@@ -13,8 +13,9 @@
 - Runtime: production preview (`pnpm exec vite preview --host 127.0.0.1`)
 - Captures: `home.png`, `home-1280x800.png`, `home-1024x768.png`,
   `home-200-percent.png`, `workbook.png`, `selection.png`, `save-dialog.png`,
-  and `recovery.png` when the deterministic acceptance fault capture is
-  available.
+  plus actual-core populated captures `workbook-50rows-1440x900.png`,
+  `workbook-50rows-1280x800.png`, `workbook-50rows-1024x768.png`, and
+  `workbook-50rows-selection.png`.
 - The error/recovery target is documented in `../targets.md`; it requires an
   authoritative runtime fault/reobserve and is not fabricated by the visual
   harness. No recovery screenshot is claimed in this revision because the
