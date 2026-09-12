@@ -180,6 +180,9 @@ export function App({ runtime, copies }: AppProps) {
   function failClosedAfterOpenRecovery(error: OpenedProjectionRecoveryError): void {
     viewRef.current = null;
     setView(null);
+    // The attempted replacement belongs to a new occurrence boundary; never
+    // carry an older unknown-edit input into its recovery reobserve.
+    recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
     syncDirty();
