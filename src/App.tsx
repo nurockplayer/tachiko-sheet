@@ -148,7 +148,7 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
-  function failClosedAfterOpenRecovery(): void {
+  function failClosedAfterOpenRecovery(error: OpenedProjectionRecoveryError): void {
     viewRef.current = null;
     setView(null);
     pendingDirtyRef.current = false;
@@ -158,7 +158,11 @@ export function App({ runtime, copies }: AppProps) {
     setSaveStatus("not-saved");
     setCurrentness("unknown");
     setOutcome("unknown");
-    setMessage("The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.");
+    setMessage(
+      error.operationOutcome === "unknown"
+        ? "The open request outcome is unknown; its current projection could not be confirmed. Refresh to re-read the resident work."
+        : "The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.",
+    );
   }
 
   function failClosedAfterPublicationRecovery(): void {
@@ -203,7 +207,7 @@ export function App({ runtime, copies }: AppProps) {
       setOutcome("idle");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
-        failClosedAfterOpenRecovery();
+        failClosedAfterOpenRecovery(error);
         return;
       } else {
         setCurrentness("current");
@@ -231,7 +235,7 @@ export function App({ runtime, copies }: AppProps) {
       setOutcome("idle");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
-        failClosedAfterOpenRecovery();
+        failClosedAfterOpenRecovery(error);
         return;
       } else {
         setCurrentness("current");
@@ -266,7 +270,7 @@ export function App({ runtime, copies }: AppProps) {
       setOutcome("idle");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
-        failClosedAfterOpenRecovery();
+        failClosedAfterOpenRecovery(error);
         return;
       } else {
         setCurrentness("current");

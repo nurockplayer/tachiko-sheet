@@ -202,7 +202,9 @@ describe("recovery presentation", () => {
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
     const markup = render({ currentness: "unknown", outcome: "unknown" });
     expect(markup).toContain('aria-label="Recovery"');
-    expect(markup).toContain("Work opened; freshness unconfirmed");
+    expect(markup).toContain("Recovery required; freshness unconfirmed");
+    expect(chipText(markup, "currentness")).toBe("Freshness unknown");
+    expect(chipText(markup, "operation-outcome")).toBe("Outcome unknown");
     expect(markup).toContain(">Refresh</button>");
     expect(markup).not.toContain("could not be opened");
   });

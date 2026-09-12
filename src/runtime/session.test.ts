@@ -426,6 +426,7 @@ describe("createSheetRuntime", () => {
     };
     const lost = await failure(runtime.openCanonical(CANONICAL_FILES));
     expect(lost).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect((lost as OpenedProjectionRecoveryError).operationOutcome).toBe("unknown");
     expect(((lost as OpenedProjectionRecoveryError).cause as UnknownOperationOutcomeError).cause).toBe(transport);
     const stale = await failure(runtime.edit(witnessOf(edited), IMPACT, { kind: "number", input: "4" }));
     expect((stale as SheetSessionError).code).toBe("not-open");

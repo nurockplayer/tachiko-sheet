@@ -445,8 +445,16 @@ export function SheetShell(props: SheetShellProps) {
       <main className="ts-home">
         {currentness === "unknown" ? (
           <section className="ts-card" aria-label="Recovery">
-            <h2 className="ts-h2">Work opened; freshness unconfirmed</h2>
-            <p className="ts-subtle">The new work is resident, but its projection is not confirmed. Refresh to re-read it.</p>
+            <h2 className="ts-h2">Recovery required; freshness unconfirmed</h2>
+            <p className="ts-subtle">Resident work is not confirmed. Refresh to re-read it.</p>
+            <div className="ts-status-strip" aria-label="Recovery status">
+              <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
+                {currentnessLabel(currentness)}
+              </span>
+              <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
+                {outcomeLabel(outcome)}
+              </span>
+            </div>
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={controlsLocked}>
               Refresh
             </button>

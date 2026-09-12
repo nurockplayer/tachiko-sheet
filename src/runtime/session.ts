@@ -57,9 +57,17 @@ export class PublishedProjectionRecoveryError extends Error {
 
 /** Open replaced the resident work, but its first projection was not coherent. */
 export class OpenedProjectionRecoveryError extends Error {
-  constructor(cause: unknown) {
-    super("The new work opened, but its current projection could not be confirmed.", { cause });
+  readonly operationOutcome: "opened" | "unknown";
+
+  constructor(cause: unknown, operationOutcome: "opened" | "unknown" = "opened") {
+    super(
+      operationOutcome === "unknown"
+        ? "The open request outcome is unknown; its current projection could not be confirmed."
+        : "The new work opened, but its current projection could not be confirmed.",
+      { cause },
+    );
     this.name = "OpenedProjectionRecoveryError";
+    this.operationOutcome = operationOutcome;
   }
 }
 
@@ -252,7 +260,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         active = null;
         residentCollection = null;
         residentAvailable = true;
-        throw new OpenedProjectionRecoveryError(error);
+        throw new OpenedProjectionRecoveryError(error, "unknown");
       }
       throw error;
     }
