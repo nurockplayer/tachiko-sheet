@@ -441,7 +441,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function renderHome(): ReactNode {
-    const recoveryLocked = currentness === "unknown" && dirty;
+    const recoveryLocked = currentness === "unknown";
     return (
       <main className="ts-home">
         {currentness === "unknown" ? (

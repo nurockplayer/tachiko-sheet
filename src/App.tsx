@@ -16,7 +16,6 @@ import {
 import {
   OpenedProjectionRecoveryError,
   PublishedProjectionRecoveryError,
-  SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 
@@ -328,10 +327,6 @@ export function App({ runtime, copies }: AppProps) {
         failClosedAfterUnknownEdit();
         return true;
       } else {
-        if (error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
-          failClosedAfterUnknownEdit();
-          return true;
-        }
         setOutcome("idle");
         setCurrentness("current");
         setMessage(describe(error, "The change was not applied."));
