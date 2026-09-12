@@ -18,6 +18,7 @@
     "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs",
     "qualification:visual-foundation-fixture": "node scripts/visual-foundation-generate-fixture.mjs",
     "qualification:visual-foundation-fixture:static": "node scripts/visual-foundation-qualify-fixture.mjs",
+    "evidence:visual-foundation-populated": "node scripts/visual-foundation-capture-populated.mjs",
     "dev": "node scripts/copy-example-fixture.mjs && vite",
     "build": "node scripts/copy-example-fixture.mjs && vite build && node scripts/check-dist.mjs dist",
     "build:acceptance": "node scripts/copy-example-fixture.mjs && vite build --mode acceptance",
