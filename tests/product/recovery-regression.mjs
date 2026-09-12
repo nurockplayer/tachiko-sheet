@@ -30,6 +30,7 @@ try {
   await page.getByTestId("project-ready").waitFor();
   const before = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
 
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
   await page.getByTestId(`cell:${expected.entity}:${expected.impact}`).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill("3");

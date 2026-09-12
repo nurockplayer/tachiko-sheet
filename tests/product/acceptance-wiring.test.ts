@@ -32,6 +32,7 @@ function projection(overrides: Record<string, unknown> = {}) {
 function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: CoreKit; calls: () => number } {
   const state = { calls: 0 };
   const client = {
+    openProject: async () => ({}) as never,
     editNumber: async () => {
       state.calls += 1;
       return onEdit();
@@ -98,6 +99,14 @@ describe("acceptance kit instrumentation", () => {
     failNextOpenProjection();
     await expect(instrumented.queryTable("items")).rejects.toThrow("replacement projection reply");
     await expect(instrumented.queryTable("items")).resolves.toMatchObject({ collection: "items" });
+  });
+
+  it("counts only an actually dispatched public openProject call", async () => {
+    const { kit } = fakeKit(async () => projection());
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    const before = openProjectRequestCount();
+    await instrumented.openProject(new ArrayBuffer(0));
+    expect(openProjectRequestCount() - before).toBe(1);
   });
 
   it("exposes the observation global only after installation", () => {
