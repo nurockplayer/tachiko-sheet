@@ -700,9 +700,7 @@ export function SheetShell(props: SheetShellProps) {
       <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
         <section className="ts-card" aria-label="Linked Brief facts">
-          <h2 className="ts-h2">
-            Brief · {selectedRow.key}
-          </h2>
+          <h2 className="ts-h2">Brief</h2>
           <BriefFacts
             entity={entity}
             occurrence={view.occurrence}
@@ -715,7 +713,7 @@ export function SheetShell(props: SheetShellProps) {
         <section className="ts-card" aria-label="Decision notes">
           <h2 className="ts-h2">Decision notes</h2>
           <p className="ts-subtle">
-            Notes on {selectedRow.key}. They are saved with the work, not with a copy.
+            Notes on the selected record. They are saved with the work, not with a copy.
           </p>
           <label className="ts-field-label" htmlFor={notesId}>
             Decision notes
