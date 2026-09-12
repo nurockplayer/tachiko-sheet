@@ -15,7 +15,9 @@ import {
 } from "./contracts.js";
 import {
   OpenedProjectionRecoveryError,
+  NoResidentWorkError,
   PublishedProjectionRecoveryError,
+  SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 
@@ -71,6 +73,7 @@ export function App({ runtime, copies }: AppProps) {
   const dirtyRef = useRef(false);
   const savedRevisionRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
+  const recoveryDraftRef = useRef<string | null>(null);
 
   const syncDirty = useCallback((): void => {
     const next = pendingDirtyRef.current || draftDirtyRef.current;
@@ -180,7 +183,7 @@ export function App({ runtime, copies }: AppProps) {
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
   }
 
-  function failClosedAfterUnknownEdit(): void {
+  function failClosedAfterUnknownEdit(edit: ScalarEdit): void {
     viewRef.current = null;
     setView(null);
     pendingDirtyRef.current = true;
@@ -189,7 +192,8 @@ export function App({ runtime, copies }: AppProps) {
     markNotSaved();
     setCurrentness("unknown");
     setOutcome("unknown");
-    setMessage("The change was dispatched but its outcome is unknown. Refresh to re-read the work.");
+    recoveryDraftRef.current = JSON.stringify(edit);
+    setMessage(`The change was dispatched but its outcome is unknown. Refresh to re-read the work. Input retained for review: ${recoveryDraftRef.current}`);
   }
 
   async function openFiles(files: FileList): Promise<void> {
@@ -324,9 +328,15 @@ export function App({ runtime, copies }: AppProps) {
         // draft path, which would offer an ordinary semantic retry.
         return true;
       } else if (error instanceof UnknownOperationOutcomeError) {
-        failClosedAfterUnknownEdit();
+        failClosedAfterUnknownEdit(edit);
         return true;
       } else {
+        if (error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
+          setOutcome("idle");
+          setCurrentness("unknown");
+          setMessage("This draft belongs to an unconfirmed work view. Refresh to re-read the work; the draft was kept.");
+          return false;
+        }
         setOutcome("idle");
         setCurrentness("current");
         setMessage(describe(error, "The change was not applied."));
@@ -414,12 +424,22 @@ export function App({ runtime, copies }: AppProps) {
       if (savedRevisionRef.current !== next.revision) markNotSaved();
       setCurrentness("current");
       setOutcome("idle");
+      if (recoveryDraftRef.current !== null) {
+        setMessage(`An unconfirmed input was retained for review: ${recoveryDraftRef.current}`);
+      }
     } catch (error) {
       viewRef.current = null;
       setView(null);
-      setCurrentness("unknown");
-      setOutcome("unknown");
-      setMessage("The current work could not be confirmed. Its freshness stays unknown.");
+      if (error instanceof NoResidentWorkError) {
+        setCurrentness("current");
+        setOutcome("idle");
+        setMessage("No resident work is available. Open a project to continue.");
+        return;
+      } else {
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("The current work could not be confirmed. Its freshness stays unknown.");
+      }
       throw new Error(describe(error, "The work could not be refreshed."));
     } finally {
       end();

@@ -71,6 +71,14 @@ export class OpenedProjectionRecoveryError extends Error {
   }
 }
 
+/** Refresh proved that an unknown open left no resident project available. */
+export class NoResidentWorkError extends Error {
+  constructor(cause: unknown) {
+    super("No resident work is available.", { cause });
+    this.name = "NoResidentWorkError";
+  }
+}
+
 type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 type ReadyKit = { kit: CoreKit; client: PublicClient };
 
@@ -170,6 +178,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       "The runtime did not report a trustworthy result for the dispatched operation.",
       { cause },
     );
+  }
+
+  function isNoProject(kit: CoreKit, error: unknown): boolean {
+    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
+      && (error as { failure?: { code?: string } }).failure?.code === "no_project";
   }
 
   async function dispatch<T>(kit: CoreKit, call: () => Promise<T>): Promise<T> {
@@ -321,6 +334,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         result = await loadCoherentView(kit, client, expected, collection);
       } catch (error) {
         active = null;
+        if (isNoProject(kit, error)) {
+          residentAvailable = false;
+          residentCollection = null;
+          closed = true;
+          throw new NoResidentWorkError(error);
+        }
         throw error;
       }
       assertUsable(expected);

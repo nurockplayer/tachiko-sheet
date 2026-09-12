@@ -142,7 +142,7 @@ export function SheetShell(props: SheetShellProps) {
   const notesDirty = notesDraft !== null && notesDraft !== notesCommitted;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
-  const controlsLocked = busy || commitPending;
+  const controlsLocked = busy || commitPending || currentness === "unknown";
   const draftActive =
     (editor !== null && editor.value !== editor.original) || notesDirty || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
@@ -231,7 +231,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function commitEditor(): Promise<boolean> {
-    if (!editor || commitPending) return false;
+    if (!editor || commitPending || controlsLocked) return false;
     const field = currentEditorField(editor);
     if (!field) {
       setEditor(null);
@@ -643,6 +643,7 @@ export function SheetShell(props: SheetShellProps) {
             aria-label="Edit cell"
             aria-busy={commitPending}
             data-testid="cell-editor"
+            disabled={controlsLocked}
             value={editor.value}
             ref={focusEditorInput}
             onChange={(event) => {

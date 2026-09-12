@@ -24,6 +24,7 @@ import {
 } from "../contracts.js";
 import {
   OpenedProjectionRecoveryError,
+  NoResidentWorkError,
   SheetSessionError,
   createSheetRuntime,
 } from "./session.js";
@@ -576,6 +577,20 @@ describe("createSheetRuntime", () => {
     const reread = await runtime.read();
     expect(reread.occurrence).toBe("scope-2");
     expect(client.calls.openProject).toHaveLength(2);
+  });
+
+  it("leaves recovery when an unknown open installed no resident project", async () => {
+    const { client, runtime } = await opened();
+    await runtime.close();
+    const transport = new Error("open transport failed before installation");
+    client.hooks.openProject = async () => {
+      throw transport;
+    };
+
+    await expect(runtime.openFiles(FILES)).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
+    await expect(runtime.read()).rejects.toBeInstanceOf(NoResidentWorkError);
+    const reopened = await runtime.openFiles(FILES);
+    expect(reopened.occurrence).toBe("scope-2");
   });
 
   it("keeps a closed session closed when pre-dispatch transfer validation fails", async () => {
