@@ -55,6 +55,14 @@ export class PublishedProjectionRecoveryError extends Error {
   }
 }
 
+/** Open replaced the resident work, but its first projection was not coherent. */
+export class OpenedProjectionRecoveryError extends Error {
+  constructor(cause: unknown) {
+    super("The new work opened, but its current projection could not be confirmed.", { cause });
+    this.name = "OpenedProjectionRecoveryError";
+  }
+}
+
 type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 type ReadyKit = { kit: CoreKit; client: PublicClient };
 
@@ -242,7 +250,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     residentCollection = null;
     residentAvailable = true;
     closed = false;
-    const read = await loadCoherentView(kit, client, expected, null);
+    let read: CoherentRead;
+    try {
+      read = await loadCoherentView(kit, client, expected, null);
+    } catch (error) {
+      throw new OpenedProjectionRecoveryError(error);
+    }
     assertNotReplaced(expected);
     active = {
       scope: read.view.occurrence,

@@ -13,7 +13,10 @@ import {
   type ViewWitness,
   type WorkbookView,
 } from "./contracts.js";
-import { PublishedProjectionRecoveryError } from "./runtime/session.js";
+import {
+  OpenedProjectionRecoveryError,
+  PublishedProjectionRecoveryError,
+} from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
@@ -145,6 +148,19 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
+  function failClosedAfterOpenRecovery(): void {
+    viewRef.current = null;
+    setView(null);
+    pendingDirtyRef.current = false;
+    draftDirtyRef.current = false;
+    syncDirty();
+    savedRevisionRef.current = null;
+    setSaveStatus("not-saved");
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setMessage("The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.");
+  }
+
   async function openFiles(files: FileList): Promise<void> {
     if (!begin()) return;
     try {
@@ -160,8 +176,11 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      setCurrentness("current");
-      setOutcome("idle");
+      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery();
+      else {
+        setCurrentness("current");
+        setOutcome("idle");
+      }
       throw new Error(describe(error, "The selected project folder could not be opened."));
     } finally {
       end();
@@ -183,8 +202,11 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      setCurrentness("current");
-      setOutcome("idle");
+      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery();
+      else {
+        setCurrentness("current");
+        setOutcome("idle");
+      }
       throw new Error(describe(error, "The example work could not be opened."));
     } finally {
       end();
@@ -213,8 +235,11 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      setCurrentness("current");
-      setOutcome("idle");
+      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery();
+      else {
+        setCurrentness("current");
+        setOutcome("idle");
+      }
       throw new Error(describe(error, `The saved copy “${name}” could not be opened.`));
     } finally {
       end();

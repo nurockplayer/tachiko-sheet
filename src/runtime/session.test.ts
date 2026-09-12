@@ -22,7 +22,11 @@ import {
   type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
-import { SheetSessionError, createSheetRuntime } from "./session.js";
+import {
+  OpenedProjectionRecoveryError,
+  SheetSessionError,
+  createSheetRuntime,
+} from "./session.js";
 
 const TITLE = "Qualification workbook";
 const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", entity_count: 1 };
@@ -510,8 +514,9 @@ describe("createSheetRuntime", () => {
     };
 
     const failed = await failure(runtime.openCanonical(CANONICAL_FILES));
-    expect(failed).toBeInstanceOf(UnknownOperationOutcomeError);
-    expect((failed as UnknownOperationOutcomeError).cause).toBe(transport);
+    expect(failed).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect((failed as OpenedProjectionRecoveryError).cause).toBeInstanceOf(UnknownOperationOutcomeError);
+    expect(((failed as OpenedProjectionRecoveryError).cause as UnknownOperationOutcomeError).cause).toBe(transport);
     expect(client.calls.openCanonicalTree).toHaveLength(1);
 
     const refused = await failure(runtime.edit(oldWitness, IMPACT, { kind: "number", input: "3" }));
