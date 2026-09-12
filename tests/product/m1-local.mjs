@@ -260,6 +260,7 @@ const cases = [
       await save(page, "recovery-copy");
       await shown(page, "save-status", "Saved on this device");
       await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+      await page.getByRole("button", { name: "Close project", exact: true }).click();
       await page.getByTestId("open-project").setInputFiles(fixture);
       await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
