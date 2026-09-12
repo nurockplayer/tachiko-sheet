@@ -39,6 +39,11 @@ try {
   await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
+  const a = await page.evaluate(() => window.__tachikoAcceptance.observe());
+  assert.match(
+    await page.locator("body").textContent(),
+    /An unconfirmed input was retained for review: \{"kind":"number","input":"3"\}/,
+  );
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("recovery-copy");
@@ -53,9 +58,12 @@ try {
   assert.equal(afterDispatch - before, 1, "replacement Open must dispatch exactly once");
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
+  const b = await page.evaluate(() => window.__tachikoAcceptance.observe());
+  assert.notEqual(b.occurrence, a.occurrence, "replacement must establish a fresh occurrence");
+  assert.equal(b.impact, expected.initialImpact, "replacement must show B's authoritative fixture value");
   assert.doesNotMatch(
     await page.locator("body").textContent(),
-    /Input retained for review: \{"kind":"number","input":"3"\}/,
+    /An unconfirmed input was retained for review: \{"kind":"number","input":"3"\}/,
   );
   console.log(JSON.stringify({ case: "focused replacement recovery", status: "PASS", openProjectDispatches: afterDispatch - before }));
 } finally {

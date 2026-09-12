@@ -257,6 +257,11 @@ const cases = [
       await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
+      const a = await snapshot(page);
+      assert.match(
+        await page.locator("body").textContent(),
+        /An unconfirmed input was retained for review: \{"kind":"number","input":"3"\}/,
+      );
       await save(page, "recovery-copy");
       await shown(page, "save-status", "Saved on this device");
       await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
@@ -265,8 +270,11 @@ const cases = [
       await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
+      const b = await snapshot(page);
+      assert.notEqual(b.occurrence, a.occurrence, "replacement must establish a fresh occurrence");
+      assert.equal(b.impact, expected.initialImpact, "replacement must show B's authoritative fixture value");
       const body = await page.locator("body").textContent();
-      assert.ok(!body.includes('Input retained for review: {"kind":"number","input":"3"}'));
+      assert.ok(!body.includes('An unconfirmed input was retained for review: {"kind":"number","input":"3"}'));
     },
   ],
 ];
