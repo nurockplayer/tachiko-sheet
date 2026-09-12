@@ -19,6 +19,8 @@
     "qualification:visual-foundation-fixture": "node scripts/visual-foundation-generate-fixture.mjs",
     "qualification:visual-foundation-fixture:static": "node scripts/visual-foundation-qualify-fixture.mjs",
     "evidence:visual-foundation-populated": "node scripts/visual-foundation-capture-populated.mjs",
+    "evidence:visual-foundation-final": "node scripts/visual-foundation-capture-final.mjs",
+    "evidence:visual-foundation-recovery": "node scripts/visual-foundation-capture-recovery.mjs",
     "dev": "node scripts/copy-example-fixture.mjs && vite",
     "build": "node scripts/copy-example-fixture.mjs && vite build && node scripts/check-dist.mjs dist",
     "build:acceptance": "node scripts/copy-example-fixture.mjs && vite build --mode acceptance",

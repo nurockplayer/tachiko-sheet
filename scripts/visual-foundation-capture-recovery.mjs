@@ -1,0 +1,32 @@
+// Acceptance-build-only recovery evidence. The fault is injected through the
+// existing bounded acceptance harness after a real UI edit; no DOM is mocked.
+import { chromium } from "playwright";
+
+const url = process.env.WORK_ACCEPTANCE_URL;
+if (!url) throw new Error("WORK_ACCEPTANCE_URL is required");
+const fixture = "tests/fixtures/release-plan.roproj";
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-project").setInputFiles(fixture);
+  await page.getByTestId("project-ready").waitFor({ timeout: 15000 });
+  await page.getByRole("tab", { name: "Brief", exact: true }).click();
+  const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+  await notes.fill("draft-authored-for-row-A");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const otherCell = page.locator('[data-work-entity]:not([data-work-entity="1d37df46-01f6-4b05-8fd9-064718dc91ea"])').first();
+  await otherCell.click();
+  await page.getByRole("tab", { name: "Brief", exact: true }).click();
+  await notes.fill("draft-authored-for-row-B");
+  await page.evaluate(() => window.__tachikoAcceptance?.failNextOpenProjection());
+  await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor({ timeout: 15000 });
+  const currentness = await page.getByTestId("currentness").textContent();
+  const outcome = await page.getByTestId("operation-outcome").textContent();
+  if (currentness?.trim() !== "Needs refresh") throw new Error(`unexpected recovery currentness: ${currentness}`);
+  await page.screenshot({ path: "evidence/visual-foundation/targets/recovery-acceptance-fault.png", fullPage: true });
+  console.log(JSON.stringify({ status: "PASS", currentness: currentness.trim(), outcome: outcome?.trim(), screenshot: "recovery-acceptance-fault.png" }));
+} finally {
+  await browser.close();
+}

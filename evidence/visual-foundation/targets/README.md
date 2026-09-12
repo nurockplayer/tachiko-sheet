@@ -1,8 +1,8 @@
 # Target-state captures
 
-- App source/build commit: `7bf79a72066fffd7bdfbb97bf752212862e7ef70`
-- Capture harness is committed with this evidence update; screenshots were
-  regenerated against the app build above.
+- App source/build commit: `6d3b30af57e54c519be89f599daa2edf8986a807`
+- Final capture harness is committed with this evidence update; screenshots
+  were regenerated against the app build above.
 - Build command: `pnpm build` (production `dist`, Vite 8.3.0)
 - Captured: 2026-09-13 (Asia/Tokyo)
 - Browser: Playwright Chromium 1.62.1, headless; host macOS Darwin 24.6.0 arm64
@@ -17,8 +17,16 @@
   `home-200-percent.png`, `workbook.png`, `selection.png`, `save-dialog.png`,
   plus actual-core populated captures `workbook-50rows-1440x900.png`,
   `workbook-50rows-1280x800.png`, `workbook-50rows-1024x768.png`, and
-  `workbook-50rows-selection.png`.
-- The error/recovery target is documented in `../targets.md`; it requires an
-  authoritative runtime fault/reobserve and is not fabricated by the visual
-  harness. No recovery screenshot is claimed in this revision because the
-  acceptance build's bounded fault call did not settle in the capture runner.
+  `workbook-50rows-selection.png`, plus `workbook-50rows-japanese-edit.png`
+  and `save-dialog-final.png` from normal UI interactions.
+- `recovery-acceptance-fault.png` is a genuine acceptance-build-only capture:
+  the existing bounded `failNextOpenProjection()` fault was armed after real
+  edits and the UI reached `Refresh required` / `Needs refresh`. Acceptance
+  hooks are not shipped in production `dist`.
+
+## Evidence boundaries
+
+The wireframes in `../targets.md` are design targets; the PNGs in this folder
+are actual builds. The Japanese capture proves glyph rendering through the
+normal editor and does not claim native IME composition. These captures do not
+claim full CJK/IME coverage, macOS native-host acceptance, or #7 completion.
