@@ -110,6 +110,24 @@ const cases = [
       await input.press("Escape");
     },
   ],
+  [
+    "product-focus-03 notes drafts stay bound to their selected entity",
+    async (page) => {
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+      await notes.fill("draft-authored-for-row-A");
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      const otherCell = page.locator(`[data-work-entity]:not([data-work-entity="${expected.entity}"])`).first();
+      await otherCell.click();
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      assert.notEqual(await notes.inputValue(), "draft-authored-for-row-A");
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).click();
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
+    },
+  ],
 ];
 
 let failures = 0;

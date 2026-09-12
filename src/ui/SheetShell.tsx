@@ -35,6 +35,13 @@ interface EditorState {
   original: string;
 }
 
+interface NotesDraft {
+  occurrence: string;
+  revision: string;
+  entity: string;
+  value: string;
+}
+
 interface GridPosition {
   entity: string;
   field: string;
@@ -65,7 +72,7 @@ export function SheetShell(props: SheetShellProps) {
   const [tab, setTab] = useState<ActiveTab>("table");
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState<NotesDraft | null>(null);
   const [commitPending, setCommitPending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
@@ -138,8 +145,16 @@ export function SheetShell(props: SheetShellProps) {
   }, [selectedRow, columns]);
 
   const notesCommitted = notesField ? seedTextOf(notesField) : "";
-  const notesValue = notesDraft ?? notesCommitted;
-  const notesDirty = notesDraft !== null && notesDraft !== notesCommitted;
+  const notesDraftBound = Boolean(
+    notesDraft &&
+      view &&
+      selectedRow &&
+      notesDraft.occurrence === view.occurrence &&
+      notesDraft.revision === view.revision &&
+      notesDraft.entity === rowEntity(selectedRow),
+  );
+  const notesValue = notesDraftBound ? (notesDraft?.value ?? notesCommitted) : notesCommitted;
+  const notesDirty = notesDraftBound && notesDraft !== null && notesDraft.value !== notesCommitted;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
@@ -322,7 +337,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function applyNotes(): Promise<void> {
-    if (!notesField || !notesEditable || !notesDirty || controlsLocked) return;
+    if (!notesField || !notesEditable || !notesDirty || !notesDraftBound || controlsLocked) return;
     const accepted = await runCommit(notesField.target, { kind: "text", value: notesValue });
     if (accepted) setLocalError(null);
   }
@@ -706,7 +721,14 @@ export function SheetShell(props: SheetShellProps) {
             aria-describedby={notesEditable ? undefined : `${notesId}-hint`}
             onChange={(event) => {
               setLocalError(null);
-              setNotesDraft(event.currentTarget.value);
+              if (view && selectedRow) {
+                setNotesDraft({
+                  occurrence: view.occurrence,
+                  revision: view.revision,
+                  entity: rowEntity(selectedRow),
+                  value: event.currentTarget.value,
+                });
+              }
             }}
             onKeyDown={onNotesKeyDown}
           />
