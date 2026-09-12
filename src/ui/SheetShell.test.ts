@@ -205,7 +205,8 @@ describe("recovery presentation", () => {
     expect(markup).toContain("Recovery required; freshness unconfirmed");
     expect(chipText(markup, "currentness")).toBe("Freshness unknown");
     expect(chipText(markup, "operation-outcome")).toBe("Outcome unknown");
-    expect(markup).toContain(">Refresh</button>");
+    expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).not.toContain("could not be opened");
   });
 
@@ -219,7 +220,8 @@ describe("recovery presentation", () => {
     });
     expect(markup).not.toContain('data-testid="cell-editor"');
     expect(markup).toContain('aria-label="Recovery"');
-    expect(markup).toContain(">Refresh</button>");
+    expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).toContain('data-testid="open-project" type="file" multiple="" disabled=""');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Try example<\/button>/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Open saved copy<\/button>/);

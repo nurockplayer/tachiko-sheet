@@ -456,7 +456,7 @@ export function SheetShell(props: SheetShellProps) {
                 {outcomeLabel(outcome)}
               </span>
             </div>
-            <button type="button" className="ts-button" onClick={() => void refresh()} disabled={controlsLocked}>
+            <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
             </button>
           </section>
