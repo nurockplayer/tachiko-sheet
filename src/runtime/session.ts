@@ -260,6 +260,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         active = null;
         residentCollection = null;
         residentAvailable = true;
+        closed = false;
         throw new OpenedProjectionRecoveryError(error, "unknown");
       }
       throw error;
@@ -292,8 +293,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
+      const transfer = await kit.projectTransferFromFiles(files);
       return openSession(kit, client, requestedAt, async () => {
-        const transfer = await kit.projectTransferFromFiles(files);
         return client.openProject(transfer);
       });
     });

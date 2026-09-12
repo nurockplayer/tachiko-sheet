@@ -280,6 +280,11 @@ class FakeClient {
     this.#open = false;
   }
 
+  openThenLoseReply(error: Error): Promise<OpenedProjection> {
+    this.#opened();
+    return Promise.reject(error);
+  }
+
   close(): void {
     this.calls.close += 1;
     this.#open = false;
@@ -557,6 +562,38 @@ describe("createSheetRuntime", () => {
     const refreshed = await runtime.read();
     expect(refreshed.revision).toBe(view.revision);
     expect(client.calls.editNumber).toBe(0);
+  });
+
+  it("re-observes after a closed session loses an open reply without opening twice", async () => {
+    const { client, runtime } = await opened();
+    await runtime.close();
+    const transport = new Error("open reply lost");
+    client.hooks.openProject = () => client.openThenLoseReply(transport);
+
+    const failed = await failure(runtime.openFiles(FILES));
+    expect(failed).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect((failed as OpenedProjectionRecoveryError).operationOutcome).toBe("unknown");
+    const reread = await runtime.read();
+    expect(reread.occurrence).toBe("scope-2");
+    expect(client.calls.openProject).toHaveLength(2);
+  });
+
+  it("keeps a closed session closed when pre-dispatch transfer validation fails", async () => {
+    const { client, runtime, projectTransferFromFiles } = await opened();
+    await runtime.close();
+    const validation = new Error("invalid project files");
+    projectTransferFromFiles.mockRejectedValueOnce(validation);
+
+    const failed = await failure(runtime.openFiles(FILES));
+    expect(failed).toBe(validation);
+    expect(failed).not.toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(client.calls.openProject).toHaveLength(1);
+
+    const closed = await failure(runtime.read());
+    expect((closed as SheetSessionError).code).toBe("closed");
+    const reopened = await runtime.openFiles(FILES);
+    expect(reopened.occurrence).toBe("scope-2");
+    expect(client.calls.openProject).toHaveLength(2);
   });
 
   it("retains publication truth while invalidating the old projection after reload failure", async () => {
