@@ -6,10 +6,9 @@ There is one Mission Lead and integrator. Under the reviewed DELIVERY.md amendme
 
 When **Terra** is the Mission Lead, #1 defines the default execution route and no additional founder reminder is needed:
 
-1. Delegate bounded implementation/test work first to the installed `~/.codex-deepseek-worker/` using its current documented entrypoint/skill.
-2. If that worker is unavailable, fails to start, or is unsuitable for the bounded task, fall back to `~/.codex/agents/luna-worker.toml` for implementation.
-3. After implementation, use `~/.codex/agents/sol-reviewer.toml` for independent review. The implementer must not review its own work.
-4. DeepSeek and Luna must not overlap writes. Terra retains architecture, shared integration, writer coordination, authority/acceptance arbitration and final integration. Sol review does not replace Steward acceptance, exact-head tests/gates or upstream review authority. If both implementation routes are unavailable, record the condition in #2 and continue independent eligible work rather than silently changing the route.
+1. Delegate bounded implementation/test work to `~/.codex/agents/luna-worker.toml`.
+2. After implementation, use `~/.codex/agents/sol-reviewer.toml` for independent review. The implementer must not review its own work.
+3. Luna must not decide architecture, authority or acceptance policy. Terra retains architecture, shared integration, writer coordination, authority/acceptance arbitration and final integration. Sol review does not replace Steward acceptance, exact-head tests/gates or upstream review authority. If Luna is unavailable, record the condition in #2 and continue independent eligible work rather than silently changing the route.
 
 Own the finished spreadsheet experience, not only passing component tests. Existing Designer code is runtime/interop evidence, never the new UI design baseline. Brief means auxiliary Sheet notes/reporting, not a full Docs client. The first three-row fixture is a canary, not Mission completion.
 
