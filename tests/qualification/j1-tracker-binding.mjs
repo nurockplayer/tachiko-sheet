@@ -1,44 +1,28 @@
 // Qualification-only: establish whether the fixed J1 inputs bind to the pinned
 // public Tracker runtime. This is not a J1 product/acceptance test.
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
-import {readFile, stat, writeFile} from 'node:fs/promises';
+import {readFile, writeFile} from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
+import {inspectQualifiedKit} from './qualified-kit.mjs';
 
 const coreSourceCommit = '8bba9b09cea3c011df383216ba3846ccd003dece';
-const qualifiedAssets = {
-  'experimental-client.js': 'd635b4b5939c1efe845c480d4a9263e4f9119f79a72b97eada532644a62f819f',
-  'designer_runtime.wasm': '1fe501c3a44bafb7b18190d5c8472f06a8dff4db5652bee241a194532934adaa',
-};
 const kit = process.env.WORK_CLIENT_KIT;
 if (!kit) throw new Error('WORK_CLIENT_KIT is required.');
 const kitRoot = path.resolve(kit);
 const evidenceFile = fileURLToPath(new URL('../../evidence/j1-tracker-binding.json', import.meta.url));
 const fixedInputFile = fileURLToPath(new URL('../../acceptance/mvp-v1/scenarios.json', import.meta.url));
-const digest = async file => createHash('sha256').update(await readFile(file)).digest('hex');
 const writeEvidence = record => writeFile(evidenceFile, `${JSON.stringify(record, null, 2)}\n`);
 
-const actualAssets = {};
-for (const asset of Object.keys(qualifiedAssets)) {
-  const file = path.join(kitRoot, asset);
-  await stat(file);
-  actualAssets[asset] = await digest(file);
-}
-const mismatches = Object.entries(qualifiedAssets).flatMap(([asset, expected]) =>
-  actualAssets[asset] === expected ? [] : [{asset, expected, actual: actualAssets[asset]}],
-);
-if (mismatches.length) {
+const kitInventory = await inspectQualifiedKit(kitRoot);
+if (!kitInventory.qualified) {
   const record = {
     case: 'J1-native-tracker-binding',
     status: 'BLOCKED',
-    reason: 'The supplied kit does not match the qualified JS/WASM artifact identity.',
-    supplied_kit: kitRoot,
-    qualified_assets: qualifiedAssets,
-    actual_assets: actualAssets,
-    mismatches,
+    reason: 'The supplied kit does not match the complete recorded 21-asset qualification inventory.',
+    kit_inventory: kitInventory,
   };
   await writeEvidence(record);
   console.error(JSON.stringify(record));
@@ -144,8 +128,7 @@ try {
     },
     qualified_kit: {
       source_commit: coreSourceCommit,
-      supplied_kit: kitRoot,
-      assets: actualAssets,
+      inventory: kitInventory,
     },
     observation,
     conclusion: {

@@ -21,11 +21,15 @@ It writes the observed record to
 complete supplied kit; the Worker and WASM therefore execute through the
 public entry rather than through a private import or raw WASM call.
 
-Before opening a browser, the probe checks the supplied
-`experimental-client.js` and `designer_runtime.wasm` SHA-256 digests against
-the qualified artifact inventory. Only a matching pair is attributed to
-source commit `8bba9b09cea3c011df383216ba3846ccd003dece`. A different pair
-writes a `BLOCKED` record and exits 78; it is not evidence for this pin.
+Before opening a browser, the probe checks the complete 21-regular-file local
+inventory recorded in `evidence/core-kit-qualification.md`, including every
+Worker, runtime and transfer asset. Missing, extra, changed, non-regular or
+symlinked assets write a `BLOCKED` record and exit 78. This is a local
+qualification inventory, not a producer artifact manifest and not a passing
+result for the original immutable `tests/kit.mjs`. Only a matching complete
+inventory is attributed to source commit
+`8bba9b09cea3c011df383216ba3846ccd003dece`; the qualified kit still has no
+producer-recorded source-commit manifest.
 
 ## Actual result
 
