@@ -248,6 +248,26 @@ const cases = [
       await shown(page, cell(expected.impact), 3);
     },
   ],
+  [
+    "M1-07 replacement recovery does not leak prior unknown input",
+    async ({ page }) => {
+      await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
+      await edit(page, "3");
+      await shown(page, "operation-outcome", "Outcome unknown");
+      await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await page.getByTestId("project-ready").waitFor();
+      await save(page, "recovery-copy");
+      await shown(page, "save-status", "Saved on this device");
+      await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+      await page.getByTestId("open-project").setInputFiles(fixture);
+      await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await page.getByTestId("project-ready").waitFor();
+      const body = await page.locator("body").textContent();
+      assert.ok(!body.includes('Input retained for review: {"kind":"number","input":"3"}'));
+    },
+  ],
 ];
 
 let failures = 0;

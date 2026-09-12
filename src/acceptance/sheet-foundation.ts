@@ -47,6 +47,7 @@ export interface AcceptanceApi {
   savedHash(name: string): Promise<string | null>;
   failNextSave(): void;
   loseNextExecuteReply(): void;
+  failNextOpenProjection(): void;
   executeRequestCount(): number;
   settleFaultWindow(): Promise<void>;
   saveObservation(): AcceptanceSaveObservation;
@@ -73,6 +74,7 @@ const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
 let wiring: AcceptanceWiring | null = null;
 let dispatchCount = 0;
 let loseArmed = false;
+let openProjectionFaultArmed = false;
 let lastReceiptValue: PublicationProjection | null = null;
 let settlePendingFault: (() => void) | null = null;
 let pendingFault: Promise<void> | null = null;
@@ -106,6 +108,16 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (typeof property === "string" && EDIT_METHODS.has(property)) {
         return (...args: unknown[]): Promise<PublicationProjection> =>
           dispatchScalarEdit(target, property, args);
+      }
+      if (property === "queryTable") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (openProjectionFaultArmed) {
+            openProjectionFaultArmed = false;
+            throw new Error("The replacement projection reply was lost after real open dispatch.");
+          }
+          return result;
+        };
       }
       return value.bind(target);
     },
@@ -341,6 +353,10 @@ export function loseNextExecuteReply(): void {
   });
 }
 
+export function failNextOpenProjection(): void {
+  openProjectionFaultArmed = true;
+}
+
 /** Resolves only when the bounded real-dispatch / drop experiment has settled. */
 export async function settleFaultWindow(): Promise<void> {
   await (pendingFault ?? Promise.resolve());
@@ -353,6 +369,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
     savedHash,
     failNextSave,
     loseNextExecuteReply,
+    failNextOpenProjection,
     executeRequestCount,
     settleFaultWindow,
     saveObservation,

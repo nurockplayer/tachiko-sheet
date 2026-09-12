@@ -9,6 +9,7 @@ import { UnknownOperationOutcomeError, type CoreKit, type KitLoader } from "../.
 import { hashCanonicalFiles } from "../../src/acceptance/canonical-hash.js";
 import {
   executeRequestCount,
+  failNextOpenProjection,
   installAcceptance,
   lastReceipt,
   loseNextExecuteReply,
@@ -90,6 +91,14 @@ describe("acceptance kit instrumentation", () => {
     expect(calls()).toBe(2);
   });
 
+  it("fails only the next real post-open projection reply", async () => {
+    const { kit } = fakeKit(async () => projection());
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    failNextOpenProjection();
+    await expect(instrumented.queryTable("items")).rejects.toThrow("replacement projection reply");
+    await expect(instrumented.queryTable("items")).resolves.toMatchObject({ collection: "items" });
+  });
+
   it("exposes the observation global only after installation", () => {
     const scope = globalThis as unknown as { window: Record<string, unknown> };
     const previous = scope.window;
@@ -103,6 +112,7 @@ describe("acceptance kit instrumentation", () => {
         "savedHash",
         "failNextSave",
         "loseNextExecuteReply",
+        "failNextOpenProjection",
         "executeRequestCount",
         "settleFaultWindow",
         "saveObservation",
