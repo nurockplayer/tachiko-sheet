@@ -20,6 +20,18 @@ try {
     const exact = await page.getByText("整理試玩回饋", { exact: true }).count();
     const mojibake = await page.getByText(/æ•´|çŽ©|å›ž/, { exact: false }).count();
     if (exact === 0 || mojibake !== 0) throw new Error(`rendered CJK check failed at ${width}x${height}: exact=${exact}, mojibake=${mojibake}`);
+    const longCell = page.locator('[data-testid^="cell:"][title]').first();
+    const fullValue = await longCell.getAttribute("title");
+    if (!fullValue || fullValue.length <= 40 || (await longCell.locator(".ts-cell-value").textContent())?.trim() !== fullValue) {
+      throw new Error(`long-value access check failed at ${width}x${height}`);
+    }
+    if (width === 1024) {
+      const dimensions = await page.locator(".ts-grid-scroll").evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }));
+      if (dimensions.scrollWidth <= dimensions.clientWidth) throw new Error("expected horizontal grid overflow at 1024px");
+    }
     await page.screenshot({ path: `evidence/visual-foundation/targets/${name}`, fullPage: true });
     if (width === 1440) {
       await page.locator(".ts-cell").first().focus();

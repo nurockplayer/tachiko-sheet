@@ -9,12 +9,23 @@ import { chromium } from "playwright";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const kitRoot = path.join(root, "public/core-kit");
+const taskValues = [
+  "Review partner brief and confirm ownership, launch timing, and rollback notes for the next release",
+  "整理試玩回饋，確認負責人、上線時程與回復方案，並保留可追蹤的決策脈絡",
+  "Investigate keyboard navigation, horizontal scrolling, and full-value access at a narrow viewport",
+  "檢查鍵盤導覽、窄視窗水平捲動，以及長文字欄位的完整值存取體驗",
+  "Prepare release checklist with dependency evidence, customer-facing notes, and follow-up owners",
+  "整理版本清單、相依性證據、對外說明與後續負責人，避免遺漏未完成事項",
+  "Compare the current projection with the saved copy and record any confirmed differences",
+  "比較目前投影與裝置上的已儲存副本，記錄所有經確認的差異與待處理事項",
+];
 const output = process.env.VF_FIXTURE_OUTPUT
   ? path.resolve(process.env.VF_FIXTURE_OUTPUT)
   : await mkdtemp("/tmp/tachiko-vf-fixture-");
 const pageSource = `<!doctype html><meta charset="utf-8"><script type="module">
 import { createExperimentalDesignerClient } from '/kit/experimental-client.js';
 const client = createExperimentalDesignerClient();
+const taskValues = ${JSON.stringify(taskValues)};
 try {
   let opened = await client.newTracker();
   let revision = opened.table.revision;
@@ -30,7 +41,7 @@ try {
     const row = table.rows[i];
     const task = field(row, 'task'); const estimate = field(row, 'estimate'); const done = field(row, 'done');
     if (!task || !estimate || !done) throw new Error('Tracker fields missing at row ' + i);
-    revision = (await client.editText(revision, task, i % 2 ? 'Review partner brief' : '整理試玩回饋')).resulting_revision;
+    revision = (await client.editText(revision, task, taskValues[i % taskValues.length])).resulting_revision;
     revision = (await client.editNumber(revision, estimate, String((i % 9) + 1))).resulting_revision;
     revision = (await client.editBoolean(revision, done, true)).resulting_revision;
     table = await client.queryTable(collection);

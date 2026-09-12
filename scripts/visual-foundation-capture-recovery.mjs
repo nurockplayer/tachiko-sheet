@@ -33,10 +33,15 @@ try {
   await page.getByRole("button", { name: "Apply notes", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor({ timeout: 15000 });
   const currentness = await page.getByTestId("currentness").textContent();
-  const outcome = await page.getByTestId("operation-outcome").textContent();
   if (currentness?.trim() !== "Needs refresh") throw new Error(`unexpected recovery currentness: ${currentness}`);
+  if (await page.getByTestId("operation-outcome").count() !== 0) {
+    throw new Error("known publication recovery rendered an empty idle outcome chip");
+  }
+  if (await page.locator('[data-testid^="cell:"]').count() !== 0) {
+    throw new Error("recovery rendered a stale grid");
+  }
   await page.screenshot({ path: "evidence/visual-foundation/targets/recovery-acceptance-fault.png", fullPage: true });
-  console.log(JSON.stringify({ status: "PASS", currentness: currentness.trim(), outcome: outcome?.trim(), screenshot: "recovery-acceptance-fault.png" }));
+  console.log(JSON.stringify({ status: "PASS", currentness: currentness.trim(), outcome: null, stale_grid_cells: 0, screenshot: "recovery-acceptance-fault.png" }));
 } finally {
   await browser.close();
 }

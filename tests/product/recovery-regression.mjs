@@ -2,10 +2,11 @@
 // Runs against the normal hosted acceptance origin, with real Worker/WASM calls.
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { installDistRoutes, LOCAL_ORIGIN } from "./dist-routes.mjs";
 
-const url = process.env.WORK_CLIENT_URL;
+const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : undefined);
 if (!url) {
-  console.error("BLOCKED: WORK_CLIENT_URL is required for the hosted recovery regression.");
+  console.error("BLOCKED: WORK_CLIENT_URL (or WORK_DIST) is required for the recovery regression.");
   process.exit(78);
 }
 let chromium;
@@ -24,7 +25,9 @@ const launchOptions = {
 };
 const browser = await chromium.launch(launchOptions);
 try {
-  const page = await browser.newPage();
+  const context = await browser.newContext();
+  if (process.env.WORK_DIST) await installDistRoutes(context, process.env.WORK_DIST);
+  const page = await context.newPage();
   await page.goto(url);
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
@@ -54,6 +57,16 @@ try {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(
+    await page.getByTestId("operation-outcome").count(),
+    0,
+    "known publication recovery must not render an empty idle outcome chip",
+  );
+  assert.equal(
+    await page.locator('[data-testid^="cell:"]').count(),
+    0,
+    "recovery must not render a stale grid",
+  );
   const afterDispatch = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
   assert.equal(afterDispatch - before, 1, "replacement Open must dispatch exactly once");
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -66,6 +79,7 @@ try {
     /An unconfirmed input was retained for review: \{"kind":"number","input":"3"\}/,
   );
   console.log(JSON.stringify({ case: "focused replacement recovery", status: "PASS", openProjectDispatches: afterDispatch - before }));
+  await context.close();
 } finally {
   await browser.close();
 }

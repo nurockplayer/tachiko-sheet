@@ -93,7 +93,11 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
     case "text":
       return stored.value === ""
         ? { text: EMPTY_TEXT, tone: "muted", title: "The stored text is empty." }
-        : { text: stored.value, tone: field.formula ? "computed" : "plain", title: formulaTitle(field) };
+        : {
+            text: stored.value,
+            tone: field.formula ? "computed" : "plain",
+            title: field.formula ? "Calculated value" : longTextTitle(stored.value),
+          };
     case "boolean":
       return {
         text: stored.value ? "true" : "false",
@@ -115,6 +119,10 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
 
 function formulaTitle(field: FieldProjection): string | null {
   return field.formula ? "Calculated value" : null;
+}
+
+function longTextTitle(value: string): string | null {
+  return value.length > 40 ? value : null;
 }
 
 function formatNumber(value: number): string {

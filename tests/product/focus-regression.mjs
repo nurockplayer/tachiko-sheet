@@ -52,6 +52,23 @@ async function editImpact(page, value) {
 
 const cases = [
   [
+    "product-focus-00 a published edit visibly distinguishes edited unsaved work",
+    async (page) => {
+      assert.equal(
+        await page.getByTestId("work-state").textContent().then((text) => text.trim()),
+        "Unchanged",
+      );
+      await editImpact(page, "3");
+      await page.waitForFunction(
+        () => document.querySelector("[data-work-dirty]")?.getAttribute("data-work-dirty") === "true",
+      );
+      assert.equal(
+        await page.getByTestId("work-state").textContent().then((text) => text.trim()),
+        "Edited — not saved",
+      );
+    },
+  ],
+  [
     "product-focus-01 dirty Close then Keep editing restores exact grid-cell focus",
     async (page) => {
       await editImpact(page, "3");

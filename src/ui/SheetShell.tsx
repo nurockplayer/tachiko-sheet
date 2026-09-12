@@ -478,9 +478,11 @@ export function SheetShell(props: SheetShellProps) {
               <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
                 {currentnessLabel(currentness)}
               </span>
-              <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
-                {outcomeLabel(outcome)}
-              </span>
+              {outcome !== "idle" ? (
+                <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
+                  {outcomeLabel(outcome)}
+                </span>
+              ) : null}
             </div>
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
@@ -573,6 +575,13 @@ export function SheetShell(props: SheetShellProps) {
         <div className="ts-status-strip">
           <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
             {currentnessLabel(currentness)}
+          </span>
+          <span
+            className={`ts-chip ${dirty ? "ts-chip--edited" : "ts-chip--unchanged"}`}
+            data-testid="work-state"
+            data-work-state={dirty ? "edited" : "unchanged"}
+          >
+            {workStateLabel(dirty)}
           </span>
           <span className={`ts-chip ts-chip--${saveStatus}`} data-testid="save-status">
             {saveLabel(saveStatus)}
@@ -1028,6 +1037,10 @@ function saveLabel(saveStatus: SheetShellProps["saveStatus"]): string {
     default:
       return "Not saved yet";
   }
+}
+
+function workStateLabel(dirty: boolean): string {
+  return dirty ? "Edited — not saved" : "Unchanged";
 }
 
 function outcomeLabel(outcome: SheetShellProps["outcome"]): string {

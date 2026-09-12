@@ -11,14 +11,17 @@ using only the vendored public `createExperimentalDesignerClient()` path:
 exactly 50 rows before writing opaque exported bytes.
 
 Observed result: `rows=50`, `files=18`, resulting revision `resident/200`.
-The committed first-run corpus has SHA-256
-`09a2e58d2092cdfb5bf5e898b08865b6460902d05b0629ca976a15b61b5b79e2`.
+The committed corpus has SHA-256
+`72b2bcfb714d731149573a6c1d9b4baacb9757dff6df378558ab2efde5b8d100`.
 Creation identities are runtime-generated, so fresh generation may produce a
 different export; the generator therefore defaults to a safe `/tmp` output and
 never mutates this tracked corpus. The static qualification command below opens
 the committed bytes twice and compares both projections.
-Rows contain alternating CJK/Latin text, numeric estimates 1–9, and supported
-boolean values. This is an evidence-only corpus and does not replace or modify
+Rows contain varied long CJK/Latin task text, numeric estimates 1–9, and
+supported boolean values across the public Tracker columns (`task`, `estimate`,
+`done`). The long task values are intentionally rendered with normal cell
+truncation while their complete strings remain available through the cell
+tooltip. This is an evidence-only corpus and does not replace or modify
 the original three-row M1 fixture.
 
 The public Tracker profile does not expose a calculation-failure or unavailable
@@ -27,6 +30,6 @@ by the existing projection unit tests and state board, not claimed as generated
 fixture content.
 
 Qualification command: `pnpm qualification:visual-foundation-fixture:static`.
-It is read-only and asserts 18 files, 50 rows, CJK/non-ASCII and Latin task
-values, numeric estimates, boolean done values, and identical repeated
-re-admission content.
+It is read-only and asserts 18 files, 50 rows, varied long CJK/non-ASCII and
+Latin task values, numeric estimates, boolean done values, and identical
+repeated re-admission content.

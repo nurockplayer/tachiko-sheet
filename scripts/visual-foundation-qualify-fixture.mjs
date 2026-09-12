@@ -31,6 +31,9 @@ try {
   if (JSON.stringify(values) !== JSON.stringify(valuesAgain)) throw new Error('re-open projection content changed');
   const text = values.map(row => row.task).filter(value => typeof value === 'string');
   if (!text.some(value => /[^\\x00-\\x7F]/u.test(value)) || !text.some(value => /[A-Za-z]/.test(value))) throw new Error('expected non-ASCII CJK and Latin task values');
+  if (new Set(text).size < 4) throw new Error('expected varied task values');
+  if (!text.some(value => value.length > 60 && /[A-Za-z]/.test(value))) throw new Error('expected long Latin task value');
+  if (!text.some(value => value.length > 30 && /[^\\x00-\\x7F]/u.test(value))) throw new Error('expected long CJK task value');
   if (!values.every(row => typeof row.estimate === 'number' && typeof row.done === 'boolean')) throw new Error('expected numeric estimate and boolean done values');
   document.body.textContent = JSON.stringify({ rows: first.rows.length, rows_again: second.rows.length, values, revision: first.revision });
 } catch (error) { document.body.dataset.status = 'failed'; document.body.textContent = String(error?.stack ?? error); }

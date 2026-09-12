@@ -30,7 +30,8 @@
     "verify:core-kit": "node scripts/verify-core-kit.mjs",
     "qualification:core-kit": "node scripts/qualify-core-kit.mjs",
     "acceptance:product": "node scripts/run-product-acceptance.mjs",
-    "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs"
+    "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs",
+    "test:visual-foundation": "node tests/product/visual-foundation-regression.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

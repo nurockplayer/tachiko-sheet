@@ -335,6 +335,17 @@
   color: var(--ts-ink-soft);
 }
 
+.ts-chip--edited {
+  background: var(--ts-warn-bg);
+  border-color: #e4c9a2;
+  color: var(--ts-warn);
+}
+
+.ts-chip--edited::before {
+  content: "•";
+  font-weight: 700;
+}
+
 .ts-actions {
   display: flex;
   gap: 7px;
@@ -386,8 +397,9 @@
   border-collapse: separate;
   border-spacing: 0;
   font-variant-numeric: tabular-nums;
-  width: max-content;
-  min-width: 100%;
+  table-layout: fixed;
+  width: 100%;
+  min-width: 1024px;
 }
 
 .ts-grid th,
@@ -636,6 +648,10 @@
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
-  .ts-cell--focused { outline-color: Highlight; box-shadow: none; }
+  .ts-app .ts-cell--focused {
+    outline: 3px solid HighlightText !important;
+    outline-offset: -3px;
+    box-shadow: inset 0 0 0 1px HighlightText !important;
+  }
   .ts-modal-backdrop { background: Canvas; opacity: 0.95; }
 }

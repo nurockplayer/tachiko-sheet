@@ -143,6 +143,11 @@ describe("fieldDisplay", () => {
     expect(reference.title).not.toContain(entityB);
   });
 
+  it("keeps long stored text available as a full-value tooltip", () => {
+    const value = "A long task value that remains available when the dense grid truncates its cell";
+    expect(fieldDisplay(projected(entityA, "c-title", { kind: "text", value })).title).toBe(value);
+  });
+
   it("keeps calculated results, failures and unavailable states distinguishable", () => {
     const calculated = fieldDisplay(
       projected(entityA, "c-priority", { kind: "number", value: 10 }, {
@@ -215,6 +220,13 @@ describe("recovery presentation", () => {
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).not.toContain("could not be opened");
+  });
+
+  it("does not render an empty idle outcome chip during recovery", () => {
+    const markup = render({ currentness: "unknown", outcome: "idle" });
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
+    expect(chipText(markup, "operation-outcome")).toBe(null);
+    expect(markup).not.toContain('data-testid="operation-outcome"');
   });
 
   it("does not render an editable stale workbook during published recovery", () => {
@@ -329,6 +341,15 @@ describe("SheetShell static rendering", () => {
     expect(render({ view: makeView(), saveStatus: "saving" })).not.toContain("Saved on this device");
     const saved = render({ view: makeView(), saveStatus: "saved" });
     expect(chipText(saved, "save-status")).toBe("Saved on this device");
+  });
+
+  it("distinguishes unchanged work from edited unsaved work", () => {
+    const unchanged = render({ view: makeView(), dirty: false });
+    expect(chipText(unchanged, "work-state")).toBe("Unchanged");
+    expect(unchanged).toContain('data-work-state="unchanged"');
+    const edited = render({ view: makeView(), dirty: true });
+    expect(chipText(edited, "work-state")).toBe("Edited — not saved");
+    expect(edited).toContain('data-work-state="edited"');
   });
 
   it("marks unknown outcomes and freshness instead of presenting values as current", () => {

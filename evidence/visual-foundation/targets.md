@@ -93,3 +93,25 @@ retain separate meanings.
 
 Responsive checks: 1440×900, 1024×768, 375×812; 100% and 200% zoom; CJK
 strings; keyboard-only focus; `prefers-reduced-motion`; and `forced-colors`.
+
+## Final shipped comparison
+
+The final captures in `targets/` are compared against these target
+compositions at the same named states: Home keeps Open and Saved copies as the
+primary frame; Populated Workbook keeps the grid, status strip, and
+consequence-bearing actions together; Active edit keeps one focused cell with
+an inline editor; Save dialog remains the only command overlay; and Recovery
+keeps Refresh available while rendering no stale grid.
+
+The following removals are intentional safety boundaries, not missing target
+content: raw collection names, revision values, and row/entity identifiers are
+not visible in normal chrome, and an idle operation outcome is not rendered as
+an empty chip. The corresponding occurrence/revision/entity witnesses remain
+in `data-*` attributes for acceptance observation, while saved, failed,
+pending, and unknown states retain their truthful visible statements.
+
+The populated actual-core corpus uses only the supported Tracker columns
+`task`, `estimate`, and `done`. Long Latin/CJK task values are clipped by the
+dense grid at the 1024px viewport, retain their complete text in the cell
+tooltip, and produce deliberate horizontal grid overflow/scroll; no
+unsupported columns or capabilities are implied.
