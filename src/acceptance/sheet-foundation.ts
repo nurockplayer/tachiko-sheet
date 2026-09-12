@@ -325,7 +325,7 @@ export function saveObservation(): AcceptanceSaveObservation {
 export function unknownObservation(): AcceptanceUnknownObservation {
   const text = document.querySelector('[data-testid="operation-outcome"]')?.textContent?.trim() ?? "";
   const normalized = text.toLowerCase();
-  const outcome = normalized.includes("unknown")
+  const outcome = normalized.includes("unknown") || normalized.includes("needs review")
     ? "unknown"
     : normalized.includes("applying") || normalized.includes("pending")
       ? "pending"

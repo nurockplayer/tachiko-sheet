@@ -101,7 +101,7 @@ const humanCases=[
  }],
  ['M1-05 lost Execute reply is unknown, not retried',async({page})=>{
   const start=await page.evaluate(()=>window.__tachikoAcceptance.executeRequestCount());
-  await page.evaluate(()=>window.__tachikoAcceptance.loseNextExecuteReply());await edit(page,'3');await shown(page,'operation-outcome','Outcome unknown');
+  await page.evaluate(()=>window.__tachikoAcceptance.loseNextExecuteReply());await edit(page,'3');await shown(page,'operation-outcome','Outcome needs review');
   // The hook resolves only after the real transport's bounded reconciliation window.
   await page.evaluate(()=>window.__tachikoAcceptance.settleFaultWindow());
   const o=await page.evaluate(()=>window.__tachikoAcceptance.unknownObservation());

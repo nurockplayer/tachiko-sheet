@@ -219,7 +219,7 @@ const cases = [
       const start = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
       await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
       await edit(page, "3");
-      await shown(page, "operation-outcome", "Outcome unknown");
+      await shown(page, "operation-outcome", "Outcome needs review");
       await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
       const observation = await page.evaluate(() => window.__tachikoAcceptance.unknownObservation());
       unknown({
@@ -253,7 +253,7 @@ const cases = [
     async ({ page }) => {
       await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
       await edit(page, "3");
-      await shown(page, "operation-outcome", "Outcome unknown");
+      await shown(page, "operation-outcome", "Outcome needs review");
       await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
@@ -267,7 +267,7 @@ const cases = [
       await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
       await page.getByRole("button", { name: "Close project", exact: true }).click();
       await page.getByTestId("open-project").setInputFiles(fixture);
-      await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
+      await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
       const b = await snapshot(page);
