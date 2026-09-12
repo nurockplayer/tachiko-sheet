@@ -104,10 +104,10 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     setEditor(null);
     const occurrence = view?.occurrence ?? null;
-    if (lastNotesOccurrenceRef.current !== occurrence) {
+    if (occurrence !== null && lastNotesOccurrenceRef.current !== null && lastNotesOccurrenceRef.current !== occurrence) {
       setNotesDrafts([]);
-      lastNotesOccurrenceRef.current = occurrence;
     }
+    if (occurrence !== null) lastNotesOccurrenceRef.current = occurrence;
     setCommitPending(false);
     setLocalError(null);
     if (!viewKey) {

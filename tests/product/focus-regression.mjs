@@ -155,6 +155,33 @@ const cases = [
       assert.equal(await notes.inputValue(), "rebased-A-notes");
     },
   ],
+  [
+    "product-focus-04 published B recovery preserves unpublished A draft",
+    async (page) => {
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+      await notes.fill("draft-authored-for-row-A");
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      const otherCell = page.locator(`[data-work-entity]:not([data-work-entity="${expected.entity}"])`).first();
+      await otherCell.click();
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      await notes.fill("draft-authored-for-row-B");
+      await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+      await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+      await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await page.getByTestId("project-ready").waitFor();
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      await otherCell.click();
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      assert.equal(await notes.inputValue(), "draft-authored-for-row-B");
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).click();
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+    },
+  ],
 ];
 
 let failures = 0;
