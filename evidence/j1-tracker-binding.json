@@ -1,0 +1,94 @@
+{
+  "case": "J1-native-tracker-binding",
+  "status": "CANDIDATE_BINDING_INSUFFICIENT",
+  "fixed_input": {
+    "source": "acceptance/mvp-v1/scenarios.json#J1",
+    "task_names": [
+      "入庫",
+      "試算",
+      "驗收"
+    ],
+    "status_values_not_sent_to_native_boolean": [
+      "Todo",
+      "Doing",
+      "Done"
+    ],
+    "priority_range_required_by_J1": [
+      1,
+      5
+    ],
+    "accepted_priority_candidate": 5,
+    "rejected_priority_candidate": 6
+  },
+  "qualified_kit": {
+    "source_commit": "8bba9b09cea3c011df383216ba3846ccd003dece",
+    "supplied_kit": "/Users/tachikoma/.codex/worktrees/sheet-core-8bba/.qualification-kit",
+    "assets": {
+      "experimental-client.js": "d635b4b5939c1efe845c480d4a9263e4f9119f79a72b97eada532644a62f819f",
+      "designer_runtime.wasm": "1fe501c3a44bafb7b18190d5c8472f06a8dff4db5652bee241a194532934adaa"
+    }
+  },
+  "observation": {
+    "methods": [
+      true,
+      true,
+      true
+    ],
+    "initial": {
+      "tracker_profile": true,
+      "columns": [
+        {
+          "id": "task",
+          "key": "task",
+          "field_type": "text",
+          "dropdown_options": null
+        },
+        {
+          "id": "estimate",
+          "key": "estimate",
+          "field_type": "number",
+          "dropdown_options": null
+        },
+        {
+          "id": "done",
+          "key": "done",
+          "field_type": "boolean",
+          "dropdown_options": [
+            "true",
+            "false"
+          ]
+        }
+      ]
+    },
+    "seeded": [
+      {
+        "task": "入庫",
+        "estimate": 3,
+        "done": false
+      },
+      {
+        "task": "試算",
+        "estimate": 1,
+        "done": false
+      },
+      {
+        "task": "驗收",
+        "estimate": 2,
+        "done": false
+      }
+    ],
+    "accepted": {
+      "revision_changed": true,
+      "resulting_estimate": 5
+    },
+    "rejected_candidate": {
+      "published": true,
+      "resulting_estimate": 6
+    }
+  },
+  "conclusion": {
+    "native_boolean_column_does_not_represent_status_enum": true,
+    "out_of_J1_range_number_published_as_native_estimate": true,
+    "J1_status_and_priority_rule_bound_without_semantic_reinterpretation": false
+  }
+}
