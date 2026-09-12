@@ -1,0 +1,30 @@
+{
+  "status": "BLOCKED-CANONICAL; local-transport FAIL",
+  "baseUrl": "http://127.0.0.1:4197",
+  "summary": [
+    {
+      "step": "copy-example-fixture",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/copy-example-fixture.log"
+    },
+    {
+      "step": "build-acceptance",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/build-acceptance.log"
+    },
+    {
+      "step": "browser-m1-local-transport",
+      "status": "FAIL",
+      "exitCode": 1,
+      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/browser-m1-local-transport.log"
+    },
+    {
+      "step": "product-focus-local-transport",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/product-focus-local-transport.log"
+    }
+  ]
+}

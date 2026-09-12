@@ -15,10 +15,32 @@
     "acceptance:kit": "node tests/kit.mjs",
     "acceptance:storage": "node tests/storage.mjs",
     "acceptance:agent-ui": "node tests/browser.mjs --agent",
-    "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs"
+    "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs",
+    "dev": "node scripts/copy-example-fixture.mjs && vite",
+    "build": "node scripts/copy-example-fixture.mjs && vite build && node scripts/check-dist.mjs dist",
+    "build:acceptance": "node scripts/copy-example-fixture.mjs && vite build --mode acceptance",
+    "preview:acceptance": "vite preview --mode acceptance",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run src/runtime src/ui tests/product && node --test src/host/local-copies.test.mjs tests/product/example-copy.node.mjs",
+    "verify:core-kit": "node scripts/verify-core-kit.mjs",
+    "qualification:core-kit": "node scripts/qualify-core-kit.mjs",
+    "acceptance:product": "node scripts/run-product-acceptance.mjs",
+    "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "^22.20.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "playwright": "1.62.1",
     "playwright-core": "1.62.1",
-    "playwright": "1.62.1"
+    "typescript": "7.0.2",
+    "vite": "8.3.0",
+    "vitest": "5.0.0"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }

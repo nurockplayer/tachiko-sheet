@@ -1,0 +1,6 @@
+{"case":"M1-01 linked views and restart durability","status":"PASS"}
+{"case":"M1-02 invalid edit is atomic and retains draft","status":"FAIL","message":"AssertionError [ERR_ASSERTION]: Rejected input was discarded\n\nfalse !== true\n\n    at rejected (file:///Users/tachikoma/Developer/tachiko-sheet-qualification/tests/oracles.mjs:20:9)\n    at async.page.page (file:///Users/tachikoma/Developer/tachiko-sheet-qualification/tests/product/m1-local.mjs:165:7)\n    at async file:///Users/tachikoma/Developer/tachiko-sheet-qualification/tests/product/m1-local.mjs:268:5"}
+{"case":"M1-03 IME composition does not publish","status":"PASS"}
+{"case":"M1-04 failed save keeps work and destination","status":"PASS"}
+{"case":"M1-05 lost Execute reply is unknown, not retried","status":"PASS"}
+{"case":"M1-06 keyboard cancel and safe close","status":"PASS"}
