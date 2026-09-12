@@ -35,7 +35,7 @@ try {
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill("3");
   await editor.press("Enter");
-  await page.getByTestId("operation-outcome").filter({ hasText: "Outcome unknown" }).waitFor();
+  await page.getByTestId("operation-outcome").filter({ hasText: "Outcome needs review" }).waitFor();
   await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
@@ -53,7 +53,7 @@ try {
   await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByTestId("open-project").setInputFiles(fixture);
-  await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   const afterDispatch = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
   assert.equal(afterDispatch - before, 1, "replacement Open must dispatch exactly once");
   await page.getByRole("button", { name: "Refresh", exact: true }).click();

@@ -202,9 +202,9 @@ describe("recovery presentation", () => {
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
     const markup = render({ currentness: "unknown", outcome: "unknown" });
     expect(markup).toContain('aria-label="Recovery"');
-    expect(markup).toContain("Recovery required; freshness unconfirmed");
-    expect(chipText(markup, "currentness")).toBe("Freshness unknown");
-    expect(chipText(markup, "operation-outcome")).toBe("Outcome unknown");
+    expect(markup).toContain("Refresh required");
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
+    expect(chipText(markup, "operation-outcome")).toBe("Outcome needs review");
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).not.toContain("could not be opened");
@@ -274,6 +274,8 @@ describe("SheetShell static rendering", () => {
     expect(impact).toContain('data-work-occurrence="occ-1"');
     expect(impact).toContain('data-work-revision="rev-1"');
     expect(impact).toContain('data-work-currentness="pending"');
+    expect(markup).not.toContain(">entity-a<");
+    expect(markup).not.toContain(">entity-b<");
     expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</dd>") as string)).toBe("first note");
     expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</dd>")).toBe(null);
   });
@@ -323,13 +325,24 @@ describe("SheetShell static rendering", () => {
   });
 
   it("marks unknown outcomes and freshness instead of presenting values as current", () => {
-    expect(chipText(render({ view: makeView() }), "operation-outcome")).toBe("No pending operation");
+    expect(chipText(render({ view: makeView() }), "operation-outcome")).toBe(null);
     const markup = render({ view: makeView(), outcome: "unknown", currentness: "unknown" });
-    expect(chipText(markup, "operation-outcome")).toBe("Outcome unknown");
-    expect(chipText(markup, "currentness")).toBe("Freshness unknown");
+    expect(chipText(markup, "operation-outcome")).toBe("Outcome needs review");
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).toContain('data-work-currentness="unknown"');
-    expect(markup).toContain("These values are not confirmed current");
+    expect(markup).toContain("These values could not be confirmed");
     expect(markup).not.toContain("Saved on this device");
+  });
+
+  it("keeps internal revision, collection, and row identities out of normal chrome", () => {
+    const markup = render({ view: makeView() });
+    expect(markup).toContain("2 rows");
+    expect(markup).toContain(">1</th>");
+    expect(markup).not.toContain("release_items ·");
+    expect(markup).not.toContain("revision rev-1");
+    // Entity/revision values remain in data-* witnesses for acceptance and
+    // recovery tooling; only visible chrome must stay free of them.
+    expect(markup).toContain('data-work-entity="entity-a"');
   });
 
   it("surfaces a single alert only when there is a message", () => {

@@ -168,7 +168,7 @@ const cases = [
       await notes.fill("draft-authored-for-row-B");
       await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
       await page.getByRole("button", { name: "Apply notes", exact: true }).click();
-      await page.getByRole("heading", { name: "Recovery required; freshness unconfirmed", exact: true }).waitFor();
+      await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
       await page.getByRole("tab", { name: "Table", exact: true }).click();
