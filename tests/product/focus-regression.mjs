@@ -123,10 +123,17 @@ const cases = [
       assert.notEqual(await notes.inputValue(), "draft-authored-for-row-A");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
       await notes.fill("draft-authored-for-row-B");
+      const bRevision = await otherCell.getAttribute("data-work-revision");
       await page.getByRole("button", { name: "Apply notes", exact: true }).click();
       await page.waitForFunction(
-        () => document.querySelector('[data-testid="save-status"]')?.textContent?.trim() !== "Saved on this device",
+        ({ entity, revision }) => {
+          const cell = document.querySelector(`[data-work-entity="${entity}"]`);
+          return cell !== null && cell.getAttribute("data-work-revision") !== revision;
+        },
+        { entity: await otherCell.getAttribute("data-work-entity"), revision: bRevision },
       );
+      assert.equal(await notes.inputValue(), "draft-authored-for-row-B");
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
       await page.getByRole("tab", { name: "Table", exact: true }).click();
       await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).click();
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
