@@ -1,0 +1,62 @@
+name: Sheet product gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheet-product-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  product:
+    name: Web product and M1 acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.25.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Verify qualified core kit
+        run: pnpm verify:core-kit
+
+      - name: Run preserved seed harness
+        run: pnpm test
+
+      - name: Run product unit and host tests
+        run: pnpm test:unit
+
+      - name: Build production artifact
+        run: pnpm build
+
+      - name: Run unchanged M1 product acceptance
+        run: pnpm acceptance:product
