@@ -1,5 +1,10 @@
 # Continuous Mission delivery
 
+The operating mode is called **Stewarded Continuous Delivery (SCD)**; see the
+[naming reference](https://github.com/nurockplayer/tachiko-work/blob/main/docs/governance/project-governance.md#repository-delivery-workflow).
+This document remains Sheet's local delivery authority. Sharing the name does
+not import upstream permissions or change the existing clauses below.
+
 Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment below takes effect only after independent review and merge; before then the existing Astra-only delegation remains in force.
 
 ## Authority and roles
