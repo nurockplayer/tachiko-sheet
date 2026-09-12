@@ -8,7 +8,7 @@ Read live #1, #2, AGENTS.md, DELIVERY.md and the active Issue/PR. Read PRODUCT-P
 
 Record one active Mission Lead and writer ownership in #2 before mutation. After the reviewed role amendment, the founder may select Astra or Terra; never run two competing leaders. A handover names the old/new session, exact branch/HEAD, active workers and unresolved review debt, and confirms prior writers stopped or transferred. An old timestamp is not proof a writer stopped.
 
-If Terra is the selected lead, route each bounded implementation package to `~/.codex/agents/luna-worker.toml`, then send the implemented result to `~/.codex/agents/sol-reviewer.toml` for independent review. Do not let the implementation worker self-review. Terra keeps architecture/integration/authority judgment. If Luna is unavailable, record the condition in #2 and continue genuinely independent eligible work rather than silently substituting a different worker route.
+For the current Astra-led delivery path, #2 may select **Fast** for the lead's tactical mode. Route each bounded implementation/test package to the installed global **`terra-worker`** profile, then send the resulting implementation to `~/.codex/agents/sol-reviewer.toml` for independent review. Resolve the real terra-worker config from installed global agent configuration; do not invent or silently substitute a different worker path. Astra keeps architecture/integration/authority judgment and one-writer coordination. If terra-worker is unavailable, record it in #2 and continue independent eligible work.
 
 ## Existing queue, not a second roadmap
 
