@@ -702,7 +702,6 @@ export function SheetShell(props: SheetShellProps) {
         <section className="ts-card" aria-label="Linked Brief facts">
           <h2 className="ts-h2">
             Brief · {selectedRow.key}
-            <span className="ts-subtle"> {entity}</span>
           </h2>
           <BriefFacts
             entity={entity}

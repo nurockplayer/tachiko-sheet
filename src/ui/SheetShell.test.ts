@@ -274,6 +274,8 @@ describe("SheetShell static rendering", () => {
     expect(impact).toContain('data-work-occurrence="occ-1"');
     expect(impact).toContain('data-work-revision="rev-1"');
     expect(impact).toContain('data-work-currentness="pending"');
+    expect(markup).not.toContain(">entity-a<");
+    expect(markup).not.toContain(">entity-b<");
     expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</dd>") as string)).toBe("first note");
     expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</dd>")).toBe(null);
   });
