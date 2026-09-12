@@ -50,7 +50,7 @@ function baseDisplay(field: FieldProjection): FieldDisplay {
       return {
         text: formatNumber(calculated.value),
         tone: field.formula ? "computed" : "plain",
-        title: field.formula ? `Formula: ${field.formula.source}` : null,
+        title: field.formula ? "Calculated value" : null,
       };
     }
     if (calculated.status === "failure") {
@@ -76,7 +76,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
       text: EMPTY_TEXT,
       tone: "muted",
       title: field.formula
-        ? `Formula without a current result: ${field.formula.source}`
+        ? "Calculated value without a current result"
         : "The open work reports no value for this field.",
     };
   }
@@ -106,7 +106,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
       return {
         text: REFERENCE_TEXT,
         tone: "reference",
-        title: `Reference to ${stored.entity}`,
+        title: "Reference value",
       };
     default:
       return NOT_LOADED;
@@ -114,7 +114,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
 }
 
 function formulaTitle(field: FieldProjection): string | null {
-  return field.formula ? `Formula: ${field.formula.source}` : null;
+  return field.formula ? "Calculated value" : null;
 }
 
 function formatNumber(value: number): string {

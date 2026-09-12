@@ -139,7 +139,8 @@ describe("fieldDisplay", () => {
     expect(fieldDisplay(projected(entityA, "c-title", { kind: "date", value: "2026-09-12" })).text).toBe("2026-09-12");
     const reference = fieldDisplay(projected(entityA, "c-title", { kind: "reference", entity: entityB }));
     expect(reference.text).toBe("→ reference");
-    expect(reference.title).toBe(`Reference to ${entityB}`);
+    expect(reference.title).toBe("Reference value");
+    expect(reference.title).not.toContain(entityB);
   });
 
   it("keeps calculated results, failures and unavailable states distinguishable", () => {
@@ -151,7 +152,13 @@ describe("fieldDisplay", () => {
     );
     expect(calculated.text).toBe("10");
     expect(calculated.tone).toBe("computed");
-    expect(calculated.title).toBe("Formula: impact + friction");
+    expect(calculated.title).toBe("Calculated value");
+    expect(calculated.title).not.toContain("impact + friction");
+    const pending = fieldDisplay(
+      projected(entityA, "c-priority", null, { formula: { source: "[playtest_notes.impact] + 1" } }),
+    );
+    expect(pending.title).toBe("Calculated value without a current result");
+    expect(pending.title).not.toContain("playtest_notes");
 
     const failure = fieldDisplay(
       projected(entityA, "c-priority", null, {
