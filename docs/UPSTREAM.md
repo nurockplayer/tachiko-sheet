@@ -2,7 +2,7 @@
 
 ## Live authority
 
-Read the relevant files in nurockplayer/tachiko-work: docs/vision/product-constitution.md; design-principles.md; docs/governance/knowledge-authority.md; Accepted ADR-0007, ADR-0020, ADR-0022, ADR-0024, ADR-0026 and the relevant later storage/history decisions; docs/specs/semantic-api.md and semantic-authorization.md; docs/architecture/frontend-backend-boundary.md. Read AGENTS.md/CONTRIBUTING.md and current Issue/PR policy before writing upstream. Imported baseline evidence never overrides live authority.
+Read the relevant files in nurockplayer/tachiko-work: docs/vision/product-constitution.md; docs/vision/design-principles.md; docs/governance/knowledge-authority.md; Accepted ADR-0007, ADR-0020, ADR-0022, ADR-0024, ADR-0026 and the relevant later storage/history decisions; docs/specs/semantic-api.md and semantic-authorization.md; docs/architecture/frontend-backend-boundary.md. Read AGENTS.md/CONTRIBUTING.md and current Issue/PR policy before writing upstream. Imported baseline evidence never overrides live authority.
 
 Core baseline in the original seed: `8bba9b09cea3c011df383216ba3846ccd003dece`.
 Original preparation: `f264ead7a8286b0de337792b118055f13aa2c83d`, path `planning/independent-work-client/`, subtree `70c2c897cb0892b8656ce7d3c595ce7e8cbb438f`.
@@ -20,6 +20,7 @@ The founder subsequently created **nurockplayer/tachiko-sheet**, public. This is
 | #361 trusted delegated bridge | stays tachiko-work #361 |
 | #362 agent review UI | tachiko-sheet #6 |
 | #363 new-client desktop | tachiko-sheet #7 |
+| #364 named local history | stays tachiko-work #364, with its separate profile/readiness gate; current Sheet integration follows #4 |
 
 Sheet #2 is the only current Mission handoff; #5 owns full spreadsheet gap/RC evidence. Child completion does not close #1. Successor routing is explicit; do not dispatch a closed old client ticket or maintain competing editable specifications.
 
@@ -32,3 +33,5 @@ Existing #315–#319/#330 and then-live successors retain semantic/producer resp
 The acceptance branch copies original tests, fixture bytes and scripts unchanged and records per-file SHA-256 in evidence/seed-provenance.json. Old generic product/governance documents and old validation claims are not copied as live authority. Current checks are independently rerun here. The package name changes to tachiko-sheet-acceptance-seed, not the assertions. The manifest preserves source attribution/provenance; it is not a license grant or conformance certificate.
 
 The runtime-kit interface remains experimental. Original test-driver names and DTO expectations are test-local wiring, not a public ABI. Producer capabilities may need a bounded upstream update rather than a client-side rewrite. Real generation/consumption and upgrade/rollback need actual evidence.
+
+The [2026-09-12 platform intake](research/2026-09-12-platform-intake.md) records a newer authority inspection, not a replacement runtime pin. The new `acceptance/mvp-v1/` inputs supplement the old seed; their preparation checks do not prove core admission or product behavior.
