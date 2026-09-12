@@ -425,8 +425,11 @@ describe("createSheetRuntime", () => {
       throw transport;
     };
     const lost = await failure(runtime.openCanonical(CANONICAL_FILES));
-    expect(lost).toBeInstanceOf(UnknownOperationOutcomeError);
-    expect((lost as UnknownOperationOutcomeError).cause).toBe(transport);
+    expect(lost).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(((lost as OpenedProjectionRecoveryError).cause as UnknownOperationOutcomeError).cause).toBe(transport);
+    const stale = await failure(runtime.edit(witnessOf(edited), IMPACT, { kind: "number", input: "4" }));
+    expect((stale as SheetSessionError).code).toBe("not-open");
+    expect(client.calls.editNumber).toBe(1);
     expect((await runtime.read()).revision).toBe("r2");
   });
 
@@ -498,6 +501,12 @@ describe("createSheetRuntime", () => {
     );
     expect(lost).toBeInstanceOf(UnknownOperationOutcomeError);
     expect((lost as UnknownOperationOutcomeError).cause).toBe(transport);
+    expect(client.calls.editText).toBe(1);
+
+    const duplicate = await failure(
+      runtime.edit(witnessOf(view), NOTES, { kind: "text", value: "重試不得發送" }),
+    );
+    expect((duplicate as SheetSessionError).code).toBe("not-open");
     expect(client.calls.editText).toBe(1);
 
     const after = await runtime.read();

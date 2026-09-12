@@ -243,7 +243,19 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     expected: number,
     dispatchOpen: () => Promise<OpenedProjection>,
   ): Promise<WorkbookView> {
-    await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
+    try {
+      await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
+    } catch (error) {
+      if (error instanceof UnknownOperationOutcomeError) {
+        // The open may have replaced the resident core work; the old
+        // projection is never safe to retain after an unknown reply.
+        active = null;
+        residentCollection = null;
+        residentAvailable = true;
+        throw new OpenedProjectionRecoveryError(error);
+      }
+      throw error;
+    }
     // The successful open replaced the resident occurrence even before its
     // projection is coherent; invalidate every old witness immediately.
     active = null;
@@ -329,10 +341,19 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const publication = await afterUsable(
-        expected,
-        dispatch(kit, () => dispatchScalarEdit(client, live.revision, target, change)),
-      );
+      let publication: PublicationProjection;
+      try {
+        publication = await afterUsable(
+          expected,
+          dispatch(kit, () => dispatchScalarEdit(client, live.revision, target, change)),
+        );
+      } catch (error) {
+        if (error instanceof UnknownOperationOutcomeError) {
+          active = null;
+          residentCollection = live.collection;
+        }
+        throw error;
+      }
       let result: CoherentRead;
       try {
         result = await loadCoherentView(kit, client, expected, live.collection);

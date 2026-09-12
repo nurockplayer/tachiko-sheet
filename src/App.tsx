@@ -175,6 +175,18 @@ export function App({ runtime, copies }: AppProps) {
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
   }
 
+  function failClosedAfterUnknownEdit(): void {
+    viewRef.current = null;
+    setView(null);
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setMessage("The change was dispatched but its outcome is unknown. Refresh to re-read the work.");
+  }
+
   async function openFiles(files: FileList): Promise<void> {
     if (!begin()) return;
     try {
@@ -292,11 +304,8 @@ export function App({ runtime, copies }: AppProps) {
         // draft path, which would offer an ordinary semantic retry.
         return true;
       } else if (error instanceof UnknownOperationOutcomeError) {
-        pendingDirtyRef.current = true;
-        syncDirty();
-        setCurrentness("unknown");
-        setOutcome("unknown");
-        setMessage("The change was dispatched but its outcome is unknown. Refresh to re-read the work.");
+        failClosedAfterUnknownEdit();
+        return true;
       } else {
         setOutcome("idle");
         setCurrentness("current");
