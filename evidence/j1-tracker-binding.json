@@ -1,0 +1,145 @@
+{
+  "case": "J1-native-tracker-binding",
+  "status": "CANDIDATE_BINDING_INSUFFICIENT",
+  "fixed_input": {
+    "source": "acceptance/mvp-v1/scenarios.json#J1",
+    "task_names": [
+      "入庫",
+      "試算",
+      "驗收"
+    ],
+    "status_values_not_sent_to_native_boolean": [
+      "Todo",
+      "Doing",
+      "Done"
+    ],
+    "priority_range_required_by_J1": [
+      1,
+      5
+    ],
+    "accepted_priority_candidate": 5,
+    "rejected_priority_candidate": 6
+  },
+  "qualified_kit": {
+    "source_commit": "8bba9b09cea3c011df383216ba3846ccd003dece",
+    "inventory": {
+      "qualified": true,
+      "inventory_source": "evidence/core-kit-qualification.md#Export inventory",
+      "expected_assets": {
+        "README.md": "7206f1daf07e592e762c71336eb0338a20ec045d8749f1504c338bd18bf62eb2",
+        "designer_runtime.wasm": "1fe501c3a44bafb7b18190d5c8472f06a8dff4db5652bee241a194532934adaa",
+        "experimental-client.d.ts": "16d69e06f2910947e446c45e612d4d672fb960b50d269488e991992e89756e15",
+        "experimental-client.js": "d635b4b5939c1efe845c480d4a9263e4f9119f79a72b97eada532644a62f819f",
+        "experimental-client.worker.d.ts": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+        "experimental-client.worker.js": "669f02aece146ae108033ca04ed808a633012c6b576e20b6d6bdf59f10ca003e",
+        "host/project-transfer.d.ts": "cfef1c51cf3f429a10ba435051d28b0126c9c9755c59ab34ff9a105ec2daf555",
+        "host/project-transfer.js": "0849d82d43c9fdbe21200d463fe09f5c2051669d3503dd47ca7eb9ef4bba2035",
+        "package.json": "6aed801a764caaa3cfd5d8b4bb8d5afa41616f1746d44762c63836ea63b61748",
+        "runtime/client.d.ts": "e0c05458a635c969d35820dcd5d97ab599982357f82c7913547600f5dd26b3c1",
+        "runtime/client.js": "9ccbdfa476c20c53d2cbbd681586f527b3afab59590867479469f34ebebc2632",
+        "runtime/interop-protocol.d.ts": "27ee9b53a7cda8457ab2396514b849cba59dd2d75a2999fc3134bb513f9f3cc2",
+        "runtime/interop-protocol.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+        "runtime/protocol.d.ts": "c6355bf45fa9b67b8c27dd48d74fdba8f89a1b3d9f32b1c566b0afa0ac833961",
+        "runtime/protocol.js": "090a3f5d26d2765d53ad6a3a9a4533937d34adfb99700bc3869218cccf0a1bbc",
+        "runtime/wasm-bridge.d.ts": "69976259dc7d5394573f388b4d391af911d8624f4d16781ddcd9506b4f1189d2",
+        "runtime/wasm-bridge.js": "ac864bcaf65ae4b95a8b7d430587cbfcc01ce50d40009259dd07e0521d8b5cc9",
+        "runtime/worker-client.d.ts": "7e88e21f494336761d68f344878bb07e40c8b5a1102a1f4932f72220f0f1ff63",
+        "runtime/worker-client.js": "4bdb5fe2b66e3868dfdeb705925a0a3828531c938471011032d36069fc223f7d",
+        "runtime/worker-runtime.d.ts": "657179a14c93df62c7a8d2e0718076082c3d53ed30b94f3f23b21cc8608587c3",
+        "runtime/worker-runtime.js": "b63e661aea5da100495408ec8098a0cbbf5b9f10a15520a281096157e89fb4db"
+      },
+      "actual_assets": {
+        "README.md": "7206f1daf07e592e762c71336eb0338a20ec045d8749f1504c338bd18bf62eb2",
+        "designer_runtime.wasm": "1fe501c3a44bafb7b18190d5c8472f06a8dff4db5652bee241a194532934adaa",
+        "experimental-client.d.ts": "16d69e06f2910947e446c45e612d4d672fb960b50d269488e991992e89756e15",
+        "experimental-client.js": "d635b4b5939c1efe845c480d4a9263e4f9119f79a72b97eada532644a62f819f",
+        "experimental-client.worker.d.ts": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+        "experimental-client.worker.js": "669f02aece146ae108033ca04ed808a633012c6b576e20b6d6bdf59f10ca003e",
+        "host/project-transfer.d.ts": "cfef1c51cf3f429a10ba435051d28b0126c9c9755c59ab34ff9a105ec2daf555",
+        "host/project-transfer.js": "0849d82d43c9fdbe21200d463fe09f5c2051669d3503dd47ca7eb9ef4bba2035",
+        "package.json": "6aed801a764caaa3cfd5d8b4bb8d5afa41616f1746d44762c63836ea63b61748",
+        "runtime/client.d.ts": "e0c05458a635c969d35820dcd5d97ab599982357f82c7913547600f5dd26b3c1",
+        "runtime/client.js": "9ccbdfa476c20c53d2cbbd681586f527b3afab59590867479469f34ebebc2632",
+        "runtime/interop-protocol.d.ts": "27ee9b53a7cda8457ab2396514b849cba59dd2d75a2999fc3134bb513f9f3cc2",
+        "runtime/interop-protocol.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+        "runtime/protocol.d.ts": "c6355bf45fa9b67b8c27dd48d74fdba8f89a1b3d9f32b1c566b0afa0ac833961",
+        "runtime/protocol.js": "090a3f5d26d2765d53ad6a3a9a4533937d34adfb99700bc3869218cccf0a1bbc",
+        "runtime/wasm-bridge.d.ts": "69976259dc7d5394573f388b4d391af911d8624f4d16781ddcd9506b4f1189d2",
+        "runtime/wasm-bridge.js": "ac864bcaf65ae4b95a8b7d430587cbfcc01ce50d40009259dd07e0521d8b5cc9",
+        "runtime/worker-client.d.ts": "7e88e21f494336761d68f344878bb07e40c8b5a1102a1f4932f72220f0f1ff63",
+        "runtime/worker-client.js": "4bdb5fe2b66e3868dfdeb705925a0a3828531c938471011032d36069fc223f7d",
+        "runtime/worker-runtime.d.ts": "657179a14c93df62c7a8d2e0718076082c3d53ed30b94f3f23b21cc8608587c3",
+        "runtime/worker-runtime.js": "b63e661aea5da100495408ec8098a0cbbf5b9f10a15520a281096157e89fb4db"
+      },
+      "missing_assets": [],
+      "extra_assets": [],
+      "changed_assets": [],
+      "symlinked_assets": [],
+      "non_regular_assets": [],
+      "supplied_kit": "/Users/tachikoma/.codex/worktrees/sheet-core-8bba/.qualification-kit"
+    }
+  },
+  "observation": {
+    "methods": [
+      true,
+      true,
+      true
+    ],
+    "initial": {
+      "tracker_profile": true,
+      "columns": [
+        {
+          "id": "task",
+          "key": "task",
+          "field_type": "text",
+          "dropdown_options": null
+        },
+        {
+          "id": "estimate",
+          "key": "estimate",
+          "field_type": "number",
+          "dropdown_options": null
+        },
+        {
+          "id": "done",
+          "key": "done",
+          "field_type": "boolean",
+          "dropdown_options": [
+            "true",
+            "false"
+          ]
+        }
+      ]
+    },
+    "seeded": [
+      {
+        "task": "入庫",
+        "estimate": 3,
+        "done": false
+      },
+      {
+        "task": "試算",
+        "estimate": 1,
+        "done": false
+      },
+      {
+        "task": "驗收",
+        "estimate": 2,
+        "done": false
+      }
+    ],
+    "accepted": {
+      "revision_changed": true,
+      "resulting_estimate": 5
+    },
+    "rejected_candidate": {
+      "published": true,
+      "resulting_estimate": 6
+    }
+  },
+  "conclusion": {
+    "native_boolean_column_does_not_represent_status_enum": true,
+    "out_of_J1_range_number_published_as_native_estimate": true,
+    "J1_status_and_priority_rule_bound_without_semantic_reinterpretation": false
+  }
+}

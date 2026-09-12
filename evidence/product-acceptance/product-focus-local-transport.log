@@ -1,0 +1,2 @@
+{"case":"product-focus-01 dirty Close then Keep editing restores exact grid-cell focus","status":"PASS"}
+{"case":"product-focus-02 a retained draft stops the saved status claim","status":"PASS"}

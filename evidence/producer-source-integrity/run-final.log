@@ -1,0 +1,164 @@
+✓ Lockfile passes supply-chain policies (verified 1m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.62.1
++ @types/node 26.4.0
++ eslint 10.9.1
++ happy-dom 20.12.0
++ typescript 6.0.3
++ typescript-eslint 8.68.0
++ vite 8.2.2
++ vitest 4.1.11
+
+Done in 2.1s using pnpm v11.25.0
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling libc v0.2.189
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling thiserror v2.0.20
+   Compiling rustix v1.1.4
+   Compiling getrandom v0.4.3
+   Compiling bitflags v2.13.1
+   Compiling cfg-if v1.0.4
+   Compiling typenum v1.20.1
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.11
+   Compiling fastrand v2.5.0
+   Compiling once_cell v1.21.4
+   Compiling crc32fast v1.5.1
+   Compiling cc v1.4.4
+   Compiling zmij v1.0.23
+   Compiling simd-adler32 v0.3.10
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.151
+   Compiling adler2 v2.0.1
+   Compiling zip v2.4.2
+   Compiling log v0.4.34
+   Compiling sha1_smol v1.0.1
+   Compiling itoa v1.0.18
+   Compiling equivalent v1.0.2
+   Compiling bumpalo v3.20.3
+   Compiling hashbrown v0.17.1
+   Compiling ryu-js v1.0.3
+   Compiling uuid v1.12.1
+   Compiling hybrid-array v0.4.14
+   Compiling quick-xml v0.37.5
+   Compiling errno v0.3.14
+   Compiling syn v3.0.4
+   Compiling miniz_oxide v0.9.1
+   Compiling zopfli v0.8.3
+   Compiling indexmap v2.14.2
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling flate2 v1.1.10
+   Compiling tempfile v3.27.0
+   Compiling digest v0.11.3
+   Compiling renamore v0.3.2
+   Compiling thiserror-impl v2.0.20
+   Compiling serde_derive v1.0.229
+   Compiling displaydoc v0.2.7
+   Compiling sha2 v0.11.0
+   Compiling tachiko-semantic-core v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/crates/semantic-core)
+   Compiling tachiko-formula-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/crates/formula-engine)
+   Compiling tachiko-storage v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/crates/storage)
+   Compiling tachiko-merge-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/crates/merge-engine)
+   Compiling tachiko-diff-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/crates/diff-engine)
+   Compiling tachiko-workspace-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/crates/workspace-engine)
+   Compiling tachiko-designer-runtime v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-source/apps/designer/runtime)
+    Finished `release` profile [optimized] target(s) in 45.35s
+experimental Designer client kit exported to /tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-kit
+✓ Lockfile passes supply-chain policies (verified 2m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.62.1
++ @types/node 26.4.0
++ eslint 10.9.1
++ happy-dom 20.12.0
++ typescript 6.0.3
++ typescript-eslint 8.68.0
++ vite 8.2.2
++ vitest 4.1.11
+
+Done in 424ms using pnpm v11.25.0
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.229
+   Compiling libc v0.2.189
+   Compiling serde v1.0.229
+   Compiling thiserror v2.0.20
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling bitflags v2.13.1
+   Compiling cfg-if v1.0.4
+   Compiling typenum v1.20.1
+   Compiling shlex v2.0.1
+   Compiling fastrand v2.5.0
+   Compiling once_cell v1.21.4
+   Compiling crc32fast v1.5.1
+   Compiling find-msvc-tools v0.1.11
+   Compiling zmij v1.0.23
+   Compiling hybrid-array v0.4.14
+   Compiling cc v1.4.4
+   Compiling memchr v2.8.3
+   Compiling simd-adler32 v0.3.10
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling adler2 v2.0.1
+   Compiling serde_json v1.0.151
+   Compiling sha1_smol v1.0.1
+   Compiling digest v0.11.3
+   Compiling miniz_oxide v0.9.1
+   Compiling bumpalo v3.20.3
+   Compiling itoa v1.0.18
+   Compiling log v0.4.34
+   Compiling hashbrown v0.17.1
+   Compiling equivalent v1.0.2
+   Compiling zip v2.4.2
+   Compiling sha2 v0.11.0
+   Compiling uuid v1.12.1
+   Compiling indexmap v2.14.2
+   Compiling ryu-js v1.0.3
+   Compiling quick-xml v0.37.5
+   Compiling errno v0.3.14
+   Compiling tempfile v3.27.0
+   Compiling syn v3.0.4
+   Compiling zopfli v0.8.3
+   Compiling flate2 v1.1.10
+   Compiling renamore v0.3.2
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling displaydoc v0.2.7
+   Compiling tachiko-semantic-core v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/crates/semantic-core)
+   Compiling tachiko-formula-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/crates/formula-engine)
+   Compiling tachiko-storage v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/crates/storage)
+   Compiling tachiko-diff-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/crates/diff-engine)
+   Compiling tachiko-merge-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/crates/merge-engine)
+   Compiling tachiko-workspace-engine v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/crates/workspace-engine)
+   Compiling tachiko-designer-runtime v0.1.0 (/tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-source/apps/designer/runtime)
+    Finished `release` profile [optimized] target(s) in 31.21s
+experimental Designer client kit exported to /tmp/tachiko-sheet-359-probe-retry.DtyvSn/delta-kit
+source_revision=8bba9b09cea3c011df383216ba3846ccd003dece
+original_head_before=8bba9b09cea3c011df383216ba3846ccd003dece
+original_head_after=8bba9b09cea3c011df383216ba3846ccd003dece
+tracked_input=apps/designer/experimental-client-kit/README.md
+baseline_input_sha256=7206f1daf07e592e762c71336eb0338a20ec045d8749f1504c338bd18bf62eb2
+delta_input_sha256=4a9dd2da0e830bc9576779715311bd1483603fea57380f1c4914b878f48f83be
+baseline_tree_sha256=3694b33701eb20432f2a9735cbb43984ada53e272ba0d49f3424858d678f061c
+delta_tree_sha256=f1387e14fcefef9cad028d7f8c76062b7272c385eb6ee00c8dafa2f2da17b472
+baseline_readme_sha256=7206f1daf07e592e762c71336eb0338a20ec045d8749f1504c338bd18bf62eb2
+delta_readme_sha256=4a9dd2da0e830bc9576779715311bd1483603fea57380f1c4914b878f48f83be
+baseline_wasm_sha256=bb7907cce15760f31cda233cbed7093dd66e115e923151dc9857dbab10a5331d
+delta_wasm_sha256=aa07fd3936246a92e0031acd3e65e5f81c71119df085311f50d2b1cf712eccb7
+baseline_file_count=21
+delta_file_count=21
+cmp: EOF on /tmp/tachiko-sheet-359-probe-retry.DtyvSn/baseline-kit/README.md
+PASS: the real exporter propagated the changed tracked packaging input while original source HEAD remained pinned.

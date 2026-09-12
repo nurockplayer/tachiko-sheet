@@ -1,0 +1,149 @@
+{
+  "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
+  "sourceRepository": "nurockplayer/tachiko-work",
+  "sourceCommit": "518aaa55e046a4e4676b4d5e05d8189c4c6343fe",
+  "stability": "experimental",
+  "entry": "experimental-client.js",
+  "capabilities": [
+    "createExperimentalDesignerClient",
+    "projectTransferFromFiles",
+    "projectTransferFromEntries",
+    "preflightCanonicalProjectEntries",
+    "openCanonicalTreeFromEntries",
+    "bootstrap",
+    "inspectProject",
+    "openProject",
+    "closeProject",
+    "queryTable",
+    "queryFields",
+    "editNumber",
+    "editText",
+    "editBoolean",
+    "editDate",
+    "updateFormula",
+    "exportProject",
+    "exportCanonicalTree",
+    "openCanonicalTree",
+    "exportPortableRo",
+    "verifyPortableRo",
+    "openPortableRo",
+    "observeOccurrence",
+    "close",
+    "inspectSpreadsheet",
+    "importSpreadsheet",
+    "inspectImportedProject",
+    "exportSpreadsheet",
+    "exportNativeTrackerSpreadsheet",
+    "exportNativeBudgetSpreadsheet",
+    "previewCleanup",
+    "commitCleanup",
+    "copyFormula",
+    "newTracker",
+    "newBudget",
+    "trackerCommand",
+    "openLocalDocument"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "e7256291ca4f7914dcaac4fb17de49a69abd03b6dcb647803ef7af8eacf3bd77"
+    },
+    {
+      "path": "designer_runtime.wasm",
+      "sha256": "16b96da504ff6d071e8253239812db9229a792f5c36ac76405f50d96fb5b4ad4"
+    },
+    {
+      "path": "experimental-client.d.ts",
+      "sha256": "64319c93ffca806eaa55044c57cbbbb4a20945a5aef2703d165d65a44d1a7c4e"
+    },
+    {
+      "path": "experimental-client.js",
+      "sha256": "dc117ed7ab28c4722e392c5c070c1eaa26596a9a22c7c33a2f63bf495e7119d4"
+    },
+    {
+      "path": "experimental-client.worker.d.ts",
+      "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"
+    },
+    {
+      "path": "experimental-client.worker.js",
+      "sha256": "669f02aece146ae108033ca04ed808a633012c6b576e20b6d6bdf59f10ca003e"
+    },
+    {
+      "path": "host/project-transfer.d.ts",
+      "sha256": "5604bc40651eae3a0987f8e03fb2c66b8d2cea91fc2212890e2a390c3f0edea5"
+    },
+    {
+      "path": "host/project-transfer.js",
+      "sha256": "a16611056c03a0912e69e73e912a9db2481897365c71456e39e43ac032262d8c"
+    },
+    {
+      "path": "notices/LICENSE-APACHE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "path": "notices/LICENSE-MIT",
+      "sha256": "8fbbe1bd4ec8eed2985f3e9d225124af632ea6a911b95b9700d3ac44c87c062d"
+    },
+    {
+      "path": "notices/THIRD_PARTY_LICENSES.md",
+      "sha256": "f1bc5ee333cc56580765262811f190816bf1ce6cd94210d8f0a439ebcd273cd8"
+    },
+    {
+      "path": "package.json",
+      "sha256": "6aed801a764caaa3cfd5d8b4bb8d5afa41616f1746d44762c63836ea63b61748"
+    },
+    {
+      "path": "runtime/client.d.ts",
+      "sha256": "eac259a95f93a6a630e009108bb8224dae632cec35e0ca5ce3f9204408d4cc7d"
+    },
+    {
+      "path": "runtime/client.js",
+      "sha256": "9ccbdfa476c20c53d2cbbd681586f527b3afab59590867479469f34ebebc2632"
+    },
+    {
+      "path": "runtime/interop-protocol.d.ts",
+      "sha256": "27ee9b53a7cda8457ab2396514b849cba59dd2d75a2999fc3134bb513f9f3cc2"
+    },
+    {
+      "path": "runtime/interop-protocol.js",
+      "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"
+    },
+    {
+      "path": "runtime/protocol.d.ts",
+      "sha256": "6b71f771a0b29d3c907b3dd8088ad36a82fbb0d1ee3cc3c6c1ad2b543bbab24b"
+    },
+    {
+      "path": "runtime/protocol.js",
+      "sha256": "090a3f5d26d2765d53ad6a3a9a4533937d34adfb99700bc3869218cccf0a1bbc"
+    },
+    {
+      "path": "runtime/wasm-bridge.d.ts",
+      "sha256": "d5db46b2b44ed2f628d5a2ee074c33d2552befec88d5773a89c599c1b5cdfe2a"
+    },
+    {
+      "path": "runtime/wasm-bridge.js",
+      "sha256": "0af53ab750f652c812e6e838de776786f670b72b3ccad00cb22705f95d705a3f"
+    },
+    {
+      "path": "runtime/worker-client.d.ts",
+      "sha256": "de4d54f21e9397517293b7a2d56c1fbda0da53b87419bdae08b07ddcf3c871e8"
+    },
+    {
+      "path": "runtime/worker-client.js",
+      "sha256": "2b515bc6e1126baa3ed530f1b2938d66d37d2078d455e6a815bac3dfb3f2855c"
+    },
+    {
+      "path": "runtime/worker-runtime.d.ts",
+      "sha256": "657179a14c93df62c7a8d2e0718076082c3d53ed30b94f3f23b21cc8608587c3"
+    },
+    {
+      "path": "runtime/worker-runtime.js",
+      "sha256": "49d67992777b5465ae9e331fedfc17aa3cf0ed8a528ced3d1bba2183ff1d9747"
+    }
+  ],
+  "licenseNotices": [
+    "notices/LICENSE-APACHE",
+    "notices/LICENSE-MIT",
+    "notices/THIRD_PARTY_LICENSES.md"
+  ]
+}

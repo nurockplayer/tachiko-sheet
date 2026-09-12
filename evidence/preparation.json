@@ -1,0 +1,86 @@
+{
+  "dateJST": "2026-09-10",
+  "environment": "v22.16.0 / ChatGPT Linux sandbox",
+  "scope": "Preparation checks only; not product acceptance or independent review",
+  "harnessPassed": 30,
+  "syntaxModulesChecked": 8,
+  "unchangedSourceFiles": 28,
+  "fixtureFiles": 18,
+  "fixtureRegeneration": "byte-identical PASS",
+  "originalSeedSubtreeVerified": "70c2c897cb0892b8656ce7d3c595ce7e8cbb438f",
+  "localMarkdownLinks": "PASS",
+  "integrationCommands": "BLOCKED/78; missing real kit/client/driver, not behavioral RED",
+  "unverified": [
+    "real Rust fixture admission",
+    "real kit production and immutable-source regression",
+    "Web client/host durability",
+    "agent bridge/UI",
+    "macOS native-host tests and actual app",
+    "full-profile executable coverage and user pilots",
+    "hosted CI and independent exact-head review"
+  ],
+  "commands": [
+    {
+      "command": "node --test tests/harness.test.mjs",
+      "exitCode": 0,
+      "stdout": "1..30\n# tests 30\n# suites 0\n# pass 30\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 79.847239\n"
+    },
+    {
+      "command": "node --check scripts/materialize-fixture.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check scripts/serve-canary.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check tests/agent.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check tests/browser.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check tests/harness.test.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check tests/kit.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check tests/oracles.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check tests/storage.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node tests/kit.mjs",
+      "exitCode": 78,
+      "stderr": "BLOCKED: WORK_CLIENT_KIT is required.\n"
+    },
+    {
+      "command": "node tests/storage.mjs",
+      "exitCode": 78,
+      "stderr": "BLOCKED: WORK_STORAGE_DRIVER must wrap the real consumer kit and core storage codec.\n"
+    },
+    {
+      "command": "node tests/browser.mjs",
+      "exitCode": 78,
+      "stderr": "BLOCKED: WORK_CLIENT_URL is required; no real client/canary has been supplied.\n"
+    },
+    {
+      "command": "node tests/agent.mjs",
+      "exitCode": 78,
+      "stderr": "BLOCKED: WORK_AGENT_DRIVER must provide real runtime/host wiring.\n"
+    },
+    {
+      "command": "node scripts/serve-canary.mjs",
+      "exitCode": 78,
+      "stderr": "BLOCKED: WORK_CLIENT_KIT must name a complete, pinned exported kit.\n"
+    }
+  ]
+}

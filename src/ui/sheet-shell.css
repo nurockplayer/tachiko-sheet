@@ -1,0 +1,585 @@
+:root {
+  --ts-ink: #17202a;
+  --ts-ink-soft: #5a6673;
+  --ts-line: #d6dbe1;
+  --ts-line-strong: #b6bec7;
+  --ts-surface: #ffffff;
+  --ts-surface-sunken: #f5f6f8;
+  --ts-surface-head: #eceff3;
+  --ts-selected: #e8f0fb;
+  --ts-focus: #1f5fa8;
+  --ts-warn: #8a4b00;
+  --ts-warn-bg: #fdf3e4;
+  --ts-error-ink: #8a1c1c;
+  --ts-error-bg: #fdecec;
+  --ts-ok-ink: #1c5c34;
+  --ts-ok-bg: #e7f4ec;
+}
+
+.ts-app {
+  color: var(--ts-ink);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  min-height: 100vh;
+  background: var(--ts-surface-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.ts-app *,
+.ts-app *::before,
+.ts-app *::after {
+  box-sizing: border-box;
+}
+
+.ts-subtle {
+  color: var(--ts-ink-soft);
+  margin: 0;
+}
+
+.ts-hint {
+  color: var(--ts-ink-soft);
+  margin: 0;
+  font-size: 12px;
+}
+
+.ts-empty {
+  color: var(--ts-ink-soft);
+  margin: 0;
+  padding: 8px 0;
+}
+
+.ts-h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ts-error {
+  border: 1px solid #e0b4b4;
+  background: var(--ts-error-bg);
+  color: var(--ts-error-ink);
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+
+.ts-notice {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid #e4c9a2;
+  background: var(--ts-warn-bg);
+  color: var(--ts-warn);
+  border-radius: 4px;
+}
+
+/* ---------- Home ---------- */
+
+.ts-home {
+  width: min(760px, 100%);
+  margin: 24px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ts-home-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ts-brand {
+  font-size: 19px;
+  font-weight: 650;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.ts-card {
+  background: var(--ts-surface);
+  border: 1px solid var(--ts-line);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ts-field-label {
+  font-weight: 600;
+  color: var(--ts-ink);
+}
+
+.ts-file-input {
+  font: inherit;
+  padding: 6px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 4px;
+  background: var(--ts-surface);
+  max-width: 100%;
+}
+
+.ts-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ts-copy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ts-copy-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  border: 1px solid var(--ts-line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: var(--ts-surface-sunken);
+}
+
+.ts-copy-meta {
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Controls ---------- */
+
+.ts-button {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 4px;
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  cursor: pointer;
+}
+
+.ts-button:hover:not(:disabled) {
+  background: var(--ts-surface-head);
+}
+
+.ts-button:disabled {
+  cursor: not-allowed;
+  color: #8c949c;
+  background: var(--ts-surface-sunken);
+  border-color: var(--ts-line);
+}
+
+.ts-button--primary {
+  background: #1f4f86;
+  border-color: #1f4f86;
+  color: #ffffff;
+}
+
+.ts-button--primary:hover:not(:disabled) {
+  background: #1a4372;
+}
+
+.ts-button--danger {
+  border-color: #b4553f;
+  color: #8a2f1c;
+}
+
+.ts-button--ghost {
+  background: transparent;
+}
+
+.ts-app :focus-visible {
+  outline: 2px solid var(--ts-focus);
+  outline-offset: 1px;
+}
+
+/* ---------- Workbook ---------- */
+
+.ts-workbook {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.ts-workbook-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ts-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ts-title {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.ts-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ts-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--ts-line);
+  background: var(--ts-surface);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ts-chip--current::before,
+.ts-chip--saved::before,
+.ts-chip--unknown::before,
+.ts-chip--failed::before,
+.ts-chip--pending::before {
+  font-size: 11px;
+}
+
+.ts-chip--current::before {
+  content: "●";
+  color: var(--ts-ok-ink);
+}
+
+.ts-chip--pending::before {
+  content: "◐";
+  color: var(--ts-warn);
+}
+
+.ts-chip--unknown::before {
+  content: "?";
+  color: var(--ts-warn);
+  font-weight: 700;
+}
+
+.ts-chip--saved {
+  background: var(--ts-ok-bg);
+  border-color: #bcdcc8;
+  color: var(--ts-ok-ink);
+}
+
+.ts-chip--saved::before {
+  content: "✓";
+}
+
+.ts-chip--failed {
+  background: var(--ts-error-bg);
+  border-color: #e0b4b4;
+  color: var(--ts-error-ink);
+}
+
+.ts-chip--failed::before {
+  content: "!";
+  font-weight: 700;
+}
+
+.ts-chip--saving,
+.ts-chip--pending {
+  background: var(--ts-warn-bg);
+  border-color: #e4c9a2;
+  color: var(--ts-warn);
+}
+
+.ts-chip--unknown {
+  background: var(--ts-warn-bg);
+  border-color: #e4c9a2;
+  color: var(--ts-warn);
+}
+
+.ts-chip--muted {
+  color: var(--ts-ink-soft);
+}
+
+.ts-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ts-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--ts-line-strong);
+}
+
+.ts-tab {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ts-ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 5px 12px;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.ts-tab--active {
+  color: var(--ts-ink);
+  background: var(--ts-surface);
+  border-color: var(--ts-line-strong);
+}
+
+.ts-panel {
+  min-height: 0;
+}
+
+/* ---------- Grid ---------- */
+
+.ts-grid-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 210px);
+  border: 1px solid var(--ts-line);
+  border-radius: 4px;
+  background: var(--ts-surface);
+}
+
+.ts-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  width: max-content;
+  min-width: 100%;
+}
+
+.ts-grid th,
+.ts-grid td {
+  border-right: 1px solid var(--ts-line);
+  border-bottom: 1px solid var(--ts-line);
+  padding: 3px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ts-col-head,
+.ts-gutter-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ts-surface-head);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ts-ink-soft);
+}
+
+.ts-col-head {
+  text-transform: none;
+}
+
+.ts-gutter-head,
+.ts-row-head {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--ts-surface-head);
+  font-weight: 600;
+  color: var(--ts-ink-soft);
+}
+
+.ts-gutter-head {
+  z-index: 3;
+}
+
+.ts-row--selected .ts-row-head {
+  color: var(--ts-ink);
+}
+
+.ts-row--selected td,
+.ts-row--selected .ts-row-head {
+  background: var(--ts-selected);
+}
+
+.ts-cell {
+  cursor: cell;
+  min-width: 72px;
+}
+
+.ts-cell--computed .ts-cell-value {
+  border-bottom: 1px dotted var(--ts-line-strong);
+}
+
+.ts-cell--warning .ts-cell-value {
+  color: var(--ts-warn);
+  text-decoration: underline dotted;
+}
+
+.ts-cell--muted .ts-cell-value {
+  color: var(--ts-ink-soft);
+  font-style: italic;
+}
+
+.ts-cell--reference .ts-cell-value {
+  color: #23508a;
+  text-decoration: underline dotted;
+}
+
+.ts-cell--focused {
+  outline: 2px solid var(--ts-focus);
+  outline-offset: -2px;
+}
+
+.ts-cell--editing {
+  padding: 0;
+  background: var(--ts-surface);
+}
+
+.ts-cell-input {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+  min-width: 90px;
+  border: none;
+  padding: 3px 8px;
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+}
+
+.ts-cell-input:focus {
+  outline: none;
+}
+
+/* ---------- Brief ---------- */
+
+.ts-brief {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 880px) {
+  .ts-brief {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ts-fact-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ts-line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ts-fact {
+  display: grid;
+  grid-template-columns: minmax(90px, 140px) 1fr;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--ts-line);
+}
+
+.ts-fact:last-child {
+  border-bottom: none;
+}
+
+.ts-fact-key {
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+}
+
+.ts-fact-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ts-notes {
+  font: inherit;
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 4px;
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+}
+
+.ts-notes:disabled {
+  background: var(--ts-surface-sunken);
+  color: var(--ts-ink-soft);
+}
+
+/* ---------- Modal ---------- */
+
+.ts-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 26, 33, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 20;
+}
+
+.ts-modal {
+  background: var(--ts-surface);
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 6px;
+  padding: 14px;
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 12px 32px rgba(15, 22, 30, 0.22);
+}
+
+.ts-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ts-dialog-error {
+  margin: 0;
+  color: var(--ts-error-ink);
+  background: var(--ts-error-bg);
+  border: 1px solid #e0b4b4;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.ts-text-input {
+  font: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 4px;
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+}
+
+.ts-status {
+  color: var(--ts-ink-soft);
+}

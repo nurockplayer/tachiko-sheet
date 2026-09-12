@@ -1,0 +1,21 @@
+✓ Lockfile passes supply-chain policies (verified 2h ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.62.1
++ @types/node 26.4.0
++ eslint 10.9.1
++ happy-dom 20.12.0
++ typescript 6.0.3
++ typescript-eslint 8.68.0
++ vite 8.2.2
++ vitest 4.1.11
+
+Done in 5.5s using pnpm v11.25.0
+error: no matching package named `quick-xml` found
+location searched: crates.io index
+required by package `tachiko-designer-runtime v0.1.0 (/tmp/tachiko-sheet-359-probe.g06Q52/baseline-source/apps/designer/runtime)`
+note: offline mode (via `--offline`) can sometimes cause surprising resolution failures
+help: if this error is too confusing you may wish to retry without `--offline`
