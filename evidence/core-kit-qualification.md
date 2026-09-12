@@ -110,9 +110,12 @@ recorded hashes. Its SHA-256 is
 `cb46a39c3350f44be9ac52b705d6bb9d170356fe32237a0a84dc051d8cf89852`.
 When Chromium is not already available, install the pinned browser with
 `pnpm exec playwright install chromium` before the canary command. Start the
-server with `WORK_CLIENT_KIT=/absolute/verified-kit pnpm exec node
-scripts/serve-canary.mjs` (or the equivalent `pnpm serve:canary` script) in a
-separate foreground session.
+server in a separate foreground session, using the same port as the canary:
+
+```sh
+WORK_CLIENT_KIT=/Users/tachikoma/.codex/worktrees/sheet-core-8bba/.qualification-kit \
+PORT=4186 pnpm exec node scripts/serve-canary.mjs
+```
 
 ## Explicit unqualified boundaries
 
