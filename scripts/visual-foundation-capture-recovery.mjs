@@ -1,13 +1,16 @@
 // Acceptance-build-only recovery evidence. The fault is injected through the
 // existing bounded acceptance harness after a real UI edit; no DOM is mocked.
 import { chromium } from "playwright";
+import { installDistRoutes, LOCAL_ORIGIN } from "../tests/product/dist-routes.mjs";
 
-const url = process.env.WORK_ACCEPTANCE_URL;
-if (!url) throw new Error("WORK_ACCEPTANCE_URL is required");
+const url = process.env.WORK_ACCEPTANCE_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : undefined);
+if (!url) throw new Error("WORK_ACCEPTANCE_URL (or WORK_DIST) is required");
 const fixture = "tests/fixtures/release-plan.roproj";
 const browser = await chromium.launch({ headless: true });
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  if (process.env.WORK_DIST) await installDistRoutes(context, process.env.WORK_DIST);
+  const page = await context.newPage();
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor({ timeout: 15000 });
@@ -42,6 +45,7 @@ try {
   }
   await page.screenshot({ path: "evidence/visual-foundation/targets/recovery-acceptance-fault.png", fullPage: true });
   console.log(JSON.stringify({ status: "PASS", currentness: currentness.trim(), outcome: null, stale_grid_cells: 0, screenshot: "recovery-acceptance-fault.png" }));
+  await context.close();
 } finally {
   await browser.close();
 }

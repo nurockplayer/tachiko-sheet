@@ -26,7 +26,7 @@ try {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.getByTestId("open-project").setInputFiles(fixture);
     await page.getByTestId("project-ready").waitFor({ timeout: 15000 });
-    const cjk = await page.getByText("整理試玩回饋", { exact: true }).count();
+    const cjk = await page.getByText(/整理試玩回饋，確認負責人/).count();
     const mojibake = await page.getByText(/æ•´|çŽ©|å›ž/, { exact: false }).count();
     if (cjk === 0 || mojibake !== 0) throw new Error(`CJK render check failed at ${width}x${height}: ${cjk}/${mojibake}`);
     const longCell = page.locator('[data-testid^="cell:"][title]').first();
@@ -45,7 +45,7 @@ try {
     if (width === 1440) {
       await page.locator(".ts-cell").first().focus();
       await page.screenshot({ path: `${target}/workbook-50rows-selection.png`, fullPage: true });
-      const editable = page.getByText("整理試玩回饋", { exact: true }).first();
+      const editable = page.getByText(/整理試玩回饋，確認負責人/).first();
       await editable.dblclick();
       const input = page.getByRole("textbox", { name: "Edit cell", exact: true });
       await input.fill("日本語の表示確認");

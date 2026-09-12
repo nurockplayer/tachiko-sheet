@@ -17,7 +17,7 @@ try {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.getByTestId("open-project").setInputFiles(fixture);
     await page.getByTestId("project-ready").waitFor({ timeout: 15000 });
-    const exact = await page.getByText("整理試玩回饋", { exact: true }).count();
+    const exact = await page.getByText(/整理試玩回饋，確認負責人/).count();
     const mojibake = await page.getByText(/æ•´|çŽ©|å›ž/, { exact: false }).count();
     if (exact === 0 || mojibake !== 0) throw new Error(`rendered CJK check failed at ${width}x${height}: exact=${exact}, mojibake=${mojibake}`);
     const longCell = page.locator('[data-testid^="cell:"][title]').first();
