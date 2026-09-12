@@ -14,6 +14,7 @@ Keeping those questions separate is deliberate. The research should constrain de
 ## Documents
 
 - [`2026-09-10-spreadsheet-research-brief.md`](2026-09-10-spreadsheet-research-brief.md) — the research question and scope agreed before designing Tachiko Sheet. The full research result is not currently preserved in this repository, so this file records the brief only and makes no missing-source findings.
+- [`2026-09-12-composable-platform-research-brief.md`](2026-09-12-composable-platform-research-brief.md) — the final deliberately compact Deep Research prompt, plus why the earlier checklist-heavy version was shortened.
 - [`2026-09-12-composable-platform-report.md`](2026-09-12-composable-platform-report.md) — evidence-grounded digest of the owner-uploaded 21-page *Tachiko Work：Composable Application Platform 的產品與架構研究* report.
 - [`2026-09-12-product-architecture-discussion.md`](2026-09-12-product-architecture-discussion.md) — chronological synthesis of the product/architecture discussion: Notion-like templates, internal LEGO/composability, the Deep Research prompt, and how the report changed the working thesis.
 - [`2026-09-12-platform-intake.md`](2026-09-12-platform-intake.md) — reconciliation of the platform report with live Tachiko Work authority and Sheet delivery state.
