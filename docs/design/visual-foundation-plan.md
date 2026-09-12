@@ -1,7 +1,7 @@
 # #13 Visual Foundation — target and evidence plan
 
-Baseline: `04fb58b6dc4a0c463f9450f50fbe98fe523f3579`  
-Lane: `codex/visual-foundation`  
+Baseline: `04fb58b6dc4a0c463f9450f50fbe98fe523f3579`
+Lane: `codex/visual-foundation`
 Scope: `src/ui/**`, presentation-only app shell/CSS/assets, and focused visual evidence.
 
 ## Before state (current build)
