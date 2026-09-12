@@ -13,6 +13,10 @@ const lock = JSON.parse(await readFile(lockPath, 'utf8'));
 if (lock.qualificationStatus !== 'qualified producer pin; product acceptance separate') {
   throw new Error('core-kit.lock.json must record the qualified producer pin with product acceptance separate.');
 }
+if (lock.qualificationReviewSourceCommit !== lock.sourceCommit ||
+    lock.qualificationReviewArtifactManifestSha256 !== lock.artifactManifestSha256) {
+  throw new Error('core-kit.lock.json qualification review must be bound to the pinned source commit and artifact manifest.');
+}
 if (!Array.isArray(lock.qualificationReview) || lock.qualificationReview.length < 2) {
   throw new Error('core-kit.lock.json must record the canonical qualification/review sources.');
 }
