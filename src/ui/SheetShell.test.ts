@@ -206,6 +206,13 @@ describe("recovery presentation", () => {
     expect(markup).toContain(">Refresh</button>");
     expect(markup).not.toContain("could not be opened");
   });
+
+  it("does not render an editable stale workbook during published recovery", () => {
+    const markup = render({ view: null, currentness: "unknown", outcome: "unknown" });
+    expect(markup).not.toContain('data-testid="cell-editor"');
+    expect(markup).toContain('aria-label="Recovery"');
+    expect(markup).toContain(">Refresh</button>");
+  });
 });
 
 describe("projection access", () => {

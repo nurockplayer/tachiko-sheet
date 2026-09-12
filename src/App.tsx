@@ -161,6 +161,20 @@ export function App({ runtime, copies }: AppProps) {
     setMessage("The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.");
   }
 
+  function failClosedAfterPublicationRecovery(): void {
+    viewRef.current = null;
+    setView(null);
+    // Keep dirty as publication truth; the editor/projection itself is no
+    // longer safe to present or retry until Refresh re-observes the resident work.
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
+  }
+
   async function openFiles(files: FileList): Promise<void> {
     if (!begin()) return;
     try {
@@ -273,12 +287,10 @@ export function App({ runtime, copies }: AppProps) {
       return true;
     } catch (error) {
       if (error instanceof PublishedProjectionRecoveryError) {
-        pendingDirtyRef.current = true;
-        syncDirty();
-        markNotSaved();
-        setCurrentness("unknown");
-        setOutcome("unknown");
-        setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
+        failClosedAfterPublicationRecovery();
+        // The publication is known successful; avoid SheetShell's rejected
+        // draft path, which would offer an ordinary semantic retry.
+        return true;
       } else if (error instanceof UnknownOperationOutcomeError) {
         pendingDirtyRef.current = true;
         syncDirty();
