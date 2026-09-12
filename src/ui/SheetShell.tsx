@@ -162,11 +162,12 @@ export function SheetShell(props: SheetShellProps) {
   );
   const notesValue = activeNotesDraft?.value ?? notesCommitted;
   const notesDirty = activeNotesDraft !== undefined && activeNotesDraft.value !== notesCommitted;
+  const anyNotesDraft = notesDrafts.length > 0;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const draftActive =
-    (editor !== null && editor.value !== editor.original) || notesDirty || (copyOpen && copyName.trim() !== "");
+    (editor !== null && editor.value !== editor.original) || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
 
   useEffect(() => {
@@ -738,15 +739,13 @@ export function SheetShell(props: SheetShellProps) {
                   entity: rowEntity(selectedRow),
                   value: event.currentTarget.value,
                 };
-                setNotesDrafts((drafts) => [
-                  ...drafts.filter(
+                setNotesDrafts((drafts) => {
+                  const remaining = drafts.filter(
                     (candidate) =>
-                      candidate.occurrence !== draft.occurrence ||
-                      candidate.revision !== draft.revision ||
-                      candidate.entity !== draft.entity,
-                  ),
-                  draft,
-                ]);
+                      candidate.occurrence !== draft.occurrence || candidate.entity !== draft.entity,
+                  );
+                  return draft.value === notesCommitted ? remaining : [...remaining, draft];
+                });
               }
             }}
             onKeyDown={onNotesKeyDown}

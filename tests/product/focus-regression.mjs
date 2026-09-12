@@ -116,12 +116,18 @@ const cases = [
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
       await notes.fill("draft-authored-for-row-A");
+      await page.waitForFunction(
+        () => document.querySelector("[data-work-dirty]")?.getAttribute("data-work-dirty") === "true",
+      );
       await page.getByRole("tab", { name: "Table", exact: true }).click();
       const otherCell = page.locator(`[data-work-entity]:not([data-work-entity="${expected.entity}"])`).first();
       await otherCell.click();
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.notEqual(await notes.inputValue(), "draft-authored-for-row-A");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      await page.getByRole("button", { name: "Close project", exact: true }).click();
+      await page.getByRole("dialog", { name: "Unsaved work", exact: true }).waitFor();
+      await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Keep editing", exact: true }).click();
       await notes.fill("draft-authored-for-row-B");
       const bRevision = await otherCell.getAttribute("data-work-revision");
       await page.getByRole("button", { name: "Apply notes", exact: true }).click();
@@ -136,9 +142,17 @@ const cases = [
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
       await page.getByRole("tab", { name: "Table", exact: true }).click();
       await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).click();
+      const aRevision = await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).getAttribute("data-work-revision");
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      await notes.fill("rebased-A-notes");
+      await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+      await page.waitForFunction(
+        ({ entity, revision }) => document.querySelector(`[data-work-entity="${entity}"]`)?.getAttribute("data-work-revision") !== revision,
+        { entity: expected.entity, revision: aRevision },
+      );
+      assert.equal(await notes.inputValue(), "rebased-A-notes");
     },
   ],
 ];
