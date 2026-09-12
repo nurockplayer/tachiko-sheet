@@ -8,6 +8,8 @@ Read live #1, #2, AGENTS.md, DELIVERY.md and the active Issue/PR. Read PRODUCT-P
 
 Record one active Mission Lead and writer ownership in #2 before mutation. After the reviewed role amendment, the founder may select Astra or Terra; never run two competing leaders. A handover names the old/new session, exact branch/HEAD, active workers and unresolved review debt, and confirms prior writers stopped or transferred. An old timestamp is not proof a writer stopped.
 
+If Terra is the selected lead, route each bounded implementation package **DeepSeek first** through `~/.codex-deepseek-worker/`, fall back to `~/.codex/agents/luna-worker.toml` only when DeepSeek is unavailable/fails/is unsuitable, then send the implemented result to `~/.codex/agents/sol-reviewer.toml` for independent review. Do not give two workers overlapping writes and do not let the implementation worker self-review. Terra keeps architecture/integration/authority judgment. Record any unavailable route in #2 rather than silently substituting a different role mapping.
+
 ## Existing queue, not a second roadmap
 
 | Stage / owner | Work and exit evidence | Continue to |

@@ -2,7 +2,14 @@
 
 Read the live **#1 body**, **#2 body**, `docs/DELIVERY.md`, and the active Issue/PR. Use `docs/UPSTREAM.md` to read relevant live core authority. #1 is Mission; #2 is the single current handoff, replaced in place. Do not mine #1 comments for current state. Read `docs/PRODUCT-PRINCIPLES.md` once at intake; `docs/MVP-EXECUTION.md` is the compact queue/gate map, not an instruction to reload every research source each loop.
 
-There is one Mission Lead and integrator. Under the reviewed DELIVERY.md amendment the founder may select Astra or Terra; before its merge the existing Astra-only delegation remains. Claim/transfer ownership in #2 and confirm prior writers stopped before changing leaders. Use the actually installed global role/worker policy for Terra, Luna, Sol and DeepSeek; this repo does not redefine model profiles or assume a profile path exists. Do not copy older role mappings from the original client seed. Preserve one writer per worktree/branch; coordinate shared-file ownership. Delegate clear bounded work, not architecture or acceptance authority, to low-cost workers. Follow the current DeepSeek skill rather than inventing a native-spawn path.
+There is one Mission Lead and integrator. Under the reviewed DELIVERY.md amendment the founder may select Astra or Terra; before its merge the existing Astra-only delegation remains. Claim/transfer ownership in #2 and confirm prior writers stopped before changing leaders. Preserve one writer per worktree/branch and coordinate shared-file ownership.
+
+When **Terra** is the Mission Lead, #1 defines the default execution route and no additional founder reminder is needed:
+
+1. Delegate bounded implementation/test work first to the installed `~/.codex-deepseek-worker/` using its current documented entrypoint/skill.
+2. If that worker is unavailable, fails to start, or is unsuitable for the bounded task, fall back to `~/.codex/agents/luna-worker.toml` for implementation.
+3. After implementation, use `~/.codex/agents/sol-reviewer.toml` for independent review. The implementer must not review its own work.
+4. DeepSeek and Luna must not overlap writes. Terra retains architecture, shared integration, writer coordination, authority/acceptance arbitration and final integration. Sol review does not replace Steward acceptance, exact-head tests/gates or upstream review authority. If both implementation routes are unavailable, record the condition in #2 and continue independent eligible work rather than silently changing the route.
 
 Own the finished spreadsheet experience, not only passing component tests. Existing Designer code is runtime/interop evidence, never the new UI design baseline. Brief means auxiliary Sheet notes/reporting, not a full Docs client. The first three-row fixture is a canary, not Mission completion.
 
