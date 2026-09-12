@@ -15,8 +15,8 @@ try {
   console.error("BLOCKED: the pinned Playwright dependency is unavailable.");
   process.exit(78);
 }
-const fixture = fileURLToPath(new URL("../../fixtures/release-plan.roproj", import.meta.url));
-const expected = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("../../fixtures/expected.json", import.meta.url), "utf8"));
+const fixture = fileURLToPath(new URL("../fixtures/release-plan.roproj", import.meta.url));
+const expected = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("../fixtures/expected.json", import.meta.url), "utf8"));
 const launchOptions = {
   headless: true,
   ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}),
