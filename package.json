@@ -21,7 +21,7 @@
     "build:acceptance": "node scripts/copy-example-fixture.mjs && vite build --mode acceptance",
     "preview:acceptance": "vite preview --mode acceptance",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test:unit": "vitest run src/runtime src/ui tests/product && node --test src/host/local-copies.test.mjs tests/product/example-copy.node.mjs",
+    "test:unit": "vitest run src/runtime src/ui src/App.test.ts tests/product && node --test src/host/local-copies.test.mjs tests/product/example-copy.node.mjs tests/verify-core-kit-provenance.test.mjs",
     "verify:core-kit": "node scripts/verify-core-kit.mjs",
     "qualification:core-kit": "node scripts/qualify-core-kit.mjs",
     "acceptance:product": "node scripts/run-product-acceptance.mjs",

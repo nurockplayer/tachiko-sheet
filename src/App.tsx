@@ -44,6 +44,22 @@ export function recoveryDraftAfterBoundary(
   return boundary === "reobserve" ? draft : null;
 }
 
+export function noResidentRecoveryState(): {
+  dirty: false;
+  currentness: "current";
+  outcome: "idle";
+  message: string;
+  recoveryDraft: null;
+} {
+  return {
+    dirty: false,
+    currentness: "current",
+    outcome: "idle",
+    message: "No resident work is available. Open a project to continue.",
+    recoveryDraft: null,
+  };
+}
+
 function describe(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
   return fallback;
@@ -445,9 +461,18 @@ export function App({ runtime, copies }: AppProps) {
       viewRef.current = null;
       setView(null);
       if (error instanceof NoResidentWorkError) {
-        setCurrentness("current");
-        setOutcome("idle");
-        setMessage("No resident work is available. Open a project to continue.");
+        // The authoritative reobserve proved that the uncertain occurrence is
+        // gone. Discard its dirty/recovery context so normal Open routes can
+        // safely establish a fresh occurrence without replaying anything.
+        const recovered = noResidentRecoveryState();
+        pendingDirtyRef.current = recovered.dirty;
+        draftDirtyRef.current = false;
+        syncDirty();
+        recoveryDraftRef.current = recovered.recoveryDraft;
+        markNotSaved();
+        setCurrentness(recovered.currentness);
+        setOutcome(recovered.outcome);
+        setMessage(recovered.message);
         return;
       } else {
         setCurrentness("unknown");
