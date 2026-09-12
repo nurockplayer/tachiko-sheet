@@ -299,16 +299,19 @@ export function SheetShell(props: SheetShellProps) {
   function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (isComposingEvent(event)) return;
     if (event.key === "Enter") {
+      event.stopPropagation();
       event.preventDefault();
       submitEditor();
       return;
     }
     if (event.key === "Escape") {
+      event.stopPropagation();
       event.preventDefault();
       cancelEdit();
       return;
     }
     if (event.key === "Tab" && editor) {
+      event.stopPropagation();
       event.preventDefault();
       const position = { entity: editor.entity, field: editor.field };
       const step = event.shiftKey ? -1 : 1;

@@ -162,6 +162,10 @@ const cases = [
       await edit(page, "not a number");
       await page.getByRole("alert").waitFor();
       const input = page.getByRole("textbox", { name: "Edit cell", exact: true });
+      assert.equal(
+        await page.getByRole("alert").textContent(),
+        "The work did not accept this value. The draft was kept so you can correct it.",
+      );
       rejected({ before, after: await snapshot(page), draftRetained: (await input.inputValue()) === "not a number" });
       await input.press("Escape");
       await shown(page, cell(expected.impact), 5);
