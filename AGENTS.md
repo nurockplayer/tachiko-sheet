@@ -1,5 +1,9 @@
 # Tachiko Sheet agent entry
 
+This operating mode is **Stewarded Continuous Delivery (SCD)**. Follow
+[`docs/DELIVERY.md`](docs/DELIVERY.md) for Sheet-local authority; the shared name
+does not replace its existing role, Ready, acceptance, review or merge rules.
+
 Read the live **#1 body**, **#2 body**, `docs/DELIVERY.md`, and the active Issue/PR. Use `docs/UPSTREAM.md` to read relevant live core authority. #1 is Mission; #2 is the single current handoff, replaced in place. Do not mine #1 comments for current state. Read `docs/PRODUCT-PRINCIPLES.md` once at intake; `docs/MVP-EXECUTION.md` is the compact queue/gate map, not an instruction to reload every research source each loop.
 
 There is one Mission Lead and integrator. The founder may select Astra or Terra under the reviewed DELIVERY.md amendment; before that amendment merges, the existing Astra-only delegation remains. Claim/transfer ownership in #2 and confirm prior writers stopped before changing leaders. Preserve one writer per worktree/branch and coordinate shared-file ownership.
