@@ -1,0 +1,16 @@
+{
+  "schema": "tachiko-sheet-core-kit-lock-v1",
+  "qualificationStatus": "qualified producer pin; product acceptance separate",
+  "defaultKit": "public/core-kit",
+  "sourceRepository": "nurockplayer/tachiko-work",
+  "sourceCommit": "49d2dfad2d411d9944499c4d35b097e0cb25a7da",
+  "artifactManifest": "public/core-kit/artifact-manifest.json",
+  "artifactManifestSha256": "eac03b2d0ffeee7936cc96bb6a0d08226b5fa25781ef1312f83458f7eba5cf38",
+  "entry": "experimental-client.js",
+  "playwrightVersion": "1.62.1",
+  "qualificationReview": [
+    "https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5643542471",
+    "https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5644131034"
+  ],
+  "notes": "The intact exported kit supplies all runtime JavaScript, declarations, notices, and WASM. This lock pins the qualified producer artifact and records its canonical qualification/review provenance. It does not establish Sheet product acceptance: the Sheet product, host and platform gates remain separate and unverified."
+}

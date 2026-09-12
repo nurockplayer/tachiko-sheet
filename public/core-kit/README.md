@@ -1,0 +1,74 @@
+# Tachiko experimental Designer client kit
+
+This vendorable browser kit is the bounded `designer-client-kit/v0` experiment.
+It is **not** a stable or public SDK, an npm package, a stable wire protocol, or
+a compatibility promise. Every exported TypeScript shape, revision spelling,
+Worker detail, filename, and browser requirement may change or disappear.
+
+Keep this directory intact. `experimental-client.js` is the only intended
+entry; its neighboring Worker modules and `designer_runtime.wasm` are private
+runtime assets. Do not import those assets directly or call the raw WASM ABI.
+
+`artifact-manifest.json` records the exact Tachiko Work commit, every packaged
+file's SHA-256 digest, the one intended entry, the current exposed client
+method inventory, and copied license notices. Keep the manifest and `notices/`
+directory with the kit. The manifest identifies the captured source used for
+this build; it does not claim that different machines or toolchains produce
+byte-identical output.
+
+```ts
+import {
+  createExperimentalDesignerClient,
+  projectTransferFromFiles,
+} from "./vendor/tachiko/experimental-client.js";
+
+const client = createExperimentalDesignerClient();
+const directoryInput = document.querySelector<HTMLInputElement>("#project");
+if (directoryInput === null || directoryInput.files === null) {
+  throw new Error("Select a canonical .roproj directory first.");
+}
+const bytes = await projectTransferFromFiles(directoryInput.files);
+const opened = await client.openProject(bytes);
+const table = await client.queryTable(opened.bootstrap.default_collection);
+
+// Use stable targets from a projection and pin every edit to its revision.
+const field = table.rows[0]?.fields.find(
+  (candidate) => candidate.editable_scalar === "number",
+);
+if (field) {
+  const publication = await client.editNumber(table.revision, field.target, "3");
+  const refreshed = await client.queryFields(publication.resulting_revision, [
+    field.target,
+    ...publication.affected_calculations,
+  ]);
+  console.log(refreshed); // calculation and diagnostic projections are authoritative
+  const exported = await client.exportCanonicalTree(publication.resulting_revision);
+  console.log(exported.files); // full canonical v1 path/byte entries
+}
+
+await client.closeProject();
+await client.close();
+```
+
+`projectTransferFromFiles` packages browser-selected path/byte records only;
+the Rust runtime remains the sole parser and authority for `.roproj` meaning.
+The frontend may retain disposable revision-keyed projections and ordinary UI
+state, but it must not calculate formulas, validate candidates, invent revision
+semantics, or mirror an authoritative document.
+
+`exportCanonicalTree(revision)` returns every canonical `.roproj/v1` file,
+including empty shards; `openCanonicalTree(files)` submits those opaque bytes
+to Rust admission. `exportPortableRo(revision)` returns genuine portable `.ro`
+bytes; `verifyPortableRo(bytes)` verifies them without changing the active work,
+and `openPortableRo(bytes)` admits them before replacing it. A rejected open
+preserves the active occurrence. These v1 paths reject unsupported Date data;
+`exportProject` remains the existing private transfer round-trip operation and
+its bytes must not be given a public `.ro` filename.
+
+`observeOccurrence()` returns the runtime's actual `{scope, revision}`. Scope
+is stable within one live occurrence and fresh after a successful open. Treat
+both values as opaque. A successful export is a snapshot, not confirmation of
+a durable host save.
+
+See the repository's first-contact guide for the Product Gap walkthrough:
+<https://github.com/nurockplayer/tachiko-work/blob/main/docs/engineering/experimental-designer-client-kit.md>.
