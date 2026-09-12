@@ -12,6 +12,8 @@ Status: evidence and synthesis, not an upstream architecture decision. Prepared 
 
 **Source gap:** the separate recent Spreadsheet Deep Research full report was not located in the available uploads/library. No two-report synthesis is claimed. Its later intake should reconcile concrete interaction decisions before their affected work is frozen; it does not invalidate the existing accepted scope or block independent #3 qualification. Do not fill its absent findings with assumptions.
 
+The original spreadsheet research question is now preserved separately in [`2026-09-10-spreadsheet-research-brief.md`](2026-09-10-spreadsheet-research-brief.md); that file deliberately contains no invented findings.
+
 ## What the PDF says
 
 | Pages | Source-derived conclusion |
@@ -22,6 +24,8 @@ Status: evidence and synthesis, not an upstream architecture decision. Prepared 
 | 14–19 | Decide costly identity/version/ownership boundaries early; leave replaceable seams; defer hypothetical universal models and builders. |
 
 The report's examples are not Tachiko schemas. Its Notion scale observations do not prove that a universal block model caused a failure. This intake does not independently re-verify every external citation or infer unpublished vendor implementation.
+
+A fuller source-grounded digest is in [`2026-09-12-composable-platform-report.md`](2026-09-12-composable-platform-report.md). The final research question that produced the report is preserved in [`2026-09-12-composable-platform-research-brief.md`](2026-09-12-composable-platform-research-brief.md).
 
 ## Reconciliation with the real project
 
@@ -34,3 +38,5 @@ The report's examples are not Tachiko schemas. Its Notion scale observations do 
 ## Resulting local changes
 
 [PRODUCT-PRINCIPLES.md](../PRODUCT-PRINCIPLES.md) states the minimum local boundaries. [MVP-EXECUTION.md](../MVP-EXECUTION.md) gives the existing queue and gate ownership. [Task inputs](../../acceptance/mvp-v1/README.md) supplement, not replace, the original canary seed. DELIVERY.md's lead-role amendment requires independent review and merge before taking effect. No upstream ADR, production Ready decision, public launch approval or runtime PASS follows from this research intake.
+
+For the reasoning history that led from “Notion-like LEGO” to the narrower **product-native semantics, platform-ready boundaries** thesis, see [`2026-09-12-product-architecture-discussion.md`](2026-09-12-product-architecture-discussion.md). The [`research index`](README.md) is the durable entry point for these materials.

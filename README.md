@@ -11,8 +11,12 @@ Start with the live [Mission #1](https://github.com/nurockplayer/tachiko-sheet/i
 - [Full spreadsheet acceptance](docs/PRODUCT-ACCEPTANCE.md)
 - [Prepared executable tests](docs/ACCEPTANCE.md)
 - [Upstream authority and issue routing](docs/UPSTREAM.md)
+- [Sheet product / architecture principles](docs/PRODUCT-PRINCIPLES.md)
+- [Research index and decision provenance](docs/research/README.md)
 
 Sheet is one client, not the container for every future Tachiko client. Full document editing, slides, ERP and CRM are separate product/solution decisions. Notes, reports and contextual assistance support spreadsheet work here.
+
+The current architecture stance is **product-native semantics, platform-ready boundaries**: build a real spreadsheet against Tachiko Work's existing semantic authority, preserve explicit seams for future cross-product resources and validated reusable engines, and do not pre-build a universal block/node model or end-user App Builder. The evidence and limits behind that stance are preserved under [`docs/research/`](docs/research/).
 
 The initial technical direction is React/TypeScript/Vite, pnpm, resident Rust/WASM and later a thin Tauri macOS host. These are provisional implementation choices, not a stable SDK or a new semantic/file format.
 
