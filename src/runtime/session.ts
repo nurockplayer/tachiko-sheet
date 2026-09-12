@@ -44,6 +44,17 @@ export class SheetSessionError extends Error {
   }
 }
 
+/** Publication succeeded, but its replacement projection could not be confirmed. */
+export class PublishedProjectionRecoveryError extends Error {
+  readonly publication: PublicationProjection;
+
+  constructor(publication: PublicationProjection, cause: unknown) {
+    super("The change was published, but the current work could not be confirmed.", { cause });
+    this.name = "PublishedProjectionRecoveryError";
+    this.publication = publication;
+  }
+}
+
 type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 type ReadyKit = { kit: CoreKit; client: PublicClient };
 
@@ -67,6 +78,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let ready: Promise<ReadyKit> | null = null;
   let tail: Promise<unknown> = Promise.resolve();
   let active: ActiveWork | null = null;
+  let residentCollection: string | null = null;
+  let residentAvailable = false;
   let closed = false;
   let epoch = 0;
 
@@ -94,6 +107,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       throw new SheetSessionError("not-open", "No workbook is open.");
     }
     return active;
+  }
+
+  function resident(): string | null {
+    if (closed) throw new SheetSessionError("closed", "The sheet session is closed.");
+    if (!residentAvailable) throw new SheetSessionError("not-open", "No workbook is open.");
+    return residentCollection;
   }
 
   function assertNotReplaced(expected: number): void {
@@ -217,6 +236,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     dispatchOpen: () => Promise<OpenedProjection>,
   ): Promise<WorkbookView> {
     await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
+    // The successful open replaced the resident occurrence even before its
+    // projection is coherent; invalidate every old witness immediately.
+    active = null;
+    residentCollection = null;
+    residentAvailable = true;
     closed = false;
     const read = await loadCoherentView(kit, client, expected, null);
     assertNotReplaced(expected);
@@ -225,6 +249,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       revision: read.view.revision,
       collection: read.collection,
     };
+    residentCollection = read.collection;
     return read.view;
   }
 
@@ -253,17 +278,24 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   function read(): Promise<WorkbookView> {
     return enqueue(async () => {
-      const live = session();
+      const collection = resident();
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const result = await loadCoherentView(kit, client, expected, live.collection);
+      let result: CoherentRead;
+      try {
+        result = await loadCoherentView(kit, client, expected, collection);
+      } catch (error) {
+        active = null;
+        throw error;
+      }
       assertUsable(expected);
       active = {
         scope: result.view.occurrence,
         revision: result.view.revision,
         collection: result.collection,
       };
+      residentCollection = result.collection;
       return result.view;
     });
   }
@@ -284,17 +316,25 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      await afterUsable(
+      const publication = await afterUsable(
         expected,
         dispatch(kit, () => dispatchScalarEdit(client, live.revision, target, change)),
       );
-      const result = await loadCoherentView(kit, client, expected, live.collection);
+      let result: CoherentRead;
+      try {
+        result = await loadCoherentView(kit, client, expected, live.collection);
+      } catch (error) {
+        active = null;
+        residentCollection = live.collection;
+        throw new PublishedProjectionRecoveryError(publication, error);
+      }
       assertUsable(expected);
       active = {
         scope: result.view.occurrence,
         revision: result.view.revision,
         collection: result.collection,
       };
+      residentCollection = result.collection;
       return result.view;
     });
   }
@@ -323,6 +363,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     closed = true;
     epoch += 1;
     active = null;
+    residentCollection = null;
+    residentAvailable = false;
     if (ready === null) {
       return;
     }

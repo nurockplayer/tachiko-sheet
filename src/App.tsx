@@ -13,6 +13,7 @@ import {
   type ViewWitness,
   type WorkbookView,
 } from "./contracts.js";
+import { PublishedProjectionRecoveryError } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
@@ -240,7 +241,14 @@ export function App({ runtime, copies }: AppProps) {
       setOutcome("idle");
       return true;
     } catch (error) {
-      if (error instanceof UnknownOperationOutcomeError) {
+      if (error instanceof PublishedProjectionRecoveryError) {
+        pendingDirtyRef.current = true;
+        syncDirty();
+        markNotSaved();
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
+      } else if (error instanceof UnknownOperationOutcomeError) {
         pendingDirtyRef.current = true;
         syncDirty();
         setCurrentness("unknown");
@@ -335,15 +343,9 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      if (error instanceof UnknownOperationOutcomeError) {
-        setCurrentness("unknown");
-        setOutcome("unknown");
-        setMessage("The current work could not be confirmed. Its freshness stays unknown.");
-      } else {
-        setOutcome("idle");
-        setCurrentness("current");
-        setMessage(describe(error, "The work could not be refreshed."));
-      }
+      setCurrentness("unknown");
+      setOutcome("unknown");
+      setMessage("The current work could not be confirmed. Its freshness stays unknown.");
       throw new Error(describe(error, "The work could not be refreshed."));
     } finally {
       end();

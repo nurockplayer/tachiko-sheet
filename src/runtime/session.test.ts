@@ -49,6 +49,7 @@ interface Hooks {
   editNumber?: () => Promise<PublicationProjection>;
   editText?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
+  queryTable?: (collection: string) => Promise<TableProjection>;
 }
 
 function scalarField(
@@ -195,6 +196,10 @@ class FakeClient {
 
   async queryTable(collection: string): Promise<TableProjection> {
     this.calls.queryTable.push(collection);
+    const hook = this.hooks.queryTable;
+    if (hook !== undefined) {
+      return hook(collection);
+    }
     this.#requireOpen();
     return this.#table();
   }
@@ -493,6 +498,60 @@ describe("createSheetRuntime", () => {
 
     const after = await runtime.read();
     expect(after.revision).toBe(view.revision);
+  });
+
+  it("invalidates a failed resident refresh and re-observes without replaying Open", async () => {
+    const { client, runtime, view: first } = await opened();
+    const oldWitness = witnessOf(first);
+    const transport = new Error("resident query failed");
+    client.hooks.queryTable = async () => {
+      client.hooks.queryTable = undefined;
+      throw transport;
+    };
+
+    const failed = await failure(runtime.openCanonical(CANONICAL_FILES));
+    expect(failed).toBeInstanceOf(UnknownOperationOutcomeError);
+    expect((failed as UnknownOperationOutcomeError).cause).toBe(transport);
+    expect(client.calls.openCanonicalTree).toHaveLength(1);
+
+    const refused = await failure(runtime.edit(oldWitness, IMPACT, { kind: "number", input: "3" }));
+    expect((refused as SheetSessionError).code).toBe("not-open");
+    expect(client.calls.editNumber).toBe(0);
+
+    const refreshed = await runtime.read();
+    expect(refreshed.occurrence).toBe("scope-2");
+    expect(refreshed.revision).toBe("r2");
+    const stale = await failure(runtime.edit(oldWitness, IMPACT, { kind: "number", input: "4" }));
+    expect((stale as SheetSessionError).code).toBe("stale-witness");
+    expect(client.calls.editNumber).toBe(0);
+    expect(client.calls.openCanonicalTree).toHaveLength(1);
+  });
+
+  it("retains publication truth while invalidating the old projection after reload failure", async () => {
+    const { client, runtime, view } = await opened();
+    const transport = new Error("reload query failed");
+    let failures = 1;
+    client.hooks.queryTable = async (collection) => {
+      if (failures > 0) {
+        failures -= 1;
+        throw transport;
+      }
+      client.hooks.queryTable = undefined;
+      return client.queryTable(collection);
+    };
+
+    const failed = await failure(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "3" }));
+    expect(failed).toHaveProperty("name", "PublishedProjectionRecoveryError");
+    expect((failed as { publication: PublicationProjection }).publication.resulting_revision).toBe("r2");
+    expect(client.calls.editNumber).toBe(1);
+
+    const refused = await failure(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "4" }));
+    expect((refused as SheetSessionError).code).toBe("not-open");
+    expect(client.calls.editNumber).toBe(1);
+
+    const refreshed = await runtime.read();
+    expect(refreshed.revision).toBe("r2");
+    expect(client.calls.editNumber).toBe(1);
   });
 
   it("propagates a known core rejection unchanged", async () => {
