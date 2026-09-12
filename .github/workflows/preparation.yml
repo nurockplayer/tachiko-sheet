@@ -1,0 +1,25 @@
+name: Preparation consistency (not product acceptance)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - planning/mvp-platform-synthesis
+
+permissions:
+  contents: read
+
+jobs:
+  preparation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check fixed task inputs (no product execution)
+        run: python3 acceptance/mvp-v1/check.py
+      - name: Check patch whitespace
+        run: git diff --check HEAD^ HEAD

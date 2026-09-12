@@ -1,16 +1,18 @@
 # Continuous Mission delivery
 
-Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy.
+Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment below takes effect only after independent review and merge; before then the existing Astra-only delegation remains in force.
 
 ## Authority and roles
 
 Upstream Product Constitution, foundational principles and relevant Accepted semantic/storage/authorization ADRs/specs constrain this client. Sheet #1 owns the finite product goal; this policy owns local dispatch; active children own their bounded implementation. Evidence is not architecture authority. Issue #2 is operational state only.
 
-ChatGPT Steward owns product scope, specifications, acceptance outcomes and material acceptance decisions. Astra is delegated **Sheet delivery stewardship**: sequence work, verify evidence, record qualified Ready decisions, integrate and merge eligible Sheet PRs. This is not power to invent missing semantic contracts, change product goals, waive acceptance, or turn implementation-authored tests into independent acceptance. Other roles follow actual global configuration, not old repo-specific model mappings.
+ChatGPT Steward owns product scope, specifications, acceptance outcomes and material acceptance decisions. The **Mission Lead** is delegated **Sheet delivery stewardship**: sequence work, verify evidence, record qualified Ready decisions, integrate and merge eligible Sheet PRs. This is not power to invent missing semantic contracts, change product goals, waive acceptance, or turn implementation-authored tests into independent acceptance. Other roles follow actual global configuration, not old repo-specific model mappings.
+
+**Single-lead amendment (2026-09-12):** the founder may select Astra or Terra as Mission Lead. Exactly one lead/session is active, recorded in #2 with its branch/HEAD and writer ownership. Confirm previous writers have stopped or explicitly transferred before takeover; a stale timestamp is not sufficient. Until a new lead is selected and safely claimed, retain the existing lead rather than launching both. After this amendment is merged, older Sheet-local references to Astra's coordination role mean the selected Mission Lead; model-specific worker instructions and upstream authority are not rewritten by that alias. No acceptance or review independence changes with a role/name switch.
 
 ## Conditional Ready; no ceremonial stop
 
-For each child Astra records, in that Issue, the exact baseline/seed/core-artifact refs, risk and write owner, acceptance-to-requirement map and actual qualification results. Ready requires:
+For each child the lead records, in that Issue, the exact baseline/seed/core-artifact refs, risk and write owner, acceptance-to-requirement map and actual qualification results. Ready requires:
 
 1. The work is inside #1, with sufficient Accepted semantics and only bounded reversible client choices unresolved.
 2. Steward-authored acceptance exists, its intended outcomes are preserved, and a reviewer independent of acceptance/production authorship has assessed adequacy for the concrete boundary.
@@ -20,7 +22,7 @@ For each child Astra records, in that Issue, the exact baseline/seed/core-artifa
 
 **Greenfield evidence plan:** before a UI exists, qualify its fixture and real kit, parse/load the test code and review the fixed user oracles. Record the absent UI as an unverified product seam, not a fake behavioral RED. This bounded preparation route permits implementation after the above independent assessment; final merge still requires the real browser journeys and applicable host evidence to pass. No mock success, skipped tests or setup-error RED substitutes for that final gate.
 
-Once these conditions hold, Astra records Ready and continues, without an extra founder message merely to repeat permission. There is no mandatory stop after #3, a material checkpoint or a completed PR. Missing independent review, actual acceptance or durable authority remains a real blocker; work on independent eligible lanes can continue. Do not call every optional question a blocker.
+Once these conditions hold, the lead records Ready and continues, without an extra founder message merely to repeat permission. There is no mandatory stop after #3, a material checkpoint or a completed PR. Missing independent review, actual acceptance or durable authority remains a real blocker; work on independent eligible lanes can continue. Do not call every optional question a blocker.
 
 ## Acceptance ownership and changes
 
@@ -30,7 +32,7 @@ Preserve the imported test source/hash and existing expected outcomes. Implement
 
 Use one coherent product slice per PR; acceptance and implementation normally share its eventual lane. Keep unqualified seed work off main. Do not split work into cosmetic micro-PRs or turn the full Mission into one giant PR. Independent lanes require non-overlapping ownership; at most three active implementation lanes unless a separately justified policy changes that bound.
 
-For **tachiko-sheet only**, Astra may execute a merge when all of these are proven for the exact final material HEAD:
+For **tachiko-sheet only**, the lead may execute a merge when all of these are proven for the exact final material HEAD:
 
 - live Issue, main, PR and overlap state have been rechecked;
 - applicable Steward acceptance, implementer unit tests and required local/hosted checks passed; absent/pending CI is not green;
@@ -40,7 +42,7 @@ For **tachiko-sheet only**, Astra may execute a merge when all of these are prov
 - normal GitHub protections and review requirements permit the merge, without admin bypass, force push, fabricated approval or blanket auto-approve;
 - the recorded head still matches immediately before merging.
 
-Execution of a reviewed merge by the coordinator is not independent approval. Astra-authored code still needs another reviewer. After merging, verify the integrated main at the affected boundary, reconcile any surviving review debt, update #2 and continue. Closing a child never closes #1. Final product/release acceptance and permission to close #1 remain founder/Steward-owned. No automatic publication, purchases, signing-account enrollment, credential provisioning or terms acceptance follows from PR merge authority.
+Execution of a reviewed merge by the coordinator is not independent approval. Lead-authored code still needs another reviewer. After merging, verify the integrated main at the affected boundary, reconcile any surviving review debt, update #2 and continue. Closing a child never closes #1. Final product/release acceptance and permission to close #1 remain founder/Steward-owned. No automatic publication, purchases, signing-account enrollment, credential provisioning or terms acceptance follows from PR merge authority.
 
 ## Upstream boundary
 

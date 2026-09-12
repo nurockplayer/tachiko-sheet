@@ -1,0 +1,50 @@
+{
+  "schema": "tachiko-sheet.acceptance-input/v1",
+  "status": "PREPARED_NOT_RUNTIME_QUALIFIED",
+  "purpose": "Synthetic user-task inputs and fixed expected facts; not a Tachiko storage format or product evidence.",
+  "journeys": [
+    {
+      "id": "J1", "bundles": [1,2,3,7,8,10,11,12],
+      "tasks": [["入庫","Todo",3],["試算","Doing",1],["驗收","Todo",2]],
+      "allowed_status": ["Todo","Doing","Done"], "priority_range": [1,5],
+      "sorted_names": ["試算","驗收","入庫"], "filtered_todo_names": ["驗收","入庫"],
+      "edit_target": "入庫", "accepted_priority": 5, "rejected_priority": 6,
+      "required_negative": "Invalid status/priority leaves canonical state unchanged and preserves the draft."
+    },
+    {
+      "id": "J2", "bundles": [1,2,3,4,5,6,7,9],
+      "expenses": [80000,30000,10000], "fixed_rate": "0.10",
+      "reserves": [8000,3000,1000], "total": 12000,
+      "duplicate_expenses": [80000,35000,10000], "duplicate_total": 12500,
+      "cross_sheet_total": 24500,
+      "required_negative": "Invalid or cyclic supported formulas never display stale success; editing the duplicate does not modify the original."
+    },
+    {
+      "id": "J3", "bundles": [1,2,4,7,10,13,14],
+      "raw_rows": [[" PEN ","3","200"],["NOTE","2","500"],[" PEN ","3","200"]],
+      "clean_rows": [["PEN",3,200],["NOTE",2,500]], "total": 1600,
+      "preserve_as_text": "0012", "ambiguous_date": "03/04/2026",
+      "required_negative": "Preview destructive cleanup; do not guess an ambiguous date, strip text-leading zeros or silently discard unsupported XLSX content."
+    },
+    {
+      "id": "J4", "bundles": [1,6,9,11],
+      "catalog": [["PEN",200],["NOTE",500]],
+      "sales": [["PEN",3],["NOTE",2],["PEN",1]],
+      "line_totals": [600,1000,200], "group_totals": [["PEN",800],["NOTE",1000]], "total": 1800,
+      "missing_key": "MISSING", "duplicate_key": "PEN",
+      "required_negative": "Missing/duplicate keys produce the qualified core diagnostic, not zero, a guessed match or a stale current result."
+    },
+    {
+      "id": "J5", "bundles": [7,8,15],
+      "source_journey": "J4", "new_pen_price": 250,
+      "group_totals": [["PEN",1000],["NOTE",1000]], "total": 2000,
+      "required_negative": "The chart updates from actual current data; unavailable data is not a successful empty or stale chart."
+    },
+    {
+      "id": "J6", "bundles": [1,4,13],
+      "source_journey": "J2", "before_total": 12000, "after_total": 12500,
+      "required_faults": ["cancel-open","dirty-close","save-failure","unknown-execute","stale-reply","fresh-process-reopen"],
+      "required_negative": "A failed save remains unsaved; uncertain Execute is not blindly retried; real restart and recomputation are required."
+    }
+  ]
+}
