@@ -79,9 +79,11 @@ semantic scenario and not a behavioral RED.
 - `bash scripts/experimental-designer-client-smoke.sh` passed. It exported two
   deterministic kits, rejected private Designer-source imports, type-checked
   the external consumer, and passed its Chromium workflow.
-- `WORK_CLIENT_URL=http://127.0.0.1:4186 node tests/browser.mjs --canary`
+- `WORK_CLIENT_URL=http://127.0.0.1:4186 pnpm exec node tests/browser.mjs --canary`
   passed against the exported kit with the seed's default `playwright-core`
-  import (no `WORK_PLAYWRIGHT_MODULE` override). It admitted the 18-file supplied fixture,
+  import (no `WORK_PLAYWRIGHT_MODULE` override). `pnpm exec` is required for
+  reproducible package resolution; raw standalone `node` must not be claimed
+  as an equivalent launcher. It admitted the 18-file supplied fixture,
   observed `5 + 5 = 10`, published `impact = 3` and observed `priority = 8`,
   rejected stale `editText` with `stale_revision` while keeping export bytes
   unchanged, and reopened the opaque export in a fresh client.
@@ -106,6 +108,11 @@ default canary import. The real `pnpm-lock.yaml` records both packages. They
 support the listed commands and do not alter the imported seed tests or their
 recorded hashes. Its SHA-256 is
 `cb46a39c3350f44be9ac52b705d6bb9d170356fe32237a0a84dc051d8cf89852`.
+When Chromium is not already available, install the pinned browser with
+`pnpm exec playwright install chromium` before the canary command. Start the
+server with `WORK_CLIENT_KIT=/absolute/verified-kit pnpm exec node
+scripts/serve-canary.mjs` (or the equivalent `pnpm serve:canary` script) in a
+separate foreground session.
 
 ## Explicit unqualified boundaries
 
