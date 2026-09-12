@@ -14,6 +14,10 @@
     "serve:canary": "node scripts/serve-canary.mjs",
     "acceptance:kit": "node tests/kit.mjs",
     "acceptance:storage": "node tests/storage.mjs",
-    "acceptance:agent-ui": "node tests/browser.mjs --agent"
+    "acceptance:agent-ui": "node tests/browser.mjs --agent",
+    "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }
