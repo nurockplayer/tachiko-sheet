@@ -2,7 +2,8 @@
   --ts-ink: #182230;
   --ts-ink-soft: #647083;
   --ts-line: #d9e0e8;
-  --ts-line-strong: #aeb9c7;
+  /* #657386 against white: 4.72:1, above the 3:1 interactive-boundary floor. */
+  --ts-line-strong: #657386;
   --ts-surface: #ffffff;
   --ts-surface-sunken: #f3f6f9;
   --ts-surface-head: #eef2f6;

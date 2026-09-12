@@ -348,6 +348,7 @@ describe("SheetShell static rendering", () => {
     expect(markup).not.toContain("release_items ·");
     expect(markup).not.toContain("revision rev-1");
     expect(markup).not.toContain("playtest_notes");
+    expect(markup).not.toContain('title="number"');
     // Entity/revision values remain in data-* witnesses for acceptance and
     // recovery tooling; only visible chrome must stay free of them.
     expect(markup).toContain('data-work-entity="entity-a"');

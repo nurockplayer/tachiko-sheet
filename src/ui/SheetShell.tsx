@@ -600,7 +600,7 @@ export function SheetShell(props: SheetShellProps) {
                   Row
                 </th>
                 {columns.map((column) => (
-                  <th key={column.id} scope="col" className="ts-col-head" title={column.field_type}>
+                  <th key={column.id} scope="col" className="ts-col-head">
                     {column.key}
                   </th>
                 ))}
