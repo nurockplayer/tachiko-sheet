@@ -1,8 +1,8 @@
 # Target-state captures
 
 - App source/build commit: `6d3b30af57e54c519be89f599daa2edf8986a807`
-- Final capture harness is committed with this evidence update; screenshots
-  were regenerated against the app build above.
+- Capture harness/evidence commit: `73b186e89582bc2e1ad6883d9633346739104035`;
+  screenshots were regenerated against the app build above.
 - Build command: `pnpm build` (production `dist`, Vite 8.3.0)
 - Captured: 2026-09-13 (Asia/Tokyo)
 - Browser: Playwright Chromium 1.62.1, headless; host macOS Darwin 24.6.0 arm64
