@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { noResidentRecoveryState, recoveryDraftAfterBoundary, recoveryDraftAfterOpenRecovery } from "./App.js";
+import {
+  clearRecoveryOccurrenceContext,
+  noResidentRecoveryState,
+  recoveryDraftAfterBoundary,
+} from "./App.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
 
 describe("recovery draft lifecycle", () => {
@@ -23,12 +27,12 @@ describe("recovery draft lifecycle", () => {
   });
 
   it("clears A recovery context in the replacement-open recovery catch", () => {
-    let recoveryDraft: string | null = '{"kind":"number","input":"3"}';
+    const recoveryContext = { current: '{"kind":"number","input":"3"}' as string | null };
     try {
       throw new OpenedProjectionRecoveryError(new Error("B projection unavailable"), "unknown");
     } catch (error) {
-      recoveryDraft = recoveryDraftAfterOpenRecovery(recoveryDraft, error);
+      expect(clearRecoveryOccurrenceContext(recoveryContext, error)).toBe(true);
     }
-    expect(recoveryDraft).toBe(null);
+    expect(recoveryContext.current).toBe(null);
   });
 });
