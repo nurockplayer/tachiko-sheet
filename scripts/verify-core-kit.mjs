@@ -8,22 +8,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const lockPath = path.join(root, 'core-kit.lock.json');
+const lockPath = process.env.WORK_CORE_KIT_LOCK ?? path.join(root, 'core-kit.lock.json');
 const lock = JSON.parse(await readFile(lockPath, 'utf8'));
 if (lock.qualificationStatus !== 'qualified producer pin; product acceptance separate') {
   throw new Error('core-kit.lock.json must record the qualified producer pin with product acceptance separate.');
 }
-if (lock.qualificationReviewSourceCommit !== lock.sourceCommit ||
-    lock.qualificationReviewArtifactManifestSha256 !== lock.artifactManifestSha256) {
-  throw new Error('core-kit.lock.json qualification review must be bound to the pinned source commit and artifact manifest.');
+const artifactReview = lock.qualificationArtifactReview;
+if (artifactReview?.sourceCommit !== lock.sourceCommit ||
+    artifactReview?.artifactManifestSha256 !== lock.artifactManifestSha256 ||
+    artifactReview?.url !== 'https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5645924065') {
+  throw new Error('core-kit.lock.json artifact review must match the pinned source, manifest and canonical review URL.');
 }
-if (!Array.isArray(lock.qualificationReview) || lock.qualificationReview.length < 2) {
-  throw new Error('core-kit.lock.json must record the canonical qualification/review sources.');
-}
-for (const source of lock.qualificationReview) {
-  if (typeof source !== 'string' || !source.startsWith('https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-')) {
-    throw new Error(`Unexpected qualification/review source: ${source}`);
-  }
+if (typeof lock.qualificationHandback !== 'string' ||
+    !lock.qualificationHandback.startsWith('https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-')) {
+  throw new Error(`Unexpected qualification handback source: ${lock.qualificationHandback}`);
 }
 const kit = path.resolve(process.env.WORK_CORE_KIT ?? path.join(root, lock.defaultKit));
 const manifestPath = path.join(kit, 'artifact-manifest.json');
@@ -46,7 +44,8 @@ console.log(JSON.stringify({
   case: 'qualified core-kit trust pin',
   status: 'PASS',
   qualificationStatus: lock.qualificationStatus,
-  qualificationReview: lock.qualificationReview,
+  qualificationHandback: lock.qualificationHandback,
+  qualificationArtifactReview: artifactReview,
   kit,
   sourceCommit: manifest.sourceCommit,
   artifactManifestSha256: manifestDigest,

@@ -7,12 +7,12 @@
   "artifactManifest": "public/core-kit/artifact-manifest.json",
   "artifactManifestSha256": "ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b",
   "entry": "experimental-client.js",
-  "qualificationReviewSourceCommit": "518aaa55e046a4e4676b4d5e05d8189c4c6343fe",
-  "qualificationReviewArtifactManifestSha256": "ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b",
   "playwrightVersion": "1.62.1",
-  "qualificationReview": [
-    "https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5643542471",
-    "https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5645924065"
-  ],
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5643542471",
+  "qualificationArtifactReview": {
+    "sourceCommit": "518aaa55e046a4e4676b4d5e05d8189c4c6343fe",
+    "artifactManifestSha256": "ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b",
+    "url": "https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5645924065"
+  },
   "notes": "The intact exported kit supplies all runtime JavaScript, declarations, notices, and WASM. This lock pins the qualified producer artifact and records its canonical qualification/review provenance. It does not establish Sheet product acceptance: the Sheet product, host and platform gates remain separate and unverified."
 }
