@@ -34,6 +34,16 @@ export interface AppProps {
   copies: LocalCopies;
 }
 
+export type RecoveryDraftBoundary = "reobserve" | "replacement" | "close";
+
+/** Keep an unknown-edit draft only while reobserving its own occurrence. */
+export function recoveryDraftAfterBoundary(
+  draft: string | null,
+  boundary: RecoveryDraftBoundary,
+): string | null {
+  return boundary === "reobserve" ? draft : null;
+}
+
 function describe(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
   return fallback;
@@ -204,6 +214,7 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("pending");
       const next = await runtime.openFiles(files);
       installView(next);
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
       syncDirty();
@@ -237,6 +248,7 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("pending");
       const next = await runtime.openCanonical(await loadExampleFiles());
       installView(next);
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
       syncDirty();
@@ -272,6 +284,7 @@ export function App({ runtime, copies }: AppProps) {
       if (!copy) throw new Error(`the saved copy “${name}” is no longer stored on this device`);
       const next = await runtime.openCanonical(copy.files);
       installView(next);
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
       syncDirty();
@@ -402,6 +415,7 @@ export function App({ runtime, copies }: AppProps) {
     } finally {
       viewRef.current = null;
       setView(null);
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "close");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
       syncDirty();
