@@ -443,6 +443,15 @@ export function SheetShell(props: SheetShellProps) {
   function renderHome(): ReactNode {
     return (
       <main className="ts-home">
+        {currentness === "unknown" ? (
+          <section className="ts-card" aria-label="Recovery">
+            <h2 className="ts-h2">Work opened; freshness unconfirmed</h2>
+            <p className="ts-subtle">The new work is resident, but its projection is not confirmed. Refresh to re-read it.</p>
+            <button type="button" className="ts-button" onClick={() => void refresh()} disabled={controlsLocked}>
+              Refresh
+            </button>
+          </section>
+        ) : null}
         <header className="ts-home-head">
           <h1 className="ts-brand">Tachiko Sheet</h1>
           <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>

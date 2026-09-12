@@ -176,8 +176,10 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery();
-      else {
+      if (error instanceof OpenedProjectionRecoveryError) {
+        failClosedAfterOpenRecovery();
+        return;
+      } else {
         setCurrentness("current");
         setOutcome("idle");
       }
@@ -202,8 +204,10 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery();
-      else {
+      if (error instanceof OpenedProjectionRecoveryError) {
+        failClosedAfterOpenRecovery();
+        return;
+      } else {
         setCurrentness("current");
         setOutcome("idle");
       }
@@ -235,8 +239,10 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
-      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery();
-      else {
+      if (error instanceof OpenedProjectionRecoveryError) {
+        failClosedAfterOpenRecovery();
+        return;
+      } else {
         setCurrentness("current");
         setOutcome("idle");
       }

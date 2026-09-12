@@ -198,6 +198,16 @@ describe("edit drafts", () => {
   });
 });
 
+describe("recovery presentation", () => {
+  it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
+    const markup = render({ currentness: "unknown", outcome: "unknown" });
+    expect(markup).toContain('aria-label="Recovery"');
+    expect(markup).toContain("Work opened; freshness unconfirmed");
+    expect(markup).toContain(">Refresh</button>");
+    expect(markup).not.toContain("could not be opened");
+  });
+});
+
 describe("projection access", () => {
   it("uses the projected entity and falls back to the row id", () => {
     const view = makeView();
