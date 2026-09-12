@@ -79,8 +79,9 @@ semantic scenario and not a behavioral RED.
 - `bash scripts/experimental-designer-client-smoke.sh` passed. It exported two
   deterministic kits, rejected private Designer-source imports, type-checked
   the external consumer, and passed its Chromium workflow.
-- `WORK_CLIENT_URL=http://127.0.0.1:4174 node tests/browser.mjs --canary`
-  passed against the exported kit. It admitted the 18-file supplied fixture,
+- `WORK_CLIENT_URL=http://127.0.0.1:4186 node tests/browser.mjs --canary`
+  passed against the exported kit with the seed's default `playwright-core`
+  import (no `WORK_PLAYWRIGHT_MODULE` override). It admitted the 18-file supplied fixture,
   observed `5 + 5 = 10`, published `impact = 3` and observed `priority = 8`,
   rejected stale `editText` with `stale_revision` while keeping export bytes
   unchanged, and reopened the opaque export in a fresh client.
@@ -99,11 +100,12 @@ semantic scenario and not a behavioral RED.
   `exportProject` result is opaque transfer bytes; it does not prove a complete
   canonical `.roproj/v1` tree or genuine `.ro` codec output.
 
-The browser dependency is now pinned as `playwright@1.62.1` in this
-qualification-only worktree with `pnpm-lock.yaml` SHA-256
-`6a64c784a9cc689f35d00bdafc97ffbabd7c27f065e764b8e9475138c1e5d214`.
-It supports the new probe and does not alter the imported seed tests or their
-recorded hashes.
+The browser dependencies are directly pinned as `playwright@1.62.1` for the
+qualification probe and `playwright-core@1.62.1` for the imported seed's
+default canary import. The real `pnpm-lock.yaml` records both packages. They
+support the listed commands and do not alter the imported seed tests or their
+recorded hashes. Its SHA-256 is
+`cb46a39c3350f44be9ac52b705d6bb9d170356fe32237a0a84dc051d8cf89852`.
 
 ## Explicit unqualified boundaries
 

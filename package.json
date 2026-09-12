@@ -18,6 +18,7 @@
     "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs"
   },
   "devDependencies": {
+    "playwright-core": "1.62.1",
     "playwright": "1.62.1"
   }
 }
