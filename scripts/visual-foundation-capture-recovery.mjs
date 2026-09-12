@@ -13,9 +13,19 @@ try {
   await page.getByTestId("project-ready").waitFor({ timeout: 15000 });
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+  const initialEntity = await page.locator("[data-work-entity]").first().getAttribute("data-work-entity");
   await notes.fill("draft-authored-for-row-A");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
-  const otherCell = page.locator('[data-work-entity]:not([data-work-entity="1d37df46-01f6-4b05-8fd9-064718dc91ea"])').first();
+  const entityCells = page.locator("[data-work-entity]");
+  let otherCell;
+  for (let index = 0; index < await entityCells.count(); index += 1) {
+    const cell = entityCells.nth(index);
+    if ((await cell.getAttribute("data-work-entity")) !== initialEntity) {
+      otherCell = cell;
+      break;
+    }
+  }
+  if (!otherCell) throw new Error("fixture must expose a distinct second entity");
   await otherCell.click();
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   await notes.fill("draft-authored-for-row-B");

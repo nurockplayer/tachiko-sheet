@@ -1,8 +1,13 @@
 # Target-state captures
 
-- App source/build commit: `6d3b30af57e54c519be89f599daa2edf8986a807`
+- App source/build commit: `a52d962a20dd21bb4cb6fb728f3f06b9b95043ed`
 - Capture harness/evidence commit: `73b186e89582bc2e1ad6883d9633346739104035`;
-  screenshots were regenerated against the app build above.
+  screenshots were generated from the production tree at the source/build
+  commit above.
+- The production UI tree (`src/ui`, `src/App.tsx`, `src/ui/sheet-shell.css`)
+  has no diff between the source/build and capture commits. Later
+  metadata-only corrections, including `dffa6f21be0d740cc627ed2f012c840678b1af1f`,
+  do not claim that screenshots were regenerated.
 - Build command: `pnpm build` (production `dist`, Vite 8.3.0)
 - Captured: 2026-09-13 (Asia/Tokyo)
 - Browser: Playwright Chromium 1.62.1, headless; host macOS Darwin 24.6.0 arm64
@@ -14,8 +19,8 @@
   browser-UI zoom preference; native browser zoom remains a separate gate.
 - Runtime: production preview (`pnpm exec vite preview --host 127.0.0.1`)
 - Captures: `home.png`, `home-1280x800.png`, `home-1024x768.png`,
-  `home-200-percent.png`, `workbook.png`, `selection.png`, `save-dialog.png`,
-  plus actual-core populated captures `workbook-50rows-1440x900.png`,
+  `home-200-percent.png`, plus actual-core populated captures
+  `workbook-50rows-1440x900.png`,
   `workbook-50rows-1280x800.png`, `workbook-50rows-1024x768.png`, and
   `workbook-50rows-selection.png`, plus `workbook-50rows-japanese-edit.png`
   and `save-dialog-final.png` from normal UI interactions.
