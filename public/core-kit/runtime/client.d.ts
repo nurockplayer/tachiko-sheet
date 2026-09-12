@@ -1,5 +1,5 @@
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, FieldBatchProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, TableProjection, FailureProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, FieldBatchProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, TableProjection, FailureProjection } from "./protocol.ts";
 export interface DesignerClient {
     inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions): Promise<SourceWorkbook>;
     importSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
@@ -32,6 +32,8 @@ export interface DesignerClient {
     editBoolean(expectedRevision: string, target: FieldTarget, value: boolean): Promise<PublicationProjection>;
     editDate(expectedRevision: string, target: FieldTarget, value: string): Promise<PublicationProjection>;
     updateFormula?(expectedRevision: string, target: FieldTarget, source: string): Promise<PublicationProjection>;
+    createKeyedGroupedSum?(expectedRevision: string, definition: KeyedGroupedSumDefinitionInput): Promise<KeyedGroupedSumPublishedProjection>;
+    queryKeyedGroupedSum?(definitionId: string): Promise<KeyedGroupedSumProjection>;
     close(): void | Promise<void>;
 }
 export declare class DesignerRuntimeError extends Error {

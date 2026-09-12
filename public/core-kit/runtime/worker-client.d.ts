@@ -1,6 +1,6 @@
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, ProjectExport, TableProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, ProjectExport, TableProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -30,6 +30,8 @@ export declare class WorkerDesignerClient implements DesignerClient {
     closeProject(): Promise<void>;
     queryTable(collection: string): Promise<TableProjection>;
     queryFields(expectedRevision: string, fields: FieldTarget[]): Promise<FieldBatchProjection>;
+    createKeyedGroupedSum(expectedRevision: string, definition: KeyedGroupedSumDefinitionInput): Promise<KeyedGroupedSumPublishedProjection>;
+    queryKeyedGroupedSum(definitionId: string): Promise<KeyedGroupedSumProjection>;
     editNumber(expectedRevision: string, target: FieldTarget, input: string): Promise<PublicationProjection>;
     editText(expectedRevision: string, target: FieldTarget, value: string): Promise<PublicationProjection>;
     editBoolean(expectedRevision: string, target: FieldTarget, value: boolean): Promise<PublicationProjection>;

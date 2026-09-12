@@ -3,9 +3,9 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "49d2dfad2d411d9944499c4d35b097e0cb25a7da",
+  "sourceCommit": "518aaa55e046a4e4676b4d5e05d8189c4c6343fe",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "eac03b2d0ffeee7936cc96bb6a0d08226b5fa25781ef1312f83458f7eba5cf38",
+  "artifactManifestSha256": "ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
   "qualificationReview": [

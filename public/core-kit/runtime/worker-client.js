@@ -204,6 +204,12 @@ export class WorkerDesignerClient {
             fields,
         }));
     }
+    async createKeyedGroupedSum(expectedRevision, definition) {
+        return expectResponse("keyed_grouped_sum_published", await this.#command({ type: "create_keyed_grouped_sum", expected_revision: expectedRevision, definition }));
+    }
+    async queryKeyedGroupedSum(definitionId) {
+        return expectResponse("keyed_grouped_sum", await this.#command({ type: "query_keyed_grouped_sum", definition_id: definitionId }));
+    }
     async editNumber(expectedRevision, target, input) {
         return expectResponse("published", await this.#command({
             type: "edit_scalar",

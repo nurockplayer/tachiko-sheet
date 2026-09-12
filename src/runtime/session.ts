@@ -319,7 +319,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
-      return openSession(kit, client, requestedAt, () => client.openCanonicalTree(files));
+      // Canonical saved copies are admitted before dispatch. A known transfer
+      // refusal is pre-dispatch and must preserve the resident occurrence.
+      kit.preflightCanonicalProjectEntries(files);
+      const transfer = kit.projectTransferFromEntries(files);
+      return openSession(kit, client, requestedAt, () => client.openProject(transfer));
     });
   }
 

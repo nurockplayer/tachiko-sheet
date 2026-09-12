@@ -16,6 +16,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
+import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
 import {
   UnknownOperationOutcomeError,
   type CoreKit,
@@ -76,7 +77,6 @@ function scalarField(
 class FakeClient {
   readonly calls = {
     openProject: [] as ArrayBuffer[],
-    openCanonicalTree: [] as Array<readonly CanonicalProjectFile[]>,
     bootstrap: 0,
     observeOccurrence: 0,
     queryTable: [] as string[],
@@ -164,16 +164,6 @@ class FakeClient {
 
   async openProject(bytes: ArrayBuffer): Promise<OpenedProjection> {
     this.calls.openProject.push(bytes);
-    const hook = this.hooks.openProject;
-    if (hook !== undefined) {
-      this.hooks.openProject = undefined;
-      return hook();
-    }
-    return this.#opened();
-  }
-
-  async openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection> {
-    this.calls.openCanonicalTree.push(files);
     const hook = this.hooks.openProject;
     if (hook !== undefined) {
       this.hooks.openProject = undefined;
@@ -294,14 +284,18 @@ class FakeClient {
 
 function makeKit(client: FakeClient) {
   const projectTransferFromFiles = vi.fn(async (_files: FileList) => new ArrayBuffer(8));
+  const projectTransferFromEntries = vi.fn((_files: readonly CanonicalProjectFile[]) => new ArrayBuffer(8));
+  const preflightCanonicalProjectEntries = vi.fn(realPreflightCanonicalProjectEntries);
   const createExperimentalDesignerClient = vi.fn(() => client as never);
   const kit = {
     EXPERIMENTAL_CLIENT_KIT_ID: "tachiko-designer-client-kit/v0-experimental",
     createExperimentalDesignerClient,
     projectTransferFromFiles,
+    projectTransferFromEntries,
+    preflightCanonicalProjectEntries,
     DesignerRuntimeError: FakeDesignerRuntimeError,
   } as unknown as CoreKit;
-  return { kit, createExperimentalDesignerClient, projectTransferFromFiles };
+  return { kit, createExperimentalDesignerClient, projectTransferFromFiles, projectTransferFromEntries, preflightCanonicalProjectEntries };
 }
 
 async function failure(promise: Promise<unknown>): Promise<unknown> {
@@ -345,7 +339,6 @@ describe("createSheetRuntime", () => {
 
     expect(projectTransferFromFiles).toHaveBeenCalledWith(FILES);
     expect(client.calls.openProject).toHaveLength(1);
-    expect(client.calls.openCanonicalTree).toHaveLength(0);
     expect(view.occurrence).toBe("scope-1");
     expect(view.revision).toBe("r1");
     expect(view.title).toBe(TITLE);
@@ -364,18 +357,31 @@ describe("createSheetRuntime", () => {
     expect(client.calls.closeProject).toBe(1);
   });
 
-  it("admits saved opaque canonical bytes through openCanonicalTree", async () => {
+  it("preflights saved canonical bytes, transfers them, then dispatches Open once", async () => {
     const client = new FakeClient();
     const kitParts = makeKit(client);
     const runtime = createSheetRuntime(async () => kitParts.kit);
 
     const view = await runtime.openCanonical(CANONICAL_FILES);
 
-    expect(client.calls.openCanonicalTree).toEqual([CANONICAL_FILES]);
-    expect(client.calls.openProject).toHaveLength(0);
+    expect(kitParts.preflightCanonicalProjectEntries).toHaveBeenCalledWith(CANONICAL_FILES);
+    expect(kitParts.projectTransferFromEntries).toHaveBeenCalledWith(CANONICAL_FILES);
+    expect(client.calls.openProject).toHaveLength(1);
     expect(kitParts.projectTransferFromFiles).not.toHaveBeenCalled();
     expect(view.occurrence).toBe("scope-1");
     expect(view.revision).toBe("r1");
+  });
+
+  it.each([
+    ["duplicate", [{ path: "a", bytes: new ArrayBuffer(1) }, { path: "a", bytes: new ArrayBuffer(1) }]],
+    ["unsafe", [{ path: "../escape", bytes: new ArrayBuffer(1) }]],
+    ["oversize", [{ path: "a", bytes: new ArrayBuffer(64 * 1024 * 1024) }]],
+  ] as const)("rejects %s canonical entries before Open and preserves resident work", async (_label, files) => {
+    const { client, runtime, view, projectTransferFromEntries } = await opened();
+    await expect(runtime.openCanonical(files)).rejects.toBeInstanceOf(Error);
+    expect(projectTransferFromEntries).not.toHaveBeenCalled();
+    expect(client.calls.openProject).toHaveLength(1);
+    await expect(runtime.read()).resolves.toMatchObject({ occurrence: view.occurrence });
   });
 
   it("refuses a stale witness before dispatch", async () => {
@@ -445,8 +451,7 @@ describe("createSheetRuntime", () => {
     const replacement = await runtime.openCanonical(CANONICAL_FILES);
     expect(replacement.occurrence).toBe("scope-2");
     expect(replacement.occurrence).not.toBe(view.occurrence);
-    expect(client.calls.openProject).toHaveLength(1);
-    expect(client.calls.openCanonicalTree).toHaveLength(1);
+    expect(client.calls.openProject).toHaveLength(2);
   });
 
   it("discards a late reply that arrives after close and cannot act on the next occurrence", async () => {
@@ -533,7 +538,7 @@ describe("createSheetRuntime", () => {
     expect(failed).toBeInstanceOf(OpenedProjectionRecoveryError);
     expect((failed as OpenedProjectionRecoveryError).cause).toBeInstanceOf(UnknownOperationOutcomeError);
     expect(((failed as OpenedProjectionRecoveryError).cause as UnknownOperationOutcomeError).cause).toBe(transport);
-    expect(client.calls.openCanonicalTree).toHaveLength(1);
+    expect(client.calls.openProject).toHaveLength(2);
 
     const refused = await failure(runtime.edit(oldWitness, IMPACT, { kind: "number", input: "3" }));
     expect((refused as SheetSessionError).code).toBe("not-open");
@@ -545,7 +550,7 @@ describe("createSheetRuntime", () => {
     const stale = await failure(runtime.edit(oldWitness, IMPACT, { kind: "number", input: "4" }));
     expect((stale as SheetSessionError).code).toBe("stale-witness");
     expect(client.calls.editNumber).toBe(0);
-    expect(client.calls.openCanonicalTree).toHaveLength(1);
+    expect(client.calls.openProject).toHaveLength(2);
   });
 
   it("cannot edit a stale projection after refresh failure until re-observation succeeds", async () => {
