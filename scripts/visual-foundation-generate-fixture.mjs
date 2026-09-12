@@ -1,7 +1,7 @@
 // Evidence-only generator: uses the vendored public client to author, export,
 // and re-admit a deterministic Tracker corpus. It does not hand-author bytes.
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,8 +9,10 @@ import { chromium } from "playwright";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const kitRoot = path.join(root, "public/core-kit");
-const output = path.join(root, "evidence/visual-foundation/fixture-50.roproj");
-const pageSource = `<!doctype html><script type="module">
+const output = process.env.VF_FIXTURE_OUTPUT
+  ? path.resolve(process.env.VF_FIXTURE_OUTPUT)
+  : await mkdtemp("/tmp/tachiko-vf-fixture-");
+const pageSource = `<!doctype html><meta charset="utf-8"><script type="module">
 import { createExperimentalDesignerClient } from '/kit/experimental-client.js';
 const client = createExperimentalDesignerClient();
 try {

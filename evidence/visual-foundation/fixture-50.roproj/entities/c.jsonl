@@ -1,1 +1,3 @@
-{"id":"tracker_row_0003_0ba68c6b-dd1d-4bed-abfc-82286b5b9355","key":"row_0003","schema":"tracker","fields":{"done":{"kind":"boolean","value":true},"estimate":{"kind":"number","value":3},"task":{"kind":"text","value":"æ•´ç†è©¦çŽ©å›žé¥‹"}}}
+{"id":"tracker_row_0004_e8606c9a-4d65-4a06-b738-73156e633d52","key":"row_0004","schema":"tracker","fields":{"done":{"kind":"boolean","value":true},"estimate":{"kind":"number","value":4},"task":{"kind":"text","value":"Review partner brief"}}}
+{"id":"tracker_row_0013_e8606c9a-4d65-4a06-b738-73156e633d52","key":"row_0013","schema":"tracker","fields":{"done":{"kind":"boolean","value":true},"estimate":{"kind":"number","value":4},"task":{"kind":"text","value":"整理試玩回饋"}}}
+{"id":"tracker_row_0029_e8606c9a-4d65-4a06-b738-73156e633d52","key":"row_0029","schema":"tracker","fields":{"done":{"kind":"boolean","value":true},"estimate":{"kind":"number","value":2},"task":{"kind":"text","value":"整理試玩回饋"}}}
