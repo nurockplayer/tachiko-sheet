@@ -21,5 +21,9 @@ jobs:
           fetch-depth: 2
       - name: Check fixed task inputs (no product execution)
         run: python3 acceptance/mvp-v1/check.py
-      - name: Check patch whitespace
-        run: git diff --check HEAD^ HEAD
+      - name: Verify qualified core-kit inventory
+        run: node scripts/verify-core-kit.mjs
+      - name: Check authored patch whitespace
+        run: >-
+          git diff --check HEAD^ HEAD -- .
+          ':(exclude)public/core-kit/notices/THIRD_PARTY_LICENSES.md'
