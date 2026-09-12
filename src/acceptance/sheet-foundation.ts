@@ -48,6 +48,7 @@ export interface AcceptanceApi {
   failNextSave(): void;
   loseNextExecuteReply(): void;
   failNextOpenProjection(): void;
+  openProjectRequestCount(): number;
   executeRequestCount(): number;
   settleFaultWindow(): Promise<void>;
   saveObservation(): AcceptanceSaveObservation;
@@ -75,6 +76,7 @@ let wiring: AcceptanceWiring | null = null;
 let dispatchCount = 0;
 let loseArmed = false;
 let openProjectionFaultArmed = false;
+let openProjectDispatchCount = 0;
 let lastReceiptValue: PublicationProjection | null = null;
 let settlePendingFault: (() => void) | null = null;
 let pendingFault: Promise<void> | null = null;
@@ -117,6 +119,12 @@ function instrumentClient(client: PublicClient): PublicClient {
             throw new Error("The replacement projection reply was lost after real open dispatch.");
           }
           return result;
+        };
+      }
+      if (property === "openProject") {
+        return (...args: unknown[]): Promise<unknown> => {
+          openProjectDispatchCount += 1;
+          return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
         };
       }
       return value.bind(target);
@@ -357,6 +365,10 @@ export function failNextOpenProjection(): void {
   openProjectionFaultArmed = true;
 }
 
+export function openProjectRequestCount(): number {
+  return openProjectDispatchCount;
+}
+
 /** Resolves only when the bounded real-dispatch / drop experiment has settled. */
 export async function settleFaultWindow(): Promise<void> {
   await (pendingFault ?? Promise.resolve());
@@ -370,6 +382,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
     failNextSave,
     loseNextExecuteReply,
     failNextOpenProjection,
+    openProjectRequestCount,
     executeRequestCount,
     settleFaultWindow,
     saveObservation,

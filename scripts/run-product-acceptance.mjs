@@ -161,6 +161,13 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
+    const recovery = await runStep('browser-recovery-regression', [path.join(root, 'tests', 'product', 'recovery-regression.mjs')], {
+      WORK_CLIENT_URL: baseUrl,
+      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
+      ...(chromiumSupport.executablePath
+        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
+        : {}),
+    });
     const focus = await runStep('product-focus', [path.join(root, 'tests', 'product', 'focus-regression.mjs')], {
       WORK_CLIENT_URL: baseUrl,
       WORK_PLAYWRIGHT_MODULE: 'playwright-core',
@@ -168,7 +175,7 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
-    exitCode = browser === 0 && focus === 0 ? 0 : 1;
+    exitCode = browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {

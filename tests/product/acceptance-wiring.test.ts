@@ -13,6 +13,7 @@ import {
   installAcceptance,
   lastReceipt,
   loseNextExecuteReply,
+  openProjectRequestCount,
   settleFaultWindow,
   wrapKitLoader,
 } from "../../src/acceptance/sheet-foundation.js";
@@ -113,6 +114,7 @@ describe("acceptance kit instrumentation", () => {
         "failNextSave",
         "loseNextExecuteReply",
         "failNextOpenProjection",
+        "openProjectRequestCount",
         "executeRequestCount",
         "settleFaultWindow",
         "saveObservation",
