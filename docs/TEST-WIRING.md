@@ -76,4 +76,3 @@ exercises the production admission/replacement boundary; rejection preserves the
 previous work. `observe` uses the actual core and `close` releases the host.
 The test edits exported fixture bytes only to independently challenge persistence;
 that is not permission for the production frontend to parse or mutate the format.
-
