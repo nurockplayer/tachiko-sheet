@@ -1,13 +1,13 @@
 # Target-state captures
 
-- App source/build commit: `a52d962a20dd21bb4cb6fb728f3f06b9b95043ed`
-- Capture harness/evidence commit: `73b186e89582bc2e1ad6883d9633346739104035`;
+- App source/build commit: `9c03e23d5d38485ffe51c65f2251eec83cec7761`
+- Capture harness/evidence commit: `f276d2e2918666585fe648a47e77248d579dc30a`;
   screenshots were generated from the production tree at the source/build
   commit above.
 - The production UI tree (`src/ui`, `src/App.tsx`, `src/ui/sheet-shell.css`)
   has no diff between the source/build and capture commits. Later
-  metadata-only corrections, including `dffa6f21be0d740cc627ed2f012c840678b1af1f`,
-  do not claim that screenshots were regenerated.
+  metadata-only corrections after the capture commit do not claim that
+  screenshots were regenerated.
 - Build command: `pnpm build` (production `dist`, Vite 8.3.0)
 - Captured: 2026-09-13 (Asia/Tokyo)
 - Browser: Playwright Chromium 1.62.1, headless; host macOS Darwin 24.6.0 arm64
