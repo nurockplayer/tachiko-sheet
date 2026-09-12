@@ -441,6 +441,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function renderHome(): ReactNode {
+    const recoveryLocked = currentness === "unknown" && dirty;
     return (
       <main className="ts-home">
         {currentness === "unknown" ? (
@@ -475,7 +476,7 @@ export function SheetShell(props: SheetShellProps) {
             data-testid="open-project"
             type="file"
             multiple
-            disabled={busy}
+            disabled={controlsLocked || recoveryLocked}
             aria-describedby={busy ? lockNoteId : undefined}
             onChange={(event) => {
               const input = event.currentTarget;
@@ -487,11 +488,11 @@ export function SheetShell(props: SheetShellProps) {
             {...directoryInputAttributes}
           />
           <div className="ts-row-actions">
-            <button
+              <button
               type="button"
               className="ts-button"
               onClick={() => void openExample()}
-              disabled={busy}
+                disabled={controlsLocked || recoveryLocked}
               aria-describedby={busy ? lockNoteId : undefined}
             >
               Try example
@@ -521,7 +522,7 @@ export function SheetShell(props: SheetShellProps) {
                     type="button"
                     className="ts-button ts-button--ghost"
                     onClick={() => void openSaved(copy.name)}
-                    disabled={busy}
+                    disabled={controlsLocked || recoveryLocked}
                     aria-describedby={busy ? lockNoteId : undefined}
                   >
                     {`Open saved ${copy.name}`}

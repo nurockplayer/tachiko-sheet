@@ -16,6 +16,7 @@ import {
 import {
   OpenedProjectionRecoveryError,
   PublishedProjectionRecoveryError,
+  SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 
@@ -157,7 +158,7 @@ export function App({ runtime, copies }: AppProps) {
     savedRevisionRef.current = null;
     setSaveStatus("not-saved");
     setCurrentness("unknown");
-    setOutcome("unknown");
+    setOutcome(error.operationOutcome === "unknown" ? "unknown" : "idle");
     setMessage(
       error.operationOutcome === "unknown"
         ? "The open request outcome is unknown; its current projection could not be confirmed. Refresh to re-read the resident work."
@@ -175,7 +176,8 @@ export function App({ runtime, copies }: AppProps) {
     syncDirty();
     markNotSaved();
     setCurrentness("unknown");
-    setOutcome("unknown");
+    // Publication is known; only projection freshness remains unknown.
+    setOutcome("idle");
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
   }
 
@@ -209,6 +211,11 @@ export function App({ runtime, copies }: AppProps) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
         return;
+      } else if (viewRef.current === null && dirtyRef.current && currentness === "unknown") {
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
+        return;
       } else {
         setCurrentness("current");
         setOutcome("idle");
@@ -236,6 +243,11 @@ export function App({ runtime, copies }: AppProps) {
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
+        return;
+      } else if (viewRef.current === null && dirtyRef.current && currentness === "unknown") {
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
         return;
       } else {
         setCurrentness("current");
@@ -271,6 +283,11 @@ export function App({ runtime, copies }: AppProps) {
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
+        return;
+      } else if (viewRef.current === null && dirtyRef.current && currentness === "unknown") {
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
         return;
       } else {
         setCurrentness("current");
@@ -311,6 +328,10 @@ export function App({ runtime, copies }: AppProps) {
         failClosedAfterUnknownEdit();
         return true;
       } else {
+        if (error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
+          failClosedAfterUnknownEdit();
+          return true;
+        }
         setOutcome("idle");
         setCurrentness("current");
         setMessage(describe(error, "The change was not applied."));
@@ -399,6 +420,8 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
+      viewRef.current = null;
+      setView(null);
       setCurrentness("unknown");
       setOutcome("unknown");
       setMessage("The current work could not be confirmed. Its freshness stays unknown.");

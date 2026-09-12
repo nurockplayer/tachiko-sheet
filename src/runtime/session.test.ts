@@ -542,6 +542,23 @@ describe("createSheetRuntime", () => {
     expect(client.calls.openCanonicalTree).toHaveLength(1);
   });
 
+  it("cannot edit a stale projection after refresh failure until re-observation succeeds", async () => {
+    const { client, runtime, view } = await opened();
+    const transport = new Error("refresh query failed");
+    client.hooks.queryTable = async () => {
+      client.hooks.queryTable = undefined;
+      throw transport;
+    };
+
+    await failure(runtime.read());
+    const refused = await failure(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "9" }));
+    expect((refused as SheetSessionError).code).toBe("not-open");
+    expect(client.calls.editNumber).toBe(0);
+    const refreshed = await runtime.read();
+    expect(refreshed.revision).toBe(view.revision);
+    expect(client.calls.editNumber).toBe(0);
+  });
+
   it("retains publication truth while invalidating the old projection after reload failure", async () => {
     const { client, runtime, view } = await opened();
     const transport = new Error("reload query failed");

@@ -210,10 +210,11 @@ describe("recovery presentation", () => {
   });
 
   it("does not render an editable stale workbook during published recovery", () => {
-    const markup = render({ view: null, currentness: "unknown", outcome: "unknown" });
+    const markup = render({ view: null, dirty: true, currentness: "unknown", outcome: "unknown" });
     expect(markup).not.toContain('data-testid="cell-editor"');
     expect(markup).toContain('aria-label="Recovery"');
     expect(markup).toContain(">Refresh</button>");
+    expect(markup).toContain('data-testid="open-project" type="file" multiple="" disabled=""');
   });
 });
 
