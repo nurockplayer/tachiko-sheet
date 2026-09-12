@@ -7,7 +7,9 @@
 - Font: platform system stack (`system-ui`, `-apple-system`, Hiragino Sans,
   Noto Sans TC, Microsoft JhengHei); no remote font
 - Viewports: 1440×900, 1280×800, 1024×768 CSS px at device scale factor 1,
-  plus a 720×450 CSS viewport with document zoom 200% (`home-200-percent.png`)
+  plus a 720×450 CSS viewport with document zoom 200% (`home-200-percent.png`).
+  The 200% case uses document zoom emulation in headless Chromium, not a
+  browser-UI zoom preference; native browser zoom remains a separate gate.
 - Runtime: production preview (`pnpm exec vite preview --host 127.0.0.1`)
 - Captures: `home.png`, `home-1280x800.png`, `home-1024x768.png`,
   `home-200-percent.png`, `workbook.png`, `selection.png`, `save-dialog.png`,
