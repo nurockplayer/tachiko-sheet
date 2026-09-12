@@ -72,7 +72,7 @@ export function SheetShell(props: SheetShellProps) {
   const [tab, setTab] = useState<ActiveTab>("table");
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [notesDraft, setNotesDraft] = useState<NotesDraft | null>(null);
+  const [notesDrafts, setNotesDrafts] = useState<NotesDraft[]>([]);
   const [commitPending, setCommitPending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
@@ -91,6 +91,7 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
@@ -102,7 +103,11 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => {
     setEditor(null);
-    setNotesDraft(null);
+    const occurrence = view?.occurrence ?? null;
+    if (lastNotesOccurrenceRef.current !== occurrence) {
+      setNotesDrafts([]);
+      lastNotesOccurrenceRef.current = occurrence;
+    }
     setCommitPending(false);
     setLocalError(null);
     if (!viewKey) {
@@ -145,16 +150,18 @@ export function SheetShell(props: SheetShellProps) {
   }, [selectedRow, columns]);
 
   const notesCommitted = notesField ? seedTextOf(notesField) : "";
-  const notesDraftBound = Boolean(
-    notesDraft &&
+  const activeNotesDraft = notesDrafts.find(
+    (draft) =>
       view &&
       selectedRow &&
-      notesDraft.occurrence === view.occurrence &&
-      notesDraft.revision === view.revision &&
-      notesDraft.entity === rowEntity(selectedRow),
+      draft.occurrence === view.occurrence &&
+      draft.entity === rowEntity(selectedRow),
   );
-  const notesValue = notesDraftBound ? (notesDraft?.value ?? notesCommitted) : notesCommitted;
-  const notesDirty = notesDraftBound && notesDraft !== null && notesDraft.value !== notesCommitted;
+  const notesDraftBound = Boolean(
+    activeNotesDraft && view && activeNotesDraft.revision === view.revision,
+  );
+  const notesValue = activeNotesDraft?.value ?? notesCommitted;
+  const notesDirty = activeNotesDraft !== undefined && activeNotesDraft.value !== notesCommitted;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
@@ -339,7 +346,10 @@ export function SheetShell(props: SheetShellProps) {
   async function applyNotes(): Promise<void> {
     if (!notesField || !notesEditable || !notesDirty || !notesDraftBound || controlsLocked) return;
     const accepted = await runCommit(notesField.target, { kind: "text", value: notesValue });
-    if (accepted) setLocalError(null);
+    if (accepted) {
+      setNotesDrafts((drafts) => drafts.filter((draft) => draft !== activeNotesDraft));
+      setLocalError(null);
+    }
   }
 
   function onNotesKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
@@ -722,12 +732,21 @@ export function SheetShell(props: SheetShellProps) {
             onChange={(event) => {
               setLocalError(null);
               if (view && selectedRow) {
-                setNotesDraft({
+                const draft = {
                   occurrence: view.occurrence,
                   revision: view.revision,
                   entity: rowEntity(selectedRow),
                   value: event.currentTarget.value,
-                });
+                };
+                setNotesDrafts((drafts) => [
+                  ...drafts.filter(
+                    (candidate) =>
+                      candidate.occurrence !== draft.occurrence ||
+                      candidate.revision !== draft.revision ||
+                      candidate.entity !== draft.entity,
+                  ),
+                  draft,
+                ]);
               }
             }}
             onKeyDown={onNotesKeyDown}
@@ -744,7 +763,7 @@ export function SheetShell(props: SheetShellProps) {
               type="button"
               className="ts-button ts-button--primary"
               onClick={() => void applyNotes()}
-              disabled={!notesEditable || controlsLocked || !notesDirty}
+              disabled={!notesEditable || controlsLocked || !notesDirty || !notesDraftBound}
               title={notesDirty ? undefined : "Change the notes before applying."}
             >
               Apply notes

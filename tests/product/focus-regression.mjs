@@ -122,10 +122,16 @@ const cases = [
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.notEqual(await notes.inputValue(), "draft-authored-for-row-A");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      await notes.fill("draft-authored-for-row-B");
+      await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="save-status"]')?.textContent?.trim() !== "Saved on this device",
+      );
       await page.getByRole("tab", { name: "Table", exact: true }).click();
       await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).click();
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
     },
   ],
 ];
