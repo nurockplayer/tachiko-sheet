@@ -60,6 +60,14 @@ export function noResidentRecoveryState(): {
   };
 }
 
+/** A replacement recovery cannot retain context from the prior occurrence. */
+export function recoveryDraftAfterOpenRecovery(
+  draft: string | null,
+  error: unknown,
+): string | null {
+  return error instanceof OpenedProjectionRecoveryError ? null : draft;
+}
+
 function describe(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
   return fallback;
@@ -182,7 +190,7 @@ export function App({ runtime, copies }: AppProps) {
     setView(null);
     // The attempted replacement belongs to a new occurrence boundary; never
     // carry an older unknown-edit input into its recovery reobserve.
-    recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
+    recoveryDraftRef.current = recoveryDraftAfterOpenRecovery(recoveryDraftRef.current, error);
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
     syncDirty();

@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { noResidentRecoveryState, recoveryDraftAfterBoundary } from "./App.js";
+import { noResidentRecoveryState, recoveryDraftAfterBoundary, recoveryDraftAfterOpenRecovery } from "./App.js";
+import { OpenedProjectionRecoveryError } from "./runtime/session.js";
 
 describe("recovery draft lifecycle", () => {
   it("retains the draft only across its own authoritative reobserve", () => {
@@ -24,13 +22,13 @@ describe("recovery draft lifecycle", () => {
     });
   });
 
-  it("wires replacement-open recovery through the draft discard boundary", async () => {
-    const source = await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "App.tsx"), "utf8");
-    const recoveryHandler = source.match(
-      /function failClosedAfterOpenRecovery\(error: OpenedProjectionRecoveryError\): void \{([\s\S]*?)\n  \}/,
-    )?.[1];
-    expect(recoveryHandler).toContain(
-      'recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");',
-    );
+  it("clears A recovery context in the replacement-open recovery catch", () => {
+    let recoveryDraft: string | null = '{"kind":"number","input":"3"}';
+    try {
+      throw new OpenedProjectionRecoveryError(new Error("B projection unavailable"), "unknown");
+    } catch (error) {
+      recoveryDraft = recoveryDraftAfterOpenRecovery(recoveryDraft, error);
+    }
+    expect(recoveryDraft).toBe(null);
   });
 });
