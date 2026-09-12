@@ -1,6 +1,9 @@
 # #13 annotated target compositions
 
-Pinned target revision: `7e1c12296690cf92779c01f13bd3c6256260b47e` (baseline capture)
+Historical provenance: this target artifact was first committed alongside the
+visual-foundation implementation at `9d1e29193b570fa16244c37a0b2fb23eb8ad3608`.
+Repository history cannot prove a pre-implementation design sequence, so this
+document makes no such timing or VF-01 acceptance claim.
 
 These compact wireframes are the reviewable target compositions for the visual
 foundation. They describe the intended arrangement of the real current runtime;

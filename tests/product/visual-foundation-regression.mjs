@@ -27,15 +27,27 @@ try {
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
 
-  const longCell = page.locator('[data-testid^="cell:"][title]').first();
-  await longCell.waitFor();
-  const fullValue = await longCell.getAttribute("title");
-  assert.ok(fullValue && fullValue.length > 40, "long cell must expose a full-value tooltip");
-  assert.equal(
-    (await longCell.locator(".ts-cell-value").textContent())?.trim(),
-    fullValue,
-    "the rendered cell must retain the complete value in the accessible DOM",
+  const titledCells = await page.locator('[data-testid^="cell:"][title]').evaluateAll((elements) =>
+    elements.map((element, index) => ({
+      index,
+      title: element.getAttribute("title") ?? "",
+      text: element.textContent?.trim() ?? "",
+    })),
   );
+  const latin = titledCells.find(({ title }) => /[A-Za-z]/.test(title));
+  const cjk = titledCells.find(({ title }) => /[\u3400-\u9fff]/u.test(title));
+  assert.ok(latin, "fixture must expose a titled Latin text cell");
+  assert.ok(cjk, "fixture must expose a titled CJK text cell");
+  for (const [label, candidate] of [["Latin", latin], ["CJK", cjk]]) {
+    const cell = page.locator('[data-testid^="cell:"][title]').nth(candidate.index);
+    assert.equal(candidate.title, candidate.text, `${label} title must equal the full canonical DOM text`);
+    assert.equal(await cell.getAttribute("title"), candidate.title, `${label} title must be present on the cell`);
+    const dimensions = await cell.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    assert.ok(dimensions.scrollWidth > dimensions.clientWidth, `${label} cell must be visibly clipped`);
+  }
 
   const grid = page.locator(".ts-grid-scroll");
   const beforeScroll = await grid.evaluate((element) => ({
@@ -78,7 +90,7 @@ try {
   console.log(JSON.stringify({
     status: "PASS",
     viewport: "1024x768",
-    full_value_chars: fullValue.length,
+    full_value_chars: { latin: latin.title.length, cjk: cjk.title.length },
     grid_scroll_width: beforeScroll.scrollWidth,
     grid_client_width: beforeScroll.clientWidth,
     scrolled_left: afterScroll,

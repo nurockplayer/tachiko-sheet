@@ -31,7 +31,7 @@ try {
     if (cjk === 0 || mojibake !== 0) throw new Error(`CJK render check failed at ${width}x${height}: ${cjk}/${mojibake}`);
     const longCell = page.locator('[data-testid^="cell:"][title]').first();
     const fullValue = await longCell.getAttribute("title");
-    if (!fullValue || fullValue.length <= 40 || (await longCell.locator(".ts-cell-value").textContent())?.trim() !== fullValue) {
+    if (!fullValue || (await longCell.locator(".ts-cell-value").textContent())?.trim() !== fullValue) {
       throw new Error(`long-value access check failed at ${width}x${height}`);
     }
     if (width === 1024) {

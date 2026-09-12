@@ -96,7 +96,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
         : {
             text: stored.value,
             tone: field.formula ? "computed" : "plain",
-            title: field.formula ? "Calculated value" : longTextTitle(stored.value),
+            title: field.formula ? "Calculated value" : stored.value,
           };
     case "boolean":
       return {
@@ -119,10 +119,6 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
 
 function formulaTitle(field: FieldProjection): string | null {
   return field.formula ? "Calculated value" : null;
-}
-
-function longTextTitle(value: string): string | null {
-  return value.length > 40 ? value : null;
 }
 
 function formatNumber(value: number): string {
