@@ -1,5 +1,6 @@
 // J4 preparation proof over the retained public core kit. This is not product UI/host PASS.
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readFile, realpath} from 'node:fs/promises';
 import http from 'node:http';
@@ -77,8 +78,14 @@ const inspectOpaqueFormat2Transfer = input => {
 let browser, server;
 try {
   assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
-  const lock = JSON.parse(await readFile(path.join(root, 'core-kit.lock.json'), 'utf8'));
+  const lockPath = path.join(root, 'core-kit.lock.json');
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   const kit = await realpath(path.join(root, lock.defaultKit));
+  execFileSync(process.execPath, [path.join(root, 'scripts', 'verify-core-kit.mjs')], {
+    cwd: root,
+    env: {...process.env, WORK_CORE_KIT_LOCK: lockPath, WORK_CORE_KIT: kit},
+    stdio: 'inherit',
+  });
   let chromium; try { ({chromium} = await import('playwright')); } catch { block('Repository-locked Playwright is unavailable.'); }
   server = http.createServer(async (request, response) => {
     try {
