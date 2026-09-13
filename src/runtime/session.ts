@@ -10,7 +10,9 @@ import type {
   CanonicalProjectFile,
   OpenedProjection,
   PublicationProjection,
+  TableProjection,
 } from "../../public/core-kit/experimental-client.js";
+import type { KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -26,6 +28,10 @@ import {
   type ScalarEdit,
   type SheetRuntime,
   type ImportedWorkbook,
+  type KeyedGroupedSumBindingCatalog,
+  type KeyedGroupedSumBindingChoice,
+  type KeyedGroupedSumResult,
+  type OpaqueProjectExport,
   type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
@@ -271,6 +277,68 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return value;
   }
 
+  function asKeyedGroupedSumResult(result: KeyedGroupedSumProjection): KeyedGroupedSumResult {
+    return {
+      definitionId: result.definition_id,
+      revision: result.revision,
+      groups: result.groups,
+      diagnostics: result.diagnostics,
+    };
+  }
+
+  function requireCurrentProjectionRevision(revision: string, actual: string, label: string): void {
+    if (actual !== revision) {
+      throw new SheetSessionError("incoherent-reply", `The ${label} does not match the live revision.`);
+    }
+  }
+
+  async function bindingCatalog(
+    kit: CoreKit,
+    client: PublicClient,
+    expected: number,
+    revision: string,
+  ): Promise<{ catalog: KeyedGroupedSumBindingCatalog; tables: Map<string, TableProjection> }> {
+    const bootstrap = await afterUsable(expected, dispatch(kit, () => client.bootstrap()));
+    requireCurrentProjectionRevision(revision, bootstrap.revision, "binding catalog");
+    const tables = new Map<string, TableProjection>();
+    for (const collection of bootstrap.collections) {
+      const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(collection.key)));
+      requireCurrentProjectionRevision(revision, table.revision, `table ${collection.key}`);
+      tables.set(collection.key, table);
+    }
+    return {
+      catalog: {
+        collections: bootstrap.collections.map((collection) => {
+          const table = tables.get(collection.key);
+          if (!table) throw new SheetSessionError("incoherent-reply", "A core collection was not returned.");
+          return {
+            key: collection.key,
+            fields: table.columns.map((column) => ({ key: column.key, fieldType: column.field_type })),
+          };
+        }),
+      },
+      tables,
+    };
+  }
+
+  function selectedTable(tables: Map<string, TableProjection>, key: string): TableProjection {
+    const table = tables.get(key);
+    if (!table) throw new SheetSessionError("incoherent-reply", `The selected table “${key}” is no longer available.`);
+    return table;
+  }
+
+  function selectedField(table: TableProjection, key: string): string {
+    const column = table.columns.find((candidate) => candidate.key === key);
+    if (!column) throw new SheetSessionError("incoherent-reply", `The selected field “${key}” is no longer available.`);
+    return column.id;
+  }
+
+  function newDefinitionId(): string {
+    const create = globalThis.crypto?.randomUUID;
+    if (typeof create !== "function") throw new Error("This host cannot create a private grouped-summary identifier.");
+    return create.call(globalThis.crypto);
+  }
+
   async function openSession(
     kit: CoreKit,
     client: PublicClient,
@@ -340,6 +408,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function openOpaque(bytes: ArrayBuffer): Promise<WorkbookView> {
+    const requestedAt = epoch;
+    return enqueue(async () => {
+      assertNotReplaced(requestedAt);
+      const { kit, client } = await loadKitOnce();
+      assertNotReplaced(requestedAt);
+      // The host record is a core-produced opaque transfer. It is cloned for
+      // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
+      return openSession(kit, client, requestedAt, () => client.openProject(bytes.slice(0)));
+    });
+  }
+
   function read(): Promise<WorkbookView> {
     return enqueue(async () => {
       const collection = resident();
@@ -367,6 +447,20 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       };
       residentCollection = result.collection;
       return result.view;
+    });
+  }
+
+  function selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const read = await loadCoherentView(kit, client, expected, collection);
+      requireCurrentProjectionRevision(live.revision, read.view.revision, "selected table");
+      active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
+      residentCollection = read.collection;
+      return read.view;
     });
   }
 
@@ -432,6 +526,105 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         );
       }
       return tree;
+    });
+  }
+
+  function exportOpaque(witness: ViewWitness): Promise<OpaqueProjectExport> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const project = await afterUsable(expected, dispatch(kit, () => client.exportProject(live.revision)));
+      requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
+      return { revision: project.revision, bytes: project.bytes.slice(0) };
+    });
+  }
+
+  function listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      return (await bindingCatalog(kit, client, expected, live.revision)).catalog;
+    });
+  }
+
+  function queryKeyedGroupedSum(witness: ViewWitness, definitionId: string): Promise<KeyedGroupedSumResult> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const query = capability(client.queryKeyedGroupedSum, "keyed grouped-summary query");
+      const result = await afterUsable(expected, dispatch(kit, () => query.call(client, definitionId)));
+      requireCurrentProjectionRevision(live.revision, result.revision, "grouped summary");
+      return asKeyedGroupedSumResult(result);
+    });
+  }
+
+  function discoverKeyedGroupedSums(witness: ViewWitness): Promise<KeyedGroupedSumResult[]> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const query = capability(client.queryKeyedGroupedSum, "keyed grouped-summary query");
+      const bootstrap = await afterUsable(expected, dispatch(kit, () => client.bootstrap()));
+      requireCurrentProjectionRevision(live.revision, bootstrap.revision, "grouped-summary discovery");
+      const ids = bootstrap.keyed_grouped_sum_definition_ids ?? [];
+      const results: KeyedGroupedSumResult[] = [];
+      for (const id of ids) {
+        const result = await afterUsable(expected, dispatch(kit, () => query.call(client, id)));
+        requireCurrentProjectionRevision(live.revision, result.revision, "grouped summary");
+        results.push(asKeyedGroupedSumResult(result));
+      }
+      return results;
+    });
+  }
+
+  function createKeyedGroupedSum(
+    witness: ViewWitness,
+    binding: KeyedGroupedSumBindingChoice,
+  ): Promise<KeyedGroupedSumResult> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const create = capability(client.createKeyedGroupedSum, "keyed grouped-summary creation");
+      const { tables } = await bindingCatalog(kit, client, expected, live.revision);
+      const orders = selectedTable(tables, binding.ordersCollection);
+      const products = selectedTable(tables, binding.productsCollection);
+      let published;
+      try {
+        published = await afterUsable(expected, dispatch(kit, () => create.call(client, live.revision, {
+          id: newDefinitionId(),
+          orders_schema: orders.collection.id,
+          order_lookup_key_field: selectedField(orders, binding.orderLookupKeyField),
+          order_quantity_field: selectedField(orders, binding.orderQuantityField),
+          products_schema: products.collection.id,
+          product_key_field: selectedField(products, binding.productKeyField),
+          product_category_field: selectedField(products, binding.productCategoryField),
+          product_price_field: selectedField(products, binding.productPriceField),
+        })));
+      } catch (error) {
+        if (error instanceof UnknownOperationOutcomeError) {
+          active = null;
+          residentCollection = live.collection;
+        }
+        throw error;
+      }
+      let read: CoherentRead;
+      try {
+        read = await loadCoherentView(kit, client, expected, live.collection);
+        requireCurrentProjectionRevision(read.view.revision, published.result.revision, "published grouped summary");
+      } catch (error) {
+        active = null;
+        residentCollection = live.collection;
+        throw new PublishedProjectionRecoveryError(published.publication, error);
+      }
+      active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
+      residentCollection = read.collection;
+      return asKeyedGroupedSumResult(published.result);
     });
   }
 
@@ -582,7 +775,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   }
 
   return {
-    openFiles, openCanonical, read, readFields, edit, exportCanonical,
+    openFiles, openCanonical, openOpaque, read, selectCollection, readFields, edit, exportCanonical, exportOpaque,
+    listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };
 }

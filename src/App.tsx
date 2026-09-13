@@ -8,6 +8,9 @@ import {
   type ImportedSourceAttachment,
   type ImportSelection,
   type InteropState,
+  type KeyedGroupedSumBindingCatalog,
+  type KeyedGroupedSumBindingChoice,
+  type KeyedGroupedSumResult,
   type LocalCopies,
   type OperationOutcome,
   type SaveStatus,
@@ -27,6 +30,7 @@ import { SheetShell } from "./ui/SheetShell.js";
 
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
 const EXAMPLE_BASE = "/examples/release-plan/";
+const J4_CANARY_BASE = "/examples/j4-catalog-sales/";
 const EXAMPLE_FILES: readonly string[] = [
   "manifest.json",
   "schemas.json",
@@ -79,9 +83,17 @@ function describe(error: unknown, fallback: string): string {
 }
 
 async function loadExampleFiles(): Promise<CanonicalProjectFile[]> {
+  return loadFixtureFiles(EXAMPLE_BASE);
+}
+
+async function loadJ4CanaryFiles(): Promise<CanonicalProjectFile[]> {
+  return loadFixtureFiles(J4_CANARY_BASE);
+}
+
+async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
   return Promise.all(
     EXAMPLE_FILES.map(async (path) => {
-      const response = await fetch(`${EXAMPLE_BASE}${path}`, { cache: "no-store" });
+      const response = await fetch(`${base}${path}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`example file ${path} is unavailable (${response.status})`);
       }
@@ -104,6 +116,8 @@ export function App({ runtime, copies }: AppProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("not-saved");
   const [message, setMessage] = useState<string | null>(null);
   const [savedCopies, setSavedCopies] = useState<SavedCopySummary[]>([]);
+  const [j4Results, setJ4Results] = useState<KeyedGroupedSumResult[]>([]);
+  const [j4DefinitionIds, setJ4DefinitionIds] = useState<string[]>([]);
   const [interop, setInterop] = useState<InteropState | null>(null);
   const importBytesRef = useRef<ArrayBuffer | null>(null);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
@@ -118,6 +132,7 @@ export function App({ runtime, copies }: AppProps) {
   const savedRevisionRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
   const recoveryDraftRef = useRef<string | null>(null);
+  const j4DefinitionIdsRef = useRef<string[]>([]);
 
   const syncDirty = useCallback((): void => {
     const next = pendingDirtyRef.current || draftDirtyRef.current;
@@ -150,6 +165,21 @@ export function App({ runtime, copies }: AppProps) {
   function installView(next: WorkbookView): void {
     viewRef.current = next;
     setView(next);
+  }
+
+  function clearJ4Results(): void {
+    setJ4Results([]);
+  }
+
+  function installJ4DefinitionIds(ids: string[]): void {
+    j4DefinitionIdsRef.current = ids;
+    setJ4DefinitionIds(ids);
+  }
+
+  async function discoverJ4Results(next: WorkbookView): Promise<void> {
+    const results = await runtime.discoverKeyedGroupedSums(witnessOf(next));
+    installJ4DefinitionIds(results.map((result) => result.definitionId));
+    setJ4Results(results);
   }
 
   function witnessOf(target: WorkbookView): ViewWitness {
@@ -198,6 +228,8 @@ export function App({ runtime, copies }: AppProps) {
   function failClosedAfterOpenRecovery(error: OpenedProjectionRecoveryError): void {
     viewRef.current = null;
     setView(null);
+    installJ4DefinitionIds([]);
+    clearJ4Results();
     // The attempted replacement belongs to a new occurrence boundary; never
     // carry an older unknown-edit input into its recovery reobserve.
     const recoveryContext = { current: recoveryDraftRef.current };
@@ -220,6 +252,7 @@ export function App({ runtime, copies }: AppProps) {
   function failClosedAfterPublicationRecovery(): void {
     viewRef.current = null;
     setView(null);
+    clearJ4Results();
     // Keep dirty as publication truth; the editor/projection itself is no
     // longer safe to present or retry until Refresh re-observes the resident work.
     pendingDirtyRef.current = true;
@@ -237,6 +270,7 @@ export function App({ runtime, copies }: AppProps) {
   function failClosedAfterUnknownCleanup(): void {
     viewRef.current = null;
     setView(null);
+    clearJ4Results();
     pendingDirtyRef.current = true;
     draftDirtyRef.current = false;
     syncDirty();
@@ -250,6 +284,7 @@ export function App({ runtime, copies }: AppProps) {
   function failClosedAfterUnknownEdit(edit: ScalarEdit): void {
     viewRef.current = null;
     setView(null);
+    clearJ4Results();
     pendingDirtyRef.current = true;
     draftDirtyRef.current = false;
     syncDirty();
@@ -260,14 +295,30 @@ export function App({ runtime, copies }: AppProps) {
     setMessage(`The change was dispatched but its outcome is unknown. Refresh to re-read the work. Input retained for review: ${recoveryDraftRef.current}`);
   }
 
+  function failClosedAfterUnknownJ4(): void {
+    viewRef.current = null;
+    setView(null);
+    clearJ4Results();
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setMessage("The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
+  }
+
   async function openFiles(files: FileList): Promise<void> {
     if (!begin()) return;
     try {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
+      installJ4DefinitionIds([]);
+      clearJ4Results();
       const next = await runtime.openFiles(files);
       installView(next);
+      await discoverJ4Results(next);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
@@ -304,8 +355,11 @@ export function App({ runtime, copies }: AppProps) {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
+      installJ4DefinitionIds([]);
+      clearJ4Results();
       const next = await runtime.openCanonical(await loadExampleFiles());
       installView(next);
+      await discoverJ4Results(next);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
@@ -336,19 +390,59 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
+  async function openJ4Canary(): Promise<void> {
+    if (!begin()) return;
+    try {
+      guardReplacement();
+      setMessage(null);
+      setCurrentness("pending");
+      installJ4DefinitionIds([]);
+      clearJ4Results();
+      const next = await runtime.openCanonical(await loadJ4CanaryFiles());
+      installView(next);
+      await discoverJ4Results(next);
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
+      pendingDirtyRef.current = false;
+      draftDirtyRef.current = false;
+      syncDirty();
+      markNotSaved();
+      importBytesRef.current = null;
+      importedSourceRef.current = null;
+      preparedDownloadRef.current = null;
+      setInterop(null);
+      setCurrentness("current");
+      setOutcome("idle");
+    } catch (error) {
+      if (error instanceof OpenedProjectionRecoveryError) {
+        failClosedAfterOpenRecovery(error);
+        return;
+      }
+      setCurrentness("current");
+      setOutcome("idle");
+      throw new Error(describe(error, "The Catalog/Sales canary could not be opened."));
+    } finally {
+      end();
+    }
+  }
+
   async function openSaved(name: string): Promise<void> {
     if (!begin()) return;
     try {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
-      const copy = await copies.read(name);
+      installJ4DefinitionIds([]);
+      clearJ4Results();
+      const copy = await copies.readAny(name);
       if (!copy) throw new Error(`the saved copy “${name}” is no longer stored on this device`);
-      if (copy.importedSource) {
+      if (copy.kind !== "opaque" && copy.importedSource) {
         await runtime.validateImportedProject(copy.files, copy.importedSource.metadata);
       }
-      const next = await runtime.openCanonical(copy.files);
+      const next = copy.kind === "opaque"
+        ? await runtime.openOpaque(copy.bytes)
+        : await runtime.openCanonical(copy.files);
       installView(next);
+      await discoverJ4Results(next);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
@@ -361,9 +455,9 @@ export function App({ runtime, copies }: AppProps) {
       }
       setCurrentness("current");
       setOutcome("idle");
-      importedSourceRef.current = copy.importedSource ?? null;
+      importedSourceRef.current = copy.kind === "opaque" ? null : copy.importedSource ?? null;
       preparedDownloadRef.current = null;
-      setInterop(copy.importedSource ? {
+      setInterop(copy.kind !== "opaque" && copy.importedSource ? {
         importInspection: null,
         metadata: copy.importedSource.metadata,
         ledger: copy.importedSource.ledger,
@@ -384,6 +478,25 @@ export function App({ runtime, copies }: AppProps) {
         setOutcome("idle");
       }
       throw new Error(describe(error, `The saved copy “${name}” could not be opened.`));
+    } finally {
+      end();
+    }
+  }
+
+  async function selectCollection(witness: ViewWitness, collection: string): Promise<void> {
+    if (!begin()) return;
+    try {
+      setMessage(null);
+      setCurrentness("pending");
+      const next = await runtime.selectCollection(witness, collection);
+      installView(next);
+      setCurrentness("current");
+      setOutcome("idle");
+    } catch (error) {
+      setCurrentness("current");
+      setOutcome("idle");
+      setMessage(describe(error, "The selected table could not be opened."));
+      throw error;
     } finally {
       end();
     }
@@ -541,6 +654,7 @@ export function App({ runtime, copies }: AppProps) {
       }
       setMessage(null);
       setCurrentness("pending");
+      clearJ4Results();
       const next = await runtime.edit(witness, target, edit);
       installView(next);
       pendingDirtyRef.current = true;
@@ -587,15 +701,25 @@ export function App({ runtime, copies }: AppProps) {
     setMessage(null);
     setSaveStatus("saving");
     try {
-      const tree = await runtime.exportCanonical(witnessOf(live));
-      const receipt = await copies.create(name, tree, importedSourceRef.current ?? undefined);
+      const definitionBearing = j4DefinitionIdsRef.current.length > 0;
+      let snapshotRevision: string;
+      let receipt;
+      if (definitionBearing) {
+        const snapshot = await runtime.exportOpaque(witnessOf(live));
+        snapshotRevision = snapshot.revision;
+        receipt = await copies.createOpaque(name, snapshot);
+      } else {
+        const snapshot = await runtime.exportCanonical(witnessOf(live));
+        snapshotRevision = snapshot.revision;
+        receipt = await copies.create(name, snapshot, importedSourceRef.current ?? undefined);
+      }
       void refreshCopies();
       const current = viewRef.current;
       const stillCurrent =
         current !== null &&
         current.occurrence === live.occurrence &&
-        current.revision === tree.revision &&
-        receipt.revision === tree.revision;
+        current.revision === snapshotRevision &&
+        receipt.revision === snapshotRevision;
       if (stillCurrent) {
         savedRevisionRef.current = receipt.revision;
         pendingDirtyRef.current = false;
@@ -618,6 +742,76 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
+  async function prepareJ4Bindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog> {
+    if (!begin()) throw new Error("Another operation is in progress.");
+    try {
+      setMessage(null);
+      return await runtime.listKeyedGroupedSumBindings(witness);
+    } catch (error) {
+      setMessage(describe(error, "The current tables could not be prepared for a cross-table summary."));
+      throw error;
+    } finally {
+      setOutcome("idle");
+      end();
+    }
+  }
+
+  async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
+    if (!begin()) return false;
+    try {
+      setMessage(null);
+      setCurrentness("pending");
+      clearJ4Results();
+      const result = await runtime.createKeyedGroupedSum(witness, binding);
+      const next = await runtime.read();
+      installView(next);
+      installJ4DefinitionIds([result.definitionId]);
+      setJ4Results([result]);
+      pendingDirtyRef.current = true;
+      syncDirty();
+      markNotSaved();
+      setCurrentness("current");
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      if (error instanceof PublishedProjectionRecoveryError) {
+        failClosedAfterPublicationRecovery();
+        return true;
+      }
+      if (error instanceof UnknownOperationOutcomeError) {
+        failClosedAfterUnknownJ4();
+        return true;
+      }
+      setCurrentness("current");
+      setOutcome("idle");
+      setMessage(describe(error, "The cross-table summary was not created."));
+      return false;
+    } finally {
+      end();
+    }
+  }
+
+  async function refreshJ4(witness: ViewWitness, definitionId: string): Promise<boolean> {
+    if (!begin()) return false;
+    try {
+      setMessage(null);
+      setCurrentness("pending");
+      clearJ4Results();
+      const result = await runtime.queryKeyedGroupedSum(witness, definitionId);
+      setJ4Results([result]);
+      setCurrentness("current");
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      setCurrentness("current");
+      setOutcome("idle");
+      setMessage(describe(error, "The cross-table summary could not be refreshed."));
+      return false;
+    } finally {
+      end();
+    }
+  }
+
   async function close(): Promise<void> {
     if (inflightRef.current) return;
     inflightRef.current = true;
@@ -630,6 +824,8 @@ export function App({ runtime, copies }: AppProps) {
     } finally {
       viewRef.current = null;
       setView(null);
+      installJ4DefinitionIds([]);
+      clearJ4Results();
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "close");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
@@ -647,8 +843,10 @@ export function App({ runtime, copies }: AppProps) {
     try {
       setMessage(null);
       setCurrentness("pending");
+      clearJ4Results();
       const next = await runtime.read();
       installView(next);
+      await discoverJ4Results(next);
       syncDirty();
       if (savedRevisionRef.current !== next.revision) markNotSaved();
       setCurrentness("current");
@@ -714,11 +912,18 @@ export function App({ runtime, copies }: AppProps) {
         onOpenFiles={openFiles}
         onOpenExample={openExample}
         onOpenSaved={openSaved}
+        onSelectCollection={selectCollection}
         onCommit={commit}
         onCreateCopy={createCopy}
         onClose={close}
         onRefresh={refresh}
         onDraftChange={onDraftChange}
+        j4Results={j4Results}
+        j4DefinitionIds={j4DefinitionIds}
+        onPrepareJ4Bindings={prepareJ4Bindings}
+        onCreateJ4={createJ4}
+        onRefreshJ4={refreshJ4}
+        onOpenJ4Canary={openJ4Canary}
         interop={interop}
         onInspectImport={inspectImport}
         onImportCandidate={importCandidate}

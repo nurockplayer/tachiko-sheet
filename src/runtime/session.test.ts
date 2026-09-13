@@ -17,6 +17,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
+import type { KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   type CoreKit,
@@ -86,6 +87,9 @@ class FakeClient {
     editBoolean: 0,
     editDate: 0,
     exportCanonicalTree: [] as string[],
+    exportProject: [] as string[],
+    createKeyedGroupedSum: [] as KeyedGroupedSumDefinitionInput[],
+    queryKeyedGroupedSum: [] as string[],
     closeProject: 0,
     close: 0,
   };
@@ -264,6 +268,35 @@ class FakeClient {
     }
     this.#requireRevision(revision);
     return { revision: this.#revision, files: [{ path: "manifest.json", bytes: new ArrayBuffer(4) }] };
+  }
+
+  async exportProject(revision: string) {
+    this.calls.exportProject.push(revision);
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return { revision: this.#revision, bytes: new Uint8Array([7, 8, 9]).buffer };
+  }
+
+  async createKeyedGroupedSum(revision: string, definition: KeyedGroupedSumDefinitionInput) {
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    this.calls.createKeyedGroupedSum.push(definition);
+    const publication = this.#publish(IMPACT);
+    return {
+      publication,
+      result: {
+        definition_id: definition.id,
+        revision: publication.resulting_revision,
+        groups: [{ category: "PEN", value: 800 }],
+        diagnostics: [],
+      } satisfies KeyedGroupedSumProjection,
+    };
+  }
+
+  async queryKeyedGroupedSum(definitionId: string): Promise<KeyedGroupedSumProjection> {
+    this.#requireOpen();
+    this.calls.queryKeyedGroupedSum.push(definitionId);
+    return { definition_id: definitionId, revision: this.#revision, groups: [{ category: "PEN", value: 800 }], diagnostics: [] };
   }
 
   async closeProject(): Promise<void> {
@@ -665,6 +698,45 @@ describe("createSheetRuntime", () => {
     const tree = await runtime.exportCanonical(witnessOf(view));
     expect(client.calls.exportCanonicalTree).toEqual(["r1"]);
     expect(tree.revision).toBe("r1");
+  });
+
+  it("exports and reopens opaque core bytes only through the revision witness", async () => {
+    const { client, runtime, view } = await opened();
+    const exported = await runtime.exportOpaque(witnessOf(view));
+    expect(client.calls.exportProject).toEqual(["r1"]);
+    expect(Array.from(new Uint8Array(exported.bytes))).toEqual([7, 8, 9]);
+    new Uint8Array(exported.bytes)[0] = 0;
+    const reopened = await runtime.openOpaque(new Uint8Array([7, 8, 9]).buffer);
+    expect(reopened.occurrence).toBe("scope-2");
+    expect(client.calls.openProject).toHaveLength(2);
+  });
+
+  it("resolves visible bindings to stable core IDs and clears the old witness after publication", async () => {
+    const { client, runtime, view } = await opened();
+    const result = await runtime.createKeyedGroupedSum(witnessOf(view), {
+      ordersCollection: "tasks",
+      orderLookupKeyField: "notes",
+      orderQuantityField: "impact",
+      productsCollection: "tasks",
+      productKeyField: "notes",
+      productCategoryField: "notes",
+      productPriceField: "impact",
+    });
+    expect(result.groups).toEqual([{ category: "PEN", value: 800 }]);
+    expect(result.revision).toBe("r2");
+    expect(client.calls.createKeyedGroupedSum).toHaveLength(1);
+    expect(client.calls.createKeyedGroupedSum[0]).toMatchObject({
+      orders_schema: "col-1",
+      order_lookup_key_field: "f2",
+      order_quantity_field: "f1",
+      products_schema: "col-1",
+      product_key_field: "f2",
+      product_category_field: "f2",
+      product_price_field: "f1",
+    });
+    await expect(runtime.queryKeyedGroupedSum(witnessOf(view), result.definitionId)).rejects.toMatchObject({ code: "stale-witness" });
+    const refreshed = await runtime.read();
+    await expect(runtime.queryKeyedGroupedSum(witnessOf(refreshed), result.definitionId)).resolves.toMatchObject({ revision: "r2" });
   });
 
   it("serializes operations so a stale second edit is refused before dispatch", async () => {
