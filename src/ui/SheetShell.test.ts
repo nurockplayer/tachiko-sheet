@@ -148,6 +148,23 @@ describe("fieldDisplay", () => {
     expect(fieldDisplay(projected(entityA, "c-title", { kind: "text", value })).title).toBe(value);
   });
 
+  it("keeps diagnostic-bearing Latin and CJK text fully accessible", () => {
+    const values = [
+      "Review partner brief and confirm ownership, launch timing, and rollback notes for the next release",
+      "檢查鍵盤導覽、窄視窗水平捲動，以及長文字欄位的完整值存取體驗",
+    ];
+    for (const value of values) {
+      const display = fieldDisplay(
+        projected(entityA, "c-title", { kind: "text", value }, {
+          diagnostics: [{ code: "stale", message: "revision too old", path: "c-title" }],
+        }),
+      );
+      expect(display.text).toBe(value);
+      expect(display.tone).toBe("warning");
+      expect(display.title).toBe(`stale: revision too old — ${value}`);
+    }
+  });
+
   it("keeps calculated results, failures and unavailable states distinguishable", () => {
     const calculated = fieldDisplay(
       projected(entityA, "c-priority", { kind: "number", value: 10 }, {

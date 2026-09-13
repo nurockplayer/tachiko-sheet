@@ -34,10 +34,14 @@ export function fieldDisplay(field: FieldProjection | null | undefined): FieldDi
   const base = baseDisplay(field);
   const diagnostic = field.diagnostics?.[0];
   if (diagnostic) {
+    const canonicalText = !field.formula && field.stored?.kind === "text" ? field.stored.value : null;
     return {
       ...base,
       tone: "warning",
-      title: `${diagnostic.code}: ${diagnostic.message}`,
+      title:
+        canonicalText === null
+          ? `${diagnostic.code}: ${diagnostic.message}`
+          : `${diagnostic.code}: ${diagnostic.message} — ${canonicalText}`,
     };
   }
   return base;
