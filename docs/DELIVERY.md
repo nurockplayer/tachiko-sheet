@@ -5,7 +5,7 @@ The operating mode is called **Stewarded Continuous Delivery (SCD)**; see the
 This document remains Sheet's local delivery authority. Sharing the name does
 not import upstream permissions or change the existing clauses below.
 
-Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment is merged and active.
+Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment and 2026-09-14 Terra-to-Astra mandatory decision-routing amendment are active.
 
 ## Authority and roles
 
@@ -15,26 +15,35 @@ ChatGPT Steward owns product scope, specifications, acceptance outcomes and mate
 
 **Single-lead amendment (2026-09-12):** the founder may select Astra or Terra as Mission Lead. Exactly one lead/session is active, recorded in #2 with its branch/HEAD and writer ownership. Confirm previous writers have stopped or explicitly transferred before takeover; a stale timestamp is not sufficient. Until a new lead is selected and safely claimed, retain the existing lead rather than launching both. Older Sheet-local references to Astra's coordination role mean the selected Mission Lead unless a narrower advisory role is explicitly stated below; model-specific worker instructions and upstream authority are not rewritten by that alias. No acceptance or review independence changes with a role/name switch.
 
-### Terra-led Astra escalation advisory
+### Terra-led mandatory Astra pre-decision consultation
 
-When Terra is the recorded Mission Lead, Terra may invoke Astra as a **read-only escalation advisor**. Advisory consultation is not a Mission Lead transfer and does not grant Astra branch, writer, integration or merge ownership. Terra remains responsible for the active lane and resumes it after the consultation.
+When Terra is the recorded Mission Lead, follow the live operational profile in [`tachiko-work#374`](https://github.com/nurockplayer/tachiko-work/issues/374). Astra is a **mandatory read-only pre-decision consultant**, not merely an escalation advisor.
 
-Use Astra advisory escalation for technical, architecture or integration diagnosis when one or more of these materially applies:
+Before Terra settles or delegates any new discretionary choice that is not already fixed by live authority or a still-applicable prior consultation, Terra must obtain an actual Astra response. This applies across Fast, Standard and Guarded work. It includes, without limitation:
 
-- the same root-cause seam survives two bounded repair attempts;
-- successive substantive review findings recur around the same abstraction seam;
-- evidence leaves it materially unclear whether the repair belongs in implementation, tests/evidence, host/runtime composition or repository architecture;
-- a proposed repair crosses subsystem boundaries or risks storage, identity, revision/recovery, security or data-integrity behavior;
-- two or more materially different and costly repair directions remain plausible without evidence clearly selecting one; or
-- an applicable convergence process has explicitly classified the loop AMBER/HOLD, or the loop is otherwise structurally non-convergent.
+- user-visible behavior, restrictions, defaults, compatibility, Save/draft/Undo/history/recovery or data-loss disclosure choices;
+- algorithm, lifecycle/state ownership, public typing, dependency/build strategy, architecture, persistence, concurrency, security or data-integrity trade-offs;
+- choosing a repair direction, dismissing or reclassifying a substantive review finding, or accepting a missing behavior as a limitation;
+- discretionary scope, decomposition or sequencing changes, abandoning or deferring a lane, relaxing/reinterpreting evidence, or treating work as complete without previously required proof.
 
-Ordinary compile errors, isolated test failures and locally obvious bugs are not escalation triggers by themselves. Difficulty alone is not authority to renegotiate acceptance.
+Mechanical execution is not a new decision. Applying an exact settled instruction, formatting, running prescribed checks, implementing a previously consulted direction within its recorded bounds, or following an already-authorized deterministic sequence does not require a consultation per line, commit or routine repair. If an implementation worker exposes a new choice, the worker returns it to Terra; delegation does not bypass consultation. When classification is uncertain, consult rather than silently treating the choice as mechanical.
 
-Before consultation, Terra records a recoverable checkpoint with exact active HEAD, checked live `main`, current evidence, relevant authority, bounded repairs already attempted and one concrete question. All affected mutation pauses while the advisory question is unresolved; unrelated qualified work may continue. Resolve the actual installed Astra configuration from global agent configuration rather than guessing a path or silently substituting another advisor.
+Before affected discretionary implementation proceeds, retain a compact decision entry in the existing canonical handoff narrative (the owning Issue before a PR exists, then the owning Issue/PR handoff as the lane develops). Record:
 
-Astra may inspect the live Issue/PR, diff, tests/evidence and relevant authority and return diagnosis, risks and a bounded recommendation. Astra remains read-only for the escalated lane and may not change product scope, acceptance outcomes, Accepted semantic/storage/authorization authority, writer ownership or merge state. If resolving the blocker requires any such material change, route it to ChatGPT Steward. The advisory result should be linked or summarized in the owning Issue/PR handoff before Terra resumes affected mutation.
+- exact head/base and authority/evidence pointers;
+- the unresolved choice and practical alternatives;
+- Terra's recommendation and the relevant user-visible, safety/correctness, compatibility, maintenance and reversibility costs;
+- Astra's actual disposition: `agree`, `revise`, or `return to Steward`;
+- the chosen bounded next action and any required Steward decision link;
+- actual proposing/consulting agents plus model/session/call identifiers where observable; mark unavailable attribution unknown rather than guessing.
 
-Astra consultation does not satisfy independent final review. Final Guarded merge still requires the fresh independent exact-head review required below; current global configuration may route that role to the installed Sol reviewer, but reviewer independence and exact-head evidence are the durable requirement.
+Astra remains read-only for the consulted lane and does not receive branch, writer, integration or merge ownership. Astra cannot amend Accepted authority, accept material test changes, promote Ready, clear HOLD, waive legal/external gates or authorize merge. No Astra reply, an unavailable Astra, or an unresolved objection keeps the affected discretionary implementation paused; persist recoverable work and continue only unaffected already-authorized actions. Within-scope disagreements return to Astra with evidence. Unresolved scope, authority, durable-product or material-acceptance questions return to ChatGPT Steward.
+
+Closely related choices in one bounded Issue may share one consultation only when Astra explicitly addresses each. Reconsult when assumptions, relevant authority, evidence or the proposed direction materially changes. An unrelated commit alone does not invalidate a consultation.
+
+Astra consultation does not satisfy independent final review. Final Guarded merge still requires the fresh independent exact-head review required below. A reviewer that participated in the solution's design, implementation, acceptance or evidence cannot receive final-review credit for that same material head.
+
+This routing adds no human approval stop between ordinary tickets. After qualified closeout, Terra recalibrates live authority and ownership and continues the next genuinely Ready, non-overlapping successor without a new founder prompt. Human/Steward intervention remains limited to the canonical unresolved durable decisions, authority conflicts and external permission gates.
 
 ## Conditional Ready; no ceremonial stop
 
@@ -64,7 +73,7 @@ For **tachiko-sheet only**, the lead may execute a merge when all of these are p
 - applicable Steward acceptance, implementer unit tests and required local/hosted checks passed; absent/pending CI is not green;
 - all valid blocking findings are resolved, and an independent final-head review exists;
 - storage, identity, revision/recovery, import/export, authorization/security, SDK/compatibility or CI/governance changes receive fresh deep independent review;
-- the final reviewer authored neither the implementation nor its acceptance/evidence and was not merely the earlier finding author re-approving their own fix;
+- the final reviewer authored neither the implementation nor its acceptance/evidence and did not materially participate in the consulted solution direction;
 - normal GitHub protections and review requirements permit the merge, without admin bypass, force push, fabricated approval or blanket auto-approve;
 - the recorded head still matches immediately before merging.
 
@@ -76,6 +85,6 @@ Core work stays in tachiko-work. #359 and #361 retain producer/I/O and delegated
 
 ## Continuation and stop
 
-Use #2 for one concise recoverable checkpoint; detailed evidence belongs to the active PR. Wait on nonterminal work using event/blocking waits or at least 180-second polling. Stop affected mutation for a concrete missing authority/acceptance, unresolved substantive finding or external permission; continue genuinely independent qualified work. Persist work before runtime termination. No scheduler is installed by this policy.
+Use #2 for one concise recoverable checkpoint; detailed evidence belongs to the active PR. Wait on nonterminal work using event/blocking waits or at least 180-second polling. Stop affected mutation for a concrete missing authority/acceptance, unresolved Astra disposition or substantive finding, or external permission; continue genuinely independent qualified work. Persist work before runtime termination. Qualified closeout triggers recalibration and the next genuinely Ready successor rather than a ceremonial stop. No scheduler is installed by this policy.
 
 One-time exception: this previously empty public repository is initialized with founder-authorized Mission, documentation and agent entry files by ChatGPT. This is not a production merge, independent review claim or precedent for direct-to-main product development. Subsequent production and policy changes use reviewed PRs.
