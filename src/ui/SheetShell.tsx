@@ -472,15 +472,17 @@ export function SheetShell(props: SheetShellProps) {
       <main className="ts-home">
         {currentness === "unknown" ? (
           <section className="ts-card" aria-label="Recovery">
-            <h2 className="ts-h2">Recovery required; freshness unconfirmed</h2>
-            <p className="ts-subtle">Resident work is not confirmed. Refresh to re-read it.</p>
+            <h2 className="ts-h2">Refresh required</h2>
+            <p className="ts-subtle">The open work could not be confirmed. Refresh to read it again.</p>
             <div className="ts-status-strip" aria-label="Recovery status">
               <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
                 {currentnessLabel(currentness)}
               </span>
-              <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
-                {outcomeLabel(outcome)}
-              </span>
+              {outcome !== "idle" ? (
+                <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
+                  {outcomeLabel(outcome)}
+                </span>
+              ) : null}
             </div>
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
@@ -568,21 +570,27 @@ export function SheetShell(props: SheetShellProps) {
       <header className="ts-workbook-head">
         <div className="ts-title-block">
           <h1 className="ts-title">{view ? view.title : ""}</h1>
-          <p className="ts-subtle">
-            {table ? `${table.collection.key} · ${table.rows.length} rows` : ""}
-            {view ? ` · revision ${view.revision}` : ""}
-          </p>
+          <p className="ts-subtle">{table ? `${table.rows.length} rows` : ""}</p>
         </div>
         <div className="ts-status-strip">
           <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
             {currentnessLabel(currentness)}
           </span>
+          <span
+            className={`ts-chip ${dirty ? "ts-chip--edited" : "ts-chip--unchanged"}`}
+            data-testid="work-state"
+            data-work-state={dirty ? "edited" : "unchanged"}
+          >
+            {workStateLabel(dirty)}
+          </span>
           <span className={`ts-chip ts-chip--${saveStatus}`} data-testid="save-status">
             {saveLabel(saveStatus)}
           </span>
-          <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
-            {outcomeLabel(outcome)}
-          </span>
+          {outcome !== "idle" ? (
+            <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
+              {outcomeLabel(outcome)}
+            </span>
+          ) : null}
         </div>
       </header>
     );
@@ -601,7 +609,7 @@ export function SheetShell(props: SheetShellProps) {
                   Row
                 </th>
                 {columns.map((column) => (
-                  <th key={column.id} scope="col" className="ts-col-head" title={column.field_type}>
+                  <th key={column.id} scope="col" className="ts-col-head">
                     {column.key}
                   </th>
                 ))}
@@ -614,7 +622,7 @@ export function SheetShell(props: SheetShellProps) {
                 return (
                   <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"}>
                     <th scope="row" className="ts-row-head">
-                      {row.key}
+                      {table.rows.indexOf(row) + 1}
                     </th>
                     {columns.map((column) => renderCell(row, entity, column))}
                   </tr>
@@ -701,10 +709,7 @@ export function SheetShell(props: SheetShellProps) {
       <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
         <section className="ts-card" aria-label="Linked Brief facts">
-          <h2 className="ts-h2">
-            Brief · {selectedRow.key}
-            <span className="ts-subtle"> {entity}</span>
-          </h2>
+          <h2 className="ts-h2">Brief</h2>
           <BriefFacts
             entity={entity}
             occurrence={view.occurrence}
@@ -717,7 +722,7 @@ export function SheetShell(props: SheetShellProps) {
         <section className="ts-card" aria-label="Decision notes">
           <h2 className="ts-h2">Decision notes</h2>
           <p className="ts-subtle">
-            Notes on {selectedRow.key}. They are saved with the work, not with a copy.
+            Notes on the selected record. They are saved with the work, not with a copy.
           </p>
           <label className="ts-field-label" htmlFor={notesId}>
             Decision notes
@@ -1010,15 +1015,15 @@ function isComposingEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {
 }
 
 function currentnessLabel(currentness: SheetShellProps["currentness"]): string {
-  if (currentness === "current") return "Current";
+  if (currentness === "current") return "Up to date";
   if (currentness === "pending") return "Updating…";
-  return "Freshness unknown";
+  return "Needs refresh";
 }
 
 function freshnessNotice(currentness: SheetShellProps["currentness"]): string {
   return currentness === "pending"
-    ? "These values are not confirmed current: a change is still being applied."
-    : "These values are not confirmed current, and shown results may be out of date.";
+    ? "These values are being updated; wait for confirmation before editing."
+    : "These values could not be confirmed. Refresh before editing.";
 }
 
 function saveLabel(saveStatus: SheetShellProps["saveStatus"]): string {
@@ -1034,10 +1039,14 @@ function saveLabel(saveStatus: SheetShellProps["saveStatus"]): string {
   }
 }
 
+function workStateLabel(dirty: boolean): string {
+  return dirty ? "Edited — not saved" : "Unchanged";
+}
+
 function outcomeLabel(outcome: SheetShellProps["outcome"]): string {
   if (outcome === "pending") return "Applying changes…";
-  if (outcome === "unknown") return "Outcome unknown";
-  return "No pending operation";
+  if (outcome === "unknown") return "Outcome needs review";
+  return "";
 }
 
 function explain(error: unknown, fallback: string): string {

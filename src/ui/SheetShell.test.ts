@@ -30,7 +30,7 @@ function projected(
   };
 }
 
-function makeView(options: { columns?: boolean } = {}): WorkbookView {
+function makeView(options: { columns?: boolean; titleValue?: string; titleDiagnostic?: boolean } = {}): WorkbookView {
   const columns = [
     { id: "c-title", key: "title", field_type: "text" },
     { id: "c-impact", key: "impact", field_type: "number" },
@@ -40,9 +40,11 @@ function makeView(options: { columns?: boolean } = {}): WorkbookView {
   const rows = [
     {
       id: entityA,
-      key: "alpha",
+      key: "playtest_notes",
       fields: [
-        projected(entityA, "c-title", { kind: "text", value: "Alpha work" }),
+        projected(entityA, "c-title", { kind: "text", value: options.titleValue ?? "Alpha work" }, options.titleDiagnostic ? {
+          diagnostics: [{ code: "stale", message: "revision too old", path: "c-title" }],
+        } : {}),
         projected(entityA, "c-impact", { kind: "number", value: 5 }),
         projected(entityA, "c-priority", { kind: "number", value: 10 }, {
           formula: { source: "impact + friction" },
@@ -139,7 +141,30 @@ describe("fieldDisplay", () => {
     expect(fieldDisplay(projected(entityA, "c-title", { kind: "date", value: "2026-09-12" })).text).toBe("2026-09-12");
     const reference = fieldDisplay(projected(entityA, "c-title", { kind: "reference", entity: entityB }));
     expect(reference.text).toBe("→ reference");
-    expect(reference.title).toBe(`Reference to ${entityB}`);
+    expect(reference.title).toBe("Reference value");
+    expect(reference.title).not.toContain(entityB);
+  });
+
+  it("keeps long stored text available as a full-value tooltip", () => {
+    const value = "A long task value that remains available when the dense grid truncates its cell";
+    expect(fieldDisplay(projected(entityA, "c-title", { kind: "text", value })).title).toBe(value);
+  });
+
+  it("keeps diagnostic-bearing Latin and CJK text fully accessible", () => {
+    const values = [
+      "Review partner brief and confirm ownership, launch timing, and rollback notes for the next release",
+      "檢查鍵盤導覽、窄視窗水平捲動，以及長文字欄位的完整值存取體驗",
+    ];
+    for (const value of values) {
+      const display = fieldDisplay(
+        projected(entityA, "c-title", { kind: "text", value }, {
+          diagnostics: [{ code: "stale", message: "revision too old", path: "c-title" }],
+        }),
+      );
+      expect(display.text).toBe(value);
+      expect(display.tone).toBe("warning");
+      expect(display.title).toBe(`stale: revision too old — ${value}`);
+    }
   });
 
   it("keeps calculated results, failures and unavailable states distinguishable", () => {
@@ -151,7 +176,13 @@ describe("fieldDisplay", () => {
     );
     expect(calculated.text).toBe("10");
     expect(calculated.tone).toBe("computed");
-    expect(calculated.title).toBe("Formula: impact + friction");
+    expect(calculated.title).toBe("Calculated value");
+    expect(calculated.title).not.toContain("impact + friction");
+    const pending = fieldDisplay(
+      projected(entityA, "c-priority", null, { formula: { source: "[playtest_notes.impact] + 1" } }),
+    );
+    expect(pending.title).toBe("Calculated value without a current result");
+    expect(pending.title).not.toContain("playtest_notes");
 
     const failure = fieldDisplay(
       projected(entityA, "c-priority", null, {
@@ -202,12 +233,19 @@ describe("recovery presentation", () => {
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
     const markup = render({ currentness: "unknown", outcome: "unknown" });
     expect(markup).toContain('aria-label="Recovery"');
-    expect(markup).toContain("Recovery required; freshness unconfirmed");
-    expect(chipText(markup, "currentness")).toBe("Freshness unknown");
-    expect(chipText(markup, "operation-outcome")).toBe("Outcome unknown");
+    expect(markup).toContain("Refresh required");
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
+    expect(chipText(markup, "operation-outcome")).toBe("Outcome needs review");
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).not.toContain("could not be opened");
+  });
+
+  it("does not render an empty idle outcome chip during recovery", () => {
+    const markup = render({ currentness: "unknown", outcome: "idle" });
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
+    expect(chipText(markup, "operation-outcome")).toBe(null);
+    expect(markup).not.toContain('data-testid="operation-outcome"');
   });
 
   it("does not render an editable stale workbook during published recovery", () => {
@@ -274,6 +312,8 @@ describe("SheetShell static rendering", () => {
     expect(impact).toContain('data-work-occurrence="occ-1"');
     expect(impact).toContain('data-work-revision="rev-1"');
     expect(impact).toContain('data-work-currentness="pending"');
+    expect(markup).not.toContain(">entity-a<");
+    expect(markup).not.toContain(">entity-b<");
     expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</dd>") as string)).toBe("first note");
     expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</dd>")).toBe(null);
   });
@@ -311,6 +351,21 @@ describe("SheetShell static rendering", () => {
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).not.toBe(null);
   });
 
+  it("renders diagnostic long Latin and CJK cells with complete combined titles", () => {
+    const values = [
+      "Review partner brief and confirm ownership, launch timing, and rollback notes for the next release",
+      "檢查鍵盤導覽、窄視窗水平捲動，以及長文字欄位的完整值存取體驗",
+    ];
+    for (const value of values) {
+      const markup = render({ view: makeView({ titleValue: value, titleDiagnostic: true }) });
+      const cell = cellMarkup(markup, `cell:${entityA}:c-title`);
+      expect(cell).not.toBe(null);
+      expect(cell).toContain('class="ts-cell ts-cell--warning"');
+      expect(cell).toContain(`title="stale: revision too old — ${value}"`);
+      expect(textOf(cell as string)).toBe(value);
+    }
+  });
+
   it("never claims a save that did not happen", () => {
     const unsaved = render({ view: makeView() });
     expect(chipText(unsaved, "save-status")).toBe("Not saved yet");
@@ -322,14 +377,36 @@ describe("SheetShell static rendering", () => {
     expect(chipText(saved, "save-status")).toBe("Saved on this device");
   });
 
+  it("distinguishes unchanged work from edited unsaved work", () => {
+    const unchanged = render({ view: makeView(), dirty: false });
+    expect(chipText(unchanged, "work-state")).toBe("Unchanged");
+    expect(unchanged).toContain('data-work-state="unchanged"');
+    const edited = render({ view: makeView(), dirty: true });
+    expect(chipText(edited, "work-state")).toBe("Edited — not saved");
+    expect(edited).toContain('data-work-state="edited"');
+  });
+
   it("marks unknown outcomes and freshness instead of presenting values as current", () => {
-    expect(chipText(render({ view: makeView() }), "operation-outcome")).toBe("No pending operation");
+    expect(chipText(render({ view: makeView() }), "operation-outcome")).toBe(null);
     const markup = render({ view: makeView(), outcome: "unknown", currentness: "unknown" });
-    expect(chipText(markup, "operation-outcome")).toBe("Outcome unknown");
-    expect(chipText(markup, "currentness")).toBe("Freshness unknown");
+    expect(chipText(markup, "operation-outcome")).toBe("Outcome needs review");
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).toContain('data-work-currentness="unknown"');
-    expect(markup).toContain("These values are not confirmed current");
+    expect(markup).toContain("These values could not be confirmed");
     expect(markup).not.toContain("Saved on this device");
+  });
+
+  it("keeps internal revision, collection, and row identities out of normal chrome", () => {
+    const markup = render({ view: makeView() });
+    expect(markup).toContain("2 rows");
+    expect(markup).toContain(">1</th>");
+    expect(markup).not.toContain("release_items ·");
+    expect(markup).not.toContain("revision rev-1");
+    expect(markup).not.toContain("playtest_notes");
+    expect(markup).not.toContain('title="number"');
+    // Entity/revision values remain in data-* witnesses for acceptance and
+    // recovery tooling; only visible chrome must stay free of them.
+    expect(markup).toContain('data-work-entity="entity-a"');
   });
 
   it("surfaces a single alert only when there is a message", () => {

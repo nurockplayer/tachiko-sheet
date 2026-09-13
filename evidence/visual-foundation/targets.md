@@ -1,0 +1,141 @@
+# #13 annotated target compositions
+
+Historical provenance: this target artifact was first committed alongside the
+visual-foundation implementation at `9d1e29193b570fa16244c37a0b2fb23eb8ad3608`.
+Repository history cannot prove a pre-implementation design sequence, so this
+document makes no such timing or VF-01 acceptance claim.
+
+Selected target/spec revision: `37d254ec51ea7e4a10ec9598181ac6b47db6c405`.
+This selects the revision that first disclosed the compact token, density, icon
+and state contract; it is not a claim that design preceded implementation.
+The comparison chain is: `9d1e291` co-committed the target artifact with the
+visual-foundation implementation, then `37d254e` recorded the selected
+target/spec disclosure alongside the diagnostic-text repair.
+
+Selected visual tokens and state contract:
+
+- Typography: system stack (`system-ui`, `-apple-system`, Hiragino Sans,
+  Noto Sans TC, Microsoft JhengHei); 13px body, 12px metadata, 18px workbook
+  title, 14px section heading.
+- Tokens: `--ts-focus: #0b63ce`, `--ts-line-strong: #657386`, white surface,
+  sunken surface `#f3f6f9`, selected surface `#e3efff`, global
+  `--ts-radius: 5px`.
+- Density: 7px × 10px grid-cell padding, 32px minimum controls, compact 3px
+  status-chip radius; status glyphs use text symbols and no icon dependency.
+- States: current is neutral, pending is amber and locked, saved is green,
+  failed is red, unknown is amber recovery with Refresh, and focused/selected
+  uses a 3px boundary plus selected-row context.
+
+These compact wireframes are the reviewable target compositions for the visual
+foundation. They describe the intended arrangement of the real current runtime;
+they do not introduce new application states or controls.
+
+## 1. Home
+
+```text
+┌ Tachiko Sheet ─────────────────────────────────────────────────────────────┐
+│ Open a project folder, or reopen a copy saved in this browser profile.      │
+│ ┌ Open project ──────────────────────────┐  ┌ Saved copies ───────────────┐ │
+│ │ Open project folder  [Choose folder]   │  │ Stored on this device        │ │
+│ │ [Try example]                         │  │ No saved copies yet.         │ │
+│ └────────────────────────────────────────┘  └──────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+Annotation: open work is the primary action; saved copies remain discoverable
+without becoming navigation. Dense spacing and a wide frame preserve room for
+CJK labels at narrow widths.
+
+## 2. Populated Workbook
+
+```text
+┌ Plan                                      Current  Not saved  No pending op ┐
+│ release_items · 8 rows · revision rev-1     [Refresh] [Save a copy] [Close] │
+│ [Table]  Brief                                                           │
+│ Row │ title             │ impact │ priority │ notes                         │
+│ 01  │ Launch checklist  │ 5      │ 10       │ Confirm owner                 │
+│ 02  │ Partner review    │ 3      │  —       │ …                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+Annotation: the grid is the primary canvas; status and consequence-bearing
+actions share one calm header. The existing Table/Brief views remain the only
+views and all values come from the runtime projection.
+
+## 3. Active edit / selection
+
+```text
+│ Row │ title             │ impact │ priority │
+│ 01  │ Launch checklist  │ [ 5              ]  ← selected, inline editor
+│     └──────────── strong 3px focus ring + keyboard-visible context
+```
+
+Annotation: one cell has an unambiguous selection/focus treatment and the
+existing inline input stays in place. Arrow, Tab, Enter, F2, Escape, and IME
+composition behaviour are unchanged.
+
+## 4. Command / save dialog
+
+```text
+                 ┌ Save a copy ───────────────────┐
+                 │ Creates a new copy in this      │
+                 │ browser profile.                 │
+                 │ Copy name                        │
+                 │ [____________________________]  │
+                 │                 [Cancel] [Create copy] │
+                 └─────────────────────────────────┘
+```
+
+Annotation: the existing modal is the only command overlay. Contrast, clear
+device-local wording, Escape handling, and focus trapping make the consequence
+of the action explicit.
+
+## 5. Error / recovery
+
+```text
+┌ The current work could not be confirmed. Its freshness stays unknown.       │
+│ Recovery required; freshness unconfirmed       Freshness unknown  Outcome ? │
+│ Resident work is not confirmed. Refresh to re-read it.       [Refresh]       │
+```
+
+Annotation: exception state is visually distinct and actionable. No stale grid
+is rendered as editable; ordinary warning, failed save, and unknown freshness
+retain separate meanings.
+
+## Brief / overlay state board
+
+| Runtime state | Presentation treatment | Interaction contract |
+|---|---|---|
+| Current | neutral status chip; normal grid | existing controls enabled |
+| Pending / applying | amber status and concise lock note | editing and conflicting actions disabled |
+| Saved on device | green confirmation chip | receipt remains tied to revision |
+| Save failed | red actionable status/message | retry remains an explicit user action |
+| Freshness unknown | amber blocking recovery card/banner | Refresh is available; open/edit routes locked |
+| Calculation failure | warning tone at cell, explicit text/title | no frontend interpretation of formula |
+| Unavailable / not loaded | muted cell tone, explicit label | no fabricated value or control |
+| Focus / selected | 3px blue outline and selected-row context | keyboard navigation remains native and visible |
+
+Responsive checks: 1440×900, 1024×768, 375×812; 100% and 200% zoom; CJK
+strings; keyboard-only focus; `prefers-reduced-motion`; and `forced-colors`.
+
+## Final shipped comparison
+
+The final captures in `targets/` are compared against these target
+compositions at the same named states: Home keeps Open and Saved copies as the
+primary frame; Populated Workbook keeps the grid, status strip, and
+consequence-bearing actions together; Active edit keeps one focused cell with
+an inline editor; Save dialog remains the only command overlay; and Recovery
+keeps Refresh available while rendering no stale grid.
+
+The following removals are intentional safety boundaries, not missing target
+content: raw collection names, revision values, and row/entity identifiers are
+not visible in normal chrome, and an idle operation outcome is not rendered as
+an empty chip. The corresponding occurrence/revision/entity witnesses remain
+in `data-*` attributes for acceptance observation, while saved, failed,
+pending, and unknown states retain their truthful visible statements.
+
+The populated actual-core corpus uses only the supported Tracker columns
+`task`, `estimate`, and `done`. Long Latin/CJK task values are clipped by the
+dense grid at the 1024px viewport, retain their complete text in the cell
+tooltip, and produce deliberate horizontal grid overflow/scroll; no
+unsupported columns or capabilities are implied.

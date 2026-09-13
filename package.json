@@ -16,6 +16,11 @@
     "acceptance:storage": "node tests/storage.mjs",
     "acceptance:agent-ui": "node tests/browser.mjs --agent",
     "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs",
+    "qualification:visual-foundation-fixture": "node scripts/visual-foundation-generate-fixture.mjs",
+    "qualification:visual-foundation-fixture:static": "node scripts/visual-foundation-qualify-fixture.mjs",
+    "evidence:visual-foundation-populated": "node scripts/visual-foundation-capture-populated.mjs",
+    "evidence:visual-foundation-final": "node scripts/visual-foundation-capture-final.mjs",
+    "evidence:visual-foundation-recovery": "node scripts/visual-foundation-capture-recovery.mjs",
     "dev": "node scripts/copy-example-fixture.mjs && vite",
     "build": "node scripts/copy-example-fixture.mjs && vite build && node scripts/check-dist.mjs dist",
     "build:acceptance": "node scripts/copy-example-fixture.mjs && vite build --mode acceptance",
@@ -25,7 +30,8 @@
     "verify:core-kit": "node scripts/verify-core-kit.mjs",
     "qualification:core-kit": "node scripts/qualify-core-kit.mjs",
     "acceptance:product": "node scripts/run-product-acceptance.mjs",
-    "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs"
+    "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs",
+    "test:visual-foundation": "node tests/product/visual-foundation-regression.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

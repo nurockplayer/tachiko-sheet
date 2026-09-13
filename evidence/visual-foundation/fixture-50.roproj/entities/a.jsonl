@@ -1,0 +1,2 @@
+{"id":"tracker_row_0020_b65b83fa-3271-422a-85a4-9aede9042db3","key":"row_0020","schema":"tracker","fields":{"done":{"kind":"boolean","value":true},"estimate":{"kind":"number","value":2},"task":{"kind":"text","value":"檢查鍵盤導覽、窄視窗水平捲動，以及長文字欄位的完整值存取體驗"}}}
+{"id":"tracker_row_0043_b65b83fa-3271-422a-85a4-9aede9042db3","key":"row_0043","schema":"tracker","fields":{"done":{"kind":"boolean","value":true},"estimate":{"kind":"number","value":7},"task":{"kind":"text","value":"Investigate keyboard navigation, horizontal scrolling, and full-value access at a narrow viewport"}}}
