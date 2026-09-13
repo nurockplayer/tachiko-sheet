@@ -11,6 +11,13 @@ import type {
   OpenedProjection,
   PublicationProjection,
 } from "../../public/core-kit/experimental-client.js";
+import type {
+  CleanupOperation,
+  ImportOptions,
+  ImportSelection,
+  InteropMetadata,
+  SpreadsheetFormat,
+} from "../../public/core-kit/runtime/interop-protocol.js";
 import {
   UnknownOperationOutcomeError,
   type CoreKit,
@@ -18,6 +25,7 @@ import {
   type KitLoader,
   type ScalarEdit,
   type SheetRuntime,
+  type ImportedWorkbook,
   type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
@@ -258,6 +266,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }
   }
 
+  function capability<T>(value: T | undefined, name: string): T {
+    if (value === undefined) throw new Error(`The installed public core kit does not provide ${name}.`);
+    return value;
+  }
+
   async function openSession(
     kit: CoreKit,
     client: PublicClient,
@@ -422,6 +435,121 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function inspectSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions) {
+    return enqueue(async () => {
+      const { kit, client } = await loadKitOnce();
+      const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
+      return dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
+    });
+  }
+
+  function importSpreadsheet(
+    bytes: ArrayBuffer,
+    format: SpreadsheetFormat,
+    options: ImportOptions,
+    selection: ImportSelection,
+  ): Promise<ImportedWorkbook> {
+    const requestedAt = epoch;
+    return enqueue(async () => {
+      assertNotReplaced(requestedAt);
+      const { kit, client } = await loadKitOnce();
+      const importSheet = capability(client.importSpreadsheet, "spreadsheet import");
+      let imported;
+      try {
+        imported = await afterNotReplaced(
+          requestedAt,
+          dispatch(kit, () => importSheet.call(client, bytes.slice(0), format, options, selection)),
+        );
+      } catch (error) {
+        if (error instanceof UnknownOperationOutcomeError) {
+          active = null;
+          residentCollection = null;
+          residentAvailable = true;
+          closed = false;
+          throw new OpenedProjectionRecoveryError(error, "unknown");
+        }
+        throw error;
+      }
+      active = null;
+      residentCollection = null;
+      residentAvailable = true;
+      closed = false;
+      let read: CoherentRead;
+      try {
+        read = await loadCoherentView(kit, client, requestedAt, null);
+      } catch (error) {
+        throw new OpenedProjectionRecoveryError(error);
+      }
+      active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
+      residentCollection = read.collection;
+      return { view: read.view, metadata: imported.metadata, ledger: imported.ledger };
+    });
+  }
+
+  function previewCleanup(witness: ViewWitness, operation: CleanupOperation) {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const preview = capability(client.previewCleanup, "cleanup preview");
+      return afterUsable(expected, dispatch(kit, () => preview.call(client, live.revision, operation)));
+    });
+  }
+
+  function commitCleanup(witness: ViewWitness, previewId: string): Promise<WorkbookView> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const commit = capability(client.commitCleanup, "cleanup commit");
+      let publication: PublicationProjection;
+      try {
+        publication = await afterUsable(expected, dispatch(kit, () => commit.call(client, live.revision, previewId)));
+      } catch (error) {
+        if (error instanceof UnknownOperationOutcomeError) active = null;
+        throw error;
+      }
+      try {
+        const read = await loadCoherentView(kit, client, expected, live.collection);
+        active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
+        residentCollection = read.collection;
+        return read.view;
+      } catch (error) {
+        active = null;
+        throw new PublishedProjectionRecoveryError(publication, error);
+      }
+    });
+  }
+
+  function exportSpreadsheet(witness: ViewWitness, metadata: InteropMetadata, format: SpreadsheetFormat) {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const exportSheet = capability(client.exportSpreadsheet, "spreadsheet export");
+      // Interop metadata carries the producer-issued collection/schema
+      // identity. The display/query key is not an export substitute.
+      const collection = metadata.sheets[0]?.schema_id;
+      if (!collection) throw new Error("Imported-source metadata has no exportable sheet identity.");
+      return afterUsable(
+        expected,
+        dispatch(kit, () => exportSheet.call(client, live.revision, metadata, format, collection)),
+      );
+    });
+  }
+
+  function validateImportedProject(files: readonly CanonicalProjectFile[], metadata: InteropMetadata): Promise<void> {
+    return enqueue(async () => {
+      const { kit, client } = await loadKitOnce();
+      const inspect = capability(client.inspectImportedProject, "imported-project inspection");
+      // This is deliberately a validation-only call over the same opaque
+      // canonical transfer that will immediately be opened below. The source
+      // spreadsheet bytes remain a host-private preservation attachment.
+      const transfer = kit.projectTransferFromEntries(files);
+      await dispatch(kit, () => inspect.call(client, transfer, metadata));
+    });
+  }
+
   async function close(): Promise<void> {
     if (closed) {
       return;
@@ -447,5 +575,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }
   }
 
-  return { openFiles, openCanonical, read, readFields, edit, exportCanonical, close };
+  return {
+    openFiles, openCanonical, read, readFields, edit, exportCanonical,
+    inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
+  };
 }

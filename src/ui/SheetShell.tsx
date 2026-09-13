@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
-import type { SheetShellProps, ViewWitness } from "../contracts.js";
+import type { ImportSelection, SheetShellProps, ViewWitness } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
@@ -25,7 +25,7 @@ import {
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
-type ActiveTab = "table" | "brief";
+type ActiveTab = "table" | "brief" | "interop";
 
 interface EditorState {
   entity: string;
@@ -67,6 +67,15 @@ export function SheetShell(props: SheetShellProps) {
     onCreateCopy,
     onClose,
     onRefresh,
+    interop = null,
+    onInspectImport = async () => { throw new Error("Spreadsheet import is unavailable."); },
+    onImportCandidate = async () => false,
+    onCancelImport = () => undefined,
+    onPreviewTrim = async () => null,
+    onPreviewDeduplicate = async () => null,
+    onCommitCleanup = async () => false,
+    onCancelCleanup = () => undefined,
+    onDownload = async () => false,
   } = props;
 
   const [tab, setTab] = useState<ActiveTab>("table");
@@ -81,8 +90,12 @@ export function SheetShell(props: SheetShellProps) {
   const [copyError, setCopyError] = useState<string | null>(null);
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
+  const [importTypes, setImportTypes] = useState<string[][]>([]);
 
   const fileInputId = useId();
+  const spreadsheetInputId = useId();
   const copyNameId = useId();
   const copyErrorId = useId();
   const lockNoteId = useId();
@@ -125,6 +138,11 @@ export function SheetShell(props: SheetShellProps) {
     const entities = view.table.rows.map(rowEntity);
     setSelectedEntity((previous) => (previous && entities.includes(previous) ? previous : entities[0] ?? null));
   }, [view]);
+
+  useEffect(() => {
+    const inspection = interop?.importInspection;
+    setImportTypes(inspection ? inspection.source.sheets.map((sheet) => sheet.columns.map(() => "text")) : []);
+  }, [interop?.importInspection]);
 
   const table = view?.table ?? null;
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
@@ -389,6 +407,24 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  async function inspectSpreadsheet(file: File | null): Promise<void> {
+    if (!file) return;
+    setImportError(null);
+    try { await onInspectImport(file); }
+    catch (error) { setImportError(explain(error, "The spreadsheet could not be inspected.")); }
+  }
+
+  async function importCandidate(): Promise<void> {
+    const inspection = interop?.importInspection;
+    if (!inspection) return;
+    const selection: ImportSelection = {
+      column_types: importTypes as ImportSelection["column_types"],
+      extra_columns: inspection.source.sheets.map(() => []),
+    };
+    const accepted = await onImportCandidate(selection);
+    if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
+  }
+
   async function refresh(): Promise<void> {
     setLocalError(null);
     try {
@@ -536,6 +572,13 @@ export function SheetShell(props: SheetShellProps) {
               An operation is in progress; controls are disabled until it finishes.
             </p>
           ) : null}
+        </section>
+        <section className="ts-card" aria-label="Import spreadsheet">
+          <h2 className="ts-h2">Import CSV or XLSX</h2>
+          <p className="ts-subtle">Sheet asks the core kit to inspect the source before creating an import candidate.</p>
+          <label className="ts-field-label" htmlFor={spreadsheetInputId}>Choose CSV or XLSX</label>
+          <input id={spreadsheetInputId} className="ts-file-input" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={controlsLocked || recoveryLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+          {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
         </section>
         <section className="ts-card" aria-label="Saved copies">
           <h2 className="ts-h2">Saved copies</h2>
@@ -779,6 +822,35 @@ export function SheetShell(props: SheetShellProps) {
     );
   }
 
+  function renderInteropPanel(): ReactNode {
+    if (!view || !table) return null;
+    const allFields = table.rows.flatMap((row) => row.fields.filter((field) => field.editable_scalar === "text").map((field) => field.target));
+    const entities = table.rows.map(rowEntity);
+    const keyFields = columns.map((column) => column.id);
+    const preview = interop?.cleanupPreview ?? null;
+    return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-brief">
+      <section className="ts-card" aria-label="Source fidelity ledger">
+        <h2 className="ts-h2">Source fidelity ledger</h2>
+        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-empty">No imported-source ledger is available for this work.</p>}
+      </section>
+      <section className="ts-card" aria-label="Cleanup preview">
+        <h2 className="ts-h2">Cleanup</h2>
+        <p className="ts-subtle">Previews are produced by the core kit. Nothing changes until you commit this exact preview.</p>
+        <div className="ts-row-actions">
+          <button type="button" className="ts-button" disabled={controlsLocked || allFields.length === 0} onClick={() => witness && void onPreviewTrim(witness, allFields)}>Preview trim</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || entities.length < 2 || keyFields.length === 0} onClick={() => witness && void onPreviewDeduplicate(witness, entities, keyFields)}>Preview whole-row deduplication</button>
+        </div>
+        {preview ? <div className="ts-preview" data-testid="cleanup-preview"><p>{preview.changes.length} cell changes and {preview.removed_entities.length} rows would change.</p><div className="ts-row-actions"><button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button><button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button></div></div> : null}
+      </section>
+      <section className="ts-card" aria-label="Download spreadsheet">
+        <h2 className="ts-h2">Download</h2>
+        <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
+        <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={() => setDownloadFormat("csv")}>Download CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={() => setDownloadFormat("xlsx")}>Download XLSX</button></div>
+        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">The download failed; the current work is still open and unsaved changes were preserved.</p> : null}
+      </section>
+    </div>;
+  }
+
   function renderWorkbook(): ReactNode {
     if (!view || !table) return null;
     return (
@@ -844,8 +916,9 @@ export function SheetShell(props: SheetShellProps) {
           >
             Brief
           </button>
+          <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
         </div>
-        {tab === "table" ? renderTablePanel() : renderBriefPanel()}
+        {tab === "table" ? renderTablePanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
   }
@@ -853,7 +926,7 @@ export function SheetShell(props: SheetShellProps) {
   function onTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    selectTab(tab === "table" ? "brief" : "table");
+    selectTab(tab === "table" ? "brief" : tab === "brief" ? "interop" : "table");
   }
 
   function selectTab(next: ActiveTab): void {
@@ -919,6 +992,16 @@ export function SheetShell(props: SheetShellProps) {
           </div>
         </Modal>
       ) : null}
+      {interop?.importInspection ? (
+        <Modal label="Review import candidate" onCancel={onCancelImport}>
+          <h2 className="ts-h2">Review import candidate</h2>
+          <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
+          {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint">No source-fidelity findings were reported for this candidate.</p>}
+          <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={onCancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
+        </Modal>
+      ) : null}
+      {downloadFormat ? <Modal label="Confirm download" onCancel={() => setDownloadFormat(null)}><h2 className="ts-h2">Download {downloadFormat.toUpperCase()}</h2><p>Export the current core revision? The source-fidelity ledger remains visible in the workbook.</p><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={() => setDownloadFormat(null)}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) setDownloadFormat(null); }); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
         <Modal label="Unsaved work" onCancel={keepEditing}>
           <h2 className="ts-h2">Unsaved work</h2>
