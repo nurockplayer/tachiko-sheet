@@ -5,9 +5,12 @@ visual-foundation implementation at `9d1e29193b570fa16244c37a0b2fb23eb8ad3608`.
 Repository history cannot prove a pre-implementation design sequence, so this
 document makes no such timing or VF-01 acceptance claim.
 
-Selected target/spec revision: `9d1e29193b570fa16244c37a0b2fb23eb8ad3608`.
-This is the first co-committed artifact revision, not a claim that design
-preceded implementation.
+Selected target/spec revision: `37d254ec51ea7e4a10ec9598181ac6b47db6c405`.
+This selects the revision that first disclosed the compact token, density, icon
+and state contract; it is not a claim that design preceded implementation.
+The comparison chain is: `9d1e291` co-committed the target artifact with the
+visual-foundation implementation, then `37d254e` recorded the selected
+target/spec disclosure alongside the diagnostic-text repair.
 
 Selected visual tokens and state contract:
 
@@ -15,8 +18,9 @@ Selected visual tokens and state contract:
   Noto Sans TC, Microsoft JhengHei); 13px body, 12px metadata, 18px workbook
   title, 14px section heading.
 - Tokens: `--ts-focus: #0b63ce`, `--ts-line-strong: #657386`, white surface,
-  sunken surface `#f3f6f9`, selected surface `#e3efff`, 5px radius.
-- Density: 7px × 10px grid-cell padding, 32px minimum controls, compact 5px
+  sunken surface `#f3f6f9`, selected surface `#e3efff`, global
+  `--ts-radius: 5px`.
+- Density: 7px × 10px grid-cell padding, 32px minimum controls, compact 3px
   status-chip radius; status glyphs use text symbols and no icon dependency.
 - States: current is neutral, pending is amber and locked, saved is green,
   failed is red, unknown is amber recovery with Refresh, and focused/selected
