@@ -219,6 +219,35 @@ test("a create-only conflict fails and preserves the existing destination", asyn
   assert.deepEqual(result.names, ["Dup"]);
 }));
 
+test("private imported-source attachment is atomically stored beside, never inside, canonical entries", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const source = new Uint8Array([0x61, 0x2c, 0x62, 0x0a]);
+    await host.create("Imported", {
+      revision: "rev-imported",
+      files: [{path: "manifest.json", bytes: new Uint8Array([1]).buffer}],
+    }, {
+      name: "original.csv",
+      format: "csv",
+      bytes: source.buffer,
+      metadata: {version: 1, sheets: []},
+      ledger: [{category: "preserved_readable", code: "source", location: "A1", message: "source retained", blocking: false}],
+    });
+    source[0] = 0x78;
+    const copy = await host.read("Imported");
+    return {
+      paths: copy.files.map((file) => file.path),
+      bytes: Array.from(new Uint8Array(copy.importedSource.bytes)),
+      metadata: copy.importedSource.metadata,
+      ledger: copy.importedSource.ledger,
+    };
+  }));
+  assert.deepEqual(result.paths, ["manifest.json"]);
+  assert.deepEqual(result.bytes, [0x61, 0x2c, 0x62, 0x0a]);
+  assert.deepEqual(result.metadata, {version: 1, sheets: []});
+  assert.equal(result.ledger[0].code, "source");
+}));
+
 test("a real transaction abort leaves no copy behind", async () => withBrowser(async (browser) => {
   const result = await withPage(browser, (page) => page.evaluate(async () => {
     const host = window.createLocalCopiesUnderTest();

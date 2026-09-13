@@ -16,6 +16,7 @@
     "acceptance:storage": "node tests/storage.mjs",
     "acceptance:agent-ui": "node tests/browser.mjs --agent",
     "qualification:real-kit-notes": "node tests/qualification/real-kit-notes.mjs",
+    "qualification:j3-public-composition": "node tests/qualification/j3-public-composition.mjs",
     "qualification:visual-foundation-fixture": "node scripts/visual-foundation-generate-fixture.mjs",
     "qualification:visual-foundation-fixture:static": "node scripts/visual-foundation-qualify-fixture.mjs",
     "evidence:visual-foundation-populated": "node scripts/visual-foundation-capture-populated.mjs",

@@ -136,6 +136,11 @@ console.log(
 );
 const singleProcessEnv = chromiumSupport.singleProcess ? { TACHIKO_TEST_SINGLE_PROCESS: '1' } : {};
 try {
+  const normalUi = await runStep(
+    'j3-normal-ui-local-transport',
+    [path.join(root, 'tests', 'product', 'j3-normal-ui-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
   if (!serving.ready) {
     console.error(`BLOCKED: the canonical acceptance server did not start.\n${Buffer.concat(serving.output).toString()}`);
     // Supporting evidence only: the same six product outcomes over a disk-routed
@@ -150,7 +155,7 @@ try {
       [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = localM1 === 0 && localFocus === 0;
+    const localOk = normalUi === 0 && localM1 === 0 && localFocus === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -175,7 +180,7 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
-    exitCode = browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
+    exitCode = normalUi === 0 && browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {

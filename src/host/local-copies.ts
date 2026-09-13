@@ -1,6 +1,7 @@
 import type {
   CanonicalProjectFile,
   CanonicalTreeExport,
+  ImportedSourceAttachment,
   LocalCopies,
   SaveReceipt,
   SavedCopy,
@@ -26,6 +27,8 @@ interface StoredCopy {
   savedAt: string;
   revision: string;
   files: StoredFile[];
+  /** Private IndexedDB composition, never a canonical project entry. */
+  importedSource?: Omit<ImportedSourceAttachment, "bytes"> & { bytes: ArrayBuffer };
 }
 
 let connection: Promise<IDBDatabase> | undefined;
@@ -83,6 +86,12 @@ function toSavedCopy(record: StoredCopy): SavedCopy {
     savedAt: record.savedAt,
     revision: record.revision,
     files: record.files.map((file) => ({ path: file.path, bytes: cloneBytes(file.bytes) })),
+    importedSource: record.importedSource ? {
+      ...record.importedSource,
+      bytes: cloneBytes(record.importedSource.bytes),
+      metadata: structuredClone(record.importedSource.metadata),
+      ledger: structuredClone(record.importedSource.ledger),
+    } : undefined,
   };
 }
 
@@ -147,7 +156,7 @@ export function createLocalCopies(): LocalCopies {
       return toSavedCopy(record);
     },
 
-    async create(name: string, snapshot: CanonicalTreeExport): Promise<SaveReceipt> {
+    async create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt> {
       if (typeof name !== "string" || name.length === 0) {
         throw new TypeError("A local copy needs a non-empty name.");
       }
@@ -156,6 +165,13 @@ export function createLocalCopies(): LocalCopies {
         savedAt: new Date().toISOString(),
         revision: String(snapshot.revision),
         files: cloneFiles(snapshot.files),
+        importedSource: importedSource ? {
+          name: importedSource.name,
+          format: importedSource.format,
+          bytes: cloneBytes(importedSource.bytes),
+          metadata: structuredClone(importedSource.metadata),
+          ledger: structuredClone(importedSource.ledger),
+        } : undefined,
       };
       const db = await openDatabase();
       await addCopyOnce(db, record);

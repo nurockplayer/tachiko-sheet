@@ -4,6 +4,10 @@ import {
   type CanonicalProjectFile,
   type Currentness,
   type FieldTarget,
+  type ImportInspection,
+  type ImportedSourceAttachment,
+  type ImportSelection,
+  type InteropState,
   type LocalCopies,
   type OperationOutcome,
   type SaveStatus,
@@ -100,6 +104,11 @@ export function App({ runtime, copies }: AppProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("not-saved");
   const [message, setMessage] = useState<string | null>(null);
   const [savedCopies, setSavedCopies] = useState<SavedCopySummary[]>([]);
+  const [interop, setInterop] = useState<InteropState | null>(null);
+  const importBytesRef = useRef<ArrayBuffer | null>(null);
+  const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
+  // An ephemeral, user-consented delivery candidate; never canonical state.
+  const preparedDownloadRef = useRef<{ format: "csv" | "xlsx"; revision: string; bytes: ArrayBuffer } | null>(null);
 
   const viewRef = useRef<WorkbookView | null>(null);
   const inflightRef = useRef(false);
@@ -220,7 +229,22 @@ export function App({ runtime, copies }: AppProps) {
     setCurrentness("unknown");
     // Publication is known; only projection freshness remains unknown.
     setOutcome("idle");
+    // The old preview targeted the projection we just discarded.
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
+  }
+
+  function failClosedAfterUnknownCleanup(): void {
+    viewRef.current = null;
+    setView(null);
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    setMessage("The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
 
   function failClosedAfterUnknownEdit(edit: ScalarEdit): void {
@@ -249,6 +273,10 @@ export function App({ runtime, copies }: AppProps) {
       draftDirtyRef.current = false;
       syncDirty();
       markNotSaved();
+      importBytesRef.current = null;
+      importedSourceRef.current = null;
+      preparedDownloadRef.current = null;
+      setInterop(null);
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
@@ -283,6 +311,10 @@ export function App({ runtime, copies }: AppProps) {
       draftDirtyRef.current = false;
       syncDirty();
       markNotSaved();
+      importBytesRef.current = null;
+      importedSourceRef.current = null;
+      preparedDownloadRef.current = null;
+      setInterop(null);
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
@@ -312,6 +344,9 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("pending");
       const copy = await copies.read(name);
       if (!copy) throw new Error(`the saved copy “${name}” is no longer stored on this device`);
+      if (copy.importedSource) {
+        await runtime.validateImportedProject(copy.files, copy.importedSource.metadata);
+      }
       const next = await runtime.openCanonical(copy.files);
       installView(next);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
@@ -326,6 +361,15 @@ export function App({ runtime, copies }: AppProps) {
       }
       setCurrentness("current");
       setOutcome("idle");
+      importedSourceRef.current = copy.importedSource ?? null;
+      preparedDownloadRef.current = null;
+      setInterop(copy.importedSource ? {
+        importInspection: null,
+        metadata: copy.importedSource.metadata,
+        ledger: copy.importedSource.ledger,
+        cleanupPreview: null,
+        downloadStatus: "idle",
+      } : null);
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
@@ -343,6 +387,147 @@ export function App({ runtime, copies }: AppProps) {
     } finally {
       end();
     }
+  }
+
+  async function inspectImport(file: File): Promise<ImportInspection> {
+    if (!begin()) throw new Error("Another operation is in progress.");
+    try {
+      guardReplacement();
+      const lower = file.name.toLowerCase();
+      const format = lower.endsWith(".csv") ? "csv" : lower.endsWith(".xlsx") ? "xlsx" : null;
+      if (!format) throw new Error("Choose a .csv or .xlsx file.");
+      const bytes = await file.arrayBuffer();
+      const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: ",", header: true });
+      const inspection = { name: file.name, format, source } as ImportInspection;
+      importBytesRef.current = bytes.slice(0);
+      setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      setMessage(null);
+      return inspection;
+    } catch (error) {
+      setMessage(describe(error, "The selected spreadsheet could not be inspected."));
+      throw error;
+    } finally { end(); }
+  }
+
+  async function importCandidate(selection: ImportSelection): Promise<boolean> {
+    const pending = interop?.importInspection;
+    const bytes = importBytesRef.current;
+    if (!pending || !bytes || !begin()) return false;
+    try {
+      guardReplacement();
+      setCurrentness("pending");
+      const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: ",", header: true }, selection);
+      installView(imported.view);
+      preparedDownloadRef.current = null;
+      pendingDirtyRef.current = true;
+      syncDirty();
+      markNotSaved();
+      setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      importedSourceRef.current = { name: pending.name, format: pending.format, bytes: bytes.slice(0), metadata: imported.metadata, ledger: imported.ledger };
+      setCurrentness("current");
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      if (error instanceof OpenedProjectionRecoveryError) failClosedAfterOpenRecovery(error);
+      else setMessage(describe(error, "The import was not applied."));
+      return false;
+    } finally { end(); }
+  }
+
+  function cancelImport(): void {
+    importBytesRef.current = null;
+    setInterop((current) => current ? { ...current, importInspection: null } : null);
+  }
+
+  async function previewTrim(witness: ViewWitness, fields: FieldTarget[]) {
+    if (!begin()) return null;
+    try {
+      const preview = await runtime.previewCleanup(witness, { kind: "trim", fields });
+      setInterop((current) => current ? { ...current, cleanupPreview: preview } : current);
+      setOutcome("idle");
+      return preview;
+    } catch (error) { setOutcome("idle"); setMessage(describe(error, "A cleanup preview could not be created.")); return null; }
+    finally { end(); }
+  }
+
+  async function previewDeduplicate(witness: ViewWitness, entities: string[], fields: string[]) {
+    if (!begin()) return null;
+    try {
+      const preview = await runtime.previewCleanup(witness, { kind: "deduplicate", entities, key_fields: fields });
+      setInterop((current) => current ? { ...current, cleanupPreview: preview } : current);
+      setOutcome("idle");
+      return preview;
+    } catch (error) { setOutcome("idle"); setMessage(describe(error, "A duplicate-row preview could not be created.")); return null; }
+    finally { end(); }
+  }
+
+  async function commitCleanup(witness: ViewWitness, previewId: string): Promise<boolean> {
+    if (!begin()) return false;
+    try {
+      const next = await runtime.commitCleanup(witness, previewId);
+      installView(next); pendingDirtyRef.current = true; syncDirty(); markNotSaved();
+      setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      if (error instanceof PublishedProjectionRecoveryError) {
+        failClosedAfterPublicationRecovery();
+      } else if (error instanceof UnknownOperationOutcomeError) {
+        failClosedAfterUnknownCleanup();
+      } else {
+        setOutcome("idle");
+        setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+        setMessage(describe(error, "The cleanup was not applied."));
+      }
+      return false;
+    }
+    finally { end(); }
+  }
+
+  function cancelCleanup(): void {
+    setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+    setOutcome("idle");
+  }
+
+  async function prepareDownload(format: "csv" | "xlsx"): Promise<boolean> {
+    const live = viewRef.current;
+    const metadata = interop?.metadata;
+    if (!live || !metadata || !begin()) return false;
+    try {
+      const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
+      preparedDownloadRef.current = { format, revision: exported.revision, bytes: exported.bytes.slice(0) };
+      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent" } : current);
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      preparedDownloadRef.current = null;
+      setOutcome("idle");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
+      setMessage(describe(error, "The export could not be prepared for review.")); return false;
+    } finally { end(); }
+  }
+
+  async function download(format: "csv" | "xlsx"): Promise<boolean> {
+    const live = viewRef.current;
+    const prepared = preparedDownloadRef.current;
+    if (!live || !prepared || prepared.format !== format || prepared.revision !== live.revision || !begin()) return false;
+    try {
+      const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = `${live.title}.${format}`; anchor.hidden = true;
+      document.body.append(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      preparedDownloadRef.current = null;
+      setInterop((current) => current ? { ...current, downloadStatus: "idle" } : current);
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      preparedDownloadRef.current = null;
+      setOutcome("idle");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
+      setMessage(describe(error, "The download was not created.")); return false;
+    } finally { end(); }
   }
 
   async function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean> {
@@ -403,7 +588,7 @@ export function App({ runtime, copies }: AppProps) {
     setSaveStatus("saving");
     try {
       const tree = await runtime.exportCanonical(witnessOf(live));
-      const receipt = await copies.create(name, tree);
+      const receipt = await copies.create(name, tree, importedSourceRef.current ?? undefined);
       void refreshCopies();
       const current = viewRef.current;
       const stillCurrent =
@@ -534,6 +719,16 @@ export function App({ runtime, copies }: AppProps) {
         onClose={close}
         onRefresh={refresh}
         onDraftChange={onDraftChange}
+        interop={interop}
+        onInspectImport={inspectImport}
+        onImportCandidate={importCandidate}
+        onCancelImport={cancelImport}
+        onPreviewTrim={previewTrim}
+        onPreviewDeduplicate={previewDeduplicate}
+        onCommitCleanup={commitCleanup}
+        onCancelCleanup={cancelCleanup}
+        onPrepareDownload={prepareDownload}
+        onDownload={download}
       />
       <footer className="ts-notices">
         <span>Tachiko Sheet · experimental core kit notices: </span>

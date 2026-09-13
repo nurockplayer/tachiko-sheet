@@ -6,6 +6,28 @@ import type {
   FieldTarget,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
+import type {
+  CleanupOperation,
+  CleanupPreview,
+  FidelityFinding,
+  ImportOptions,
+  ImportSelection,
+  InteropMetadata,
+  SourceWorkbook,
+  SpreadsheetExport,
+  SpreadsheetFormat,
+} from "../public/core-kit/runtime/interop-protocol.js";
+export type {
+  CleanupOperation,
+  CleanupPreview,
+  FidelityFinding,
+  ImportOptions,
+  ImportSelection,
+  InteropMetadata,
+  SourceWorkbook,
+  SpreadsheetExport,
+  SpreadsheetFormat,
+} from "../public/core-kit/runtime/interop-protocol.js";
 
 export type { CanonicalProjectFile, CanonicalTreeExport, FieldTarget };
 export type CoreKit = typeof import("../public/core-kit/experimental-client.js");
@@ -33,19 +55,41 @@ export interface SheetRuntime {
   readFields(witness: ViewWitness, targets: FieldTarget[]): Promise<FieldBatchProjection>;
   edit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<WorkbookView>;
   exportCanonical(witness: ViewWitness): Promise<CanonicalTreeExport>;
+  /** The public kit parses all spreadsheet bytes; Sheet retains no parser. */
+  inspectSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions): Promise<SourceWorkbook>;
+  importSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions, selection: ImportSelection): Promise<ImportedWorkbook>;
+  previewCleanup(witness: ViewWitness, operation: CleanupOperation): Promise<CleanupPreview>;
+  commitCleanup(witness: ViewWitness, previewId: string): Promise<WorkbookView>;
+  exportSpreadsheet(witness: ViewWitness, metadata: InteropMetadata, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
+  validateImportedProject(files: readonly CanonicalProjectFile[], metadata: InteropMetadata): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface ImportedWorkbook {
+  view: WorkbookView;
+  metadata: InteropMetadata;
+  ledger: FidelityFinding[];
 }
 
 export interface SavedCopySummary { name: string; savedAt: string }
 export interface SavedCopy extends SavedCopySummary {
   revision: string;
   files: CanonicalProjectFile[];
+  importedSource?: ImportedSourceAttachment;
+}
+/** Host-private attachment: deliberately outside the opaque canonical tree. */
+export interface ImportedSourceAttachment {
+  name: string;
+  format: SpreadsheetFormat;
+  bytes: ArrayBuffer;
+  metadata: InteropMetadata;
+  ledger: FidelityFinding[];
 }
 export interface SaveReceipt extends SavedCopySummary { revision: string }
 export interface LocalCopies {
   list(): Promise<SavedCopySummary[]>;
   read(name: string): Promise<SavedCopy | null>;
-  create(name: string, snapshot: CanonicalTreeExport): Promise<SaveReceipt>;
+  create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt>;
   close(): Promise<void>;
 }
 
@@ -69,6 +113,31 @@ export interface SheetShellProps {
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;
   onDraftChange(dirty: boolean): void;
+  interop?: InteropState | null;
+  onInspectImport?(file: File): Promise<ImportInspection>;
+  onImportCandidate?(selection: ImportSelection): Promise<boolean>;
+  onCancelImport?(): void;
+  onPreviewTrim?(witness: ViewWitness, fields: FieldTarget[]): Promise<CleanupPreview | null>;
+  onPreviewDeduplicate?(witness: ViewWitness, entities: string[], fields: string[]): Promise<CleanupPreview | null>;
+  onCommitCleanup?(witness: ViewWitness, previewId: string): Promise<boolean>;
+  onCancelCleanup?(): void;
+  /** Produces the actual core export and ledger; this never downloads it. */
+  onPrepareDownload?(format: SpreadsheetFormat): Promise<boolean>;
+  onDownload?(format: SpreadsheetFormat): Promise<boolean>;
+}
+
+export interface ImportInspection {
+  name: string;
+  format: SpreadsheetFormat;
+  source: SourceWorkbook;
+}
+
+export interface InteropState {
+  importInspection: ImportInspection | null;
+  metadata: InteropMetadata | null;
+  ledger: FidelityFinding[];
+  cleanupPreview: CleanupPreview | null;
+  downloadStatus: "idle" | "consent" | "failed";
 }
 
 /** A dispatched operation has no trustworthy publication result. */

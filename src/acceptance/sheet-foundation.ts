@@ -70,6 +70,7 @@ declare global {
 type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 
 const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate"]);
+const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup"]);
 const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
 
 let wiring: AcceptanceWiring | null = null;
@@ -107,9 +108,9 @@ function instrumentClient(client: PublicClient): PublicClient {
     get(target, property): unknown {
       const value = Reflect.get(target, property, target) as unknown;
       if (typeof value !== "function") return value;
-      if (typeof property === "string" && EDIT_METHODS.has(property)) {
+      if (typeof property === "string" && PUBLICATION_METHODS.has(property)) {
         return (...args: unknown[]): Promise<PublicationProjection> =>
-          dispatchScalarEdit(target, property, args);
+          dispatchPublication(target, property, args);
       }
       if (property === "queryTable") {
         return async (...args: unknown[]): Promise<unknown> => {
@@ -133,11 +134,12 @@ function instrumentClient(client: PublicClient): PublicClient {
 }
 
 /**
- * Genuine scalar-edit dispatch. When the reply-loss arm is set, the real call is
- * made exactly once, its real successful projection is retained observationally
- * and only then is an unknown outcome raised. The result is never resent.
+ * Genuine publication dispatch. When the reply-loss arm is set, the real call
+ * is made exactly once, its real successful projection is retained
+ * observationally and only then is an unknown outcome raised. The result is
+ * never resent. This includes scalar edits and cleanup commits.
  */
-async function dispatchScalarEdit(
+async function dispatchPublication(
   target: PublicClient,
   method: string,
   args: unknown[],
