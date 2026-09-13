@@ -49,13 +49,15 @@ The product must make these concepts distinguishable when they exist:
 - editing;
 - drag pickup and valid/invalid destination;
 - disabled / unavailable;
-- pending / loading;
+- locally queued / started / loading;
+- operation outcome: succeeded / failed / unknown;
 - error / recovery;
-- current / dirty / saving / saved / unknown freshness.
+- projection freshness: current / stale / unknown;
+- persistence: dirty / saving / saved / failed / unknown.
 
 Do not collapse these concepts into one generic highlight color or one generic grey background. The exact visual channel may differ by component, but the semantics must remain readable.
 
-States may coexist. In particular, keyboard focus is not the same thing as spreadsheet selection, and selection may remain while focus moves to a command surface.
+States may coexist. In particular, keyboard focus is not the same thing as spreadsheet selection, and selection may remain while focus moves to a command surface. Operation outcome, projection freshness and persistence are independent dimensions (§4); one must not be inferred solely from another.
 
 ### 1.4 Spreadsheet anchors are functional, not decorative legacy
 
@@ -92,7 +94,7 @@ Menus, popovers, panes, dialogs, help/detail layers, and temporary editing surfa
 Relevant context includes:
 
 - active selection/range;
-- scroll position;
+- usable scroll context (not identical offsets during legitimate adaptation; §1.2);
 - edited object and draft;
 - keyboard focus/return target;
 - current filter/view/sheet;
@@ -102,7 +104,7 @@ Closing a transient layer should return the user to a predictable place rather t
 
 ### 1.8 Feedback is truthful and lands near consequence
 
-Pending, saved, failed, unknown, stale, unavailable, and current states must not be visually conflated.
+Pending, saved, failed, unknown, stale, unavailable, and current states must not be visually conflated. Semantic publication, projection freshness and durable persistence require their respective evidence under existing runtime/host contracts; a success indication for one does not establish the others.
 
 When a change affects the grid, the grid/object should carry the primary consequence feedback when practical. Global toast/status messaging may supplement local feedback but should not be the only indication of a cell/range-local error or change.
 
@@ -147,10 +149,10 @@ The design system should define semantic families rather than copy screenshot-de
 
 Required families include, as the product needs them:
 
-- **surface roles** — work canvas, quiet chrome, raised/local panel, transient overlay, selected/current surfaces;
+- **surface roles** — work canvas, quiet chrome, raised/local panel, transient overlay, selected/active-navigation surfaces;
 - **text roles** — primary, secondary, tertiary/metadata, disabled, danger/status, code/numeric where needed;
 - **line/boundary roles** — gridline, divider, input boundary, selection, focus, error/warning;
-- **state roles** — hover, pressed, selected, editing, drag target, pending, success/current, error, unknown;
+- **state roles** — hover, pressed, selected, editing, drag target, local progress, operation outcome, projection freshness, persistence status, error/recovery; outcome, freshness and persistence remain independent;
 - **spacing families** — a finite repeated rhythm for inline, control-internal, group, and section spacing;
 - **control geometry** — repeated control/row families appropriate to density/input mode;
 - **radius/elevation roles** — tied to semantic container/layer roles rather than feature-local decoration;
@@ -165,7 +167,7 @@ Existing `--ts-*` values are implementation, not independent product authority; 
 
 For every shared interactive primitive, define only the states that semantically exist, but derive them from a common grammar.
 
-| State | Required property |
+| State or dimension | Required property |
 | --- | --- |
 | Rest | Quiet enough not to compete with the current task unless the control itself is primary. |
 | Hover | Confirms target/action without incidental geometry shift (§1.2); not the only path to critical capability. |
@@ -175,11 +177,15 @@ For every shared interactive primitive, define only the states that semantically
 | Editing | Clearly different from selected-but-not-editing; typing consequences are unambiguous. |
 | Dragging | Shows pickup plus valid/invalid destination before commit. |
 | Disabled/unavailable | Readable and recognizably unavailable; explain reason/recovery where material. |
-| Pending/loading | Shows that work was accepted and is not yet complete; does not look saved/current. |
+| Pending/loading | Shows that an operation has been locally queued/started, or that content is loading, but is not complete. This indication alone does not prove authoritative runtime acceptance, semantic publication, projection currentness or durable save. |
 | Error/recovery | Attached to the relevant context where practical and provides a recovery path. |
-| Success/current | Confirms completed/current state without becoming permanent celebratory chrome. |
+| Operation outcome | Report confirmed success/failure for the specific operation under the existing runtime/host contract; completion alone is not success. A historical success is not proof that the displayed workbook is current or that its latest work is durably saved. Uncertain outcomes remain unknown. |
+| Projection freshness | Show current/stale/unknown for displayed data using existing occurrence/revision-qualified authority, independently of operation outcome and persistence. A success badge alone cannot establish currentness. |
+| Persistence | Show dirty/saving/saved/failed/unknown from existing host/durable-save evidence for the relevant work, independently of publication and freshness. A successful save of an older revision must not mark newer work saved or clear its dirty state. |
 
 This is not a linear state machine. Multiple state dimensions may coexist and tests should cover material combinations.
+
+In particular, check confirmed semantic publication with a current projection while Save is pending or failed; a successful save of an older revision while newer work remains dirty; and local-queue or unknown-outcome indications without publication evidence. A save result does not establish freshness of the currently displayed projection. Apply existing occurrence/revision and save contracts; this table introduces no new canonical state or storage semantics.
 
 ## 5. Density and responsive/input adaptation
 
@@ -203,7 +209,7 @@ None of these is a goal by itself.
 Use them only when they communicate a job:
 
 - **border/divider** — real boundary, editable control boundary, selection/focus, or meaningful separation;
-- **surface change** — grouping, current/selected state, or chrome/work-area distinction;
+- **surface change** — grouping, selection/active-navigation state, or chrome/work-area distinction;
 - **radius** — consistent geometry vocabulary for a semantic container family;
 - **shadow/elevation** — temporary layer relationship, not “modern” decoration for every card;
 - **motion** — state/layer/spatial continuity and feedback; it must not delay high-frequency work or create false hierarchy.
@@ -223,7 +229,7 @@ Applicable changes must not introduce:
 - selection/edit/focus or command-scope ambiguity that can cause the wrong operation target;
 - incidental hover/focus/contextual-affordance shifts that disrupt target acquisition; legitimate workspace adaptation is governed by §1.2;
 - lost working target, draft, focus continuity or usable scroll context across transient UI or workspace adaptation; necessary scrolling/reflow to keep the editor usable is not itself context loss;
-- false saved/current/success treatment for pending/failed/unknown work;
+- false operation-success, projection-currentness or durable-save claims without evidence for that specific dimension, including marking newer work saved from an older successful save; legitimate combinations such as current data with a failed Save must remain representable (§4);
 - inaccessible core paths for the supported keyboard/pointer/touch claim;
 - hidden critical state with no non-hover path;
 - drag/resize/insert interaction whose destination is unknowable before commit;
@@ -314,4 +320,4 @@ This contract does not require or authorize:
 
 The enduring product rule is simpler:
 
-> **Keep necessary information dense; make unnecessary visual competition sparse. Preserve spreadsheet state, position, and trust while doing it.**
+> **Keep necessary information dense; make unnecessary visual competition sparse. Preserve the working target, uncommitted drafts, semantic context, interaction continuity and trust through legitimate workspace adaptation (§1.2), rather than requiring fixed pixel positions or scroll offsets.**
