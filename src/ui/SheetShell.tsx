@@ -105,6 +105,7 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -427,6 +428,14 @@ export function SheetShell(props: SheetShellProps) {
     if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
   }
 
+  function cancelImport(): void {
+    setImportError(null);
+    onCancelImport();
+    // Wait for React to remove the dialog; focusing before that commit would
+    // lose focus with the unmounted modal control.
+    window.setTimeout(() => spreadsheetInputRef.current?.focus(), 0);
+  }
+
   async function prepareDownload(format: "csv" | "xlsx", trigger: HTMLButtonElement): Promise<void> {
     downloadTriggerRef.current = trigger;
     if (await onPrepareDownload(format)) setDownloadFormat(format);
@@ -589,8 +598,8 @@ export function SheetShell(props: SheetShellProps) {
           <h2 className="ts-h2">Import CSV or XLSX</h2>
           <p className="ts-subtle">Sheet asks the core kit to inspect the source before creating an import candidate.</p>
           <label className="ts-field-label" htmlFor={spreadsheetInputId}>Choose CSV or XLSX</label>
-          <input id={spreadsheetInputId} className="ts-file-input" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={controlsLocked || recoveryLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
-          {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
+          <input ref={spreadsheetInputRef} id={spreadsheetInputId} className="ts-file-input" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={controlsLocked || recoveryLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+          {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
         </section>
         <section className="ts-card" aria-label="Saved copies">
           <h2 className="ts-h2">Saved copies</h2>
@@ -1008,12 +1017,13 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
       ) : null}
       {interop?.importInspection ? (
-        <Modal label="Review import candidate" onCancel={onCancelImport}>
+        <Modal label="Review import candidate" onCancel={cancelImport}>
           <h2 className="ts-h2">Review import candidate</h2>
           <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
           {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint">No source-fidelity findings were reported for this candidate.</p>}
           <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
-          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={onCancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
+          {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
         </Modal>
       ) : null}
       {downloadFormat ? <Modal label="Confirm download" onCancel={cancelDownload}><h2 className="ts-h2">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p>{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint">The exporter reported no fidelity findings for this output.</p>}<div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) cancelDownload(); }); }}>Download</button></div></Modal> : null}

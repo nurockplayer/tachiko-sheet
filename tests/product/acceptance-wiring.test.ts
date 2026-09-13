@@ -37,6 +37,10 @@ function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: C
       state.calls += 1;
       return onEdit();
     },
+    commitCleanup: async () => {
+      state.calls += 1;
+      return onEdit();
+    },
     queryTable: async (collection: string) => ({ collection, rows: [], columns: [], revision: "r1" }),
   };
   const kit = {
@@ -91,6 +95,22 @@ describe("acceptance kit instrumentation", () => {
     const next = await instrumented.editNumber("r2", { entity: "e", field: "f" }, "4");
     expect(next.resulting_revision).toBe("r7");
     expect(calls()).toBe(2);
+  });
+
+  it("loses a real cleanup commit reply after exactly one dispatch", async () => {
+    const { kit, calls } = fakeKit(async () => projection({ resulting_revision: "cleanup-r7" }));
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    const start = executeRequestCount();
+    loseNextExecuteReply();
+    const commit = instrumented.commitCleanup;
+    expect(commit).toBeDefined();
+    await expect(commit!.call(instrumented, "r1", "preview-1")).rejects.toBeInstanceOf(
+      UnknownOperationOutcomeError,
+    );
+    await settleFaultWindow();
+    expect(calls()).toBe(1);
+    expect(executeRequestCount() - start).toBe(1);
+    expect(lastReceipt()?.resulting_revision).toBe("cleanup-r7");
   });
 
   it("fails only the next real post-open projection reply", async () => {

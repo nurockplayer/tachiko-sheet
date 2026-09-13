@@ -87,14 +87,17 @@ try {
   let dialog = await choose(page, messyCsv);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Choose CSV or XLSX", { exact: true }).evaluate((input) => document.activeElement === input), true, "cancel must restore focus to the spreadsheet trigger");
   // Invalid typing stays a rejected import candidate; it never opens or replaces work.
   dialog = await choose(page, messyCsv);
   await dialog.locator("select").first().selectOption("number");
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
-  const importAlert = page.getByText(/The import was not applied/, { exact: false }).first();
+  const importAlert = dialog.getByRole("alert");
   await importAlert.waitFor();
   assert.match(await importAlert.textContent(), /import was not applied/i);
-  await dialog.press("Escape");
+  assert.equal(await importAlert.evaluate((alert) => alert.closest('[role="dialog"]')?.getAttribute("aria-modal")), "true", "rejection alert must remain inside the active modal");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
 
   // I01/I07: normal CSV selection, visible candidate and explicit choices.
   await importWithTypes(page, messyCsv);
@@ -130,13 +133,20 @@ try {
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Enter");
   await preview(page, "Preview trim");
   assert.ok(await page.getByLabel("Cleanup targets", { exact: true }).locator("li").count() > 0, "preview must identify concrete row/column targets");
-  // This is the declared acceptance transport fault: the core publication is
-  // known, while its following projection read is unavailable. The normal UI
-  // must clear the old preview and require a re-observe instead of retrying.
-  await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+  // This declared acceptance transport fault reaches the actual cleanup
+  // commit once, then loses its reply. It must not be mistaken for a failed
+  // cleanup or retried by the UI.
+  const cleanupDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
   await page.getByRole("button", { name: "Commit preview", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true");
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
+  assert.equal(await page.getByTestId("operation-outcome").textContent(), "Outcome needs review");
+  assert.equal(await page.getByTestId("project-ready").count(), 0, "unknown cleanup retained the old view");
+  assert.equal(await page.locator("[role=grid]").count(), 0, "unknown cleanup retained a stale grid");
+  assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "unknown cleanup retained the old preview");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), cleanupDispatches + 1, "unknown cleanup was retried");
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
