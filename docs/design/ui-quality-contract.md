@@ -177,15 +177,16 @@ For every shared interactive primitive, define only the states that semantically
 | Editing | Clearly different from selected-but-not-editing; typing consequences are unambiguous. |
 | Dragging | Shows pickup plus valid/invalid destination before commit. |
 | Disabled/unavailable | Readable and recognizably unavailable; explain reason/recovery where material. |
-| Pending/loading | Shows that an operation has been locally queued/started, or that content is loading, but is not complete. This indication alone does not prove authoritative runtime acceptance, semantic publication, projection currentness or durable save. |
+| Pending/loading | Shows that an operation is locally queued or running, or that content is still loading; the local work is incomplete. This indication alone does not prove authoritative runtime acceptance, successful completion, semantic publication, projection currentness or durable save. |
 | Error/recovery | Attached to the relevant context where practical and provides a recovery path. |
-| Operation outcome | Report confirmed success/failure for the specific operation under the existing runtime/host contract; completion alone is not success. A historical success is not proof that the displayed workbook is current or that its latest work is durably saved. Uncertain outcomes remain unknown. |
+| Operation completion/outcome | For the specific operation, distinguish incomplete from completed and confirmed success from failure under the existing runtime/host contract. A successful completion establishes only that operation's outcome; it does not by itself establish semantic publication, projection currentness/freshness or durable save. Uncertain outcomes remain unknown. |
+| Semantic publication | Show publication only from confirmation under the existing semantic runtime contract, independently of local progress, operation completion, projection freshness and persistence. Do not infer publication from a generic success indication or a durable-save result. |
 | Projection freshness | Show current/stale/unknown for displayed data using existing occurrence/revision-qualified authority, independently of operation outcome and persistence. A success badge alone cannot establish currentness. |
 | Persistence | Show dirty/saving/saved/failed/unknown from existing host/durable-save evidence for the relevant work, independently of publication and freshness. A successful save of an older revision must not mark newer work saved or clear its dirty state. |
 
 This is not a linear state machine. Multiple state dimensions may coexist and tests should cover material combinations.
 
-In particular, check confirmed semantic publication with a current projection while Save is pending or failed; a successful save of an older revision while newer work remains dirty; and local-queue or unknown-outcome indications without publication evidence. A save result does not establish freshness of the currently displayed projection. Apply existing occurrence/revision and save contracts; this table introduces no new canonical state or storage semantics.
+In particular, check confirmed semantic publication with a current projection while Save is pending or failed; a successful operation completion without publication or currentness evidence; a successful save of an older revision while newer work remains dirty; and local-queue or unknown-outcome indications without publication evidence. A save result does not establish freshness of the currently displayed projection. Apply existing publication, occurrence/revision and save contracts; this table introduces no new canonical state or storage semantics.
 
 ## 5. Density and responsive/input adaptation
 
