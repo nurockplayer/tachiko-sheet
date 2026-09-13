@@ -60,13 +60,14 @@ try {
     const client = kit.createExperimentalDesignerClient();
     const groups = projection => Object.fromEntries(projection.groups.map(group => [group.category, group.value]));
     const rows = table => Object.fromEntries(table.rows.map(row => [row.key, Object.fromEntries(row.fields.map(field => [field.target.field, field.stored && {kind: field.stored.kind, value: field.stored.value}]))]));
+    const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonical(item)])) : value;
     const definition = {id: definitionId, orders_schema: salesSchema, order_lookup_key_field: fields.salesCode, order_quantity_field: fields.quantity, products_schema: catalogSchema, product_key_field: fields.code, product_category_field: fields.category, product_price_field: fields.price};
     try {
       const opened = await client.openProject(kit.projectTransferFromEntries(materialized));
       const catalog = await client.queryTable('catalog'); const sales = await client.queryTable('sales');
       const columnKinds = table => Object.fromEntries(table.columns.map(column => [column.key, column.field_type]));
       const beforeDefinition = {collections: opened.bootstrap.collections.map(collection => ({key: collection.key, id: collection.id})).sort((left, right) => left.key.localeCompare(right)), catalogKinds: columnKinds(catalog), salesKinds: columnKinds(sales), catalogRows: rows(catalog), salesRows: rows(sales)};
-      if (JSON.stringify(beforeDefinition) !== JSON.stringify(expectedBefore)) throw new Error('Materialized J4 fixture did not match the fixed schema, binding, and row provenance before definition evaluation.');
+      if (JSON.stringify(canonical(beforeDefinition)) !== JSON.stringify(canonical(expectedBefore))) throw new Error('Materialized J4 fixture did not match the fixed schema, binding, and row provenance before definition evaluation.');
       const published = await client.createKeyedGroupedSum(opened.bootstrap.revision, definition);
       const initial = await client.queryKeyedGroupedSum(definitionId);
       const pen = catalog.rows.find(row => row.key === 'catalog_pen');
