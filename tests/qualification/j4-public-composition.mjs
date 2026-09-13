@@ -52,7 +52,9 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
   await page.goto(origin);
-  const result = await page.evaluate(async ({entries, fields, catalogSchema, salesSchema, definitionId}) => {
+  const expectedBeforeDefinition = {collections: [{key: 'catalog', id: catalogSchema}, {key: 'sales', id: salesSchema}], catalogKinds: {category: 'text', code: 'text', price: 'number'}, salesKinds: {product_code: 'text', quantity: 'number'}, catalogRows: {catalog_note: {[fields.code]: {kind: 'text', value: 'NOTE'}, [fields.category]: {kind: 'text', value: 'NOTE'}, [fields.price]: {kind: 'number', value: 500}}, catalog_pen: {[fields.code]: {kind: 'text', value: 'PEN'}, [fields.category]: {kind: 'text', value: 'PEN'}, [fields.price]: {kind: 'number', value: 200}}}, salesRows: {sale_note: {[fields.salesCode]: {kind: 'text', value: 'NOTE'}, [fields.quantity]: {kind: 'number', value: 2}}, sale_pen_1: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 1}}, sale_pen_3: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 3}}}};
+  assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
+  const result = await page.evaluate(async ({entries, fields, catalogSchema, salesSchema, definitionId, expectedBefore}) => {
     const kit = await import('/kit/experimental-client.js');
     const materialized = entries.map(entry => ({path: entry.path, bytes: new Uint8Array(entry.bytes).buffer}));
     const client = kit.createExperimentalDesignerClient();
@@ -64,6 +66,7 @@ try {
       const catalog = await client.queryTable('catalog'); const sales = await client.queryTable('sales');
       const columnKinds = table => Object.fromEntries(table.columns.map(column => [column.key, column.field_type]));
       const beforeDefinition = {collections: opened.bootstrap.collections.map(collection => ({key: collection.key, id: collection.id})).sort((left, right) => left.key.localeCompare(right)), catalogKinds: columnKinds(catalog), salesKinds: columnKinds(sales), catalogRows: rows(catalog), salesRows: rows(sales)};
+      if (JSON.stringify(beforeDefinition) !== JSON.stringify(expectedBefore)) throw new Error('Materialized J4 fixture did not match the fixed schema, binding, and row provenance before definition evaluation.');
       const published = await client.createKeyedGroupedSum(opened.bootstrap.revision, definition);
       const initial = await client.queryKeyedGroupedSum(definitionId);
       const pen = catalog.rows.find(row => row.key === 'catalog_pen');
@@ -87,9 +90,8 @@ try {
       await client.closeProject(); await client.close();
       return {beforeDefinition, initial: groups(initial), current: groups(current), reopened: groups(reopenedGroups), duplicate: {groups: duplicate.groups.length, diagnostics: duplicate.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, missing: {groups: missing.groups.length, diagnostics: missing.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, exportBytes: [...new Uint8Array(exported.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
     } catch (error) { try { await client.close(); } catch {} throw error; }
-  }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId});
-  assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
-  assert.deepEqual(result.beforeDefinition, {collections: [{key: 'catalog', id: catalogSchema}, {key: 'sales', id: salesSchema}], catalogKinds: {category: 'text', code: 'text', price: 'number'}, salesKinds: {product_code: 'text', quantity: 'number'}, catalogRows: {catalog_note: {[fields.code]: {kind: 'text', value: 'NOTE'}, [fields.category]: {kind: 'text', value: 'NOTE'}, [fields.price]: {kind: 'number', value: 500}}, catalog_pen: {[fields.code]: {kind: 'text', value: 'PEN'}, [fields.category]: {kind: 'text', value: 'PEN'}, [fields.price]: {kind: 'number', value: 200}}}, salesRows: {sale_note: {[fields.salesCode]: {kind: 'text', value: 'NOTE'}, [fields.quantity]: {kind: 'number', value: 2}}, sale_pen_1: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 1}}, sale_pen_3: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 3}}}});
+  }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId, expectedBefore: expectedBeforeDefinition});
+  assert.deepEqual(result.beforeDefinition, expectedBeforeDefinition);
   assert.deepEqual(result.initial, {NOTE: 1000, PEN: 800});
   assert.deepEqual(result.current, {NOTE: 1000, PEN: 1000});
   assert.deepEqual(result.reopened, {NOTE: 1000, PEN: 1000});
