@@ -1,6 +1,7 @@
 # Exact-final-head production visual matrix
 
 Source/build commit: `37d254ec51ea7e4a10ec9598181ac6b47db6c405`.
+Capture/evidence commit: `17df804ef9d692e6e196a787034fe3d3ceaaeb73`.
 
 This matrix was regenerated from that exact production head with:
 
@@ -28,4 +29,7 @@ The final capture command reported seven rendered CJK cells and zero mojibake
 cells at each workbook viewport. The executable visual regression additionally
 confirmed exact full-value title access for both Latin and CJK cells, actual
 cell clipping, horizontal scroll at 1024px, and the forced-colors focus style
-change. These are deterministic headless/emulated observations only.
+change. The exact-build comparison
+`git diff --stat 37d254ec51ea7e4a10ec9598181ac6b47db6c405 17df804ef9d692e6e196a787034fe3d3ceaaeb73 -- src/ui src/App.tsx src/ui/sheet-shell.css`
+returned no output. These are deterministic headless/emulated observations
+only.

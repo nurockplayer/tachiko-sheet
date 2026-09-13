@@ -1,7 +1,7 @@
 # Target-state captures
 
-- App source/build commit: `9c03e23d5d38485ffe51c65f2251eec83cec7761`
-- Capture harness/evidence commit: `f276d2e2918666585fe648a47e77248d579dc30a`;
+- App source/build commit: `37d254ec51ea7e4a10ec9598181ac6b47db6c405`
+- Capture harness/evidence commit: `17df804ef9d692e6e196a787034fe3d3ceaaeb73`;
   screenshots were generated from the production tree at the source/build
   commit above.
 - The production UI tree (`src/ui`, `src/App.tsx`, `src/ui/sheet-shell.css`)
@@ -18,6 +18,11 @@
   The 200% case uses document zoom emulation in headless Chromium, not a
   browser-UI zoom preference; native browser zoom remains a separate gate.
 - Runtime: production preview (`pnpm exec vite preview --host 127.0.0.1`)
+- Exact-final-head matrix: [`../production-matrix.md`](../production-matrix.md);
+  this is deterministic headless/emulated browser evidence, not native
+  macOS/iPad/#16 evidence. The production UI tree comparison between the
+  source/build and capture commits is empty (`git diff --stat ... -- src/ui
+  src/App.tsx src/ui/sheet-shell.css`).
 - Captures: `home.png`, `home-1280x800.png`, `home-1024x768.png`,
   `home-200-percent.png`, plus actual-core populated captures
   `workbook-50rows-1440x900.png`,
