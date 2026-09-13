@@ -58,7 +58,11 @@ try {
     const kit = await import('/kit/experimental-client.js');
     const materialized = entries.map(entry => ({path: entry.path, bytes: new Uint8Array(entry.bytes).buffer}));
     const client = kit.createExperimentalDesignerClient();
-    const groups = projection => ({revision: projection.revision, values: Object.fromEntries(projection.groups.map(group => [group.category, group.value]))});
+    const projection = value => ({
+      revision: value.revision,
+      groups: value.groups.map(group => ({category: group.category, value: group.value})).sort((left, right) => left.category.localeCompare(right.category) || left.value - right.value),
+      diagnostics: value.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key})).sort((left, right) => left.code.localeCompare(right.code) || left.lookupKey.localeCompare(right.lookupKey)),
+    });
     const rows = table => Object.fromEntries(table.rows.map(row => [row.key, Object.fromEntries(row.fields.map(field => [field.target.field, field.stored && {kind: field.stored.kind, value: field.stored.value}]))]));
     const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonical(item)])) : value;
     const definition = {id: definitionId, orders_schema: salesSchema, order_lookup_key_field: fields.salesCode, order_quantity_field: fields.quantity, products_schema: catalogSchema, product_key_field: fields.code, product_category_field: fields.category, product_price_field: fields.price};
@@ -90,17 +94,26 @@ try {
       await client.editText(restored.resulting_revision, missingCode, 'MISSING');
       const missing = await client.queryKeyedGroupedSum(definitionId);
       await client.closeProject(); await client.close();
-      return {beforeDefinition, initial: groups(initial), current: groups(current), reopened: groups(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: {groups: duplicate.groups.length, diagnostics: duplicate.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, missing: {groups: missing.groups.length, diagnostics: missing.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, exportBytes: [...new Uint8Array(exported.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
+      return {beforeDefinition, initial: projection(initial), current: projection(current), reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
     } catch (error) { try { await client.close(); } catch {} throw error; }
   }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId, expectedBefore: expectedBeforeDefinition});
   assert.deepEqual(result.beforeDefinition, expectedBeforeDefinition);
-  assert.deepEqual(result.initial.values, {NOTE: 1000, PEN: 800});
+  assert.deepEqual(result.initial.groups, [{category: 'NOTE', value: 1000}, {category: 'PEN', value: 800}]);
+  assert.deepEqual(result.initial.diagnostics, []);
   assert.equal(result.initial.revision, result.publicationRevision);
-  assert.deepEqual(result.current.values, {NOTE: 1000, PEN: 1000});
+  assert.deepEqual(result.current.groups, [{category: 'NOTE', value: 1000}, {category: 'PEN', value: 1000}]);
+  assert.deepEqual(result.current.diagnostics, []);
   assert.equal(result.current.revision, result.editRevision); assert.notEqual(result.current.revision, result.initial.revision);
-  assert.deepEqual(result.reopened.values, {NOTE: 1000, PEN: 1000}); assert.equal(result.reopened.revision, result.reopenedBootstrapRevision);
-  assert.equal(result.duplicate.groups, 0); assert.ok(result.duplicate.diagnostics.some(value => value.code === 'lookup.ambiguous_key' && value.lookupKey === 'PEN'));
-  assert.equal(result.missing.groups, 0); assert.ok(result.missing.diagnostics.some(value => value.code === 'lookup.missing_key' && value.lookupKey === 'MISSING'));
+  assert.deepEqual(result.reopened.groups, [{category: 'NOTE', value: 1000}, {category: 'PEN', value: 1000}]);
+  assert.deepEqual(result.reopened.diagnostics, []); assert.equal(result.reopened.revision, result.reopenedBootstrapRevision);
+  assert.deepEqual(result.duplicate.groups, []);
+  assert.deepEqual(result.duplicate.diagnostics, [
+    {code: 'lookup.ambiguous_key', lookupKey: 'PEN'},
+    {code: 'lookup.ambiguous_key', lookupKey: 'PEN'},
+    {code: 'lookup.missing_key', lookupKey: 'NOTE'},
+  ]);
+  assert.deepEqual(result.missing.groups, []);
+  assert.deepEqual(result.missing.diagnostics, [{code: 'lookup.missing_key', lookupKey: 'MISSING'}]);
   console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
 } catch (error) {
   console.error(JSON.stringify({status: error.blocked ? 'BLOCKED' : 'FAIL_OR_UNQUALIFIED', message: String(error.stack ?? error)})); process.exitCode = error.blocked ? 78 : 1;

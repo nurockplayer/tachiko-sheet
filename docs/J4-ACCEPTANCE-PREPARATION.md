@@ -48,7 +48,7 @@ human-readable binding/result surface plus opaque core-project host composition.
 It may not change the core pin, J4 oracle, storage format, portable-v1 behavior,
 or upstream ownership.
 
-`pnpm exec node tests/qualification/j4-public-composition.mjs` is the required
+`pnpm qualification:j4-public-composition` is the required
 real-core preparation probe. It verifies the source rows, schema/field types,
 stable hidden bindings, initial groups, fixed currentness edit, duplicate and
 missing diagnostics, and a fresh opaque `exportProject` reopen. It labels UI,

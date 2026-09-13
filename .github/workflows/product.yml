@@ -49,6 +49,9 @@ jobs:
       - name: Verify qualified core kit
         run: pnpm verify:core-kit
 
+      - name: Run J4 public composition qualification
+        run: pnpm qualification:j4-public-composition
+
       - name: Run preserved seed harness
         run: pnpm test
 
