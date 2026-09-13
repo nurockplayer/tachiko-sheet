@@ -5,7 +5,7 @@ The operating mode is called **Stewarded Continuous Delivery (SCD)**; see the
 This document remains Sheet's local delivery authority. Sharing the name does
 not import upstream permissions or change the existing clauses below.
 
-Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment below takes effect only after independent review and merge; before then the existing Astra-only delegation remains in force.
+Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment is merged and active.
 
 ## Authority and roles
 
@@ -13,7 +13,28 @@ Upstream Product Constitution, foundational principles and relevant Accepted sem
 
 ChatGPT Steward owns product scope, specifications, acceptance outcomes and material acceptance decisions. The **Mission Lead** is delegated **Sheet delivery stewardship**: sequence work, verify evidence, record qualified Ready decisions, integrate and merge eligible Sheet PRs. This is not power to invent missing semantic contracts, change product goals, waive acceptance, or turn implementation-authored tests into independent acceptance. Other roles follow actual global configuration, not old repo-specific model mappings.
 
-**Single-lead amendment (2026-09-12):** the founder may select Astra or Terra as Mission Lead. Exactly one lead/session is active, recorded in #2 with its branch/HEAD and writer ownership. Confirm previous writers have stopped or explicitly transferred before takeover; a stale timestamp is not sufficient. Until a new lead is selected and safely claimed, retain the existing lead rather than launching both. After this amendment is merged, older Sheet-local references to Astra's coordination role mean the selected Mission Lead; model-specific worker instructions and upstream authority are not rewritten by that alias. No acceptance or review independence changes with a role/name switch.
+**Single-lead amendment (2026-09-12):** the founder may select Astra or Terra as Mission Lead. Exactly one lead/session is active, recorded in #2 with its branch/HEAD and writer ownership. Confirm previous writers have stopped or explicitly transferred before takeover; a stale timestamp is not sufficient. Until a new lead is selected and safely claimed, retain the existing lead rather than launching both. Older Sheet-local references to Astra's coordination role mean the selected Mission Lead unless a narrower advisory role is explicitly stated below; model-specific worker instructions and upstream authority are not rewritten by that alias. No acceptance or review independence changes with a role/name switch.
+
+### Terra-led Astra escalation advisory
+
+When Terra is the recorded Mission Lead, Terra may invoke Astra as a **read-only escalation advisor**. Advisory consultation is not a Mission Lead transfer and does not grant Astra branch, writer, integration or merge ownership. Terra remains responsible for the active lane and resumes it after the consultation.
+
+Use Astra advisory escalation for technical, architecture or integration diagnosis when one or more of these materially applies:
+
+- the same root-cause seam survives two bounded repair attempts;
+- successive substantive review findings recur around the same abstraction seam;
+- evidence leaves it materially unclear whether the repair belongs in implementation, tests/evidence, host/runtime composition or repository architecture;
+- a proposed repair crosses subsystem boundaries or risks storage, identity, revision/recovery, security or data-integrity behavior;
+- two or more materially different and costly repair directions remain plausible without evidence clearly selecting one; or
+- an applicable convergence process has explicitly classified the loop AMBER/HOLD, or the loop is otherwise structurally non-convergent.
+
+Ordinary compile errors, isolated test failures and locally obvious bugs are not escalation triggers by themselves. Difficulty alone is not authority to renegotiate acceptance.
+
+Before consultation, Terra records a recoverable checkpoint with exact active HEAD, checked live `main`, current evidence, relevant authority, bounded repairs already attempted and one concrete question. All affected mutation pauses while the advisory question is unresolved; unrelated qualified work may continue. Resolve the actual installed Astra configuration from global agent configuration rather than guessing a path or silently substituting another advisor.
+
+Astra may inspect the live Issue/PR, diff, tests/evidence and relevant authority and return diagnosis, risks and a bounded recommendation. Astra remains read-only for the escalated lane and may not change product scope, acceptance outcomes, Accepted semantic/storage/authorization authority, writer ownership or merge state. If resolving the blocker requires any such material change, route it to ChatGPT Steward. The advisory result should be linked or summarized in the owning Issue/PR handoff before Terra resumes affected mutation.
+
+Astra consultation does not satisfy independent final review. Final Guarded merge still requires the fresh independent exact-head review required below; current global configuration may route that role to the installed Sol reviewer, but reviewer independence and exact-head evidence are the durable requirement.
 
 ## Conditional Ready; no ceremonial stop
 
