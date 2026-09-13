@@ -73,7 +73,7 @@ For **tachiko-sheet only**, the lead may execute a merge when all of these are p
 - applicable Steward acceptance, implementer unit tests and required local/hosted checks passed; absent/pending CI is not green;
 - all valid blocking findings are resolved, and an independent final-head review exists;
 - storage, identity, revision/recovery, import/export, authorization/security, SDK/compatibility or CI/governance changes receive fresh deep independent review;
-- the final reviewer authored neither the implementation nor its acceptance/evidence and did not materially participate in the consulted solution direction;
+- the final reviewer authored neither the implementation nor its acceptance/evidence, did not materially participate in the consulted solution direction, and was not merely the earlier finding author re-approving their own fix;
 - normal GitHub protections and review requirements permit the merge, without admin bypass, force push, fabricated approval or blanket auto-approve;
 - the recorded head still matches immediately before merging.
 
