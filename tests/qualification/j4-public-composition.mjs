@@ -30,6 +30,50 @@ for (const shard of '0123456789abcdef') fixtureText[`entities/${shard}.jsonl`] ?
 const fixture = Object.entries(fixtureText).sort(([a], [b]) => a.localeCompare(b)).map(([path, body]) => ({path, bytes: text(body)}));
 const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(fixtureText).sort())).digest('hex');
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
+const expectedPersistedDefinition = [{
+  id: definitionId,
+  orders: {schema: salesSchema, lookup_key_field: fields.salesCode, quantity_field: fields.quantity},
+  products: {schema: catalogSchema, key_field: fields.code, category_field: fields.category, price_field: fields.price},
+}];
+const expectedFormat2Paths = ['manifest.json', 'schemas.json', 'definitions.json', ...[...'0123456789abcdef'].map(shard => `entities/${shard}.jsonl`)].sort();
+const assertPersistedDefinition = definitions => assert.deepEqual(definitions, expectedPersistedDefinition, 'Persisted J4 definition bindings changed.');
+// Qualification-only inspection of the core-produced private transfer envelope.
+// This is not a product codec and never rewrites the bytes passed to openProject.
+const inspectOpaqueFormat2Transfer = input => {
+  const bytes = new Uint8Array(input);
+  assert.ok(bytes.byteLength >= 12, 'Format-2 transfer is truncated before its header.');
+  const decoder = new TextDecoder('utf-8', {fatal: true});
+  const magic = decoder.decode(bytes.slice(0, 8));
+  assert.equal(magic, 'TWDPROJ1', 'Unexpected private transfer envelope magic.');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint32(8, true);
+  assert.equal(count, 19, 'Format-2 transfer must retain all 19 expected entries.');
+  const entries = [];
+  const paths = new Set();
+  let offset = 12;
+  for (let index = 0; index < count; index += 1) {
+    assert.ok(offset + 6 <= bytes.byteLength, 'Format-2 transfer is truncated in its entry header.');
+    const pathLength = view.getUint16(offset, true); offset += 2;
+    const byteLength = view.getUint32(offset, true); offset += 4;
+    const end = offset + pathLength + byteLength;
+    assert.ok(Number.isSafeInteger(end) && end <= bytes.byteLength, 'Format-2 transfer is truncated in an entry body.');
+    const path = decoder.decode(bytes.slice(offset, offset + pathLength)); offset += pathLength;
+    assert.ok(path.length > 0 && !path.startsWith('/') && !path.includes('\\') && path.split('/').every(component => component.length > 0 && component !== '.' && component !== '..') && !paths.has(path), 'Format-2 transfer has unsafe or duplicate paths.');
+    paths.add(path);
+    entries.push({path, text: decoder.decode(bytes.slice(offset, end))}); offset = end;
+  }
+  assert.equal(offset, bytes.byteLength, 'Format-2 transfer has trailing bytes.');
+  const manifest = entries.find(entry => entry.path === 'manifest.json');
+  const definitions = entries.find(entry => entry.path === 'definitions.json');
+  assert.ok(manifest && definitions, 'Format-2 transfer is missing manifest.json or definitions.json.');
+  assert.deepEqual({magic, count, paths: [...paths].sort(), manifest: JSON.parse(manifest.text)}, {
+    magic: 'TWDPROJ1',
+    count: 19,
+    paths: expectedFormat2Paths,
+    manifest: {format: 'tachiko.roproj', format_version: 2, document: {id: '50000000-0000-4000-8000-000000000001', title: 'Sheet J4 Catalog Sales'}},
+  }, 'Persisted J4 format-2 envelope changed.');
+  assertPersistedDefinition(JSON.parse(definitions.text));
+};
 let browser, server;
 try {
   assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
@@ -83,6 +127,7 @@ try {
       const fresh = kit.createExperimentalDesignerClient();
       const reopened = await fresh.openProject(exported.bytes.slice(0));
       const reopenedGroups = await fresh.queryKeyedGroupedSum(definitionId);
+      const reopenedExport = await fresh.exportProject(reopenedGroups.revision);
       await fresh.closeProject(); await fresh.close();
       const note = (await client.queryTable('catalog')).rows.find(row => row.key === 'catalog_note');
       const noteCode = note.fields.find(field => field.target.field === fields.code).target;
@@ -94,7 +139,7 @@ try {
       await client.editText(restored.resulting_revision, missingCode, 'MISSING');
       const missing = await client.queryKeyedGroupedSum(definitionId);
       await client.closeProject(); await client.close();
-      return {beforeDefinition, initial: projection(initial), current: projection(current), reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
+      return {beforeDefinition, initial: projection(initial), current: projection(current), reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], reopenedExportBytes: [...new Uint8Array(reopenedExport.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
     } catch (error) { try { await client.close(); } catch {} throw error; }
   }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId, expectedBefore: expectedBeforeDefinition});
   assert.deepEqual(result.beforeDefinition, expectedBeforeDefinition);
@@ -114,6 +159,9 @@ try {
   ]);
   assert.deepEqual(result.missing.groups, []);
   assert.deepEqual(result.missing.diagnostics, [{code: 'lookup.missing_key', lookupKey: 'MISSING'}]);
+  inspectOpaqueFormat2Transfer(result.exportBytes);
+  inspectOpaqueFormat2Transfer(result.reopenedExportBytes);
+  assert.throws(() => assertPersistedDefinition([{...expectedPersistedDefinition[0], products: {...expectedPersistedDefinition[0].products, category_field: fields.code}}]), /Persisted J4 definition bindings changed/);
   console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
 } catch (error) {
   console.error(JSON.stringify({status: error.blocked ? 'BLOCKED' : 'FAIL_OR_UNQUALIFIED', message: String(error.stack ?? error)})); process.exitCode = error.blocked ? 78 : 1;
