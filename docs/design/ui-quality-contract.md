@@ -31,11 +31,13 @@ That is not a universal ordering. Formula editing, a blocking recovery state, a 
 
 Do not hard-code a rule that the grid must always be visually first. The requirement is that the dominant visual signal matches what the user must understand or act on **now**.
 
-### 1.2 Spreadsheet geometry is stable
+### 1.2 Prevent incidental geometry shifts; preserve context during adaptation
 
-Hover, focus, selection, context controls, warnings, and transient affordances must not unexpectedly change row/column/cell positions or push the user's current target away.
+With the effective workspace unchanged, hover/focus/selection styling and the appearance of contextual affordances must not unexpectedly change row/column/cell positions or push the user's intended target away. Overlays and reserved slots are possible techniques, not mandatory layouts.
 
-Prefer overlay, reserved slots, margins, popovers, panes, or other mechanisms that preserve spatial memory. Any intentional geometry change must be part of the actual spreadsheet operation, not incidental decoration.
+Responsive reflow, window/viewport resizing, browser zoom, opening or resizing a side pane, software-keyboard appearance, and accessibility adaptations may legitimately change workspace geometry. These changes are not limited to spreadsheet data/structure operations and are not failures merely because content moves.
+
+During those adaptations, preserve the selected/edited target and uncommitted draft unless an accepted user operation changes them, maintain truthful focus, and keep the active editor usable, bringing it into view as needed. Necessary panning, scrolling or reflow to continue editing is permitted; context continuity does not require identical pixel coordinates or scroll offsets. #16 retains the physical-platform qualification requirements, including software-keyboard and viewport-change evidence.
 
 ### 1.3 State visibility outranks decoration
 
@@ -75,16 +77,13 @@ However:
 
 The product should hide **representation** when appropriate, not capability.
 
-### 1.6 Action placement follows scope
+### 1.6 Command target and scope are explicit
 
-Place commands near the semantic scope they affect:
+The hard constraint is that the user can determine which cell/range, column, sheet or workbook a command will affect, and execution follows the accepted target-binding and selection contracts. Moving keyboard focus to a command surface must not by itself silently retarget the operation.
 
-- cell/range-local actions near the cell/range context;
-- column actions at column/header scope;
-- sheet actions at sheet/navigation scope;
-- workbook/global actions at workbook/application scope.
+A fixed or compact workbook toolbar, command search, shared inspector, or context menu is a valid presentation when the affected scope remains clear and correctly bound. This contract does not require commands to occupy the same physical region as their targets or to be duplicated locally.
 
-Do not force all actions into one global toolbar, and do not force all actions into local popovers. Scope determines placement.
+**HEURISTIC — prefer proximity when it helps the task.** Object-local commands near their objects, column actions near headers, or sheet actions near navigation may reduce task effort. Evaluate that preference against discoverability, repeated-use efficiency, input modality and expert spatial memory. Proximity is a design preference, not a mandatory physical-placement gate.
 
 ### 1.7 Transient UI preserves work context
 
@@ -169,7 +168,7 @@ For every shared interactive primitive, define only the states that semantically
 | State | Required property |
 | --- | --- |
 | Rest | Quiet enough not to compete with the current task unless the control itself is primary. |
-| Hover | Confirms target/action without geometry shift; not the only path to critical capability. |
+| Hover | Confirms target/action without incidental geometry shift (§1.2); not the only path to critical capability. |
 | Focus | Clearly visible for keyboard use and distinguishable from hover/selection. |
 | Pressed/active | Gives immediate input acknowledgement without falsely implying completion. |
 | Selected | Represents persistent object/range/tab selection and remains distinguishable from transient hover. |
@@ -221,9 +220,9 @@ Review through three separate tracks.
 
 Applicable changes must not introduce:
 
-- selection/edit/focus ambiguity that can cause the wrong operation target;
-- hover/focus/contextual layout shifts that disrupt target acquisition;
-- lost focus/selection/draft/scroll context across ordinary transient UI;
+- selection/edit/focus or command-scope ambiguity that can cause the wrong operation target;
+- incidental hover/focus/contextual-affordance shifts that disrupt target acquisition; legitimate workspace adaptation is governed by §1.2;
+- lost working target, draft, focus continuity or usable scroll context across transient UI or workspace adaptation; necessary scrolling/reflow to keep the editor usable is not itself context loss;
 - false saved/current/success treatment for pending/failed/unknown work;
 - inaccessible core paths for the supported keyboard/pointer/touch claim;
 - hidden critical state with no non-hover path;
