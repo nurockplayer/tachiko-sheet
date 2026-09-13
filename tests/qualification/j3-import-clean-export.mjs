@@ -72,7 +72,7 @@ try {
     return {kind:field.stored.kind, value:field.stored.value};
   }));
   const expected = rows => rows.map(row => row.map(value => ({kind:typeof value === 'number' ? 'number' : 'text',value})));
-  const refresh = async () => page.evaluate(async () => window.table = await window.client.queryTable(window.table.collection.id));
+  const refresh = async () => page.evaluate(async () => window.table = await window.client.queryTable(window.table.collection.key));
   const previewTrim = async () => page.evaluate(async () => {
     const t = window.table;
     return window.client.previewCleanup(t.revision, {kind:'trim',fields:t.rows.map(row => ({entity:row.id,field:t.columns[0].id}))});
