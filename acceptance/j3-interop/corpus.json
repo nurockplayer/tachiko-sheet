@@ -1,0 +1,28 @@
+{
+  "schema": "tachiko-sheet.j3-fixture-corpus/v1",
+  "status": "PREPARED_NOT_RUNTIME_QUALIFIED",
+  "owner": "ChatGPT Steward; tachiko-sheet#5 bounded J3 interop child",
+  "sheet_baseline": "fdf4f262f7f097f8452f3336586be8218470781c",
+  "core_source": "518aaa55e046a4e4676b4d5e05d8189c4c6343fe",
+  "core_manifest_sha256": "ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b",
+  "generation": "Synthetic inputs written by ChatGPT Steward; XLSX created independently with artifact_tool, not the Tachiko exporter. No external copyrighted data.",
+  "headers": ["item", "quantity", "price"],
+  "raw_rows": [[" PEN ", "3", "200"], ["NOTE", "2", "500"], [" PEN ", "3", "200"]],
+  "clean_rows": [["PEN", 3, 200], ["NOTE", 2, 500]],
+  "text_sentinels": ["0012", "03/04/2026"],
+  "fixed_total_reference": 1600,
+  "unsupported_fixture": {
+    "file": "merged-note.xlsx",
+    "construct": "mergeCells",
+    "sheet": "MergedNote",
+    "range": "A1:B1",
+    "text": "Preserve this merged source note",
+    "note": "Must qualify exact producer diagnostic/ledger. No current PASS or particular diagnostic spelling is asserted."
+  },
+  "files": {
+    "merged-note.xlsx": {"sha256": "eddc13a1df93dec372cfa03e7573d8aeecf989fef8bad0f7063716ab17c30c12", "bytes": 4029},
+    "messy.csv": {"sha256": "dfdc47b13a41f7ba750fc3d4318337cde9f0f09d48d1fdffca9caecab2dae3e0", "bytes": 55},
+    "messy.xlsx": {"sha256": "9c606a68e4e8a5f309f6879a20bd95ff187ecb1ce57af348af3c3678739736f0", "bytes": 3588},
+    "text-sentinels.csv": {"sha256": "2e6d033b11f73847d6dea611a5b6a99fb8d3c9dfb79b84e6438b6c5be9e38f4d", "bytes": 22}
+  }
+}
