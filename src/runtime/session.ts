@@ -506,7 +506,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       try {
         publication = await afterUsable(expected, dispatch(kit, () => commit.call(client, live.revision, previewId)));
       } catch (error) {
-        if (error instanceof UnknownOperationOutcomeError) active = null;
+        if (error instanceof UnknownOperationOutcomeError) {
+          // The commit might have published. Retain only the resident handle
+          // needed for an explicit re-observe, never the old witness.
+          active = null;
+          residentCollection = live.collection;
+        }
         throw error;
       }
       try {
@@ -516,6 +521,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         return read.view;
       } catch (error) {
         active = null;
+        residentCollection = live.collection;
         throw new PublishedProjectionRecoveryError(publication, error);
       }
     });

@@ -3,7 +3,7 @@
 // data or invokes an import/cleanup/export capability on the app's behalf.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,7 @@ const corpus = path.join(root, "acceptance/j3-interop");
 const messyCsv = path.join(corpus, "fixtures/messy.csv");
 const messyXlsx = path.join(corpus, "fixtures/messy.xlsx");
 const mergedXlsx = path.join(corpus, "fixtures/merged-note.xlsx");
+const textSentinels = path.join(corpus, "fixtures/text-sentinels.csv");
 const launch = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 
 async function choose(page, file) {
@@ -53,17 +54,20 @@ async function preview(page, name) {
 }
 
 async function download(page, format, destination) {
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   const cancelledDownload = page.waitForEvent("download", { timeout: 250 }).then(() => false).catch(() => true);
-  await page.getByRole("button", { name: `Download ${format.toUpperCase()}`, exact: true }).click();
+  await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
+  assert.match(await dialog.textContent(), /actual exporter|exporter produced/i);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await assert.doesNotReject(async () => page.getByRole("button", { name: `Download ${format.toUpperCase()}`, exact: true }).waitFor());
+  await assert.doesNotReject(async () => page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).waitFor());
   // The first consent was explicitly cancelled: there must not be a download.
   const noDownload = await cancelledDownload;
   assert.equal(noDownload, true, "cancelled export must not download");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), `Prepare ${format.toUpperCase()}`);
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: `Download ${format.toUpperCase()}`, exact: true }).click();
+  await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
   await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();
   await (await downloaded).saveAs(destination);
 }
@@ -125,9 +129,20 @@ try {
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill(" PEN ");
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Enter");
   await preview(page, "Preview trim");
+  assert.ok(await page.getByLabel("Cleanup targets", { exact: true }).locator("li").count() > 0, "preview must identify concrete row/column targets");
+  // This is the declared acceptance transport fault: the core publication is
+  // known, while its following projection read is unavailable. The normal UI
+  // must clear the old preview and require a re-observe instead of retrying.
+  await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
   await page.getByRole("button", { name: "Commit preview", exact: true }).click();
-  await preview(page, "Preview whole-row deduplication");
-  await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "published recovery retained a stale cleanup preview");
+  assert.ok(await page.getByRole("button", { name: "Preview whole-row deduplication", exact: true }).isEnabled(), "re-observe did not restore an eligible cleanup action");
+  // Continue from the re-observed revision with a new, explicit preview.
   await preview(page, "Preview whole-row deduplication");
   await page.getByRole("button", { name: "Commit preview", exact: true }).click();
 
@@ -159,14 +174,40 @@ try {
   await download(page, "xlsx", restartOut);
   execFileSync("python3", [path.join(corpus, "check.py"), "--export", restartOut], { stdio: "inherit" });
 
-  // I01/I06: independent XLSX reaches normal candidate UI; merge disposition is visible and cancellable.
+  // I01/I06: real XLSX follows the normal import path, not merely inspection.
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
-  dialog = await choose(page, messyXlsx);
-  assert.match(await dialog.textContent(), /item/);
-  await dialog.press("Escape");
+  await importWithTypes(page, messyXlsx);
+  assert.match(await page.locator("[role=grid]").textContent(), /PEN/);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Close without saving", exact: true }).click();
+
+  // Text-looking sentinel values are imported and preserved through host save,
+  // actual browser restart, reopen, and the exporter.
+  await importWithTypes(page, textSentinels, { numbers: false });
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j3-sentinel-copy");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await context.close();
+  context = await chromium.launchPersistentContext(profile, launch);
+  await installDistRoutes(context, dist);
+  page = context.pages()[0] ?? await context.newPage();
+  await page.goto(LOCAL_ORIGIN);
+  await page.getByRole("button", { name: "Open saved j3-sentinel-copy", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  const sentinelOut = path.join(output, "normal-ui-sentinels.csv");
+  await download(page, "csv", sentinelOut);
+  const sentinelText = await readFile(sentinelOut, "utf8");
+  assert.match(sentinelText, /0012/);
+  assert.match(sentinelText, /03\/04\/2026/);
+
+  // Construct-specific merged-cells disposition remains visible at candidate
+  // review and cannot be mistaken for generic XLSX support.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   dialog = await choose(page, mergedXlsx);
-  assert.match(await dialog.textContent(), /Candidate source fidelity ledger|No source-fidelity findings|merged/i);
+  assert.match(await dialog.getByLabel("Candidate source fidelity ledger", { exact: true }).textContent(), /merged/i);
   await dialog.press("Escape");
   console.log(JSON.stringify({ case: "J3 normal UI CSV/XLSX, cleanup, consent, restart", status: "PASS", manualBoundary: "Real CJK IME and assistive-technology walkthrough remain manual." }));
 } finally {

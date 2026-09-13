@@ -75,6 +75,7 @@ export function SheetShell(props: SheetShellProps) {
     onPreviewDeduplicate = async () => null,
     onCommitCleanup = async () => false,
     onCancelCleanup = () => undefined,
+    onPrepareDownload = async () => false,
     onDownload = async () => false,
   } = props;
 
@@ -107,6 +108,7 @@ export function SheetShell(props: SheetShellProps) {
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
 
@@ -423,6 +425,16 @@ export function SheetShell(props: SheetShellProps) {
     };
     const accepted = await onImportCandidate(selection);
     if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
+  }
+
+  async function prepareDownload(format: "csv" | "xlsx", trigger: HTMLButtonElement): Promise<void> {
+    downloadTriggerRef.current = trigger;
+    if (await onPrepareDownload(format)) setDownloadFormat(format);
+  }
+
+  function cancelDownload(): void {
+    setDownloadFormat(null);
+    window.requestAnimationFrame(() => downloadTriggerRef.current?.focus());
   }
 
   async function refresh(): Promise<void> {
@@ -840,12 +852,12 @@ export function SheetShell(props: SheetShellProps) {
           <button type="button" className="ts-button" disabled={controlsLocked || allFields.length === 0} onClick={() => witness && void onPreviewTrim(witness, allFields)}>Preview trim</button>
           <button type="button" className="ts-button" disabled={controlsLocked || entities.length < 2 || keyFields.length === 0} onClick={() => witness && void onPreviewDeduplicate(witness, entities, keyFields)}>Preview whole-row deduplication</button>
         </div>
-        {preview ? <div className="ts-preview" data-testid="cleanup-preview"><p>{preview.changes.length} cell changes and {preview.removed_entities.length} rows would change.</p><div className="ts-row-actions"><button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button><button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button></div></div> : null}
+        {preview ? <div className="ts-preview" data-testid="cleanup-preview"><p>{preview.changes.length} cell changes and {preview.removed_entities.length} rows would change.</p>{preview.changes.length ? <ul aria-label="Cleanup targets">{preview.changes.map((change, index) => { const row = table.rows.findIndex((candidate) => rowEntity(candidate) === change.target.entity); const column = columns.find((candidate) => candidate.id === change.target.field); return <li key={`${change.target.entity}-${change.target.field}-${index}`}>{`Row ${row + 1}, ${column?.key ?? change.target.field}`}</li>; })}</ul> : null}<div className="ts-row-actions"><button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button><button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button></div></div> : null}
       </section>
       <section className="ts-card" aria-label="Download spreadsheet">
         <h2 className="ts-h2">Download</h2>
         <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
-        <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={() => setDownloadFormat("csv")}>Download CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={() => setDownloadFormat("xlsx")}>Download XLSX</button></div>
+        <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button></div>
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">The download failed; the current work is still open and unsaved changes were preserved.</p> : null}
       </section>
     </div>;
@@ -926,7 +938,10 @@ export function SheetShell(props: SheetShellProps) {
   function onTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    selectTab(tab === "table" ? "brief" : tab === "brief" ? "interop" : "table");
+    const tabs: ActiveTab[] = ["table", "brief", "interop"];
+    const focused = (event.target as HTMLElement).id;
+    const index = Math.max(0, tabs.findIndex((name) => tabId(name) === focused));
+    selectTab(tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]!);
   }
 
   function selectTab(next: ActiveTab): void {
@@ -1001,7 +1016,7 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={onCancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal label="Confirm download" onCancel={() => setDownloadFormat(null)}><h2 className="ts-h2">Download {downloadFormat.toUpperCase()}</h2><p>Export the current core revision? The source-fidelity ledger remains visible in the workbook.</p><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={() => setDownloadFormat(null)}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) setDownloadFormat(null); }); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal label="Confirm download" onCancel={cancelDownload}><h2 className="ts-h2">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p>{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint">The exporter reported no fidelity findings for this output.</p>}<div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) cancelDownload(); }); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
         <Modal label="Unsaved work" onCancel={keepEditing}>
           <h2 className="ts-h2">Unsaved work</h2>

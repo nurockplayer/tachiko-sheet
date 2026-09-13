@@ -121,6 +121,8 @@ export interface SheetShellProps {
   onPreviewDeduplicate?(witness: ViewWitness, entities: string[], fields: string[]): Promise<CleanupPreview | null>;
   onCommitCleanup?(witness: ViewWitness, previewId: string): Promise<boolean>;
   onCancelCleanup?(): void;
+  /** Produces the actual core export and ledger; this never downloads it. */
+  onPrepareDownload?(format: SpreadsheetFormat): Promise<boolean>;
   onDownload?(format: SpreadsheetFormat): Promise<boolean>;
 }
 

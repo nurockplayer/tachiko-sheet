@@ -107,6 +107,8 @@ export function App({ runtime, copies }: AppProps) {
   const [interop, setInterop] = useState<InteropState | null>(null);
   const importBytesRef = useRef<ArrayBuffer | null>(null);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
+  // An ephemeral, user-consented delivery candidate; never canonical state.
+  const preparedDownloadRef = useRef<{ format: "csv" | "xlsx"; revision: string; bytes: ArrayBuffer } | null>(null);
 
   const viewRef = useRef<WorkbookView | null>(null);
   const inflightRef = useRef(false);
@@ -227,7 +229,22 @@ export function App({ runtime, copies }: AppProps) {
     setCurrentness("unknown");
     // Publication is known; only projection freshness remains unknown.
     setOutcome("idle");
+    // The old preview targeted the projection we just discarded.
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
+  }
+
+  function failClosedAfterUnknownCleanup(): void {
+    viewRef.current = null;
+    setView(null);
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    setMessage("The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
 
   function failClosedAfterUnknownEdit(edit: ScalarEdit): void {
@@ -258,6 +275,7 @@ export function App({ runtime, copies }: AppProps) {
       markNotSaved();
       importBytesRef.current = null;
       importedSourceRef.current = null;
+      preparedDownloadRef.current = null;
       setInterop(null);
       setCurrentness("current");
       setOutcome("idle");
@@ -295,6 +313,7 @@ export function App({ runtime, copies }: AppProps) {
       markNotSaved();
       importBytesRef.current = null;
       importedSourceRef.current = null;
+      preparedDownloadRef.current = null;
       setInterop(null);
       setCurrentness("current");
       setOutcome("idle");
@@ -343,6 +362,7 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
       importedSourceRef.current = copy.importedSource ?? null;
+      preparedDownloadRef.current = null;
       setInterop(copy.importedSource ? {
         importInspection: null,
         metadata: copy.importedSource.metadata,
@@ -398,6 +418,7 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("pending");
       const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: ",", header: true }, selection);
       installView(imported.view);
+      preparedDownloadRef.current = null;
       pendingDirtyRef.current = true;
       syncDirty();
       markNotSaved();
@@ -423,8 +444,9 @@ export function App({ runtime, copies }: AppProps) {
     try {
       const preview = await runtime.previewCleanup(witness, { kind: "trim", fields });
       setInterop((current) => current ? { ...current, cleanupPreview: preview } : current);
+      setOutcome("idle");
       return preview;
-    } catch (error) { setMessage(describe(error, "A cleanup preview could not be created.")); return null; }
+    } catch (error) { setOutcome("idle"); setMessage(describe(error, "A cleanup preview could not be created.")); return null; }
     finally { end(); }
   }
 
@@ -433,8 +455,9 @@ export function App({ runtime, copies }: AppProps) {
     try {
       const preview = await runtime.previewCleanup(witness, { kind: "deduplicate", entities, key_fields: fields });
       setInterop((current) => current ? { ...current, cleanupPreview: preview } : current);
+      setOutcome("idle");
       return preview;
-    } catch (error) { setMessage(describe(error, "A duplicate-row preview could not be created.")); return null; }
+    } catch (error) { setOutcome("idle"); setMessage(describe(error, "A duplicate-row preview could not be created.")); return null; }
     finally { end(); }
   }
 
@@ -444,30 +467,64 @@ export function App({ runtime, copies }: AppProps) {
       const next = await runtime.commitCleanup(witness, previewId);
       installView(next); pendingDirtyRef.current = true; syncDirty(); markNotSaved();
       setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+      setOutcome("idle");
       return true;
-    } catch (error) { setMessage(describe(error, "The cleanup was not applied.")); return false; }
+    } catch (error) {
+      if (error instanceof PublishedProjectionRecoveryError) {
+        failClosedAfterPublicationRecovery();
+      } else if (error instanceof UnknownOperationOutcomeError) {
+        failClosedAfterUnknownCleanup();
+      } else {
+        setOutcome("idle");
+        setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+        setMessage(describe(error, "The cleanup was not applied."));
+      }
+      return false;
+    }
     finally { end(); }
   }
 
   function cancelCleanup(): void {
     setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+    setOutcome("idle");
   }
 
-  async function download(format: "csv" | "xlsx"): Promise<boolean> {
+  async function prepareDownload(format: "csv" | "xlsx"): Promise<boolean> {
     const live = viewRef.current;
     const metadata = interop?.metadata;
     if (!live || !metadata || !begin()) return false;
     try {
       const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
-      const blob = new Blob([exported.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      preparedDownloadRef.current = { format, revision: exported.revision, bytes: exported.bytes.slice(0) };
+      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent" } : current);
+      setOutcome("idle");
+      return true;
+    } catch (error) {
+      preparedDownloadRef.current = null;
+      setOutcome("idle");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
+      setMessage(describe(error, "The export could not be prepared for review.")); return false;
+    } finally { end(); }
+  }
+
+  async function download(format: "csv" | "xlsx"): Promise<boolean> {
+    const live = viewRef.current;
+    const prepared = preparedDownloadRef.current;
+    if (!live || !prepared || prepared.format !== format || prepared.revision !== live.revision || !begin()) return false;
+    try {
+      const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url; anchor.download = `${live.title}.${format}`; anchor.hidden = true;
       document.body.append(anchor); anchor.click(); anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "idle" } : current);
+      preparedDownloadRef.current = null;
+      setInterop((current) => current ? { ...current, downloadStatus: "idle" } : current);
+      setOutcome("idle");
       return true;
     } catch (error) {
+      preparedDownloadRef.current = null;
+      setOutcome("idle");
       setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
       setMessage(describe(error, "The download was not created.")); return false;
     } finally { end(); }
@@ -670,6 +727,7 @@ export function App({ runtime, copies }: AppProps) {
         onPreviewDeduplicate={previewDeduplicate}
         onCommitCleanup={commitCleanup}
         onCancelCleanup={cancelCleanup}
+        onPrepareDownload={prepareDownload}
         onDownload={download}
       />
       <footer className="ts-notices">
