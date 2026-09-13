@@ -14,6 +14,14 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain("@media (forced-colors: active)");
   });
 
+  it("keeps dense cells clipped while retaining a tooltip access path", () => {
+    const cellRule = css.match(/\.ts-grid th,\s*\.ts-grid td \{([\s\S]*?)\n\}/)?.[1];
+    expect(cellRule).toBeDefined();
+    expect(cellRule).toContain("max-width: 320px");
+    expect(cellRule).toContain("overflow: hidden");
+    expect(cellRule).toContain("text-overflow: ellipsis");
+  });
+
   function contrastRatio(foreground: string, background: string): number {
     const luminance = (hex: string): number => {
       const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);

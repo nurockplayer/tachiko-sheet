@@ -30,7 +30,7 @@ function projected(
   };
 }
 
-function makeView(options: { columns?: boolean } = {}): WorkbookView {
+function makeView(options: { columns?: boolean; titleValue?: string; titleDiagnostic?: boolean } = {}): WorkbookView {
   const columns = [
     { id: "c-title", key: "title", field_type: "text" },
     { id: "c-impact", key: "impact", field_type: "number" },
@@ -42,7 +42,9 @@ function makeView(options: { columns?: boolean } = {}): WorkbookView {
       id: entityA,
       key: "playtest_notes",
       fields: [
-        projected(entityA, "c-title", { kind: "text", value: "Alpha work" }),
+        projected(entityA, "c-title", { kind: "text", value: options.titleValue ?? "Alpha work" }, options.titleDiagnostic ? {
+          diagnostics: [{ code: "stale", message: "revision too old", path: "c-title" }],
+        } : {}),
         projected(entityA, "c-impact", { kind: "number", value: 5 }),
         projected(entityA, "c-priority", { kind: "number", value: 10 }, {
           formula: { source: "impact + friction" },
@@ -347,6 +349,21 @@ describe("SheetShell static rendering", () => {
   it("renders cells from the field order when the projection has no columns", () => {
     const markup = render({ view: makeView({ columns: false }) });
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).not.toBe(null);
+  });
+
+  it("renders diagnostic long Latin and CJK cells with complete combined titles", () => {
+    const values = [
+      "Review partner brief and confirm ownership, launch timing, and rollback notes for the next release",
+      "檢查鍵盤導覽、窄視窗水平捲動，以及長文字欄位的完整值存取體驗",
+    ];
+    for (const value of values) {
+      const markup = render({ view: makeView({ titleValue: value, titleDiagnostic: true }) });
+      const cell = cellMarkup(markup, `cell:${entityA}:c-title`);
+      expect(cell).not.toBe(null);
+      expect(cell).toContain('class="ts-cell ts-cell--warning"');
+      expect(cell).toContain(`title="stale: revision too old — ${value}"`);
+      expect(textOf(cell as string)).toBe(value);
+    }
   });
 
   it("never claims a save that did not happen", () => {
