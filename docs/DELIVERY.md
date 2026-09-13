@@ -30,7 +30,7 @@ Use Astra advisory escalation for technical, architecture or integration diagnos
 
 Ordinary compile errors, isolated test failures and locally obvious bugs are not escalation triggers by themselves. Difficulty alone is not authority to renegotiate acceptance.
 
-Before consultation, Terra records a recoverable checkpoint with exact active HEAD, checked live `main`, current evidence, relevant authority, bounded repairs already attempted and one concrete question. Affected speculative mutation pauses while the advisory question is unresolved; unrelated qualified work may continue. Resolve the actual installed Astra configuration from global agent configuration rather than guessing a path or silently substituting another advisor.
+Before consultation, Terra records a recoverable checkpoint with exact active HEAD, checked live `main`, current evidence, relevant authority, bounded repairs already attempted and one concrete question. All affected mutation pauses while the advisory question is unresolved; unrelated qualified work may continue. Resolve the actual installed Astra configuration from global agent configuration rather than guessing a path or silently substituting another advisor.
 
 Astra may inspect the live Issue/PR, diff, tests/evidence and relevant authority and return diagnosis, risks and a bounded recommendation. Astra remains read-only for the escalated lane and may not change product scope, acceptance outcomes, Accepted semantic/storage/authorization authority, writer ownership or merge state. If resolving the blocker requires any such material change, route it to ChatGPT Steward. The advisory result should be linked or summarized in the owning Issue/PR handoff before Terra resumes affected mutation.
 
