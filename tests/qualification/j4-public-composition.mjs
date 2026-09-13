@@ -32,6 +32,7 @@ const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
 let browser, server;
 try {
+  assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
   const lock = JSON.parse(await readFile(path.join(root, 'core-kit.lock.json'), 'utf8'));
   const kit = await realpath(path.join(root, lock.defaultKit));
   let chromium; try { ({chromium} = await import('playwright')); } catch { block('Repository-locked Playwright is unavailable.'); }
@@ -52,13 +53,12 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
   await page.goto(origin);
-  const expectedBeforeDefinition = {collections: [{key: 'catalog', id: catalogSchema}, {key: 'sales', id: salesSchema}], catalogKinds: {category: 'text', code: 'text', price: 'number'}, salesKinds: {product_code: 'text', quantity: 'number'}, catalogRows: {catalog_note: {[fields.code]: {kind: 'text', value: 'NOTE'}, [fields.category]: {kind: 'text', value: 'NOTE'}, [fields.price]: {kind: 'number', value: 500}}, catalog_pen: {[fields.code]: {kind: 'text', value: 'PEN'}, [fields.category]: {kind: 'text', value: 'PEN'}, [fields.price]: {kind: 'number', value: 200}}}, salesRows: {sale_note: {[fields.salesCode]: {kind: 'text', value: 'NOTE'}, [fields.quantity]: {kind: 'number', value: 2}}, sale_pen_1: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 1}}, sale_pen_3: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 3}}}};
-  assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
+  const expectedBeforeDefinition = {collections: [{key: 'catalog', id: catalogSchema}, {key: 'sales', id: salesSchema}], catalogKinds: {category: 'text', code: 'text', price: 'number'}, salesKinds: {product_code: 'text', quantity: 'number'}, catalogColumns: [{id: fields.category, key: 'category', field_type: 'text'}, {id: fields.code, key: 'code', field_type: 'text'}, {id: fields.price, key: 'price', field_type: 'number'}], salesColumns: [{id: fields.salesCode, key: 'product_code', field_type: 'text'}, {id: fields.quantity, key: 'quantity', field_type: 'number'}], catalogRows: {catalog_note: {[fields.code]: {kind: 'text', value: 'NOTE'}, [fields.category]: {kind: 'text', value: 'NOTE'}, [fields.price]: {kind: 'number', value: 500}}, catalog_pen: {[fields.code]: {kind: 'text', value: 'PEN'}, [fields.category]: {kind: 'text', value: 'PEN'}, [fields.price]: {kind: 'number', value: 200}}}, salesRows: {sale_note: {[fields.salesCode]: {kind: 'text', value: 'NOTE'}, [fields.quantity]: {kind: 'number', value: 2}}, sale_pen_1: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 1}}, sale_pen_3: {[fields.salesCode]: {kind: 'text', value: 'PEN'}, [fields.quantity]: {kind: 'number', value: 3}}}};
   const result = await page.evaluate(async ({entries, fields, catalogSchema, salesSchema, definitionId, expectedBefore}) => {
     const kit = await import('/kit/experimental-client.js');
     const materialized = entries.map(entry => ({path: entry.path, bytes: new Uint8Array(entry.bytes).buffer}));
     const client = kit.createExperimentalDesignerClient();
-    const groups = projection => Object.fromEntries(projection.groups.map(group => [group.category, group.value]));
+    const groups = projection => ({revision: projection.revision, values: Object.fromEntries(projection.groups.map(group => [group.category, group.value]))});
     const rows = table => Object.fromEntries(table.rows.map(row => [row.key, Object.fromEntries(row.fields.map(field => [field.target.field, field.stored && {kind: field.stored.kind, value: field.stored.value}]))]));
     const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonical(item)])) : value;
     const definition = {id: definitionId, orders_schema: salesSchema, order_lookup_key_field: fields.salesCode, order_quantity_field: fields.quantity, products_schema: catalogSchema, product_key_field: fields.code, product_category_field: fields.category, product_price_field: fields.price};
@@ -66,7 +66,8 @@ try {
       const opened = await client.openProject(kit.projectTransferFromEntries(materialized));
       const catalog = await client.queryTable('catalog'); const sales = await client.queryTable('sales');
       const columnKinds = table => Object.fromEntries(table.columns.map(column => [column.key, column.field_type]));
-      const beforeDefinition = {collections: opened.bootstrap.collections.map(collection => ({key: collection.key, id: collection.id})).sort((left, right) => left.key.localeCompare(right)), catalogKinds: columnKinds(catalog), salesKinds: columnKinds(sales), catalogRows: rows(catalog), salesRows: rows(sales)};
+      const columnIdentity = table => table.columns.map(column => ({id: column.id, key: column.key, field_type: column.field_type})).sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
+      const beforeDefinition = {collections: opened.bootstrap.collections.map(collection => ({key: collection.key, id: collection.id})).sort((left, right) => left.key.localeCompare(right)), catalogKinds: columnKinds(catalog), salesKinds: columnKinds(sales), catalogColumns: columnIdentity(catalog), salesColumns: columnIdentity(sales), catalogRows: rows(catalog), salesRows: rows(sales)};
       if (JSON.stringify(canonical(beforeDefinition)) !== JSON.stringify(canonical(expectedBefore))) throw new Error('Materialized J4 fixture did not match the fixed schema, binding, and row provenance before definition evaluation.');
       const published = await client.createKeyedGroupedSum(opened.bootstrap.revision, definition);
       const initial = await client.queryKeyedGroupedSum(definitionId);
@@ -89,13 +90,15 @@ try {
       await client.editText(restored.resulting_revision, missingCode, 'MISSING');
       const missing = await client.queryKeyedGroupedSum(definitionId);
       await client.closeProject(); await client.close();
-      return {beforeDefinition, initial: groups(initial), current: groups(current), reopened: groups(reopenedGroups), duplicate: {groups: duplicate.groups.length, diagnostics: duplicate.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, missing: {groups: missing.groups.length, diagnostics: missing.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, exportBytes: [...new Uint8Array(exported.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
+      return {beforeDefinition, initial: groups(initial), current: groups(current), reopened: groups(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: {groups: duplicate.groups.length, diagnostics: duplicate.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, missing: {groups: missing.groups.length, diagnostics: missing.diagnostics.map(diagnostic => ({code: diagnostic.code, lookupKey: diagnostic.lookup_key}))}, exportBytes: [...new Uint8Array(exported.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
     } catch (error) { try { await client.close(); } catch {} throw error; }
   }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId, expectedBefore: expectedBeforeDefinition});
   assert.deepEqual(result.beforeDefinition, expectedBeforeDefinition);
-  assert.deepEqual(result.initial, {NOTE: 1000, PEN: 800});
-  assert.deepEqual(result.current, {NOTE: 1000, PEN: 1000});
-  assert.deepEqual(result.reopened, {NOTE: 1000, PEN: 1000});
+  assert.deepEqual(result.initial.values, {NOTE: 1000, PEN: 800});
+  assert.equal(result.initial.revision, result.publicationRevision);
+  assert.deepEqual(result.current.values, {NOTE: 1000, PEN: 1000});
+  assert.equal(result.current.revision, result.editRevision); assert.notEqual(result.current.revision, result.initial.revision);
+  assert.deepEqual(result.reopened.values, {NOTE: 1000, PEN: 1000}); assert.equal(result.reopened.revision, result.reopenedBootstrapRevision);
   assert.equal(result.duplicate.groups, 0); assert.ok(result.duplicate.diagnostics.some(value => value.code === 'lookup.ambiguous_key' && value.lookupKey === 'PEN'));
   assert.equal(result.missing.groups, 0); assert.ok(result.missing.diagnostics.some(value => value.code === 'lookup.missing_key' && value.lookupKey === 'MISSING'));
   console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
