@@ -31,6 +31,8 @@ for (const shard of '0123456789abcdef') fixtureText[`entities/${shard}.jsonl`] ?
 const fixture = Object.entries(fixtureText).sort(([a], [b]) => a.localeCompare(b)).map(([path, body]) => ({path, bytes: text(body)}));
 const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(fixtureText).sort())).digest('hex');
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
+const expectedCoreSourceCommit = '518aaa55e046a4e4676b4d5e05d8189c4c6343fe';
+const expectedCoreManifestSha256 = 'ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b';
 const expectedPersistedDefinition = [{
   id: definitionId,
   orders: {schema: salesSchema, lookup_key_field: fields.salesCode, quantity_field: fields.quantity},
@@ -80,6 +82,8 @@ try {
   assert.equal(fixtureSha256, expectedFixtureSha256, 'Fixture provenance changed; obtain Steward reconciliation.');
   const lockPath = path.join(root, 'core-kit.lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+  assert.equal(lock.sourceCommit, expectedCoreSourceCommit, 'J4 core source pin changed; obtain Steward reconciliation.');
+  assert.equal(lock.artifactManifestSha256, expectedCoreManifestSha256, 'J4 core manifest pin changed; obtain Steward reconciliation.');
   const kit = await realpath(path.join(root, lock.defaultKit));
   execFileSync(process.execPath, [path.join(root, 'scripts', 'verify-core-kit.mjs')], {
     cwd: root,
