@@ -130,6 +130,12 @@ try {
       const penPrice = pen.fields.find(field => field.target.field === fields.price).target;
       const edit = await client.editNumber(initial.revision, penPrice, '250');
       const current = await client.queryKeyedGroupedSum(definitionId);
+      const captureRefusal = async operation => {
+        try { await operation(); return null; }
+        catch (error) { return {code: error?.failure?.code ?? null, message: String(error?.message ?? error)}; }
+      };
+      const canonicalRefusal = await captureRefusal(() => client.exportCanonicalTree(current.revision));
+      const portableRefusal = await captureRefusal(() => client.exportPortableRo(current.revision));
       const exported = await client.exportProject(current.revision);
       const fresh = kit.createExperimentalDesignerClient();
       const reopened = await fresh.openProject(exported.bytes.slice(0));
@@ -146,7 +152,7 @@ try {
       await client.editText(restored.resulting_revision, missingCode, 'MISSING');
       const missing = await client.queryKeyedGroupedSum(definitionId);
       await client.closeProject(); await client.close();
-      return {beforeDefinition, initial: projection(initial), current: projection(current), reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], reopenedExportBytes: [...new Uint8Array(reopenedExport.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
+      return {beforeDefinition, initial: projection(initial), current: projection(current), canonicalRefusal, portableRefusal, reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], reopenedExportBytes: [...new Uint8Array(reopenedExport.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
     } catch (error) { try { await client.close(); } catch {} throw error; }
   }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId, expectedBefore: expectedBeforeDefinition});
   assert.deepEqual(result.beforeDefinition, expectedBeforeDefinition);
@@ -156,6 +162,9 @@ try {
   assert.deepEqual(result.current.groups, [{category: 'NOTE', value: 1000}, {category: 'PEN', value: 1000}]);
   assert.deepEqual(result.current.diagnostics, []);
   assert.equal(result.current.revision, result.editRevision); assert.notEqual(result.current.revision, result.initial.revision);
+  const expectedV1Refusal = {code: 'invalid_project', message: 'canonical project admission failed: invalid .roproj representation: saved keyed grouped-sum definitions require .roproj/v2'};
+  assert.deepEqual(result.canonicalRefusal, expectedV1Refusal);
+  assert.deepEqual(result.portableRefusal, expectedV1Refusal);
   assert.deepEqual(result.reopened.groups, [{category: 'NOTE', value: 1000}, {category: 'PEN', value: 1000}]);
   assert.deepEqual(result.reopened.diagnostics, []); assert.equal(result.reopened.revision, result.reopenedBootstrapRevision);
   assert.deepEqual(result.duplicate.groups, []);
@@ -169,7 +178,7 @@ try {
   inspectOpaqueFormat2Transfer(result.exportBytes);
   inspectOpaqueFormat2Transfer(result.reopenedExportBytes);
   assert.throws(() => assertPersistedDefinition([{...expectedPersistedDefinition[0], products: {...expectedPersistedDefinition[0].products, category_field: fields.code}}]), /Persisted J4 definition bindings changed/);
-  console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
+  console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, refusals: {canonical: result.canonicalRefusal, portable: result.portableRefusal}, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
 } catch (error) {
   console.error(JSON.stringify({status: error.blocked ? 'BLOCKED' : 'FAIL_OR_UNQUALIFIED', message: String(error.stack ?? error)})); process.exitCode = error.blocked ? 78 : 1;
 } finally { if (browser) await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
