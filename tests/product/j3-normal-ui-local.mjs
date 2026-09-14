@@ -128,9 +128,8 @@ try {
   await edit.fill("PEN!");
   await edit.press("Enter");
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Commit preview", exact: true }).click();
-  await page.getByRole("alert").waitFor();
-  assert.match(await page.getByRole("alert").textContent(), /cleanup was not applied|stale/i);
+  assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "an intervening publication must clear the stale preview");
+  assert.equal(await page.getByRole("button", { name: "Commit preview", exact: true }).count(), 0, "a stale preview must not remain dispatchable");
   // The intervening edit is retained; explicitly correct it before making a
   // new preview, rather than treating a stale preview as a retry.
   await page.getByRole("tab", { name: "Table", exact: true }).click();

@@ -137,6 +137,7 @@ export function SheetShell(props: SheetShellProps) {
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
+  const viewCollectionKey = view?.table.collection.key ?? null;
 
   useEffect(() => {
     onDraftChangeRef.current = props.onDraftChange;
@@ -159,7 +160,7 @@ export function SheetShell(props: SheetShellProps) {
       setCloseOpen(false);
       setTab("table");
     }
-  }, [viewKey]);
+  }, [viewKey, viewCollectionKey]);
 
   useEffect(() => {
     if (!view) {
@@ -215,8 +216,9 @@ export function SheetShell(props: SheetShellProps) {
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
+  const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
-    (editor !== null && editor.value !== editor.original) || anyNotesDraft || (copyOpen && copyName.trim() !== "");
+    cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
 
   useEffect(() => {
@@ -421,6 +423,11 @@ export function SheetShell(props: SheetShellProps) {
 
   async function selectCollection(next: string): Promise<void> {
     if (!witness || next === view?.table.collection.key) return;
+    if (cellDraftActive) {
+      setLocalError("Apply or cancel the value you are editing before switching tables.");
+      if (editor) focusCell(editor.entity, editor.field);
+      return;
+    }
     setLocalError(null);
     try {
       await onSelectCollection(witness, next);
@@ -1034,7 +1041,7 @@ export function SheetShell(props: SheetShellProps) {
         {renderToolbar()}
         <nav className="ts-actions" aria-label="Workbook actions">
           <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
-          <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked}>
+          <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
             {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
           </select>
           <button

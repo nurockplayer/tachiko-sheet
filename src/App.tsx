@@ -164,6 +164,13 @@ export function App({ runtime, copies }: AppProps) {
   const saveInFlightRef = useRef(false);
   const recoveryDraftRef = useRef<string | null>(null);
   const j4DefinitionIdsRef = useRef<string[]>([]);
+  type CleanupPreviewContext = {
+    occurrence: string;
+    revision: string;
+    collection: string;
+    previewId: string;
+  };
+  const cleanupPreviewContextRef = useRef<CleanupPreviewContext | null>(null);
   // Independent of the old-work checkpoint: an unknown Open may start from
   // the home screen, so recovery must remain fail-closed even without one.
   const unknownOpenRecoveryRef = useRef(false);
@@ -184,6 +191,7 @@ export function App({ runtime, copies }: AppProps) {
     savedRevision: string | null;
     saveStatus: SaveStatus;
     recoveryDraft: string | null;
+    cleanupPreviewContext: CleanupPreviewContext | null;
   };
   const openRecoveryCheckpointRef = useRef<OpenRecoveryCheckpoint | null>(null);
 
@@ -236,6 +244,25 @@ export function App({ runtime, copies }: AppProps) {
   function installJ4Results(results: KeyedGroupedSumResult[]): void {
     installJ4DefinitionIds(results.map((result) => result.definitionId));
     setJ4Results(results);
+  }
+
+  function clearCleanupPreview(): void {
+    cleanupPreviewContextRef.current = null;
+    setInterop((current) => current && current.cleanupPreview !== null
+      ? { ...current, cleanupPreview: null }
+      : current);
+  }
+
+  function setCleanupPreview(preview: NonNullable<InteropState["cleanupPreview"]>, view: WorkbookView): void {
+    cleanupPreviewContextRef.current = {
+      occurrence: view.occurrence,
+      revision: view.revision,
+      collection: view.table.collection.key,
+      previewId: preview.preview_id,
+    };
+    setInterop((current) => current
+      ? { ...current, cleanupPreview: preview }
+      : { importInspection: null, metadata: null, ledger: [], cleanupPreview: preview, downloadStatus: "idle" });
   }
 
   function upsertJ4Result(result: KeyedGroupedSumResult): void {
@@ -327,6 +354,7 @@ export function App({ runtime, copies }: AppProps) {
       savedRevision: savedRevisionRef.current,
       saveStatus,
       recoveryDraft: recoveryDraftRef.current,
+      cleanupPreviewContext: cleanupPreviewContextRef.current,
     } : null;
   }
 
@@ -362,6 +390,7 @@ export function App({ runtime, copies }: AppProps) {
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
     setInterop(provenance.interop ?? null);
+    cleanupPreviewContextRef.current = null;
     setCurrentness("unknown");
     setOutcome("unknown");
   }
@@ -405,6 +434,7 @@ export function App({ runtime, copies }: AppProps) {
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
     setInterop(provenance.interop ?? null);
+    cleanupPreviewContextRef.current = null;
     setCurrentness("current");
     setOutcome("idle");
   }
@@ -462,6 +492,7 @@ export function App({ runtime, copies }: AppProps) {
     setOutcome("idle");
     // The old preview targeted the projection we just discarded.
     setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    cleanupPreviewContextRef.current = null;
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
   }
 
@@ -476,6 +507,7 @@ export function App({ runtime, copies }: AppProps) {
     setCurrentness("unknown");
     setOutcome("unknown");
     setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    cleanupPreviewContextRef.current = null;
     setMessage("The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
 
@@ -487,6 +519,7 @@ export function App({ runtime, copies }: AppProps) {
     draftDirtyRef.current = false;
     syncDirty();
     markNotSaved();
+    cleanupPreviewContextRef.current = null;
     setCurrentness("unknown");
     setOutcome("unknown");
     recoveryDraftRef.current = JSON.stringify(edit);
@@ -501,6 +534,7 @@ export function App({ runtime, copies }: AppProps) {
     draftDirtyRef.current = false;
     syncDirty();
     markNotSaved();
+    cleanupPreviewContextRef.current = null;
     setCurrentness("unknown");
     setOutcome("unknown");
     setMessage("The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
@@ -629,12 +663,17 @@ export function App({ runtime, copies }: AppProps) {
 
   async function selectCollection(witness: ViewWitness, collection: string): Promise<void> {
     if (blockUnknownOpenRecovery()) return;
+    if (draftDirtyRef.current) {
+      setMessage("Apply or cancel the current draft before switching tables.");
+      return;
+    }
     if (!begin()) return;
     try {
       setMessage(null);
       setCurrentness("pending");
       const next = await runtime.selectCollection(witness, collection);
       installView(next);
+      clearCleanupPreview();
       setCurrentness("current");
       setOutcome("idle");
     } catch (error) {
@@ -690,6 +729,7 @@ export function App({ runtime, copies }: AppProps) {
       syncDirty();
       markNotSaved();
       setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      cleanupPreviewContextRef.current = null;
       importedSourceRef.current = { name: pending.name, format: pending.format, bytes: bytes.slice(0), metadata: imported.metadata, ledger: imported.ledger };
       setCurrentness("current");
       setOutcome("idle");
@@ -706,6 +746,7 @@ export function App({ runtime, copies }: AppProps) {
         if (checkpoint) {
           setInterop(checkpoint.interop);
           importBytesRef.current = checkpoint.importBytes?.slice(0) ?? null;
+          cleanupPreviewContextRef.current = checkpoint.cleanupPreviewContext;
         }
         clearOpenCheckpoint();
         setMessage(describe(error, "The import was not applied."));
@@ -720,6 +761,7 @@ export function App({ runtime, copies }: AppProps) {
     if (checkpoint) {
       setInterop(checkpoint.interop);
       importBytesRef.current = checkpoint.importBytes?.slice(0) ?? null;
+      cleanupPreviewContextRef.current = checkpoint.cleanupPreviewContext;
     } else {
       setInterop((current) => current ? { ...current, importInspection: null } : null);
     }
@@ -731,7 +773,13 @@ export function App({ runtime, copies }: AppProps) {
     if (!begin()) return null;
     try {
       const preview = await runtime.previewCleanup(witness, { kind: "trim", fields });
-      setInterop((current) => current ? { ...current, cleanupPreview: preview } : current);
+      const live = viewRef.current;
+      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
+        setOutcome("idle");
+        setMessage("The cleanup preview belongs to an older work view.");
+        return null;
+      }
+      setCleanupPreview(preview, live);
       setOutcome("idle");
       return preview;
     } catch (error) { setOutcome("idle"); setMessage(describe(error, "A cleanup preview could not be created.")); return null; }
@@ -743,7 +791,13 @@ export function App({ runtime, copies }: AppProps) {
     if (!begin()) return null;
     try {
       const preview = await runtime.previewCleanup(witness, { kind: "deduplicate", entities, key_fields: fields });
-      setInterop((current) => current ? { ...current, cleanupPreview: preview } : current);
+      const live = viewRef.current;
+      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
+        setOutcome("idle");
+        setMessage("The cleanup preview belongs to an older work view.");
+        return null;
+      }
+      setCleanupPreview(preview, live);
       setOutcome("idle");
       return preview;
     } catch (error) { setOutcome("idle"); setMessage(describe(error, "A duplicate-row preview could not be created.")); return null; }
@@ -752,6 +806,15 @@ export function App({ runtime, copies }: AppProps) {
 
   async function commitCleanup(witness: ViewWitness, previewId: string): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
+    const live = viewRef.current;
+    const context = cleanupPreviewContextRef.current;
+    if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision ||
+      !context || context.occurrence !== live.occurrence || context.revision !== live.revision ||
+      context.collection !== live.table.collection.key || context.previewId !== previewId) {
+      setOutcome("idle");
+      setMessage("This cleanup preview is no longer current. Preview it again before committing.");
+      return false;
+    }
     if (!begin()) return false;
     try {
       const next = await runtime.commitCleanup(witness, previewId);
@@ -760,7 +823,7 @@ export function App({ runtime, copies }: AppProps) {
       // the newly published revision.
       clearJ4Results();
       installView(next); pendingDirtyRef.current = true; syncDirty(); markNotSaved();
-      setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+      clearCleanupPreview();
       setOutcome("idle");
       return true;
     } catch (error) {
@@ -770,7 +833,7 @@ export function App({ runtime, copies }: AppProps) {
         failClosedAfterUnknownCleanup();
       } else {
         setOutcome("idle");
-        setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+        clearCleanupPreview();
         setMessage(describe(error, "The cleanup was not applied."));
       }
       return false;
@@ -779,7 +842,7 @@ export function App({ runtime, copies }: AppProps) {
   }
 
   function cancelCleanup(): void {
-    setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
+    clearCleanupPreview();
     setOutcome("idle");
   }
 
@@ -841,6 +904,7 @@ export function App({ runtime, copies }: AppProps) {
       clearJ4Results();
       const next = await runtime.edit(witness, target, edit);
       installView(next);
+      clearCleanupPreview();
       pendingDirtyRef.current = true;
       syncDirty();
       if (savedRevisionRef.current !== next.revision) markNotSaved();
@@ -953,12 +1017,13 @@ export function App({ runtime, copies }: AppProps) {
       setMessage(null);
       setCurrentness("pending");
       clearJ4Results();
-      const result = await runtime.createKeyedGroupedSum(witness, binding);
+      await runtime.createKeyedGroupedSum(witness, binding);
       published = true;
       const next = await runtime.read();
+      const results = await readJ4Results(next);
       installView(next);
-      installJ4DefinitionIds([result.definitionId]);
-      setJ4Results([result]);
+      installJ4Results(results);
+      clearCleanupPreview();
       pendingDirtyRef.current = true;
       syncDirty();
       markNotSaved();
@@ -1038,6 +1103,7 @@ export function App({ runtime, copies }: AppProps) {
       importBytesRef.current = null;
       preparedDownloadRef.current = null;
       setInterop(null);
+      cleanupPreviewContextRef.current = null;
       unknownOpenRecoveryRef.current = false;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
@@ -1071,6 +1137,7 @@ export function App({ runtime, copies }: AppProps) {
         clearJ4Results();
         importedSourceRef.current = null;
         setInterop(null);
+        cleanupPreviewContextRef.current = null;
         importBytesRef.current = null;
         preparedDownloadRef.current = null;
         pendingDirtyRef.current = false;
@@ -1085,6 +1152,12 @@ export function App({ runtime, copies }: AppProps) {
       }
       installView(next);
       installJ4Results(results);
+      const cleanupContext = cleanupPreviewContextRef.current;
+      if (cleanupContext && (cleanupContext.occurrence !== next.occurrence ||
+        cleanupContext.revision !== next.revision ||
+        cleanupContext.collection !== next.table.collection.key)) {
+        clearCleanupPreview();
+      }
       if (checkpoint && recoveryDecision?.sameOccurrence) {
         // Reopening the old occurrence restores its settled source context;
         // the receipt is valid only when the observed revision still matches
@@ -1097,6 +1170,10 @@ export function App({ runtime, copies }: AppProps) {
               downloadStatus: "idle",
             }
           : null);
+        cleanupPreviewContextRef.current = checkpoint.cleanupPreviewContext &&
+          checkpoint.cleanupPreviewContext.revision === next.revision
+          ? checkpoint.cleanupPreviewContext
+          : null;
         importBytesRef.current = checkpoint.importBytes?.slice(0) ?? null;
         preparedDownloadRef.current = checkpoint.preparedDownload && checkpoint.preparedDownload.revision === next.revision
           ? { ...checkpoint.preparedDownload, bytes: checkpoint.preparedDownload.bytes.slice(0) }
@@ -1115,6 +1192,7 @@ export function App({ runtime, copies }: AppProps) {
         // previous source attachment and receipt.
         importedSourceRef.current = null;
         setInterop(null);
+        cleanupPreviewContextRef.current = null;
         importBytesRef.current = null;
         preparedDownloadRef.current = null;
         pendingDirtyRef.current = false;
@@ -1145,6 +1223,7 @@ export function App({ runtime, copies }: AppProps) {
         draftDirtyRef.current = false;
         syncDirty();
         recoveryDraftRef.current = recovered.recoveryDraft;
+        cleanupPreviewContextRef.current = null;
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
         clearOpenCheckpoint();
