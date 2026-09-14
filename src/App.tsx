@@ -314,17 +314,13 @@ export function App({ runtime, copies }: AppProps) {
     setJ4Results(results);
   }
 
-  /** Restore a confirmed pre-publication result without rebuilding its definition inventory. */
-  function restoreJ4Results(results: KeyedGroupedSumResult[]): void {
-    j4ResultsRef.current = results;
-    setJ4Results(results);
-  }
-
+  /** Restore confirmed pre-publication J4 state after a refused operation. */
   function restoreJ4Results(
     definitionIds: string[],
     results: KeyedGroupedSumResult[],
   ): void {
     installJ4DefinitionIds(definitionIds);
+    j4ResultsRef.current = results;
     setJ4Results(results);
   }
 
@@ -1175,7 +1171,9 @@ export function App({ runtime, copies }: AppProps) {
   async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
-    const priorResults = currentness === "current" ? j4ResultsRef.current : null;
+    const priorJ4 = currentness === "current"
+      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] }
+      : null;
     const priorOccurrence = witness.occurrence;
     const priorRevision = witness.revision;
     let published = false;
@@ -1210,9 +1208,9 @@ export function App({ runtime, copies }: AppProps) {
         return true;
       }
       const current = viewRef.current;
-      if (priorResults && current &&
+      if (priorJ4 && current &&
         current.occurrence === priorOccurrence && current.revision === priorRevision) {
-        restoreJ4Results(priorResults);
+        restoreJ4Results(priorJ4.definitionIds, priorJ4.results);
       }
       setCurrentness("current");
       setOutcome("idle");
