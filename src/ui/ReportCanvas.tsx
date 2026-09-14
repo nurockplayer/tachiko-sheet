@@ -132,6 +132,17 @@ export function drawReportCanvas(
     context.font = "600 20px system-ui, sans-serif";
     return context.measureText(text).width;
   };
+  if (groups.length === 0) {
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#1f2937";
+    context.font = "600 20px system-ui, sans-serif";
+    context.fillText(report.title || "Current report", 76, 38);
+    context.fillStyle = "#475569";
+    context.font = "14px system-ui, sans-serif";
+    context.fillText("No groups in the current result.", 76, 104);
+    return;
+  }
   const layout = reportCanvasLayout(report, groups, measureBody, measureTitle);
   canvas.width = layout.width;
   canvas.height = layout.height;

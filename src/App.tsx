@@ -684,6 +684,12 @@ export function App({ runtime, copies }: AppProps) {
         importInspection: null, metadata: copy.importedSource.metadata, ledger: copy.importedSource.ledger,
         cleanupPreview: null, downloadStatus: "idle" as const,
       } : null;
+      // Validate the optional presentation before replacing the resident work.
+      // A hash failure is a known refusal to open this copy, not a failed Open
+      // after the new occurrence has already become resident.
+      const presentationDigest = copy.kind === "opaque" && copy.presentation
+        ? await opaqueSnapshotDigest(copy.bytes)
+        : null;
       if (!await replaceWork(
         () => copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision },
@@ -695,10 +701,9 @@ export function App({ runtime, copies }: AppProps) {
           candidate.revision === reopened.revision &&
           candidate.diagnostics.length === 0,
         );
-        const digest = await opaqueSnapshotDigest(copy.bytes);
         if (reopened && result &&
           copy.presentation.snapshotRevision === copy.revision &&
-          copy.presentation.snapshotDigest === digest) {
+          copy.presentation.snapshotDigest === presentationDigest) {
           installReport(copy.presentation.report);
         } else {
           setMessage("The saved report configuration does not match a current source, so it was not opened.");

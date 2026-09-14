@@ -1093,6 +1093,7 @@ export function SheetShell(props: SheetShellProps) {
             <label className="ts-check"><input type="checkbox" checked={report.legendVisible} onChange={(event) => update({ legendVisible: event.currentTarget.checked })} disabled={controlsLocked} /> Show legend</label>
           </div>
           <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
+          {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
           <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
           <div className="ts-report-scroll"><ReportCanvas key={`${report.definitionId}:${report.type}:${report.title}:${report.categoryLabel}:${report.valueLabel}:${report.legendVisible}:${result.revision}`} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={setReportRenderReady} /></div>
           {!reportRenderReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
