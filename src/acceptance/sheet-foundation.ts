@@ -54,11 +54,13 @@ export interface AcceptanceApi {
   failNextSave(): void;
   loseNextExecuteReply(): void;
   loseNextOpenReply(): void;
-  loseNextImportReply(): void;
+  loseNextImportBeforeDispatch(): void;
+  loseNextImportReplyAfterDispatch(): void;
   failNextImportProjection(): void;
   failNextOpenProjection(): void;
   failNextJ4PostPublicationRead(): void;
   openProjectRequestCount(): number;
+  importSpreadsheetRequestCount(): number;
   executeRequestCount(): number;
   settleFaultWindow(): Promise<void>;
   saveObservation(): AcceptanceSaveObservation;
@@ -93,7 +95,8 @@ let wiring: AcceptanceWiring | null = null;
 let dispatchCount = 0;
 let loseArmed = false;
 let openReplyFaultArmed = false;
-let importReplyFaultArmed = false;
+let importBeforeDispatchFaultArmed = false;
+let importReplyAfterDispatchFaultArmed = false;
 let importProjectionFaultRequested = false;
 let importProjectionFaultArmed = false;
 let openProjectionFaultArmed = false;
@@ -101,6 +104,7 @@ let j4PostPublicationReadFaultRequested = false;
 let j4PostPublicationReadFaultArmed = false;
 let j4PostPublicationReadSkipped = false;
 let openProjectDispatchCount = 0;
+let importSpreadsheetDispatchCount = 0;
 let exportCanonicalDispatchCount = 0;
 let exportOpaqueDispatchCount = 0;
 let copyCanonicalDispatchCount = 0;
@@ -190,11 +194,17 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "importSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
-          if (importReplyFaultArmed) {
-            importReplyFaultArmed = false;
-            throw new UnknownOperationOutcomeError("The dispatched import reply was lost before the candidate could be confirmed.");
+          if (importBeforeDispatchFaultArmed) {
+            importBeforeDispatchFaultArmed = false;
+            throw new UnknownOperationOutcomeError("Import delivery outcome was unknown before dispatch; no candidate was sent.");
           }
+          const loseReplyAfterDispatch = importReplyAfterDispatchFaultArmed;
+          importReplyAfterDispatchFaultArmed = false;
+          importSpreadsheetDispatchCount += 1;
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (loseReplyAfterDispatch) {
+            throw new UnknownOperationOutcomeError("The dispatched import reply was lost after the real transport replied.");
+          }
           if (importProjectionFaultRequested) {
             importProjectionFaultRequested = false;
             importProjectionFaultArmed = true;
@@ -453,8 +463,19 @@ export function loseNextOpenReply(): void {
   openReplyFaultArmed = true;
 }
 
-export function loseNextImportReply(): void {
-  importReplyFaultArmed = true;
+/**
+ * Simulates delivery uncertainty before a candidate is dispatched. No import
+ * call is made; this arm is deliberately distinct from reply loss.
+ */
+export function loseNextImportBeforeDispatch(): void {
+  importReplyAfterDispatchFaultArmed = false;
+  importBeforeDispatchFaultArmed = true;
+}
+
+/** Simulates a lost reply only after one real import dispatch has succeeded. */
+export function loseNextImportReplyAfterDispatch(): void {
+  importBeforeDispatchFaultArmed = false;
+  importReplyAfterDispatchFaultArmed = true;
 }
 
 export function failNextImportProjection(): void {
@@ -474,6 +495,10 @@ export function failNextOpenProjection(): void {
 
 export function openProjectRequestCount(): number {
   return openProjectDispatchCount;
+}
+
+export function importSpreadsheetRequestCount(): number {
+  return importSpreadsheetDispatchCount;
 }
 
 export function exportDispatchCounts(): { canonical: number; opaque: number } {
@@ -544,11 +569,13 @@ export function installAcceptance(next: AcceptanceWiring): void {
     failNextSave,
     loseNextExecuteReply,
     loseNextOpenReply,
-    loseNextImportReply,
+    loseNextImportBeforeDispatch,
+    loseNextImportReplyAfterDispatch,
     failNextImportProjection,
     failNextOpenProjection,
     failNextJ4PostPublicationRead,
     openProjectRequestCount,
+    importSpreadsheetRequestCount,
     executeRequestCount,
     settleFaultWindow,
     saveObservation,

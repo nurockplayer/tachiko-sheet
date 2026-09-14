@@ -188,7 +188,8 @@ try {
 
   // With no resident after the explicit close, an unknown import must not
   // invent a candidate; Refresh must report the real no-resident core failure.
-  await page.evaluate(() => window.__tachikoAcceptance.loseNextImportReply());
+  const importBeforeNoResident = await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount());
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextImportBeforeDispatch());
   await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
   const unknownImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await unknownImport.waitFor();
@@ -213,6 +214,55 @@ try {
     },
   );
   assert.equal(await page.getByTestId("project-ready").count(), 0, "no-resident unknown import refresh must return to home");
+  assert.equal(
+    await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount()) - importBeforeNoResident,
+    0,
+    "before-dispatch import delivery uncertainty must not dispatch a candidate",
+  );
+
+  // A separate arm loses the reply only after one real import dispatch. Its
+  // unknown result must remain source-unconfirmed through Refresh, without a
+  // second import or any actionable project, save, or export surface.
+  const importBeforeReplyLoss = await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount());
+  const exportBeforeImportReplyLoss = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
+  const copiesBeforeImportReplyLoss = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextImportReplyAfterDispatch());
+  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  const replyLossImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  await replyLossImport.waitFor();
+  await replyLossImport.locator("select").nth(2).selectOption("number");
+  await replyLossImport.locator("select").nth(4).selectOption("number");
+  await replyLossImport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await page.getByTestId("operation-outcome").filter({ hasText: "Outcome needs review" }).waitFor();
+  assert.equal(
+    await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount()) - importBeforeReplyLoss,
+    1,
+    "post-dispatch reply loss must call real import exactly once",
+  );
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("project-ready").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Prepare XLSX", exact: true }).count(), 0);
+  assert.equal(
+    await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount()) - importBeforeReplyLoss,
+    1,
+    "Refresh must not repeat an unknown import",
+  );
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), exportBeforeImportReplyLoss);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copiesBeforeImportReplyLoss);
+  await page.getByRole("button", { name: "Close and abandon recovery", exact: true }).click();
+  await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Close without saving", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Open saved j4-imported-restart", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  const reopenedUnsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  if (await reopenedUnsaved.count()) {
+    await reopenedUnsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  }
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await waitForHomeOpen(page);
 
   // The import itself can succeed while its first projection observation is
   // lost. That known operation outcome still leaves source provenance

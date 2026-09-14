@@ -12,9 +12,12 @@ import {
   acceptanceHarnessVersion,
   coreFailureProbe,
   failNextOpenProjection,
+  importSpreadsheetRequestCount,
   installAcceptance,
   lastReceipt,
   loseNextExecuteReply,
+  loseNextImportBeforeDispatch,
+  loseNextImportReplyAfterDispatch,
   openProjectRequestCount,
   resetCoreFailureProbe,
   settleFaultWindow,
@@ -32,10 +35,14 @@ function projection(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: CoreKit; calls: () => number } {
-  const state = { calls: 0 };
+function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: CoreKit; calls: () => number; importCalls: () => number } {
+  const state = { calls: 0, importCalls: 0 };
   const client = {
     openProject: async () => ({}) as never,
+    importSpreadsheet: async () => {
+      state.importCalls += 1;
+      return { imported: true } as never;
+    },
     editNumber: async () => {
       state.calls += 1;
       return onEdit();
@@ -49,7 +56,7 @@ function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: C
   const kit = {
     createExperimentalDesignerClient: () => client,
   } as unknown as CoreKit;
-  return { kit, calls: () => state.calls };
+  return { kit, calls: () => state.calls, importCalls: () => state.importCalls };
 }
 
 describe("acceptance canonical hash", () => {
@@ -169,6 +176,64 @@ describe("acceptance kit instrumentation", () => {
     expect(openProjectRequestCount() - before).toBe(1);
   });
 
+  it("keeps the before-dispatch import delivery arm at zero real dispatches", async () => {
+    const { kit, importCalls } = fakeKit(async () => projection());
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    const before = importSpreadsheetRequestCount();
+    loseNextImportBeforeDispatch();
+    await expect(instrumented.importSpreadsheet(new ArrayBuffer(0), "csv" as never, {} as never, {} as never)).rejects.toBeInstanceOf(
+      UnknownOperationOutcomeError,
+    );
+    expect(importCalls()).toBe(0);
+    expect(importSpreadsheetRequestCount() - before).toBe(0);
+  });
+
+  it("loses an import reply only after exactly one successful real dispatch", async () => {
+    const { kit, importCalls } = fakeKit(async () => projection());
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    const before = importSpreadsheetRequestCount();
+    loseNextImportReplyAfterDispatch();
+    await expect(instrumented.importSpreadsheet(new ArrayBuffer(0), "csv" as never, {} as never, {} as never)).rejects.toBeInstanceOf(
+      UnknownOperationOutcomeError,
+    );
+    expect(importCalls()).toBe(1);
+    expect(importSpreadsheetRequestCount() - before).toBe(1);
+  });
+
+  it("keeps before-dispatch and post-dispatch import fault arms mutually exclusive", async () => {
+    const { kit, importCalls } = fakeKit(async () => projection());
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    const before = importSpreadsheetRequestCount();
+    loseNextImportReplyAfterDispatch();
+    loseNextImportBeforeDispatch();
+    await expect(instrumented.importSpreadsheet(new ArrayBuffer(0), "csv" as never, {} as never, {} as never)).rejects.toBeInstanceOf(
+      UnknownOperationOutcomeError,
+    );
+    expect(importCalls()).toBe(0);
+    loseNextImportBeforeDispatch();
+    loseNextImportReplyAfterDispatch();
+    await expect(instrumented.importSpreadsheet(new ArrayBuffer(0), "csv" as never, {} as never, {} as never)).rejects.toBeInstanceOf(
+      UnknownOperationOutcomeError,
+    );
+    expect(importCalls()).toBe(1);
+    expect(importSpreadsheetRequestCount() - before).toBe(1);
+  });
+
+  it("preserves an underlying import rejection when post-dispatch reply loss is armed", async () => {
+    const failure = new Error("real import rejected");
+    const client = {
+      importSpreadsheet: async () => Promise.reject(failure),
+    };
+    const kit = {
+      createExperimentalDesignerClient: () => client,
+    } as unknown as CoreKit;
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
+    const before = importSpreadsheetRequestCount();
+    loseNextImportReplyAfterDispatch();
+    await expect(instrumented.importSpreadsheet(new ArrayBuffer(0), "csv" as never, {} as never, {} as never)).rejects.toBe(failure);
+    expect(importSpreadsheetRequestCount() - before).toBe(1);
+  });
+
   it("exposes the observation global only after installation", () => {
     const scope = globalThis as unknown as { window: Record<string, unknown> };
     const previous = scope.window;
@@ -183,11 +248,13 @@ describe("acceptance kit instrumentation", () => {
         "failNextSave",
         "loseNextExecuteReply",
         "loseNextOpenReply",
-        "loseNextImportReply",
+        "loseNextImportBeforeDispatch",
+        "loseNextImportReplyAfterDispatch",
         "failNextImportProjection",
         "failNextOpenProjection",
         "failNextJ4PostPublicationRead",
         "openProjectRequestCount",
+        "importSpreadsheetRequestCount",
         "executeRequestCount",
         "settleFaultWindow",
         "saveObservation",
