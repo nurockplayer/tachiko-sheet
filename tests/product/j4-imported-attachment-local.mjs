@@ -96,6 +96,17 @@ async function savedAttachment(page, name) {
   }, name);
 }
 
+async function visibleTable(page, collection) {
+  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption(collection);
+  const grid = page.getByRole("grid", { name: "Table", exact: true });
+  return {
+    headers: await grid.locator("thead th").allTextContents(),
+    rows: await grid.locator("tbody tr").evaluateAll((rows) => rows.map((row) =>
+      Array.from(row.querySelectorAll("td"), (cell) => cell.textContent),
+    )),
+  };
+}
+
 try {
   await makeImportedFixture();
   const sourceHash = createHash("sha256").update(await readFile(fixture)).digest("hex");
@@ -168,7 +179,14 @@ try {
   await reimport.locator("select").nth(4).selectOption("number");
   await reimport.getByRole("button", { name: "Import candidate", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
-  assert.match(await page.locator("[role=grid]").textContent(), /PEN.*NOTE|NOTE.*PEN/);
+  assert.deepEqual(await visibleTable(page, "sheet_1"), {
+    headers: ["Row", "column_1", "column_2", "column_3"],
+    rows: [["PEN", "PEN", "200"], ["NOTE", "NOTE", "500"]],
+  });
+  assert.deepEqual(await visibleTable(page, "sheet_2"), {
+    headers: ["Row", "column_1", "column_2"],
+    rows: [["PEN ", "4"], ["NOTE", "2"]],
+  });
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.equal(await page.getByLabel("Cross-table groups", { exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: /Refresh cross-table summary/ }).count(), 0);

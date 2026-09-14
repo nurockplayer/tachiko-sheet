@@ -925,7 +925,12 @@ export function SheetShell(props: SheetShellProps) {
     const collection = (key: string) => j4Catalog?.collections.find((candidate) => candidate.key === key) ?? null;
     const fields = (key: string) => collection(key)?.fields ?? [];
     const choose = (key: keyof KeyedGroupedSumBindingChoice, value: string) => {
-      setJ4Binding((current) => current ? { ...current, [key]: value } : current);
+      setJ4Binding((current) => {
+        if (!current) return current;
+        if (key === "ordersCollection") return { ...current, ordersCollection: value, orderLookupKeyField: "", orderQuantityField: "" };
+        if (key === "productsCollection") return { ...current, productsCollection: value, productKeyField: "", productCategoryField: "", productPriceField: "" };
+        return { ...current, [key]: value };
+      });
     };
     const prepare = async () => {
       if (controlsLocked || j4Pending) return;
@@ -963,11 +968,18 @@ export function SheetShell(props: SheetShellProps) {
     const selector = (label: string, key: keyof KeyedGroupedSumBindingChoice, values: Array<{ key: string }>) => (
       <><label className="ts-field-label" htmlFor={`j4-${key}`}>{label}</label>
       <select id={`j4-${key}`} value={j4Binding?.[key] ?? ""} onChange={(event) => choose(key, event.currentTarget.value)} disabled={controlsLocked || j4Pending}>
+        <option value="">Choose a field</option>
         {values.map((value) => <option key={value.key} value={value.key}>{value.key}</option>)}
       </select></>
     );
+    const hasField = (collectionKey: string, fieldKey: string) => fields(collectionKey).some((field) => field.key === fieldKey);
     const bindingReady = Boolean(j4Binding && j4Catalog &&
-      [j4Binding.ordersCollection, j4Binding.orderLookupKeyField, j4Binding.orderQuantityField, j4Binding.productsCollection, j4Binding.productKeyField, j4Binding.productCategoryField, j4Binding.productPriceField].every(Boolean));
+      [j4Binding.ordersCollection, j4Binding.productsCollection].every(Boolean) &&
+      hasField(j4Binding.ordersCollection, j4Binding.orderLookupKeyField) &&
+      hasField(j4Binding.ordersCollection, j4Binding.orderQuantityField) &&
+      hasField(j4Binding.productsCollection, j4Binding.productKeyField) &&
+      hasField(j4Binding.productsCollection, j4Binding.productCategoryField) &&
+      hasField(j4Binding.productsCollection, j4Binding.productPriceField));
     return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className="ts-panel ts-brief">
       <section className="ts-card" aria-label="Cross-table summary binding">
         <h2 className="ts-h2">Cross-table summary</h2>
