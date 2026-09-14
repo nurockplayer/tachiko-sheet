@@ -14,17 +14,17 @@
 | --- | --- | --- |
 | Single Responsibility | workflow 決定何時可存；host adapter 決定如何完成寫入；UI 決定如何顯示 | 不是每個函式只能一行，也不是一個檔案只能一個 export |
 | Open/Closed | 增加已授權的 host 能力時，替換 port 的實作，維持既有 workflow 行為 | 不先建立所有未來平台、插件與策略物件 |
-| Liskov Substitution | adapter 不可把「write requested」冒充「durable write completed」；不支援的能力明確表示 | 不把 Web 與 macOS 不同能力假装成完全相同 |
+| Liskov Substitution | adapter 不可把「write requested」冒充「durable write completed」；不支援的能力明確表示 | 不把 Web 與 macOS 不同能力假裝成完全相同 |
 | Interface Segregation | summary read workflow 不必依賴 save／close；view-only UI 不必拿整個 App controller | 不必為每個純函式造 interface |
 | Dependency Inversion | application 定義需要的 port；kit／IndexedDB／Tauri 實作在外層 | 不引入 service locator 或 DI framework |
 
-SOLID 不要求大量 class／繼承。TypeScript 的 plain object、函式與 factory 足以承擔多数邊界；只有具體生命週期／封裝需求才選 class。
+SOLID 不要求大量 class／繼承。TypeScript 的 plain object、函式與 factory 足以承擔多數邊界；只有具體生命週期／封裝需求才選 class。
 
 ## 3. 可在 review 指認的規則
 
 ### CC-01：名稱表達事實，不混淆不同效果
 
-使用 `publishEdit`、`saveCopy`、`requestDownload`、`reobserveWork` 等說明效果的名稱；不要用 `processData`、`handleStuff`、`Manager` 隱藏責任。純 predicate 可用 `is...`／`can...`；有副作用的函式不能偽装成查詢。
+使用 `publishEdit`、`saveCopy`、`requestDownload`、`reobserveWork` 等說明效果的名稱；不要用 `processData`、`handleStuff`、`Manager` 隱藏責任。純 predicate 可用 `is...`／`can...`；有副作用的函式不能偽裝成查詢。
 
 `revision` 不叫 `versionNumber`，因為它是 opaque。`rowIndex`／座標不叫 entity identity。`saved` 不代表已渲染，`downloaded` 不代表 anchor 已 click。Journey 代號 J4／J5 留在 acceptance／evidence；新產品模組以 cross-table-summary／report 等使用者概念命名，舊名稱不需為了整齊一次全改。
 
@@ -84,7 +84,7 @@ React `useRef` 可持有 DOM node、訂閱清理或必要的最新 callback，�
 
 避免每個 render 重建完整 workbook 或為每格新建大型物件；必要的 projection／selector cache 以正確 identity 管理。不要在缺乏 profile 證據時到處加 memoization、worker、debounce 或 cache。
 
-任何最佳化都必須保留觀察結果、offscreen dependencies、draft 與 accessibility。不得偷偷放寬資料精度，或為通過 benchmark 替换 real runtime 為 fake。具體 workload／budget 由 #19 與相關 acceptance 決定。
+任何最佳化都必須保留觀察結果、offscreen dependencies、draft 與 accessibility。不得偷偷放寬資料精度，或為通過 benchmark 替換 real runtime 為 fake。具體 workload／budget 由 #19 與相關 acceptance 決定。
 
 ### CC-10：測試描述使用者結果與邊界，不模仿實作
 

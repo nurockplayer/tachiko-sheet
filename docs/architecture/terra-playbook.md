@@ -8,7 +8,7 @@
 
 Terra 仍是 delivery owner；新 discretionary choice 仍必須先取得 actual Astra read-only disposition。架構文件已描述的方向，不等於作者代替 Astra 做過 consultation；後續新的資料型別、拆分取捨、gate tool、行為／相容性決策也不能推定已被批准。已獲准的機械執行不需要每行／每 commit 重新問。
 
-本次文件作者是 ChatGPT；未執行 Astra agent consultation 或 fresh independent Sol review。設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
+原始提案由 ChatGPT 撰寫；其後的 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並由本候選的有界修補處理。fresh independent Sol review 仍須在每個 material head 上另行完成。文件作者、Astra consultant、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
 
 目前 inspection baseline 上，PR #28 正在修改 App、contracts、local-copies、SheetShell 等共享位置。**不要和它同時做這些檔案的架構重構。** 不碰使用者 root checkout 的 untracked files，不接管 active worktree，不重寫 #2 來宣告 takeover。新 docs lane 與將來 source lane 分開。
 
