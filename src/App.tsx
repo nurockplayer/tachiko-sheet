@@ -516,10 +516,15 @@ export function App({ runtime, copies }: AppProps) {
     );
   }
 
-  function commitReplacement(next: WorkbookView, results: KeyedGroupedSumResult[], provenance: ReplacementProvenance = {}): void {
+  function commitReplacement(
+    next: WorkbookView,
+    results: KeyedGroupedSumResult[],
+    provenance: ReplacementProvenance = {},
+    recoveredReport: ReportConfiguration | null = null,
+  ): void {
     installView(next);
     installJ4Results(results);
-    installReport(null);
+    installReport(recoveredReport);
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
     presentationDirtyRef.current = false;
@@ -546,7 +551,26 @@ export function App({ runtime, copies }: AppProps) {
     try {
       next = await open();
       const results = await readJ4Results(next);
-      commitReplacement(next, results, provenance);
+      const recoveredReport = provenance.presentation
+        ? recoverPresentationAfterAcknowledgedOpen(
+            { occurrence: next.occurrence, presentation: provenance.presentation },
+            next,
+            results,
+          )
+        : null;
+      if (provenance.presentation && !recoveredReport) {
+        // A known runtime Open is not an unknown operation, but the paired
+        // host-private presentation is still unconfirmed. Keep the complete
+        // candidate for Refresh instead of publishing a partial saved copy.
+        failClosedAfterReplacement(provenance, next.occurrence);
+        unknownOpenRecoveryRef.current = false;
+        provenanceUnconfirmedRef.current = false;
+        clearOpenCheckpoint();
+        setOutcome("idle");
+        setMessage("The saved work opened, but its report configuration could not be confirmed. Refresh to re-read the paired work.");
+        return false;
+      }
+      commitReplacement(next, results, provenance, recoveredReport);
       unknownOpenRecoveryRef.current = false;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
@@ -756,19 +780,6 @@ export function App({ runtime, copies }: AppProps) {
         () => copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation },
       )) return;
-      if (presentation) {
-        const reopened = viewRef.current;
-        const recovered = reopened && recoverPresentationAfterAcknowledgedOpen(
-          { occurrence: reopened.occurrence, presentation },
-          reopened,
-          j4ResultsRef.current,
-        );
-        if (recovered) {
-          installReport(recovered);
-        } else {
-          setMessage("The saved report configuration does not match a current source, so it was not opened.");
-        }
-      }
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
@@ -1378,8 +1389,6 @@ export function App({ runtime, copies }: AppProps) {
         setMessage("The resident work's source identity could not be confirmed. Refresh again or close it before continuing.");
         return;
       }
-      installView(next);
-      installJ4Results(results);
       if (pendingReplacement) {
         const sameReplacement = pendingReplacement.savedRevision !== null &&
           pendingReplacement.savedRevision === next.revision &&
@@ -1396,6 +1405,17 @@ export function App({ runtime, copies }: AppProps) {
                 results,
               )
             : null;
+          if (pendingReplacement.presentation && !recoveredReport) {
+            // Do not publish the workbook receipt without its verified
+            // paired presentation. Retain the candidate for another Refresh
+            // or the existing explicit Close path.
+            failClosedAfterReplacement(pendingReplacement, next.occurrence);
+            unknownOpenRecoveryRef.current = false;
+            provenanceUnconfirmedRef.current = false;
+            setOutcome("idle");
+            setMessage("The saved work opened, but its report configuration could not be confirmed. Refresh to re-read the paired work.");
+            return;
+          }
           installReport(recoveredReport);
           savedRevisionRef.current = pendingReplacement.savedRevision;
           setSaveStatus("saved");
@@ -1414,6 +1434,8 @@ export function App({ runtime, copies }: AppProps) {
           setMessage("The saved work could not be confirmed after opening; its report was not restored.");
         }
       }
+      installView(next);
+      installJ4Results(results);
       const cleanupContext = cleanupPreviewContextRef.current;
       if (cleanupContext && (cleanupContext.occurrence !== next.occurrence ||
         cleanupContext.revision !== next.revision ||

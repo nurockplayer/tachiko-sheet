@@ -71,6 +71,40 @@ async function redrawReport(page, title) {
   });
 }
 
+/**
+ * A persisted presentation can be structurally valid and byte-paired yet no
+ * longer name a discoverable definition. This is a host-record fault only;
+ * the core bytes and their digest remain untouched.
+ */
+async function replaceSavedReportDefinition(page, name, definitionId) {
+  await page.evaluate(async ({ name: copyName, definitionId: nextDefinitionId }) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("tachiko-sheet-local-copies", 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error("Could not open the saved-copy store."));
+    });
+    try {
+      const transaction = db.transaction(["opaque-copies"], "readwrite");
+      const store = transaction.objectStore("opaque-copies");
+      const record = await new Promise((resolve, reject) => {
+        const request = store.get(copyName);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error("Could not read the saved report."));
+      });
+      if (!record?.presentation) throw new Error("Expected a persisted presentation attachment.");
+      record.presentation.report.definitionId = nextDefinitionId;
+      store.put(record);
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? new Error("Could not store the report fault."));
+        transaction.onabort = () => reject(transaction.error ?? new Error("The report fault transaction aborted."));
+      });
+    } finally {
+      db.close();
+    }
+  }, { name, definitionId });
+}
+
 async function eraseCanvasColor(page, hex, bounds) {
   await page.locator(".ts-report-canvas").evaluate((canvas, { hex, bounds }) => {
     const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -455,6 +489,22 @@ try {
   await reportData.waitFor();
   assert.match(await reportData.textContent(), /PEN\s*1000/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
+
+  // A host-private attachment may still pass its shape, revision and opaque
+  // byte digest checks while referring to a non-current definition. Opening
+  // that partial pair must stay in recoverable state: no current facts, saved
+  // receipt or unpaired save may be published, including after repeat Refresh.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await replaceSavedReportDefinition(page, "j5-report", "missing-current-definition");
+  await page.getByRole("button", { name: "Open saved j5-report", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("project-ready").count(), 0);
+  assert.equal(await page.getByTestId("save-status").count(), 0, "an unpaired saved copy must not claim a saved receipt");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("project-ready").count(), 0, "repeat Refresh must retain the unpaired candidate");
+  assert.equal(await page.getByTestId("save-status").count(), 0, "repeat Refresh must not publish a partial saved receipt");
 } finally {
   if (context) await context.close().catch(() => {});
   await rm(profile, { recursive: true, force: true });
