@@ -246,6 +246,14 @@ export function App({ runtime, copies }: AppProps) {
     setJ4Results(results);
   }
 
+  function restoreJ4Results(
+    definitionIds: string[],
+    results: KeyedGroupedSumResult[],
+  ): void {
+    installJ4DefinitionIds(definitionIds);
+    setJ4Results(results);
+  }
+
   function clearCleanupPreview(): void {
     cleanupPreviewContextRef.current = null;
     setInterop((current) => current && current.cleanupPreview !== null
@@ -892,6 +900,9 @@ export function App({ runtime, copies }: AppProps) {
   async function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
+    const priorJ4 = currentness === "current"
+      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4Results] }
+      : null;
     try {
       const live = viewRef.current;
       if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
@@ -926,6 +937,11 @@ export function App({ runtime, copies }: AppProps) {
           setCurrentness("unknown");
           setMessage("This draft belongs to an unconfirmed work view. Refresh to re-read the work; the draft was kept.");
           return false;
+        }
+        const current = viewRef.current;
+        if (priorJ4 && current &&
+          current.occurrence === witness.occurrence && current.revision === witness.revision) {
+          restoreJ4Results(priorJ4.definitionIds, priorJ4.results);
         }
         setOutcome("idle");
         setCurrentness("current");
