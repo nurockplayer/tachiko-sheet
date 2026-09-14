@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sheet-preparation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   preparation:
     runs-on: ubuntu-24.04

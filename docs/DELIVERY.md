@@ -45,6 +45,18 @@ Astra consultation does not satisfy independent final review. Final Guarded merg
 
 This routing adds no human approval stop between ordinary tickets. After qualified closeout, Terra recalibrates live authority and ownership and continues the next genuinely Ready, non-overlapping successor without a new founder prompt. Human/Steward intervention remains limited to the canonical unresolved durable decisions, authority conflicts and external permission gates.
 
+## Three-level SCD loop and Final Candidate
+
+Use this cadence without weakening Conditional Ready, acceptance ownership, Astra decision routing, independent-review eligibility, exact-head validation or normal merge protections:
+
+1. **Inner loop:** implementation and mechanical repair already covered by authority or consultation may use granular local commits and focused local tests. Do not request fresh independent Sol final review for a WIP head or rerun full hosted gates solely because a small repair commit exists.
+2. **Repair-batch checkpoint:** collect the complete currently known finding set and classify it together. Batch all mechanical findings inside already-authorized bounds into one coherent repair; separate findings or commits alone do not trigger another Astra consultation. Closely related new discretionary choices may share one Astra consultation only when Astra explicitly addresses each. Scope, durable-product, acceptance or authority conflicts return to ChatGPT Steward. After the batch, run affected regression/integration checks. Push at coherent checkpoint boundaries when practical; local commits may remain granular. Do not manually request Codex review for intermediate WIP heads.
+3. **Final Candidate:** the lane may record `FINAL_CANDIDATE <sha>` only when no known code mutation remains, no blocking finding or discretionary/Steward decision remains unresolved, applicable focused and affected-regression checks are green, and the PR is otherwise believed merge-ready under existing authority. Only then run full applicable hosted gates and obtain fresh independent Sol final review for the exact head.
+
+A material commit after Final Candidate invalidates that status and requires the applicable exact-head gates and review again. If final review fails, collect the complete finding set first, invalidate Final Candidate, classify once, make one bounded repair batch, and then establish a new Final Candidate; Sol is not a high-cost linter for each small fix. If the same defect/failure family survives two bounded repair batches, stop patching and perform a root-cause checkpoint before another high-cost final-review cycle.
+
+Keep #2 as one concise current handoff replaced in place. Historical checkpoints and detailed evidence belong in the owning Issue or PR rather than accumulating in #2.
+
 ## Conditional Ready; no ceremonial stop
 
 For each child the lead records, in that Issue, the exact baseline/seed/core-artifact refs, risk and write owner, acceptance-to-requirement map and actual qualification results. Ready requires:
