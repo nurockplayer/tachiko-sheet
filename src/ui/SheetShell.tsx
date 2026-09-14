@@ -1013,6 +1013,13 @@ export function SheetShell(props: SheetShellProps) {
     };
     const create = async () => {
       if (!j4Binding || controlsLocked || j4Pending) return;
+      if (cellDraftActive) {
+        setLocalError("Apply or cancel the value you are editing before creating a cross-table summary.");
+        // The editor is only mounted in the Table panel. Returning there lets
+        // its existing autofocus callback retain the draft for correction.
+        setTab("table");
+        return;
+      }
       setJ4Pending(true);
       setLocalError(null);
       try {
