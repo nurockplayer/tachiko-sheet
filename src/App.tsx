@@ -112,6 +112,14 @@ export function runIfRecoveryCleared<T>(
   return unknownOpenRecovery ? blocked() : action();
 }
 
+/** A confirmed import is a new occurrence and cannot inherit a prior report attachment. */
+export function presentationAfterConfirmedImport(_prior: ReportConfiguration | null): {
+  report: null;
+  presentationDirty: false;
+} {
+  return { report: null, presentationDirty: false };
+}
+
 function describe(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
   return fallback;
@@ -779,7 +787,8 @@ export function App({ runtime, copies }: AppProps) {
       installJ4DefinitionIds([]);
       clearJ4Results();
       installView(imported.view);
-      installReport(null);
+      const presentation = presentationAfterConfirmedImport(reportRef.current);
+      installReport(presentation.report, presentation.presentationDirty);
       preparedDownloadRef.current = null;
       pendingDirtyRef.current = true;
       syncDirty();

@@ -124,10 +124,14 @@ export function drawReportCanvas(
   const context = canvas.getContext("2d");
   if (!context) throw new Error("A 2D Canvas context is unavailable.");
 
-  context.font = "14px system-ui, sans-serif";
-  const measureBody = (text: string) => context.measureText(text).width;
-  context.font = "600 20px system-ui, sans-serif";
-  const measureTitle = (text: string) => context.measureText(text).width;
+  const measureBody = (text: string) => {
+    context.font = "14px system-ui, sans-serif";
+    return context.measureText(text).width;
+  };
+  const measureTitle = (text: string) => {
+    context.font = "600 20px system-ui, sans-serif";
+    return context.measureText(text).width;
+  };
   const layout = reportCanvasLayout(report, groups, measureBody, measureTitle);
   canvas.width = layout.width;
   canvas.height = layout.height;

@@ -4,6 +4,7 @@ import {
   clearRecoveryOccurrenceContext,
   noResidentRecoveryState,
   openRecoveryRestoreDecision,
+  presentationAfterConfirmedImport,
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
 } from "./App.js";
@@ -96,5 +97,18 @@ describe("unknown-open provenance recovery", () => {
     expect(opaqueCalls).toBe(0);
     expect(exportCalls).toBe(0);
     expect(runIfRecoveryCleared(false, () => "reopened", () => "blocked")).toBe("reopened");
+  });
+});
+
+describe("confirmed import presentation isolation", () => {
+  it("clears an old occurrence report and its dirty marker only after confirmed import", () => {
+    expect(presentationAfterConfirmedImport({
+      definitionId: "old-summary",
+      type: "line",
+      title: "Old report",
+      categoryLabel: "Category",
+      valueLabel: "Value",
+      legendVisible: true,
+    })).toEqual({ report: null, presentationDirty: false });
   });
 });
