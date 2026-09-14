@@ -72,7 +72,7 @@ describe("report Canvas layout", () => {
 
   it("uses the measured report frame for an empty result while retaining its explicit no-data state", () => {
     const drawn: Array<{ text: string; x: number; y: number }> = [];
-    const context = {
+    const drawingContext = {
       font: "",
       fillStyle: "",
       strokeStyle: "",
@@ -81,7 +81,8 @@ describe("report Canvas layout", () => {
       measureText: (text: string) => ({ width: measure(text) }),
       fillRect: () => {}, beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {}, fill: () => {}, arc: () => {},
       fillText: (text: string, x: number, y: number) => drawn.push({ text, x, y }),
-    } as unknown as CanvasRenderingContext2D;
+    };
+    const context = drawingContext as unknown as CanvasRenderingContext2D;
     const canvas = {
       width: 0, height: 0,
       getContext: () => context,
@@ -99,6 +100,27 @@ describe("report Canvas layout", () => {
       y: layout.top + (layout.bottom - layout.top) / 2,
     });
     expect(drawn.filter(({ text }) => text === "")).toHaveLength(3);
+  });
+
+  it("draws equal-width centered bars for sparse signed data", () => {
+    const bars: Array<{ x: number; y: number; width: number; height: number }> = [];
+    const drawingContext = {
+      font: "", fillStyle: "", strokeStyle: "", lineWidth: 0, textAlign: "start" as CanvasTextAlign,
+      measureText: (text: string) => ({ width: measure(text) }),
+      fillRect(x: number, y: number, width: number, height: number) {
+        if (drawingContext.fillStyle === "#2563eb" && width > 20) bars.push({ x, y, width, height });
+      },
+      beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {}, fill: () => {}, arc: () => {}, fillText: () => {},
+    };
+    const context = drawingContext as unknown as CanvasRenderingContext2D;
+    const canvas = { width: 0, height: 0, getContext: () => context } as unknown as HTMLCanvasElement;
+    const groups = [{ category: "Long category", value: -800 }, { category: "P", value: 0 }, { category: "Sale", value: 1000 }];
+    drawReportCanvas(canvas, report, groups);
+    const layout = reportCanvasLayout(report, groups, measure);
+
+    expect(bars).toHaveLength(3);
+    expect(bars.every((bar) => bar.width === 56 && bar.height >= 0)).toBe(true);
+    bars.forEach((bar, index) => expect(bar.x + bar.width / 2).toBe(layout.points[index]!.x));
   });
 
   it("refuses non-finite values instead of drawing a misleading PNG", () => {

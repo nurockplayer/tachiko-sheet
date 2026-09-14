@@ -169,10 +169,8 @@ export function drawReportCanvas(
 
   if (report.type === "bar") {
     context.fillStyle = "#2563eb";
-    for (const [index, point] of points.entries()) {
-      const nextX = points[index + 1]?.x ?? left + chartWidth;
-      const previousX = points[index - 1]?.x ?? left;
-      const barWidth = Math.min(96, Math.max(18, (nextX - previousX) * 0.3));
+    const barWidth = 56;
+    for (const point of points) {
       context.fillRect(point.x - barWidth / 2, Math.min(point.y, zeroY), barWidth, Math.abs(zeroY - point.y));
     }
   } else {
