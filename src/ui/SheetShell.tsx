@@ -11,11 +11,15 @@ import {
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type {
+  Currentness,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
   KeyedGroupedSumBindingChoice,
+  KeyedGroupedSumResult,
+  ReportConfiguration,
   SheetShellProps,
   ViewWitness,
+  WorkbookView,
 } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -65,6 +69,25 @@ export function missingKeyedGroupedSumDefinitionIds(
 
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
 const directoryInputAttributes: Record<string, string> = { webkitdirectory: "", directory: "" };
+
+/** Report pixels follow their source result, not the selected table. */
+export function reportRenderResetKey(
+  view: Pick<WorkbookView, "occurrence" | "revision"> | null,
+  report: ReportConfiguration | null,
+  results: readonly KeyedGroupedSumResult[],
+  currentness: Currentness,
+): string {
+  if (!view || !report || currentness !== "current") return "unavailable";
+  const source = results.find((candidate) => candidate.definitionId === report.definitionId);
+  return JSON.stringify({
+    occurrence: view.occurrence,
+    revision: view.revision,
+    report,
+    source: source
+      ? { revision: source.revision, groups: source.groups, diagnostics: source.diagnostics }
+      : null,
+  });
+}
 
 export function SheetShell(props: SheetShellProps) {
   const {
@@ -126,6 +149,7 @@ export function SheetShell(props: SheetShellProps) {
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const [j4Pending, setJ4Pending] = useState(false);
   const [reportRenderReady, setReportRenderReady] = useState(false);
+  const [reportRenderReadyKey, setReportRenderReadyKey] = useState("unavailable");
 
   const fileInputId = useId();
   const spreadsheetInputId = useId();
@@ -145,7 +169,12 @@ export function SheetShell(props: SheetShellProps) {
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
-  const viewCollectionKey = view?.table.collection.key ?? null;
+  const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
+  const reportCanvasReady = reportRenderReady && reportRenderReadyKey === reportRenderKey;
+  const onReportRenderState = useCallback((ready: boolean) => {
+    setReportRenderReady(ready);
+    setReportRenderReadyKey(ready ? reportRenderKey : "unavailable");
+  }, [reportRenderKey]);
 
   useEffect(() => {
     onDraftChangeRef.current = props.onDraftChange;
@@ -163,13 +192,12 @@ export function SheetShell(props: SheetShellProps) {
     setJ4Catalog(null);
     setJ4Binding(null);
     setJ4Pending(false);
-    setReportRenderReady(false);
     if (!viewKey) {
       setCopyOpen(false);
       setCloseOpen(false);
       setTab("table");
     }
-  }, [viewKey, viewCollectionKey]);
+  }, [viewKey]);
 
   useEffect(() => {
     if (!view) {
@@ -1095,9 +1123,9 @@ export function SheetShell(props: SheetShellProps) {
           <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
           {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
           <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
-          <div className="ts-report-scroll"><ReportCanvas key={`${report.definitionId}:${report.type}:${report.title}:${report.categoryLabel}:${report.valueLabel}:${report.legendVisible}:${result.revision}`} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={setReportRenderReady} /></div>
-          {!reportRenderReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
-          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportRenderReady}>Export current PNG</button>
+          <div className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
+          {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
+          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady}>Export current PNG</button>
           </>}
           <div className="ts-row-actions">
             <button type="button" className="ts-button" onClick={removeReport} disabled={controlsLocked}>Remove report</button>

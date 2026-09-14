@@ -5,6 +5,7 @@ import {
   noResidentRecoveryState,
   openRecoveryRestoreDecision,
   presentationAfterConfirmedImport,
+  recoverPresentationAfterAcknowledgedOpen,
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
 } from "./App.js";
@@ -110,5 +111,53 @@ describe("confirmed import presentation isolation", () => {
       valueLabel: "Value",
       legendVisible: true,
     })).toEqual({ report: null, presentationDirty: false });
+  });
+});
+
+describe("acknowledged saved-open presentation recovery", () => {
+  const presentation = {
+    version: 1 as const,
+    report: {
+      definitionId: "definition-1",
+      type: "bar" as const,
+      title: "Saved report",
+      categoryLabel: "Category",
+      valueLabel: "Value",
+      legendVisible: true,
+    },
+    snapshotRevision: "rev-1",
+    snapshotDigest: "a".repeat(64),
+  };
+  const result = {
+    definitionId: "definition-1",
+    revision: "rev-1",
+    groups: [{ category: "Alpha", value: 3 }],
+    diagnostics: [],
+  };
+
+  it("binds only after the same replacement and a fresh clean result", () => {
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: "replacement", presentation },
+      { occurrence: "replacement", revision: "rev-1" },
+      [result],
+    )).toEqual(presentation.report);
+  });
+
+  it("isolates a different occurrence, revision, or failed result", () => {
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: "replacement", presentation },
+      { occurrence: "other", revision: "rev-1" },
+      [result],
+    )).toBe(null);
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: null, presentation },
+      { occurrence: "replacement", revision: "rev-2" },
+      [result],
+    )).toBe(null);
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: "replacement", presentation },
+      { occurrence: "replacement", revision: "rev-1" },
+      [{ ...result, diagnostics: [{ code: "failed", entity: null, field: null, lookup_key: null, candidates: [] }] }],
+    )).toBe(null);
   });
 });

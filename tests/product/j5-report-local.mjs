@@ -61,6 +61,34 @@ async function downloadedPng(page) {
   return png;
 }
 
+async function redrawReport(page, title) {
+  const control = page.getByLabel("Title", { exact: true });
+  await control.fill(`${title} redraw`);
+  await control.fill(title);
+  await page.locator(".ts-report-canvas").evaluate((canvas) => {
+    if (canvas.dataset.reportReady !== "true") throw new Error("Report redraw did not settle.");
+  });
+}
+
+async function eraseCanvasColor(page, hex, bounds) {
+  await page.locator(".ts-report-canvas").evaluate((canvas, { hex, bounds }) => {
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("Test fault requires a 2D context.");
+    const red = Number.parseInt(hex.slice(1, 3), 16);
+    const green = Number.parseInt(hex.slice(3, 5), 16);
+    const blue = Number.parseInt(hex.slice(5, 7), 16);
+    const image = context.getImageData(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+    for (let offset = 0; offset < image.data.length; offset += 4) {
+      if (image.data[offset] === red && image.data[offset + 1] === green && image.data[offset + 2] === blue && image.data[offset + 3] === 255) {
+        image.data[offset] = 255;
+        image.data[offset + 1] = 255;
+        image.data[offset + 2] = 255;
+      }
+    }
+    context.putImageData(image, bounds.left, bounds.top);
+  }, { hex, bounds });
+}
+
 /**
  * Decodes the downloaded artifact, then independently compares its pixels to
  * the configured report text and expected series colour. This deliberately
@@ -145,6 +173,8 @@ async function pngFacts(page, png, expected) {
       height: canvas.height,
       seriesPixels: colorCount(expected.seriesColor, expected.seriesBounds),
       legendPixels: colorCount(expected.seriesColor, expected.legendBounds),
+      seriesSlots: expected.seriesSlots.map((bounds) => colorCount(expected.seriesColor, bounds)),
+      seriesAbsences: expected.seriesAbsences.map((bounds) => colorCount(expected.seriesColor, bounds)),
       textMatches,
     };
   }, { encoded: base64, expected });
@@ -155,6 +185,8 @@ async function assertReportPng(page, png, expected) {
   assert.ok(facts.width > 0 && facts.height > 0, "downloaded report must decode to a nonempty bitmap");
   assert.ok(facts.seriesPixels > 100, "downloaded report must retain its series pixels");
   assert.ok(facts.legendPixels > 50, "downloaded report must retain its legend swatch");
+  for (const [index, pixels] of facts.seriesSlots.entries()) assert.ok(pixels > 20, `downloaded report must retain series geometry in slot ${index + 1}`);
+  for (const [index, pixels] of facts.seriesAbsences.entries()) assert.equal(pixels, 0, `downloaded report must not draw series outside slot ${index + 1}`);
   for (const text of facts.textMatches) {
     assert.ok(text.expectedPixels > 0, `oracle must rasterize ${text.value}`);
     assert.equal(text.matchingPixels, text.expectedPixels, `downloaded report must retain configured text: ${text.value}`);
@@ -166,13 +198,17 @@ const barArtifact = {
   seriesColor: "#2563eb",
   seriesBounds: { left: 80, top: 80, right: 250, bottom: 320 },
   legendBounds: { left: 550, top: 16, right: 590, bottom: 42 },
+  seriesSlots: [{ left: 95, top: 96, right: 153, bottom: 306 }, { left: 191, top: 96, right: 249, bottom: 306 }],
+  seriesAbsences: [],
   text: [
     { value: "Initial sales report", color: "#1f2937", font: "600 20px system-ui, sans-serif", align: "start", x: 76, y: 38 },
     { value: "Initial value", color: "#475569", font: "14px system-ui, sans-serif", align: "start", x: 76, y: 62 },
     { value: "Product category", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 372, y: 358 },
     { value: "Bar series", color: "#334155", font: "14px system-ui, sans-serif", align: "start", x: 580, y: 33 },
-    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 112, search: { left: 100, top: 96, right: 244, bottom: 145 } },
-    { value: "800", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 220, y: 130, search: { left: 100, top: 96, right: 244, bottom: 145 } },
+    { value: "NOTE", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 326 },
+    { value: "PEN", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 220, y: 326 },
+    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 112, search: { left: 100, top: 96, right: 145, bottom: 145 } },
+    { value: "800", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 220, y: 130, search: { left: 196, top: 96, right: 244, bottom: 145 } },
   ],
 };
 
@@ -180,12 +216,17 @@ const lineArtifact = {
   seriesColor: "#7c3aed",
   seriesBounds: { left: 80, top: 80, right: 250, bottom: 320 },
   legendBounds: { left: 550, top: 16, right: 590, bottom: 42 },
+  seriesSlots: [{ left: 116, top: 91, right: 132, bottom: 111 }, { left: 212, top: 91, right: 228, bottom: 111 }],
+  seriesAbsences: [{ left: 116, top: 148, right: 132, bottom: 164 }],
   text: [
     { value: "Updated sales report", color: "#1f2937", font: "600 20px system-ui, sans-serif", align: "start", x: 76, y: 38 },
     { value: "Updated value", color: "#475569", font: "14px system-ui, sans-serif", align: "start", x: 76, y: 62 },
     { value: "Updated category", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 372, y: 358 },
     { value: "Line series", color: "#334155", font: "14px system-ui, sans-serif", align: "start", x: 580, y: 33 },
-    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 112, search: { left: 100, top: 96, right: 244, bottom: 145 }, minimumMatches: 2 },
+    { value: "NOTE", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 326 },
+    { value: "PEN", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 220, y: 326 },
+    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 112, search: { left: 100, top: 96, right: 145, bottom: 145 } },
+    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 220, y: 112, search: { left: 196, top: 96, right: 244, bottom: 145 } },
   ],
 };
 
@@ -201,6 +242,16 @@ try {
   await page.getByLabel("Title", { exact: true }).fill("Initial sales report");
   await page.getByLabel("Category label", { exact: true }).fill("Product category");
   await page.getByLabel("Value label", { exact: true }).fill("Initial value");
+  await assertReportPng(page, await downloadedPng(page), barArtifact);
+
+  // A table switch changes only the table projection; the still-current
+  // report source and raster stay eligible for export.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("sales");
+  await page.getByRole("columnheader", { name: "product_code", exact: true }).waitFor();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await page.getByRole("button", { name: "Export current PNG", exact: true }).waitFor({ state: "visible" });
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).isEnabled(), true);
   await assertReportPng(page, await downloadedPng(page), barArtifact);
 
   await editPenPrice(page);
@@ -239,6 +290,36 @@ try {
   await page.getByLabel("Value label", { exact: true }).fill("Updated value");
   await assertReportPng(page, await downloadedPng(page), lineArtifact);
 
+  // Each decodable fault isolates one oracle dimension. None uses a product
+  // draw/layout helper: the downloaded PNG remains the only observation.
+  await eraseCanvasColor(page, "#7c3aed", lineArtifact.seriesBounds);
+  const seriesOnlyFault = await downloadedPng(page);
+  await assert.rejects(() => assertReportPng(page, seriesOnlyFault, lineArtifact), /series pixels/);
+  await redrawReport(page, "Updated sales report");
+
+  await page.locator(".ts-report-canvas").evaluate((canvas) => {
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Test fault requires a 2D context.");
+    context.fillStyle = "#ffffff";
+    context.fillRect(100, 310, 50, 30);
+    context.fillRect(196, 310, 50, 30);
+  });
+  const textOnlyFault = await downloadedPng(page);
+  await assert.rejects(() => assertReportPng(page, textOnlyFault, lineArtifact), /configured text: (NOTE|PEN)/);
+  await redrawReport(page, "Updated sales report");
+
+  // Preserve the expected points but add a decodable, misplaced series mark.
+  // The global colour count still passes; the absence/geometry oracle must not.
+  await page.locator(".ts-report-canvas").evaluate((canvas) => {
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Test fault requires a 2D context.");
+    context.fillStyle = "#7c3aed";
+    context.fillRect(116, 148, 16, 16);
+  });
+  const geometryFault = await downloadedPng(page);
+  await assert.rejects(() => assertReportPng(page, geometryFault, lineArtifact), /outside slot 1/);
+  await redrawReport(page, "Updated sales report");
+
   // A faulted raster can still be a valid PNG. The artifact oracle must reject
   // it because it contains neither the series nor the configured text.
   await page.locator(".ts-report-canvas").evaluate((canvas) => {
@@ -262,6 +343,22 @@ try {
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   reportData = page.getByLabel("Current report data", { exact: true });
   assert.ok(await reportData.count(), await page.locator("body").textContent());
+  assert.match(await reportData.textContent(), /PEN\s*1000/);
+  assert.match(await reportData.textContent(), /NOTE\s*1000/);
+
+  // An acknowledged Open can lose its first projection. Refresh must bind the
+  // saved presentation only after the same replacement and clean J4 discovery.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+  await page.getByRole("button", { name: "Open saved j5-report", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Current report data", { exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  reportData = page.getByLabel("Current report data", { exact: true });
+  await reportData.waitFor();
   assert.match(await reportData.textContent(), /PEN\s*1000/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
 } finally {
