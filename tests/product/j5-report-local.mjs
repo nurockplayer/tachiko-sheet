@@ -66,11 +66,28 @@ try {
 
   await editPenPrice(page);
   await page.getByRole("tab", { name: "Report", exact: true }).click();
-  await page.getByText("This report source is not current. Refresh the cross-table summary before viewing or sharing it.", { exact: true }).waitFor();
+  await page.getByText("This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Remove report", exact: true }).click();
+  await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
+  await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-stale-report-removed");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await context.close();
+  context = undefined;
+  page = await start();
+  await page.getByRole("button", { name: "Open saved j5-stale-report-removed", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
 
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.getByRole("button", { name: "Refresh cross-table summary 1", exact: true }).click();
+  const refreshMissingSummary = page.getByRole("button", { name: "Refresh cross-table summary 1", exact: true });
+  if (await refreshMissingSummary.count()) await refreshMissingSummary.click();
   await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Create line report", exact: true }).click();
   await page.getByRole("tab", { name: "Report", exact: true }).click();

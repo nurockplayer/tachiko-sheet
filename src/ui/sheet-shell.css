@@ -666,19 +666,22 @@
 
 .ts-report-data {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin: 12px 0;
 }
 
 .ts-report-data div {
-  min-width: 84px;
+  flex: 0 1 160px;
+  min-width: 0;
+  max-width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--ts-line);
   border-radius: var(--ts-radius);
 }
 
-.ts-report-data dt { color: var(--ts-ink-soft); }
-.ts-report-data dd { margin: 3px 0 0; font-weight: 650; }
+.ts-report-data dt { color: var(--ts-ink-soft); overflow-wrap: anywhere; }
+.ts-report-data dd { margin: 3px 0 0; font-weight: 650; overflow-wrap: anywhere; }
 
 .ts-report-scroll {
   overflow-x: auto;

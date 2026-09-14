@@ -204,6 +204,7 @@ export interface SheetShellProps {
   onCreateReport?(definitionId: string, type: ReportConfiguration["type"]): void;
   onUpdateReport?(report: ReportConfiguration): void;
   onExportReportPng?(witness: ViewWitness, report: ReportConfiguration): boolean;
+  onRemoveReport?(): boolean;
   interop?: InteropState | null;
   onInspectImport?(file: File): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;

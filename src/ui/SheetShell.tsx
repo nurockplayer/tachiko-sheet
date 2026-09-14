@@ -104,6 +104,7 @@ export function SheetShell(props: SheetShellProps) {
     onCreateReport = () => undefined,
     onUpdateReport = () => undefined,
     onExportReportPng = () => false,
+    onRemoveReport = () => false,
   } = props;
 
   const [tab, setTab] = useState<ActiveTab>("table");
@@ -1076,10 +1077,15 @@ export function SheetShell(props: SheetShellProps) {
         setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
       }
     };
+    const removeReport = () => {
+      if (!onRemoveReport()) return;
+      window.setTimeout(() => document.getElementById(tabId("report"))?.focus(), 0);
+    };
     return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
       <section className="ts-card" aria-label="Current report">
         <h2 className="ts-h2">Current report</h2>
-        {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : !result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it.</p> : <>
+        {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
+          {!result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
           <div className="ts-report-controls">
             <label className="ts-field-label" htmlFor="report-title">Title</label><input id="report-title" value={report.title} onChange={(event) => update({ title: event.currentTarget.value })} disabled={controlsLocked} />
             <label className="ts-field-label" htmlFor="report-category-label">Category label</label><input id="report-category-label" value={report.categoryLabel} onChange={(event) => update({ categoryLabel: event.currentTarget.value })} disabled={controlsLocked} />
@@ -1091,6 +1097,11 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-report-scroll"><ReportCanvas key={`${report.definitionId}:${report.type}:${report.title}:${report.categoryLabel}:${report.valueLabel}:${report.legendVisible}:${result.revision}`} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={setReportRenderReady} /></div>
           {!reportRenderReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
           <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportRenderReady}>Export current PNG</button>
+          </>}
+          <div className="ts-row-actions">
+            <button type="button" className="ts-button" onClick={removeReport} disabled={controlsLocked}>Remove report</button>
+            <p className="ts-subtle">This removes only the report configuration. Table data and the cross-table definition stay available.</p>
+          </div>
         </>}
       </section>
     </div>;

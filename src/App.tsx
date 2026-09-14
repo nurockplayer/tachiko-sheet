@@ -1195,6 +1195,19 @@ export function App({ runtime, copies }: AppProps) {
     markNotSaved();
   }
 
+  function removeReport(): boolean {
+    if (blockUnknownOpenRecovery() || !begin()) return false;
+    try {
+      if (!viewRef.current || reportRef.current === null) return false;
+      installReport(null, true);
+      markNotSaved();
+      setMessage("The report configuration was removed. Table data and the cross-table definition were kept.");
+      return true;
+    } finally {
+      end();
+    }
+  }
+
   function exportReportPng(witness: ViewWitness, candidate: ReportConfiguration): boolean {
     const live = viewRef.current;
     const current = reportRef.current;
@@ -1429,6 +1442,7 @@ export function App({ runtime, copies }: AppProps) {
         onCreateReport={createReport}
         onUpdateReport={updateReport}
         onExportReportPng={exportReportPng}
+        onRemoveReport={removeReport}
         interop={interop}
         onInspectImport={inspectImport}
         onImportCandidate={importCandidate}
