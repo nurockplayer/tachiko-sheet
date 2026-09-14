@@ -297,6 +297,7 @@ try {
   await page.getByRole("button", { name: "Remove report", exact: true }).click();
   await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
   await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
+  assert.equal(await page.getByTestId("operation-outcome").count(), 0, "a successful report removal must clear the pending outcome");
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-stale-report-removed");

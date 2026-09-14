@@ -1282,6 +1282,7 @@ export function App({ runtime, copies }: AppProps) {
       if (!viewRef.current || reportRef.current === null) return false;
       installReport(null, true);
       markNotSaved();
+      setOutcome("idle");
       setMessage("The report configuration was removed. Table data and the cross-table definition were kept.");
       return true;
     } finally {
