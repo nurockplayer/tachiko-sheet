@@ -318,6 +318,14 @@ try {
   await page.getByText("This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
   const removeReportButton = page.getByRole("button", { name: "Remove report", exact: true });
+  // The stale-source status can render in the same React turn that releases
+  // the preceding edit. Wait for the existing control to become actionable;
+  // pressing a disabled button would not exercise the required removal.
+  await page.waitForFunction(() => {
+    const button = Array.from(document.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.trim() === "Remove report");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
   await removeReportButton.focus();
   await page.keyboard.press("Enter");
   await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
