@@ -203,6 +203,7 @@ export function App({ runtime, copies }: AppProps) {
     pendingDirty: boolean;
     draftDirty: boolean;
     presentationDirty: boolean;
+    report: ReportConfiguration | null;
     savedRevision: string | null;
     saveStatus: SaveStatus;
     recoveryDraft: string | null;
@@ -266,6 +267,12 @@ export function App({ runtime, copies }: AppProps) {
 
   function installJ4Results(results: KeyedGroupedSumResult[]): void {
     installJ4DefinitionIds(results.map((result) => result.definitionId));
+    j4ResultsRef.current = results;
+    setJ4Results(results);
+  }
+
+  /** Restore a confirmed pre-publication result without rebuilding its definition inventory. */
+  function restoreJ4Results(results: KeyedGroupedSumResult[]): void {
     j4ResultsRef.current = results;
     setJ4Results(results);
   }
@@ -378,6 +385,7 @@ export function App({ runtime, copies }: AppProps) {
       pendingDirty: pendingDirtyRef.current,
       draftDirty: draftDirtyRef.current,
       presentationDirty: presentationDirtyRef.current,
+      report: reportRef.current ? { ...reportRef.current } : null,
       savedRevision: savedRevisionRef.current,
       saveStatus,
       recoveryDraft: recoveryDraftRef.current,
@@ -1076,7 +1084,7 @@ export function App({ runtime, copies }: AppProps) {
   async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
-    const priorResults = currentness === "current" ? j4Results : null;
+    const priorResults = currentness === "current" ? j4ResultsRef.current : null;
     const priorOccurrence = witness.occurrence;
     const priorRevision = witness.revision;
     let published = false;
@@ -1113,7 +1121,7 @@ export function App({ runtime, copies }: AppProps) {
       const current = viewRef.current;
       if (priorResults && current &&
         current.occurrence === priorOccurrence && current.revision === priorRevision) {
-        setJ4Results(priorResults);
+        restoreJ4Results(priorResults);
       }
       setCurrentness("current");
       setOutcome("idle");
@@ -1294,7 +1302,7 @@ export function App({ runtime, copies }: AppProps) {
           : null;
         pendingDirtyRef.current = checkpoint.pendingDirty;
         draftDirtyRef.current = checkpoint.draftDirty;
-        presentationDirtyRef.current = checkpoint.presentationDirty;
+        installReport(checkpoint.report ? { ...checkpoint.report } : null, checkpoint.presentationDirty);
         recoveryDraftRef.current = checkpoint.recoveryDraft;
         savedRevisionRef.current = recoveryDecision.saved ? checkpoint.savedRevision : null;
         setSaveStatus(recoveryDecision.saved ? checkpoint.saveStatus : "not-saved");

@@ -124,6 +124,7 @@ export function SheetShell(props: SheetShellProps) {
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const [j4Pending, setJ4Pending] = useState(false);
+  const [reportRenderReady, setReportRenderReady] = useState(false);
 
   const fileInputId = useId();
   const spreadsheetInputId = useId();
@@ -161,6 +162,7 @@ export function SheetShell(props: SheetShellProps) {
     setJ4Catalog(null);
     setJ4Binding(null);
     setJ4Pending(false);
+    setReportRenderReady(false);
     if (!viewKey) {
       setCopyOpen(false);
       setCloseOpen(false);
@@ -1048,19 +1050,31 @@ export function SheetShell(props: SheetShellProps) {
       candidate.diagnostics.length === 0,
     );
     const update = (patch: Partial<NonNullable<typeof report>>) => {
-      if (report) onUpdateReport({ ...report, ...patch });
+      if (report) {
+        setReportRenderReady(false);
+        onUpdateReport({ ...report, ...patch });
+      }
     };
     const exportPng = async () => {
       if (!report || !result || controlsLocked) return;
       if (!onExportReportPng({ occurrence: view.occurrence, revision: view.revision }, report)) return;
       const canvas = reportCanvasRef.current;
-      if (!canvas) return;
-      const anchor = document.createElement("a");
-      anchor.href = canvas.toDataURL("image/png");
-      anchor.download = "tachiko-sheet-report.png";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
+      if (!canvas || canvas.dataset.reportReady !== "true") {
+        setLocalError("The current report image could not be rendered, so no PNG was downloaded.");
+        return;
+      }
+      try {
+        const href = canvas.toDataURL("image/png");
+        if (href === "data:," || !href.startsWith("data:image/png;base64,")) throw new Error("PNG encoding failed.");
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = "tachiko-sheet-report.png";
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+      } catch {
+        setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
+      }
     };
     return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
       <section className="ts-card" aria-label="Current report">
@@ -1074,8 +1088,9 @@ export function SheetShell(props: SheetShellProps) {
           </div>
           <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
           <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
-          <ReportCanvas canvasRef={reportCanvasRef} report={report} groups={result.groups} />
-          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked}>Export current PNG</button>
+          <div className="ts-report-scroll"><ReportCanvas key={`${report.definitionId}:${report.type}:${report.title}:${report.categoryLabel}:${report.valueLabel}:${report.legendVisible}:${result.revision}`} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={setReportRenderReady} /></div>
+          {!reportRenderReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
+          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportRenderReady}>Export current PNG</button>
         </>}
       </section>
     </div>;
