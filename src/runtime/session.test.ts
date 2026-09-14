@@ -52,6 +52,7 @@ class FakeDesignerRuntimeError extends Error {
 
 interface Hooks {
   openProject?: () => Promise<OpenedProjection>;
+  inspectImportedProject?: () => Promise<OpenedProjection>;
   observeOccurrence?: () => Promise<OccurrenceProjection>;
   editNumber?: () => Promise<PublicationProjection>;
   editText?: () => Promise<PublicationProjection>;
@@ -78,6 +79,7 @@ function scalarField(
 class FakeClient {
   readonly calls = {
     openProject: [] as ArrayBuffer[],
+    inspectImportedProject: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
     bootstrap: 0,
     observeOccurrence: 0,
     queryTable: [] as string[],
@@ -174,6 +176,18 @@ class FakeClient {
       return hook();
     }
     return this.#opened();
+  }
+
+  async inspectImportedProject(bytes: ArrayBuffer, metadata: unknown): Promise<OpenedProjection> {
+    this.calls.inspectImportedProject.push({ bytes, metadata });
+    const hook = this.hooks.inspectImportedProject;
+    if (hook !== undefined) {
+      this.hooks.inspectImportedProject = undefined;
+      return hook();
+    }
+    // The public imported-project inspection is validation only. It must not
+    // install or replace the resident project before openProject succeeds.
+    return { bootstrap: this.#bootstrap(), table: this.#table() };
   }
 
   async bootstrap() {
@@ -709,6 +723,28 @@ describe("createSheetRuntime", () => {
     const reopened = await runtime.openOpaque(new Uint8Array([7, 8, 9]).buffer);
     expect(reopened.occurrence).toBe("scope-2");
     expect(client.calls.openProject).toHaveLength(2);
+  });
+
+  it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
+    const { client, runtime, view } = await opened();
+    const bytes = new Uint8Array([7, 8, 9]).buffer;
+    const metadata = { version: 1, sheets: [] };
+
+    const reopened = await runtime.openOpaque(bytes, metadata);
+    expect(reopened.occurrence).toBe("scope-2");
+    expect(client.calls.inspectImportedProject).toHaveLength(1);
+    expect(client.calls.inspectImportedProject[0].metadata).toBe(metadata);
+    expect(client.calls.inspectImportedProject[0].bytes).not.toBe(bytes);
+    expect(client.calls.openProject).toHaveLength(2);
+
+    client.hooks.inspectImportedProject = async () => {
+      throw new FakeDesignerRuntimeError("invalid_value", "r2");
+    };
+    const rejection = await failure(runtime.openOpaque(bytes, metadata));
+    expect(rejection).toBeInstanceOf(FakeDesignerRuntimeError);
+    expect(client.calls.openProject).toHaveLength(2);
+    expect((await runtime.read()).revision).toBe(reopened.revision);
+    expect(view.occurrence).toBe("scope-1");
   });
 
   it("resolves visible bindings to stable core IDs and clears the old witness after publication", async () => {

@@ -52,8 +52,12 @@ export type ScalarEdit =
 export interface SheetRuntime {
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
-  /** Opens an unparsed core-produced format-2 export; no client codec is involved. */
-  openOpaque(bytes: ArrayBuffer): Promise<WorkbookView>;
+  /**
+   * Opens an unparsed core-produced format-2 export. When it descends from an
+   * imported source, the public kit first validates the retained producer
+   * metadata; no client codec is involved.
+   */
+  openOpaque(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
   read(): Promise<WorkbookView>;
   selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView>;
   readFields(witness: ViewWitness, targets: FieldTarget[]): Promise<FieldBatchProjection>;
@@ -97,9 +101,15 @@ export interface OpaqueSavedCopy extends SavedCopySummary {
   formatVersion: 2;
   revision: string;
   bytes: ArrayBuffer;
+  /** Optional host-private source attachment; never part of the opaque bytes. */
+  importedSource?: ImportedSourceAttachment;
 }
 export type AnySavedCopy = SavedCopy | OpaqueSavedCopy;
-export interface OpaqueProjectExport { revision: string; bytes: ArrayBuffer }
+export interface OpaqueProjectExport {
+  revision: string;
+  bytes: ArrayBuffer;
+  importedSource?: ImportedSourceAttachment;
+}
 /** Visible selection vocabulary only. Runtime resolves these names to stable core IDs at dispatch. */
 export interface KeyedGroupedSumBindingCatalog {
   collections: Array<{

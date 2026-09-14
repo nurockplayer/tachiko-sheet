@@ -45,6 +45,8 @@ interface StoredOpaqueCopy {
   savedAt: string;
   revision: string;
   bytes: ArrayBuffer;
+  /** Private IndexedDB composition, never embedded in the opaque bytes. */
+  importedSource?: Omit<ImportedSourceAttachment, "bytes"> & { bytes: ArrayBuffer };
 }
 
 let connection: Promise<IDBDatabase> | undefined;
@@ -126,7 +128,7 @@ function toCanonicalSavedCopy(record: StoredCopy): SavedCopy {
 }
 
 function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
-  return {
+  const copy: OpaqueSavedCopy = {
     name: record.name,
     savedAt: record.savedAt,
     kind: "opaque",
@@ -134,6 +136,15 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
     revision: record.revision,
     bytes: cloneBytes(record.bytes),
   };
+  if (record.importedSource) {
+    copy.importedSource = {
+      ...record.importedSource,
+      bytes: cloneBytes(record.importedSource.bytes),
+      metadata: structuredClone(record.importedSource.metadata),
+      ledger: structuredClone(record.importedSource.ledger),
+    };
+  }
+  return copy;
 }
 
 /**
@@ -337,6 +348,13 @@ export function createLocalCopies(): LocalCopies {
         savedAt: new Date().toISOString(),
         revision: snapshot.revision,
         bytes: cloneBytes(snapshot.bytes),
+        importedSource: snapshot.importedSource ? {
+          name: snapshot.importedSource.name,
+          format: snapshot.importedSource.format,
+          bytes: cloneBytes(snapshot.importedSource.bytes),
+          metadata: structuredClone(snapshot.importedSource.metadata),
+          ledger: structuredClone(snapshot.importedSource.ledger),
+        } : undefined,
       };
       const db = await openDatabase();
       await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);

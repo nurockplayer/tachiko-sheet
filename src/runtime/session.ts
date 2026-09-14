@@ -408,12 +408,20 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function openOpaque(bytes: ArrayBuffer): Promise<WorkbookView> {
+  function openOpaque(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView> {
     const requestedAt = epoch;
     return enqueue(async () => {
       assertNotReplaced(requestedAt);
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
+      if (importedMetadata) {
+        const inspect = capability(client.inspectImportedProject, "imported-project inspection");
+        // The retained J3 metadata is producer-issued and is validated by the
+        // public kit against a cloned opaque transfer before this replacement
+        // boundary. Sheet neither decodes nor rewrites the transfer.
+        await dispatch(kit, () => inspect.call(client, bytes.slice(0), importedMetadata));
+        assertNotReplaced(requestedAt);
+      }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
       return openSession(kit, client, requestedAt, () => client.openProject(bytes.slice(0)));

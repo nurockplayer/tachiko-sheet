@@ -439,7 +439,7 @@ export function App({ runtime, copies }: AppProps) {
         await runtime.validateImportedProject(copy.files, copy.importedSource.metadata);
       }
       const next = copy.kind === "opaque"
-        ? await runtime.openOpaque(copy.bytes)
+        ? await runtime.openOpaque(copy.bytes, copy.importedSource?.metadata)
         : await runtime.openCanonical(copy.files);
       installView(next);
       await discoverJ4Results(next);
@@ -455,9 +455,9 @@ export function App({ runtime, copies }: AppProps) {
       }
       setCurrentness("current");
       setOutcome("idle");
-      importedSourceRef.current = copy.kind === "opaque" ? null : copy.importedSource ?? null;
+      importedSourceRef.current = copy.importedSource ?? null;
       preparedDownloadRef.current = null;
-      setInterop(copy.kind !== "opaque" && copy.importedSource ? {
+      setInterop(copy.importedSource ? {
         importInspection: null,
         metadata: copy.importedSource.metadata,
         ledger: copy.importedSource.ledger,
@@ -707,7 +707,10 @@ export function App({ runtime, copies }: AppProps) {
       if (definitionBearing) {
         const snapshot = await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
-        receipt = await copies.createOpaque(name, snapshot);
+        receipt = await copies.createOpaque(name, {
+          ...snapshot,
+          importedSource: importedSourceRef.current ?? undefined,
+        });
       } else {
         const snapshot = await runtime.exportCanonical(witnessOf(live));
         snapshotRevision = snapshot.revision;
