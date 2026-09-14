@@ -28,16 +28,20 @@ async function openCanary(page) {
   await page.getByTestId("project-ready").waitFor();
 }
 
-async function bindAndCreate(page, { failPostPublicationRead = false } = {}) {
+async function chooseBinding(page, { orderQuantity = "quantity" } = {}) {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
   await page.getByLabel("Orders table", { exact: true }).selectOption("sales");
   await page.getByLabel("Order lookup key", { exact: true }).selectOption("product_code");
-  await page.getByLabel("Order quantity", { exact: true }).selectOption("quantity");
+  await page.getByLabel("Order quantity", { exact: true }).selectOption(orderQuantity);
   await page.getByLabel("Products table", { exact: true }).selectOption("catalog");
   await page.getByLabel("Product key", { exact: true }).selectOption("code");
   await page.getByLabel("Product category", { exact: true }).selectOption("category");
   await page.getByLabel("Product price", { exact: true }).selectOption("price");
+}
+
+async function bindAndCreate(page, { failPostPublicationRead = false } = {}) {
+  await chooseBinding(page);
   if (failPostPublicationRead) await page.evaluate(() => window.__tachikoAcceptance.failNextJ4PostPublicationRead());
   await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
   if (!failPostPublicationRead) {
@@ -66,6 +70,19 @@ try {
   await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
   assert.match(await groupText(page), /NOTE: 1000/);
   assert.match(await groupText(page), /PEN: 800/);
+
+  // The visible selectors permit a text field in the numeric quantity role.
+  // The core must reject that second Create before publication, and the
+  // existing current result must remain available without a refresh.
+  const firstSummary = await groupText(page);
+  const firstRefreshControls = await page.getByRole("button", { name: "Refresh core result", exact: true }).count();
+  await chooseBinding(page, { orderQuantity: "product_code" });
+  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+  await page.getByRole("alert").waitFor();
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
+  assert.equal(await page.getByTestId("j4-result-0").count(), 1, "a known pre-publication rejection must retain the existing result");
+  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), firstRefreshControls, "a known pre-publication rejection must retain existing refresh controls");
+  assert.equal(await groupText(page), firstSummary, "a known pre-publication rejection must retain the current grouped values");
 
   const tablePicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
   // A cleanup preview is tied to its collection. Switching from A to B must

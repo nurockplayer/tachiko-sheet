@@ -1012,6 +1012,9 @@ export function App({ runtime, copies }: AppProps) {
   async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
+    const priorResults = currentness === "current" ? j4Results : null;
+    const priorOccurrence = witness.occurrence;
+    const priorRevision = witness.revision;
     let published = false;
     try {
       setMessage(null);
@@ -1042,6 +1045,11 @@ export function App({ runtime, copies }: AppProps) {
       if (error instanceof UnknownOperationOutcomeError) {
         failClosedAfterUnknownJ4();
         return true;
+      }
+      const current = viewRef.current;
+      if (priorResults && current &&
+        current.occurrence === priorOccurrence && current.revision === priorRevision) {
+        setJ4Results(priorResults);
       }
       setCurrentness("current");
       setOutcome("idle");
