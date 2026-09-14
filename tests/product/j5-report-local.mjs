@@ -52,6 +52,143 @@ async function editPenPrice(page) {
   await editor.press("Enter");
 }
 
+async function downloadedPng(page) {
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export current PNG", exact: true }).click();
+  const download = await downloadPromise;
+  const png = await readFile(await download.path());
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  return png;
+}
+
+/**
+ * Decodes the downloaded artifact, then independently compares its pixels to
+ * the configured report text and expected series colour. This deliberately
+ * observes the encoded PNG rather than product DOM or canvas calls.
+ */
+async function pngFacts(page, png, expected) {
+  const base64 = png.toString("base64");
+  return page.evaluate(async ({ encoded, expected }) => {
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("PNG pixel inspection requires a 2D context.");
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const actual = context.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    const colorCount = (hex, bounds) => {
+      const red = Number.parseInt(hex.slice(1, 3), 16);
+      const green = Number.parseInt(hex.slice(3, 5), 16);
+      const blue = Number.parseInt(hex.slice(5, 7), 16);
+      let count = 0;
+      for (let y = bounds.top; y < Math.min(bounds.bottom, canvas.height); y += 1) {
+        for (let x = bounds.left; x < Math.min(bounds.right, canvas.width); x += 1) {
+          const offset = (y * canvas.width + x) * 4;
+          if (actual[offset] === red && actual[offset + 1] === green && actual[offset + 2] === blue && actual[offset + 3] === 255) count += 1;
+        }
+      }
+      return count;
+    };
+
+    const textMatches = expected.text.map((entry) => {
+      const sample = new OffscreenCanvas(canvas.width, canvas.height);
+      const sampleContext = sample.getContext("2d", { willReadFrequently: true });
+      if (!sampleContext) throw new Error("PNG text inspection requires a 2D context.");
+      sampleContext.fillStyle = "#ffffff";
+      sampleContext.fillRect(0, 0, sample.width, sample.height);
+      sampleContext.fillStyle = entry.color;
+      sampleContext.font = entry.font;
+      sampleContext.textAlign = entry.align;
+      sampleContext.fillText(entry.value, entry.x, entry.y);
+      const samplePixels = sampleContext.getImageData(0, 0, sample.width, sample.height).data;
+      const textColor = [Number.parseInt(entry.color.slice(1, 3), 16), Number.parseInt(entry.color.slice(3, 5), 16), Number.parseInt(entry.color.slice(5, 7), 16)];
+      const expectedPixels = [];
+      for (let offset = 0; offset < samplePixels.length; offset += 4) {
+        if (samplePixels[offset] !== textColor[0] || samplePixels[offset + 1] !== textColor[1] || samplePixels[offset + 2] !== textColor[2] || samplePixels[offset + 3] !== 255) continue;
+        expectedPixels.push({
+          x: (offset / 4) % sample.width,
+          y: Math.floor(offset / 4 / sample.width),
+          red: samplePixels[offset],
+          green: samplePixels[offset + 1],
+          blue: samplePixels[offset + 2],
+          alpha: samplePixels[offset + 3],
+        });
+      }
+      const offsets = entry.search
+        ? Array.from({ length: entry.search.bottom - entry.search.top + 1 }, (_, y) =>
+          Array.from({ length: entry.search.right - entry.search.left + 1 }, (_, x) => ({
+            x: entry.search.left + x - entry.x,
+            y: entry.search.top + y - entry.y,
+          })),
+        ).flat()
+        : [{ x: 0, y: 0 }];
+      let matchingPixels = 0;
+      let completeMatches = 0;
+      for (const shift of offsets) {
+        let matching = 0;
+        for (const pixel of expectedPixels) {
+          const x = pixel.x + shift.x;
+          const y = pixel.y + shift.y;
+          if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+          const offset = (y * canvas.width + x) * 4;
+          if (actual[offset] === pixel.red && actual[offset + 1] === pixel.green && actual[offset + 2] === pixel.blue && actual[offset + 3] === pixel.alpha) matching += 1;
+        }
+        matchingPixels = Math.max(matchingPixels, matching);
+        if (matching === expectedPixels.length) completeMatches += 1;
+      }
+      return { value: entry.value, expectedPixels: expectedPixels.length, matchingPixels, completeMatches, minimumMatches: entry.minimumMatches ?? 1 };
+    });
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      seriesPixels: colorCount(expected.seriesColor, expected.seriesBounds),
+      legendPixels: colorCount(expected.seriesColor, expected.legendBounds),
+      textMatches,
+    };
+  }, { encoded: base64, expected });
+}
+
+async function assertReportPng(page, png, expected) {
+  const facts = await pngFacts(page, png, expected);
+  assert.ok(facts.width > 0 && facts.height > 0, "downloaded report must decode to a nonempty bitmap");
+  assert.ok(facts.seriesPixels > 100, "downloaded report must retain its series pixels");
+  assert.ok(facts.legendPixels > 50, "downloaded report must retain its legend swatch");
+  for (const text of facts.textMatches) {
+    assert.ok(text.expectedPixels > 0, `oracle must rasterize ${text.value}`);
+    assert.equal(text.matchingPixels, text.expectedPixels, `downloaded report must retain configured text: ${text.value}`);
+    assert.ok(text.completeMatches >= text.minimumMatches, `downloaded report must retain every expected instance of: ${text.value}`);
+  }
+}
+
+const barArtifact = {
+  seriesColor: "#2563eb",
+  seriesBounds: { left: 80, top: 80, right: 250, bottom: 320 },
+  legendBounds: { left: 550, top: 16, right: 590, bottom: 42 },
+  text: [
+    { value: "Initial sales report", color: "#1f2937", font: "600 20px system-ui, sans-serif", align: "start", x: 76, y: 38 },
+    { value: "Initial value", color: "#475569", font: "14px system-ui, sans-serif", align: "start", x: 76, y: 62 },
+    { value: "Product category", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 372, y: 358 },
+    { value: "Bar series", color: "#334155", font: "14px system-ui, sans-serif", align: "start", x: 580, y: 33 },
+    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 112, search: { left: 100, top: 96, right: 244, bottom: 145 } },
+    { value: "800", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 220, y: 130, search: { left: 100, top: 96, right: 244, bottom: 145 } },
+  ],
+};
+
+const lineArtifact = {
+  seriesColor: "#7c3aed",
+  seriesBounds: { left: 80, top: 80, right: 250, bottom: 320 },
+  legendBounds: { left: 550, top: 16, right: 590, bottom: 42 },
+  text: [
+    { value: "Updated sales report", color: "#1f2937", font: "600 20px system-ui, sans-serif", align: "start", x: 76, y: 38 },
+    { value: "Updated value", color: "#475569", font: "14px system-ui, sans-serif", align: "start", x: 76, y: 62 },
+    { value: "Updated category", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 372, y: 358 },
+    { value: "Line series", color: "#334155", font: "14px system-ui, sans-serif", align: "start", x: 580, y: 33 },
+    { value: "1000", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 124, y: 112, search: { left: 100, top: 96, right: 244, bottom: 145 }, minimumMatches: 2 },
+  ],
+};
+
 try {
   let page = await start();
   await bindSummary(page);
@@ -61,8 +198,10 @@ try {
   await reportData.waitFor();
   assert.match(await reportData.textContent(), /PEN\s*800/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
-  await page.getByLabel("Title", { exact: true }).fill("Current sales report");
-  await page.getByLabel("Show legend", { exact: true }).uncheck();
+  await page.getByLabel("Title", { exact: true }).fill("Initial sales report");
+  await page.getByLabel("Category label", { exact: true }).fill("Product category");
+  await page.getByLabel("Value label", { exact: true }).fill("Initial value");
+  await assertReportPng(page, await downloadedPng(page), barArtifact);
 
   await editPenPrice(page);
   await page.getByRole("tab", { name: "Report", exact: true }).click();
@@ -95,20 +234,21 @@ try {
   await reportData.waitFor();
   assert.match(await reportData.textContent(), /PEN\s*1000/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
+  await page.getByLabel("Title", { exact: true }).fill("Updated sales report");
+  await page.getByLabel("Category label", { exact: true }).fill("Updated category");
+  await page.getByLabel("Value label", { exact: true }).fill("Updated value");
+  await assertReportPng(page, await downloadedPng(page), lineArtifact);
 
-  const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export current PNG", exact: true }).click();
-  const download = await downloadPromise;
-  const png = await readFile(await download.path());
-  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  const base64 = png.toString("base64");
-  assert.equal(await page.evaluate(async (encoded) => {
-    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-    const valid = bitmap.width > 0 && bitmap.height > 0;
-    bitmap.close();
-    return valid;
-  }, base64), true);
+  // A faulted raster can still be a valid PNG. The artifact oracle must reject
+  // it because it contains neither the series nor the configured text.
+  await page.locator(".ts-report-canvas").evaluate((canvas) => {
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Test fault requires a 2D context.");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  });
+  const faultedPng = await downloadedPng(page);
+  await assert.rejects(() => assertReportPng(page, faultedPng, lineArtifact), /series pixels/);
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-report");
