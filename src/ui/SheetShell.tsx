@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -169,6 +170,8 @@ export function SheetShell(props: SheetShellProps) {
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
+  const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
+  const lastCollectionIdentityRef = useRef(collectionIdentity);
   const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
   const reportCanvasReady = reportRenderReady && reportRenderReadyKey === reportRenderKey;
   const onReportRenderState = useCallback((ready: boolean) => {
@@ -198,6 +201,17 @@ export function SheetShell(props: SheetShellProps) {
       setTab("table");
     }
   }, [viewKey]);
+
+  // The callback only requests a collection; the installed projection is the
+  // authority for a real switch. Reset roving focus before the new grid paints
+  // so an old table key cannot leave this grid with no tab stop.
+  useLayoutEffect(() => {
+    if (lastCollectionIdentityRef.current !== collectionIdentity) {
+      setFocusedKey(null);
+      lastCellRef.current = null;
+    }
+    lastCollectionIdentityRef.current = collectionIdentity;
+  }, [collectionIdentity]);
 
   useEffect(() => {
     if (!view) {
@@ -604,8 +618,22 @@ export function SheetShell(props: SheetShellProps) {
 
   function keepEditing(): void {
     setCloseOpen(false);
-    const target = lastCellRef.current;
-    if (target) requestAnimationFrame(() => target.focus());
+    requestAnimationFrame(() => {
+      const prior = lastCellRef.current;
+      if (prior?.isConnected && prior.closest('table[aria-label="Table"]')) {
+        prior.focus();
+        return;
+      }
+      const first = gridOrder[0];
+      if (first) {
+        const cell = cellRefs.current.get(cellKey(first.entity, first.field));
+        if (cell?.isConnected) {
+          cell.focus();
+          return;
+        }
+      }
+      document.getElementById(tabId(tab))?.focus();
+    });
   }
 
   function currentEditorField(state: EditorState): FieldProjection | null {
