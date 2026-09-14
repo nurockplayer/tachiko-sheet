@@ -414,9 +414,9 @@ export function App({ runtime, copies }: AppProps) {
     presentation?: PresentationAttachment | null;
   };
 
-  function checkpointBeforeOpen(): void {
+  function checkpointBeforeOpen(replaceExisting = false): void {
     const old = viewRef.current;
-    if (old && openRecoveryCheckpointRef.current !== null) return;
+    if (old && openRecoveryCheckpointRef.current !== null && !replaceExisting) return;
     openRecoveryCheckpointRef.current = old ? {
       occurrence: old.occurrence,
       revision: old.revision,
@@ -840,7 +840,10 @@ export function App({ runtime, copies }: AppProps) {
     if (!pending || !bytes || !begin()) return false;
     try {
       guardReplacement();
-      checkpointBeforeOpen();
+      // Inspection is not dispatch. Replace the earlier inspection snapshot
+      // at the actual import boundary so unknown-import recovery restores the
+      // latest same-occurrence report, dirty marker, and save receipt.
+      checkpointBeforeOpen(true);
       setCurrentness("pending");
       const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: ",", header: true }, selection);
       // Import installs a different work occurrence. Never present an older

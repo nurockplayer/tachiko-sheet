@@ -77,6 +77,10 @@ describe("unknown-open provenance recovery", () => {
       sameOccurrence: true,
       saved: false,
     });
+    expect(openRecoveryRestoreDecision({ ...checkpoint, presentationDirty: true }, checkpoint)).toEqual({
+      sameOccurrence: true,
+      saved: false,
+    });
   });
 
   it("blocks copy/export dispatches when an unknown open has no old checkpoint", () => {

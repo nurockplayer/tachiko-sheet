@@ -314,6 +314,51 @@ test("opaque copies retain only a validated, cloned presentation attachment", as
   assert.equal(result.missing, null);
 }));
 
+test("persisted opaque presentations reject every malformed v1 shape on read", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    await host.createOpaque("Valid", {
+      revision: "core-rev-valid",
+      bytes: new Uint8Array([1]).buffer,
+      presentation: {
+        version: 1,
+        report: {definitionId: "summary-1", type: "line", title: "", categoryLabel: "", valueLabel: "", legendVisible: false},
+        snapshotRevision: "core-rev-valid",
+        snapshotDigest: "a".repeat(64),
+      },
+    });
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const corrupt = await new Promise((resolve, reject) => {
+      const tx = db.transaction([window.localOpaqueCopiesStore], "readwrite");
+      const record = {
+        kind: "opaque", formatVersion: 2, name: "Corrupt", savedAt: "2026-09-14T00:00:00.000Z", revision: "core-rev-corrupt",
+        bytes: new Uint8Array([2]).buffer,
+        presentation: {version: 1, report: {definitionId: "summary-1", type: "line", title: "", categoryLabel: "", valueLabel: ""}, snapshotRevision: "core-rev-corrupt", snapshotDigest: "a".repeat(64)},
+      };
+      tx.objectStore(window.localOpaqueCopiesStore).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    void corrupt;
+    let failure = null;
+    try { await host.readAny("Corrupt"); } catch (error) { failure = error?.name ?? null; }
+    const valid = await host.readAny("Valid");
+    db.close();
+    return {failure, valid: valid.presentation};
+  }));
+  assert.equal(result.failure, "TypeError");
+  assert.deepEqual(result.valid, {
+    version: 1,
+    report: {definitionId: "summary-1", type: "line", title: "", categoryLabel: "", valueLabel: "", legendVisible: false},
+    snapshotRevision: "core-rev-valid",
+    snapshotDigest: "a".repeat(64),
+  });
+}));
+
 test("opaque copies preserve an optional imported-source attachment outside the raw bytes", async () => withBrowser(async (browser) => {
   const result = await withPage(browser, (page) => page.evaluate(async () => {
     const host = window.createLocalCopiesUnderTest();

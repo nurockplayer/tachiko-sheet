@@ -89,6 +89,16 @@ async function eraseCanvasColor(page, hex, bounds) {
   }, { hex, bounds });
 }
 
+/** Remove only the connecting line corridor; point markers remain untouched. */
+async function eraseCanvasStroke(page, bounds) {
+  await page.locator(".ts-report-canvas").evaluate((canvas, bounds) => {
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Test fault requires a 2D context.");
+    context.fillStyle = "#ffffff";
+    context.fillRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+  }, bounds);
+}
+
 /**
  * Decodes the downloaded artifact, then independently compares its pixels to
  * the configured report text and expected series colour. This deliberately
@@ -175,6 +185,7 @@ async function pngFacts(page, png, expected) {
       legendPixels: colorCount(expected.seriesColor, expected.legendBounds),
       seriesSlots: expected.seriesSlots.map((bounds) => colorCount(expected.seriesColor, bounds)),
       seriesAbsences: expected.seriesAbsences.map((bounds) => colorCount(expected.seriesColor, bounds)),
+      lineStrokeCorridors: (expected.lineStrokeCorridors ?? []).map((bounds) => colorCount(expected.seriesColor, bounds)),
       textMatches,
     };
   }, { encoded: base64, expected });
@@ -187,6 +198,9 @@ async function assertReportPng(page, png, expected) {
   assert.ok(facts.legendPixels > 50, "downloaded report must retain its legend swatch");
   for (const [index, pixels] of facts.seriesSlots.entries()) assert.ok(pixels > 20, `downloaded report must retain series geometry in slot ${index + 1}`);
   for (const [index, pixels] of facts.seriesAbsences.entries()) assert.equal(pixels, 0, `downloaded report must not draw series outside slot ${index + 1}`);
+  for (const [index, pixels] of facts.lineStrokeCorridors.entries()) {
+    assert.ok(pixels > expected.lineStrokeCorridors[index].minimumPixels, `downloaded report must retain line stroke corridor ${index + 1}`);
+  }
   for (const text of facts.textMatches) {
     assert.ok(text.expectedPixels > 0, `oracle must rasterize ${text.value}`);
     assert.equal(text.matchingPixels, text.expectedPixels, `downloaded report must retain configured text: ${text.value}`);
@@ -227,6 +241,9 @@ const lineArtifact = {
   legendBounds: { left: 550, top: 16, right: 590, bottom: 42 },
   seriesSlots: [{ left: 116, top: 91, right: 132, bottom: 111 }, { left: 212, top: 91, right: 228, bottom: 111 }],
   seriesAbsences: [{ left: 116, top: 148, right: 132, bottom: 164 }],
+  // This middle corridor is outside both point markers. It proves the PNG
+  // contains the line stroke itself, not merely the two plotted dots.
+  lineStrokeCorridors: [{ left: 140, top: 94, right: 204, bottom: 99, minimumPixels: 80 }],
   text: [
     { value: "Updated sales report", color: "#1f2937", font: "600 20px system-ui, sans-serif", align: "start", x: 76, y: 38 },
     { value: "Updated value", color: "#475569", font: "14px system-ui, sans-serif", align: "start", x: 76, y: 62 },
@@ -314,6 +331,13 @@ try {
   await eraseCanvasColor(page, "#7c3aed", lineArtifact.seriesBounds);
   const seriesOnlyFault = await downloadedPng(page);
   await assert.rejects(() => assertReportPng(page, seriesOnlyFault, lineArtifact), /series pixels/);
+  await redrawReport(page, "Updated sales report");
+
+  // Keep both point markers and labels, while removing only their connecting
+  // stroke. The independent PNG corridor oracle must fail.
+  await eraseCanvasStroke(page, lineArtifact.lineStrokeCorridors[0]);
+  const strokeOnlyFault = await downloadedPng(page);
+  await assert.rejects(() => assertReportPng(page, strokeOnlyFault, lineArtifact), /line stroke corridor 1/);
   await redrawReport(page, "Updated sales report");
 
   await page.locator(".ts-report-canvas").evaluate((canvas) => {

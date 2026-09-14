@@ -147,23 +147,30 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
       ledger: structuredClone(record.importedSource.ledger),
     };
   }
-  if (record.presentation) copy.presentation = structuredClone(record.presentation);
+  // IndexedDB records are persisted input. Do not let a malformed optional
+  // attachment become a typed runtime value merely because it is truthy.
+  if (record.presentation !== undefined) copy.presentation = clonePresentation(record.presentation)!;
   return copy;
 }
 
-function clonePresentation(presentation: PresentationAttachment | undefined): PresentationAttachment | undefined {
-  if (!presentation) return undefined;
-  const { report } = presentation;
-  if (presentation.version !== 1 ||
+function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
+  if (presentation === undefined) return undefined;
+  if (typeof presentation !== "object" || presentation === null) {
+    throw new TypeError("The presentation attachment is invalid.");
+  }
+  const candidate = presentation as Partial<PresentationAttachment>;
+  const report = candidate.report;
+  if (candidate.version !== 1 ||
+    typeof report !== "object" || report === null ||
     (report.type !== "bar" && report.type !== "line") ||
     typeof report.definitionId !== "string" || report.definitionId.length === 0 ||
     typeof report.title !== "string" || typeof report.categoryLabel !== "string" ||
     typeof report.valueLabel !== "string" || typeof report.legendVisible !== "boolean" ||
-    typeof presentation.snapshotRevision !== "string" || presentation.snapshotRevision.length === 0 ||
-    !/^[a-f0-9]{64}$/i.test(presentation.snapshotDigest)) {
+    typeof candidate.snapshotRevision !== "string" || candidate.snapshotRevision.length === 0 ||
+    typeof candidate.snapshotDigest !== "string" || !/^[a-f0-9]{64}$/i.test(candidate.snapshotDigest)) {
     throw new TypeError("The presentation attachment is invalid.");
   }
-  return structuredClone(presentation);
+  return structuredClone(candidate as PresentationAttachment);
 }
 
 /**

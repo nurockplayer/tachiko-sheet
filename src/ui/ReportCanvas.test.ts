@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reportCanvasLayout } from "./ReportCanvas.js";
+import { drawReportCanvas, reportCanvasLayout } from "./ReportCanvas.js";
 
 const report = {
   definitionId: "summary-1",
@@ -68,6 +68,37 @@ describe("report Canvas layout", () => {
     expect(layout.titleLines).toEqual([""]);
     expect(layout.valueLabelLines).toEqual([""]);
     expect(layout.categoryLabelLines).toEqual([""]);
+  });
+
+  it("uses the measured report frame for an empty result while retaining its explicit no-data state", () => {
+    const drawn: Array<{ text: string; x: number; y: number }> = [];
+    const context = {
+      font: "",
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 0,
+      textAlign: "start" as CanvasTextAlign,
+      measureText: (text: string) => ({ width: measure(text) }),
+      fillRect: () => {}, beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {}, fill: () => {}, arc: () => {},
+      fillText: (text: string, x: number, y: number) => drawn.push({ text, x, y }),
+    } as unknown as CanvasRenderingContext2D;
+    const canvas = {
+      width: 0, height: 0,
+      getContext: () => context,
+    } as unknown as HTMLCanvasElement;
+
+    const emptyReport = {...report, title: "", valueLabel: "", categoryLabel: ""};
+    drawReportCanvas(canvas, emptyReport, []);
+    const layout = reportCanvasLayout(emptyReport, [], measure);
+
+    expect(canvas.width).toBe(layout.width);
+    expect(canvas.height).toBe(layout.height);
+    expect(drawn).toContainEqual({
+      text: "No groups in the current result.",
+      x: layout.left + (layout.width - layout.left - layout.right) / 2,
+      y: layout.top + (layout.bottom - layout.top) / 2,
+    });
+    expect(drawn.filter(({ text }) => text === "")).toHaveLength(3);
   });
 
   it("refuses non-finite values instead of drawing a misleading PNG", () => {
