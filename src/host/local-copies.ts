@@ -5,6 +5,7 @@ import type {
   LocalCopies,
   OpaqueProjectExport,
   OpaqueSavedCopy,
+  PresentationAttachment,
   SaveReceipt,
   SavedCopy,
   SavedCopySummary,
@@ -47,6 +48,8 @@ interface StoredOpaqueCopy {
   bytes: ArrayBuffer;
   /** Private IndexedDB composition, never embedded in the opaque bytes. */
   importedSource?: Omit<ImportedSourceAttachment, "bytes"> & { bytes: ArrayBuffer };
+  /** Private presentation data paired to this exact opaque snapshot. */
+  presentation?: PresentationAttachment;
 }
 
 let connection: Promise<IDBDatabase> | undefined;
@@ -144,7 +147,23 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
       ledger: structuredClone(record.importedSource.ledger),
     };
   }
+  if (record.presentation) copy.presentation = structuredClone(record.presentation);
   return copy;
+}
+
+function clonePresentation(presentation: PresentationAttachment | undefined): PresentationAttachment | undefined {
+  if (!presentation) return undefined;
+  const { report } = presentation;
+  if (presentation.version !== 1 ||
+    (report.type !== "bar" && report.type !== "line") ||
+    typeof report.definitionId !== "string" || report.definitionId.length === 0 ||
+    typeof report.title !== "string" || typeof report.categoryLabel !== "string" ||
+    typeof report.valueLabel !== "string" || typeof report.legendVisible !== "boolean" ||
+    typeof presentation.snapshotRevision !== "string" || presentation.snapshotRevision.length === 0 ||
+    !/^[a-f0-9]{64}$/i.test(presentation.snapshotDigest)) {
+    throw new TypeError("The presentation attachment is invalid.");
+  }
+  return structuredClone(presentation);
 }
 
 /**
@@ -355,6 +374,7 @@ export function createLocalCopies(): LocalCopies {
           metadata: structuredClone(snapshot.importedSource.metadata),
           ledger: structuredClone(snapshot.importedSource.ledger),
         } : undefined,
+        presentation: clonePresentation(snapshot.presentation),
       };
       const db = await openDatabase();
       await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);

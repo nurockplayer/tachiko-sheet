@@ -103,12 +103,16 @@ export interface OpaqueSavedCopy extends SavedCopySummary {
   bytes: ArrayBuffer;
   /** Optional host-private source attachment; never part of the opaque bytes. */
   importedSource?: ImportedSourceAttachment;
+  /** Optional host-private report configuration; never part of the opaque bytes. */
+  presentation?: PresentationAttachment;
 }
 export type AnySavedCopy = SavedCopy | OpaqueSavedCopy;
 export interface OpaqueProjectExport {
   revision: string;
   bytes: ArrayBuffer;
   importedSource?: ImportedSourceAttachment;
+  /** Optional host-private report configuration paired to this exact snapshot. */
+  presentation?: PresentationAttachment;
 }
 /** Visible selection vocabulary only. Runtime resolves these names to stable core IDs at dispatch. */
 export interface KeyedGroupedSumBindingCatalog {
@@ -132,6 +136,22 @@ export interface KeyedGroupedSumResult {
   revision: string;
   groups: KeyedGroupedSumProjection["groups"];
   diagnostics: KeyedGroupedSumProjection["diagnostics"];
+}
+/** Bounded UI configuration. It never contains groups, totals, currentness, or rendered pixels. */
+export interface ReportConfiguration {
+  definitionId: string;
+  type: "bar" | "line";
+  title: string;
+  categoryLabel: string;
+  valueLabel: string;
+  legendVisible: boolean;
+}
+/** Private host record paired to an opaque core snapshot, not a project codec extension. */
+export interface PresentationAttachment {
+  version: 1;
+  report: ReportConfiguration;
+  snapshotRevision: string;
+  snapshotDigest: string;
 }
 /** Host-private attachment: deliberately outside the opaque canonical tree. */
 export interface ImportedSourceAttachment {
@@ -180,6 +200,10 @@ export interface SheetShellProps {
   onCreateJ4?(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean>;
   onRefreshJ4?(witness: ViewWitness, definitionId: string): Promise<boolean>;
   onOpenJ4Canary?(): Promise<void>;
+  report?: ReportConfiguration | null;
+  onCreateReport?(definitionId: string, type: ReportConfiguration["type"]): void;
+  onUpdateReport?(report: ReportConfiguration): void;
+  onExportReportPng?(witness: ViewWitness, report: ReportConfiguration): boolean;
   interop?: InteropState | null;
   onInspectImport?(file: File): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;

@@ -281,6 +281,39 @@ test("opaque format-2 bytes are cloned, persisted, and explicitly discriminated"
   assert.deepEqual(result.listed, [{name: "Opaque", savedAt: result.receipt.savedAt, kind: "opaque"}]);
 }));
 
+test("opaque copies retain only a validated, cloned presentation attachment", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const presentation = {
+      version: 1,
+      report: {definitionId: "summary-1", type: "line", title: "Sales", categoryLabel: "Category", valueLabel: "Value", legendVisible: true},
+      snapshotRevision: "core-rev-report",
+      snapshotDigest: "a".repeat(64),
+    };
+    await host.createOpaque("Report", {revision: "core-rev-report", bytes: new Uint8Array([1, 2]).buffer, presentation});
+    presentation.report.title = "mutated";
+    const first = await host.readAny("Report");
+    const firstTitle = first.presentation.report.title;
+    first.presentation.report.title = "returned mutation";
+    const second = await host.readAny("Report");
+    let invalid = null;
+    try {
+      await host.createOpaque("Invalid", {
+        revision: "core-rev-invalid",
+        bytes: new Uint8Array([3]).buffer,
+        presentation: {...presentation, snapshotDigest: "not-a-digest"},
+      });
+    } catch (error) {
+      invalid = error?.name ?? null;
+    }
+    return {firstTitle, second: second.presentation, invalid, missing: await host.readAny("Invalid")};
+  }));
+  assert.equal(result.firstTitle, "Sales");
+  assert.equal(result.second.report.title, "Sales");
+  assert.equal(result.invalid, "TypeError");
+  assert.equal(result.missing, null);
+}));
+
 test("opaque copies preserve an optional imported-source attachment outside the raw bytes", async () => withBrowser(async (browser) => {
   const result = await withPage(browser, (page) => page.evaluate(async () => {
     const host = window.createLocalCopiesUnderTest();

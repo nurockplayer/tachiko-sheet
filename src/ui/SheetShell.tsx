@@ -28,10 +28,11 @@ import {
   type TableColumn,
   type TableRow,
 } from "./projection-access.js";
+import { ReportCanvas } from "./ReportCanvas.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
-type ActiveTab = "table" | "summary" | "brief" | "interop";
+type ActiveTab = "table" | "summary" | "report" | "brief" | "interop";
 
 interface EditorState {
   entity: string;
@@ -99,6 +100,10 @@ export function SheetShell(props: SheetShellProps) {
     onCreateJ4 = async () => false,
     onRefreshJ4 = async () => false,
     onOpenJ4Canary = async () => { throw new Error("The Catalog/Sales canary is unavailable."); },
+    report = null,
+    onCreateReport = () => undefined,
+    onUpdateReport = () => undefined,
+    onExportReportPng = () => false,
   } = props;
 
   const [tab, setTab] = useState<ActiveTab>("table");
@@ -135,6 +140,7 @@ export function SheetShell(props: SheetShellProps) {
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
   const viewCollectionKey = view?.table.collection.key ?? null;
@@ -1020,7 +1026,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Authoritative result</h2>
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul>}
+          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => { onCreateReport(result.definitionId, "bar"); selectTab("report"); }} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => { onCreateReport(result.definitionId, "line"); selectTab("report"); }} disabled={controlsLocked}>Create line report</button></div></>}
           <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
@@ -1030,6 +1036,47 @@ export function SheetShell(props: SheetShellProps) {
             return <button key={definitionId} type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, definitionId)} disabled={controlsLocked || j4Pending}>Refresh cross-table summary {index + 1}</button>;
           })}
         </div> : null}
+      </section>
+    </div>;
+  }
+
+  function renderReportPanel(): ReactNode {
+    if (!view) return null;
+    const result = report && j4Results.find((candidate) =>
+      candidate.definitionId === report.definitionId &&
+      candidate.revision === view.revision &&
+      candidate.diagnostics.length === 0,
+    );
+    const update = (patch: Partial<NonNullable<typeof report>>) => {
+      if (report) onUpdateReport({ ...report, ...patch });
+    };
+    const exportPng = async () => {
+      if (!report || !result || controlsLocked) return;
+      if (!onExportReportPng({ occurrence: view.occurrence, revision: view.revision }, report)) return;
+      const canvas = reportCanvasRef.current;
+      if (!canvas) return;
+      const anchor = document.createElement("a");
+      anchor.href = canvas.toDataURL("image/png");
+      anchor.download = "tachiko-sheet-report.png";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+    };
+    return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
+      <section className="ts-card" aria-label="Current report">
+        <h2 className="ts-h2">Current report</h2>
+        {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : !result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it.</p> : <>
+          <div className="ts-report-controls">
+            <label className="ts-field-label" htmlFor="report-title">Title</label><input id="report-title" value={report.title} onChange={(event) => update({ title: event.currentTarget.value })} disabled={controlsLocked} />
+            <label className="ts-field-label" htmlFor="report-category-label">Category label</label><input id="report-category-label" value={report.categoryLabel} onChange={(event) => update({ categoryLabel: event.currentTarget.value })} disabled={controlsLocked} />
+            <label className="ts-field-label" htmlFor="report-value-label">Value label</label><input id="report-value-label" value={report.valueLabel} onChange={(event) => update({ valueLabel: event.currentTarget.value })} disabled={controlsLocked} />
+            <label className="ts-check"><input type="checkbox" checked={report.legendVisible} onChange={(event) => update({ legendVisible: event.currentTarget.checked })} disabled={controlsLocked} /> Show legend</label>
+          </div>
+          <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
+          <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
+          <ReportCanvas canvasRef={reportCanvasRef} report={report} groups={result.groups} />
+          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked}>Export current PNG</button>
+        </>}
       </section>
     </div>;
   }
@@ -1092,6 +1139,7 @@ export function SheetShell(props: SheetShellProps) {
             Table
           </button>
           <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
+          <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
           <button
             type="button"
             role="tab"
@@ -1106,7 +1154,7 @@ export function SheetShell(props: SheetShellProps) {
           </button>
           <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
         </div>
-        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
+        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
   }
@@ -1114,7 +1162,7 @@ export function SheetShell(props: SheetShellProps) {
   function onTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const tabs: ActiveTab[] = ["table", "summary", "brief", "interop"];
+    const tabs: ActiveTab[] = ["table", "summary", "report", "brief", "interop"];
     const focused = (event.target as HTMLElement).id;
     const index = Math.max(0, tabs.findIndex((name) => tabId(name) === focused));
     selectTab(tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]!);
