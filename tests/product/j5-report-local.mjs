@@ -212,6 +212,15 @@ const barArtifact = {
   ],
 };
 
+const blankLabelArtifact = {
+  ...barArtifact,
+  text: [
+    { value: "Current report", color: "#1f2937", font: "600 20px system-ui, sans-serif", align: "start", x: 76, y: 38 },
+    { value: "Value", color: "#475569", font: "14px system-ui, sans-serif", align: "start", x: 76, y: 62 },
+    { value: "Category", color: "#334155", font: "14px system-ui, sans-serif", align: "center", x: 372, y: 358 },
+  ],
+};
+
 const lineArtifact = {
   seriesColor: "#7c3aed",
   seriesBounds: { left: 80, top: 80, right: 250, bottom: 320 },
@@ -243,6 +252,16 @@ try {
   await page.getByLabel("Category label", { exact: true }).fill("Product category");
   await page.getByLabel("Value label", { exact: true }).fill("Initial value");
   await assertReportPng(page, await downloadedPng(page), barArtifact);
+  await page.getByLabel("Title", { exact: true }).fill("");
+  await page.getByLabel("Category label", { exact: true }).fill("");
+  await page.getByLabel("Value label", { exact: true }).fill("");
+  const blankLabelFacts = await pngFacts(page, await downloadedPng(page), blankLabelArtifact);
+  for (const text of blankLabelFacts.textMatches) {
+    assert.equal(text.matchingPixels, 0, `downloaded report must not substitute a default ${text.value} label`);
+  }
+  await page.getByLabel("Title", { exact: true }).fill("Initial sales report");
+  await page.getByLabel("Category label", { exact: true }).fill("Product category");
+  await page.getByLabel("Value label", { exact: true }).fill("Initial value");
 
   // A table switch changes only the table projection; the still-current
   // report source and raster stay eligible for export.
@@ -330,6 +349,14 @@ try {
   });
   const faultedPng = await downloadedPng(page);
   await assert.rejects(() => assertReportPng(page, faultedPng, lineArtifact), /series pixels/);
+  await redrawReport(page, "Updated sales report");
+  await page.getByLabel("Title", { exact: true }).fill("");
+  await page.getByLabel("Category label", { exact: true }).fill("");
+  await page.getByLabel("Value label", { exact: true }).fill("");
+  const blankLineLabelFacts = await pngFacts(page, await downloadedPng(page), blankLabelArtifact);
+  for (const text of blankLineLabelFacts.textMatches) {
+    assert.equal(text.matchingPixels, 0, `downloaded line report must not substitute a default ${text.value} label`);
+  }
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-report");
@@ -345,6 +372,13 @@ try {
   assert.ok(await reportData.count(), await page.locator("body").textContent());
   assert.match(await reportData.textContent(), /PEN\s*1000/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
+  for (const label of ["Title", "Category label", "Value label"]) {
+    assert.equal(await page.getByLabel(label, { exact: true }).inputValue(), "", `reopened report must retain an empty ${label}`);
+  }
+  const reopenedBlankLabelFacts = await pngFacts(page, await downloadedPng(page), blankLabelArtifact);
+  for (const text of reopenedBlankLabelFacts.textMatches) {
+    assert.equal(text.matchingPixels, 0, `reopened PNG must not substitute a default ${text.value} label`);
+  }
 
   // An acknowledged Open can lose its first projection. Refresh must bind the
   // saved presentation only after the same replacement and clean J4 discovery.

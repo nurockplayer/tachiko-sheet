@@ -30,7 +30,7 @@ export interface ReportCanvasLayout {
 }
 
 function wrapText(text: string, width: number, measureText: (text: string) => number): string[] {
-  const characters = Array.from(text || " ");
+  const characters = Array.from(text);
   const lines: string[] = [];
   let line = "";
   for (const character of characters) {
@@ -43,7 +43,7 @@ function wrapText(text: string, width: number, measureText: (text: string) => nu
     }
   }
   if (line) lines.push(line);
-  return lines.length > 0 ? lines : [" "];
+  return lines.length > 0 ? lines : [""];
 }
 
 /** Rendering geometry only: values remain the unmodified authoritative group projection. */
@@ -65,8 +65,8 @@ export function reportCanvasLayout(
   ));
   const chartWidth = Math.max(592, slotWidths.reduce((total, width) => total + width, 0));
   const width = Math.ceil(Math.max(720, left + chartWidth + right));
-  const titleLines = wrapText(report.title || "Current report", Math.max(180, width - left - right - legendWidth), measureTitle);
-  const valueLabelLines = wrapText(report.valueLabel || "Value", chartWidth, measureText);
+  const titleLines = wrapText(report.title, Math.max(180, width - left - right - legendWidth), measureTitle);
+  const valueLabelLines = wrapText(report.valueLabel, chartWidth, measureText);
   const valueLabelTop = 38 + titleLines.length * 24;
   const top = valueLabelTop + valueLabelLines.length * 16 + 18;
   const chartHeight = 210;
@@ -82,7 +82,7 @@ export function reportCanvasLayout(
   if (!Number.isFinite(span) || span <= 0) throw new RangeError("Current report range is not renderable.");
   const categoryLines = groups.map((group, index) => wrapText(group.category, Math.max(72, slotWidths[index]! - 12), measureText));
   const categoryHeight = Math.max(1, ...categoryLines.map((lines) => lines.length)) * 16;
-  const categoryLabelLines = wrapText(report.categoryLabel || "Category", chartWidth, measureText);
+  const categoryLabelLines = wrapText(report.categoryLabel, chartWidth, measureText);
   const categoryLabelTop = bottom + 20 + categoryHeight + 16;
   const height = Math.ceil(Math.max(360, categoryLabelTop + categoryLabelLines.length * 16 + 24));
   let offset = left;
@@ -137,7 +137,7 @@ export function drawReportCanvas(
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#1f2937";
     context.font = "600 20px system-ui, sans-serif";
-    context.fillText(report.title || "Current report", 76, 38);
+    context.fillText(report.title, 76, 38);
     context.fillStyle = "#475569";
     context.font = "14px system-ui, sans-serif";
     context.fillText("No groups in the current result.", 76, 104);

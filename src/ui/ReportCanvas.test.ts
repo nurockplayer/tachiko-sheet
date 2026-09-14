@@ -57,6 +57,19 @@ describe("report Canvas layout", () => {
     expect(layout.height).toBeGreaterThan(layout.categoryLabelTop);
   });
 
+  it("keeps intentionally empty presentation labels empty", () => {
+    const layout = reportCanvasLayout({
+      ...report,
+      title: "",
+      valueLabel: "",
+      categoryLabel: "",
+    }, [], measure);
+
+    expect(layout.titleLines).toEqual([""]);
+    expect(layout.valueLabelLines).toEqual([""]);
+    expect(layout.categoryLabelLines).toEqual([""]);
+  });
+
   it("refuses non-finite values instead of drawing a misleading PNG", () => {
     expect(() => reportCanvasLayout(report, [{ category: "Unknown", value: Number.NaN }], measure)).toThrow(RangeError);
   });
