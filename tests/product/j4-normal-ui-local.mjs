@@ -84,7 +84,33 @@ try {
   assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), firstRefreshControls, "a known pre-publication rejection must retain existing refresh controls");
   assert.equal(await groupText(page), firstSummary, "a known pre-publication rejection must retain the current grouped values");
 
+  // A modified cell draft must remain in place when summary creation is
+  // attempted. Cancelling it permits the normal create path to continue.
   const tablePicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await tablePicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const draftHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const draftPriceIndex = draftHeaders.filter((header) => header !== "Row").indexOf("price");
+  const draftPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  await draftPenRow.locator("td").nth(draftPriceIndex).dblclick();
+  const draftEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await draftEditor.fill("250");
+  const blockedCreateDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await chooseBinding(page);
+  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+  await page.getByRole("alert").waitFor();
+  assert.match(await page.getByRole("alert").textContent(), /Apply or cancel.*before creating a cross-table summary/i);
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), blockedCreateDispatches, "draft guard must dispatch zero creates");
+  assert.equal(await draftEditor.inputValue(), "250", "draft guard must retain the modified value");
+  assert.equal(await draftEditor.evaluate((input) => document.activeElement === input), true, "draft guard must restore editor focus");
+  await draftEditor.press("Escape");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+  await page.locator('[data-testid="j4-result-1"]').getByLabel("Cross-table groups", { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "cancelled drafts must allow normal summary creation");
+
   // A cleanup preview is tied to its collection. Switching from A to B must
   // remove the old preview and never dispatch its stale commit.
   await page.getByRole("tab", { name: "Table", exact: true }).click();
@@ -136,19 +162,32 @@ try {
   await page.locator('table[aria-label="Table"]').waitFor();
   assert.match(await page.locator('table[aria-label="Table"]').textContent(), /PEN/, "B cleanup must retain the normalized sales value");
 
-  // A second definition must preserve the first result and its refresh
-  // control; creation re-reads the complete core inventory.
-  await bindAndCreate(page, { failPostPublicationRead: true });
-  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
-  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
-  assert.doesNotMatch(await page.locator("body").textContent(), /was not created/i);
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
+  // A scalar rejection before publication must restore every current J4
+  // result and definition, rather than leaving just one sibling visible.
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.locator('[data-testid="j4-result-1"]').getByLabel("Cross-table groups", { exact: true }).waitFor();
-  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2);
+  await page.getByRole("button", { name: "Refresh cross-table summary 1", exact: true }).click();
+  await page.getByTestId("j4-result-0").getByLabel("Cross-table groups", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Refresh cross-table summary 2", exact: true }).click();
+  await page.getByTestId("j4-result-1").getByLabel("Cross-table groups", { exact: true }).waitFor();
+  const priorGroups = await page.getByLabel("Cross-table groups", { exact: true }).allTextContents();
   assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 2);
-
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await tablePicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const rejectedHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const rejectedPriceIndex = rejectedHeaders.filter((header) => header !== "Row").indexOf("price");
+  const rejectedPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  await rejectedPenRow.locator("td").nth(rejectedPriceIndex).dblclick();
+  const rejectedEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await rejectedEditor.fill("not a number");
+  await rejectedEditor.press("Enter");
+  await page.getByRole("alert").waitFor();
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
+  await rejectedEditor.press("Escape");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "a known edit rejection must retain every result");
+  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 2, "a known edit rejection must retain sibling refresh controls");
+  assert.deepEqual(await page.getByLabel("Cross-table groups", { exact: true }).allTextContents(), priorGroups, "a known edit rejection must restore complete prior J4 results");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
