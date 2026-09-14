@@ -17,6 +17,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
+import type { KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   type CoreKit,
@@ -51,6 +52,7 @@ class FakeDesignerRuntimeError extends Error {
 
 interface Hooks {
   openProject?: () => Promise<OpenedProjection>;
+  inspectImportedProject?: () => Promise<OpenedProjection>;
   observeOccurrence?: () => Promise<OccurrenceProjection>;
   editNumber?: () => Promise<PublicationProjection>;
   editText?: () => Promise<PublicationProjection>;
@@ -77,6 +79,7 @@ function scalarField(
 class FakeClient {
   readonly calls = {
     openProject: [] as ArrayBuffer[],
+    inspectImportedProject: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
     bootstrap: 0,
     observeOccurrence: 0,
     queryTable: [] as string[],
@@ -86,6 +89,9 @@ class FakeClient {
     editBoolean: 0,
     editDate: 0,
     exportCanonicalTree: [] as string[],
+    exportProject: [] as string[],
+    createKeyedGroupedSum: [] as KeyedGroupedSumDefinitionInput[],
+    queryKeyedGroupedSum: [] as string[],
     closeProject: 0,
     close: 0,
   };
@@ -93,12 +99,13 @@ class FakeClient {
   hooks: Hooks = {};
 
   #open = false;
+  noProjectCode = "no_project";
   #scope = 0;
   #counter = 0;
   #revision = "r0";
 
   #requireOpen(): void {
-    if (!this.#open) throw new FakeDesignerRuntimeError("no_project", this.#revision);
+    if (!this.#open) throw new FakeDesignerRuntimeError(this.noProjectCode, this.#revision);
   }
 
   #requireRevision(revision: string): void {
@@ -170,6 +177,18 @@ class FakeClient {
       return hook();
     }
     return this.#opened();
+  }
+
+  async inspectImportedProject(bytes: ArrayBuffer, metadata: unknown): Promise<OpenedProjection> {
+    this.calls.inspectImportedProject.push({ bytes, metadata });
+    const hook = this.hooks.inspectImportedProject;
+    if (hook !== undefined) {
+      this.hooks.inspectImportedProject = undefined;
+      return hook();
+    }
+    // The public imported-project inspection is validation only. It must not
+    // install or replace the resident project before openProject succeeds.
+    return { bootstrap: this.#bootstrap(), table: this.#table() };
   }
 
   async bootstrap() {
@@ -264,6 +283,35 @@ class FakeClient {
     }
     this.#requireRevision(revision);
     return { revision: this.#revision, files: [{ path: "manifest.json", bytes: new ArrayBuffer(4) }] };
+  }
+
+  async exportProject(revision: string) {
+    this.calls.exportProject.push(revision);
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return { revision: this.#revision, bytes: new Uint8Array([7, 8, 9]).buffer };
+  }
+
+  async createKeyedGroupedSum(revision: string, definition: KeyedGroupedSumDefinitionInput) {
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    this.calls.createKeyedGroupedSum.push(definition);
+    const publication = this.#publish(IMPACT);
+    return {
+      publication,
+      result: {
+        definition_id: definition.id,
+        revision: publication.resulting_revision,
+        groups: [{ category: "PEN", value: 800 }],
+        diagnostics: [],
+      } satisfies KeyedGroupedSumProjection,
+    };
+  }
+
+  async queryKeyedGroupedSum(definitionId: string): Promise<KeyedGroupedSumProjection> {
+    this.#requireOpen();
+    this.calls.queryKeyedGroupedSum.push(definitionId);
+    return { definition_id: definitionId, revision: this.#revision, groups: [{ category: "PEN", value: 800 }], diagnostics: [] };
   }
 
   async closeProject(): Promise<void> {
@@ -592,8 +640,15 @@ describe("createSheetRuntime", () => {
       throw transport;
     };
 
-    await expect(runtime.openFiles(FILES)).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
-    await expect(runtime.read()).rejects.toBeInstanceOf(NoResidentWorkError);
+    const failedOpen = await failure(runtime.openFiles(FILES));
+    expect(failedOpen).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(client.calls.openProject).toHaveLength(2);
+
+    client.noProjectCode = "no_project_open";
+    const observesBeforeRead = client.calls.observeOccurrence;
+    const failedRead = await failure(runtime.read());
+    expect(failedRead).toBeInstanceOf(NoResidentWorkError);
+    expect(client.calls.observeOccurrence).toBe(observesBeforeRead + 1);
     const reopened = await runtime.openFiles(FILES);
     expect(reopened.occurrence).toBe("scope-2");
   });
@@ -665,6 +720,67 @@ describe("createSheetRuntime", () => {
     const tree = await runtime.exportCanonical(witnessOf(view));
     expect(client.calls.exportCanonicalTree).toEqual(["r1"]);
     expect(tree.revision).toBe("r1");
+  });
+
+  it("exports and reopens opaque core bytes only through the revision witness", async () => {
+    const { client, runtime, view } = await opened();
+    const exported = await runtime.exportOpaque(witnessOf(view));
+    expect(client.calls.exportProject).toEqual(["r1"]);
+    expect(Array.from(new Uint8Array(exported.bytes))).toEqual([7, 8, 9]);
+    new Uint8Array(exported.bytes)[0] = 0;
+    const reopened = await runtime.openOpaque(new Uint8Array([7, 8, 9]).buffer);
+    expect(reopened.occurrence).toBe("scope-2");
+    expect(client.calls.openProject).toHaveLength(2);
+  });
+
+  it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
+    const { client, runtime, view } = await opened();
+    const bytes = new Uint8Array([7, 8, 9]).buffer;
+    const metadata = { version: 1, sheets: [] };
+
+    const reopened = await runtime.openOpaque(bytes, metadata);
+    expect(reopened.occurrence).toBe("scope-2");
+    expect(client.calls.inspectImportedProject).toHaveLength(1);
+    expect(client.calls.inspectImportedProject[0].metadata).toBe(metadata);
+    expect(client.calls.inspectImportedProject[0].bytes).not.toBe(bytes);
+    expect(client.calls.openProject).toHaveLength(2);
+
+    client.hooks.inspectImportedProject = async () => {
+      throw new FakeDesignerRuntimeError("invalid_value", "r2");
+    };
+    const rejection = await failure(runtime.openOpaque(bytes, metadata));
+    expect(rejection).toBeInstanceOf(FakeDesignerRuntimeError);
+    expect(client.calls.openProject).toHaveLength(2);
+    expect((await runtime.read()).revision).toBe(reopened.revision);
+    expect(view.occurrence).toBe("scope-1");
+  });
+
+  it("resolves visible bindings to stable core IDs and clears the old witness after publication", async () => {
+    const { client, runtime, view } = await opened();
+    const result = await runtime.createKeyedGroupedSum(witnessOf(view), {
+      ordersCollection: "tasks",
+      orderLookupKeyField: "notes",
+      orderQuantityField: "impact",
+      productsCollection: "tasks",
+      productKeyField: "notes",
+      productCategoryField: "notes",
+      productPriceField: "impact",
+    });
+    expect(result.groups).toEqual([{ category: "PEN", value: 800 }]);
+    expect(result.revision).toBe("r2");
+    expect(client.calls.createKeyedGroupedSum).toHaveLength(1);
+    expect(client.calls.createKeyedGroupedSum[0]).toMatchObject({
+      orders_schema: "col-1",
+      order_lookup_key_field: "f2",
+      order_quantity_field: "f1",
+      products_schema: "col-1",
+      product_key_field: "f2",
+      product_category_field: "f2",
+      product_price_field: "f1",
+    });
+    await expect(runtime.queryKeyedGroupedSum(witnessOf(view), result.definitionId)).rejects.toMatchObject({ code: "stale-witness" });
+    const refreshed = await runtime.read();
+    await expect(runtime.queryKeyedGroupedSum(witnessOf(refreshed), result.definitionId)).resolves.toMatchObject({ revision: "r2" });
   });
 
   it("serializes operations so a stale second edit is refused before dispatch", async () => {

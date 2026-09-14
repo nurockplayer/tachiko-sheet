@@ -42,18 +42,35 @@ export interface AcceptanceUnknownObservation {
   currentness: string | null;
 }
 
+export interface AcceptanceCoreFailureProbe {
+  name: string;
+  causeName: string;
+  causeFailureCode: string | null;
+}
+
 export interface AcceptanceApi {
   observe(): Promise<AcceptanceObservation>;
   savedHash(name: string): Promise<string | null>;
   failNextSave(): void;
   loseNextExecuteReply(): void;
+  loseNextOpenReply(): void;
+  loseNextImportBeforeDispatch(): void;
+  loseNextImportReplyAfterDispatch(): void;
+  failNextImportProjection(): void;
   failNextOpenProjection(): void;
+  failNextJ4PostPublicationRead(): void;
   openProjectRequestCount(): number;
+  importSpreadsheetRequestCount(): number;
   executeRequestCount(): number;
   settleFaultWindow(): Promise<void>;
   saveObservation(): AcceptanceSaveObservation;
   unknownObservation(): AcceptanceUnknownObservation;
   lastReceipt(): PublicationProjection | null;
+  exportDispatchCounts(): { canonical: number; opaque: number };
+  copyWriteDispatchCounts(): { canonical: number; opaque: number };
+  acceptanceHarnessVersion(): string;
+  resetCoreFailureProbe(): void;
+  coreFailureProbe(): AcceptanceCoreFailureProbe | null;
 }
 
 export interface AcceptanceWiring {
@@ -72,15 +89,30 @@ type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate"]);
 const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup"]);
 const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
+const ACCEPTANCE_HARNESS_VERSION = "j4-no-resident-runtime-read-probe-v2";
 
 let wiring: AcceptanceWiring | null = null;
 let dispatchCount = 0;
 let loseArmed = false;
+let openReplyFaultArmed = false;
+let importBeforeDispatchFaultArmed = false;
+let importReplyAfterDispatchFaultArmed = false;
+let importProjectionFaultRequested = false;
+let importProjectionFaultArmed = false;
 let openProjectionFaultArmed = false;
+let j4PostPublicationReadFaultRequested = false;
+let j4PostPublicationReadFaultArmed = false;
+let j4PostPublicationReadSkipped = false;
 let openProjectDispatchCount = 0;
+let importSpreadsheetDispatchCount = 0;
+let exportCanonicalDispatchCount = 0;
+let exportOpaqueDispatchCount = 0;
+let copyCanonicalDispatchCount = 0;
+let copyOpaqueDispatchCount = 0;
 let lastReceiptValue: PublicationProjection | null = null;
 let settlePendingFault: (() => void) | null = null;
 let pendingFault: Promise<void> | null = null;
+let lastCoreFailureProbe: AcceptanceCoreFailureProbe | null = null;
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -119,12 +151,76 @@ function instrumentClient(client: PublicClient): PublicClient {
             openProjectionFaultArmed = false;
             throw new Error("The replacement projection reply was lost after real open dispatch.");
           }
+          if (importProjectionFaultArmed) {
+            importProjectionFaultArmed = false;
+            throw new Error("The replacement projection reply was lost after real import dispatch.");
+          }
+          // A J4 create first re-observes its acknowledged publication inside
+          // the runtime. The App's following read is deliberately faulted to
+          // exercise its published-recovery boundary without faking a receipt.
+          if (j4PostPublicationReadFaultArmed) {
+            if (!j4PostPublicationReadSkipped) {
+              j4PostPublicationReadSkipped = true;
+            } else {
+              j4PostPublicationReadFaultArmed = false;
+              j4PostPublicationReadSkipped = false;
+              throw new Error("The post-publication J4 read projection reply was lost.");
+            }
+          }
+          return result;
+        };
+      }
+      if (property === "createKeyedGroupedSum") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (j4PostPublicationReadFaultRequested) {
+            j4PostPublicationReadFaultRequested = false;
+            j4PostPublicationReadFaultArmed = true;
+            j4PostPublicationReadSkipped = false;
+          }
           return result;
         };
       }
       if (property === "openProject") {
-        return (...args: unknown[]): Promise<unknown> => {
+        return async (...args: unknown[]): Promise<unknown> => {
           openProjectDispatchCount += 1;
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (openReplyFaultArmed) {
+            openReplyFaultArmed = false;
+            throw new UnknownOperationOutcomeError("The dispatched open reply was lost after the real transport replied.");
+          }
+          return result;
+        };
+      }
+      if (property === "importSpreadsheet") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          if (importBeforeDispatchFaultArmed) {
+            importBeforeDispatchFaultArmed = false;
+            throw new UnknownOperationOutcomeError("Import delivery outcome was unknown before dispatch; no candidate was sent.");
+          }
+          const loseReplyAfterDispatch = importReplyAfterDispatchFaultArmed;
+          importReplyAfterDispatchFaultArmed = false;
+          importSpreadsheetDispatchCount += 1;
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (loseReplyAfterDispatch) {
+            throw new UnknownOperationOutcomeError("The dispatched import reply was lost after the real transport replied.");
+          }
+          if (importProjectionFaultRequested) {
+            importProjectionFaultRequested = false;
+            importProjectionFaultArmed = true;
+          }
+          return result;
+        };
+      }
+      if (property === "exportCanonicalTree") {
+        return (...args: unknown[]): Promise<unknown> => {
+          exportCanonicalDispatchCount += 1;
+          return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+        };
+      }
+      if (property === "exportProject") {
+        return (...args: unknown[]): Promise<unknown> => {
+          exportOpaqueDispatchCount += 1;
           return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
         };
       }
@@ -363,12 +459,86 @@ export function loseNextExecuteReply(): void {
   });
 }
 
+export function loseNextOpenReply(): void {
+  openReplyFaultArmed = true;
+}
+
+/**
+ * Simulates delivery uncertainty before a candidate is dispatched. No import
+ * call is made; this arm is deliberately distinct from reply loss.
+ */
+export function loseNextImportBeforeDispatch(): void {
+  importReplyAfterDispatchFaultArmed = false;
+  importBeforeDispatchFaultArmed = true;
+}
+
+/** Simulates a lost reply only after one real import dispatch has succeeded. */
+export function loseNextImportReplyAfterDispatch(): void {
+  importBeforeDispatchFaultArmed = false;
+  importReplyAfterDispatchFaultArmed = true;
+}
+
+export function failNextImportProjection(): void {
+  importProjectionFaultRequested = true;
+  importProjectionFaultArmed = false;
+}
+
+export function failNextJ4PostPublicationRead(): void {
+  j4PostPublicationReadFaultRequested = true;
+  j4PostPublicationReadFaultArmed = false;
+  j4PostPublicationReadSkipped = false;
+}
+
 export function failNextOpenProjection(): void {
   openProjectionFaultArmed = true;
 }
 
 export function openProjectRequestCount(): number {
   return openProjectDispatchCount;
+}
+
+export function importSpreadsheetRequestCount(): number {
+  return importSpreadsheetDispatchCount;
+}
+
+export function exportDispatchCounts(): { canonical: number; opaque: number } {
+  return { canonical: exportCanonicalDispatchCount, opaque: exportOpaqueDispatchCount };
+}
+
+export function copyWriteDispatchCounts(): { canonical: number; opaque: number } {
+  return { canonical: copyCanonicalDispatchCount, opaque: copyOpaqueDispatchCount };
+}
+
+export function acceptanceHarnessVersion(): string {
+  return ACCEPTANCE_HARNESS_VERSION;
+}
+
+export function resetCoreFailureProbe(): void {
+  lastCoreFailureProbe = null;
+}
+
+export function coreFailureProbe(): AcceptanceCoreFailureProbe | null {
+  return lastCoreFailureProbe ? { ...lastCoreFailureProbe } : null;
+}
+
+function installRuntimeReadProbe(runtime: SheetRuntime): void {
+  const originalRead = runtime.read;
+  runtime.read = async function readWithAcceptanceProbe(): Promise<WorkbookView> {
+    try {
+      return await originalRead.call(runtime);
+    } catch (error) {
+      const cause = (error as { cause?: unknown } | null)?.cause as {
+        name?: unknown;
+        failure?: { code?: unknown };
+      } | null;
+      lastCoreFailureProbe = {
+        name: error instanceof Error ? error.name : "unknown",
+        causeName: typeof cause?.name === "string" ? cause.name : "unknown",
+        causeFailureCode: typeof cause?.failure?.code === "string" ? cause.failure.code : null,
+      };
+      throw error;
+    }
+  };
 }
 
 /** Resolves only when the bounded real-dispatch / drop experiment has settled. */
@@ -378,17 +548,43 @@ export async function settleFaultWindow(): Promise<void> {
 
 export function installAcceptance(next: AcceptanceWiring): void {
   wiring = next;
+  installRuntimeReadProbe(next.runtime);
+  const create = next.copies.create;
+  const createOpaque = next.copies.createOpaque;
+  if (typeof create === "function") {
+    next.copies.create = async (...args) => {
+      copyCanonicalDispatchCount += 1;
+      return create.apply(next.copies, args);
+    };
+  }
+  if (typeof createOpaque === "function") {
+    next.copies.createOpaque = async (...args) => {
+      copyOpaqueDispatchCount += 1;
+      return createOpaque.apply(next.copies, args);
+    };
+  }
   window.__tachikoAcceptance = {
     observe,
     savedHash,
     failNextSave,
     loseNextExecuteReply,
+    loseNextOpenReply,
+    loseNextImportBeforeDispatch,
+    loseNextImportReplyAfterDispatch,
+    failNextImportProjection,
     failNextOpenProjection,
+    failNextJ4PostPublicationRead,
     openProjectRequestCount,
+    importSpreadsheetRequestCount,
     executeRequestCount,
     settleFaultWindow,
     saveObservation,
     unknownObservation,
     lastReceipt,
+    exportDispatchCounts,
+    copyWriteDispatchCounts,
+    acceptanceHarnessVersion,
+    resetCoreFailureProbe,
+    coreFailureProbe,
   };
 }

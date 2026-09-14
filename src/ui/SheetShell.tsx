@@ -10,7 +10,13 @@ import {
 } from "react";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
-import type { ImportSelection, SheetShellProps, ViewWitness } from "../contracts.js";
+import type {
+  ImportSelection,
+  KeyedGroupedSumBindingCatalog,
+  KeyedGroupedSumBindingChoice,
+  SheetShellProps,
+  ViewWitness,
+} from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
@@ -25,7 +31,7 @@ import {
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
-type ActiveTab = "table" | "brief" | "interop";
+type ActiveTab = "table" | "summary" | "brief" | "interop";
 
 interface EditorState {
   entity: string;
@@ -47,6 +53,15 @@ interface GridPosition {
   field: string;
 }
 
+/** Definitions without a visible result still need an explicit refresh path. */
+export function missingKeyedGroupedSumDefinitionIds(
+  definitionIds: readonly string[],
+  results: readonly Pick<import("../contracts.js").KeyedGroupedSumResult, "definitionId">[],
+): string[] {
+  const resultIds = new Set(results.map((result) => result.definitionId));
+  return definitionIds.filter((definitionId) => !resultIds.has(definitionId));
+}
+
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
 const directoryInputAttributes: Record<string, string> = { webkitdirectory: "", directory: "" };
 
@@ -63,6 +78,7 @@ export function SheetShell(props: SheetShellProps) {
     onOpenFiles,
     onOpenExample,
     onOpenSaved,
+    onSelectCollection = async () => {},
     onCommit,
     onCreateCopy,
     onClose,
@@ -77,6 +93,12 @@ export function SheetShell(props: SheetShellProps) {
     onCancelCleanup = () => undefined,
     onPrepareDownload = async () => false,
     onDownload = async () => false,
+    j4Results = [],
+    j4DefinitionIds = [],
+    onPrepareJ4Bindings = async () => ({ collections: [] }),
+    onCreateJ4 = async () => false,
+    onRefreshJ4 = async () => false,
+    onOpenJ4Canary = async () => { throw new Error("The Catalog/Sales canary is unavailable."); },
   } = props;
 
   const [tab, setTab] = useState<ActiveTab>("table");
@@ -94,6 +116,9 @@ export function SheetShell(props: SheetShellProps) {
   const [importError, setImportError] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
   const [importTypes, setImportTypes] = useState<string[][]>([]);
+  const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
+  const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
+  const [j4Pending, setJ4Pending] = useState(false);
 
   const fileInputId = useId();
   const spreadsheetInputId = useId();
@@ -112,6 +137,7 @@ export function SheetShell(props: SheetShellProps) {
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
+  const viewCollectionKey = view?.table.collection.key ?? null;
 
   useEffect(() => {
     onDraftChangeRef.current = props.onDraftChange;
@@ -126,12 +152,15 @@ export function SheetShell(props: SheetShellProps) {
     if (occurrence !== null) lastNotesOccurrenceRef.current = occurrence;
     setCommitPending(false);
     setLocalError(null);
+    setJ4Catalog(null);
+    setJ4Binding(null);
+    setJ4Pending(false);
     if (!viewKey) {
       setCopyOpen(false);
       setCloseOpen(false);
       setTab("table");
     }
-  }, [viewKey]);
+  }, [viewKey, viewCollectionKey]);
 
   useEffect(() => {
     if (!view) {
@@ -187,8 +216,9 @@ export function SheetShell(props: SheetShellProps) {
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
+  const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
-    (editor !== null && editor.value !== editor.original) || anyNotesDraft || (copyOpen && copyName.trim() !== "");
+    cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
 
   useEffect(() => {
@@ -391,12 +421,36 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  async function selectCollection(next: string): Promise<void> {
+    if (!witness || next === view?.table.collection.key) return;
+    if (cellDraftActive) {
+      setLocalError("Apply or cancel the value you are editing before switching tables.");
+      if (editor) focusCell(editor.entity, editor.field);
+      return;
+    }
+    setLocalError(null);
+    try {
+      await onSelectCollection(witness, next);
+    } catch (error) {
+      setLocalError(explain(error, "Could not switch to that table."));
+    }
+  }
+
   async function openExample(): Promise<void> {
     setLocalError(null);
     try {
       await onOpenExample();
     } catch (error) {
       setLocalError(explain(error, "Could not open the example work."));
+    }
+  }
+
+  async function openJ4Canary(): Promise<void> {
+    setLocalError(null);
+    try {
+      await onOpenJ4Canary();
+    } catch (error) {
+      setLocalError(explain(error, "Could not open the Catalog/Sales canary."));
     }
   }
 
@@ -492,8 +546,8 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function requestClose(): Promise<void> {
-    if (controlsLocked) return;
-    if (dirty || draftActive) {
+    if (busy || commitPending) return;
+    if (dirty || draftActive || currentness === "unknown") {
       setCloseOpen(true);
       return;
     }
@@ -544,6 +598,9 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
             </button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={() => void requestClose()} disabled={busy || commitPending}>
+              Close and abandon recovery
+            </button>
           </section>
         ) : null}
         <header className="ts-home-head">
@@ -581,6 +638,15 @@ export function SheetShell(props: SheetShellProps) {
               aria-describedby={busy ? lockNoteId : undefined}
             >
               Try example
+            </button>
+            <button
+              type="button"
+              className="ts-button"
+              onClick={() => void openJ4Canary()}
+              disabled={controlsLocked || recoveryLocked}
+              aria-describedby={busy ? lockNoteId : undefined}
+            >
+              Try Catalog/Sales canary
             </button>
             {busy ? (
               <span className="ts-status" role="status">
@@ -872,12 +938,112 @@ export function SheetShell(props: SheetShellProps) {
     </div>;
   }
 
+  function renderSummaryPanel(): ReactNode {
+    if (!view) return null;
+    const liveWitness: ViewWitness = { occurrence: view.occurrence, revision: view.revision };
+    const collection = (key: string) => j4Catalog?.collections.find((candidate) => candidate.key === key) ?? null;
+    const fields = (key: string) => collection(key)?.fields ?? [];
+    const choose = (key: keyof KeyedGroupedSumBindingChoice, value: string) => {
+      setJ4Binding((current) => {
+        if (!current) return current;
+        if (key === "ordersCollection") return { ...current, ordersCollection: value, orderLookupKeyField: "", orderQuantityField: "" };
+        if (key === "productsCollection") return { ...current, productsCollection: value, productKeyField: "", productCategoryField: "", productPriceField: "" };
+        return { ...current, [key]: value };
+      });
+    };
+    const prepare = async () => {
+      if (controlsLocked || j4Pending) return;
+      setJ4Pending(true);
+      setLocalError(null);
+      try {
+        const catalog = await onPrepareJ4Bindings(liveWitness);
+        const first = catalog.collections[0];
+        setJ4Catalog(catalog);
+        setJ4Binding(first ? {
+          ordersCollection: first.key,
+          orderLookupKeyField: first.fields[0]?.key ?? "",
+          orderQuantityField: first.fields[0]?.key ?? "",
+          productsCollection: first.key,
+          productKeyField: first.fields[0]?.key ?? "",
+          productCategoryField: first.fields[0]?.key ?? "",
+          productPriceField: first.fields[0]?.key ?? "",
+        } : null);
+      } catch (error) {
+        setLocalError(explain(error, "Could not read the current table and field names."));
+      } finally {
+        setJ4Pending(false);
+      }
+    };
+    const create = async () => {
+      if (!j4Binding || controlsLocked || j4Pending) return;
+      setJ4Pending(true);
+      setLocalError(null);
+      try {
+        await onCreateJ4(liveWitness, j4Binding);
+      } finally {
+        setJ4Pending(false);
+      }
+    };
+    const selector = (label: string, key: keyof KeyedGroupedSumBindingChoice, values: Array<{ key: string }>) => (
+      <><label className="ts-field-label" htmlFor={`j4-${key}`}>{label}</label>
+      <select id={`j4-${key}`} value={j4Binding?.[key] ?? ""} onChange={(event) => choose(key, event.currentTarget.value)} disabled={controlsLocked || j4Pending}>
+        <option value="">Choose a field</option>
+        {values.map((value) => <option key={value.key} value={value.key}>{value.key}</option>)}
+      </select></>
+    );
+    const hasField = (collectionKey: string, fieldKey: string) => fields(collectionKey).some((field) => field.key === fieldKey);
+    const bindingReady = Boolean(j4Binding && j4Catalog &&
+      [j4Binding.ordersCollection, j4Binding.productsCollection].every(Boolean) &&
+      hasField(j4Binding.ordersCollection, j4Binding.orderLookupKeyField) &&
+      hasField(j4Binding.ordersCollection, j4Binding.orderQuantityField) &&
+      hasField(j4Binding.productsCollection, j4Binding.productKeyField) &&
+      hasField(j4Binding.productsCollection, j4Binding.productCategoryField) &&
+      hasField(j4Binding.productsCollection, j4Binding.productPriceField));
+    const missingDefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
+    return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className="ts-panel ts-brief">
+      <section className="ts-card" aria-label="Cross-table summary binding">
+        <h2 className="ts-h2">Cross-table summary</h2>
+        <p className="ts-subtle">Choose visible table and field names. The core binds their stable identities and remains the only calculator.</p>
+        {!j4Catalog ? <button type="button" className="ts-button" onClick={() => void prepare()} disabled={controlsLocked || j4Pending}>{j4Pending ? "Loading names…" : "Choose tables and fields"}</button> : <>
+          {selector("Orders table", "ordersCollection", j4Catalog.collections)}
+          {selector("Order lookup key", "orderLookupKeyField", fields(j4Binding?.ordersCollection ?? ""))}
+          {selector("Order quantity", "orderQuantityField", fields(j4Binding?.ordersCollection ?? ""))}
+          {selector("Products table", "productsCollection", j4Catalog.collections)}
+          {selector("Product key", "productKeyField", fields(j4Binding?.productsCollection ?? ""))}
+          {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
+          {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
+          <p className="ts-hint">Creating this summary uses the core’s format-2 project representation. Canonical and portable v1 exits remain unsupported for definition-bearing work.</p>
+          <button type="button" className="ts-button ts-button--primary" onClick={() => void create()} disabled={controlsLocked || j4Pending || !bindingReady}>{j4Pending ? "Creating…" : "Create cross-table summary"}</button>
+        </>}
+      </section>
+      <section className="ts-card" aria-label="Cross-table summary result">
+        <h2 className="ts-h2">Authoritative result</h2>
+        {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
+        {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
+          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul>}
+          <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
+        </div>)}
+        {missingDefinitionIds.length > 0 ? <div className="ts-preview">
+          <p className="ts-empty">Source data changed, so the previous result is not current.</p>
+          {missingDefinitionIds.map((definitionId) => {
+            const index = j4DefinitionIds.indexOf(definitionId);
+            return <button key={definitionId} type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, definitionId)} disabled={controlsLocked || j4Pending}>Refresh cross-table summary {index + 1}</button>;
+          })}
+        </div> : null}
+      </section>
+    </div>;
+  }
+
   function renderWorkbook(): ReactNode {
     if (!view || !table) return null;
     return (
       <div className="ts-workbook" data-testid="project-ready" aria-busy={busy}>
         {renderToolbar()}
         <nav className="ts-actions" aria-label="Workbook actions">
+          <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
+          <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
+            {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
+          </select>
           <button
             type="button"
             className="ts-button"
@@ -925,6 +1091,7 @@ export function SheetShell(props: SheetShellProps) {
           >
             Table
           </button>
+          <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
           <button
             type="button"
             role="tab"
@@ -939,7 +1106,7 @@ export function SheetShell(props: SheetShellProps) {
           </button>
           <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
         </div>
-        {tab === "table" ? renderTablePanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
+        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
   }
@@ -947,7 +1114,7 @@ export function SheetShell(props: SheetShellProps) {
   function onTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const tabs: ActiveTab[] = ["table", "brief", "interop"];
+    const tabs: ActiveTab[] = ["table", "summary", "brief", "interop"];
     const focused = (event.target as HTMLElement).id;
     const index = Math.max(0, tabs.findIndex((name) => tabId(name) === focused));
     selectTab(tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]!);

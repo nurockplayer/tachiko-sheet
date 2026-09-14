@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
-import type { SheetShellProps, WorkbookView } from "../contracts.js";
+import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
-import { SheetShell } from "./SheetShell.js";
+import { missingKeyedGroupedSumDefinitionIds, SheetShell } from "./SheetShell.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
@@ -79,6 +79,15 @@ function makeView(options: { columns?: boolean; titleValue?: string; titleDiagno
       columns: options.columns === false ? [] : columns,
       rows,
     },
+  };
+}
+
+function summaryResult(definitionId: string, value: number): KeyedGroupedSumResult {
+  return {
+    definitionId,
+    revision: "rev-1",
+    groups: [{ category: "PEN", value }],
+    diagnostics: [],
   };
 }
 
@@ -237,6 +246,7 @@ describe("recovery presentation", () => {
     expect(chipText(markup, "currentness")).toBe("Needs refresh");
     expect(chipText(markup, "operation-outcome")).toBe("Outcome needs review");
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
+    expect(markup).toContain("Close and abandon recovery");
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).not.toContain("could not be opened");
   });
@@ -259,10 +269,13 @@ describe("recovery presentation", () => {
     expect(markup).not.toContain('data-testid="cell-editor"');
     expect(markup).toContain('aria-label="Recovery"');
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
+    expect(markup).toContain("Close and abandon recovery");
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
     expect(markup).toContain('data-testid="open-project" type="file" multiple="" disabled=""');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Try example<\/button>/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Open saved copy<\/button>/);
+    expect(markup).not.toContain('data-testid="project-ready"');
+    expect(markup).not.toContain("Save a copy");
   });
 });
 
@@ -421,5 +434,19 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("Opening…");
     expect(markup).toContain("An operation is in progress");
     expect(markup).toContain("disabled");
+  });
+
+  it("keeps every summary refresh control reachable when results are missing", () => {
+    expect(missingKeyedGroupedSumDefinitionIds(
+      ["definition-1", "definition-2"],
+      [summaryResult("definition-2", 800)],
+    )).toEqual(["definition-1"]);
+  });
+
+  it("retains all definition controls after clearing every result", () => {
+    expect(missingKeyedGroupedSumDefinitionIds(
+      ["definition-1", "definition-2"],
+      [],
+    )).toEqual(["definition-1", "definition-2"]);
   });
 });

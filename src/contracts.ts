@@ -6,6 +6,7 @@ import type {
   FieldTarget,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
+import type { KeyedGroupedSumProjection } from "../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   CleanupPreview,
@@ -51,10 +52,22 @@ export type ScalarEdit =
 export interface SheetRuntime {
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
+  /**
+   * Opens an unparsed core-produced format-2 export. When it descends from an
+   * imported source, the public kit first validates the retained producer
+   * metadata; no client codec is involved.
+   */
+  openOpaque(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
   read(): Promise<WorkbookView>;
+  selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView>;
   readFields(witness: ViewWitness, targets: FieldTarget[]): Promise<FieldBatchProjection>;
   edit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<WorkbookView>;
   exportCanonical(witness: ViewWitness): Promise<CanonicalTreeExport>;
+  exportOpaque(witness: ViewWitness): Promise<OpaqueProjectExport>;
+  listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog>;
+  createKeyedGroupedSum(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<KeyedGroupedSumResult>;
+  queryKeyedGroupedSum(witness: ViewWitness, definitionId: string): Promise<KeyedGroupedSumResult>;
+  discoverKeyedGroupedSums(witness: ViewWitness): Promise<KeyedGroupedSumResult[]>;
   /** The public kit parses all spreadsheet bytes; Sheet retains no parser. */
   inspectSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions): Promise<SourceWorkbook>;
   importSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions, selection: ImportSelection): Promise<ImportedWorkbook>;
@@ -71,11 +84,54 @@ export interface ImportedWorkbook {
   ledger: FidelityFinding[];
 }
 
-export interface SavedCopySummary { name: string; savedAt: string }
-export interface SavedCopy extends SavedCopySummary {
+export type SavedCopyKind = "canonical" | "opaque";
+export interface SavedCopySummary { name: string; savedAt: string; kind?: SavedCopyKind }
+export interface SavedCopy {
+  name: string;
+  savedAt: string;
+  /** Legacy canonical records predate the discriminator and are inferred as canonical. */
+  kind?: "canonical";
   revision: string;
   files: CanonicalProjectFile[];
   importedSource?: ImportedSourceAttachment;
+}
+/** A private, unparsed core-project export (format version 2). */
+export interface OpaqueSavedCopy extends SavedCopySummary {
+  kind: "opaque";
+  formatVersion: 2;
+  revision: string;
+  bytes: ArrayBuffer;
+  /** Optional host-private source attachment; never part of the opaque bytes. */
+  importedSource?: ImportedSourceAttachment;
+}
+export type AnySavedCopy = SavedCopy | OpaqueSavedCopy;
+export interface OpaqueProjectExport {
+  revision: string;
+  bytes: ArrayBuffer;
+  importedSource?: ImportedSourceAttachment;
+}
+/** Visible selection vocabulary only. Runtime resolves these names to stable core IDs at dispatch. */
+export interface KeyedGroupedSumBindingCatalog {
+  collections: Array<{
+    key: string;
+    fields: Array<{ key: string; fieldType: string }>;
+  }>;
+}
+export interface KeyedGroupedSumBindingChoice {
+  ordersCollection: string;
+  orderLookupKeyField: string;
+  orderQuantityField: string;
+  productsCollection: string;
+  productKeyField: string;
+  productCategoryField: string;
+  productPriceField: string;
+}
+/** Disposable, revision-scoped core output. IDs are retained only for re-query, never requested from users. */
+export interface KeyedGroupedSumResult {
+  definitionId: string;
+  revision: string;
+  groups: KeyedGroupedSumProjection["groups"];
+  diagnostics: KeyedGroupedSumProjection["diagnostics"];
 }
 /** Host-private attachment: deliberately outside the opaque canonical tree. */
 export interface ImportedSourceAttachment {
@@ -89,7 +145,10 @@ export interface SaveReceipt extends SavedCopySummary { revision: string }
 export interface LocalCopies {
   list(): Promise<SavedCopySummary[]>;
   read(name: string): Promise<SavedCopy | null>;
+  /** Discriminated read for callers that support both canonical and opaque copies. */
+  readAny(name: string): Promise<AnySavedCopy | null>;
   create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt>;
+  createOpaque(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
   close(): Promise<void>;
 }
 
@@ -108,11 +167,19 @@ export interface SheetShellProps {
   onOpenFiles(files: FileList): Promise<void>;
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
+  onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
   onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean>;
   onCreateCopy(name: string): Promise<boolean>;
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;
   onDraftChange(dirty: boolean): void;
+  j4Results?: KeyedGroupedSumResult[];
+  /** Internal core handles for refresh only; the UI never displays or requests them. */
+  j4DefinitionIds?: string[];
+  onPrepareJ4Bindings?(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog>;
+  onCreateJ4?(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean>;
+  onRefreshJ4?(witness: ViewWitness, definitionId: string): Promise<boolean>;
+  onOpenJ4Canary?(): Promise<void>;
   interop?: InteropState | null;
   onInspectImport?(file: File): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;

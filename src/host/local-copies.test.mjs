@@ -62,6 +62,7 @@ const pageHtml = `<!doctype html><meta charset="utf-8"><title>local copies host 
 ${compiled}
 window.createLocalCopiesUnderTest = createLocalCopies;
 window.localCopiesDbName = LOCAL_COPIES_DB_NAME;
+window.localOpaqueCopiesStore = LOCAL_OPAQUE_COPIES_STORE;
 </script>`;
 
 const origin = "https://tachiko-sheet-host.test/";
@@ -180,14 +181,14 @@ test("create commits a durable copy; list/read return the stored bytes and core 
   assert.equal(result.receipt.name, "Sample A");
   assert.equal(result.receipt.revision, "core-rev-7");
   assert.match(result.receipt.savedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-  assert.deepEqual(result.listed, [{name: "Sample A", savedAt: result.receipt.savedAt}]);
+  assert.deepEqual(result.listed, [{name: "Sample A", savedAt: result.receipt.savedAt, kind: "canonical"}]);
   assert.equal(result.revision, "core-rev-7");
   assert.deepEqual(result.paths, ["manifest.json", "entities/0.jsonl"]);
   assert.deepEqual(result.first, [1, 2, 3, 4]);
   assert.deepEqual(result.second, [9, 8, 7]);
   assert.equal(result.missing, null);
   const writes = result.transactions.filter((tx) => tx.mode === "readwrite");
-  assert.deepEqual(writes, [{store: "copies", mode: "readwrite", options: {durability: "strict"}}]);
+  assert.deepEqual(writes, [{store: ["copies", "opaque-copies"], mode: "readwrite", options: {durability: "strict"}}]);
 }));
 
 test("a create-only conflict fails and preserves the existing destination", async () => withBrowser(async (browser) => {
@@ -217,6 +218,154 @@ test("a create-only conflict fails and preserves the existing destination", asyn
   assert.equal(result.revision, "rev-1");
   assert.deepEqual(result.bytes, [1]);
   assert.deepEqual(result.names, ["Dup"]);
+}));
+
+test("the v1 canonical store is readable after the format-2 schema upgrade", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("copies", {keyPath: "name"});
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction("copies", "readwrite");
+        tx.objectStore("copies").add({
+          name: "Legacy",
+          savedAt: "2026-09-13T00:00:00.000Z",
+          revision: "legacy-rev",
+          files: [{path: "manifest.json", bytes: new Uint8Array([7, 8]).buffer}],
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    const host = window.createLocalCopiesUnderTest();
+    const copy = await host.readAny("Legacy");
+    return {copy: {kind: copy.kind, revision: copy.revision, bytes: Array.from(new Uint8Array(copy.files[0].bytes))}, listed: await host.list()};
+  }));
+  assert.equal(result.copy.kind, "canonical");
+  assert.equal(result.copy.revision, "legacy-rev");
+  assert.deepEqual(result.copy.bytes, [7, 8]);
+  assert.deepEqual(result.listed, [{name: "Legacy", savedAt: "2026-09-13T00:00:00.000Z", kind: "canonical"}]);
+}));
+
+test("opaque format-2 bytes are cloned, persisted, and explicitly discriminated", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const bytes = new Uint8Array([0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x32]);
+    const receipt = await host.createOpaque("Opaque", {revision: "core-rev-2", bytes: bytes.buffer});
+    bytes[0] = 0;
+    const first = await host.readAny("Opaque");
+    new Uint8Array(first.bytes)[1] = 0;
+    const second = await host.readAny("Opaque");
+    let legacyReadFailure = null;
+    try {
+      await host.read("Opaque");
+    } catch (error) {
+      legacyReadFailure = {name: error?.name ?? null};
+    }
+    return {
+      receipt,
+      legacyReadFailure,
+      first: {kind: first.kind, formatVersion: first.formatVersion, revision: first.revision, bytes: Array.from(new Uint8Array(first.bytes)), hasFiles: "files" in first, hasImportedSource: "importedSource" in first},
+      second: {kind: second.kind, formatVersion: second.formatVersion, bytes: Array.from(new Uint8Array(second.bytes))},
+      listed: await host.list(),
+    };
+  }));
+  assert.deepEqual(result.receipt, {name: "Opaque", savedAt: result.receipt.savedAt, kind: "opaque", revision: "core-rev-2"});
+  assert.deepEqual(result.legacyReadFailure, {name: "TypeError"});
+  assert.deepEqual(result.first, {kind: "opaque", formatVersion: 2, revision: "core-rev-2", bytes: [0x66, 0, 0x72, 0x6d, 0x61, 0x74, 0x32], hasFiles: false, hasImportedSource: false});
+  assert.deepEqual(result.second, {kind: "opaque", formatVersion: 2, bytes: [0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x32]});
+  assert.deepEqual(result.listed, [{name: "Opaque", savedAt: result.receipt.savedAt, kind: "opaque"}]);
+}));
+
+test("opaque copies preserve an optional imported-source attachment outside the raw bytes", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const opaqueBytes = new Uint8Array([0x70, 0x72, 0x6f, 0x6a]);
+    const sourceBytes = new Uint8Array([0x73, 0x72, 0x63]);
+    const metadata = {version: 2, sheets: [{name: "原始", rows: 3}]};
+    const ledger = [{category: "preserved_readable", code: "opaque-source", location: "A1", message: "retained", blocking: false}];
+    await host.createOpaque("Opaque attached", {
+      revision: "core-rev-attached",
+      bytes: opaqueBytes.buffer,
+      importedSource: {name: "source.csv", format: "csv", bytes: sourceBytes.buffer, metadata, ledger},
+    });
+    opaqueBytes[0] = 0;
+    sourceBytes[0] = 0;
+    metadata.sheets[0].rows = 99;
+    ledger[0].message = "mutated";
+    const first = await host.readAny("Opaque attached");
+    new Uint8Array(first.bytes)[1] = 0;
+    first.importedSource.bytes = new Uint8Array([0]).buffer;
+    first.importedSource.metadata.sheets[0].rows = 0;
+    const second = await host.readAny("Opaque attached");
+    return {
+      first: {
+        kind: first.kind,
+        bytes: Array.from(new Uint8Array(first.bytes)),
+        sourceBytes: Array.from(new Uint8Array(first.importedSource.bytes)),
+        sourceName: first.importedSource.name,
+        sourceFormat: first.importedSource.format,
+        metadata: first.importedSource.metadata,
+        ledger: first.importedSource.ledger,
+      },
+      second: {
+        bytes: Array.from(new Uint8Array(second.bytes)),
+        sourceBytes: Array.from(new Uint8Array(second.importedSource.bytes)),
+        metadata: second.importedSource.metadata,
+        ledger: second.importedSource.ledger,
+      },
+    };
+  }));
+  assert.equal(result.first.kind, "opaque");
+  assert.deepEqual(result.first.bytes, [0x70, 0, 0x6f, 0x6a]);
+  assert.deepEqual(result.first.sourceBytes, [0]);
+  assert.equal(result.first.sourceName, "source.csv");
+  assert.equal(result.first.sourceFormat, "csv");
+  assert.deepEqual(result.first.metadata, {version: 2, sheets: [{name: "原始", rows: 0}]});
+  assert.equal(result.first.ledger[0].message, "retained");
+  assert.deepEqual(result.second, {
+    bytes: [0x70, 0x72, 0x6f, 0x6a],
+    sourceBytes: [0x73, 0x72, 0x63],
+    metadata: {version: 2, sheets: [{name: "原始", rows: 3}]},
+    ledger: [{category: "preserved_readable", code: "opaque-source", location: "A1", message: "retained", blocking: false}],
+  });
+}));
+
+test("canonical and opaque names are create-only across both stores", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    await host.create("Shared", {revision: "canonical-rev", files: [{path: "manifest.json", bytes: new Uint8Array([1]).buffer}]});
+    let failure = null;
+    try {
+      await host.createOpaque("Shared", {revision: "opaque-rev", bytes: new Uint8Array([2, 3]).buffer});
+    } catch (error) {
+      failure = {name: error?.name ?? null, message: String(error?.message ?? error)};
+    }
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const counts = await new Promise((resolve, reject) => {
+      const tx = db.transaction(["copies", window.localOpaqueCopiesStore], "readonly");
+      const canonical = tx.objectStore("copies").count();
+      const opaque = tx.objectStore(window.localOpaqueCopiesStore).count();
+      let values = [];
+      canonical.onsuccess = () => { values[0] = canonical.result; if (values.length === 2) resolve(values); };
+      opaque.onsuccess = () => { values[1] = opaque.result; if (values.length === 2) resolve(values); };
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+    const canonical = await host.readAny("Shared");
+    return {failure, counts, kind: canonical.kind, revision: canonical.revision};
+  }));
+  assert.equal(result.failure.name, "ConstraintError");
+  assert.deepEqual(result.counts, [1, 0]);
+  assert.deepEqual({kind: result.kind, revision: result.revision}, {kind: "canonical", revision: "canonical-rev"});
 }));
 
 test("private imported-source attachment is atomically stored beside, never inside, canonical entries", async () => withBrowser(async (browser) => {
@@ -282,7 +431,48 @@ test("a real transaction abort leaves no copy behind", async () => withBrowser(a
   assert.deepEqual(result.names, []);
 }));
 
-test("close releases the connection and copies survive a browser restart", async () => {
+test("an opaque transaction abort leaves neither opaque data nor attachment behind", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const originalAdd = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (...args) {
+      const request = originalAdd.apply(this, args);
+      const tx = this.transaction;
+      queueMicrotask(() => {
+        try {
+          tx.abort();
+        } catch {
+          // Transaction already settled.
+        }
+      });
+      return request;
+    };
+    let failure = null;
+    try {
+      await host.createOpaque("Opaque aborted", {
+        revision: "rev-opaque-aborted",
+        bytes: new Uint8Array([8, 9]).buffer,
+        importedSource: {
+          name: "aborted.csv",
+          format: "csv",
+          bytes: new Uint8Array([10]).buffer,
+          metadata: {version: 1, sheets: []},
+          ledger: [],
+        },
+      });
+    } catch (error) {
+      failure = {name: error?.name ?? null};
+    } finally {
+      IDBObjectStore.prototype.add = originalAdd;
+    }
+    return {failure, copy: await host.readAny("Opaque aborted"), names: (await host.list()).map((e) => e.name)};
+  }));
+  assert.ok(result.failure, "aborted opaque create must fail");
+  assert.equal(result.copy, null);
+  assert.deepEqual(result.names, []);
+}));
+
+test("close releases the connection and canonical and opaque copies survive a browser restart", async () => {
   const userDataDir = await mkdtemp(path.join(tmpdir(), "tachiko-local-copies-"));
   let context;
   try {
@@ -294,12 +484,30 @@ test("close releases the connection and copies survive a browser restart", async
         revision: "rev-persist",
         files: [{path: "manifest.json", bytes: new Uint8Array([42, 43]).buffer}],
       });
+      await host.createOpaque("Persisted opaque", {
+        revision: "rev-opaque-persist",
+        bytes: new Uint8Array([44, 45]).buffer,
+        importedSource: {
+          name: "persisted.csv",
+          format: "csv",
+          bytes: new Uint8Array([46, 47]).buffer,
+          metadata: {version: 1, sheets: []},
+          ledger: [],
+        },
+      });
       await host.close();
       // Same host object must reopen the connection for the next operation.
-      const reopened = await host.read("Persisted");
-      return reopened && {revision: reopened.revision, bytes: Array.from(new Uint8Array(reopened.files[0].bytes))};
+      const reopened = await host.readAny("Persisted");
+      const reopenedOpaque = await host.readAny("Persisted opaque");
+      return reopened && reopenedOpaque && {
+        revision: reopened.revision,
+        bytes: Array.from(new Uint8Array(reopened.files[0].bytes)),
+        opaqueRevision: reopenedOpaque.revision,
+        opaqueBytes: Array.from(new Uint8Array(reopenedOpaque.bytes)),
+        opaqueSourceBytes: Array.from(new Uint8Array(reopenedOpaque.importedSource.bytes)),
+      };
     });
-    assert.deepEqual(afterClose, {revision: "rev-persist", bytes: [42, 43]});
+    assert.deepEqual(afterClose, {revision: "rev-persist", bytes: [42, 43], opaqueRevision: "rev-opaque-persist", opaqueBytes: [44, 45], opaqueSourceBytes: [46, 47]});
 
     // Full browser-process restart against the same persistent profile.
     await context.close();
@@ -308,14 +516,18 @@ test("close releases the connection and copies survive a browser restart", async
     const restarted = await openPage(context, {reset: false});
     const afterRestart = await restarted.evaluate(async () => {
       const host = window.createLocalCopiesUnderTest();
-      const copy = await host.read("Persisted");
+      const copy = await host.readAny("Persisted");
+      const opaque = await host.readAny("Persisted opaque");
       return copy && {
         revision: copy.revision,
         bytes: Array.from(new Uint8Array(copy.files[0].bytes)),
-        names: (await host.list()).map((entry) => entry.name),
+        opaqueRevision: opaque.revision,
+        opaqueBytes: Array.from(new Uint8Array(opaque.bytes)),
+        opaqueSourceBytes: Array.from(new Uint8Array(opaque.importedSource.bytes)),
+        names: (await host.list()).map((entry) => entry.name).sort(),
       };
     });
-    assert.deepEqual(afterRestart, {revision: "rev-persist", bytes: [42, 43], names: ["Persisted"]});
+    assert.deepEqual(afterRestart, {revision: "rev-persist", bytes: [42, 43], opaqueRevision: "rev-opaque-persist", opaqueBytes: [44, 45], opaqueSourceBytes: [46, 47], names: ["Persisted", "Persisted opaque"]});
   } finally {
     if (context) await context.close().catch(() => {});
     await rm(userDataDir, {recursive: true, force: true});
