@@ -53,6 +53,15 @@ interface GridPosition {
   field: string;
 }
 
+/** Definitions without a visible result still need an explicit refresh path. */
+export function missingKeyedGroupedSumDefinitionIds(
+  definitionIds: readonly string[],
+  results: readonly Pick<import("../contracts.js").KeyedGroupedSumResult, "definitionId">[],
+): string[] {
+  const resultIds = new Set(results.map((result) => result.definitionId));
+  return definitionIds.filter((definitionId) => !resultIds.has(definitionId));
+}
+
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
 const directoryInputAttributes: Record<string, string> = { webkitdirectory: "", directory: "" };
 
@@ -530,8 +539,8 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function requestClose(): Promise<void> {
-    if (controlsLocked) return;
-    if (dirty || draftActive) {
+    if (busy || commitPending) return;
+    if (dirty || draftActive || currentness === "unknown") {
       setCloseOpen(true);
       return;
     }
@@ -581,6 +590,9 @@ export function SheetShell(props: SheetShellProps) {
             </div>
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
+            </button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={() => void requestClose()} disabled={busy || commitPending}>
+              Close and abandon recovery
             </button>
           </section>
         ) : null}
@@ -980,6 +992,7 @@ export function SheetShell(props: SheetShellProps) {
       hasField(j4Binding.productsCollection, j4Binding.productKeyField) &&
       hasField(j4Binding.productsCollection, j4Binding.productCategoryField) &&
       hasField(j4Binding.productsCollection, j4Binding.productPriceField));
+    const missingDefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
     return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className="ts-panel ts-brief">
       <section className="ts-card" aria-label="Cross-table summary binding">
         <h2 className="ts-h2">Cross-table summary</h2>
@@ -998,10 +1011,18 @@ export function SheetShell(props: SheetShellProps) {
       </section>
       <section className="ts-card" aria-label="Cross-table summary result">
         <h2 className="ts-h2">Authoritative result</h2>
-        {j4Results.length === 0 ? j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : <div className="ts-preview"><p className="ts-empty">Source data changed, so the previous result is not current.</p>{j4DefinitionIds.map((definitionId, index) => <button key={definitionId} type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, definitionId)} disabled={controlsLocked || j4Pending}>Refresh cross-table summary {index + 1}</button>)}</div> : j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
+        {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
+        {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
           {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul>}
           <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
         </div>)}
+        {missingDefinitionIds.length > 0 ? <div className="ts-preview">
+          <p className="ts-empty">Source data changed, so the previous result is not current.</p>
+          {missingDefinitionIds.map((definitionId) => {
+            const index = j4DefinitionIds.indexOf(definitionId);
+            return <button key={definitionId} type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, definitionId)} disabled={controlsLocked || j4Pending}>Refresh cross-table summary {index + 1}</button>;
+          })}
+        </div> : null}
       </section>
     </div>;
   }

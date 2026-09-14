@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   clearRecoveryOccurrenceContext,
   noResidentRecoveryState,
+  openRecoveryRestoreDecision,
   recoveryDraftAfterBoundary,
+  runIfRecoveryCleared,
 } from "./App.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
 
@@ -34,5 +36,65 @@ describe("recovery draft lifecycle", () => {
       expect(clearRecoveryOccurrenceContext(recoveryContext, error)).toBe(true);
     }
     expect(recoveryContext.current).toBe(null);
+  });
+});
+
+describe("unknown-open provenance recovery", () => {
+  const checkpoint = {
+    occurrence: "old-occurrence",
+    revision: "old-revision",
+    savedRevision: "old-revision",
+    pendingDirty: false,
+    draftDirty: false,
+  };
+
+  it("restores a receipt only for the same occurrence and matching revision", () => {
+    expect(openRecoveryRestoreDecision(checkpoint, {
+      occurrence: "old-occurrence",
+      revision: "old-revision",
+    })).toEqual({ sameOccurrence: true, saved: true });
+    expect(openRecoveryRestoreDecision(checkpoint, {
+      occurrence: "old-occurrence",
+      revision: "new-revision",
+    })).toEqual({ sameOccurrence: true, saved: false });
+  });
+
+  it("does not infer source identity from a different occurrence", () => {
+    expect(openRecoveryRestoreDecision(checkpoint, {
+      occurrence: "candidate-occurrence",
+      revision: "old-revision",
+    })).toEqual({ sameOccurrence: false, saved: false });
+  });
+
+  it("does not restore a receipt while a checkpoint had draft or dirty state", () => {
+    expect(openRecoveryRestoreDecision({ ...checkpoint, pendingDirty: true }, checkpoint)).toEqual({
+      sameOccurrence: true,
+      saved: false,
+    });
+    expect(openRecoveryRestoreDecision({ ...checkpoint, draftDirty: true }, checkpoint)).toEqual({
+      sameOccurrence: true,
+      saved: false,
+    });
+  });
+
+  it("blocks copy/export dispatches when an unknown open has no old checkpoint", () => {
+    let createCalls = 0;
+    let opaqueCalls = 0;
+    let exportCalls = 0;
+    const blocked = runIfRecoveryCleared(
+      true,
+      () => {
+        createCalls += 1;
+        opaqueCalls += 1;
+        exportCalls += 1;
+        return "dispatched";
+      },
+      () => "blocked",
+    );
+    expect(blocked).toBe("blocked");
+    expect(createCalls).toBe(0);
+    expect(opaqueCalls).toBe(0);
+    expect(exportCalls).toBe(0);
+    expect(runIfRecoveryCleared(false, () => "reopened", () => "blocked")).toBe("reopened");
   });
 });

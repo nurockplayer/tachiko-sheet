@@ -56,12 +56,17 @@ async function preview(page, name) {
 async function download(page, format, destination) {
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   const cancelledDownload = page.waitForEvent("download", { timeout: 250 }).then(() => false).catch(() => true);
-  await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
+  const trigger = page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true });
+  await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
   assert.match(await dialog.textContent(), /actual exporter|exporter produced/i);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await assert.doesNotReject(async () => page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).waitFor());
+  await dialog.waitFor({ state: "detached" });
+  const triggerHandle = await trigger.elementHandle();
+  assert.ok(triggerHandle, `Prepare ${format.toUpperCase()} trigger must remain mounted after cancellation`);
+  await page.waitForFunction((element) => element === document.activeElement, triggerHandle);
+  await assert.doesNotReject(async () => trigger.waitFor());
   // The first consent was explicitly cancelled: there must not be a download.
   const noDownload = await cancelledDownload;
   assert.equal(noDownload, true, "cancelled export must not download");
@@ -86,7 +91,8 @@ try {
   // I02: cancellation has no resident workbook or semantic side effect.
   let dialog = await choose(page, messyCsv);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await dialog.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
   assert.equal(await page.getByLabel("Choose CSV or XLSX", { exact: true }).evaluate((input) => document.activeElement === input), true, "cancel must restore focus to the spreadsheet trigger");
   // Invalid typing stays a rejected import candidate; it never opens or replaces work.
   dialog = await choose(page, messyCsv);

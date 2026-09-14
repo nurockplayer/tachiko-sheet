@@ -99,12 +99,13 @@ class FakeClient {
   hooks: Hooks = {};
 
   #open = false;
+  noProjectCode = "no_project";
   #scope = 0;
   #counter = 0;
   #revision = "r0";
 
   #requireOpen(): void {
-    if (!this.#open) throw new FakeDesignerRuntimeError("no_project", this.#revision);
+    if (!this.#open) throw new FakeDesignerRuntimeError(this.noProjectCode, this.#revision);
   }
 
   #requireRevision(revision: string): void {
@@ -639,8 +640,15 @@ describe("createSheetRuntime", () => {
       throw transport;
     };
 
-    await expect(runtime.openFiles(FILES)).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
-    await expect(runtime.read()).rejects.toBeInstanceOf(NoResidentWorkError);
+    const failedOpen = await failure(runtime.openFiles(FILES));
+    expect(failedOpen).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(client.calls.openProject).toHaveLength(2);
+
+    client.noProjectCode = "no_project_open";
+    const observesBeforeRead = client.calls.observeOccurrence;
+    const failedRead = await failure(runtime.read());
+    expect(failedRead).toBeInstanceOf(NoResidentWorkError);
+    expect(client.calls.observeOccurrence).toBe(observesBeforeRead + 1);
     const reopened = await runtime.openFiles(FILES);
     expect(reopened.occurrence).toBe("scope-2");
   });

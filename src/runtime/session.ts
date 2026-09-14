@@ -196,7 +196,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   function isNoProject(kit: CoreKit, error: unknown): boolean {
     return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
-      && (error as { failure?: { code?: string } }).failure?.code === "no_project";
+      && ["no_project", "no_project_open"].includes((error as { failure?: { code?: string } }).failure?.code ?? "");
   }
 
   async function dispatch<T>(kit: CoreKit, call: () => Promise<T>): Promise<T> {

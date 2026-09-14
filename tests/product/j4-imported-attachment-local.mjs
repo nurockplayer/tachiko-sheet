@@ -43,6 +43,16 @@ async function start() {
   return page;
 }
 
+async function waitForHomeOpen(page) {
+  await page.getByRole("region", { name: "Recovery", exact: true }).waitFor({ state: "detached" });
+  const input = page.getByLabel("Choose CSV or XLSX", { exact: true });
+  await input.waitFor();
+  await page.waitForFunction(() => {
+    const candidate = document.querySelector('input[type="file"][accept*=".csv"]');
+    return candidate instanceof HTMLInputElement && !candidate.disabled && candidate.value === "";
+  });
+}
+
 async function importFixture(page) {
   await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
   const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
@@ -97,14 +107,25 @@ async function savedAttachment(page, name) {
 }
 
 async function visibleTable(page, collection) {
-  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption(collection);
-  const grid = page.getByRole("grid", { name: "Table", exact: true });
-  return {
-    headers: await grid.locator("thead th").allTextContents(),
-    rows: await grid.locator("tbody tr").evaluateAll((rows) => rows.map((row) =>
+  const picker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
+  await picker.selectOption(collection);
+  await page.waitForFunction(
+    (expectedCollection) => {
+      const selectedTable = document.querySelector("#ts-active-table");
+      const currentness = document.querySelector('[data-testid="currentness"]');
+      const grid = document.querySelector('table[aria-label="Table"]');
+      return selectedTable?.value === expectedCollection &&
+        currentness?.getAttribute("data-currentness") === "current" &&
+        grid?.querySelector("thead th") !== null;
+    },
+    collection,
+  );
+  return page.getByRole("grid", { name: "Table", exact: true }).evaluate((grid) => ({
+    headers: Array.from(grid.querySelectorAll("thead th"), (cell) => cell.textContent ?? ""),
+    rows: Array.from(grid.querySelectorAll("tbody tr"), (row) =>
       Array.from(row.querySelectorAll("td"), (cell) => cell.textContent),
-    )),
-  };
+    ),
+  }));
 }
 
 try {
@@ -154,6 +175,72 @@ try {
   assert.deepEqual(await retainedLedger.locator("li").allTextContents(), initialLedgerEntries);
   const savedAfterRestart = await savedAttachment(page, "j4-imported-restart");
   assert.deepEqual(savedAfterRestart, savedBeforeRestart);
+
+  // Candidate inspection is a home-screen action. Leave the reopened project
+  // through its normal close path before selecting another spreadsheet.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  const restartUnsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  if (await restartUnsaved.count()) {
+    await restartUnsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  }
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await waitForHomeOpen(page);
+
+  // With no resident after the explicit close, an unknown import must not
+  // invent a candidate; Refresh must report the real no-resident core failure.
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextImportReply());
+  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  const unknownImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  await unknownImport.waitFor();
+  await unknownImport.locator("select").nth(2).selectOption("number");
+  await unknownImport.locator("select").nth(4).selectOption("number");
+  await unknownImport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("project-ready").count(), 0);
+  assert.equal(
+    await page.evaluate(() => window.__tachikoAcceptance.acceptanceHarnessVersion()),
+    "j4-no-resident-runtime-read-probe-v2",
+  );
+  await page.evaluate(() => window.__tachikoAcceptance.resetCoreFailureProbe());
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await waitForHomeOpen(page);
+  assert.deepEqual(
+    await page.evaluate(() => window.__tachikoAcceptance.coreFailureProbe()),
+    {
+      name: "NoResidentWorkError",
+      causeName: "DesignerRuntimeError",
+      causeFailureCode: "no_project_open",
+    },
+  );
+  assert.equal(await page.getByTestId("project-ready").count(), 0, "no-resident unknown import refresh must return to home");
+
+  // The import itself can succeed while its first projection observation is
+  // lost. That known operation outcome still leaves source provenance
+  // unconfirmed, so recovery must remain closed until explicit abandon.
+  const exportBeforeImportProjectionLoss = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
+  const copiesBeforeImportProjectionLoss = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  await page.evaluate(() => window.__tachikoAcceptance.failNextImportProjection());
+  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  const projectionLossImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  await projectionLossImport.waitFor();
+  await projectionLossImport.locator("select").nth(2).selectOption("number");
+  await projectionLossImport.locator("select").nth(4).selectOption("number");
+  await projectionLossImport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("operation-outcome").count(), 0, "known import publication recovery keeps outcome idle");
+  assert.equal(await page.getByTestId("project-ready").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("project-ready").count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), exportBeforeImportProjectionLoss);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copiesBeforeImportProjectionLoss);
+  await page.getByRole("button", { name: "Close and abandon recovery", exact: true }).click();
+  await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Close without saving", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Open saved j4-imported-restart", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByLabel("Cross-table diagnostics", { exact: true }).waitFor();
   assert.match(await page.getByLabel("Cross-table diagnostics", { exact: true }).textContent(), /lookup\.missing_key: PEN/);

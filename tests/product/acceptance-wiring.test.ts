@@ -9,11 +9,14 @@ import { UnknownOperationOutcomeError, type CoreKit, type KitLoader } from "../.
 import { hashCanonicalFiles } from "../../src/acceptance/canonical-hash.js";
 import {
   executeRequestCount,
+  acceptanceHarnessVersion,
+  coreFailureProbe,
   failNextOpenProjection,
   installAcceptance,
   lastReceipt,
   loseNextExecuteReply,
   openProjectRequestCount,
+  resetCoreFailureProbe,
   settleFaultWindow,
   wrapKitLoader,
 } from "../../src/acceptance/sheet-foundation.js";
@@ -68,6 +71,43 @@ describe("acceptance canonical hash", () => {
 });
 
 describe("acceptance kit instrumentation", () => {
+  it("records typed core observation failures without exposing payloads", async () => {
+    const scope = globalThis as unknown as { window: Record<string, unknown> };
+    const previous = scope.window;
+    scope.window = {};
+    const view = { title: "probe", occurrence: "o1", revision: "r1", collections: [], table: {} } as never;
+    let failed: Error | null = null;
+    let calls = 0;
+    const originalRead = async () => {
+      calls += 1;
+      if (failed) throw failed;
+      return view;
+    };
+    const runtime = { read: originalRead };
+    try {
+      installAcceptance({ runtime: runtime as never, copies: {} as never });
+      const first = await runtime.read();
+      expect(first).toBe(view);
+      expect(calls).toBe(1);
+
+      const cause = new Error("no resident project");
+      cause.name = "DesignerRuntimeError";
+      Object.assign(cause, { failure: { code: "no_project_open" } });
+      failed = new Error("No resident work is available.", { cause });
+      failed.name = "NoResidentWorkError";
+      resetCoreFailureProbe();
+      await expect(runtime.read()).rejects.toBe(failed);
+      expect(calls).toBe(2);
+    } finally {
+      scope.window = previous;
+    }
+    expect(coreFailureProbe()).toEqual({
+      name: "NoResidentWorkError",
+      causeName: "DesignerRuntimeError",
+      causeFailureCode: "no_project_open",
+    });
+  });
+
   it("counts genuine scalar-edit dispatches and returns the real projection", async () => {
     const { kit, calls } = fakeKit(async () => projection());
     const loader: KitLoader = wrapKitLoader(async () => kit);
@@ -142,6 +182,9 @@ describe("acceptance kit instrumentation", () => {
         "savedHash",
         "failNextSave",
         "loseNextExecuteReply",
+        "loseNextOpenReply",
+        "loseNextImportReply",
+        "failNextImportProjection",
         "failNextOpenProjection",
         "failNextJ4PostPublicationRead",
         "openProjectRequestCount",
@@ -150,11 +193,20 @@ describe("acceptance kit instrumentation", () => {
         "saveObservation",
         "unknownObservation",
         "lastReceipt",
+        "exportDispatchCounts",
+        "copyWriteDispatchCounts",
+        "acceptanceHarnessVersion",
+        "resetCoreFailureProbe",
+        "coreFailureProbe",
       ]) {
         expect(typeof api[name]).toBe("function");
       }
     } finally {
       scope.window = previous;
     }
+  });
+
+  it("identifies the acceptance bundle version", () => {
+    expect(acceptanceHarnessVersion()).toBe("j4-no-resident-runtime-read-probe-v2");
   });
 });
