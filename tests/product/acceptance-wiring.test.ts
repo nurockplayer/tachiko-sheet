@@ -143,6 +143,7 @@ describe("acceptance kit instrumentation", () => {
         "failNextSave",
         "loseNextExecuteReply",
         "failNextOpenProjection",
+        "failNextJ4PostPublicationRead",
         "openProjectRequestCount",
         "executeRequestCount",
         "settleFaultWindow",

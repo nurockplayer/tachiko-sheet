@@ -48,6 +48,7 @@ export interface AcceptanceApi {
   failNextSave(): void;
   loseNextExecuteReply(): void;
   failNextOpenProjection(): void;
+  failNextJ4PostPublicationRead(): void;
   openProjectRequestCount(): number;
   executeRequestCount(): number;
   settleFaultWindow(): Promise<void>;
@@ -77,6 +78,9 @@ let wiring: AcceptanceWiring | null = null;
 let dispatchCount = 0;
 let loseArmed = false;
 let openProjectionFaultArmed = false;
+let j4PostPublicationReadFaultRequested = false;
+let j4PostPublicationReadFaultArmed = false;
+let j4PostPublicationReadSkipped = false;
 let openProjectDispatchCount = 0;
 let lastReceiptValue: PublicationProjection | null = null;
 let settlePendingFault: (() => void) | null = null;
@@ -118,6 +122,29 @@ function instrumentClient(client: PublicClient): PublicClient {
           if (openProjectionFaultArmed) {
             openProjectionFaultArmed = false;
             throw new Error("The replacement projection reply was lost after real open dispatch.");
+          }
+          // A J4 create first re-observes its acknowledged publication inside
+          // the runtime. The App's following read is deliberately faulted to
+          // exercise its published-recovery boundary without faking a receipt.
+          if (j4PostPublicationReadFaultArmed) {
+            if (!j4PostPublicationReadSkipped) {
+              j4PostPublicationReadSkipped = true;
+            } else {
+              j4PostPublicationReadFaultArmed = false;
+              j4PostPublicationReadSkipped = false;
+              throw new Error("The post-publication J4 read projection reply was lost.");
+            }
+          }
+          return result;
+        };
+      }
+      if (property === "createKeyedGroupedSum") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (j4PostPublicationReadFaultRequested) {
+            j4PostPublicationReadFaultRequested = false;
+            j4PostPublicationReadFaultArmed = true;
+            j4PostPublicationReadSkipped = false;
           }
           return result;
         };
@@ -363,6 +390,12 @@ export function loseNextExecuteReply(): void {
   });
 }
 
+export function failNextJ4PostPublicationRead(): void {
+  j4PostPublicationReadFaultRequested = true;
+  j4PostPublicationReadFaultArmed = false;
+  j4PostPublicationReadSkipped = false;
+}
+
 export function failNextOpenProjection(): void {
   openProjectionFaultArmed = true;
 }
@@ -384,6 +417,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
     failNextSave,
     loseNextExecuteReply,
     failNextOpenProjection,
+    failNextJ4PostPublicationRead,
     openProjectRequestCount,
     executeRequestCount,
     settleFaultWindow,

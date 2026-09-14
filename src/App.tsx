@@ -530,6 +530,10 @@ export function App({ runtime, copies }: AppProps) {
       guardReplacement();
       setCurrentness("pending");
       const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: ",", header: true }, selection);
+      // Import installs a different work occurrence. Never present an older
+      // work's groups or definition IDs against this newly imported view.
+      installJ4DefinitionIds([]);
+      clearJ4Results();
       installView(imported.view);
       preparedDownloadRef.current = null;
       pendingDirtyRef.current = true;
@@ -578,6 +582,10 @@ export function App({ runtime, copies }: AppProps) {
     if (!begin()) return false;
     try {
       const next = await runtime.commitCleanup(witness, previewId);
+      // Cleanup publishes a semantic replacement. Its prior core groups are
+      // no longer current; keep definition IDs so explicit Refresh can query
+      // the newly published revision.
+      clearJ4Results();
       installView(next); pendingDirtyRef.current = true; syncDirty(); markNotSaved();
       setInterop((current) => current ? { ...current, cleanupPreview: null } : current);
       setOutcome("idle");
@@ -761,11 +769,13 @@ export function App({ runtime, copies }: AppProps) {
 
   async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
     if (!begin()) return false;
+    let published = false;
     try {
       setMessage(null);
       setCurrentness("pending");
       clearJ4Results();
       const result = await runtime.createKeyedGroupedSum(witness, binding);
+      published = true;
       const next = await runtime.read();
       installView(next);
       installJ4DefinitionIds([result.definitionId]);
@@ -777,6 +787,10 @@ export function App({ runtime, copies }: AppProps) {
       setOutcome("idle");
       return true;
     } catch (error) {
+      if (published) {
+        failClosedAfterPublicationRecovery();
+        return true;
+      }
       if (error instanceof PublishedProjectionRecoveryError) {
         failClosedAfterPublicationRecovery();
         return true;

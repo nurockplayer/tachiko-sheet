@@ -28,7 +28,7 @@ async function openCanary(page) {
   await page.getByTestId("project-ready").waitFor();
 }
 
-async function bindAndCreate(page) {
+async function bindAndCreate(page, { failPostPublicationRead = false } = {}) {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
   await page.getByLabel("Orders table", { exact: true }).selectOption("sales");
@@ -38,8 +38,9 @@ async function bindAndCreate(page) {
   await page.getByLabel("Product key", { exact: true }).selectOption("code");
   await page.getByLabel("Product category", { exact: true }).selectOption("category");
   await page.getByLabel("Product price", { exact: true }).selectOption("price");
+  if (failPostPublicationRead) await page.evaluate(() => window.__tachikoAcceptance.failNextJ4PostPublicationRead());
   await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
-  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  if (!failPostPublicationRead) await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
 }
 
 async function groupText(page) {
@@ -49,7 +50,15 @@ async function groupText(page) {
 try {
   let page = await start();
   await openCanary(page);
-  await bindAndCreate(page);
+  await bindAndCreate(page, { failPostPublicationRead: true });
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true");
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
+  assert.doesNotMatch(await page.locator("body").textContent(), /was not created/i);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
   assert.match(await groupText(page), /NOTE: 1000/);
   assert.match(await groupText(page), /PEN: 800/);
 
