@@ -689,6 +689,8 @@
   margin: 12px 0;
 }
 
+.ts-report-card { min-width: 0; }
+
 .ts-report-canvas {
   display: block;
   width: auto;

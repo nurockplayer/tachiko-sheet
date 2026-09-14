@@ -14,10 +14,11 @@ const profile = await mkdtemp(path.join(tmpdir(), "tachiko-j5-product-"));
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 let context;
 
-async function start() {
+async function start(viewport) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   const page = await context.newPage();
+  if (viewport) await page.setViewportSize(viewport);
   page.setDefaultTimeout(5000);
   await page.goto(LOCAL_ORIGIN);
   return page;
@@ -257,17 +258,39 @@ const lineArtifact = {
 };
 
 try {
-  let page = await start();
+  let page = await start({ width: 500, height: 900 });
   await bindSummary(page);
   await page.getByRole("button", { name: "Create bar report", exact: true }).click();
-  await page.getByRole("tab", { name: "Report", exact: true }).click();
   let reportData = page.getByLabel("Current report data", { exact: true });
   await reportData.waitFor();
+  await page.waitForFunction(() => document.activeElement?.id === "ts-tab-report", { timeout: 1000 });
   assert.match(await reportData.textContent(), /PEN\s*800/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
   await page.getByLabel("Title", { exact: true }).fill("Initial sales report");
   await page.getByLabel("Category label", { exact: true }).fill("Product category");
   await page.getByLabel("Value label", { exact: true }).fill("Initial value");
+
+  // The report canvas must remain keyboard-reachable as a named, horizontally
+  // scrollable region without changing the existing control order.
+  const legend = page.getByRole("checkbox", { name: "Show legend", exact: true });
+  const reportScroll = page.getByRole("region", { name: "Report chart", exact: true });
+  await legend.focus();
+  assert.equal(await legend.evaluate((element) => element === document.activeElement), true);
+  const reportCard = page.getByRole("region", { name: "Current report", exact: true });
+  const overflow = await reportScroll.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+  const cardBounds = await reportCard.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+  assert.ok(cardBounds.scrollWidth <= cardBounds.clientWidth, `report card must remain bounded (${cardBounds.clientWidth}x${cardBounds.scrollWidth})`);
+  assert.ok(overflow.scrollWidth > overflow.clientWidth, `report chart must horizontally overflow its viewport (${overflow.clientWidth}x${overflow.scrollWidth})`);
+  await page.keyboard.press("Tab");
+  assert.equal(await reportScroll.evaluate((element) => element === document.activeElement), true, "Tab from the legend must reach the named report chart region");
+  const scrollBefore = await reportScroll.evaluate((element) => element.scrollLeft);
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction((before) => document.querySelector('[aria-label="Report chart"]')?.scrollLeft > before, scrollBefore, { timeout: 1000 });
+  const scrollAfter = await reportScroll.evaluate((element) => element.scrollLeft);
+  assert.ok(scrollAfter > scrollBefore, `ArrowRight must scroll the report chart region (${scrollBefore}->${scrollAfter})`);
+  await page.keyboard.press("Tab");
+  const exportButton = page.getByRole("button", { name: "Export current PNG", exact: true });
+  assert.equal(await exportButton.evaluate((element) => element === document.activeElement), true, "Tab must continue to Export current PNG");
   await assertReportPng(page, await downloadedPng(page), barArtifact);
   await page.getByLabel("Title", { exact: true }).fill("");
   await page.getByLabel("Category label", { exact: true }).fill("");
@@ -294,8 +317,12 @@ try {
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   await page.getByText("This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
-  await page.getByRole("button", { name: "Remove report", exact: true }).click();
+  const removeReportButton = page.getByRole("button", { name: "Remove report", exact: true });
+  await removeReportButton.focus();
+  await page.keyboard.press("Enter");
   await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Report", { timeout: 1000 });
+  assert.equal(await page.getByRole("tab", { name: "Report", exact: true }).evaluate((element) => element === document.activeElement), true, "keyboard Remove must return focus to the Report tab");
   await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
   assert.equal(await page.getByTestId("operation-outcome").count(), 0, "a successful report removal must clear the pending outcome");
 

@@ -1117,7 +1117,7 @@ export function SheetShell(props: SheetShellProps) {
       window.setTimeout(() => document.getElementById(tabId("report"))?.focus(), 0);
     };
     return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
-      <section className="ts-card" aria-label="Current report">
+      <section className="ts-card ts-report-card" aria-label="Current report">
         <h2 className="ts-h2">Current report</h2>
         {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
           {!result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
@@ -1130,7 +1130,7 @@ export function SheetShell(props: SheetShellProps) {
           <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
           {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
           <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
-          <div className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
+          <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
           {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
           <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady}>Export current PNG</button>
           </>}
