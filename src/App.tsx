@@ -779,6 +779,7 @@ export function App({ runtime, copies }: AppProps) {
       installJ4DefinitionIds([]);
       clearJ4Results();
       installView(imported.view);
+      installReport(null);
       preparedDownloadRef.current = null;
       pendingDirtyRef.current = true;
       syncDirty();

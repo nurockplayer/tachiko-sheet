@@ -41,6 +41,22 @@ describe("report Canvas layout", () => {
     expect(layout.points.every((point) => point.categoryLines.join("") === point.category)).toBe(true);
   });
 
+  it("reserves complete configurable axis labels without borrowing plot space", () => {
+    const layout = reportCanvasLayout({
+      ...report,
+      title: "長いタイトルABCDEFGHIJKLMN",
+      valueLabel: "値の単位と説明ABCDEFGHIJKLMNABCDEFGHIJKLMN",
+      categoryLabel: "分類の説明ABCDEFGHIJKLMNABCDEFGHIJKLMN",
+    }, [{ category: "PEN", value: 800 }], measure, (text) => Array.from(text).length * 13);
+
+    expect(layout.titleLines.join("")).toBe("長いタイトルABCDEFGHIJKLMN");
+    expect(layout.valueLabelLines.join("")).toBe("値の単位と説明ABCDEFGHIJKLMNABCDEFGHIJKLMN");
+    expect(layout.categoryLabelLines.join("")).toBe("分類の説明ABCDEFGHIJKLMNABCDEFGHIJKLMN");
+    expect(layout.valueLabelTop).toBeLessThan(layout.top);
+    expect(layout.categoryLabelTop).toBeGreaterThan(layout.bottom);
+    expect(layout.height).toBeGreaterThan(layout.categoryLabelTop);
+  });
+
   it("refuses non-finite values instead of drawing a misleading PNG", () => {
     expect(() => reportCanvasLayout(report, [{ category: "Unknown", value: Number.NaN }], measure)).toThrow(RangeError);
   });

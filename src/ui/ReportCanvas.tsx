@@ -22,6 +22,10 @@ export interface ReportCanvasLayout {
   bottom: number;
   zeroY: number;
   titleLines: string[];
+  valueLabelLines: string[];
+  categoryLabelLines: string[];
+  valueLabelTop: number;
+  categoryLabelTop: number;
   points: ReportPoint[];
 }
 
@@ -47,6 +51,7 @@ export function reportCanvasLayout(
   report: ReportConfiguration,
   groups: readonly ReportDatum[],
   measureText: (text: string) => number,
+  measureTitle: (text: string) => number = measureText,
 ): ReportCanvasLayout {
   if (groups.some((group) => !Number.isFinite(group.value))) {
     throw new RangeError("Current report values must be finite numbers.");
@@ -60,8 +65,10 @@ export function reportCanvasLayout(
   ));
   const chartWidth = Math.max(592, slotWidths.reduce((total, width) => total + width, 0));
   const width = Math.ceil(Math.max(720, left + chartWidth + right));
-  const titleLines = wrapText(report.title || "Current report", Math.max(180, width - left - right - legendWidth), measureText);
-  const top = 20 + titleLines.length * 24 + 18;
+  const titleLines = wrapText(report.title || "Current report", Math.max(180, width - left - right - legendWidth), measureTitle);
+  const valueLabelLines = wrapText(report.valueLabel || "Value", chartWidth, measureText);
+  const valueLabelTop = 38 + titleLines.length * 24;
+  const top = valueLabelTop + valueLabelLines.length * 16 + 18;
   const chartHeight = 210;
   const bottom = top + chartHeight;
   const values = groups.map((group) => group.value);
@@ -75,7 +82,9 @@ export function reportCanvasLayout(
   if (!Number.isFinite(span) || span <= 0) throw new RangeError("Current report range is not renderable.");
   const categoryLines = groups.map((group, index) => wrapText(group.category, Math.max(72, slotWidths[index]! - 12), measureText));
   const categoryHeight = Math.max(1, ...categoryLines.map((lines) => lines.length)) * 16;
-  const height = Math.ceil(Math.max(360, bottom + categoryHeight + 62));
+  const categoryLabelLines = wrapText(report.categoryLabel || "Category", chartWidth, measureText);
+  const categoryLabelTop = bottom + 20 + categoryHeight + 16;
+  const height = Math.ceil(Math.max(360, categoryLabelTop + categoryLabelLines.length * 16 + 24));
   let offset = left;
   const points = groups.map((group, index) => {
     const slotWidth = slotWidths[index]!;
@@ -97,6 +106,10 @@ export function reportCanvasLayout(
     bottom,
     zeroY: top + (maximum / span) * chartHeight,
     titleLines,
+    valueLabelLines,
+    categoryLabelLines,
+    valueLabelTop,
+    categoryLabelTop,
     points,
   };
 }
@@ -112,7 +125,10 @@ export function drawReportCanvas(
   if (!context) throw new Error("A 2D Canvas context is unavailable.");
 
   context.font = "14px system-ui, sans-serif";
-  const layout = reportCanvasLayout(report, groups, (text) => context.measureText(text).width);
+  const measureBody = (text: string) => context.measureText(text).width;
+  context.font = "600 20px system-ui, sans-serif";
+  const measureTitle = (text: string) => context.measureText(text).width;
+  const layout = reportCanvasLayout(report, groups, measureBody, measureTitle);
   canvas.width = layout.width;
   canvas.height = layout.height;
   if (canvas.width !== layout.width || canvas.height !== layout.height) {
@@ -137,8 +153,7 @@ export function drawReportCanvas(
   context.stroke();
   context.fillStyle = "#475569";
   context.font = "14px system-ui, sans-serif";
-  context.fillText(report.valueLabel || "Value", 18, top + 8);
-  context.fillText(report.categoryLabel || "Category", left + chartWidth - 72, height - 18);
+  layout.valueLabelLines.forEach((line, index) => context.fillText(line, left, layout.valueLabelTop + index * 16));
 
   if (report.type === "bar") {
     context.fillStyle = "#2563eb";
@@ -172,6 +187,7 @@ export function drawReportCanvas(
     const valueY = point.y <= top + 18 ? point.y + 16 : point.y - 8;
     context.fillText(String(point.value), point.x, valueY);
   }
+  layout.categoryLabelLines.forEach((line, index) => context.fillText(line, left + chartWidth / 2, layout.categoryLabelTop + index * 16));
   context.textAlign = "start";
   if (report.legendVisible) {
     context.fillStyle = report.type === "bar" ? "#2563eb" : "#7c3aed";
