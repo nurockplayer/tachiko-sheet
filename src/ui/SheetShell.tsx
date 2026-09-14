@@ -465,6 +465,7 @@ export function SheetShell(props: SheetShellProps) {
       if (editor) focusCell(editor.entity, editor.field);
       return;
     }
+    if (editor && editor.value === editor.original) setEditor(null);
     setLocalError(null);
     try {
       await onSelectCollection(witness, next);

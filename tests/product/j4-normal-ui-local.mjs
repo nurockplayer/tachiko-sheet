@@ -85,6 +85,47 @@ try {
   assert.equal(await groupText(page), firstSummary, "a known pre-publication rejection must retain the current grouped values");
 
   const tablePicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
+  // Opening a clean editor must not leave it mounted across a collection
+  // switch. The source witness and value must remain unchanged, and switching
+  // tables must not dispatch an Execute mutation.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await tablePicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const cleanHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const cleanPriceIndex = cleanHeaders.filter((header) => header !== "Row").indexOf("price");
+  const cleanPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  const cleanCell = cleanPenRow.locator("td").nth(cleanPriceIndex);
+  const cleanEntity = await cleanCell.getAttribute("data-work-entity");
+  const cleanOccurrence = await cleanCell.getAttribute("data-work-occurrence");
+  const cleanRevision = await cleanCell.getAttribute("data-work-revision");
+  const cleanValue = await cleanCell.locator(".ts-cell-value").textContent();
+  assert.ok(cleanEntity, "Catalog clean-edit target must expose its entity.");
+  await cleanCell.dblclick();
+  const cleanEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await cleanEditor.waitFor();
+  assert.equal(await cleanEditor.inputValue(), cleanValue, "clean editor must retain the source value");
+  const cleanSwitchDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
+  await tablePicker.selectOption("sales");
+  await page.getByRole("columnheader", { name: "product_code", exact: true }).waitFor();
+  assert.equal(await page.getByRole("textbox", { name: "Edit cell", exact: true }).count(), 0, "clean editor must clear when leaving its collection");
+  await tablePicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const returnedCell = page.locator(`td[data-work-entity="${cleanEntity}"]`).nth(cleanPriceIndex);
+  await returnedCell.waitFor();
+  assert.equal(await returnedCell.getAttribute("data-work-occurrence"), cleanOccurrence, "collection switch must retain occurrence");
+  assert.equal(await returnedCell.getAttribute("data-work-revision"), cleanRevision, "collection switch must retain revision");
+  assert.equal(await returnedCell.locator(".ts-cell-value").textContent(), cleanValue, "collection switch must retain value");
+  assert.equal(await page.getByRole("textbox", { name: "Edit cell", exact: true }).count(), 0, "clean editor must not resurrect on return");
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-testid="cell-editor"]') ?? false), false, "clean editor must not retain focus on return");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), cleanSwitchDispatches, "collection switches must not dispatch Execute");
+  await returnedCell.dblclick();
+  const retainedEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await retainedEditor.fill("250");
+  assert.equal(await tablePicker.isDisabled(), true, "a modified cell draft must block collection switching");
+  assert.equal(await retainedEditor.inputValue(), "250", "modified draft must be retained");
+  assert.equal(await retainedEditor.evaluate((input) => document.activeElement === input), true, "modified draft must retain focus");
+  await retainedEditor.press("Escape");
+
   // A cleanup preview is tied to its collection. Switching from A to B must
   // remove the old preview and never dispatch its stale commit.
   await page.getByRole("tab", { name: "Table", exact: true }).click();
