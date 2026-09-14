@@ -138,7 +138,7 @@ Application 維持一份可觀察的 workflow snapshot，更新走明確 transit
 | ID | 必須保留的行為 |
 | --- | --- |
 | INV-01 | 一個 interactive occurrence 只有一個 authoritative Rust runtime；JS 不計算正式 formula／validation／group total |
-| INV-02 | revision 視為 opaque；witness 必须同時包含 occurrence 與 revision，座標／顯示名稱不是 stable semantic identity |
+| INV-02 | revision 視為 opaque；witness 必須同時包含 occurrence 與 revision，座標／顯示名稱不是 stable semantic identity |
 | INV-03 | Close／replacement 後的 reply 不得使舊資料再次 current；adapter 必須在相關 await 後檢查生命週期 |
 | INV-04 | 已發布但未取得 coherent projection，與結果未知都不得宣告 current／saved，也不得 blind replay |
 | INV-05 | Save receipt 只證明指定 host 上指定 snapshot 的寫入；較舊 receipt 不得把較新的工作或草稿標成已儲存 |
@@ -148,7 +148,7 @@ Application 維持一份可觀察的 workflow snapshot，更新走明確 transit
 | INV-09 | 延遲的 commit 回覆不能清掉之後建立的新 draft；用 occurrence、target 與本地 edit generation 識別實際被確認的草稿 |
 | INV-10 | synthetic IME／DOM snapshot 不冒充真實 IME／accessibility／macOS 證據；release build 不包含 acceptance-only hooks |
 
-INV-09 的具體事件顺序須由特定 lane 的 characterization／acceptance 確認；若發現目前行為有缺陷，另列 repair，不得假裝成無行為變更的搬移。
+INV-09 的具體事件順序須由特定 lane 的 characterization／acceptance 確認；若發現目前行為有缺陷，另列 repair，不得假裝成無行為變更的搬移。
 
 ### 6.3 分開三種效果
 

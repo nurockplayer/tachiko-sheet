@@ -40,7 +40,7 @@ B 與 C 的來源檔案可能和 live J5 重疊；必須在其合法 closeout／
 | `SheetRuntime`／`LocalCopies` 的使用端契約 | `application/ports`／model | 按 consumer 縮小介面；先有必要契約，再轉換 boundary；不任意新增 stable public API |
 | session 的 vendor error／projection mapping | `adapters/runtime` | 保留 known rejected／known published／unknown／stale 分類與一個 serialization owner |
 | `local-copies` IndexedDB 機制 | `adapters/host/web` | DB identity、stores、version、strict transaction、legacy format、create-only／byte-copy 不變 |
-| SheetShell 的 feature UI | `ui/grid`、`ui/workbook`、`ui/summary`、`ui/interop`；J5 在合法整合後處理 | 保留 focus、selection identity、draft lifetime、IME、disabled reason 与 product journeys |
+| SheetShell 的 feature UI | `ui/grid`、`ui/workbook`、`ui/summary`、`ui/interop`；J5 在合法整合後處理 | 保留 focus、selection identity、draft lifetime、IME、disabled reason 與 product journeys |
 | `main.tsx` 的實例建立／掛載 | `app` composition root | 保留 acceptance-only 隔離及清理；不把 application 流程搬回 root |
 
 暫時維持舊 import facade 可以降低每個 PR 的風險，但要留下精確的 migration debt，不新增依賴。結案時移除該 slice 已不需要的 facade。不能僅把檔案搬到新目錄，卻讓原依賴圈完整留下。
@@ -51,7 +51,7 @@ B 與 C 的來源檔案可能和 live J5 重疊；必須在其合法 closeout／
 
 ### ARCH-01：依賴圖與循環依賴
 
-建議 entry name：`pnpm check:architecture`，實際工具／版本選擇仍需對應 live decision。Checker 必須解析 resolved imports，不只 grep 檔案字串；遵循專案的 `.js` specifier → TS resolution、relative paths、alias、re-export 與 type-only imports。檢查靜態及可解析的 dynamic import；新不透明 dynamic loading 需具名例外，不能成為绕過邊界的方法。
+建議 entry name：`pnpm check:architecture`，實際工具／版本選擇仍需對應 live decision。Checker 必須解析 resolved imports，不只 grep 檔案字串；遵循專案的 `.js` specifier → TS resolution、relative paths、alias、re-export 與 type-only imports。檢查靜態及可解析的 dynamic import；新不透明 dynamic loading 需具名例外，不能成為繞過邊界的方法。
 
 至少拒絕：application → UI／React／adapter／public-kit；UI → adapter／public-kit；adapter → UI；production dependency cycle；production import acceptance-only module（既有受 build mode 隔離的入口須精確處理，不能一刀刪掉測試能力）。用小型負例測試 checker：相對 import、alias、type-only、re-export、dynamic literal 和 cycle 都應被抓到。
 
@@ -81,7 +81,7 @@ CI 的架構 gate 只在 checker 與 negative cases 被審查後加入；本次 
 
 ## 5. 必須證明的行為情境
 
-下面是後續 migration lane 的 **Steward-authored acceptance requirements**，尚不是 executable tests 或 Ready 證據。需依實際 slice 與 live accepted outcomes 映射、實作並由獨立角色評估 adequacy；implementation 作者自行補 unit test 不能冒充獨立 acceptance。現有 hashes／oracles 不被這份表取代。
+下面是後續 migration lane 的**擬議 verification scenarios**，尚不是 executable tests、Steward-authored acceptance 或 Ready 證據。每個實際 slice 都必須先映射既有 live Steward acceptance／accepted outcomes，並由獨立角色評估 adequacy；implementation 作者自行補 unit test 不能冒充獨立 acceptance。若既有 acceptance 缺漏，或需實質更改任何 outcome，必須回 Steward。現有 hashes／oracles 不被這份表取代。
 
 | ID | 情境 | 必須觀察到的結果 | 證據層 |
 | --- | --- | --- | --- |
@@ -120,7 +120,7 @@ pnpm build:acceptance
 pnpm acceptance:product
 ```
 
-依實際 slice 選 applicable checks，檢查 fixture／artifact prerequisites 及 runner 確實跑哪個 boundary。Setup failure 不是 behavioral RED；`pnpm build:acceptance` 成功不是實際 browser PASS；unit tests 不能代替真实 macOS 或獨立產品驗收。將來新增 scripts 時同步更新本節，避免文件指向不存在的命令。
+依實際 slice 選 applicable checks，檢查 fixture／artifact prerequisites 及 runner 確實跑哪個 boundary。Setup failure 不是 behavioral RED；`pnpm build:acceptance` 成功不是實際 browser PASS；unit tests 不能代替真實 macOS 或獨立產品驗收。將來新增 scripts 時同步更新本節，避免文件指向不存在的命令。
 
 遵循現有 inner loop → repair-batch checkpoint → Final Candidate；WIP 跑 focused checks，穩定 candidate 才跑完整 applicable hosted gates 和 fresh independent review。新 material commit 使相關 exact-head 證據失效；不得重複套用舊 PASS。
 
