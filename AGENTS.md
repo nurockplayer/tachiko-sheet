@@ -37,3 +37,7 @@ At material stages, and at least once per active hour when meaningful durable wo
 Use pnpm for JavaScript dependencies, explicit packageManager and a real lockfile. Do not add install lifecycle scripts, incidental toolchain migrations, secrets, remote fonts, telemetry or provider calls. Follow the installed frontend taste skill when available, adapted to dense spreadsheet ergonomics, not a landing page.
 
 Never implement canonical state, formula/validation, semantic revision, storage codec or approval policy in frontend state. Never confuse semantic publication with durable Save or external effects. Report only checks actually run. Keep known data-integrity/security and substantive review findings blocking, including still-valid debt from merged code.
+
+## Architecture and code-quality reference
+
+For architecture-related work, read [`docs/architecture/README.md`](docs/architecture/README.md), [`clean-code.md`](docs/architecture/clean-code.md), and [`terra-playbook.md`](docs/architecture/terra-playbook.md), tracked in [#33](https://github.com/nurockplayer/tachiko-sheet/issues/33). Respect their proposal/adoption status. They describe Sheet-local boundaries and bounded migration, not a blanket source-refactor dispatch or Ready decision. Existing authority, actual Astra consultation, independent final review, active writer ownership, and unresolved product/acceptance HOLDs remain unchanged. Read the relevant sections at intake or a material architecture change, not every unchanged heartbeat.
