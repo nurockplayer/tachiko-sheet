@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
-import { missingKeyedGroupedSumDefinitionIds, SheetShell } from "./SheetShell.js";
+import { missingKeyedGroupedSumDefinitionIds, reportRenderResetKey, SheetShell } from "./SheetShell.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
@@ -109,6 +109,7 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
     onClose: async () => {},
     onRefresh: async () => {},
     onDraftChange: () => {},
+    onReportDraftChange: () => {},
     ...overrides,
   };
 }
@@ -434,6 +435,30 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("Opening…");
     expect(markup).toContain("An operation is in progress");
     expect(markup).toContain("disabled");
+  });
+
+  it("keeps report readiness across table selection but resets it for source changes and removal", () => {
+    const report = {
+      definitionId: "definition-1",
+      type: "bar" as const,
+      title: "Saved report",
+      categoryLabel: "Category",
+      valueLabel: "Value",
+      legendVisible: true,
+    };
+    const result: KeyedGroupedSumResult = {
+      definitionId: "definition-1",
+      revision: "rev-1",
+      groups: [{ category: "Alpha", value: 3 }],
+      diagnostics: [],
+    };
+    const view = { occurrence: "occ-1", revision: "rev-1" };
+    const ready = reportRenderResetKey(view, report, [result], "current");
+    expect(reportRenderResetKey(view, report, [result], "current")).toBe(ready);
+    expect(reportRenderResetKey({ ...view, revision: "rev-2" }, report, [result], "current")).not.toBe(ready);
+    expect(reportRenderResetKey(view, report, [], "current")).not.toBe(ready);
+    expect(reportRenderResetKey(view, null, [result], "current")).not.toBe(ready);
+    expect(reportRenderResetKey(view, report, [result], "unknown")).not.toBe(ready);
   });
 
   it("keeps every summary refresh control reachable when results are missing", () => {

@@ -40,8 +40,8 @@ async function transpileWithCli(source) {
   }
 }
 
-async function compileProductionModule() {
-  const source = await readFile(new URL("./local-copies.ts", import.meta.url), "utf8");
+async function compileProductionModule(sourceUrl) {
+  const source = await readFile(sourceUrl, "utf8");
   try {
     const ts = await import("typescript");
     if (typeof ts.transpileModule === "function") {
@@ -55,7 +55,8 @@ async function compileProductionModule() {
   return transpileWithCli(source);
 }
 
-const compiled = await compileProductionModule();
+const compiled = await compileProductionModule(new URL("./local-copies.ts", import.meta.url));
+const compiledContracts = await compileProductionModule(new URL("../contracts.ts", import.meta.url));
 
 const pageHtml = `<!doctype html><meta charset="utf-8"><title>local copies host test</title>
 <script type="module">
@@ -69,6 +70,9 @@ const origin = "https://tachiko-sheet-host.test/";
 
 async function installRoutes(router) {
   await router.route("**/*", (route) => {
+    if (new URL(route.request().url()).pathname === "/contracts.js") {
+      return route.fulfill({status: 200, contentType: "text/javascript; charset=utf-8", body: compiledContracts});
+    }
     if (route.request().resourceType() === "document") {
       return route.fulfill({status: 200, contentType: "text/html; charset=utf-8", body: pageHtml});
     }
@@ -279,6 +283,160 @@ test("opaque format-2 bytes are cloned, persisted, and explicitly discriminated"
   assert.deepEqual(result.first, {kind: "opaque", formatVersion: 2, revision: "core-rev-2", bytes: [0x66, 0, 0x72, 0x6d, 0x61, 0x74, 0x32], hasFiles: false, hasImportedSource: false});
   assert.deepEqual(result.second, {kind: "opaque", formatVersion: 2, bytes: [0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x32]});
   assert.deepEqual(result.listed, [{name: "Opaque", savedAt: result.receipt.savedAt, kind: "opaque"}]);
+}));
+
+test("opaque copies retain only a validated, cloned presentation attachment", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const presentation = {
+      version: 1,
+      report: {definitionId: "summary-1", type: "line", title: "Sales", categoryLabel: "Category", valueLabel: "Value", legendVisible: true},
+      snapshotRevision: "core-rev-report",
+      snapshotDigest: "a".repeat(64),
+    };
+    await host.createOpaque("Report", {revision: "core-rev-report", bytes: new Uint8Array([1, 2]).buffer, presentation});
+    presentation.report.title = "mutated";
+    const first = await host.readAny("Report");
+    const firstTitle = first.presentation.report.title;
+    first.presentation.report.title = "returned mutation";
+    const second = await host.readAny("Report");
+    let invalid = null;
+    try {
+      await host.createOpaque("Invalid", {
+        revision: "core-rev-invalid",
+        bytes: new Uint8Array([3]).buffer,
+        presentation: {...presentation, snapshotDigest: "not-a-digest"},
+      });
+    } catch (error) {
+      invalid = error?.name ?? null;
+    }
+    return {firstTitle, second: second.presentation, invalid, missing: await host.readAny("Invalid")};
+  }));
+  assert.equal(result.firstTitle, "Sales");
+  assert.equal(result.second.report.title, "Sales");
+  assert.equal(result.invalid, "TypeError");
+  assert.equal(result.missing, null);
+}));
+
+test("opaque presentations use Unicode code-point limits at create and read boundaries", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const presentation = {
+      version: 1,
+      report: {
+        definitionId: "summary-1", type: "line",
+        title: "A".repeat(119) + "😀",
+        categoryLabel: "界".repeat(79) + "😀",
+        valueLabel: "",
+        legendVisible: false,
+      },
+      snapshotRevision: "core-rev-bounds",
+      snapshotDigest: "a".repeat(64),
+    };
+    await host.createOpaque("At limit", {revision: "core-rev-bounds", bytes: new Uint8Array([1]).buffer, presentation});
+    const accepted = await host.readAny("At limit");
+    const createFailures = [];
+    for (const [field, value] of [
+      ["title", "A".repeat(120) + "😀"],
+      ["categoryLabel", "界".repeat(80) + "😀"],
+      ["valueLabel", "値".repeat(80) + "😀"],
+    ]) {
+      try {
+        await host.createOpaque(`Over ${field}`, {
+          revision: "core-rev-bounds",
+          bytes: new Uint8Array([2]).buffer,
+          presentation: {...presentation, report: {...presentation.report, [field]: value}},
+        });
+      } catch (error) {
+        createFailures.push({field, name: error?.name ?? null, missing: await host.readAny(`Over ${field}`)});
+      }
+    }
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction([window.localOpaqueCopiesStore], "readwrite");
+      tx.objectStore(window.localOpaqueCopiesStore).put({
+        kind: "opaque", formatVersion: 2, name: "Injected overlimit", savedAt: "2026-09-15T00:00:00.000Z", revision: "core-rev-bounds",
+        bytes: new Uint8Array([3]).buffer,
+        presentation: {...presentation, report: {...presentation.report, title: "A".repeat(120) + "😀"}},
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    let readFailure = null;
+    try { await host.readAny("Injected overlimit"); } catch (error) { readFailure = error?.name ?? null; }
+    db.close();
+    return {
+      accepted: accepted.presentation.report,
+      createFailures,
+      readFailure,
+      codePoints: {
+        title: Array.from(presentation.report.title).length,
+        titleCodeUnits: presentation.report.title.length,
+        label: Array.from(presentation.report.categoryLabel).length,
+        labelCodeUnits: presentation.report.categoryLabel.length,
+      },
+    };
+  }));
+  assert.deepEqual(result.accepted, {
+    definitionId: "summary-1", type: "line", title: "A".repeat(119) + "😀",
+    categoryLabel: "界".repeat(79) + "😀", valueLabel: "", legendVisible: false,
+  });
+  assert.deepEqual(result.createFailures.map(({field, name, missing}) => ({field, name, missing})), [
+    {field: "title", name: "TypeError", missing: null},
+    {field: "categoryLabel", name: "TypeError", missing: null},
+    {field: "valueLabel", name: "TypeError", missing: null},
+  ]);
+  assert.equal(result.readFailure, "TypeError");
+  assert.deepEqual(result.codePoints, {title: 120, titleCodeUnits: 121, label: 80, labelCodeUnits: 81});
+}));
+
+test("persisted opaque presentations reject every malformed v1 shape on read", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    await host.createOpaque("Valid", {
+      revision: "core-rev-valid",
+      bytes: new Uint8Array([1]).buffer,
+      presentation: {
+        version: 1,
+        report: {definitionId: "summary-1", type: "line", title: "", categoryLabel: "", valueLabel: "", legendVisible: false},
+        snapshotRevision: "core-rev-valid",
+        snapshotDigest: "a".repeat(64),
+      },
+    });
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const corrupt = await new Promise((resolve, reject) => {
+      const tx = db.transaction([window.localOpaqueCopiesStore], "readwrite");
+      const record = {
+        kind: "opaque", formatVersion: 2, name: "Corrupt", savedAt: "2026-09-14T00:00:00.000Z", revision: "core-rev-corrupt",
+        bytes: new Uint8Array([2]).buffer,
+        presentation: {version: 1, report: {definitionId: "summary-1", type: "line", title: "", categoryLabel: "", valueLabel: ""}, snapshotRevision: "core-rev-corrupt", snapshotDigest: "a".repeat(64)},
+      };
+      tx.objectStore(window.localOpaqueCopiesStore).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    void corrupt;
+    let failure = null;
+    try { await host.readAny("Corrupt"); } catch (error) { failure = error?.name ?? null; }
+    const valid = await host.readAny("Valid");
+    db.close();
+    return {failure, valid: valid.presentation};
+  }));
+  assert.equal(result.failure, "TypeError");
+  assert.deepEqual(result.valid, {
+    version: 1,
+    report: {definitionId: "summary-1", type: "line", title: "", categoryLabel: "", valueLabel: "", legendVisible: false},
+    snapshotRevision: "core-rev-valid",
+    snapshotDigest: "a".repeat(64),
+  });
 }));
 
 test("opaque copies preserve an optional imported-source attachment outside the raw bytes", async () => withBrowser(async (browser) => {

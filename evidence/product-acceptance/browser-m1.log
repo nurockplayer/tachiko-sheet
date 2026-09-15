@@ -1,0 +1,6 @@
+{"case":"M1-01 linked views and restart durability","status":"PASS"}
+{"case":"M1-02 invalid edit is atomic and retains draft","status":"PASS"}
+{"case":"M1-03 IME composition does not publish","status":"PASS"}
+{"case":"M1-04 failed save keeps work and destination","status":"PASS"}
+{"case":"M1-05 lost Execute reply is unknown, not retried","status":"PASS"}
+{"case":"M1-06 keyboard cancel and safe close","status":"PASS"}

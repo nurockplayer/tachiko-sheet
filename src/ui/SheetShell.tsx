@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,12 +12,18 @@ import {
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type {
+  Currentness,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
   KeyedGroupedSumBindingChoice,
+  KeyedGroupedSumResult,
+  ReportConfiguration,
+  ReportPresentationTextField,
   SheetShellProps,
   ViewWitness,
+  WorkbookView,
 } from "../contracts.js";
+import { reportPresentationTextLimitViolation } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
@@ -28,10 +35,11 @@ import {
   type TableColumn,
   type TableRow,
 } from "./projection-access.js";
+import { ReportCanvas } from "./ReportCanvas.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
-type ActiveTab = "table" | "summary" | "brief" | "interop";
+type ActiveTab = "table" | "summary" | "report" | "brief" | "interop";
 
 interface EditorState {
   entity: string;
@@ -53,6 +61,13 @@ interface GridPosition {
   field: string;
 }
 
+interface ReportTextDraft {
+  occurrence: string;
+  definitionId: string;
+  type: ReportConfiguration["type"];
+  values: Partial<Record<ReportPresentationTextField, string>>;
+}
+
 /** Definitions without a visible result still need an explicit refresh path. */
 export function missingKeyedGroupedSumDefinitionIds(
   definitionIds: readonly string[],
@@ -64,6 +79,25 @@ export function missingKeyedGroupedSumDefinitionIds(
 
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
 const directoryInputAttributes: Record<string, string> = { webkitdirectory: "", directory: "" };
+
+/** Report pixels follow their source result, not the selected table. */
+export function reportRenderResetKey(
+  view: Pick<WorkbookView, "occurrence" | "revision"> | null,
+  report: ReportConfiguration | null,
+  results: readonly KeyedGroupedSumResult[],
+  currentness: Currentness,
+): string {
+  if (!view || !report || currentness !== "current") return "unavailable";
+  const source = results.find((candidate) => candidate.definitionId === report.definitionId);
+  return JSON.stringify({
+    occurrence: view.occurrence,
+    revision: view.revision,
+    report,
+    source: source
+      ? { revision: source.revision, groups: source.groups, diagnostics: source.diagnostics }
+      : null,
+  });
+}
 
 export function SheetShell(props: SheetShellProps) {
   const {
@@ -99,6 +133,11 @@ export function SheetShell(props: SheetShellProps) {
     onCreateJ4 = async () => false,
     onRefreshJ4 = async () => false,
     onOpenJ4Canary = async () => { throw new Error("The Catalog/Sales canary is unavailable."); },
+    report = null,
+    onCreateReport = () => undefined,
+    onUpdateReport = () => undefined,
+    onExportReportPng = () => false,
+    onRemoveReport = () => false,
   } = props;
 
   const [tab, setTab] = useState<ActiveTab>("table");
@@ -119,6 +158,9 @@ export function SheetShell(props: SheetShellProps) {
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const [j4Pending, setJ4Pending] = useState(false);
+  const [reportRenderReady, setReportRenderReady] = useState(false);
+  const [reportRenderReadyKey, setReportRenderReadyKey] = useState("unavailable");
+  const [reportTextDraft, setReportTextDraft] = useState<ReportTextDraft | null>(null);
 
   const fileInputId = useId();
   const spreadsheetInputId = useId();
@@ -135,13 +177,37 @@ export function SheetShell(props: SheetShellProps) {
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
+  const onReportDraftChangeRef = useRef(props.onReportDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
-  const viewCollectionKey = view?.table.collection.key ?? null;
+  const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
+  const lastCollectionIdentityRef = useRef(collectionIdentity);
+  const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
+  // A Refresh recovery can temporarily remove the projection without proving
+  // that its resident work was replaced. Keep the local-only draft attached
+  // to its report until a non-null different occurrence, removal, or Close.
+  const reportDraftRetained = Boolean(
+    reportTextDraft && report &&
+    reportTextDraft.definitionId === report.definitionId &&
+    reportTextDraft.type === report.type &&
+    (!view || reportTextDraft.occurrence === view.occurrence),
+  );
+  const activeReportTextDraft = reportDraftRetained && view ? reportTextDraft : null;
+  const hasInvalidReportDraft = Boolean(reportDraftRetained && reportTextDraft && Object.keys(reportTextDraft.values).length > 0);
+  const reportCanvasReady = reportRenderReady && reportRenderReadyKey === reportRenderKey;
+  const onReportRenderState = useCallback((ready: boolean) => {
+    setReportRenderReady(ready);
+    setReportRenderReadyKey(ready ? reportRenderKey : "unavailable");
+  }, [reportRenderKey]);
 
   useEffect(() => {
     onDraftChangeRef.current = props.onDraftChange;
   }, [props.onDraftChange]);
+
+  useEffect(() => {
+    onReportDraftChangeRef.current = props.onReportDraftChange;
+  }, [props.onReportDraftChange]);
 
   useEffect(() => {
     setEditor(null);
@@ -160,7 +226,26 @@ export function SheetShell(props: SheetShellProps) {
       setCloseOpen(false);
       setTab("table");
     }
-  }, [viewKey, viewCollectionKey]);
+  }, [viewKey]);
+
+  useEffect(() => {
+    setReportTextDraft((current) => {
+      if (!current || !report) return null;
+      if (current.definitionId !== report.definitionId || current.type !== report.type) return null;
+      return !view || current.occurrence === view.occurrence ? current : null;
+    });
+  }, [view?.occurrence, report?.definitionId, report?.type]);
+
+  // The callback only requests a collection; the installed projection is the
+  // authority for a real switch. Reset roving focus before the new grid paints
+  // so an old table key cannot leave this grid with no tab stop.
+  useLayoutEffect(() => {
+    if (lastCollectionIdentityRef.current !== collectionIdentity) {
+      setFocusedKey(null);
+      lastCellRef.current = null;
+    }
+    lastCollectionIdentityRef.current = collectionIdentity;
+  }, [collectionIdentity]);
 
   useEffect(() => {
     if (!view) {
@@ -225,9 +310,14 @@ export function SheetShell(props: SheetShellProps) {
     onDraftChangeRef.current(draftActive);
   }, [draftActive]);
 
+  useEffect(() => {
+    onReportDraftChangeRef.current(hasInvalidReportDraft);
+  }, [hasInvalidReportDraft]);
+
   useEffect(
     () => () => {
       onDraftChangeRef.current(false);
+      onReportDraftChangeRef.current(false);
     },
     [],
   );
@@ -428,6 +518,7 @@ export function SheetShell(props: SheetShellProps) {
       if (editor) focusCell(editor.entity, editor.field);
       return;
     }
+    if (editor && editor.value === editor.original) setEditor(null);
     setLocalError(null);
     try {
       await onSelectCollection(witness, next);
@@ -526,6 +617,10 @@ export function SheetShell(props: SheetShellProps) {
   async function createCopy(): Promise<void> {
     const name = copyName.trim();
     if (name === "" || copyPending) return;
+    if (hasInvalidReportDraft) {
+      setCopyError("Correct the invalid report presentation text before creating a copy.");
+      return;
+    }
     setCopyPending(true);
     setLocalError(null);
     try {
@@ -547,7 +642,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function requestClose(): Promise<void> {
     if (busy || commitPending) return;
-    if (dirty || draftActive || currentness === "unknown") {
+    if (dirty || draftActive || hasInvalidReportDraft || currentness === "unknown") {
       setCloseOpen(true);
       return;
     }
@@ -566,8 +661,22 @@ export function SheetShell(props: SheetShellProps) {
 
   function keepEditing(): void {
     setCloseOpen(false);
-    const target = lastCellRef.current;
-    if (target) requestAnimationFrame(() => target.focus());
+    requestAnimationFrame(() => {
+      const prior = lastCellRef.current;
+      if (prior?.isConnected && prior.closest('table[aria-label="Table"]')) {
+        prior.focus();
+        return;
+      }
+      const first = gridOrder[0];
+      if (first) {
+        const cell = cellRefs.current.get(cellKey(first.entity, first.field));
+        if (cell?.isConnected) {
+          cell.focus();
+          return;
+        }
+      }
+      document.getElementById(tabId(tab))?.focus();
+    });
   }
 
   function currentEditorField(state: EditorState): FieldProjection | null {
@@ -1027,7 +1136,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Authoritative result</h2>
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul>}
+          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button></div></>}
           <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
@@ -1037,6 +1146,122 @@ export function SheetShell(props: SheetShellProps) {
             return <button key={definitionId} type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, definitionId)} disabled={controlsLocked || j4Pending}>Refresh cross-table summary {index + 1}</button>;
           })}
         </div> : null}
+      </section>
+    </div>;
+  }
+
+  function createReportFromSummary(definitionId: string, type: ReportConfiguration["type"]): void {
+    if (hasInvalidReportDraft) {
+      setLocalError("Correct the invalid report presentation text before replacing this report.");
+      selectTab("report");
+      return;
+    }
+    onCreateReport(definitionId, type);
+    selectTab("report");
+  }
+
+  function renderReportPanel(): ReactNode {
+    if (!view) return null;
+    const result = report && j4Results.find((candidate) =>
+      candidate.definitionId === report.definitionId &&
+      candidate.revision === view.revision &&
+      candidate.diagnostics.length === 0,
+    );
+    const update = (patch: Partial<NonNullable<typeof report>>) => {
+      if (report) {
+        setReportRenderReady(false);
+        onUpdateReport({ ...report, ...patch });
+      }
+    };
+    const textValue = (field: ReportPresentationTextField): string =>
+      activeReportTextDraft?.values[field] ?? report?.[field] ?? "";
+    const textViolation = (field: ReportPresentationTextField) =>
+      reportPresentationTextLimitViolation(field, textValue(field));
+    const updateText = (field: ReportPresentationTextField, value: string): void => {
+      if (!report || !view) return;
+      if (reportPresentationTextLimitViolation(field, value)) {
+        setReportTextDraft((current) => ({
+          occurrence: view.occurrence,
+          definitionId: report.definitionId,
+          type: report.type,
+          values: {
+            ...(current && current.occurrence === view.occurrence && current.definitionId === report.definitionId && current.type === report.type
+              ? current.values
+              : {}),
+            [field]: value,
+          },
+        }));
+        return;
+      }
+      setReportTextDraft((current) => {
+        if (!current || current.occurrence !== view.occurrence || current.definitionId !== report.definitionId || current.type !== report.type) return current;
+        const { [field]: _discarded, ...remaining } = current.values;
+        return Object.keys(remaining).length > 0 ? { ...current, values: remaining } : null;
+      });
+      update({ [field]: value });
+    };
+    const exportPng = async () => {
+      if (!report || !result || controlsLocked) return;
+      if (hasInvalidReportDraft) {
+        setLocalError("Correct the invalid report presentation text before exporting PNG.");
+        return;
+      }
+      if (!onExportReportPng({ occurrence: view.occurrence, revision: view.revision }, report)) return;
+      const canvas = reportCanvasRef.current;
+      if (!canvas || canvas.dataset.reportReady !== "true") {
+        setLocalError("The current report image could not be rendered, so no PNG was downloaded.");
+        return;
+      }
+      try {
+        const href = canvas.toDataURL("image/png");
+        if (href === "data:," || !href.startsWith("data:image/png;base64,")) throw new Error("PNG encoding failed.");
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = "tachiko-sheet-report.png";
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+      } catch {
+        setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
+      }
+    };
+    const removeReport = () => {
+      if (!onRemoveReport()) return;
+      setReportTextDraft(null);
+      window.setTimeout(() => document.getElementById(tabId("report"))?.focus(), 0);
+    };
+    return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
+      <section className="ts-card ts-report-card" aria-label="Current report">
+        <h2 className="ts-h2">Current report</h2>
+        {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
+          {!result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
+          <div className="ts-report-controls">
+            {(["title", "categoryLabel", "valueLabel"] as const).map((field) => {
+              const labels = { title: "Title", categoryLabel: "Category label", valueLabel: "Value label" };
+              const ids = { title: "report-title", categoryLabel: "report-category-label", valueLabel: "report-value-label" };
+              const violation = textViolation(field);
+              const errorId = `${ids[field]}-error`;
+              return <div key={field}>
+                <label className="ts-field-label" htmlFor={ids[field]}>{labels[field]}</label>
+                <input id={ids[field]} value={textValue(field)} onChange={(event) => updateText(field, event.currentTarget.value)} disabled={controlsLocked} aria-invalid={violation ? true : undefined} aria-describedby={violation ? errorId : undefined} />
+                {violation ? <p id={errorId} className="ts-subtle" role="status">{labels[field]} must be {violation.limit} Unicode code points or fewer ({violation.length} entered). This value has not been applied.</p> : null}
+              </div>;
+            })}
+            <label className="ts-check"><input type="checkbox" checked={report.legendVisible} onChange={(event) => update({ legendVisible: event.currentTarget.checked })} disabled={controlsLocked} /> Show legend</label>
+          </div>
+          <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
+          {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
+          <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
+          <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
+          {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
+          {hasInvalidReportDraft ? <p role="status">Correct the invalid report presentation text before saving or exporting. The current report has not been changed.</p> : null}
+          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady || hasInvalidReportDraft}>Export current PNG</button>
+          </>}
+          <div className="ts-row-actions">
+            <button type="button" className="ts-button" onClick={removeReport} disabled={controlsLocked}>Remove report</button>
+            <p className="ts-subtle">This removes only the report configuration{hasInvalidReportDraft ? " and discards the uncommitted presentation text" : ""}. Table data and the cross-table definition stay available.</p>
+          </div>
+        </>}
       </section>
     </div>;
   }
@@ -1099,6 +1324,7 @@ export function SheetShell(props: SheetShellProps) {
             Table
           </button>
           <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
+          <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
           <button
             type="button"
             role="tab"
@@ -1113,7 +1339,7 @@ export function SheetShell(props: SheetShellProps) {
           </button>
           <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
         </div>
-        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
+        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
   }
@@ -1121,7 +1347,7 @@ export function SheetShell(props: SheetShellProps) {
   function onTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const tabs: ActiveTab[] = ["table", "summary", "brief", "interop"];
+    const tabs: ActiveTab[] = ["table", "summary", "report", "brief", "interop"];
     const focused = (event.target as HTMLElement).id;
     const index = Math.max(0, tabs.findIndex((name) => tabId(name) === focused));
     selectTab(tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]!);
@@ -1182,7 +1408,7 @@ export function SheetShell(props: SheetShellProps) {
               type="button"
               className="ts-button ts-button--primary"
               onClick={() => void createCopy()}
-              disabled={copyPending || copyName.trim() === ""}
+              disabled={copyPending || copyName.trim() === "" || hasInvalidReportDraft}
               aria-busy={copyPending}
             >
               Create copy
