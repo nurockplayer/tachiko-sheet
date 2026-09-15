@@ -1221,7 +1221,7 @@ export function App({ runtime, copies }: AppProps) {
       const current = viewRef.current;
       if (priorJ4 && current &&
         current.occurrence === priorOccurrence && current.revision === priorRevision) {
-        restoreJ4Results(priorJ4.results, priorJ4.definitionIds);
+        restoreJ4Results(priorJ4.definitionIds, priorJ4.results);
       }
       setCurrentness("current");
       setOutcome("idle");
