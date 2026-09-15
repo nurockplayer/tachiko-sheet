@@ -549,7 +549,7 @@ try {
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => {
-    const event = new BeforeUnloadEvent("beforeunload", { cancelable: true });
+    const event = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event);
     return event.defaultPrevented;
   }), true, "a retained invalid report draft must keep the unload lifecycle guard during recovery");
