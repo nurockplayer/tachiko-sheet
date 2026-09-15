@@ -135,7 +135,6 @@ export function recoverPresentationAfterAcknowledgedOpen(
   results: readonly KeyedGroupedSumResult[],
 ): ReportConfiguration | null {
   if (candidate.occurrence !== null && candidate.occurrence !== observed.occurrence) return null;
-  if (candidate.presentation.snapshotRevision !== observed.revision) return null;
   const source = results.find((result) =>
     result.definitionId === candidate.presentation.report.definitionId &&
     result.revision === observed.revision &&
@@ -228,6 +227,7 @@ export function App({ runtime, copies }: AppProps) {
 
   type PendingReplacementProvenance = {
     occurrence: string | null;
+    revision: string | null;
     importedSource: ImportedSourceAttachment | null;
     interop: InteropState | null;
     savedRevision: string | null;
@@ -459,7 +459,7 @@ export function App({ runtime, copies }: AppProps) {
 
   function failClosedAfterReplacement(
     provenance: ReplacementProvenance,
-    occurrence: string | null = null,
+    witness: Pick<WorkbookView, "occurrence" | "revision"> | null = null,
   ): void {
     viewRef.current = null;
     setView(null);
@@ -477,7 +477,8 @@ export function App({ runtime, copies }: AppProps) {
     // work must not leak into an unconfirmed projection.
     pendingReplacementRef.current = (provenance.importedSource || provenance.interop || provenance.savedRevision || provenance.presentation)
       ? {
-          occurrence,
+          occurrence: witness?.occurrence ?? null,
+          revision: witness?.revision ?? null,
           importedSource: provenance.importedSource ?? null,
           interop: provenance.interop ?? null,
           savedRevision: provenance.savedRevision ?? null,
@@ -532,8 +533,8 @@ export function App({ runtime, copies }: AppProps) {
     reportDraftDirtyRef.current = false;
     presentationDirtyRef.current = false;
     syncDirty();
-    if (provenance.savedRevision === next.revision) {
-      savedRevisionRef.current = provenance.savedRevision;
+    if (provenance.savedRevision !== null) {
+      savedRevisionRef.current = next.revision;
       setSaveStatus("saved");
     } else {
       markNotSaved();
@@ -565,7 +566,7 @@ export function App({ runtime, copies }: AppProps) {
         // A known runtime Open is not an unknown operation, but the paired
         // host-private presentation is still unconfirmed. Keep the complete
         // candidate for Refresh instead of publishing a partial saved copy.
-        failClosedAfterReplacement(provenance, next.occurrence);
+        failClosedAfterReplacement(provenance, next);
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
         clearOpenCheckpoint();
@@ -585,7 +586,7 @@ export function App({ runtime, copies }: AppProps) {
         return false;
       }
       if (next !== null) {
-        failClosedAfterReplacement(provenance, next.occurrence);
+        failClosedAfterReplacement(provenance, next);
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
         clearOpenCheckpoint();
@@ -1395,8 +1396,8 @@ export function App({ runtime, copies }: AppProps) {
       }
       if (pendingReplacement) {
         const sameReplacement = pendingReplacement.savedRevision !== null &&
-          pendingReplacement.savedRevision === next.revision &&
-          (pendingReplacement.occurrence === null || pendingReplacement.occurrence === next.occurrence);
+          (pendingReplacement.occurrence === null ||
+            (pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision));
         if (sameReplacement) {
           importedSourceRef.current = pendingReplacement.importedSource;
           setInterop(pendingReplacement.interop
@@ -1413,7 +1414,7 @@ export function App({ runtime, copies }: AppProps) {
             // Do not publish the workbook receipt without its verified
             // paired presentation. Retain the candidate for another Refresh
             // or the existing explicit Close path.
-            failClosedAfterReplacement(pendingReplacement, next.occurrence);
+            failClosedAfterReplacement(pendingReplacement, next);
             unknownOpenRecoveryRef.current = false;
             provenanceUnconfirmedRef.current = false;
             setOutcome("idle");
@@ -1421,7 +1422,7 @@ export function App({ runtime, copies }: AppProps) {
             return;
           }
           installReport(recoveredReport);
-          savedRevisionRef.current = pendingReplacement.savedRevision;
+          savedRevisionRef.current = next.revision;
           setSaveStatus("saved");
           pendingReplacementRef.current = null;
           if (pendingReplacement.presentation && !recoveredReport) {

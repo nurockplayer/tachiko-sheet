@@ -168,15 +168,15 @@ describe("acknowledged saved-open presentation recovery", () => {
     diagnostics: [],
   };
 
-  it("binds only after the same replacement and a fresh clean result", () => {
+  it("binds after the same replacement and a fresh clean result even when a new resident session resets revision", () => {
     expect(recoverPresentationAfterAcknowledgedOpen(
       { occurrence: "replacement", presentation },
-      { occurrence: "replacement", revision: "rev-1" },
-      [result],
+      { occurrence: "replacement", revision: "resident/0" },
+      [{ ...result, revision: "resident/0" }],
     )).toEqual(presentation.report);
   });
 
-  it("isolates a different occurrence, revision, or failed result", () => {
+  it("isolates a different occurrence, stale result, or failed result", () => {
     expect(recoverPresentationAfterAcknowledgedOpen(
       { occurrence: "replacement", presentation },
       { occurrence: "other", revision: "rev-1" },

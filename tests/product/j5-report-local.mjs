@@ -404,6 +404,24 @@ try {
   await page.getByLabel("Category label", { exact: true }).fill("Product category");
   await page.getByLabel("Value label", { exact: true }).fill("Initial value");
 
+  // Saving immediately after creating the summary preserves a published
+  // snapshot. Reopening starts a fresh resident session whose revision is
+  // intentionally different, so the report must bind through the freshly
+  // discovered definition/result rather than comparing the old revision token.
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-direct-publication-report");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await context.close();
+  context = undefined;
+  page = await start({ width: 500, height: 900 });
+  await page.getByRole("button", { name: "Open saved j5-direct-publication-report", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  for (const [label, value] of [["Title", "Initial sales report"], ["Category label", "Product category"], ["Value label", "Initial value"]]) {
+    assert.equal(await page.getByLabel(label, { exact: true }).inputValue(), value, `direct post-publication reopen must retain ${label}`);
+  }
+
   // A table switch changes only the table projection; the still-current
   // report source and raster stay eligible for export.
   await page.getByRole("tab", { name: "Table", exact: true }).click();
