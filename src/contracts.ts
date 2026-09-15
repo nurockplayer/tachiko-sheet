@@ -146,6 +146,34 @@ export interface ReportConfiguration {
   valueLabel: string;
   legendVisible: boolean;
 }
+
+export const REPORT_PRESENTATION_TEXT_LIMITS = {
+  title: 120,
+  categoryLabel: 80,
+  valueLabel: 80,
+} as const;
+
+export type ReportPresentationTextField = keyof typeof REPORT_PRESENTATION_TEXT_LIMITS;
+
+/** These bounds are host-private presentation limits, never core-group limits. */
+export function reportPresentationTextLimitViolation(
+  field: ReportPresentationTextField,
+  text: string,
+): { limit: number; length: number } | null {
+  const length = Array.from(text).length;
+  const limit = REPORT_PRESENTATION_TEXT_LIMITS[field];
+  return length <= limit ? null : { limit, length };
+}
+
+export function reportPresentationLimitViolation(
+  report: Pick<ReportConfiguration, ReportPresentationTextField>,
+): { field: ReportPresentationTextField; limit: number; length: number } | null {
+  for (const field of Object.keys(REPORT_PRESENTATION_TEXT_LIMITS) as ReportPresentationTextField[]) {
+    const violation = reportPresentationTextLimitViolation(field, report[field]);
+    if (violation) return { field, ...violation };
+  }
+  return null;
+}
 /** Private host record paired to an opaque core snapshot, not a project codec extension. */
 export interface PresentationAttachment {
   version: 1;

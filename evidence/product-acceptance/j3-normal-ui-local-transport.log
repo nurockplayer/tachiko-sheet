@@ -1,0 +1,11 @@
+J3 normal UI: open CSV
+J3 candidate type controls: 3
+J3 normal UI: imported CSV
+J3 normal UI: downloaded CSV
+{"case": "J3 independent external-format values", "status": "PASS_FILE_CONTENT_ONLY", "file": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/tachiko-sheet-j3-output-LvWkPR/normal-ui.csv"}
+{"case": "J3 independent external-format values", "status": "PASS_FILE_CONTENT_ONLY", "file": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/tachiko-sheet-j3-output-LvWkPR/normal-ui.xlsx"}
+J3 normal UI: saved local copy
+J3 normal UI: reopened local copy
+{"case": "J3 independent external-format values", "status": "PASS_FILE_CONTENT_ONLY", "file": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/tachiko-sheet-j3-output-LvWkPR/normal-ui-restart.xlsx"}
+J3 candidate type controls: 3
+{"case":"J3 normal UI CSV/XLSX, cleanup, consent, restart","status":"PASS","manualBoundary":"Real CJK IME and assistive-technology walkthrough remain manual."}

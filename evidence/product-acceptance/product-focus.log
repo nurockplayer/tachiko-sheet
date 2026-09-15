@@ -1,0 +1,5 @@
+{"case":"product-focus-00 a published edit visibly distinguishes edited unsaved work","status":"PASS"}
+{"case":"product-focus-01 dirty Close then Keep editing restores exact grid-cell focus","status":"PASS"}
+{"case":"product-focus-02 a retained draft stops the saved status claim","status":"PASS"}
+{"case":"product-focus-03 notes drafts stay bound to their selected entity","status":"PASS"}
+{"case":"product-focus-04 published B recovery preserves unpublished A draft","status":"PASS"}

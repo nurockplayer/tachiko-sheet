@@ -11,6 +11,7 @@ import type {
   SavedCopySummary,
   AnySavedCopy,
 } from "../contracts.js";
+import { reportPresentationLimitViolation } from "../contracts.js";
 
 /**
  * A dedicated IndexedDB database for durable local copies. This name is app
@@ -167,7 +168,8 @@ function clonePresentation(presentation: unknown): PresentationAttachment | unde
     typeof report.title !== "string" || typeof report.categoryLabel !== "string" ||
     typeof report.valueLabel !== "string" || typeof report.legendVisible !== "boolean" ||
     typeof candidate.snapshotRevision !== "string" || candidate.snapshotRevision.length === 0 ||
-    typeof candidate.snapshotDigest !== "string" || !/^[a-f0-9]{64}$/i.test(candidate.snapshotDigest)) {
+    typeof candidate.snapshotDigest !== "string" || !/^[a-f0-9]{64}$/i.test(candidate.snapshotDigest) ||
+    reportPresentationLimitViolation(report as PresentationAttachment["report"]) !== null) {
     throw new TypeError("The presentation attachment is invalid.");
   }
   return structuredClone(candidate as PresentationAttachment);

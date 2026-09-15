@@ -1,30 +1,60 @@
 {
-  "status": "BLOCKED-CANONICAL; local-transport FAIL",
+  "status": "PASS",
   "baseUrl": "http://127.0.0.1:4197",
   "summary": [
     {
       "step": "copy-example-fixture",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/copy-example-fixture.log"
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/copy-example-fixture.log"
     },
     {
       "step": "build-acceptance",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/build-acceptance.log"
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/build-acceptance.log"
     },
     {
-      "step": "browser-m1-local-transport",
-      "status": "FAIL",
-      "exitCode": 1,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/browser-m1-local-transport.log"
-    },
-    {
-      "step": "product-focus-local-transport",
+      "step": "j4-normal-ui-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-qualification/evidence/product-acceptance/product-focus-local-transport.log"
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/j4-normal-ui-local-transport.log"
+    },
+    {
+      "step": "j4-imported-attachment-local-transport",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/j4-imported-attachment-local-transport.log"
+    },
+    {
+      "step": "j5-report-local-transport",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/j5-report-local-transport.log"
+    },
+    {
+      "step": "j3-normal-ui-local-transport",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/j3-normal-ui-local-transport.log"
+    },
+    {
+      "step": "browser-m1",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/browser-m1.log"
+    },
+    {
+      "step": "browser-recovery-regression",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/browser-recovery-regression.log"
+    },
+    {
+      "step": "product-focus",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/tachiko-sheet-j5-report/evidence/product-acceptance/product-focus.log"
     }
   ]
 }

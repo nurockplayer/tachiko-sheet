@@ -18,10 +18,12 @@ import type {
   KeyedGroupedSumBindingChoice,
   KeyedGroupedSumResult,
   ReportConfiguration,
+  ReportPresentationTextField,
   SheetShellProps,
   ViewWitness,
   WorkbookView,
 } from "../contracts.js";
+import { reportPresentationTextLimitViolation } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
@@ -57,6 +59,13 @@ interface NotesDraft {
 interface GridPosition {
   entity: string;
   field: string;
+}
+
+interface ReportTextDraft {
+  occurrence: string;
+  definitionId: string;
+  type: ReportConfiguration["type"];
+  values: Partial<Record<ReportPresentationTextField, string>>;
 }
 
 /** Definitions without a visible result still need an explicit refresh path. */
@@ -151,6 +160,7 @@ export function SheetShell(props: SheetShellProps) {
   const [j4Pending, setJ4Pending] = useState(false);
   const [reportRenderReady, setReportRenderReady] = useState(false);
   const [reportRenderReadyKey, setReportRenderReadyKey] = useState("unavailable");
+  const [reportTextDraft, setReportTextDraft] = useState<ReportTextDraft | null>(null);
 
   const fileInputId = useId();
   const spreadsheetInputId = useId();
@@ -173,6 +183,14 @@ export function SheetShell(props: SheetShellProps) {
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
   const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
+  const reportDraftMatches = Boolean(
+    reportTextDraft && view && report &&
+    reportTextDraft.occurrence === view.occurrence &&
+    reportTextDraft.definitionId === report.definitionId &&
+    reportTextDraft.type === report.type,
+  );
+  const activeReportTextDraft = reportDraftMatches ? reportTextDraft : null;
+  const hasInvalidReportDraft = Boolean(activeReportTextDraft && Object.keys(activeReportTextDraft.values).length > 0);
   const reportCanvasReady = reportRenderReady && reportRenderReadyKey === reportRenderKey;
   const onReportRenderState = useCallback((ready: boolean) => {
     setReportRenderReady(ready);
@@ -201,6 +219,16 @@ export function SheetShell(props: SheetShellProps) {
       setTab("table");
     }
   }, [viewKey]);
+
+  useEffect(() => {
+    setReportTextDraft((current) => {
+      if (!current || !view || !report) return null;
+      return current.occurrence === view.occurrence &&
+        current.definitionId === report.definitionId && current.type === report.type
+        ? current
+        : null;
+    });
+  }, [view?.occurrence, report?.definitionId, report?.type]);
 
   // The callback only requests a collection; the installed projection is the
   // authority for a real switch. Reset roving focus before the new grid paints
@@ -578,6 +606,10 @@ export function SheetShell(props: SheetShellProps) {
   async function createCopy(): Promise<void> {
     const name = copyName.trim();
     if (name === "" || copyPending) return;
+    if (hasInvalidReportDraft) {
+      setCopyError("Correct the invalid report presentation text before creating a copy.");
+      return;
+    }
     setCopyPending(true);
     setLocalError(null);
     try {
@@ -1120,8 +1152,39 @@ export function SheetShell(props: SheetShellProps) {
         onUpdateReport({ ...report, ...patch });
       }
     };
+    const textValue = (field: ReportPresentationTextField): string =>
+      activeReportTextDraft?.values[field] ?? report?.[field] ?? "";
+    const textViolation = (field: ReportPresentationTextField) =>
+      reportPresentationTextLimitViolation(field, textValue(field));
+    const updateText = (field: ReportPresentationTextField, value: string): void => {
+      if (!report || !view) return;
+      if (reportPresentationTextLimitViolation(field, value)) {
+        setReportTextDraft((current) => ({
+          occurrence: view.occurrence,
+          definitionId: report.definitionId,
+          type: report.type,
+          values: {
+            ...(current && current.occurrence === view.occurrence && current.definitionId === report.definitionId && current.type === report.type
+              ? current.values
+              : {}),
+            [field]: value,
+          },
+        }));
+        return;
+      }
+      setReportTextDraft((current) => {
+        if (!current || current.occurrence !== view.occurrence || current.definitionId !== report.definitionId || current.type !== report.type) return current;
+        const { [field]: _discarded, ...remaining } = current.values;
+        return Object.keys(remaining).length > 0 ? { ...current, values: remaining } : null;
+      });
+      update({ [field]: value });
+    };
     const exportPng = async () => {
       if (!report || !result || controlsLocked) return;
+      if (hasInvalidReportDraft) {
+        setLocalError("Correct the invalid report presentation text before exporting PNG.");
+        return;
+      }
       if (!onExportReportPng({ occurrence: view.occurrence, revision: view.revision }, report)) return;
       const canvas = reportCanvasRef.current;
       if (!canvas || canvas.dataset.reportReady !== "true") {
@@ -1143,6 +1206,7 @@ export function SheetShell(props: SheetShellProps) {
     };
     const removeReport = () => {
       if (!onRemoveReport()) return;
+      setReportTextDraft(null);
       window.setTimeout(() => document.getElementById(tabId("report"))?.focus(), 0);
     };
     return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
@@ -1151,9 +1215,17 @@ export function SheetShell(props: SheetShellProps) {
         {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
           {!result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
           <div className="ts-report-controls">
-            <label className="ts-field-label" htmlFor="report-title">Title</label><input id="report-title" value={report.title} onChange={(event) => update({ title: event.currentTarget.value })} disabled={controlsLocked} />
-            <label className="ts-field-label" htmlFor="report-category-label">Category label</label><input id="report-category-label" value={report.categoryLabel} onChange={(event) => update({ categoryLabel: event.currentTarget.value })} disabled={controlsLocked} />
-            <label className="ts-field-label" htmlFor="report-value-label">Value label</label><input id="report-value-label" value={report.valueLabel} onChange={(event) => update({ valueLabel: event.currentTarget.value })} disabled={controlsLocked} />
+            {(["title", "categoryLabel", "valueLabel"] as const).map((field) => {
+              const labels = { title: "Title", categoryLabel: "Category label", valueLabel: "Value label" };
+              const ids = { title: "report-title", categoryLabel: "report-category-label", valueLabel: "report-value-label" };
+              const violation = textViolation(field);
+              const errorId = `${ids[field]}-error`;
+              return <div key={field}>
+                <label className="ts-field-label" htmlFor={ids[field]}>{labels[field]}</label>
+                <input id={ids[field]} value={textValue(field)} onChange={(event) => updateText(field, event.currentTarget.value)} disabled={controlsLocked} aria-invalid={violation ? true : undefined} aria-describedby={violation ? errorId : undefined} />
+                {violation ? <p id={errorId} className="ts-subtle" role="status">{labels[field]} must be {violation.limit} Unicode code points or fewer ({violation.length} entered). This value has not been applied.</p> : null}
+              </div>;
+            })}
             <label className="ts-check"><input type="checkbox" checked={report.legendVisible} onChange={(event) => update({ legendVisible: event.currentTarget.checked })} disabled={controlsLocked} /> Show legend</label>
           </div>
           <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
@@ -1161,7 +1233,8 @@ export function SheetShell(props: SheetShellProps) {
           <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
           <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
           {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
-          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady}>Export current PNG</button>
+          {hasInvalidReportDraft ? <p role="status">Correct the invalid report presentation text before saving or exporting. The current report has not been changed.</p> : null}
+          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady || hasInvalidReportDraft}>Export current PNG</button>
           </>}
           <div className="ts-row-actions">
             <button type="button" className="ts-button" onClick={removeReport} disabled={controlsLocked}>Remove report</button>
@@ -1314,7 +1387,7 @@ export function SheetShell(props: SheetShellProps) {
               type="button"
               className="ts-button ts-button--primary"
               onClick={() => void createCopy()}
-              disabled={copyPending || copyName.trim() === ""}
+              disabled={copyPending || copyName.trim() === "" || hasInvalidReportDraft}
               aria-busy={copyPending}
             >
               Create copy

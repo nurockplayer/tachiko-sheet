@@ -9,7 +9,36 @@ import {
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
 } from "./App.js";
+import { reportPresentationLimitViolation, reportPresentationTextLimitViolation } from "./contracts.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
+
+describe("report presentation Unicode bounds", () => {
+  it("counts code points rather than UTF-16 code units and preserves blank values", () => {
+    const atTitleLimit = "A".repeat(119) + "😀";
+    const atLabelLimit = "界".repeat(79) + "😀";
+    expect(atTitleLimit.length).toBe(121);
+    expect(Array.from(atTitleLimit)).toHaveLength(120);
+    expect(reportPresentationTextLimitViolation("title", atTitleLimit)).toBe(null);
+    expect(reportPresentationTextLimitViolation("categoryLabel", atLabelLimit)).toBe(null);
+    expect(reportPresentationTextLimitViolation("valueLabel", "")).toBe(null);
+    expect(reportPresentationLimitViolation({
+      title: atTitleLimit,
+      categoryLabel: atLabelLimit,
+      valueLabel: "",
+    })).toEqual(null);
+  });
+
+  it("identifies the first over-limit presentation field without rewriting it", () => {
+    const title = "名".repeat(120) + "😀";
+    expect(reportPresentationTextLimitViolation("title", title)).toEqual({limit: 120, length: 121});
+    expect(reportPresentationLimitViolation({
+      title,
+      categoryLabel: "",
+      valueLabel: "",
+    })).toEqual({field: "title", limit: 120, length: 121});
+    expect(title).toBe("名".repeat(120) + "😀");
+  });
+});
 
 describe("recovery draft lifecycle", () => {
   it("retains the draft only across its own authoritative reobserve", () => {
