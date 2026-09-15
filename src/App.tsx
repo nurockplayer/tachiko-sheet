@@ -533,7 +533,7 @@ export function App({ runtime, copies }: AppProps) {
     reportDraftDirtyRef.current = false;
     presentationDirtyRef.current = false;
     syncDirty();
-    if (provenance.savedRevision !== null) {
+    if (typeof provenance.savedRevision === "string") {
       savedRevisionRef.current = next.revision;
       setSaveStatus("saved");
     } else {
