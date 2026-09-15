@@ -202,6 +202,7 @@ export function App({ runtime, copies }: AppProps) {
   const inflightRef = useRef(false);
   const pendingDirtyRef = useRef(false);
   const draftDirtyRef = useRef(false);
+  const reportDraftDirtyRef = useRef(false);
   const dirtyRef = useRef(false);
   const savedRevisionRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
@@ -255,7 +256,7 @@ export function App({ runtime, copies }: AppProps) {
   const openRecoveryCheckpointRef = useRef<OpenRecoveryCheckpoint | null>(null);
 
   const syncDirty = useCallback((): void => {
-    const next = pendingDirtyRef.current || draftDirtyRef.current || presentationDirtyRef.current;
+    const next = pendingDirtyRef.current || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current;
     dirtyRef.current = next;
     setDirty(next);
   }, []);
@@ -396,7 +397,7 @@ export function App({ runtime, copies }: AppProps) {
     const live = viewRef.current;
     const saved = savedRevisionRef.current;
     if (saveInFlightRef.current || saved === null || live === null) return;
-    if (live.revision !== saved || draftDirtyRef.current || presentationDirtyRef.current) return;
+    if (live.revision !== saved || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current) return;
     setSaveStatus((previous) => (previous === "failed" ? previous : "saved"));
   }
 
@@ -467,6 +468,7 @@ export function App({ runtime, copies }: AppProps) {
     recoveryDraftRef.current = null;
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
+    reportDraftDirtyRef.current = false;
     presentationDirtyRef.current = false;
     installReport(null);
     syncDirty();
@@ -527,6 +529,7 @@ export function App({ runtime, copies }: AppProps) {
     installReport(recoveredReport);
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
+    reportDraftDirtyRef.current = false;
     presentationDirtyRef.current = false;
     syncDirty();
     if (provenance.savedRevision === next.revision) {
@@ -1331,6 +1334,7 @@ export function App({ runtime, copies }: AppProps) {
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "close");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
+      reportDraftDirtyRef.current = false;
       syncDirty();
       savedRevisionRef.current = null;
       setSaveStatus("not-saved");
@@ -1549,6 +1553,23 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
+  function onReportDraftChange(next: boolean): void {
+    if (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) {
+      reportDraftDirtyRef.current = false;
+      syncDirty();
+      return;
+    }
+    reportDraftDirtyRef.current = next;
+    syncDirty();
+    if (next) {
+      setSaveStatus((previous) =>
+        previous === "saving" || previous === "failed" ? previous : "not-saved",
+      );
+    } else {
+      evaluateSavedStatus();
+    }
+  }
+
   return (
     <div
       className="ts-app-root"
@@ -1573,6 +1594,7 @@ export function App({ runtime, copies }: AppProps) {
         onClose={close}
         onRefresh={refresh}
         onDraftChange={onDraftChange}
+        onReportDraftChange={onReportDraftChange}
         j4Results={j4Results}
         j4DefinitionIds={j4DefinitionIds}
         onPrepareJ4Bindings={prepareJ4Bindings}

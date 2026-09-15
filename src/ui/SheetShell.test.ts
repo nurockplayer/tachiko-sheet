@@ -109,6 +109,7 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
     onClose: async () => {},
     onRefresh: async () => {},
     onDraftChange: () => {},
+    onReportDraftChange: () => {},
     ...overrides,
   };
 }

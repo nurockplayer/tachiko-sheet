@@ -179,6 +179,7 @@ export function SheetShell(props: SheetShellProps) {
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
+  const onReportDraftChangeRef = useRef(props.onReportDraftChange);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
@@ -200,6 +201,10 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     onDraftChangeRef.current = props.onDraftChange;
   }, [props.onDraftChange]);
+
+  useEffect(() => {
+    onReportDraftChangeRef.current = props.onReportDraftChange;
+  }, [props.onReportDraftChange]);
 
   useEffect(() => {
     setEditor(null);
@@ -304,9 +309,14 @@ export function SheetShell(props: SheetShellProps) {
     onDraftChangeRef.current(draftActive);
   }, [draftActive]);
 
+  useEffect(() => {
+    onReportDraftChangeRef.current(hasInvalidReportDraft);
+  }, [hasInvalidReportDraft]);
+
   useEffect(
     () => () => {
       onDraftChangeRef.current(false);
+      onReportDraftChangeRef.current(false);
     },
     [],
   );
@@ -631,7 +641,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function requestClose(): Promise<void> {
     if (busy || commitPending) return;
-    if (dirty || draftActive || currentness === "unknown") {
+    if (dirty || draftActive || hasInvalidReportDraft || currentness === "unknown") {
       setCloseOpen(true);
       return;
     }
@@ -1125,7 +1135,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Authoritative result</h2>
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => { onCreateReport(result.definitionId, "bar"); selectTab("report"); }} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => { onCreateReport(result.definitionId, "line"); selectTab("report"); }} disabled={controlsLocked}>Create line report</button></div></>}
+          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button></div></>}
           <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
@@ -1137,6 +1147,16 @@ export function SheetShell(props: SheetShellProps) {
         </div> : null}
       </section>
     </div>;
+  }
+
+  function createReportFromSummary(definitionId: string, type: ReportConfiguration["type"]): void {
+    if (hasInvalidReportDraft) {
+      setLocalError("Correct the invalid report presentation text before replacing this report.");
+      selectTab("report");
+      return;
+    }
+    onCreateReport(definitionId, type);
+    selectTab("report");
   }
 
   function renderReportPanel(): ReactNode {
@@ -1238,7 +1258,7 @@ export function SheetShell(props: SheetShellProps) {
           </>}
           <div className="ts-row-actions">
             <button type="button" className="ts-button" onClick={removeReport} disabled={controlsLocked}>Remove report</button>
-            <p className="ts-subtle">This removes only the report configuration. Table data and the cross-table definition stay available.</p>
+            <p className="ts-subtle">This removes only the report configuration{hasInvalidReportDraft ? " and discards the uncommitted presentation text" : ""}. Table data and the cross-table definition stay available.</p>
           </div>
         </>}
       </section>

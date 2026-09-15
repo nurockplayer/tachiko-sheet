@@ -221,6 +221,8 @@ export interface SheetShellProps {
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;
   onDraftChange(dirty: boolean): void;
+  /** An invalid report-presentation field is local-only, but must survive lifecycle guards. */
+  onReportDraftChange(dirty: boolean): void;
   j4Results?: KeyedGroupedSumResult[];
   /** Internal core handles for refresh only; the UI never displays or requests them. */
   j4DefinitionIds?: string[];
