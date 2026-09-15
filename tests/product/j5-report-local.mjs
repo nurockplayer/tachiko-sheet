@@ -541,6 +541,25 @@ try {
     assert.equal(text.matchingPixels, 0, `reopened PNG must not substitute a default ${text.value} label`);
   }
 
+  // A failed Refresh temporarily loses the projection but does not prove that
+  // this occurrence was replaced. The local-only invalid text and its dirty
+  // lifecycle guard must survive the recovery and return with the work.
+  await page.getByLabel("Title", { exact: true }).fill(titleOverLimit);
+  await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => {
+    const event = new BeforeUnloadEvent("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  }), true, "a retained invalid report draft must keep the unload lifecycle guard during recovery");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), titleOverLimit, "a same-occurrence Refresh recovery must retain the invalid text exactly");
+  assert.equal(await page.getByLabel("Title", { exact: true }).getAttribute("aria-invalid"), "true");
+  await page.getByLabel("Title", { exact: true }).fill("");
+
   // A host-injected over-limit attachment is rejected by readAny before App
   // can replace its resident work or publish the saved-copy receipt.
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();

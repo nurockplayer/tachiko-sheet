@@ -184,14 +184,17 @@ export function SheetShell(props: SheetShellProps) {
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
   const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
-  const reportDraftMatches = Boolean(
-    reportTextDraft && view && report &&
-    reportTextDraft.occurrence === view.occurrence &&
+  // A Refresh recovery can temporarily remove the projection without proving
+  // that its resident work was replaced. Keep the local-only draft attached
+  // to its report until a non-null different occurrence, removal, or Close.
+  const reportDraftRetained = Boolean(
+    reportTextDraft && report &&
     reportTextDraft.definitionId === report.definitionId &&
-    reportTextDraft.type === report.type,
+    reportTextDraft.type === report.type &&
+    (!view || reportTextDraft.occurrence === view.occurrence),
   );
-  const activeReportTextDraft = reportDraftMatches ? reportTextDraft : null;
-  const hasInvalidReportDraft = Boolean(activeReportTextDraft && Object.keys(activeReportTextDraft.values).length > 0);
+  const activeReportTextDraft = reportDraftRetained && view ? reportTextDraft : null;
+  const hasInvalidReportDraft = Boolean(reportDraftRetained && reportTextDraft && Object.keys(reportTextDraft.values).length > 0);
   const reportCanvasReady = reportRenderReady && reportRenderReadyKey === reportRenderKey;
   const onReportRenderState = useCallback((ready: boolean) => {
     setReportRenderReady(ready);
@@ -227,11 +230,9 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => {
     setReportTextDraft((current) => {
-      if (!current || !view || !report) return null;
-      return current.occurrence === view.occurrence &&
-        current.definitionId === report.definitionId && current.type === report.type
-        ? current
-        : null;
+      if (!current || !report) return null;
+      if (current.definitionId !== report.definitionId || current.type !== report.type) return null;
+      return !view || current.occurrence === view.occurrence ? current : null;
     });
   }, [view?.occurrence, report?.definitionId, report?.type]);
 
