@@ -5,7 +5,7 @@ The operating mode is called **Stewarded Continuous Delivery (SCD)**; see the
 This document remains Sheet's local delivery authority. Sharing the name does
 not import upstream permissions or change the existing clauses below.
 
-Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment and 2026-09-14 Terra-to-Astra mandatory decision-routing amendment are active.
+Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-12 single-lead amendment remains active; the 2026-09-20 Oracle routing amendment supersedes the prior Terra-to-Astra engineering decision-routing rule.
 
 ## Authority and roles
 
@@ -13,13 +13,13 @@ Upstream Product Constitution, foundational principles and relevant Accepted sem
 
 ChatGPT Steward owns product scope, specifications, acceptance outcomes and material acceptance decisions. The **Mission Lead** is delegated **Sheet delivery stewardship**: sequence work, verify evidence, record qualified Ready decisions, integrate and merge eligible Sheet PRs. This is not power to invent missing semantic contracts, change product goals, waive acceptance, or turn implementation-authored tests into independent acceptance. Other roles follow actual global configuration, not old repo-specific model mappings.
 
-**Single-lead amendment (2026-09-12):** the founder may select Astra or Terra as Mission Lead. Exactly one lead/session is active, recorded in #2 with its branch/HEAD and writer ownership. Confirm previous writers have stopped or explicitly transferred before takeover; a stale timestamp is not sufficient. Until a new lead is selected and safely claimed, retain the existing lead rather than launching both. Older Sheet-local references to Astra's coordination role mean the selected Mission Lead unless a narrower advisory role is explicitly stated below; model-specific worker instructions and upstream authority are not rewritten by that alias. No acceptance or review independence changes with a role/name switch.
+**Single-lead amendment (2026-09-12; routing updated 2026-09-20):** exactly one Terra Mission Lead/session is active, recorded in #2 with its branch/HEAD and writer ownership. The founder may choose **Terra High or Terra Medium** according to task complexity. Confirm previous writers have stopped or explicitly transferred before takeover; a stale timestamp is not sufficient. Until a new lead is selected and safely claimed, retain the existing lead rather than launching both. Worker-router supplies bounded implementation capacity; the Mission Lead remains the sole Sheet coordinator/integrator. No acceptance or review independence changes with reasoning-effort selection.
 
-### Terra-led mandatory Astra pre-decision consultation
+### Terra-led mandatory Oracle pre-decision consultation
 
-When Terra is the recorded Mission Lead, follow the live operational profile in [`tachiko-work#374`](https://github.com/nurockplayer/tachiko-work/issues/374). Astra is a **mandatory read-only pre-decision consultant**, not merely an escalation advisor.
+When Terra is the recorded Mission Lead, the qualified Conductor Oracle lane from [`tachiko-conductor#79`](https://github.com/nurockplayer/tachiko-conductor/issues/79) is the mandatory **read-only pre-decision consultation** path for new discretionary choices. Oracle is reasoning authority for the bounded consultation only; it is not a writer, queue owner, integrator or merge executor.
 
-Before Terra settles or delegates any new discretionary choice that is not already fixed by live authority or a still-applicable prior consultation, Terra must obtain an actual Astra response. This applies across Fast, Standard and Guarded work. It includes, without limitation:
+Before Terra settles or delegates any new discretionary choice that is not already fixed by live authority or a still-applicable prior consultation, Terra must obtain an actual Oracle response. This applies across routine and complex work. It includes, without limitation:
 
 - user-visible behavior, restrictions, defaults, compatibility, Save/draft/Undo/history/recovery or data-loss disclosure choices;
 - algorithm, lifecycle/state ownership, public typing, dependency/build strategy, architecture, persistence, concurrency, security or data-integrity trade-offs;
@@ -33,27 +33,27 @@ Before affected discretionary implementation proceeds, retain a compact decision
 - exact head/base and authority/evidence pointers;
 - the unresolved choice and practical alternatives;
 - Terra's recommendation and the relevant user-visible, safety/correctness, compatibility, maintenance and reversibility costs;
-- Astra's actual disposition: `agree`, `revise`, or `return to Steward`;
+- Oracle's bounded disposition (`ANSWER`, `REVISE`, or `BLOCKED`) and `requires_steward_decision` when returned;
 - the chosen bounded next action and any required Steward decision link;
 - actual proposing/consulting agents plus model/session/call identifiers where observable; mark unavailable attribution unknown rather than guessing.
 
-Astra remains read-only for the consulted lane and does not receive branch, writer, integration or merge ownership. Astra cannot amend Accepted authority, accept material test changes, promote Ready, clear HOLD, waive legal/external gates or authorize merge. No Astra reply, an unavailable Astra, or an unresolved objection keeps the affected discretionary implementation paused; persist recoverable work and continue only unaffected already-authorized actions. Within-scope disagreements return to Astra with evidence. Unresolved scope, authority, durable-product or material-acceptance questions return to ChatGPT Steward.
+Oracle remains read-only for the consulted lane and does not receive branch, writer, integration or merge ownership. Oracle cannot amend Accepted authority, accept material test changes, promote Ready, clear HOLD, waive legal/external gates or authorize a merge by itself. Oracle transport failure, no reply, or an unresolved objection keeps the affected discretionary implementation paused; persist recoverable work and continue only unaffected already-authorized actions. Unresolved scope, authority, durable-product or material-acceptance questions return to ChatGPT Steward.
 
-Closely related choices in one bounded Issue may share one consultation only when Astra explicitly addresses each. Reconsult when assumptions, relevant authority, evidence or the proposed direction materially changes. An unrelated commit alone does not invalidate a consultation.
+Closely related choices in one bounded Issue may share one consultation only when Oracle explicitly addresses each. Reconsult when assumptions, relevant authority, evidence or the proposed direction materially changes. An unrelated commit alone does not invalidate a consultation.
 
-Astra consultation does not satisfy independent final review. Final Guarded merge still requires the fresh independent exact-head review required below. A reviewer that participated in the solution's design, implementation, acceptance or evidence cannot receive final-review credit for that same material head.
+Oracle consultation does not satisfy independent final review. Final Guarded merge still requires a fresh independent exact-HEAD review. A **fresh Oracle session** may provide that review when it did not participate in the solution's design, implementation, acceptance, evidence or consulted direction; Sol remains an allowed independent fallback/alternate. A reviewer that participated materially in the solution direction cannot receive final-review credit for that same material HEAD.
 
-This routing adds no human approval stop between ordinary tickets. After qualified closeout, Terra recalibrates live authority and ownership and continues the next genuinely Ready, non-overlapping successor without a new founder prompt. Human/Steward intervention remains limited to the canonical unresolved durable decisions, authority conflicts and external permission gates.
+This routing adds no human approval stop between ordinary tickets. After qualified closeout, Terra recalibrates live authority and ownership and continues the next genuinely Ready, non-overlapping successor without a new founder prompt. Human/Steward intervention remains limited to canonical unresolved durable decisions, authority conflicts and external permission gates.
 
 ## Three-level SCD loop and Final Candidate
 
-Use this cadence without weakening Conditional Ready, acceptance ownership, Astra decision routing, independent-review eligibility, exact-head validation or normal merge protections:
+Use this cadence without weakening Conditional Ready, acceptance ownership, Oracle decision routing, independent-review eligibility, exact-head validation or normal merge protections:
 
 1. **Inner loop:** implementation and mechanical repair already covered by authority or consultation may use granular local commits and focused local tests. Do not request fresh independent Sol final review for a WIP head or rerun full hosted gates solely because a small repair commit exists.
-2. **Repair-batch checkpoint:** collect the complete currently known finding set and classify it together. Batch all mechanical findings inside already-authorized bounds into one coherent repair; separate findings or commits alone do not trigger another Astra consultation. Closely related new discretionary choices may share one Astra consultation only when Astra explicitly addresses each. Scope, durable-product, acceptance or authority conflicts return to ChatGPT Steward. After the batch, run affected regression/integration checks. Push at coherent checkpoint boundaries when practical; local commits may remain granular. Do not manually request Codex review for intermediate WIP heads.
-3. **Final Candidate:** the lane may record `FINAL_CANDIDATE <sha>` only when no known code mutation remains, no blocking finding or discretionary/Steward decision remains unresolved, applicable focused and affected-regression checks are green, and the PR is otherwise believed merge-ready under existing authority. Only then run full applicable hosted gates and obtain fresh independent Sol final review for the exact head.
+2. **Repair-batch checkpoint:** collect the complete currently known finding set and classify it together. Batch all mechanical findings inside already-authorized bounds into one coherent repair; separate findings or commits alone do not trigger another Oracle consultation. Closely related new discretionary choices may share one Oracle consultation only when Oracle explicitly addresses each. Scope, durable-product, acceptance or authority conflicts return to ChatGPT Steward. After the batch, run affected regression/integration checks. Push at coherent checkpoint boundaries when practical; local commits may remain granular. Do not manually request Codex review for intermediate WIP heads.
+3. **Final Candidate:** the lane may record `FINAL_CANDIDATE <sha>` only when no known code mutation remains, no blocking finding or discretionary/Steward decision remains unresolved, applicable focused and affected-regression checks are green, and the PR is otherwise believed merge-ready under existing authority. Only then run full applicable hosted gates and obtain one fresh independent exact-HEAD review (fresh Oracle session when eligible; Sol remains an allowed fallback/alternate).
 
-A material commit after Final Candidate invalidates that status and requires the applicable exact-head gates and review again. If final review fails, collect the complete finding set first, invalidate Final Candidate, classify once, make one bounded repair batch, and then establish a new Final Candidate; Sol is not a high-cost linter for each small fix. If the same defect/failure family survives two bounded repair batches, stop patching and perform a root-cause checkpoint before another high-cost final-review cycle.
+A material commit after Final Candidate invalidates that status and requires the applicable exact-head gates and review again. If final review fails, collect the complete finding set first, invalidate Final Candidate, classify once, make one bounded repair batch, and then establish a new Final Candidate; no high-cost reviewer is a linter for each small fix. If the same defect/failure family survives two bounded repair batches, stop patching and perform a root-cause checkpoint before another high-cost final-review cycle.
 
 Keep #2 as one concise current handoff replaced in place. Historical checkpoints and detailed evidence belong in the owning Issue or PR rather than accumulating in #2.
 
@@ -89,7 +89,7 @@ For **tachiko-sheet only**, the lead may execute a merge when all of these are p
 - normal GitHub protections and review requirements permit the merge, without admin bypass, force push, fabricated approval or blanket auto-approve;
 - the recorded head still matches immediately before merging.
 
-Execution of a reviewed merge by the coordinator is not independent approval. Lead-authored code still needs another reviewer. After merging, verify the integrated main at the affected boundary, reconcile any surviving review debt, update #2 and continue. Closing a child never closes #1. Final product/release acceptance and permission to close #1 remain founder/Steward-owned. No automatic publication, purchases, signing-account enrollment, credential provisioning or terms acceptance follows from PR merge authority.
+Execution of a reviewed merge by the coordinator is not independent approval. **Oracle remains read-only and never performs the GitHub merge; Terra/Conductor executes the merge only after the review receipt and every deterministic/hosted gate are valid for the exact recorded HEAD.** Lead-authored code still needs another reviewer. After merging, verify the integrated main at the affected boundary, reconcile any surviving review debt, update #2 and continue. Closing a child never closes #1. Final product/release acceptance and permission to close #1 remain founder/Steward-owned. No automatic publication, purchases, signing-account enrollment, credential provisioning or terms acceptance follows from PR merge authority.
 
 ## Upstream boundary
 
@@ -97,6 +97,6 @@ Core work stays in tachiko-work. #359 and #361 retain producer/I/O and delegated
 
 ## Continuation and stop
 
-Use #2 for one concise recoverable checkpoint; detailed evidence belongs to the active PR. Wait on nonterminal work using event/blocking waits or at least 180-second polling. Stop affected mutation for a concrete missing authority/acceptance, unresolved Astra disposition or substantive finding, or external permission; continue genuinely independent qualified work. Persist work before runtime termination. Qualified closeout triggers recalibration and the next genuinely Ready successor rather than a ceremonial stop. No scheduler is installed by this policy.
+Use #2 for one concise recoverable checkpoint; detailed evidence belongs to the active PR. Wait on nonterminal work using event/blocking waits or at least 180-second polling. Stop affected mutation for a concrete missing authority/acceptance, unresolved Oracle disposition or substantive finding, or external permission; continue genuinely independent qualified work. Persist work before runtime termination. Qualified closeout triggers recalibration and the next genuinely Ready successor rather than a ceremonial stop. No scheduler is installed by this policy.
 
 One-time exception: this previously empty public repository is initialized with founder-authorized Mission, documentation and agent entry files by ChatGPT. This is not a production merge, independent review claim or precedent for direct-to-main product development. Subsequent production and policy changes use reviewed PRs.
