@@ -857,7 +857,7 @@ export function SheetShell(props: SheetShellProps) {
   function renderStatusStrip(): ReactNode {
     return (
         <div className="ts-status-strip">
-          <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
+          <span className={`ts-chip ts-chip--${currentness}`} data-testid="currentness" data-currentness={currentness}>
             {currentnessLabel(currentness)}
           </span>
           <span

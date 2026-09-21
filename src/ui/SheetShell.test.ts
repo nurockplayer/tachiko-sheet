@@ -432,6 +432,14 @@ describe("SheetShell static rendering", () => {
     expect(markup).not.toContain("Saved on this device");
   });
 
+  it("exposes currentness with text and a matching non-color state hook", () => {
+    for (const [currentness, label] of [["current", "Up to date"], ["pending", "Updating…"], ["unknown", "Needs refresh"]] as const) {
+      const markup = render({ view: makeView(), currentness });
+      expect(chipText(markup, "currentness")).toBe(label);
+      expect(markup).toContain(`class="ts-chip ts-chip--${currentness}"`);
+    }
+  });
+
   it("keeps internal revision, collection, and row identities out of normal chrome", () => {
     const markup = render({ view: makeView() });
     expect(markup).toContain("2 rows");

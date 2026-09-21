@@ -29,6 +29,13 @@ describe("visual foundation CSS contract", () => {
     expect(cellRule).toContain("text-overflow: ellipsis");
   });
 
+  it("keeps selected, focused, and forced-color cues independently visible", () => {
+    expect(css).toContain(".ts-row--selected .ts-cell--focused");
+    expect(css).toContain("background: var(--ts-surface)");
+    expect(css).toContain("inset 0 -2px 0 var(--ts-focus)");
+    expect(css).toContain(".ts-app :focus-visible { outline-color: Highlight; }");
+  });
+
   function contrastRatio(foreground: string, background: string): number {
     const luminance = (hex: string): number => {
       const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);

@@ -635,7 +635,11 @@
   outline-offset: -2px;
   position: relative;
   z-index: 1;
-  box-shadow: inset 0 0 0 1px #fff;
+  box-shadow: inset 0 -2px 0 var(--ts-focus), inset 0 0 0 1px #fff;
+}
+
+.ts-row--selected .ts-cell--focused {
+  background: var(--ts-surface);
 }
 
 .ts-cell--editing {
@@ -871,7 +875,7 @@
   .ts-context-table select { max-width: none; width: 100%; }
   .ts-tabs, .ts-workbook-status { padding-inline: 16px; }
   .ts-workbook-status { min-height: 44px; }
-  .ts-status-strip { flex-wrap: wrap; }
+  .ts-status-strip { flex-wrap: wrap; min-width: 0; }
   .ts-grid-scroll { max-height: max(168px, calc(100vh - 304px)); }
   .ts-report-controls { grid-template-columns: 1fr; }
 }
@@ -890,6 +894,7 @@
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .ts-app :focus-visible { outline-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
   .ts-app .ts-cell--focused {
     outline: 3px solid HighlightText !important;
