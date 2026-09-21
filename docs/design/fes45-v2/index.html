@@ -1,0 +1,4 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tachiko Sheet — FES45 v3 design candidate</title><link rel="stylesheet" href="styles.css"></head><body><main id="mount"></main><script src="font-policy.js"></script><script src="tokens.js"></script><script src="design.js"></script><script src="boards.js"></script><script>
+(async()=>{await resolveFesFonts();const p=new URLSearchParams(location.search);renderScene(p.get('scene')||'macbook-retina',p);await document.fonts.ready;await Promise.all([...document.images].map(i=>i.decode()));window.FES_READY=true;})().catch(e=>{document.body.textContent=String(e);window.FES_ERROR=String(e);});
+</script></body></html>

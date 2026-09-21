@@ -1,0 +1,504 @@
+{
+  "scope": "Author-owned design-harness checks, not independent review or shipped product acceptance",
+  "passed": 61,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "V3 font policy resolves locally",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Actual glyph face: latinRegular",
+      "status": "PASS",
+      "detail": [
+        {
+          "familyName": "Inter",
+          "postScriptName": "Inter-Regular",
+          "isCustomFont": false,
+          "glyphCount": 23
+        }
+      ]
+    },
+    {
+      "check": "Actual glyph face: latinSemibold",
+      "status": "PASS",
+      "detail": [
+        {
+          "familyName": "Inter Display SemiBold",
+          "postScriptName": "InterDisplay-SemiBold",
+          "isCustomFont": false,
+          "glyphCount": 20
+        }
+      ]
+    },
+    {
+      "check": "Actual glyph face: japanese",
+      "status": "PASS",
+      "detail": [
+        {
+          "familyName": "Noto Sans CJK JP",
+          "postScriptName": "NotoSansCJKjp-Regular",
+          "isCustomFont": false,
+          "glyphCount": 6
+        }
+      ]
+    },
+    {
+      "check": "Actual glyph face: traditionalChinese",
+      "status": "PASS",
+      "detail": [
+        {
+          "familyName": "Noto Sans CJK TC",
+          "postScriptName": "NotoSansCJKtc-Regular",
+          "isCustomFont": false,
+          "glyphCount": 5
+        }
+      ]
+    },
+    {
+      "check": "No synthesized fonts",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "14px data text / 20px baseline",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Exactly 400 projected scalar cells",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Numeric right alignment",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "No checkbox semantics for booleans",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Selection details are readouts, not editors",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Four existing Views only",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Selected View is Table",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Commands contain no unsupported controls",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Mark is decorative, not a new command",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Row gutter / column count accessible",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Committed selection remains 18",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Normal active focus uses one 3px ring",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Command focus uses 3px / 2px clearance",
+      "status": "PASS",
+      "detail": [
+        "3px",
+        "2px"
+      ]
+    },
+    {
+      "check": "Command focus removes competing cell focus",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Refresh has actual hover feedback",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Forced-colors removes decorative gradient",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Forced-colors keeps real cell outline",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown retains all three messages",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Retained raw draft abc",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown editor disabled",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown editor has no caret or blue keyboard focus",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown readout remains committed 18",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown locks Refresh",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown locks Save a copy",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unknown locks CollectionSelect",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Close remains enabled when not busy",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Saved earlier copy remains acknowledged",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Unsaved work remains explicit",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Currentness remains Needs refresh",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Rejected editor retains red perimeter",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Forced-colors invalid is dashed (not color-only)",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Narrow all four distinct truth messages remain visible in full layout",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Narrow document may grow rather than clip",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Narrow no page-wide horizontal overflow",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Panned narrow retained draft actually visible",
+      "status": "PASS",
+      "detail": {
+        "x": 96,
+        "y": 464,
+        "width": 104,
+        "height": 28
+      }
+    },
+    {
+      "check": "Narrow no status truncation",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Only supported Close project in More",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Open menu owns real browser focus",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Cell remains Active, not FocusVisible, under menu",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Overflow focus is visible",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Long title ellipsizes without changing identity",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "320px controls remain 32px high",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "320px title/actions fit document",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "320px Views pan, not shrink",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "Contrast: data / canvas",
+      "status": "PASS",
+      "detail": {
+        "ratio": 14.786,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: secondary / chrome",
+      "status": "PASS",
+      "detail": {
+        "ratio": 5.219,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: header / header",
+      "status": "PASS",
+      "detail": {
+        "ratio": 5.884,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: data / selected row",
+      "status": "PASS",
+      "detail": {
+        "ratio": 13.582,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: primary button label",
+      "status": "PASS",
+      "detail": {
+        "ratio": 5.819,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: selected row number",
+      "status": "PASS",
+      "detail": {
+        "ratio": 5.819,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: selected view label",
+      "status": "PASS",
+      "detail": {
+        "ratio": 7.413,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: focus / white",
+      "status": "PASS",
+      "detail": {
+        "ratio": 5.799,
+        "minimum": 3
+      }
+    },
+    {
+      "check": "Contrast: warning / chrome",
+      "status": "PASS",
+      "detail": {
+        "ratio": 6.25,
+        "minimum": 4.5
+      }
+    },
+    {
+      "check": "Contrast: error perimeter / white",
+      "status": "PASS",
+      "detail": {
+        "ratio": 7.122,
+        "minimum": 3
+      }
+    },
+    {
+      "check": "Contrast: saved copy / chrome",
+      "status": "PASS",
+      "detail": {
+        "ratio": 5.977,
+        "minimum": 4.5
+      }
+    }
+  ],
+  "glyphFaces": {
+    "latinRegular": [
+      {
+        "familyName": "Inter",
+        "postScriptName": "Inter-Regular",
+        "isCustomFont": false,
+        "glyphCount": 23
+      }
+    ],
+    "latinSemibold": [
+      {
+        "familyName": "Inter Display SemiBold",
+        "postScriptName": "InterDisplay-SemiBold",
+        "isCustomFont": false,
+        "glyphCount": 20
+      }
+    ],
+    "latinItalic": [
+      {
+        "familyName": "Inter",
+        "postScriptName": "Inter-Italic",
+        "isCustomFont": false,
+        "glyphCount": 5
+      }
+    ],
+    "japanese": [
+      {
+        "familyName": "Noto Sans CJK JP",
+        "postScriptName": "NotoSansCJKjp-Regular",
+        "isCustomFont": false,
+        "glyphCount": 6
+      }
+    ],
+    "traditionalChinese": [
+      {
+        "familyName": "Noto Sans CJK TC",
+        "postScriptName": "NotoSansCJKtc-Regular",
+        "isCustomFont": false,
+        "glyphCount": 5
+      }
+    ]
+  },
+  "contrastPairs": [
+    {
+      "role": "data / canvas",
+      "foreground": "#252735",
+      "background": "#FFFFFF",
+      "ratio": 14.786,
+      "minimum": 4.5
+    },
+    {
+      "role": "secondary / chrome",
+      "foreground": "#646879",
+      "background": "#F8F8FC",
+      "ratio": 5.219,
+      "minimum": 4.5
+    },
+    {
+      "role": "header / header",
+      "foreground": "#5B6072",
+      "background": "#F7F8FB",
+      "ratio": 5.884,
+      "minimum": 4.5
+    },
+    {
+      "role": "data / selected row",
+      "foreground": "#252735",
+      "background": "#F6F4FE",
+      "ratio": 13.582,
+      "minimum": 4.5
+    },
+    {
+      "role": "primary button label",
+      "foreground": "#FFFFFF",
+      "background": "#6350D2",
+      "ratio": 5.819,
+      "minimum": 4.5
+    },
+    {
+      "role": "selected row number",
+      "foreground": "#FFFFFF",
+      "background": "#6350D2",
+      "ratio": 5.819,
+      "minimum": 4.5
+    },
+    {
+      "role": "selected view label",
+      "foreground": "#5542B5",
+      "background": "#FFFFFF",
+      "ratio": 7.413,
+      "minimum": 4.5
+    },
+    {
+      "role": "focus / white",
+      "foreground": "#6551CE",
+      "background": "#FFFFFF",
+      "ratio": 5.799,
+      "minimum": 3
+    },
+    {
+      "role": "warning / chrome",
+      "foreground": "#865015",
+      "background": "#F8F8FC",
+      "ratio": 6.25,
+      "minimum": 4.5
+    },
+    {
+      "role": "error perimeter / white",
+      "foreground": "#A02D42",
+      "background": "#FFFFFF",
+      "ratio": 7.122,
+      "minimum": 3
+    },
+    {
+      "role": "saved copy / chrome",
+      "foreground": "#206C4E",
+      "background": "#F8F8FC",
+      "ratio": 5.977,
+      "minimum": 4.5
+    }
+  ],
+  "independentReviewStatus": "PENDING",
+  "implementationAuthority": false
+}

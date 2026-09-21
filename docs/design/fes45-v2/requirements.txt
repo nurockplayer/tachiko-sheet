@@ -1,0 +1,3 @@
+# Install into an isolated environment. No install hooks or root project changes.
+playwright==1.57.0
+Pillow==12.3.0
