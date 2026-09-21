@@ -1,35 +1,46 @@
 :root {
-  --ts-ink: #182230;
-  --ts-ink-soft: #647083;
-  --ts-line: #d9e0e8;
-  /* #657386 against white: 4.72:1, above the 3:1 interactive-boundary floor. */
-  --ts-line-strong: #657386;
+  --ts-ink: #252735;
+  --ts-ink-soft: #646879;
+  --ts-ink-on-tint: #5b6072;
+  --ts-line: #dfe2ea;
+  /* #858b9c against white: 3.42:1, above the 3:1 interactive-boundary floor. */
+  --ts-line-strong: #858b9c;
   --ts-surface: #ffffff;
-  --ts-surface-sunken: #f3f6f9;
-  --ts-surface-head: #eef2f6;
-  --ts-selected: #e3efff;
-  --ts-focus: #0b63ce;
-  --ts-warn: #815000;
-  --ts-warn-bg: #fff4dc;
-  --ts-error-ink: #9b2424;
-  --ts-error-bg: #fff0f0;
-  --ts-ok-ink: #17623b;
-  --ts-ok-bg: #e7f6ed;
-  --ts-radius: 5px;
-  --ts-shadow: 0 8px 24px rgba(31, 47, 65, 0.08);
+  --ts-surface-chrome: #f8f8fc;
+  --ts-surface-sunken: #f5f6f9;
+  --ts-surface-head: #eceef4;
+  --ts-grid-head: #f7f8fb;
+  --ts-selected: #ece9fe;
+  --ts-selected-row: #f6f4fe;
+  --ts-focus: #6551ce;
+  --ts-accent: #6350d2;
+  --ts-accent-hover: #5541c2;
+  --ts-accent-pressed: #4936ab;
+  --ts-accent-ink: #5542b5;
+  --ts-accent-soft: #f0edfd;
+  --ts-grid-horizontal: #e9ebf1;
+  --ts-grid-vertical: #eef0f4;
+  --ts-warn: #865015;
+  --ts-warn-bg: #fff3dd;
+  --ts-error-ink: #a02d42;
+  --ts-error-bg: #fff0f3;
+  --ts-ok-ink: #206c4e;
+  --ts-ok-bg: #e9f6f0;
+  --ts-radius: 7px;
+  --ts-shadow: 0 10px 30px -8px rgba(39, 33, 57, 0.15), 0 2px 6px rgba(39, 33, 57, 0.05);
 }
 
 .ts-app {
   color: var(--ts-ink);
-  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
-  font-size: 13px;
-  line-height: 1.45;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Hiragino Sans", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-size: 14px;
+  line-height: 20px;
   min-height: 100vh;
-  background: var(--ts-surface-sunken);
+  background: var(--ts-surface-chrome);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: clamp(10px, 2vw, 24px);
+  gap: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
@@ -198,7 +209,7 @@
 .ts-button {
   font: inherit;
   min-height: 32px;
-  padding: 6px 11px;
+  padding: 5px 11px;
   border: 1px solid var(--ts-line-strong);
   border-radius: var(--ts-radius);
   background: var(--ts-surface);
@@ -207,7 +218,7 @@
 }
 
 .ts-button:hover:not(:disabled) {
-  background: var(--ts-surface-head);
+  background: var(--ts-surface-sunken);
 }
 
 .ts-button:disabled {
@@ -218,13 +229,20 @@
 }
 
 .ts-button--primary {
-  background: #145cae;
-  border-color: #145cae;
+  background: var(--ts-accent);
+  border-color: var(--ts-accent);
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(48, 37, 100, 0.09);
 }
 
 .ts-button--primary:hover:not(:disabled) {
-  background: #0b4d98;
+  background: var(--ts-accent-hover);
+  border-color: var(--ts-accent-hover);
+}
+
+.ts-button--primary:active:not(:disabled) {
+  background: var(--ts-accent-pressed);
+  border-color: var(--ts-accent-pressed);
 }
 
 .ts-button--danger {
@@ -246,8 +264,9 @@
 .ts-workbook {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
   min-height: 0;
+  flex: 1 1 auto;
 }
 
 .ts-workbook-head {
@@ -255,26 +274,59 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  min-height: 60px;
+  padding: 8px clamp(16px, 3vw, 40px);
+  background: linear-gradient(108deg, var(--ts-accent-soft) 0%, var(--ts-surface-chrome) 35%, var(--ts-surface-chrome) 100%);
+  border-bottom: 1px solid var(--ts-line);
+}
+
+.ts-document-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.ts-document-mark {
+  display: block;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .ts-title-block {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
+  min-width: 0;
+}
+
+.ts-wordmark {
+  color: var(--ts-ink-on-tint);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
 }
 
 .ts-title {
   font-size: 18px;
-  font-weight: 700;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.018em;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ts-status-strip {
   display: flex;
   align-items: center;
   gap: 5px;
-  flex-wrap: wrap;
+  min-width: max-content;
 }
 
 .ts-chip {
@@ -283,9 +335,10 @@
   gap: 4px;
   border: 1px solid var(--ts-line);
   background: var(--ts-surface);
-  border-radius: 3px;
-  padding: 4px 8px;
+  border-radius: 4px;
+  padding: 2px 7px;
   font-size: 12px;
+  line-height: 20px;
   white-space: nowrap;
 }
 
@@ -315,7 +368,7 @@
 
 .ts-chip--saved {
   background: var(--ts-ok-bg);
-  border-color: #bcdcc8;
+  border-color: #a6d5bf;
   color: var(--ts-ok-ink);
 }
 
@@ -325,7 +378,7 @@
 
 .ts-chip--failed {
   background: var(--ts-error-bg);
-  border-color: #e0b4b4;
+  border-color: #e8b9c4;
   color: var(--ts-error-ink);
 }
 
@@ -337,13 +390,13 @@
 .ts-chip--saving,
 .ts-chip--pending {
   background: var(--ts-warn-bg);
-  border-color: #e4c9a2;
+  border-color: #e6c79d;
   color: var(--ts-warn);
 }
 
 .ts-chip--unknown {
   background: var(--ts-warn-bg);
-  border-color: #e4c9a2;
+  border-color: #e6c79d;
   color: var(--ts-warn);
 }
 
@@ -353,7 +406,7 @@
 
 .ts-chip--edited {
   background: var(--ts-warn-bg);
-  border-color: #e4c9a2;
+  border-color: #e6c79d;
   color: var(--ts-warn);
 }
 
@@ -362,50 +415,133 @@
   font-weight: 700;
 }
 
+.ts-workbook-row-count {
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ts-work-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  gap: 12px;
+  padding: 4px clamp(16px, 3vw, 40px);
+  background: var(--ts-surface);
+  border-bottom: 1px solid var(--ts-line);
+}
+
+.ts-context-table,
 .ts-actions {
   display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
   align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ts-header-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.ts-context-table .ts-field-label {
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ts-context-table select {
+  height: 32px;
+  min-width: 160px;
+  max-width: min(32vw, 320px);
+  padding: 4px 28px 4px 9px;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius);
+  background: var(--ts-selected);
+  color: var(--ts-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ts-context-table select:disabled {
+  color: var(--ts-ink-soft);
+  background: var(--ts-surface-sunken);
 }
 
 .ts-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--ts-line-strong);
+  min-height: 36px;
+  padding: 2px clamp(16px, 3vw, 40px) 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  background: var(--ts-surface-chrome);
+  border-bottom: 1px solid var(--ts-line);
 }
 
 .ts-tab {
   font: inherit;
-  font-weight: 600;
+  flex: 0 0 auto;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--ts-ink-soft);
   background: transparent;
   border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 4px 4px 0 0;
-  padding: 7px 14px;
+  border-radius: 6px 6px 0 0;
+  padding: 5px 12px;
   cursor: pointer;
-  margin-bottom: -1px;
+  position: relative;
+}
+
+.ts-tab:hover:not(:disabled) {
+  background: var(--ts-surface-sunken);
+  color: var(--ts-ink);
 }
 
 .ts-tab--active {
-  color: var(--ts-ink);
+  color: var(--ts-accent-ink);
   background: var(--ts-surface);
-  border-color: var(--ts-line-strong);
+  border-color: var(--ts-line);
+  font-weight: 600;
+}
+
+.ts-tab--active::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 2px;
+  background: var(--ts-accent);
+}
+
+.ts-workbook-status {
+  min-height: 28px;
+  overflow-x: auto;
+  padding: 2px clamp(16px, 3vw, 40px);
+  background: var(--ts-surface-chrome);
+  border-bottom: 1px solid var(--ts-line);
+  scrollbar-width: thin;
 }
 
 .ts-panel {
   min-height: 0;
+  flex: 1 1 auto;
 }
 
 /* ---------- Grid ---------- */
 
 .ts-grid-scroll {
   overflow: auto;
-  max-height: calc(100vh - 226px);
-  border: 1px solid var(--ts-line);
-  border-radius: var(--ts-radius);
-  box-shadow: 0 2px 8px rgba(31, 47, 65, 0.04);
+  max-height: max(168px, calc(100vh - 164px));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background: var(--ts-surface);
 }
 
@@ -420,9 +556,10 @@
 
 .ts-grid th,
 .ts-grid td {
-  border-right: 1px solid var(--ts-line);
-  border-bottom: 1px solid var(--ts-line);
-  padding: 7px 10px;
+  height: 28px;
+  border-right: 1px solid var(--ts-grid-vertical);
+  border-bottom: 1px solid var(--ts-grid-horizontal);
+  padding: 4px 10px;
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
@@ -436,8 +573,8 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--ts-surface-head);
-  font-weight: 600;
+  background: var(--ts-grid-head);
+  font-weight: 500;
   font-size: 12px;
   color: var(--ts-ink-soft);
 }
@@ -451,8 +588,8 @@
   position: sticky;
   left: 0;
   z-index: 1;
-  background: var(--ts-surface-head);
-  font-weight: 600;
+  background: var(--ts-grid-head);
+  font-weight: 500;
   color: var(--ts-ink-soft);
 }
 
@@ -461,12 +598,12 @@
 }
 
 .ts-row--selected .ts-row-head {
-  color: var(--ts-ink);
+  color: #ffffff;
+  background: var(--ts-accent);
 }
 
-.ts-row--selected td,
-.ts-row--selected .ts-row-head {
-  background: var(--ts-selected);
+.ts-row--selected td {
+  background: var(--ts-selected-row);
 }
 
 .ts-cell {
@@ -494,11 +631,15 @@
 }
 
 .ts-cell--focused {
-  outline: 3px solid var(--ts-focus);
-  outline-offset: -3px;
+  outline: 2px solid var(--ts-focus);
+  outline-offset: -2px;
   position: relative;
   z-index: 1;
-  box-shadow: inset 0 0 0 1px #fff;
+  box-shadow: inset 0 -2px 0 var(--ts-focus), inset 0 0 0 1px #fff;
+}
+
+.ts-row--selected .ts-cell--focused {
+  background: var(--ts-surface);
 }
 
 .ts-cell--editing {
@@ -512,8 +653,8 @@
   width: 100%;
   min-width: 90px;
   border: none;
-  min-height: 34px;
-  padding: 7px 10px;
+  min-height: 27px;
+  padding: 4px 10px;
   background: var(--ts-surface);
   color: var(--ts-ink);
 }
@@ -701,13 +842,41 @@
   background: #fff;
 }
 
-@media (max-width: 700px) {
-  .ts-app { padding: 10px; }
+@media (max-width: 1023px) {
+  .ts-workbook-head {
+    align-content: center;
+    flex-wrap: wrap;
+    min-height: 96px;
+  }
+  .ts-document-identity { flex-basis: 100%; }
+  .ts-grid-scroll { max-height: max(168px, calc(100vh - 200px)); }
+}
+
+@media (max-width: 599px) {
   .ts-home { margin-top: 14px; }
-  .ts-workbook-head { align-items: flex-start; flex-direction: column; }
-  .ts-status-strip { width: 100%; }
-  .ts-actions .ts-button { flex: 1 1 auto; }
-  .ts-grid th, .ts-grid td { padding: 7px 8px; }
+  .ts-workbook-head {
+    align-items: flex-start;
+    min-height: 136px;
+    padding-inline: 16px;
+  }
+  .ts-header-actions { width: 100%; }
+  .ts-header-actions .ts-button { flex: 1 1 auto; padding-inline: 8px; }
+  .ts-work-context {
+    align-items: flex-start;
+    min-height: 88px;
+    padding-inline: 16px;
+  }
+  .ts-context-table {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+  .ts-context-table select { max-width: none; width: 100%; }
+  .ts-tabs, .ts-workbook-status { padding-inline: 16px; }
+  .ts-workbook-status { min-height: 44px; }
+  .ts-status-strip { flex-wrap: wrap; min-width: 0; }
+  .ts-grid-scroll { max-height: max(168px, calc(100vh - 304px)); }
   .ts-report-controls { grid-template-columns: 1fr; }
 }
 
@@ -725,11 +894,12 @@
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .ts-app :focus-visible { outline-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
   .ts-app .ts-cell--focused {
-    outline: 3px solid HighlightText !important;
+    outline: 3px solid Highlight !important;
     outline-offset: -3px;
-    box-shadow: inset 0 0 0 1px HighlightText !important;
+    box-shadow: inset 0 0 0 1px Highlight !important;
   }
   .ts-modal-backdrop { background: Canvas; opacity: 0.95; }
 }

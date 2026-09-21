@@ -1,15 +1,9 @@
 # Target-state captures
 
-- App source/build commit: `84c9c08a904568450510001aa557bade8f36b8b1`
-- Capture harness/evidence commit: `1b1b4173aead3fb31aeb6497723fc93c57b3b9e4`;
-  screenshots were generated from the production tree at the source/build
-  commit above.
-- The production UI tree (`src/ui`, `src/App.tsx`, `src/ui/sheet-shell.css`)
-  has no diff between the source/build and capture commits. Later
-  metadata-only corrections after the capture commit do not claim that
-  screenshots were regenerated.
+- App source/build and regenerated-capture commit:
+  `f96cc5161303545995bec0219cd5a4f25384f195`
 - Build command: `pnpm build` (production `dist`, Vite 8.3.0)
-- Captured: 2026-09-13 (Asia/Tokyo)
+- Captured: 2026-09-22 (Asia/Tokyo)
 - Browser: Playwright Chromium 1.62.1, headless; host macOS Darwin 24.6.0 arm64
 - Font: platform system stack (`system-ui`, `-apple-system`, Hiragino Sans,
   Noto Sans TC, Microsoft JhengHei); no remote font
@@ -24,7 +18,10 @@
 - Captures: Home and actual-core populated workbook states at every matrix
   workspace, plus `workbook-50rows-selection.png`,
   `workbook-50rows-japanese-edit.png`, and `save-dialog-final.png` from normal
-  UI interactions at the standard 1440×900 workspace.
+  UI interactions at the standard 1440×900 workspace. The S4D additions are
+  `workbook-macbook-1512x982.png`, a 720px open grid-overflow capture, a 360px
+  open Views-strip-overflow capture, and a 1024px long imported-title capture;
+  each uses the normal product UI and is described in the matrix.
 - `recovery-acceptance-fault.png` is a genuine acceptance-build-only capture:
   the existing bounded `failNextOpenProjection()` fault was armed after real
   edits and the UI reached `Refresh required` / `Needs refresh`. Acceptance

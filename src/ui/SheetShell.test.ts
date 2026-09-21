@@ -240,6 +240,29 @@ describe("edit drafts", () => {
 });
 
 describe("recovery presentation", () => {
+  it("keeps the established five-view order and Refresh recovery route in a retained workbook", () => {
+    const markup = render({ view: makeView(), currentness: "unknown", outcome: "unknown" });
+    const orderedTabs = ["ts-tab-table", "ts-tab-summary", "ts-tab-report", "ts-tab-brief", "ts-tab-interop"];
+    const positions = orderedTabs.map((id) => markup.indexOf(`id=\"${id}\"`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    const refresh = markup.match(/<button[^>]*>Refresh<\/button>/)?.[0];
+    expect(refresh).toBeDefined();
+    expect(refresh).not.toContain("disabled");
+  });
+
+  it("keeps every workbook command available in the responsive document header", () => {
+    const markup = render({ view: makeView() });
+    const header = markup.match(/<header class="ts-workbook-head">([\s\S]*?)<\/header>/)?.[1];
+    const context = markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0];
+    expect(header).toContain('aria-label="Document commands"');
+    expect(header).toContain(">Refresh</button>");
+    expect(header).toContain(">Save a copy</button>");
+    expect(header).toContain(">Close project</button>");
+    expect(context).toContain('aria-label="Workbook actions"');
+    expect(context).toContain('id="ts-active-table"');
+  });
+
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
     const markup = render({ currentness: "unknown", outcome: "unknown" });
     expect(markup).toContain('aria-label="Recovery"');
@@ -408,6 +431,14 @@ describe("SheetShell static rendering", () => {
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).toContain('data-work-currentness="unknown"');
     expect(markup).toContain("These values could not be confirmed");
     expect(markup).not.toContain("Saved on this device");
+  });
+
+  it("exposes currentness with text and a matching non-color state hook", () => {
+    for (const [currentness, label] of [["current", "Up to date"], ["pending", "Updating…"], ["unknown", "Needs refresh"]] as const) {
+      const markup = render({ view: makeView(), currentness });
+      expect(chipText(markup, "currentness")).toBe(label);
+      expect(markup).toContain(`class="ts-chip ts-chip--${currentness}"`);
+    }
   });
 
   it("keeps internal revision, collection, and row identities out of normal chrome", () => {

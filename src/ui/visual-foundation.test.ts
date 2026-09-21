@@ -4,13 +4,20 @@ import { describe, expect, it } from "vitest";
 describe("visual foundation CSS contract", () => {
   const css = readFileSync(new URL("./sheet-shell.css", import.meta.url), "utf8");
 
-  it("keeps dense-grid focus and responsive hooks explicit", () => {
-    expect(css).toContain("--ts-focus: #0b63ce");
+  it("keeps dense-grid focus and the three responsive tiers explicit", () => {
+    expect(css).toContain("--ts-focus: #6551ce");
+    expect(css).toContain("--ts-accent: #6350d2");
+    expect(css).toContain(".ts-work-context");
+    expect(css).toContain(".ts-workbook-status");
     const lineStrong = css.match(/--ts-line-strong:\s*(#[0-9a-f]{6})/i)?.[1];
     expect(lineStrong).toBeDefined();
     expect(contrastRatio(lineStrong as string, "#ffffff")).toBeGreaterThanOrEqual(3);
     expect(css).toContain(".ts-cell--focused");
-    expect(css).toContain("@media (max-width: 700px)");
+    expect(css).toContain("@media (max-width: 1023px)");
+    expect(css).toContain("@media (max-width: 599px)");
+    expect(css).toContain("max-height: max(168px, calc(100vh - 164px))");
+    expect(css).toContain("max-height: max(168px, calc(100vh - 200px))");
+    expect(css).toContain("max-height: max(168px, calc(100vh - 304px))");
     expect(css).toContain("@media (forced-colors: active)");
   });
 
@@ -20,6 +27,13 @@ describe("visual foundation CSS contract", () => {
     expect(cellRule).toContain("max-width: 320px");
     expect(cellRule).toContain("overflow: hidden");
     expect(cellRule).toContain("text-overflow: ellipsis");
+  });
+
+  it("keeps selected, focused, and forced-color cues independently visible", () => {
+    expect(css).toContain(".ts-row--selected .ts-cell--focused");
+    expect(css).toContain("background: var(--ts-surface)");
+    expect(css).toContain("inset 0 -2px 0 var(--ts-focus)");
+    expect(css).toContain(".ts-app :focus-visible { outline-color: Highlight; }");
   });
 
   function contrastRatio(foreground: string, background: string): number {
