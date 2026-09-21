@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Issue #56 External DocumentRef probe</title>
+    <style>
+      :root { color: #182230; background: #f3f6f9; font: 14px/1.45 system-ui, sans-serif; }
+      body { margin: 0; padding: 28px; }
+      main { max-width: 900px; margin: auto; }
+      .notice { color: #5d6878; font-size: 12px; }
+      .surface { background: #fff; border: 1px solid #d9e0e8; border-radius: 6px; box-shadow: 0 8px 24px #1f2f4114; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #d9e0e8; }
+      th { background: #eef2f6; font-size: 12px; color: #516072; }
+      button, a.button { font: inherit; color: inherit; background: #fff; border: 1px solid #657386; border-radius: 4px; padding: 6px 10px; cursor: pointer; text-decoration: none; }
+      button:hover, a.button:hover { background: #eef2f6; }
+      .reference { color: #1458a6; font-weight: 600; }
+      aside { margin-top: 14px; padding: 16px; }
+      aside[hidden] { display: none; }
+      .header { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+      .meta { display: grid; grid-template-columns: 150px 1fr; gap: 8px 16px; margin: 16px 0; }
+      .meta dt { color: #5d6878; }
+      .meta dd { margin: 0; overflow-wrap: anywhere; }
+      .status { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 12px; font-weight: 650; }
+      .matched { background: #e7f6ed; color: #17623b; }
+      .stale, .unavailable, .denied { background: #fff4dc; color: #815000; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      .state-note { min-height: 22px; margin: 12px 0 0; color: #5d6878; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>External DocumentRef qualification</h1>
+      <p class="notice">Disposable Issue #56 UX probe. It has no Sheet runtime, provider API, Git integration, or durable Tachiko content model.</p>
+
+      <section class="surface" aria-label="Existing Sheet row">
+        <table>
+          <thead><tr><th>Account</th><th>Renewal notes</th><th>Amount</th></tr></thead>
+          <tbody><tr><td>Northstar</td><td><button class="reference" data-testid="documentref-cell" type="button">Document · Renewal notes</button></td><td>$120,000</td></tr></tbody>
+        </table>
+      </section>
+
+      <aside class="surface" aria-label="External document detail" data-testid="detail-panel" hidden>
+        <div class="header"><div><h2 id="detail-title">External document</h2><p class="notice">The provider remains content authority.</p></div><button data-testid="close-panel" type="button">Close</button></div>
+        <dl class="meta">
+          <dt>Provider</dt><dd data-testid="provider">HedgeDoc fixture</dd>
+          <dt>Display label</dt><dd data-testid="display-label">Renewal notes</dd>
+          <dt>Stable target locator</dt><dd data-testid="locator">https://hedgedoc.example/notes/northstar-renewal</dd>
+          <dt>Observed provider revision</dt><dd data-testid="provider-revision">r17</dd>
+          <dt>Projection checkpoint</dt><dd data-testid="checkpoint">r17 · fixture receipt</dd>
+          <dt>Currentness</dt><dd><span class="status matched" data-testid="currentness">Matched</span></dd>
+        </dl>
+        <div class="actions">
+          <a class="button" data-testid="open-externally" href="https://hedgedoc.example/notes/northstar-renewal" target="_blank" rel="noreferrer">Open externally</a>
+          <button data-testid="rename" type="button">Simulate renamed label</button>
+          <button data-testid="provider-advance" type="button">Simulate provider advance</button>
+          <button data-testid="checkpoint-record" type="button">Record explicit checkpoint</button>
+          <button data-testid="permission-denied" type="button">Simulate permission denied</button>
+          <button data-testid="unavailable" type="button">Simulate unavailable</button>
+        </div>
+        <p class="state-note" aria-live="polite" data-testid="state-note">The locator, not the display label, identifies this external target.</p>
+      </aside>
+    </main>
+    <script>
+      const panel = document.querySelector('[data-testid="detail-panel"]');
+      const label = document.querySelector('[data-testid="display-label"]');
+      const locator = document.querySelector('[data-testid="locator"]');
+      const providerRevision = document.querySelector('[data-testid="provider-revision"]');
+      const checkpoint = document.querySelector('[data-testid="checkpoint"]');
+      const currentness = document.querySelector('[data-testid="currentness"]');
+      const note = document.querySelector('[data-testid="state-note"]');
+      let providerState = 'available';
+      let observedRevision = 'r17';
+      let checkpointRevision = 'r17';
+
+      function render() {
+        const matched = providerState === 'available' && observedRevision === checkpointRevision;
+        providerRevision.textContent = providerState === 'available' ? observedRevision : 'Not observable';
+        checkpoint.textContent = checkpointRevision ? `${checkpointRevision} · fixture receipt` : 'No checkpoint recorded';
+        if (providerState === 'denied') {
+          currentness.textContent = 'Permission denied'; currentness.className = 'status denied';
+          note.textContent = 'Permission was denied by the provider; currentness is unknown, not current.';
+        } else if (providerState === 'unavailable') {
+          currentness.textContent = 'Unavailable'; currentness.className = 'status unavailable';
+          note.textContent = 'The provider is unavailable; the last checkpoint is not presented as current.';
+        } else if (!matched) {
+          currentness.textContent = 'Stale'; currentness.className = 'status stale';
+          note.textContent = 'The provider changed after the checkpoint. Review externally before creating a new checkpoint.';
+        } else {
+          currentness.textContent = 'Matched'; currentness.className = 'status matched';
+          note.textContent = 'Observed provider revision and fixture checkpoint match.';
+        }
+      }
+
+      document.querySelector('[data-testid="documentref-cell"]').addEventListener('click', () => { panel.hidden = false; });
+      document.querySelector('[data-testid="close-panel"]').addEventListener('click', () => { panel.hidden = true; });
+      document.querySelector('[data-testid="rename"]').addEventListener('click', () => {
+        label.textContent = 'Renewal notes — renamed externally';
+        note.textContent = 'The display label changed. The stable target locator is unchanged.';
+      });
+      document.querySelector('[data-testid="provider-advance"]').addEventListener('click', () => { providerState = 'available'; observedRevision = 'r18'; render(); });
+      document.querySelector('[data-testid="checkpoint-record"]').addEventListener('click', () => {
+        if (providerState !== 'available') return;
+        checkpointRevision = observedRevision; render();
+        note.textContent = 'Fixture checkpoint recorded for the observed provider revision. No Git commit was created.';
+      });
+      document.querySelector('[data-testid="permission-denied"]').addEventListener('click', () => { providerState = 'denied'; render(); });
+      document.querySelector('[data-testid="unavailable"]').addEventListener('click', () => { providerState = 'unavailable'; render(); });
+      window.__issue56Probe = { locator: () => locator.textContent, state: () => ({ providerState, observedRevision, checkpointRevision }) };
+    </script>
+  </body>
+</html>
