@@ -1,7 +1,6 @@
 # Exact-final-head production visual matrix
 
-Source/build commit: `84c9c08a904568450510001aa557bade8f36b8b1`.
-Capture/evidence commit: `1b1b4173aead3fb31aeb6497723fc93c57b3b9e4`.
+Source/build and regenerated-capture commit: `f96cc5161303545995bec0219cd5a4f25384f195`.
 
 This matrix was regenerated from that exact production head with:
 
@@ -32,18 +31,28 @@ evidence, not native macOS, iPad, physical-device, or #16 evidence.
 | Populated actual-core Tracker | Standard | 1440×900 | 1 / 100% | `targets/workbook-50rows-1440x900.png` |
 | Populated actual-core Tracker | Standard | 1280×800 | 1 / 100% | `targets/workbook-50rows-1280x800.png` |
 | Populated actual-core Tracker | Standard | 1024×768 | 1 / 100% | `targets/workbook-50rows-1024x768.png` |
+| Populated actual-core Tracker | MacBook workspace | 1512×982 | 1 / 100% | `targets/workbook-macbook-1512x982.png` |
 | Populated actual-core Tracker | FHD | 1920×1080 | 1 / 100% | `targets/workbook-50rows-fhd-1920x1080.png` |
 | Populated actual-core Tracker | QHD | 2560×1440 | 1 / 100% | `targets/workbook-50rows-qhd-2560x1440.png` |
 | Populated actual-core Tracker | 4K | 3840×2160 | 1 / 100% | `targets/workbook-50rows-4k-3840x2160.png` |
 | Populated actual-core Tracker | 200% zoom | 720×450 | 1 / 200% | `targets/workbook-50rows-200-percent.png` |
 | Focused selection / edit / save dialog | Standard | 1440×900 | 1 / 100% | `targets/workbook-50rows-selection.png`, `targets/workbook-50rows-japanese-edit.png`, `targets/save-dialog-final.png` |
+| Grid horizontal overflow opened | 200% zoom | 720×450 | 1 / 200% | `targets/workbook-grid-overflow-open-720x450.png` |
+| Views-strip horizontal overflow opened | Narrow workspace | 360×800 | 1 / 100% | `targets/workbook-views-overflow-open-360x800.png` |
+| Long imported document title | Standard | 1024×768 | 1 / 100% | `targets/workbook-long-title-1024x768.png` |
+| Retained unknown draft / recovery | Standard | 1440×900 | 1 / 100% | `targets/recovery-acceptance-fault.png` |
 
 The final capture command reported seven rendered CJK cells and zero mojibake
 cells at each populated workbook workspace. It also checked complete title
-access for a long cell value; the 1024px case checked deliberate horizontal
-grid overflow. The executable visual regression separately confirms exact
-full-value title access for Latin and CJK cells, actual clipping, and the
-forced-colors focus style change. The exact-build comparison
-`git diff --stat 84c9c08a904568450510001aa557bade8f36b8b1 1b1b4173aead3fb31aeb6497723fc93c57b3b9e4 -- src/ui src/App.tsx src/ui/sheet-shell.css`
-returned no output. These observations remain headless/emulated and do not
-substitute for the pending physical Mac walkthrough.
+access for a long cell value. The explicit 720px grid check measured 704px
+client width against 1024px scroll width and panned from 0px to 320px; the
+360px Views strip measured 344px client width against 492px scroll width and
+panned from 0px to 148px. The long imported document title measured 594px
+client width against 1357px scroll width without displacing its commands.
+The executable visual regression separately confirms exact full-value title
+access for Latin and CJK cells, actual clipping, and the forced-colors focus
+boundary: after focus it is a solid 3px `Highlight` outline against the white
+selected-cell surface. The recovery capture uses the existing acceptance-only
+fault after real edits and reports `Needs refresh` with zero stale grid cells.
+These observations remain headless/emulated and do not substitute for the
+pending physical Mac walkthrough.
