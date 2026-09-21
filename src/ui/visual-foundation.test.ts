@@ -5,7 +5,10 @@ describe("visual foundation CSS contract", () => {
   const css = readFileSync(new URL("./sheet-shell.css", import.meta.url), "utf8");
 
   it("keeps dense-grid focus and responsive hooks explicit", () => {
-    expect(css).toContain("--ts-focus: #0b63ce");
+    expect(css).toContain("--ts-focus: #6551ce");
+    expect(css).toContain("--ts-accent: #6350d2");
+    expect(css).toContain(".ts-work-context");
+    expect(css).toContain(".ts-workbook-status");
     const lineStrong = css.match(/--ts-line-strong:\s*(#[0-9a-f]{6})/i)?.[1];
     expect(lineStrong).toBeDefined();
     expect(contrastRatio(lineStrong as string, "#ffffff")).toBeGreaterThanOrEqual(3);

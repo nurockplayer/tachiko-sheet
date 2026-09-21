@@ -240,6 +240,17 @@ describe("edit drafts", () => {
 });
 
 describe("recovery presentation", () => {
+  it("keeps the established five-view order and Refresh recovery route in a retained workbook", () => {
+    const markup = render({ view: makeView(), currentness: "unknown", outcome: "unknown" });
+    const orderedTabs = ["ts-tab-table", "ts-tab-summary", "ts-tab-report", "ts-tab-brief", "ts-tab-interop"];
+    const positions = orderedTabs.map((id) => markup.indexOf(`id=\"${id}\"`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    const refresh = markup.match(/<button[^>]*>Refresh<\/button>/)?.[0];
+    expect(refresh).toBeDefined();
+    expect(refresh).not.toContain("disabled");
+  });
+
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
     const markup = render({ currentness: "unknown", outcome: "unknown" });
     expect(markup).toContain('aria-label="Recovery"');

@@ -807,10 +807,20 @@ export function SheetShell(props: SheetShellProps) {
   function renderToolbar(): ReactNode {
     return (
       <header className="ts-workbook-head">
-        <div className="ts-title-block">
-          <h1 className="ts-title">{view ? view.title : ""}</h1>
-          <p className="ts-subtle">{table ? `${table.rows.length} rows` : ""}</p>
+        <div className="ts-document-identity">
+          <img className="ts-document-mark" src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" />
+          <div className="ts-title-block">
+            <span className="ts-wordmark">Tachiko Sheet</span>
+            <h1 className="ts-title">{view ? view.title : ""}</h1>
+            <p className="ts-subtle">{table ? `${table.rows.length} rows` : ""}</p>
+          </div>
         </div>
+      </header>
+    );
+  }
+
+  function renderStatusStrip(): ReactNode {
+    return (
         <div className="ts-status-strip">
           <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
             {currentnessLabel(currentness)}
@@ -831,7 +841,6 @@ export function SheetShell(props: SheetShellProps) {
             </span>
           ) : null}
         </div>
-      </header>
     );
   }
 
@@ -1271,40 +1280,44 @@ export function SheetShell(props: SheetShellProps) {
     return (
       <div className="ts-workbook" data-testid="project-ready" aria-busy={busy}>
         {renderToolbar()}
-        <nav className="ts-actions" aria-label="Workbook actions">
-          <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
-          <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
-            {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
-          </select>
-          <button
-            type="button"
-            className="ts-button"
-            onClick={() => void refresh()}
-            disabled={controlsLocked}
-            aria-describedby={controlsLocked ? lockNoteId : undefined}
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            className="ts-button ts-button--primary"
-            ref={saveCopyButtonRef}
-            onClick={openCopyDialog}
-            disabled={controlsLocked || saveStatus === "saving"}
-            aria-describedby={controlsLocked ? lockNoteId : undefined}
-          >
-            Save a copy
-          </button>
-          <button
-            type="button"
-            className="ts-button"
-            onClick={() => void requestClose()}
-            disabled={busy}
-            aria-describedby={busy ? lockNoteId : undefined}
-          >
-            Close project
-          </button>
-        </nav>
+        <section className="ts-work-context" aria-label="Workbook context">
+          <div className="ts-context-table">
+            <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
+            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
+              {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
+            </select>
+          </div>
+          <nav className="ts-actions" aria-label="Workbook actions">
+            <button
+              type="button"
+              className="ts-button"
+              onClick={() => void refresh()}
+              disabled={busy || commitPending}
+              aria-describedby={controlsLocked ? lockNoteId : undefined}
+            >
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="ts-button ts-button--primary"
+              ref={saveCopyButtonRef}
+              onClick={openCopyDialog}
+              disabled={controlsLocked || saveStatus === "saving"}
+              aria-describedby={controlsLocked ? lockNoteId : undefined}
+            >
+              Save a copy
+            </button>
+            <button
+              type="button"
+              className="ts-button"
+              onClick={() => void requestClose()}
+              disabled={busy}
+              aria-describedby={busy ? lockNoteId : undefined}
+            >
+              Close project
+            </button>
+          </nav>
+        </section>
         {controlsLocked ? (
           <p className="ts-hint" id={lockNoteId} role="note">
             An operation is in progress; editing is disabled until it finishes.
@@ -1339,6 +1352,7 @@ export function SheetShell(props: SheetShellProps) {
           </button>
           <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
         </div>
+        <div className="ts-workbook-status">{renderStatusStrip()}</div>
         {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
