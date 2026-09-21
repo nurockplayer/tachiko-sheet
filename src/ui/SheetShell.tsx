@@ -812,10 +812,45 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-title-block">
             <span className="ts-wordmark">Tachiko Sheet</span>
             <h1 className="ts-title">{view ? view.title : ""}</h1>
-            <p className="ts-subtle">{table ? `${table.rows.length} rows` : ""}</p>
           </div>
         </div>
+        {renderWorkbookActions()}
       </header>
+    );
+  }
+
+  function renderWorkbookActions(): ReactNode {
+    return (
+      <nav className="ts-actions ts-header-actions" aria-label="Workbook actions">
+        <button
+          type="button"
+          className="ts-button"
+          onClick={() => void refresh()}
+          disabled={busy || commitPending}
+          aria-describedby={controlsLocked ? lockNoteId : undefined}
+        >
+          Refresh
+        </button>
+        <button
+          type="button"
+          className="ts-button ts-button--primary"
+          ref={saveCopyButtonRef}
+          onClick={openCopyDialog}
+          disabled={controlsLocked || saveStatus === "saving"}
+          aria-describedby={controlsLocked ? lockNoteId : undefined}
+        >
+          Save a copy
+        </button>
+        <button
+          type="button"
+          className="ts-button"
+          onClick={() => void requestClose()}
+          disabled={busy}
+          aria-describedby={busy ? lockNoteId : undefined}
+        >
+          Close project
+        </button>
+      </nav>
     );
   }
 
@@ -835,6 +870,7 @@ export function SheetShell(props: SheetShellProps) {
           <span className={`ts-chip ts-chip--${saveStatus}`} data-testid="save-status">
             {saveLabel(saveStatus)}
           </span>
+          <span className="ts-workbook-row-count">{table ? `${table.rows.length} rows` : ""}</span>
           {outcome !== "idle" ? (
             <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
               {outcomeLabel(outcome)}
@@ -1287,36 +1323,6 @@ export function SheetShell(props: SheetShellProps) {
               {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
             </select>
           </div>
-          <nav className="ts-actions" aria-label="Workbook actions">
-            <button
-              type="button"
-              className="ts-button"
-              onClick={() => void refresh()}
-              disabled={busy || commitPending}
-              aria-describedby={controlsLocked ? lockNoteId : undefined}
-            >
-              Refresh
-            </button>
-            <button
-              type="button"
-              className="ts-button ts-button--primary"
-              ref={saveCopyButtonRef}
-              onClick={openCopyDialog}
-              disabled={controlsLocked || saveStatus === "saving"}
-              aria-describedby={controlsLocked ? lockNoteId : undefined}
-            >
-              Save a copy
-            </button>
-            <button
-              type="button"
-              className="ts-button"
-              onClick={() => void requestClose()}
-              disabled={busy}
-              aria-describedby={busy ? lockNoteId : undefined}
-            >
-              Close project
-            </button>
-          </nav>
         </section>
         {controlsLocked ? (
           <p className="ts-hint" id={lockNoteId} role="note">

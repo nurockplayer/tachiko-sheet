@@ -272,6 +272,8 @@
 .ts-workbook-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 60px;
   padding: 8px clamp(16px, 3vw, 40px);
   background: linear-gradient(108deg, var(--ts-accent-soft) 0%, var(--ts-surface-chrome) 35%, var(--ts-surface-chrome) 100%);
@@ -283,6 +285,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 260px;
 }
 
 .ts-document-mark {
@@ -412,6 +415,13 @@
   font-weight: 700;
 }
 
+.ts-workbook-row-count {
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .ts-work-context {
   display: flex;
   align-items: center;
@@ -429,6 +439,11 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
+}
+
+.ts-header-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
 }
 
 .ts-context-table .ts-field-label {
@@ -523,7 +538,7 @@
 
 .ts-grid-scroll {
   overflow: auto;
-  max-height: calc(100vh - 164px);
+  max-height: max(168px, calc(100vh - 164px));
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -823,13 +838,41 @@
   background: #fff;
 }
 
-@media (max-width: 700px) {
-  .ts-app { padding: 10px; }
+@media (max-width: 1023px) {
+  .ts-workbook-head {
+    align-content: center;
+    flex-wrap: wrap;
+    min-height: 96px;
+  }
+  .ts-document-identity { flex-basis: 100%; }
+  .ts-grid-scroll { max-height: max(168px, calc(100vh - 200px)); }
+}
+
+@media (max-width: 599px) {
   .ts-home { margin-top: 14px; }
-  .ts-workbook-head { align-items: flex-start; flex-direction: column; }
-  .ts-status-strip { width: 100%; }
-  .ts-actions .ts-button { flex: 1 1 auto; }
-  .ts-grid th, .ts-grid td { padding: 7px 8px; }
+  .ts-workbook-head {
+    align-items: flex-start;
+    min-height: 136px;
+    padding-inline: 16px;
+  }
+  .ts-header-actions { width: 100%; }
+  .ts-header-actions .ts-button { flex: 1 1 auto; padding-inline: 8px; }
+  .ts-work-context {
+    align-items: flex-start;
+    min-height: 88px;
+    padding-inline: 16px;
+  }
+  .ts-context-table {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+  .ts-context-table select { max-width: none; width: 100%; }
+  .ts-tabs, .ts-workbook-status { padding-inline: 16px; }
+  .ts-workbook-status { min-height: 44px; }
+  .ts-status-strip { flex-wrap: wrap; }
+  .ts-grid-scroll { max-height: max(168px, calc(100vh - 304px)); }
   .ts-report-controls { grid-template-columns: 1fr; }
 }
 

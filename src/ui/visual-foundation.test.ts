@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("visual foundation CSS contract", () => {
   const css = readFileSync(new URL("./sheet-shell.css", import.meta.url), "utf8");
 
-  it("keeps dense-grid focus and responsive hooks explicit", () => {
+  it("keeps dense-grid focus and the three responsive tiers explicit", () => {
     expect(css).toContain("--ts-focus: #6551ce");
     expect(css).toContain("--ts-accent: #6350d2");
     expect(css).toContain(".ts-work-context");
@@ -13,7 +13,11 @@ describe("visual foundation CSS contract", () => {
     expect(lineStrong).toBeDefined();
     expect(contrastRatio(lineStrong as string, "#ffffff")).toBeGreaterThanOrEqual(3);
     expect(css).toContain(".ts-cell--focused");
-    expect(css).toContain("@media (max-width: 700px)");
+    expect(css).toContain("@media (max-width: 1023px)");
+    expect(css).toContain("@media (max-width: 599px)");
+    expect(css).toContain("max-height: max(168px, calc(100vh - 164px))");
+    expect(css).toContain("max-height: max(168px, calc(100vh - 200px))");
+    expect(css).toContain("max-height: max(168px, calc(100vh - 304px))");
     expect(css).toContain("@media (forced-colors: active)");
   });
 
