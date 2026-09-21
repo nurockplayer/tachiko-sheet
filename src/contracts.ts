@@ -103,12 +103,16 @@ export interface OpaqueSavedCopy extends SavedCopySummary {
   bytes: ArrayBuffer;
   /** Optional host-private source attachment; never part of the opaque bytes. */
   importedSource?: ImportedSourceAttachment;
+  /** Optional host-private report configuration; never part of the opaque bytes. */
+  presentation?: PresentationAttachment;
 }
 export type AnySavedCopy = SavedCopy | OpaqueSavedCopy;
 export interface OpaqueProjectExport {
   revision: string;
   bytes: ArrayBuffer;
   importedSource?: ImportedSourceAttachment;
+  /** Optional host-private report configuration paired to this exact snapshot. */
+  presentation?: PresentationAttachment;
 }
 /** Visible selection vocabulary only. Runtime resolves these names to stable core IDs at dispatch. */
 export interface KeyedGroupedSumBindingCatalog {
@@ -132,6 +136,50 @@ export interface KeyedGroupedSumResult {
   revision: string;
   groups: KeyedGroupedSumProjection["groups"];
   diagnostics: KeyedGroupedSumProjection["diagnostics"];
+}
+/** Bounded UI configuration. It never contains groups, totals, currentness, or rendered pixels. */
+export interface ReportConfiguration {
+  definitionId: string;
+  type: "bar" | "line";
+  title: string;
+  categoryLabel: string;
+  valueLabel: string;
+  legendVisible: boolean;
+}
+
+export const REPORT_PRESENTATION_TEXT_LIMITS = {
+  title: 120,
+  categoryLabel: 80,
+  valueLabel: 80,
+} as const;
+
+export type ReportPresentationTextField = keyof typeof REPORT_PRESENTATION_TEXT_LIMITS;
+
+/** These bounds are host-private presentation limits, never core-group limits. */
+export function reportPresentationTextLimitViolation(
+  field: ReportPresentationTextField,
+  text: string,
+): { limit: number; length: number } | null {
+  const length = Array.from(text).length;
+  const limit = REPORT_PRESENTATION_TEXT_LIMITS[field];
+  return length <= limit ? null : { limit, length };
+}
+
+export function reportPresentationLimitViolation(
+  report: Pick<ReportConfiguration, ReportPresentationTextField>,
+): { field: ReportPresentationTextField; limit: number; length: number } | null {
+  for (const field of Object.keys(REPORT_PRESENTATION_TEXT_LIMITS) as ReportPresentationTextField[]) {
+    const violation = reportPresentationTextLimitViolation(field, report[field]);
+    if (violation) return { field, ...violation };
+  }
+  return null;
+}
+/** Private host record paired to an opaque core snapshot, not a project codec extension. */
+export interface PresentationAttachment {
+  version: 1;
+  report: ReportConfiguration;
+  snapshotRevision: string;
+  snapshotDigest: string;
 }
 /** Host-private attachment: deliberately outside the opaque canonical tree. */
 export interface ImportedSourceAttachment {
@@ -173,6 +221,8 @@ export interface SheetShellProps {
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;
   onDraftChange(dirty: boolean): void;
+  /** An invalid report-presentation field is local-only, but must survive lifecycle guards. */
+  onReportDraftChange(dirty: boolean): void;
   j4Results?: KeyedGroupedSumResult[];
   /** Internal core handles for refresh only; the UI never displays or requests them. */
   j4DefinitionIds?: string[];
@@ -180,6 +230,11 @@ export interface SheetShellProps {
   onCreateJ4?(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean>;
   onRefreshJ4?(witness: ViewWitness, definitionId: string): Promise<boolean>;
   onOpenJ4Canary?(): Promise<void>;
+  report?: ReportConfiguration | null;
+  onCreateReport?(definitionId: string, type: ReportConfiguration["type"]): void;
+  onUpdateReport?(report: ReportConfiguration): void;
+  onExportReportPng?(witness: ViewWitness, report: ReportConfiguration): boolean;
+  onRemoveReport?(): boolean;
   interop?: InteropState | null;
   onInspectImport?(file: File): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;

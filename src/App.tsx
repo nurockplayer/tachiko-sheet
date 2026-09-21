@@ -13,6 +13,8 @@ import {
   type KeyedGroupedSumResult,
   type LocalCopies,
   type OperationOutcome,
+  type PresentationAttachment,
+  type ReportConfiguration,
   type SaveStatus,
   type SavedCopySummary,
   type ScalarEdit,
@@ -85,6 +87,7 @@ export function openRecoveryRestoreDecision(
     savedRevision: string | null;
     pendingDirty: boolean;
     draftDirty: boolean;
+    presentationDirty?: boolean;
   },
   observed: Pick<WorkbookView, "occurrence" | "revision">,
 ): { sameOccurrence: boolean; saved: boolean } {
@@ -95,7 +98,8 @@ export function openRecoveryRestoreDecision(
       checkpoint.savedRevision !== null &&
       checkpoint.savedRevision === observed.revision &&
       !checkpoint.pendingDirty &&
-      !checkpoint.draftDirty,
+      !checkpoint.draftDirty &&
+      !checkpoint.presentationDirty,
   };
 }
 
@@ -108,9 +112,46 @@ export function runIfRecoveryCleared<T>(
   return unknownOpenRecovery ? blocked() : action();
 }
 
+/** A confirmed import is a new occurrence and cannot inherit a prior report attachment. */
+export function presentationAfterConfirmedImport(_prior: ReportConfiguration | null): {
+  report: null;
+  presentationDirty: false;
+} {
+  return { report: null, presentationDirty: false };
+}
+
+/**
+ * A saved report is only safe to rebind after the acknowledged replacement is
+ * observed again and its current grouped-summary result is freshly discovered.
+ * An absent occurrence witness is used only for the projection-recovery path
+ * where the runtime acknowledged Open but could not return its first view.
+ */
+export function recoverPresentationAfterAcknowledgedOpen(
+  candidate: {
+    occurrence: string | null;
+    presentation: PresentationAttachment;
+  },
+  observed: Pick<WorkbookView, "occurrence" | "revision">,
+  results: readonly KeyedGroupedSumResult[],
+): ReportConfiguration | null {
+  if (candidate.occurrence !== null && candidate.occurrence !== observed.occurrence) return null;
+  const source = results.find((result) =>
+    result.definitionId === candidate.presentation.report.definitionId &&
+    result.revision === observed.revision &&
+    result.diagnostics.length === 0,
+  );
+  return source ? { ...candidate.presentation.report } : null;
+}
+
 function describe(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
   return fallback;
+}
+
+async function opaqueSnapshotDigest(bytes: ArrayBuffer): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error("This host cannot verify the opaque project snapshot.");
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function loadExampleFiles(): Promise<CanonicalProjectFile[]> {
@@ -149,6 +190,7 @@ export function App({ runtime, copies }: AppProps) {
   const [savedCopies, setSavedCopies] = useState<SavedCopySummary[]>([]);
   const [j4Results, setJ4Results] = useState<KeyedGroupedSumResult[]>([]);
   const [j4DefinitionIds, setJ4DefinitionIds] = useState<string[]>([]);
+  const [report, setReport] = useState<ReportConfiguration | null>(null);
   const [interop, setInterop] = useState<InteropState | null>(null);
   const importBytesRef = useRef<ArrayBuffer | null>(null);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
@@ -159,11 +201,15 @@ export function App({ runtime, copies }: AppProps) {
   const inflightRef = useRef(false);
   const pendingDirtyRef = useRef(false);
   const draftDirtyRef = useRef(false);
+  const reportDraftDirtyRef = useRef(false);
   const dirtyRef = useRef(false);
   const savedRevisionRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
   const recoveryDraftRef = useRef<string | null>(null);
   const j4DefinitionIdsRef = useRef<string[]>([]);
+  const j4ResultsRef = useRef<KeyedGroupedSumResult[]>([]);
+  const reportRef = useRef<ReportConfiguration | null>(null);
+  const presentationDirtyRef = useRef(false);
   type CleanupPreviewContext = {
     occurrence: string;
     revision: string;
@@ -179,6 +225,18 @@ export function App({ runtime, copies }: AppProps) {
   // safe to expose or save until an authoritative refresh settles it.
   const provenanceUnconfirmedRef = useRef(false);
 
+  type PendingReplacementProvenance = {
+    occurrence: string | null;
+    revision: string | null;
+    importedSource: ImportedSourceAttachment | null;
+    interop: InteropState | null;
+    savedRevision: string | null;
+    presentation: PresentationAttachment | null;
+  };
+  // Candidate provenance stays private until Refresh proves that the
+  // acknowledged replacement is the one whose projection was recovered.
+  const pendingReplacementRef = useRef<PendingReplacementProvenance | null>(null);
+
   type OpenRecoveryCheckpoint = {
     occurrence: string;
     revision: string;
@@ -188,6 +246,8 @@ export function App({ runtime, copies }: AppProps) {
     preparedDownload: { format: "csv" | "xlsx"; revision: string; bytes: ArrayBuffer } | null;
     pendingDirty: boolean;
     draftDirty: boolean;
+    presentationDirty: boolean;
+    report: ReportConfiguration | null;
     savedRevision: string | null;
     saveStatus: SaveStatus;
     recoveryDraft: string | null;
@@ -196,7 +256,7 @@ export function App({ runtime, copies }: AppProps) {
   const openRecoveryCheckpointRef = useRef<OpenRecoveryCheckpoint | null>(null);
 
   const syncDirty = useCallback((): void => {
-    const next = pendingDirtyRef.current || draftDirtyRef.current;
+    const next = pendingDirtyRef.current || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current;
     dirtyRef.current = next;
     setDirty(next);
   }, []);
@@ -229,7 +289,15 @@ export function App({ runtime, copies }: AppProps) {
   }
 
   function clearJ4Results(): void {
+    j4ResultsRef.current = [];
     setJ4Results([]);
+  }
+
+  function installReport(next: ReportConfiguration | null, dirty = false): void {
+    reportRef.current = next;
+    setReport(next);
+    presentationDirtyRef.current = dirty;
+    syncDirty();
   }
 
   function installJ4DefinitionIds(ids: string[]): void {
@@ -243,14 +311,17 @@ export function App({ runtime, copies }: AppProps) {
 
   function installJ4Results(results: KeyedGroupedSumResult[]): void {
     installJ4DefinitionIds(results.map((result) => result.definitionId));
+    j4ResultsRef.current = results;
     setJ4Results(results);
   }
 
+  /** Restore confirmed pre-publication J4 state after a refused operation. */
   function restoreJ4Results(
     definitionIds: string[],
     results: KeyedGroupedSumResult[],
   ): void {
     installJ4DefinitionIds(definitionIds);
+    j4ResultsRef.current = results;
     setJ4Results(results);
   }
 
@@ -279,18 +350,20 @@ export function App({ runtime, copies }: AppProps) {
       : [...j4DefinitionIdsRef.current, result.definitionId];
     j4DefinitionIdsRef.current = definitionIds;
     setJ4DefinitionIds(definitionIds);
-    setJ4Results((current) => {
-      const byDefinition = new Map(current.map((candidate) => [candidate.definitionId, candidate]));
-      byDefinition.set(result.definitionId, result);
-      return definitionIds.flatMap((definitionId) => {
-        const candidate = byDefinition.get(definitionId);
-        return candidate ? [candidate] : [];
-      });
+    const byDefinition = new Map(j4ResultsRef.current.map((candidate) => [candidate.definitionId, candidate]));
+    byDefinition.set(result.definitionId, result);
+    const next = definitionIds.flatMap((definitionId) => {
+      const candidate = byDefinition.get(definitionId);
+      return candidate ? [candidate] : [];
     });
+    j4ResultsRef.current = next;
+    setJ4Results(next);
   }
 
   function dropJ4Result(definitionId: string): void {
-    setJ4Results((current) => current.filter((result) => result.definitionId !== definitionId));
+    const next = j4ResultsRef.current.filter((result) => result.definitionId !== definitionId);
+    j4ResultsRef.current = next;
+    setJ4Results(next);
   }
 
   function witnessOf(target: WorkbookView): ViewWitness {
@@ -324,7 +397,7 @@ export function App({ runtime, copies }: AppProps) {
     const live = viewRef.current;
     const saved = savedRevisionRef.current;
     if (saveInFlightRef.current || saved === null || live === null) return;
-    if (live.revision !== saved || draftDirtyRef.current) return;
+    if (live.revision !== saved || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current) return;
     setSaveStatus((previous) => (previous === "failed" ? previous : "saved"));
   }
 
@@ -343,11 +416,12 @@ export function App({ runtime, copies }: AppProps) {
     importedSource?: ImportedSourceAttachment | null;
     interop?: InteropState | null;
     savedRevision?: string | null;
+    presentation?: PresentationAttachment | null;
   };
 
-  function checkpointBeforeOpen(): void {
+  function checkpointBeforeOpen(replaceExisting = false): void {
     const old = viewRef.current;
-    if (old && openRecoveryCheckpointRef.current !== null) return;
+    if (old && openRecoveryCheckpointRef.current !== null && !replaceExisting) return;
     openRecoveryCheckpointRef.current = old ? {
       occurrence: old.occurrence,
       revision: old.revision,
@@ -359,6 +433,8 @@ export function App({ runtime, copies }: AppProps) {
         : null,
       pendingDirty: pendingDirtyRef.current,
       draftDirty: draftDirtyRef.current,
+      presentationDirty: presentationDirtyRef.current,
+      report: reportRef.current ? { ...reportRef.current } : null,
       savedRevision: savedRevisionRef.current,
       saveStatus,
       recoveryDraft: recoveryDraftRef.current,
@@ -381,7 +457,10 @@ export function App({ runtime, copies }: AppProps) {
     );
   }
 
-  function failClosedAfterReplacement(provenance: ReplacementProvenance): void {
+  function failClosedAfterReplacement(
+    provenance: ReplacementProvenance,
+    witness: Pick<WorkbookView, "occurrence" | "revision"> | null = null,
+  ): void {
     viewRef.current = null;
     setView(null);
     installJ4DefinitionIds([]);
@@ -389,15 +468,29 @@ export function App({ runtime, copies }: AppProps) {
     recoveryDraftRef.current = null;
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
+    reportDraftDirtyRef.current = false;
+    presentationDirtyRef.current = false;
+    installReport(null);
     syncDirty();
-    // The resident runtime now belongs to the candidate occurrence. Retain
-    // only provenance supplied by that candidate; old work must not leak in.
-    savedRevisionRef.current = provenance.savedRevision ?? null;
+    // The resident runtime now belongs to the candidate occurrence. Keep its
+    // provenance private until Refresh proves this exact replacement; old
+    // work must not leak into an unconfirmed projection.
+    pendingReplacementRef.current = (provenance.importedSource || provenance.interop || provenance.savedRevision || provenance.presentation)
+      ? {
+          occurrence: witness?.occurrence ?? null,
+          revision: witness?.revision ?? null,
+          importedSource: provenance.importedSource ?? null,
+          interop: provenance.interop ?? null,
+          savedRevision: provenance.savedRevision ?? null,
+          presentation: provenance.presentation ?? null,
+        }
+      : null;
+    savedRevisionRef.current = null;
     setSaveStatus("not-saved");
-    importedSourceRef.current = provenance.importedSource ?? null;
+    importedSourceRef.current = null;
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
-    setInterop(provenance.interop ?? null);
+    setInterop(null);
     cleanupPreviewContextRef.current = null;
     setCurrentness("unknown");
     setOutcome("unknown");
@@ -426,14 +519,22 @@ export function App({ runtime, copies }: AppProps) {
     );
   }
 
-  function commitReplacement(next: WorkbookView, results: KeyedGroupedSumResult[], provenance: ReplacementProvenance = {}): void {
+  function commitReplacement(
+    next: WorkbookView,
+    results: KeyedGroupedSumResult[],
+    provenance: ReplacementProvenance = {},
+    recoveredReport: ReportConfiguration | null = null,
+  ): void {
     installView(next);
     installJ4Results(results);
+    installReport(recoveredReport);
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
+    reportDraftDirtyRef.current = false;
+    presentationDirtyRef.current = false;
     syncDirty();
-    if (provenance.savedRevision === next.revision) {
-      savedRevisionRef.current = provenance.savedRevision;
+    if (typeof provenance.savedRevision === "string") {
+      savedRevisionRef.current = next.revision;
       setSaveStatus("saved");
     } else {
       markNotSaved();
@@ -454,7 +555,26 @@ export function App({ runtime, copies }: AppProps) {
     try {
       next = await open();
       const results = await readJ4Results(next);
-      commitReplacement(next, results, provenance);
+      const recoveredReport = provenance.presentation
+        ? recoverPresentationAfterAcknowledgedOpen(
+            { occurrence: next.occurrence, presentation: provenance.presentation },
+            next,
+            results,
+          )
+        : null;
+      if (provenance.presentation && !recoveredReport) {
+        // A known runtime Open is not an unknown operation, but the paired
+        // host-private presentation is still unconfirmed. Keep the complete
+        // candidate for Refresh instead of publishing a partial saved copy.
+        failClosedAfterReplacement(provenance, next);
+        unknownOpenRecoveryRef.current = false;
+        provenanceUnconfirmedRef.current = false;
+        clearOpenCheckpoint();
+        setOutcome("idle");
+        setMessage("The saved work opened, but its report configuration could not be confirmed. Refresh to re-read the paired work.");
+        return false;
+      }
+      commitReplacement(next, results, provenance, recoveredReport);
       unknownOpenRecoveryRef.current = false;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
@@ -466,7 +586,7 @@ export function App({ runtime, copies }: AppProps) {
         return false;
       }
       if (next !== null) {
-        failClosedAfterReplacement(provenance);
+        failClosedAfterReplacement(provenance, next);
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
         clearOpenCheckpoint();
@@ -645,9 +765,24 @@ export function App({ runtime, copies }: AppProps) {
         importInspection: null, metadata: copy.importedSource.metadata, ledger: copy.importedSource.ledger,
         cleanupPreview: null, downloadStatus: "idle" as const,
       } : null;
+      // Validate the optional presentation before replacing the resident work.
+      // A hash failure is a known refusal to open this copy, not a failed Open
+      // after the new occurrence has already become resident.
+      const presentationDigest = copy.kind === "opaque" && copy.presentation
+        ? await opaqueSnapshotDigest(copy.bytes)
+        : null;
+      const presentation = copy.kind === "opaque" && copy.presentation
+        ? (() => {
+            if (copy.presentation!.snapshotRevision !== copy.revision ||
+              copy.presentation!.snapshotDigest !== presentationDigest) {
+              throw new Error("The saved report configuration does not match its opaque snapshot.");
+            }
+            return copy.presentation!;
+          })()
+        : null;
       if (!await replaceWork(
         () => copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
-        { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision },
+        { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation },
       )) return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
@@ -724,7 +859,10 @@ export function App({ runtime, copies }: AppProps) {
     if (!pending || !bytes || !begin()) return false;
     try {
       guardReplacement();
-      checkpointBeforeOpen();
+      // Inspection is not dispatch. Replace the earlier inspection snapshot
+      // at the actual import boundary so unknown-import recovery restores the
+      // latest same-occurrence report, dirty marker, and save receipt.
+      checkpointBeforeOpen(true);
       setCurrentness("pending");
       const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: ",", header: true }, selection);
       // Import installs a different work occurrence. Never present an older
@@ -732,6 +870,8 @@ export function App({ runtime, copies }: AppProps) {
       installJ4DefinitionIds([]);
       clearJ4Results();
       installView(imported.view);
+      const presentation = presentationAfterConfirmedImport(reportRef.current);
+      installReport(presentation.report, presentation.presentationDirty);
       preparedDownloadRef.current = null;
       pendingDirtyRef.current = true;
       syncDirty();
@@ -742,6 +882,7 @@ export function App({ runtime, copies }: AppProps) {
       setCurrentness("current");
       setOutcome("idle");
       importBytesRef.current = null;
+      pendingReplacementRef.current = null;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
       return true;
@@ -972,9 +1113,25 @@ export function App({ runtime, copies }: AppProps) {
       if (definitionBearing) {
         const snapshot = await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
+        const configuredReport = reportRef.current;
+        const source = configuredReport && j4ResultsRef.current.find((candidate) =>
+          candidate.definitionId === configuredReport.definitionId &&
+          candidate.revision === live.revision &&
+          candidate.diagnostics.length === 0,
+        );
+        if (configuredReport && !source) {
+          throw new Error("Refresh the report source before saving its presentation settings.");
+        }
+        const presentation: PresentationAttachment | undefined = configuredReport ? {
+          version: 1,
+          report: configuredReport,
+          snapshotRevision,
+          snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
+        } : undefined;
         receipt = await copies.createOpaque(name, {
           ...snapshot,
           importedSource: importedSourceRef.current ?? undefined,
+          presentation,
         });
       } else {
         const snapshot = await runtime.exportCanonical(witnessOf(live));
@@ -991,6 +1148,7 @@ export function App({ runtime, copies }: AppProps) {
       if (stillCurrent) {
         savedRevisionRef.current = receipt.revision;
         pendingDirtyRef.current = false;
+        presentationDirtyRef.current = false;
         syncDirty();
       } else {
         markNotSaved();
@@ -1028,7 +1186,9 @@ export function App({ runtime, copies }: AppProps) {
   async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
-    const priorResults = currentness === "current" ? j4Results : null;
+    const priorJ4 = currentness === "current"
+      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] }
+      : null;
     const priorOccurrence = witness.occurrence;
     const priorRevision = witness.revision;
     let published = false;
@@ -1063,9 +1223,9 @@ export function App({ runtime, copies }: AppProps) {
         return true;
       }
       const current = viewRef.current;
-      if (priorResults && current &&
+      if (priorJ4 && current &&
         current.occurrence === priorOccurrence && current.revision === priorRevision) {
-        setJ4Results(priorResults);
+        restoreJ4Results(priorJ4.definitionIds, priorJ4.results);
       }
       setCurrentness("current");
       setOutcome("idle");
@@ -1103,6 +1263,60 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
+  function createReport(definitionId: string, type: ReportConfiguration["type"]): void {
+    const live = viewRef.current;
+    const source = live && j4ResultsRef.current.find((candidate) =>
+      candidate.definitionId === definitionId && candidate.revision === live.revision && candidate.diagnostics.length === 0,
+    );
+    if (!source) {
+      setMessage("Refresh the cross-table result before creating a report.");
+      return;
+    }
+    installReport({
+      definitionId,
+      type,
+      title: type === "bar" ? "Current grouped summary" : "Grouped summary trend",
+      categoryLabel: "Category",
+      valueLabel: "Value",
+      legendVisible: true,
+    }, true);
+    markNotSaved();
+  }
+
+  function updateReport(next: ReportConfiguration): void {
+    if (next.definitionId.length === 0 || (next.type !== "bar" && next.type !== "line")) return;
+    installReport(next, true);
+    markNotSaved();
+  }
+
+  function removeReport(): boolean {
+    if (blockUnknownOpenRecovery() || !begin()) return false;
+    try {
+      if (!viewRef.current || reportRef.current === null) return false;
+      installReport(null, true);
+      markNotSaved();
+      setOutcome("idle");
+      setMessage("The report configuration was removed. Table data and the cross-table definition were kept.");
+      return true;
+    } finally {
+      end();
+    }
+  }
+
+  function exportReportPng(witness: ViewWitness, candidate: ReportConfiguration): boolean {
+    const live = viewRef.current;
+    const current = reportRef.current;
+    const result = live && j4ResultsRef.current.find((entry) =>
+      entry.definitionId === candidate.definitionId && entry.revision === live.revision && entry.diagnostics.length === 0,
+    );
+    if (!live || !current || current !== candidate || live.occurrence !== witness.occurrence ||
+      live.revision !== witness.revision || !result || currentness !== "current") {
+      setMessage("The report source changed or is unavailable. Refresh it before exporting a PNG.");
+      return false;
+    }
+    return true;
+  }
+
   async function close(): Promise<void> {
     if (inflightRef.current) return;
     inflightRef.current = true;
@@ -1117,9 +1331,11 @@ export function App({ runtime, copies }: AppProps) {
       setView(null);
       installJ4DefinitionIds([]);
       clearJ4Results();
+      installReport(null);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "close");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
+      reportDraftDirtyRef.current = false;
       syncDirty();
       savedRevisionRef.current = null;
       setSaveStatus("not-saved");
@@ -1128,6 +1344,7 @@ export function App({ runtime, copies }: AppProps) {
       preparedDownloadRef.current = null;
       setInterop(null);
       cleanupPreviewContextRef.current = null;
+      pendingReplacementRef.current = null;
       unknownOpenRecoveryRef.current = false;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
@@ -1148,6 +1365,7 @@ export function App({ runtime, copies }: AppProps) {
       // table projection that has not yet been paired with its J4 inventory.
       const results = await readJ4Results(next);
       const checkpoint = openRecoveryCheckpointRef.current;
+      const pendingReplacement = pendingReplacementRef.current;
       const recoveryDecision = checkpoint ? openRecoveryRestoreDecision(checkpoint, next) : null;
       const sourceUnconfirmed = (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) &&
         (checkpoint === null || !recoveryDecision?.sameOccurrence);
@@ -1159,11 +1377,13 @@ export function App({ runtime, copies }: AppProps) {
         setView(null);
         installJ4DefinitionIds([]);
         clearJ4Results();
+        installReport(null);
         importedSourceRef.current = null;
         setInterop(null);
         cleanupPreviewContextRef.current = null;
         importBytesRef.current = null;
         preparedDownloadRef.current = null;
+        pendingReplacementRef.current = null;
         pendingDirtyRef.current = false;
         draftDirtyRef.current = false;
         recoveryDraftRef.current = null;
@@ -1173,6 +1393,51 @@ export function App({ runtime, copies }: AppProps) {
         setOutcome(unknownOpenRecoveryRef.current ? "unknown" : "idle");
         setMessage("The resident work's source identity could not be confirmed. Refresh again or close it before continuing.");
         return;
+      }
+      if (pendingReplacement) {
+        const sameReplacement = pendingReplacement.savedRevision !== null &&
+          (pendingReplacement.occurrence === null ||
+            (pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision));
+        if (sameReplacement) {
+          importedSourceRef.current = pendingReplacement.importedSource;
+          setInterop(pendingReplacement.interop
+            ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle" }
+            : null);
+          const recoveredReport = pendingReplacement.presentation
+            ? recoverPresentationAfterAcknowledgedOpen(
+                { occurrence: pendingReplacement.occurrence, presentation: pendingReplacement.presentation },
+                next,
+                results,
+              )
+            : null;
+          if (pendingReplacement.presentation && !recoveredReport) {
+            // Do not publish the workbook receipt without its verified
+            // paired presentation. Retain the candidate for another Refresh
+            // or the existing explicit Close path.
+            failClosedAfterReplacement(pendingReplacement, next);
+            unknownOpenRecoveryRef.current = false;
+            provenanceUnconfirmedRef.current = false;
+            setOutcome("idle");
+            setMessage("The saved work opened, but its report configuration could not be confirmed. Refresh to re-read the paired work.");
+            return;
+          }
+          installReport(recoveredReport);
+          savedRevisionRef.current = next.revision;
+          setSaveStatus("saved");
+          pendingReplacementRef.current = null;
+          if (pendingReplacement.presentation && !recoveredReport) {
+            setMessage("The saved report configuration does not match a current source, so it was not opened.");
+          }
+        } else {
+          // A readable result from another occurrence must not inherit the
+          // candidate's source attachment, receipt, or report configuration.
+          pendingReplacementRef.current = null;
+          importedSourceRef.current = null;
+          setInterop(null);
+          installReport(null);
+          markNotSaved();
+          setMessage("The saved work could not be confirmed after opening; its report was not restored.");
+        }
       }
       installView(next);
       installJ4Results(results);
@@ -1204,6 +1469,7 @@ export function App({ runtime, copies }: AppProps) {
           : null;
         pendingDirtyRef.current = checkpoint.pendingDirty;
         draftDirtyRef.current = checkpoint.draftDirty;
+        installReport(checkpoint.report ? { ...checkpoint.report } : null, checkpoint.presentationDirty);
         recoveryDraftRef.current = checkpoint.recoveryDraft;
         savedRevisionRef.current = recoveryDecision.saved ? checkpoint.savedRevision : null;
         setSaveStatus(recoveryDecision.saved ? checkpoint.saveStatus : "not-saved");
@@ -1219,8 +1485,10 @@ export function App({ runtime, copies }: AppProps) {
         cleanupPreviewContextRef.current = null;
         importBytesRef.current = null;
         preparedDownloadRef.current = null;
+        pendingReplacementRef.current = null;
         pendingDirtyRef.current = false;
         draftDirtyRef.current = false;
+        installReport(null);
         recoveryDraftRef.current = null;
         markNotSaved();
         // Keep both the marker and checkpoint. A later authoritative Refresh
@@ -1245,9 +1513,11 @@ export function App({ runtime, copies }: AppProps) {
         const recovered = noResidentRecoveryState();
         pendingDirtyRef.current = recovered.dirty;
         draftDirtyRef.current = false;
+        installReport(null);
         syncDirty();
         recoveryDraftRef.current = recovered.recoveryDraft;
         cleanupPreviewContextRef.current = null;
+        pendingReplacementRef.current = null;
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
         clearOpenCheckpoint();
@@ -1284,6 +1554,23 @@ export function App({ runtime, copies }: AppProps) {
     }
   }
 
+  function onReportDraftChange(next: boolean): void {
+    if (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) {
+      reportDraftDirtyRef.current = false;
+      syncDirty();
+      return;
+    }
+    reportDraftDirtyRef.current = next;
+    syncDirty();
+    if (next) {
+      setSaveStatus((previous) =>
+        previous === "saving" || previous === "failed" ? previous : "not-saved",
+      );
+    } else {
+      evaluateSavedStatus();
+    }
+  }
+
   return (
     <div
       className="ts-app-root"
@@ -1308,12 +1595,18 @@ export function App({ runtime, copies }: AppProps) {
         onClose={close}
         onRefresh={refresh}
         onDraftChange={onDraftChange}
+        onReportDraftChange={onReportDraftChange}
         j4Results={j4Results}
         j4DefinitionIds={j4DefinitionIds}
         onPrepareJ4Bindings={prepareJ4Bindings}
         onCreateJ4={createJ4}
         onRefreshJ4={refreshJ4}
         onOpenJ4Canary={openJ4Canary}
+        report={report}
+        onCreateReport={createReport}
+        onUpdateReport={updateReport}
+        onExportReportPng={exportReportPng}
+        onRemoveReport={removeReport}
         interop={interop}
         onInspectImport={inspectImport}
         onImportCandidate={importCandidate}

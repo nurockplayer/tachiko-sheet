@@ -5,11 +5,13 @@ import type {
   LocalCopies,
   OpaqueProjectExport,
   OpaqueSavedCopy,
+  PresentationAttachment,
   SaveReceipt,
   SavedCopy,
   SavedCopySummary,
   AnySavedCopy,
 } from "../contracts.js";
+import { reportPresentationLimitViolation } from "../contracts.js";
 
 /**
  * A dedicated IndexedDB database for durable local copies. This name is app
@@ -47,6 +49,8 @@ interface StoredOpaqueCopy {
   bytes: ArrayBuffer;
   /** Private IndexedDB composition, never embedded in the opaque bytes. */
   importedSource?: Omit<ImportedSourceAttachment, "bytes"> & { bytes: ArrayBuffer };
+  /** Private presentation data paired to this exact opaque snapshot. */
+  presentation?: PresentationAttachment;
 }
 
 let connection: Promise<IDBDatabase> | undefined;
@@ -144,7 +148,31 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
       ledger: structuredClone(record.importedSource.ledger),
     };
   }
+  // IndexedDB records are persisted input. Do not let a malformed optional
+  // attachment become a typed runtime value merely because it is truthy.
+  if (record.presentation !== undefined) copy.presentation = clonePresentation(record.presentation)!;
   return copy;
+}
+
+function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
+  if (presentation === undefined) return undefined;
+  if (typeof presentation !== "object" || presentation === null) {
+    throw new TypeError("The presentation attachment is invalid.");
+  }
+  const candidate = presentation as Partial<PresentationAttachment>;
+  const report = candidate.report;
+  if (candidate.version !== 1 ||
+    typeof report !== "object" || report === null ||
+    (report.type !== "bar" && report.type !== "line") ||
+    typeof report.definitionId !== "string" || report.definitionId.length === 0 ||
+    typeof report.title !== "string" || typeof report.categoryLabel !== "string" ||
+    typeof report.valueLabel !== "string" || typeof report.legendVisible !== "boolean" ||
+    typeof candidate.snapshotRevision !== "string" || candidate.snapshotRevision.length === 0 ||
+    typeof candidate.snapshotDigest !== "string" || !/^[a-f0-9]{64}$/i.test(candidate.snapshotDigest) ||
+    reportPresentationLimitViolation(report as PresentationAttachment["report"]) !== null) {
+    throw new TypeError("The presentation attachment is invalid.");
+  }
+  return structuredClone(candidate as PresentationAttachment);
 }
 
 /**
@@ -355,6 +383,7 @@ export function createLocalCopies(): LocalCopies {
           metadata: structuredClone(snapshot.importedSource.metadata),
           ledger: structuredClone(snapshot.importedSource.ledger),
         } : undefined,
+        presentation: clonePresentation(snapshot.presentation),
       };
       const db = await openDatabase();
       await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);

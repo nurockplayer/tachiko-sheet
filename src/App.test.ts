@@ -4,10 +4,41 @@ import {
   clearRecoveryOccurrenceContext,
   noResidentRecoveryState,
   openRecoveryRestoreDecision,
+  presentationAfterConfirmedImport,
+  recoverPresentationAfterAcknowledgedOpen,
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
 } from "./App.js";
+import { reportPresentationLimitViolation, reportPresentationTextLimitViolation } from "./contracts.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
+
+describe("report presentation Unicode bounds", () => {
+  it("counts code points rather than UTF-16 code units and preserves blank values", () => {
+    const atTitleLimit = "A".repeat(119) + "😀";
+    const atLabelLimit = "界".repeat(79) + "😀";
+    expect(atTitleLimit.length).toBe(121);
+    expect(Array.from(atTitleLimit)).toHaveLength(120);
+    expect(reportPresentationTextLimitViolation("title", atTitleLimit)).toBe(null);
+    expect(reportPresentationTextLimitViolation("categoryLabel", atLabelLimit)).toBe(null);
+    expect(reportPresentationTextLimitViolation("valueLabel", "")).toBe(null);
+    expect(reportPresentationLimitViolation({
+      title: atTitleLimit,
+      categoryLabel: atLabelLimit,
+      valueLabel: "",
+    })).toEqual(null);
+  });
+
+  it("identifies the first over-limit presentation field without rewriting it", () => {
+    const title = "名".repeat(120) + "😀";
+    expect(reportPresentationTextLimitViolation("title", title)).toEqual({limit: 120, length: 121});
+    expect(reportPresentationLimitViolation({
+      title,
+      categoryLabel: "",
+      valueLabel: "",
+    })).toEqual({field: "title", limit: 120, length: 121});
+    expect(title).toBe("名".repeat(120) + "😀");
+  });
+});
 
 describe("recovery draft lifecycle", () => {
   it("retains the draft only across its own authoritative reobserve", () => {
@@ -75,6 +106,10 @@ describe("unknown-open provenance recovery", () => {
       sameOccurrence: true,
       saved: false,
     });
+    expect(openRecoveryRestoreDecision({ ...checkpoint, presentationDirty: true }, checkpoint)).toEqual({
+      sameOccurrence: true,
+      saved: false,
+    });
   });
 
   it("blocks copy/export dispatches when an unknown open has no old checkpoint", () => {
@@ -96,5 +131,66 @@ describe("unknown-open provenance recovery", () => {
     expect(opaqueCalls).toBe(0);
     expect(exportCalls).toBe(0);
     expect(runIfRecoveryCleared(false, () => "reopened", () => "blocked")).toBe("reopened");
+  });
+});
+
+describe("confirmed import presentation isolation", () => {
+  it("clears an old occurrence report and its dirty marker only after confirmed import", () => {
+    expect(presentationAfterConfirmedImport({
+      definitionId: "old-summary",
+      type: "line",
+      title: "Old report",
+      categoryLabel: "Category",
+      valueLabel: "Value",
+      legendVisible: true,
+    })).toEqual({ report: null, presentationDirty: false });
+  });
+});
+
+describe("acknowledged saved-open presentation recovery", () => {
+  const presentation = {
+    version: 1 as const,
+    report: {
+      definitionId: "definition-1",
+      type: "bar" as const,
+      title: "Saved report",
+      categoryLabel: "Category",
+      valueLabel: "Value",
+      legendVisible: true,
+    },
+    snapshotRevision: "rev-1",
+    snapshotDigest: "a".repeat(64),
+  };
+  const result = {
+    definitionId: "definition-1",
+    revision: "rev-1",
+    groups: [{ category: "Alpha", value: 3 }],
+    diagnostics: [],
+  };
+
+  it("binds after the same replacement and a fresh clean result even when a new resident session resets revision", () => {
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: "replacement", presentation },
+      { occurrence: "replacement", revision: "resident/0" },
+      [{ ...result, revision: "resident/0" }],
+    )).toEqual(presentation.report);
+  });
+
+  it("isolates a different occurrence, stale result, or failed result", () => {
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: "replacement", presentation },
+      { occurrence: "other", revision: "rev-1" },
+      [result],
+    )).toBe(null);
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: null, presentation },
+      { occurrence: "replacement", revision: "rev-2" },
+      [result],
+    )).toBe(null);
+    expect(recoverPresentationAfterAcknowledgedOpen(
+      { occurrence: "replacement", presentation },
+      { occurrence: "replacement", revision: "rev-1" },
+      [{ ...result, diagnostics: [{ code: "failed", entity: null, field: null, lookup_key: null, candidates: [] }] }],
+    )).toBe(null);
   });
 });

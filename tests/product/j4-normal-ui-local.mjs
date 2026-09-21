@@ -85,6 +85,63 @@ try {
   assert.equal(await groupText(page), firstSummary, "a known pre-publication rejection must retain the current grouped values");
 
   const tablePicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
+  // Opening a clean editor must not leave it mounted across a collection
+  // switch. The source witness and value must remain unchanged, and switching
+  // tables must not dispatch an Execute mutation.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await tablePicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const cleanHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const cleanPriceIndex = cleanHeaders.filter((header) => header !== "Row").indexOf("price");
+  const cleanPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  const cleanCell = cleanPenRow.locator("td").nth(cleanPriceIndex);
+  const cleanEntity = await cleanCell.getAttribute("data-work-entity");
+  const cleanOccurrence = await cleanCell.getAttribute("data-work-occurrence");
+  const cleanRevision = await cleanCell.getAttribute("data-work-revision");
+  const cleanValue = await cleanCell.locator(".ts-cell-value").textContent();
+  assert.ok(cleanEntity, "Catalog clean-edit target must expose its entity.");
+  await cleanCell.dblclick();
+  const cleanEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await cleanEditor.waitFor();
+  assert.equal(await cleanEditor.inputValue(), cleanValue, "clean editor must retain the source value");
+  const cleanSwitchDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
+  await tablePicker.selectOption("sales");
+  await page.getByRole("columnheader", { name: "product_code", exact: true }).waitFor();
+  assert.equal(await page.getByRole("textbox", { name: "Edit cell", exact: true }).count(), 0, "clean editor must clear when leaving its collection");
+  const salesGrid = page.locator('table[aria-label="Table"]');
+  assert.equal(await salesGrid.locator('td[tabindex="0"]').count(), 1, "a new collection grid must retain exactly one roving tab stop");
+  // The table selector retains keyboard focus after selection. Reach the grid
+  // by normal Tab navigation, then verify grid navigation with real keys.
+  for (let index = 0; index < 5; index += 1) await page.keyboard.press("Tab");
+  const salesFirstCell = salesGrid.locator('td[tabindex="0"]');
+  assert.equal(await salesFirstCell.evaluate((cell) => document.activeElement === cell), true, "Tab must enter the new grid at its roving tab stop");
+  const enteredSalesCellId = await salesFirstCell.getAttribute("data-testid");
+  await page.keyboard.press("ArrowRight");
+  const arrowSalesCellId = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? null);
+  assert.ok(arrowSalesCellId?.startsWith("cell:"), "Arrow navigation must remain in the new grid");
+  assert.notEqual(arrowSalesCellId, enteredSalesCellId, "Arrow navigation must leave the entered Sales cell");
+  await page.waitForFunction((testId) => document.querySelector(`[data-testid="${testId}"]`)?.getAttribute("tabindex") === "0", arrowSalesCellId);
+  await page.keyboard.press("Shift+Tab");
+  const tabSalesCellId = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? null);
+  assert.equal(tabSalesCellId, enteredSalesCellId, "Shift+Tab navigation must remain in the Sales grid");
+  await tablePicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const returnedCell = page.locator(`td[data-work-entity="${cleanEntity}"]`).nth(cleanPriceIndex);
+  await returnedCell.waitFor();
+  assert.equal(await returnedCell.getAttribute("data-work-occurrence"), cleanOccurrence, "collection switch must retain occurrence");
+  assert.equal(await returnedCell.getAttribute("data-work-revision"), cleanRevision, "collection switch must retain revision");
+  assert.equal(await returnedCell.locator(".ts-cell-value").textContent(), cleanValue, "collection switch must retain value");
+  assert.equal(await page.getByRole("textbox", { name: "Edit cell", exact: true }).count(), 0, "clean editor must not resurrect on return");
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-testid="cell-editor"]') ?? false), false, "clean editor must not retain focus on return");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), cleanSwitchDispatches, "collection switches must not dispatch Execute");
+  await returnedCell.dblclick();
+  const retainedEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await retainedEditor.fill("250");
+  assert.equal(await tablePicker.isDisabled(), true, "a modified cell draft must block collection switching");
+  assert.equal(await retainedEditor.inputValue(), "250", "modified draft must be retained");
+  assert.equal(await retainedEditor.evaluate((input) => document.activeElement === input), true, "modified draft must retain focus");
+  await retainedEditor.press("Escape");
+
   // A cleanup preview is tied to its collection. Switching from A to B must
   // remove the old preview and never dispatch its stale commit.
   await page.getByRole("tab", { name: "Table", exact: true }).click();
@@ -107,6 +164,30 @@ try {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("sales");
   await page.getByRole("columnheader", { name: "product_code", exact: true }).waitFor();
+  const switchedSalesGrid = page.locator('table[aria-label="Table"]');
+  const switchedSalesFirstCell = switchedSalesGrid.locator("td").first();
+  const switchedSalesFirstId = await switchedSalesFirstCell.getAttribute("data-testid");
+  // The last focused Catalog cell is now unmounted. Both close-dialog exits
+  // must resolve focus against the live Sales grid instead.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("dialog", { name: "Unsaved work", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.waitForFunction((testId) => document.activeElement?.getAttribute("data-testid") === testId, switchedSalesFirstId);
+  assert.equal(await switchedSalesFirstCell.evaluate((cell) => document.activeElement === cell), true, "Escape from unsaved-work must focus the live Sales first cell");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await page.waitForFunction((testId) => document.activeElement?.getAttribute("data-testid") === testId, switchedSalesFirstId);
+  assert.equal(await switchedSalesFirstCell.evaluate((cell) => document.activeElement === cell), true, "Keep editing must focus the live Sales first cell");
+  await page.keyboard.press("ArrowRight");
+  const switchedSalesSecondId = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? null);
+  assert.ok(switchedSalesSecondId?.startsWith("cell:"), "Sales keyboard navigation must remain in the grid");
+  assert.notEqual(switchedSalesSecondId, switchedSalesFirstId, "Sales keyboard navigation must focus a non-first cell");
+  await tablePicker.selectOption("sales");
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? null), switchedSalesSecondId, "same-collection selection must preserve current focus");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await page.waitForFunction((testId) => document.activeElement?.getAttribute("data-testid") === testId, switchedSalesSecondId);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? null), switchedSalesSecondId, "Keep editing must restore a connected current-grid cell");
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "collection switch must clear the A preview");
   const staleCommitDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
