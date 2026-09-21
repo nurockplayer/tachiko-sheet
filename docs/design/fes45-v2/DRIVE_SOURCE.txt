@@ -1,6 +1,0 @@
-FES45 v3 complete bundle source
-Drive folder: https://drive.google.com/drive/folders/1zmVcHBr-6ncLzkMZDJWOMIZHrjxC4Dzn
-Complete ZIP: https://drive.google.com/file/d/1yiPaY7BYwb3g70FdqPvArEFPylriaNdH/view
-ZIP SHA-256: 18d2baea8505b473c6ff7e4171c19aa20bc9f051eb88b84002e9eaab13b4cce8
-Evidence aggregate SHA-256: bf583416d1cd394f4b31091ad42ca6c4ab87b5c130224fb68577638c1351fd38
-Manifest SHA-256: 9e0b328f34452ac2fdfb9ae0582ccc6015356bd02f6857c8e05138571c4df4ad
