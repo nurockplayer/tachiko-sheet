@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --quiet gdown
-          gdown --id 1yiPaY7BYwb3g70FdqPvArEFPylriaNdH --output /tmp/fes45-v3.zip
+          gdown 1yiPaY7BYwb3g70FdqPvArEFPylriaNdH -O /tmp/fes45-v3.zip
           echo "18d2baea8505b473c6ff7e4171c19aa20bc9f051eb88b84002e9eaab13b4cce8  /tmp/fes45-v3.zip" | sha256sum -c -
       - name: Import exact bundle
         shell: bash
