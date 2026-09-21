@@ -1,0 +1,64 @@
+name: Fix FES45 v3 bundle whitespace
+on:
+  push:
+    branches:
+      - design/issue-45-fes45-v2
+    paths:
+      - .github/workflows/fes45-v3-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: design/issue-45-fes45-v2
+      - name: Repair authored whitespace and refresh manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          root = Path("docs/design/fes45-v2")
+          p = root / "boards.js"
+          s = p.read_text()
+          old = "entries.slice(28).forEach((a,i)=>swatch(a,32+384*(i%4),1712+80*Math.floor(i/4))); \n"
+          new = "entries.slice(28).forEach((a,i)=>swatch(a,32+384*(i%4),1712+80*Math.floor(i/4)));\n"
+          if old not in s:
+              raise SystemExit("expected trailing-whitespace target not found")
+          p.write_text(s.replace(old, new, 1))
+          raw = p.read_bytes()
+          sha = hashlib.sha256(raw).hexdigest()
+          mpath = root / "fes45-v3-manifest.json"
+          m = json.loads(mpath.read_text())
+          for f in m["files"]:
+              if f["path"] == "boards.js":
+                  f["bytes"] = len(raw)
+                  f["sha256"] = sha
+                  break
+          else:
+              raise SystemExit("boards.js manifest entry missing")
+          mpath.write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\n")
+          mraw = mpath.read_bytes()
+          msha = hashlib.sha256(mraw).hexdigest()
+          (root / "MANIFEST.sha256").write_text(f"{msha}  fes45-v3-manifest.json\n")
+          print("boards", sha)
+          print("manifest", msha)
+          PY
+          python docs/design/fes45-v2/verify_bundle.py
+          git diff --check HEAD -- . ':(exclude)public/core-kit/notices/THIRD_PARTY_LICENSES.md'
+      - name: Commit repair and remove bootstrap workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fes45-v3-fix.yml
+          git add docs/design/fes45-v2/boards.js docs/design/fes45-v2/fes45-v3-manifest.json docs/design/fes45-v2/MANIFEST.sha256
+          git commit -m "design: normalize FES45 v3 evidence bundle (Refs #45)"
+          git push origin HEAD:design/issue-45-fes45-v2
