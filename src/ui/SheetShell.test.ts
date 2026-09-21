@@ -254,12 +254,13 @@ describe("recovery presentation", () => {
   it("keeps every workbook command available in the responsive document header", () => {
     const markup = render({ view: makeView() });
     const header = markup.match(/<header class="ts-workbook-head">([\s\S]*?)<\/header>/)?.[1];
-    const context = markup.match(/<section class="ts-work-context"[\s\S]*?<\/section>/)?.[0];
-    expect(header).toContain('aria-label="Workbook actions"');
+    const context = markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0];
+    expect(header).toContain('aria-label="Document commands"');
     expect(header).toContain(">Refresh</button>");
     expect(header).toContain(">Save a copy</button>");
     expect(header).toContain(">Close project</button>");
-    expect(context).not.toContain('aria-label="Workbook actions"');
+    expect(context).toContain('aria-label="Workbook actions"');
+    expect(context).toContain('id="ts-active-table"');
   });
 
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {

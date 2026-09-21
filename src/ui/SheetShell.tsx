@@ -821,7 +821,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderWorkbookActions(): ReactNode {
     return (
-      <nav className="ts-actions ts-header-actions" aria-label="Workbook actions">
+      <div className="ts-actions ts-header-actions" role="group" aria-label="Document commands">
         <button
           type="button"
           className="ts-button"
@@ -850,7 +850,7 @@ export function SheetShell(props: SheetShellProps) {
         >
           Close project
         </button>
-      </nav>
+      </div>
     );
   }
 
@@ -1316,14 +1316,14 @@ export function SheetShell(props: SheetShellProps) {
     return (
       <div className="ts-workbook" data-testid="project-ready" aria-busy={busy}>
         {renderToolbar()}
-        <section className="ts-work-context" aria-label="Workbook context">
+        <nav className="ts-work-context" aria-label="Workbook actions">
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
             <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
               {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
             </select>
           </div>
-        </section>
+        </nav>
         {controlsLocked ? (
           <p className="ts-hint" id={lockNoteId} role="note">
             An operation is in progress; editing is disabled until it finishes.
