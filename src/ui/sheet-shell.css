@@ -939,8 +939,20 @@
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .ts-header-actions .ts-button--primary:not(:disabled) {
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+    box-shadow: none;
+    forced-color-adjust: none;
+  }
   .ts-app :focus-visible { outline-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
+  .ts-row--selected .ts-cell-value, .ts-row--selected .ts-row-head {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
   .ts-app .ts-cell--focused {
     outline: 3px solid Highlight !important;
     outline-offset: -3px;

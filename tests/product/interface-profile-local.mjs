@@ -36,6 +36,96 @@ async function downloadedPng() {
   return bytes;
 }
 
+async function forcedColorPaintEvidence(label) {
+  // Check the resting control, not a pointer hover left by the Save journey.
+  await page.mouse.move(0, 0);
+  const screenshot = (await page.screenshot({ type: "png" })).toString("base64");
+  const evidence = await page.evaluate(async ({ label: caseLabel, screenshot }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${screenshot}`;
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const rgb = (value) => value.match(/\d+/g)?.slice(0, 3).map(Number) ?? [];
+    const relativeLuminance = ([r, g, b]) => {
+      const linear = (channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    const contrast = (first, second) => {
+      const lighter = Math.max(relativeLuminance(first), relativeLuminance(second));
+      const darker = Math.min(relativeLuminance(first), relativeLuminance(second));
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const paint = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`${caseLabel}: missing ${selector}`);
+      const style = getComputedStyle(element);
+      const elementRect = element.getBoundingClientRect();
+      // Tight text bounds reject a same-color text backplate even when the
+      // surrounding button/header has the expected contrasting system color.
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const textRect = range.getBoundingClientRect();
+      const rect = {
+        left: Math.max(elementRect.left, textRect.left),
+        top: Math.max(elementRect.top, textRect.top),
+        right: Math.min(elementRect.right, textRect.right),
+        bottom: Math.min(elementRect.bottom, textRect.bottom),
+      };
+      const left = Math.max(0, Math.floor(rect.left));
+      const top = Math.max(0, Math.floor(rect.top));
+      const right = Math.min(canvas.width, Math.ceil(rect.right));
+      const bottom = Math.min(canvas.height, Math.ceil(rect.bottom));
+      if (right <= left || bottom <= top) throw new Error(`${caseLabel}: empty crop for ${selector}`);
+      const pixels = context.getImageData(left, top, right - left, bottom - top).data;
+      const counts = new Map();
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3] === 0) continue;
+        const color = [pixels[index], pixels[index + 1], pixels[index + 2]];
+        const key = color.join(",");
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      const dominant = [...counts.entries()].sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1])[0];
+      const foreground = rgb(style.color);
+      const foregroundKey = foreground.join(",");
+      return {
+        selector,
+        crop: { left, top, right, bottom },
+        foreground,
+        foregroundPixels: counts.get(foregroundKey) ?? 0,
+        dominantBackground: dominant ? dominant[0].split(",").map(Number) : [],
+        backgroundPixels: dominant?.[1] ?? 0,
+        contrast: dominant ? contrast(foreground, dominant[0].split(",").map(Number)) : 0,
+        forcedColorAdjust: style.forcedColorAdjust,
+      };
+    };
+    return {
+      label: caseLabel,
+      save: paint(".ts-header-actions .ts-button--primary:not(:disabled)"),
+      selectedFocusedValue: paint(".ts-row--selected .ts-cell--focused .ts-cell-value"),
+      selectedNonFocusedValue: paint(".ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value"),
+      selectedRowNumber: paint(".ts-row--selected .ts-row-head"),
+    };
+  }, { label, screenshot });
+  const failures = [];
+  for (const paint of [evidence.save, evidence.selectedFocusedValue, evidence.selectedNonFocusedValue, evidence.selectedRowNumber]) {
+    if (paint.foregroundPixels <= 0) failures.push(`${paint.selector} has no rendered glyph foreground pixels`);
+    if (paint.backgroundPixels <= 0) failures.push(`${paint.selector} has no rendered interior background pixels`);
+    if (paint.contrast < 4.5) failures.push(`${paint.selector} rendered contrast ${paint.contrast.toFixed(2)} is too low`);
+  }
+  assert.deepEqual(failures, [], `${label}: ${failures.join("; ")}`);
+  return evidence;
+}
+
 try {
   await page.goto(LOCAL_ORIGIN);
   await page.getByTestId("project-ready").waitFor();
@@ -70,6 +160,12 @@ try {
   assert.ok(priceIndex >= 0);
   const cell = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
   await cell.focus();
+  const canonicalForcedColors = [];
+  for (const colorScheme of ["light", "dark"]) {
+    await page.emulateMedia({ forcedColors: "active", colorScheme });
+    canonicalForcedColors.push(await forcedColorPaintEvidence(`canonical profile / ${colorScheme}`));
+  }
+  await page.emulateMedia({ forcedColors: "none", colorScheme: "light" });
   await cell.press("Enter");
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill("250");
@@ -162,6 +258,11 @@ try {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   const focusCell = page.locator(".ts-cell").first();
   await focusCell.focus();
+  const stressForcedColors = [];
+  for (const colorScheme of ["light", "dark"]) {
+    await page.emulateMedia({ forcedColors: "active", colorScheme, reducedMotion: "reduce" });
+    stressForcedColors.push(await forcedColorPaintEvidence(`stress profile / ${colorScheme}`));
+  }
   const accessibility = await focusCell.evaluate((element) => {
     const style = getComputedStyle(element);
     return { width: style.outlineWidth, style: style.outlineStyle, transition: style.transitionDuration, scroll: style.scrollBehavior };
@@ -170,7 +271,7 @@ try {
   assert.equal(accessibility.style, "solid");
   assert.equal(accessibility.scroll, "auto");
   assert.ok(parseFloat(accessibility.transition) <= 0.00001);
-  console.log(JSON.stringify({ case: "Interface Profile appearance-only boundary", status: "PASS", workMethodDelta: Object.entries(applied.countsAfter).reduce((total, [key, value]) => total + value - (applied.counts[key] ?? 0), 0), protectedRecipes: applied.recipes.length, protectedNodes: applied.protectedCount, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex") }));
+  console.log(JSON.stringify({ case: "Interface Profile appearance-only boundary", status: "PASS", workMethodDelta: Object.entries(applied.countsAfter).reduce((total, [key, value]) => total + value - (applied.counts[key] ?? 0), 0), protectedRecipes: applied.recipes.length, protectedNodes: applied.protectedCount, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"), forcedColorPaint: [...canonicalForcedColors, ...stressForcedColors] }));
 } finally {
   await context.close();
   await browser.close();

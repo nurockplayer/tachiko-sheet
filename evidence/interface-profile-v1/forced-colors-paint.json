@@ -1,0 +1,386 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "label": "canonical profile / light",
+      "save": {
+        "selector": ".ts-header-actions .ts-button--primary:not(:disabled)",
+        "crop": {
+          "left": 1022,
+          "top": 28,
+          "right": 1103,
+          "bottom": 46
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 83,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 981,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      },
+      "selectedFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell--focused .ts-cell-value",
+        "crop": {
+          "left": 966,
+          "top": 210,
+          "right": 994,
+          "bottom": 227
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 53,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 281,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      },
+      "selectedNonFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value",
+        "crop": {
+          "left": 334,
+          "top": 210,
+          "right": 362,
+          "bottom": 227
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 29,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 283,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      },
+      "selectedRowNumber": {
+        "selector": ".ts-row--selected .ts-row-head",
+        "crop": {
+          "left": 18,
+          "top": 210,
+          "right": 28,
+          "bottom": 227
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 11,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 129,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      }
+    },
+    {
+      "label": "canonical profile / dark",
+      "save": {
+        "selector": ".ts-header-actions .ts-button--primary:not(:disabled)",
+        "crop": {
+          "left": 1022,
+          "top": 28,
+          "right": 1103,
+          "bottom": 46
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 83,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 981,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      },
+      "selectedFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell--focused .ts-cell-value",
+        "crop": {
+          "left": 966,
+          "top": 210,
+          "right": 994,
+          "bottom": 227
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 53,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 281,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      },
+      "selectedNonFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value",
+        "crop": {
+          "left": 334,
+          "top": 210,
+          "right": 362,
+          "bottom": 227
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 29,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 283,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      },
+      "selectedRowNumber": {
+        "selector": ".ts-row--selected .ts-row-head",
+        "crop": {
+          "left": 18,
+          "top": 210,
+          "right": 28,
+          "bottom": 227
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 11,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 129,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      }
+    },
+    {
+      "label": "stress profile / light",
+      "save": {
+        "selector": ".ts-header-actions .ts-button--primary:not(:disabled)",
+        "crop": {
+          "left": 1022,
+          "top": 28,
+          "right": 1103,
+          "bottom": 46
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 83,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 981,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      },
+      "selectedFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell--focused .ts-cell-value",
+        "crop": {
+          "left": 334,
+          "top": 210,
+          "right": 362,
+          "bottom": 227
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 29,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 300,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      },
+      "selectedNonFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value",
+        "crop": {
+          "left": 650,
+          "top": 210,
+          "right": 678,
+          "bottom": 227
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 29,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 283,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      },
+      "selectedRowNumber": {
+        "selector": ".ts-row--selected .ts-row-head",
+        "crop": {
+          "left": 18,
+          "top": 210,
+          "right": 28,
+          "bottom": 227
+        },
+        "foreground": [
+          255,
+          255,
+          255
+        ],
+        "foregroundPixels": 11,
+        "dominantBackground": [
+          55,
+          51,
+          109
+        ],
+        "backgroundPixels": 129,
+        "contrast": 11.309774587047812,
+        "forcedColorAdjust": "none"
+      }
+    },
+    {
+      "label": "stress profile / dark",
+      "save": {
+        "selector": ".ts-header-actions .ts-button--primary:not(:disabled)",
+        "crop": {
+          "left": 1022,
+          "top": 28,
+          "right": 1103,
+          "bottom": 46
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 83,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 981,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      },
+      "selectedFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell--focused .ts-cell-value",
+        "crop": {
+          "left": 334,
+          "top": 210,
+          "right": 362,
+          "bottom": 227
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 29,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 300,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      },
+      "selectedNonFocusedValue": {
+        "selector": ".ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value",
+        "crop": {
+          "left": 650,
+          "top": 210,
+          "right": 678,
+          "bottom": 227
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 29,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 283,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      },
+      "selectedRowNumber": {
+        "selector": ".ts-row--selected .ts-row-head",
+        "crop": {
+          "left": 18,
+          "top": 210,
+          "right": 28,
+          "bottom": 227
+        },
+        "foreground": [
+          0,
+          0,
+          0
+        ],
+        "foregroundPixels": 11,
+        "dominantBackground": [
+          0,
+          184,
+          204
+        ],
+        "backgroundPixels": 129,
+        "contrast": 8.728122576381333,
+        "forcedColorAdjust": "none"
+      }
+    }
+  ],
+  "negativeControlHead": "87bfd26fbdc6074d3815eec2234d1463b65c114f"
+}

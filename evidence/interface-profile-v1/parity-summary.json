@@ -1,22 +1,19 @@
 {
   "status": "PASS",
-  "baselineRef": "799c42120c3c2a2ae6a4e2ab796b33c1062d9dcc",
+  "previousReviewedHead": "87bfd26fbdc6074d3815eec2234d1463b65c114f",
+  "stewardAuthorization": "https://github.com/nurockplayer/tachiko-sheet/issues/68#issuecomment-5775343376",
   "viewportCount": 12,
-  "stateCount": 7,
-  "totalPairs": 84,
-  "canonicalPixelChangedStates": 72,
-  "canonicalPixelIdenticalStates": 12,
+  "totalStates": 84,
+  "unchangedNormalStates": 72,
+  "changedForcedStates": 12,
   "geometryFontBackgroundOutlineEqualStates": 84,
-  "outsideApprovedConsumers": 0,
-  "forcedColorsPixelIdenticalStates": 12,
-  "restoredThreeExactPairs": 84,
-  "manifestSha256": {
-    "approved-baseline-stable": "2124cc369f1457cfd12535c6b845a7f0c67018a1ab88e208d85854d212e98bb7",
-    "approved-canonical-consumers": "f48ed2a80435886c44c56d5bd9099576ba12568b08a2b5bf752f67d9d0a41d0e",
-    "approved-restored-three": "2124cc369f1457cfd12535c6b845a7f0c67018a1ab88e208d85854d212e98bb7"
-  },
-  "artifactRoot": "/Users/tachikoma/.codex/artifacts/tachiko-sheet-68",
-  "fullComparisonSha256": "5c63622fceaa7ad706ee92226e2d55faca989e6a09c1832bf2f1da3d9fdfd3f2",
+  "outsideAuthorizedForcedConsumers": 0,
   "consumerPaintOutsetPixels": 1,
-  "consumerPaintOutsetReason": "Underline/antialias paint can extend one pixel outside the CSS box."
+  "manifestSha256": {
+    "approved-canonical-consumers": "f48ed2a80435886c44c56d5bd9099576ba12568b08a2b5bf752f67d9d0a41d0e",
+    "forced-repair-candidate": "3e54ded116bd1a623d73890ef3ad0e7339a5473ec40f9aa4aa87cc1e5064ff6c"
+  },
+  "fullComparisonSha256": "41375c306f7ea68a2d36aed925c4ac28e7f45a64f431cf355d9e5c8b7fa6221c",
+  "artifactRoot": "/Users/tachikoma/.codex/artifacts/tachiko-sheet-68",
+  "normalColorBaselineEvidence": "pre-forced-repair-parity-summary.json"
 }
