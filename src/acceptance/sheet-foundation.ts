@@ -11,12 +11,27 @@ import {
   type CoreKit,
   type KitLoader,
   type LocalCopies,
+  type PresentationAttachment,
   type SheetRuntime,
   type WorkbookView,
 } from "../contracts.js";
 import { LOCAL_COPIES_DB_NAME, LOCAL_COPIES_STORE } from "../host/local-copies.js";
 import type { FieldProjection, PublicationProjection } from "../../public/core-kit/experimental-client.js";
 import { hashCanonicalFiles } from "./canonical-hash.js";
+import { applyResolvedProfile, resolveInterfaceProfile } from "../ui/interface-profile/index.js";
+
+export interface AcceptanceRuntimeSnapshot {
+  occurrence: string;
+  revision: string;
+  opaqueBytesHash: string;
+}
+
+export interface AcceptanceSavedSnapshot {
+  kind: "canonical" | "opaque";
+  revision: string;
+  bytesHash: string;
+  presentation: PresentationAttachment | null;
+}
 
 export interface AcceptanceObservation {
   occurrence: string;
@@ -49,6 +64,10 @@ export interface AcceptanceCoreFailureProbe {
 }
 
 export interface AcceptanceApi {
+  runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
+  savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null>;
+  workMethodCounts(): Record<string, number>;
+  applyInterfaceProfile(input: unknown): boolean;
   observe(): Promise<AcceptanceObservation>;
   savedHash(name: string): Promise<string | null>;
   failNextSave(): void;
@@ -92,6 +111,7 @@ const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
 const ACCEPTANCE_HARNESS_VERSION = "j4-no-resident-runtime-read-probe-v2";
 
 let wiring: AcceptanceWiring | null = null;
+const workMethodInvocations = new Map<string, number>();
 let dispatchCount = 0;
 let loseArmed = false;
 let openReplyFaultArmed = false;
@@ -131,8 +151,24 @@ function instrumentKit(kit: CoreKit): CoreKit {
   const create = kit.createExperimentalDesignerClient;
   return {
     ...kit,
-    createExperimentalDesignerClient: () => instrumentClient(create()),
+    createExperimentalDesignerClient: () => observeClientMethods(instrumentClient(create())),
   };
+}
+
+/** Count public client invocations without changing the existing fault wrappers. */
+function observeClientMethods(client: PublicClient): PublicClient {
+  return new Proxy(client, {
+    get(target, property): unknown {
+      const value = Reflect.get(target, property, target) as unknown;
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]): unknown => {
+        if (typeof property === "string") {
+          workMethodInvocations.set(property, (workMethodInvocations.get(property) ?? 0) + 1);
+        }
+        return Reflect.apply(value, target, args);
+      };
+    },
+  });
 }
 
 function instrumentClient(client: PublicClient): PublicClient {
@@ -333,6 +369,44 @@ export async function observe(): Promise<AcceptanceObservation> {
     notes: storedText(fieldFor(batch.fields, entity, notesColumn)),
     canonicalHash: await hashCanonicalFiles(tree.files),
   };
+}
+
+/** Generic real-kit observation; unlike the M1 probe, no column names are assumed. */
+export async function runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot> {
+  const { runtime } = requireWiring();
+  const view = await runtime.read();
+  const snapshot = await runtime.exportOpaque({ occurrence: view.occurrence, revision: view.revision });
+  return { occurrence: view.occurrence, revision: view.revision, opaqueBytesHash: await hashBytes(snapshot.bytes) };
+}
+
+/** Readonly host observation; opaque bytes and their attachment are never decoded or rewritten. */
+export async function savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null> {
+  const copy = await requireWiring().copies.readAny(name);
+  if (!copy) return null;
+  if (copy.kind === "opaque") {
+    return {
+      kind: "opaque",
+      revision: copy.revision,
+      bytesHash: await hashBytes(copy.bytes),
+      presentation: copy.presentation ? structuredClone(copy.presentation) : null,
+    };
+  }
+  return { kind: "canonical", revision: copy.revision, bytesHash: await hashCanonicalFiles(copy.files), presentation: null };
+}
+
+async function hashBytes(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function workMethodCounts(): Record<string, number> {
+  return Object.fromEntries(workMethodInvocations);
+}
+
+/** Exercise the production appearance seam only; this helper has no runtime/host access. */
+export function applyInterfaceProfile(input: unknown): boolean {
+  const resolved = resolveInterfaceProfile(input);
+  return resolved.ok && applyResolvedProfile(document.documentElement, resolved.value);
 }
 
 /** Hash of the durable bytes actually stored by the host, or null when absent. */
@@ -564,6 +638,10 @@ export function installAcceptance(next: AcceptanceWiring): void {
     };
   }
   window.__tachikoAcceptance = {
+    runtimeSnapshot,
+    savedSnapshot,
+    workMethodCounts,
+    applyInterfaceProfile,
     observe,
     savedHash,
     failNextSave,

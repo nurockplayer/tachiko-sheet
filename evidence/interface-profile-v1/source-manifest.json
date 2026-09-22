@@ -1,0 +1,13 @@
+{
+  "src/main.tsx": "b6f01957b0da9a1c195b2583d22b2f2de4f51517299c5b3a21bc0b41126b5cd8",
+  "src/acceptance/sheet-foundation.ts": "9f001cb3a64139c1835175a948d1c3b64c27dd259102e88593c41b890b7c24a3",
+  "src/ui/sheet-shell.css": "4e92ef455441828fe3b37c99c958bb660e2331e9483e2b788cfda80961ed1c3d",
+  "src/ui/visual-foundation.test.ts": "3ad83e3b9679abf875faeb537870e99f3778e897d669ec567009923347db3e09",
+  "tests/product/interface-profile-local.mjs": "b731e368a6e942165d30846414d3e627aa14fee1c716ad8f630ac77b21bb2ae3",
+  "scripts/run-product-acceptance.mjs": "24c0d4b8c239d7a4477fcba3a357613d56bc89c444c33de384e3438f2e61e711",
+  "docs/design/interface-profile-v1-mapping.json": "86bfea48279b0df89979a5226593e926c2f35256fad9ff2803786cff39868c57",
+  "docs/design/interface-profile-v1-mapping.md": "6e20acfd2db0566bd08b2e62d3dc9cb9db822d19afbfdc3431f84565f8529a55",
+  "src/ui/interface-profile/index.ts": "c3b4d48bf5027f81ff6a2a9ee3ed5d480063c6de481f101cde08f35af26ccb4c",
+  "src/ui/interface-profile/profile.test.ts": "98304fcb927b22f0c5454908d10205c43c96dee3edc0996e40406d38b2db5c12",
+  "src/ui/interface-profile/profile.ts": "94ac62faac5bc1870952aabafa84fb20f5889ce162d25a275d5b8419db4b7033"
+}

@@ -1,15 +1,19 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import {
+  PRIVATE_CSS_VARIABLES,
+  TACHIKO_COMPACT_PORCELAIN_PROFILE,
+} from "./interface-profile/index.js";
 
 describe("visual foundation CSS contract", () => {
   const css = readFileSync(new URL("./sheet-shell.css", import.meta.url), "utf8");
 
   it("keeps dense-grid focus and the three responsive tiers explicit", () => {
-    expect(css).toContain("--ts-focus: #6551ce");
-    expect(css).toContain("--ts-accent: #6350d2");
+    expect(css).toContain(alias("--ts-focus", "focus.ring"));
+    expect(css).toContain(alias("--ts-accent", "action.primary.background"));
     expect(css).toContain(".ts-work-context");
     expect(css).toContain(".ts-workbook-status");
-    const lineStrong = css.match(/--ts-line-strong:\s*(#[0-9a-f]{6})/i)?.[1];
+    const lineStrong = css.match(/--ts-line-strong:\s*var\(--ts-profile-border-control,\s*(#[0-9a-f]{6})\)/i)?.[1];
     expect(lineStrong).toBeDefined();
     expect(contrastRatio(lineStrong as string, "#ffffff")).toBeGreaterThanOrEqual(3);
     expect(css).toContain(".ts-cell--focused");
@@ -31,9 +35,32 @@ describe("visual foundation CSS contract", () => {
 
   it("keeps selected, focused, and forced-color cues independently visible", () => {
     expect(css).toContain(".ts-row--selected .ts-cell--focused");
-    expect(css).toContain("background: var(--ts-surface)");
-    expect(css).toContain("inset 0 -2px 0 var(--ts-focus)");
+    expect(css).toContain("background: var(--ts-selection-active-background)");
+    expect(css).toContain("inset 0 -2px 0 var(--ts-selection-active-border)");
     expect(css).toContain(".ts-app :focus-visible { outline-color: Highlight; }");
+  });
+
+  it("keeps public profile bindings private and held production roles unchanged", () => {
+    expect(css).toContain(alias("--ts-surface-chrome-tint", "surface.chrome.tint"));
+    expect(css).toContain(alias("--ts-grid-canvas", "grid.canvas"));
+    expect(css).toContain(alias("--ts-selection-active-border", "selection.active.border"));
+    expect(css).toContain(alias("--ts-action-primary-foreground", "action.primary.foreground"));
+    expect(css).toContain("--ts-text-link-held: #245d9f");
+    expect(css).toContain("--ts-text-reference-held: #23508a");
+    expect(css).toContain("--ts-grid-header-foreground-held: #646879");
+    expect(css).toContain("HOLD: text.link remains the current production binding");
+    expect(css).toContain("HOLD: text.reference remains the current production binding");
+    expect(css).toContain("HOLD: grid.header.foreground remains #646879");
+    expect(css).not.toContain("--ts-text-link: var(--ts-profile-text-link");
+    expect(css).not.toContain("--ts-text-reference: var(--ts-profile-text-reference");
+  });
+
+  it("keeps product-owned disabled and status recipes outside profile aliases", () => {
+    expect(css).toContain("--ts-protected-surface: #ffffff");
+    expect(css).toContain("--ts-protected-border-subtle: #dfe2ea");
+    expect(css).toContain("--ts-protected-disabled-foreground: #8c949c");
+    expect(css).toContain(".ts-button--danger:hover:not(:disabled)");
+    expect(css).toContain("background: var(--ts-protected-surface-inset)");
   });
 
   function contrastRatio(foreground: string, background: string): number {
@@ -52,4 +79,8 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain("scroll-behavior: auto");
     expect(css).toContain("transition-duration: 0.01ms");
   });
+
+  function alias(privateName: string, role: keyof typeof PRIVATE_CSS_VARIABLES): string {
+    return `${privateName}: var(${PRIVATE_CSS_VARIABLES[role]}, ${TACHIKO_COMPACT_PORCELAIN_PROFILE.colors[role].toLowerCase()})`;
+  }
 });
