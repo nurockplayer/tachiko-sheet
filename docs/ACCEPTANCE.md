@@ -36,4 +36,4 @@ Preserve original source and use docs/TEST-WIRING.md on the seed branch for exac
 
 Snapshot observations are allowed at this explicit debug boundary; normal client editing still uses bounded semantic operations. A real browser restart and a fresh runtime must actually happen; same-process export/open is insufficient. Synthetic composition events are not real Japanese/Chinese IME or screen-reader evidence. Exact test inputs/expected values remain fixed unless Steward approves a material correction.
 
-Terra records conditional Ready under DELIVERY.md after actual qualification and independent assessment. This supersedes the original Sheet-local automatic-stop instruction, not the required evidence or upstream restrictions. Final product gates do not pass until actually executed on the relevant artifact.
+Astra records conditional Ready under DELIVERY.md after actual qualification and independent assessment. This supersedes the original Sheet-local automatic-stop instruction, not the required evidence or upstream restrictions. Final product gates do not pass until actually executed on the relevant artifact.

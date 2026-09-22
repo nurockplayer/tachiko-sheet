@@ -1,6 +1,6 @@
 # J4 acceptance preparation — not a product result
 
-Owner: Terra High under Sheet #20. This records the fixed acceptance-to-evidence
+Owner: Astra under Sheet #20. This records the fixed acceptance-to-evidence
 map before implementation; it neither changes `acceptance/mvp-v1` nor claims
 J4 Ready or product PASS.
 
