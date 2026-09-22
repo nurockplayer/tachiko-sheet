@@ -87,6 +87,9 @@ try {
   page.setDefaultTimeout(8_000);
   console.log("J3 normal UI: open CSV");
   await page.goto(LOCAL_ORIGIN);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByLabel("Choose CSV or XLSX", { exact: true }).waitFor();
 
   // I02: cancellation has no resident workbook or semantic side effect.
   let dialog = await choose(page, messyCsv);
@@ -181,6 +184,9 @@ try {
   await installDistRoutes(context, dist);
   page = context.pages()[0] ?? await context.newPage();
   await page.goto(LOCAL_ORIGIN);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await page.getByRole("button", { name: "Open saved j3-normal-copy", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   console.log("J3 normal UI: reopened local copy");
@@ -209,6 +215,9 @@ try {
   await installDistRoutes(context, dist);
   page = context.pages()[0] ?? await context.newPage();
   await page.goto(LOCAL_ORIGIN);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await page.getByRole("button", { name: "Open saved j3-sentinel-copy", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   const sentinelOut = path.join(output, "normal-ui-sentinels.csv");
