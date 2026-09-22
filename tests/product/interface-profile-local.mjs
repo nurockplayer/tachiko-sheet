@@ -63,6 +63,8 @@ try {
 
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
+  // Table selection awaits the real runtime projection; selectOption only dispatches it.
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
   const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
   assert.ok(priceIndex >= 0);

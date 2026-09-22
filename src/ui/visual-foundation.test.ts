@@ -40,19 +40,20 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain(".ts-app :focus-visible { outline-color: Highlight; }");
   });
 
-  it("keeps public profile bindings private and held production roles unchanged", () => {
+  it("keeps public profile bindings private and wires the approved role mappings", () => {
     expect(css).toContain(alias("--ts-surface-chrome-tint", "surface.chrome.tint"));
     expect(css).toContain(alias("--ts-grid-canvas", "grid.canvas"));
     expect(css).toContain(alias("--ts-selection-active-border", "selection.active.border"));
     expect(css).toContain(alias("--ts-action-primary-foreground", "action.primary.foreground"));
-    expect(css).toContain("--ts-text-link-held: #245d9f");
-    expect(css).toContain("--ts-text-reference-held: #23508a");
-    expect(css).toContain("--ts-grid-header-foreground-held: #646879");
-    expect(css).toContain("HOLD: text.link remains the current production binding");
-    expect(css).toContain("HOLD: text.reference remains the current production binding");
-    expect(css).toContain("HOLD: grid.header.foreground remains #646879");
-    expect(css).not.toContain("--ts-text-link: var(--ts-profile-text-link");
-    expect(css).not.toContain("--ts-text-reference: var(--ts-profile-text-reference");
+    expect(css).toContain(alias("--ts-text-link", "text.link"));
+    expect(css).toContain(alias("--ts-text-reference", "text.reference"));
+    expect(css).toContain(alias("--ts-grid-header-foreground", "grid.header.foreground"));
+    expect(css).not.toContain("--ts-text-link-held");
+    expect(css).not.toContain("--ts-text-reference-held");
+    expect(css).not.toContain("--ts-grid-header-foreground-held");
+    expect(css).not.toContain("HOLD: text.link");
+    expect(css).not.toContain("HOLD: text.reference");
+    expect(css).not.toContain("HOLD: grid.header.foreground");
   });
 
   it("keeps product-owned disabled and status recipes outside profile aliases", () => {

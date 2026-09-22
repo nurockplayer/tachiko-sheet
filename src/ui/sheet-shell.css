@@ -28,10 +28,9 @@
   --ts-grid-vertical: var(--ts-profile-grid-line-vertical, #eef0f4);
   --ts-action-primary-foreground: var(--ts-profile-action-primary-foreground, #ffffff);
   --ts-selection-header-foreground: var(--ts-profile-selection-header-foreground, #5542b5);
-  /* Held public roles remain on their current production values until Steward disposition. */
-  --ts-text-link-held: #245d9f;
-  --ts-text-reference-held: #23508a;
-  --ts-grid-header-foreground-held: #646879;
+  --ts-text-link: var(--ts-profile-text-link, #5542b5);
+  --ts-text-reference: var(--ts-profile-text-reference, #4f54ad);
+  --ts-grid-header-foreground: var(--ts-profile-grid-header-foreground, #5b6072);
   /* Product-owned status, disabled, destructive, and chip recipes never consume profile roles. */
   --ts-protected-surface: #ffffff;
   --ts-protected-surface-inset: #f5f6f9;
@@ -86,8 +85,7 @@
   font-size: 11px;
 }
 
-/* HOLD: text.link remains the current production binding pending Steward disposition. */
-.ts-notices a { color: var(--ts-text-link-held); }
+.ts-notices a { color: var(--ts-text-link); }
 
 .ts-subtle {
   color: var(--ts-ink-soft);
@@ -611,8 +609,7 @@
   background: var(--ts-grid-head);
   font-weight: 500;
   font-size: 12px;
-  /* HOLD: grid.header.foreground remains #646879 pending Steward disposition. */
-  color: var(--ts-grid-header-foreground-held);
+  color: var(--ts-grid-header-foreground);
 }
 
 .ts-col-head {
@@ -626,8 +623,7 @@
   z-index: 1;
   background: var(--ts-grid-head);
   font-weight: 500;
-  /* HOLD: grid.header.foreground remains #646879 pending Steward disposition. */
-  color: var(--ts-grid-header-foreground-held);
+  color: var(--ts-grid-header-foreground);
 }
 
 .ts-gutter-head {
@@ -663,8 +659,7 @@
 }
 
 .ts-cell--reference .ts-cell-value {
-  /* HOLD: text.reference remains the current production binding pending Steward disposition. */
-  color: var(--ts-text-reference-held);
+  color: var(--ts-text-reference);
   text-decoration: underline dotted;
 }
 

@@ -4,8 +4,8 @@ transforming...
 rendering chunks...
 computing gzip size...
 dist-acceptance/index.html                             0.39 kB │ gzip:  0.26 kB
-dist-acceptance/assets/index-B6DJz5tO.css             17.13 kB │ gzip:  3.93 kB
-dist-acceptance/assets/sheet-foundation-CqJZRVuM.js    8.92 kB │ gzip:  3.29 kB │ map:    35.59 kB
-dist-acceptance/assets/index-BPoHCBmz.js             316.51 kB │ gzip: 94.60 kB │ map: 1,295.92 kB
+dist-acceptance/assets/index-BPUsJ-AT.css             17.19 kB │ gzip:  3.92 kB
+dist-acceptance/assets/sheet-foundation-DoC6pFGF.js    8.92 kB │ gzip:  3.29 kB │ map:    35.59 kB
+dist-acceptance/assets/index-BRJ5BzAM.js             316.51 kB │ gzip: 94.60 kB │ map: 1,295.92 kB
 
-✓ built in 881ms
+✓ built in 301ms

@@ -12,14 +12,15 @@ verified variable, collection, or mode binding identifiers, so each role's
 The shared reason is `unavailable: painted/readback frames contain no verified
 binding IDs`. No IDs are inferred from names or screenshots.
 
-The three approved values that currently differ from production CSS remain held
-for Steward disposition and are intentionally not wired by this package:
+The three values below correct prior implementation drift under the explicit
+[Steward disposition](https://github.com/nurockplayer/tachiko-sheet/issues/68#issuecomment-5774025721).
+Their canonical values are wired through private aliases:
 
-| Role | Approved mapping | Current production CSS | Status |
+| Role | Approved mapping | Prior production CSS | Status |
 | --- | --- | --- | --- |
-| `text.link` | `#5542B5` | `#245D9F` | held |
-| `text.reference` | `#4F54AD` | `#23508A` | held |
-| `grid.header.foreground` | `#5B6072` | `#646879` | held |
+| `text.link` | `#5542B5` | `#245D9F` | wired |
+| `text.reference` | `#4F54AD` | `#23508A` | wired |
+| `grid.header.foreground` | `#5B6072` | `#646879` | wired |
 
 The mapping does not control protected state colors, disabled or destructive
 treatments, modal scrim, focus geometry, forced-colors behavior, reduced-motion
@@ -38,8 +39,9 @@ The integration reserves `surface.app`, `accent.background`, `selection.header.f
 profile attributes for later appearance work. It uses the canonical
 `surface.chrome.tint`, `grid.canvas`, `selection.active.background`,
 `selection.active.border`, `action.primary.foreground`, and `focus.ring` roles
-where their current production values already agree. The three held roles above
-remain on explicit current-value recipes and are not consumed by CSS aliases.
+where their current production values already agree, plus the three approved
+bindings listed above. The reserved roles above do not add new visible
+treatments in this boundary migration.
 Protected chips, statuses, disabled controls, destructive controls, forced
 colors, reduced motion, focus geometry, scrim, and report pixels remain
 product-owned.
