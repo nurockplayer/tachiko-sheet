@@ -32,6 +32,9 @@ const launchOptions = {
 
 async function open(page) {
   await page.goto(url);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByTestId("open-project").waitFor();
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
 }

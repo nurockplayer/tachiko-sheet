@@ -38,6 +38,9 @@ try {
   if (process.env.WORK_DIST) await installDistRoutes(context, process.env.WORK_DIST);
   const page = await context.newPage();
   await page.goto(url);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForHomeOpen(page);
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
   const before = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
