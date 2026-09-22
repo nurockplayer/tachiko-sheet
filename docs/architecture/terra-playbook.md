@@ -161,7 +161,7 @@ Reviewer 必須能回答：UI 不依賴哪個細節了？哪條規則現在可�
 不要把 draft 視為已生效規則或立即重構授權。保留 active writer、J5 HOLD、
 上游語意／格式與所有驗收。高風險架構取捨可取得 read-only Sol consultation。
 採用後只挑一條 genuinely Ready、non-overlapping migration slice，
-由 worker-luna 執行有界實作／測試 package，Astra 保留 integration ownership；
+由 worker-luna 執行有界實作／unit-test package，Astra 保留 integration ownership；
 先確認 characterization／test discovery，再做行為保持的 bounded extraction；
 穩定 Final Candidate 才取得適用 exact-head gates 與 fresh independent Sol review。
 只回報實際執行的結果，詳細證據留 owning Issue/PR，不重寫 #2 的任務所有權。
