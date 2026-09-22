@@ -112,6 +112,17 @@ export function runIfRecoveryCleared<T>(
   return unknownOpenRecovery ? blocked() : action();
 }
 
+/** Consume the mount-local launch attempt before dispatching it. */
+export function startInitialExampleOnce(
+  attempted: { current: boolean },
+  openExample: () => Promise<void>,
+  onKnownFailure: (error: unknown) => void,
+): void {
+  if (attempted.current) return;
+  attempted.current = true;
+  void openExample().catch(onKnownFailure);
+}
+
 /** A confirmed import is a new occurrence and cannot inherit a prior report attachment. */
 export function presentationAfterConfirmedImport(_prior: ReportConfiguration | null): {
   report: null;
@@ -220,6 +231,9 @@ export function App({ runtime, copies }: AppProps) {
   // Independent of the old-work checkpoint: an unknown Open may start from
   // the home screen, so recovery must remain fail-closed even without one.
   const unknownOpenRecoveryRef = useRef(false);
+  // This is intentionally never cleared: Close and an initial failure must
+  // leave the no-work surface available rather than relaunching the example.
+  const initialExampleAttemptedRef = useRef(false);
   // A known import publication can still lose its first projection. This is
   // separate from operation outcome: the candidate source identity is not
   // safe to expose or save until an authoritative refresh settles it.
@@ -725,6 +739,14 @@ export function App({ runtime, copies }: AppProps) {
       end();
     }
   }
+
+  useEffect(() => {
+    // The ref consumes React development effect replay before the async open
+    // starts, while manual Open routes remain available after a known failure.
+    startInitialExampleOnce(initialExampleAttemptedRef, openExample, (error) => {
+      setMessage(describe(error, "The example work could not be opened."));
+    });
+  }, []);
 
   async function openJ4Canary(): Promise<void> {
     if (blockUnknownOpenRecovery()) return;

@@ -24,6 +24,8 @@ try {
   await installDistRoutes(context, dist);
   const page = await context.newPage();
   await page.goto(LOCAL_ORIGIN);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
 

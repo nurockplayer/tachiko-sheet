@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   clearRecoveryOccurrenceContext,
@@ -8,6 +8,7 @@ import {
   recoverPresentationAfterAcknowledgedOpen,
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
+  startInitialExampleOnce,
 } from "./App.js";
 import { reportPresentationLimitViolation, reportPresentationTextLimitViolation } from "./contracts.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
@@ -192,5 +193,35 @@ describe("acknowledged saved-open presentation recovery", () => {
       { occurrence: "replacement", revision: "rev-1" },
       [{ ...result, diagnostics: [{ code: "failed", entity: null, field: null, lookup_key: null, candidates: [] }] }],
     )).toBe(null);
+  });
+});
+
+describe("first-entry example launch", () => {
+  it("dispatches once and does not retry after a known failure", async () => {
+    const attempted = { current: false };
+    const failure = new Error("fixture unavailable");
+    const openExample = vi.fn(async () => { throw failure; });
+    const onKnownFailure = vi.fn();
+
+    startInitialExampleOnce(attempted, openExample, onKnownFailure);
+    startInitialExampleOnce(attempted, openExample, onKnownFailure);
+    await Promise.resolve();
+
+    expect(openExample).toHaveBeenCalledTimes(1);
+    expect(onKnownFailure).toHaveBeenCalledWith(failure);
+    expect(attempted.current).toBe(true);
+  });
+
+  it("keeps the completed launch latch after Close", async () => {
+    const attempted = { current: false };
+    const openExample = vi.fn(async () => undefined);
+
+    startInitialExampleOnce(attempted, openExample, vi.fn());
+    await Promise.resolve();
+    // Close deliberately does not reset the mount-scoped latch.
+    startInitialExampleOnce(attempted, openExample, vi.fn());
+
+    expect(openExample).toHaveBeenCalledTimes(1);
+    expect(attempted.current).toBe(true);
   });
 });

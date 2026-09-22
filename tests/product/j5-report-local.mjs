@@ -21,6 +21,8 @@ async function start(viewport) {
   if (viewport) await page.setViewportSize(viewport);
   page.setDefaultTimeout(5000);
   await page.goto(LOCAL_ORIGIN);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
   return page;
 }
 
