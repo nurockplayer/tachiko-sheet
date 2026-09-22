@@ -724,7 +724,9 @@ export function App({ runtime, copies }: AppProps) {
         setCurrentness("current");
         setOutcome("idle");
       }
-      throw new Error(describe(error, "The example work could not be opened."));
+      const explanation = describe(error, "The example work could not be opened.");
+      setMessage(explanation);
+      throw new Error(explanation);
     } finally {
       end();
     }

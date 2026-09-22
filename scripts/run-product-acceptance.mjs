@@ -136,6 +136,11 @@ console.log(
 );
 const singleProcessEnv = chromiumSupport.singleProcess ? { TACHIKO_TEST_SINGLE_PROCESS: '1' } : {};
 try {
+  const firstEntry = await runStep(
+    'first-entry-local-transport',
+    [path.join(root, 'tests', 'product', 'first-entry-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
   const j4 = await runStep(
     'j4-normal-ui-local-transport',
     [path.join(root, 'tests', 'product', 'j4-normal-ui-local.mjs')],
@@ -170,7 +175,7 @@ try {
       [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0;
+    const localOk = firstEntry === 0 && j4 === 0 && j4Imported === 0 && j5 === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -195,7 +200,7 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
-    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && normalUi === 0 && browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
+    exitCode = firstEntry === 0 && j4 === 0 && j4Imported === 0 && j5 === 0 && normalUi === 0 && browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
