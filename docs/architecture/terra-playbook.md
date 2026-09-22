@@ -1,14 +1,14 @@
-# Terra — 架構遷移與驗收流程
+# Sheet 架構遷移與驗收流程
 
-狀態：與 [架構設計](README.md) 同為 Proposed；追蹤 [#33](https://github.com/nurockplayer/tachiko-sheet/issues/33)。本文提供 adoption 與 implementation preparation，不是 blanket Ready、actual Oracle consultation 或 final review。
+狀態：與 [架構設計](README.md) 同為 Proposed；追蹤 [#33](https://github.com/nurockplayer/tachiko-sheet/issues/33)。本文提供 adoption 與 implementation preparation，不是 blanket Ready、Sol consultation 或 final review。
 
 ## 1. 先確認現在允許做什麼
 
-既有 [DELIVERY](../DELIVERY.md)、live #1、#2、active Issue/PR 與 [UPSTREAM](../UPSTREAM.md) 維持權威。Oracle consultation/review 使用 DELIVERY 所引用的 qualified `tachiko-conductor#79` contract；本文不複製一份可獨立修改的 SCD 政策。
+既有 [DELIVERY](../DELIVERY.md)、live #1、#2、active Issue/PR 與 [UPSTREAM](../UPSTREAM.md) 維持權威。Sol consultation/review 依 DELIVERY 的 Astra-led routing；本文不複製一份可獨立修改的 SCD 政策。
 
-Terra 仍是唯一 delivery owner；新 discretionary choice 必須先取得 actual Oracle read-only disposition。架構文件已描述的方向，不等於作者代替 Oracle 做過 consultation；後續新的資料型別、拆分取捨、gate tool、行為／相容性決策也不能推定已被批准。已獲准的機械執行不需要每行／每 commit 重新問。
+Astra 是唯一 delivery owner；架構文件已描述的方向，不等於作者代替 Astra 或 Steward 做過決定。後續新的資料型別、拆分取捨、gate tool、行為／相容性決策仍須依 DELIVERY 記錄並遵守 Steward authority。高風險架構選擇可取得 read-only Sol consultation；已獲准的機械執行不需要每行／每 commit 重新問。
 
-原始提案由 ChatGPT 撰寫；先前 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並作為歷史證據保留。現行工程路由不再要求 Astra/Sol；穩定 Final Candidate 由未參與 solution direction 的 fresh independent Oracle session 進行 exact-HEAD final review。文件作者、Oracle consultant、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
+原始提案由 ChatGPT 撰寫；先前 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並作為歷史證據保留。穩定 Final Candidate 由未參與 solution direction 的 fresh independent Sol session 進行 exact-HEAD final review。文件作者、Sol consultant、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
 
 目前 inspection baseline 上，PR #28 正在修改 App、contracts、local-copies、SheetShell 等共享位置。**不要和它同時做這些檔案的架構重構。** 不碰使用者 root checkout 的 untracked files，不接管 active worktree，不重寫 #2 來宣告 takeover。新 docs lane 與將來 source lane 分開。
 
@@ -134,7 +134,7 @@ Exact base / candidate HEAD / qualified kit:
 Changed responsibility and dependency edges:
 State owner / effects / invariants (INV-xx, AT-xx):
 Allowed files / shared-file owner / excluded behavior:
-Actual Oracle decision link and remaining choices:
+Actual decision link and remaining choices:
 Steward acceptance + independent adequacy evidence:
 Actual commands, environment and results / NOT RUN:
 Compatibility and rollback / remaining migration debt:
@@ -149,22 +149,22 @@ Reviewer 必須能回答：UI 不依賴哪個細節了？哪條規則現在可�
 
 預設 architecture extraction 不改 persisted schema／core pin，rollback 是還原 bounded code commit，不能回滾使用者資料、刪 database 或 rewrite history。若為維持相容必須做 schema／public contract 變更，停止把它當 refactor，回到原 owner 的 migration／compatibility 流程。
 
-碰到同一 defect family 反覆修兩輪仍未收斂，沿 DELIVERY 做 root-cause checkpoint；不要用更多 wrapper 或重試掩蓋問題。發現 authority gap／新產品限制／未解 Oracle disposition 時暫停受影響 mutation；不是中止所有獨立合格工作。
+碰到同一 defect family 反覆修兩輪仍未收斂，沿 DELIVERY 做 root-cause checkpoint；不要用更多 wrapper 或重試掩蓋問題。發現 authority gap／新產品限制／未解 substantive finding 時暫停受影響 mutation；不是中止所有獨立合格工作。
 
 本文不新增 heartbeat、cron、worker router、command bus 或 SCD engine，也不把 Sheet 重構移交給 tachiko-conductor 以外的新排程器。
 
-## 9. 可給 Terra 的短 prompt
+## 9. 可給 Astra 的短 prompt
 
 ```text
 在 nurockplayer/tachiko-sheet 讀 live #1/#2、#33、AGENTS、DELIVERY，
 以及 docs/architecture/ 三份文件。先處理 #33 文件提案的審查與採用；
 不要把 draft 視為已生效規則或立即重構授權。保留 active writer、J5 HOLD、
-上游語意／格式與所有驗收。新取捨先取得 actual Oracle consultation。
+上游語意／格式與所有驗收。高風險架構取捨可取得 read-only Sol consultation。
 採用後只挑一條 genuinely Ready、non-overlapping migration slice，
-由 worker-router 執行有界實作／測試 package，Terra 保留 integration ownership；
+由 worker-luna 執行有界實作／測試 package，Astra 保留 integration ownership；
 先確認 characterization／test discovery，再做行為保持的 bounded extraction；
-穩定 Final Candidate 才取得適用 exact-head gates 與 fresh independent Oracle review。
+穩定 Final Candidate 才取得適用 exact-head gates 與 fresh independent Sol review。
 只回報實際執行的結果，詳細證據留 owning Issue/PR，不重寫 #2 的任務所有權。
 ```
 
-Terra High/Medium 依 live #2 與 task complexity 選擇；Oracle consultation 與 final review 必須由彼此具備獨立性的 session 執行，且 Oracle 全程 read-only。實際 worker-router/model mapping 與 effort 依當時安裝設定，不藉此文件替換；merge 仍由 Terra/Conductor 在 exact-head gates 通過後執行。
+依 live #2 使用 Astra 的最強實用 reasoning level；Sol consultation 與 final review 必須由彼此具備獨立性的 session 執行，且 Sol 全程 read-only。實際 worker-luna/model mapping 與 effort 依當時安裝設定，不藉此文件替換；merge 仍由 Astra/Conductor 在 exact-head gates 通過後執行。
