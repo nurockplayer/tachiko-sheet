@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { leaveFirstEntryAtHome } from "./first-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) {
@@ -87,6 +88,7 @@ try {
   page.setDefaultTimeout(8_000);
   console.log("J3 normal UI: open CSV");
   await page.goto(LOCAL_ORIGIN);
+  await leaveFirstEntryAtHome(page);
 
   // I02: cancellation has no resident workbook or semantic side effect.
   let dialog = await choose(page, messyCsv);
@@ -181,6 +183,7 @@ try {
   await installDistRoutes(context, dist);
   page = context.pages()[0] ?? await context.newPage();
   await page.goto(LOCAL_ORIGIN);
+  await leaveFirstEntryAtHome(page);
   await page.getByRole("button", { name: "Open saved j3-normal-copy", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   console.log("J3 normal UI: reopened local copy");
@@ -209,6 +212,7 @@ try {
   await installDistRoutes(context, dist);
   page = context.pages()[0] ?? await context.newPage();
   await page.goto(LOCAL_ORIGIN);
+  await leaveFirstEntryAtHome(page);
   await page.getByRole("button", { name: "Open saved j3-sentinel-copy", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   const sentinelOut = path.join(output, "normal-ui-sentinels.csv");

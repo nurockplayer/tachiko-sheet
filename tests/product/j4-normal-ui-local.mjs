@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { leaveFirstEntryAtHome } from "./first-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -20,6 +21,7 @@ async function start() {
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   await page.goto(LOCAL_ORIGIN);
+  await leaveFirstEntryAtHome(page);
   return page;
 }
 

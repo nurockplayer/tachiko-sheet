@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { leaveFirstEntryAtHome } from "./first-entry.mjs";
 
 const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : undefined);
 if (!url) {
@@ -32,6 +33,7 @@ const launchOptions = {
 
 async function open(page) {
   await page.goto(url);
+  await leaveFirstEntryAtHome(page);
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
 }

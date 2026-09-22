@@ -220,6 +220,10 @@ export function App({ runtime, copies }: AppProps) {
   // Independent of the old-work checkpoint: an unknown Open may start from
   // the home screen, so recovery must remain fail-closed even without one.
   const unknownOpenRecoveryRef = useRef(false);
+  // A first-entry convenience is attempted once for this mounted application
+  // session. Keep this separate from resident/recovery state: Close and a
+  // known initial failure must leave Home available without replaying Open.
+  const firstEntryAttemptedRef = useRef(false);
   // A known import publication can still lose its first projection. This is
   // separate from operation outcome: the candidate source identity is not
   // safe to expose or save until an authoritative refresh settles it.
@@ -725,6 +729,17 @@ export function App({ runtime, copies }: AppProps) {
       end();
     }
   }
+
+  useEffect(() => {
+    // React may replay mount effects in development. Claim the attempt before
+    // dispatching so the representative workbook is never opened twice.
+    if (firstEntryAttemptedRef.current) return;
+    firstEntryAttemptedRef.current = true;
+    // openExample preserves the fail-closed recovery path itself. Its known
+    // refusal is rendered as the usable Home message; the effect must not
+    // surface that expected rejection as an unhandled promise.
+    void openExample().catch(() => undefined);
+  }, []);
 
   async function openJ4Canary(): Promise<void> {
     if (blockUnknownOpenRecovery()) return;

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { linked, rejected, saveFailed, reopened, unknown } from "../oracles.mjs";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { leaveFirstEntryAtHome } from "./first-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) {
@@ -66,6 +67,7 @@ async function shown(page, id, value) {
 
 async function open(page) {
   await page.goto(LOCAL_ORIGIN);
+  await leaveFirstEntryAtHome(page);
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
 }
@@ -150,6 +152,7 @@ const cases = [
       await env.restart();
       page = env.page;
       await page.goto(LOCAL_ORIGIN);
+      await leaveFirstEntryAtHome(page);
       await page.getByRole("button", { name: "Open saved review-copy", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
       reopened({ before: confirmed, after: await snapshot(page), browserProcessRestarted: true, authoritativeRead: true });

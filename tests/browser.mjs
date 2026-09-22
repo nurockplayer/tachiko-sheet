@@ -25,7 +25,8 @@ async function sourceHash(){
 async function shown(page,id,value){
  await page.waitForFunction(({id,value})=>Array.from(document.querySelectorAll('[data-testid]')).some(el=>el.dataset.testid===id&&el.textContent.trim()===String(value)),{id,value});
 }
-async function open(page){await page.goto(url);await page.getByTestId('open-project').setInputFiles(fixture);await page.getByTestId('project-ready').waitFor();}
+async function leaveFirstEntryAtHome(page){await page.getByTestId('project-ready').waitFor();await page.getByRole('button',{name:'Close project',exact:true}).click();await page.getByTestId('open-project').waitFor();await page.waitForTimeout(100);assert.equal(await page.getByTestId('project-ready').count(),0,'Close must not automatically reopen the first-entry workbook');}
+async function open(page){await page.goto(url);await leaveFirstEntryAtHome(page);await page.getByTestId('open-project').setInputFiles(fixture);await page.getByTestId('project-ready').waitFor();}
 async function snapshot(page){return page.evaluate(()=>window.__tachikoAcceptance.observe());}
 async function rendered(page,view){
  const id=f=>view==='table'?cell(f):`brief:${expected.entity}:${f}`;
@@ -74,7 +75,7 @@ const humanCases=[
   await page.getByRole('tab',{name:'Brief',exact:true}).click();const brief=await rendered(page,'brief');
   linked({sheet,brief,occurrence:confirmed.occurrence,revision:confirmed.revision,baseRevision:initial.revision,entity:expected.entity,notes:confirmed.notes,sourceHashBefore:env.source,sourceHashAfter:await sourceHash()});
   await save(page,'review-copy');await shown(page,'save-status','Saved on this device');
-  await env.restart();page=env.page;await page.goto(url);
+  await env.restart();page=env.page;await page.goto(url);await leaveFirstEntryAtHome(page);
   await page.getByRole('button',{name:'Open saved review-copy',exact:true}).click();await page.getByTestId('project-ready').waitFor();
   reopened({before:confirmed,after:await snapshot(page),browserProcessRestarted:true,authoritativeRead:true});
  }],
