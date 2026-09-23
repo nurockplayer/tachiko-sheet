@@ -2,7 +2,7 @@
 
 Status: **operational guidance, not authority**.
 
-The authority order remains live **#1 → #2 → `AGENTS.md` → `docs/DELIVERY.md` → active Issue/PR → required upstream authority**. This playbook records repeatable operating practice learned from completed delivery work. When it conflicts with live authority, live authority wins.
+There is **no single linear authority chain**. Apply the scoped authority model from `docs/DELIVERY.md`: accepted upstream semantic/storage/authorization authority constrains Sheet; live #1 owns the Mission/product boundary; `docs/DELIVERY.md` owns Sheet-local delivery policy; the active Issue/PR owns its bounded implementation/acceptance contract inside those authorities; and #2 is **operational handoff state only** and cannot override policy, semantics, acceptance, or the owning Issue/PR. `AGENTS.md` / `docs/MVP-EXECUTION.md` are entry and execution guidance within those authorities. This playbook records repeatable operating practice learned from completed delivery work. When it conflicts with any governing authority in its scope, that authority wins.
 
 The completed #70 / PR #83 run is the main historical case study because it exercised Figma authoring, serial worker ownership, CI failure diagnosis, multiple Final Candidate invalidations, repeated independent-review blockers, root-cause escalation, Oracle transport trouble, review-thread cleanup and normal protected merge.
 
@@ -200,7 +200,7 @@ Required behavior:
 - require concrete P1/P2 findings with trigger/file/line when applicable;
 - require literal terminal verdict `No blocking findings.` only when there are no blockers;
 - keep Oracle read-only;
-- do not let a design/implementation/acceptance author receive final-review credit.
+- do not grant final-review credit to anyone who authored the design, implementation, acceptance, or review evidence, materially participated in the consulted solution direction, or is merely the earlier finding author re-approving their own fix.
 
 ### Long-running review
 
@@ -284,7 +284,8 @@ If the waiting system itself fails, record the tool/transport failure separately
 Immediately before Sol executes the normal merge:
 
 - [ ] live #1/#2/Issue/PR re-read;
-- [ ] exact PR HEAD/base match the reviewed candidate;
+- [ ] live `main` and all overlapping open PR/lane ownership rechecked immediately before merge;
+- [ ] exact PR HEAD/base match the reviewed candidate, and any `main` movement since Final Candidate has been reconciled/requalified rather than assumed harmless;
 - [ ] no active/pending source writer;
 - [ ] applicable local product evidence green;
 - [ ] required hosted checks SUCCESS on exact HEAD;
