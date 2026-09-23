@@ -101,6 +101,15 @@ export function reportRenderResetKey(
   });
 }
 
+/** Available grid viewport below its measured document chrome, with a usable floor. */
+function availableGridScrollHeight(
+  viewportHeight: number,
+  gridTop: number,
+  bottomGap = 12,
+): number {
+  return Math.max(168, Math.floor(viewportHeight - gridTop - bottomGap));
+}
+
 export function SheetShell(props: SheetShellProps) {
   const {
     view,
@@ -204,6 +213,7 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
@@ -337,6 +347,56 @@ export function SheetShell(props: SheetShellProps) {
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
+
+  useLayoutEffect(() => {
+    const grid = gridScrollRef.current;
+    const appRoot = grid?.closest<HTMLElement>(".ts-app");
+    if (!grid || !appRoot || !view || tab !== "table") return;
+
+    let frame: number | null = null;
+    const measure = () => {
+      frame = null;
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const gridTop = grid.getBoundingClientRect().top;
+      grid.style.setProperty(
+        "--ts-grid-available-height",
+        `${availableGridScrollHeight(viewportHeight, gridTop)}px`,
+      );
+    };
+    const scheduleMeasure = () => {
+      if (frame === null) frame = window.requestAnimationFrame(measure);
+    };
+
+    measure();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
+    if (resizeObserver) {
+      appRoot.querySelectorAll<HTMLElement>(
+        ".ts-workbook-head, .ts-work-context, .ts-tabs, .ts-workbook-status, .ts-hint, .ts-notice, .ts-error",
+      ).forEach((element) => resizeObserver.observe(element));
+    }
+    const profileObserver = new MutationObserver(scheduleMeasure);
+    profileObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [
+        "data-ts-profile-color-scheme",
+        "data-ts-profile-typography",
+        "data-ts-profile-density",
+        "data-ts-profile-chrome",
+      ],
+    });
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", scheduleMeasure);
+    visualViewport?.addEventListener("resize", scheduleMeasure);
+
+    return () => {
+      window.removeEventListener("resize", scheduleMeasure);
+      visualViewport?.removeEventListener("resize", scheduleMeasure);
+      resizeObserver?.disconnect();
+      profileObserver.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      grid.style.removeProperty("--ts-grid-available-height");
+    };
+  }, [view, tab, currentness, errorMessage]);
 
   useEffect(() => {
     onDraftChangeRef.current(draftActive);
@@ -921,7 +981,7 @@ export function SheetShell(props: SheetShellProps) {
     return (
       <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className="ts-panel">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
-        <div className="ts-grid-scroll">
+        <div className="ts-grid-scroll" ref={gridScrollRef}>
           <table className="ts-grid" role="grid" aria-label="Table" aria-busy={busy}>
             <thead>
               <tr>

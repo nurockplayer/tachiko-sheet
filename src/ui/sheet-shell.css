@@ -613,7 +613,8 @@
 
 .ts-grid-scroll {
   overflow: auto;
-  max-height: max(168px, calc(100vh - 164px));
+  min-height: 168px;
+  max-height: max(168px, var(--ts-grid-available-height, 100vh));
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -634,7 +635,7 @@
   height: var(--ts-profile-grid-row-pitch);
   border-right: 1px solid var(--ts-grid-vertical);
   border-bottom: 1px solid var(--ts-grid-horizontal);
-  padding: 4px 10px;
+  padding: 3px 10px;
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
@@ -942,7 +943,6 @@
     min-height: 96px;
   }
   .ts-document-identity { flex-basis: 100%; }
-  .ts-grid-scroll { max-height: max(168px, calc(100vh - 200px)); }
 }
 
 @media (max-width: 599px) {
@@ -978,7 +978,6 @@
   .ts-tabs, .ts-workbook-status { padding-inline: 16px; }
   .ts-workbook-status { min-height: 44px; }
   .ts-status-strip { flex-wrap: wrap; min-width: 0; }
-  .ts-grid-scroll { max-height: max(168px, calc(100vh - 304px)); }
   .ts-report-controls { grid-template-columns: 1fr; }
 }
 
