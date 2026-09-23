@@ -179,7 +179,6 @@ try {
   });
   assert.ok(selectorPosition, "Appearance precedes Document commands and remains outside Views");
   await bindReport(page);
-  const pngBefore = await reportPng(page);
 
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   const tablePicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
@@ -331,7 +330,22 @@ try {
   assert.equal(preferenceBeforeRestart, JSON.stringify({ schemaVersion: 1, profileId: "minimal-focus", density: "comfortable" }));
   await editor.press("Escape");
   await page.getByRole("tab", { name: "Report", exact: true }).click();
-  assert.deepEqual(await reportPng(page), pngBefore, "report PNG is byte-identical after all UI selections");
+  await setAppearance(page, "tachiko", "compact");
+  const reportPngBaseline = await reportPng(page);
+  for (const combo of combos) {
+    await setAppearance(page, combo.profile, combo.density);
+    const renderedPng = await reportPng(page);
+    assert.deepEqual(
+      renderedPng,
+      reportPngBaseline,
+      `report PNG download is byte-identical for ${combo.profile}/${combo.density}`,
+    );
+  }
+  assert.equal(
+    await page.evaluate((storageKey) => localStorage.getItem(storageKey), key),
+    JSON.stringify({ schemaVersion: 1, profileId: "minimal-focus", density: "comfortable" }),
+    "the six-recipe report check leaves Minimal-Focus/comfortable stored for restart",
+  );
 
   await context.close();
   context = await chromium.launchPersistentContext(profile, launchOptions);
@@ -409,7 +423,8 @@ try {
     status: "PASS",
     combinations: combos.length,
     workMethodDelta: Object.entries(methodsAfter).reduce((sum, [name, count]) => sum + count - (methodsBefore[name] ?? 0), 0),
-    reportPngBytes: pngBefore.length,
+    reportPngBytes: reportPngBaseline.length,
+    reportAppearanceMatrix: combos.map(({ profile: profileId, density }) => `${profileId}/${density}`),
     composition: "queued radio presentation, two-axis revert/cancel, and both-axis profile-first/density-first synthetic regressions; no physical IME claim",
     storageCases: ["exact record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap"],
   }));

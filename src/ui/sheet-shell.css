@@ -527,7 +527,7 @@
 }
 
 .ts-context-table select {
-  height: 32px;
+  height: var(--ts-profile-command-target-min-height);
   min-width: 160px;
   max-width: min(32vw, 320px);
   padding: 4px 28px 4px 9px;

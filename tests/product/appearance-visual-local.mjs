@@ -264,11 +264,13 @@ async function geometry(page, width, combo) {
     const head = document.querySelector(".ts-workbook-head");
     const title = document.querySelector(".ts-title");
     const app = document.querySelector(".ts-app");
+    const tableSelector = document.querySelector(".ts-context-table select");
     return {
       pageWidth: root.scrollWidth,
       viewportWidth: innerWidth,
       appWidth: app?.getBoundingClientRect().width ?? 0,
       gridHeight: grid?.clientHeight ?? 0,
+      tableSelectorHeight: tableSelector?.getBoundingClientRect().height ?? null,
       rowPitch: rows.length === 2 ? rows[1] - rows[0] : null,
       headerBackground: head ? getComputedStyle(head).backgroundImage : "missing",
       titleFont: title ? getComputedStyle(title).fontFamily : "missing",
@@ -278,6 +280,9 @@ async function geometry(page, width, combo) {
   evidence(result.pageWidth <= width, `${width}px page has no horizontal overflow`, { ...result, combo });
   evidence(result.gridHeight >= 168, `${width}px grid retains 168px usable minimum`, { ...result, combo });
   evidence(result.rowPitch === combo.pitch, `${width}px rendered row pitch equals ${combo.pitch}px`, { ...result, combo });
+  const expectedTarget = combo.density === "comfortable" ? 36 : 32;
+  evidence(result.tableSelectorHeight === expectedTarget,
+    `${width}px Table selector height equals the ${expectedTarget}px ${combo.density} target`, { ...result, combo, expectedTarget });
   return result;
 }
 
