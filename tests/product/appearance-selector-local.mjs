@@ -183,14 +183,23 @@ try {
   await cell.focus();
   await cell.press("Enter");
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
-  await editor.fill("250");
-  await editor.evaluate((input) => input.setSelectionRange(1, 2));
+  await editor.fill("not a number");
+  await editor.evaluate((input) => input.setSelectionRange(3, 7));
+  await editor.press("Enter");
+  const editError = page.getByRole("alert");
+  await editError.waitFor();
+  assert.equal(
+    await editError.textContent(),
+    "The work did not accept this value. The draft was kept so you can correct it.",
+    "invalid numeric edit reports a retained-draft error before appearance changes",
+  );
 
   const shellHandle = await page.locator(".ts-app").elementHandle();
   const editorHandle = await editor.elementHandle();
   const cellHandle = await page.locator(".ts-cell--focused").elementHandle();
   assert.ok(shellHandle && editorHandle && cellHandle);
   const draftBefore = await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]);
+  assert.deepEqual(draftBefore.slice(0, 3), ["not a number", 3, 7], "rejected numeric draft and selection remain in the editor");
   const runtimeBefore = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
   const methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
   const writesBefore = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
@@ -207,6 +216,7 @@ try {
     assert.equal(await editorHandle.evaluate((node) => node.isConnected && node === document.querySelector('[aria-label="Edit cell"]')), true, "editor remains mounted");
     assert.equal(await cellHandle.evaluate((node) => node.isConnected && node.classList.contains("ts-cell--focused")), true, "selected cell remains mounted and selected");
     assert.deepEqual(await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]), draftBefore, "editor draft and selection survive profile changes");
+    assert.equal(await editError.textContent(), "The work did not accept this value. The draft was kept so you can correct it.", "edit error survives profile changes");
     assert.deepEqual(await headerInventory(page), inventory, "commands and views remain unchanged");
   }
   assert.equal(new Set(profileSurfaces.values()).size, 3, "each built-in applies a distinct root chrome color");
@@ -222,6 +232,7 @@ try {
 
   const preferenceBeforeRestart = await page.evaluate((storageKey) => localStorage.getItem(storageKey), key);
   assert.equal(preferenceBeforeRestart, JSON.stringify({ schemaVersion: 1, profileId: "minimal-focus", density: "comfortable" }));
+  await editor.press("Escape");
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   assert.deepEqual(await reportPng(page), pngBefore, "report PNG is byte-identical after all UI selections");
 

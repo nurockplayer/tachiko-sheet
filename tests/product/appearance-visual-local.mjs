@@ -20,7 +20,7 @@ const densities = [
   { id: "compact", label: "Compact", pitch: 28 },
   { id: "comfortable", label: "Comfortable", pitch: 32 },
 ];
-const widths = [320, 600, 1024];
+const widths = [320, 600, 1023, 1024];
 const failures = [];
 const observations = [];
 const evidence = (condition, label, details = null) => {
@@ -379,6 +379,45 @@ async function main() {
     }
     evidence(signatures.size === 3 && new Set(signatures.values()).size === 3, "all three built-ins produce distinct rendered header/typography/chrome", Object.fromEntries(signatures));
 
+    await page.setViewportSize({ width: 512, height: 900 });
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(page, profile.id, density.id);
+        const label = `200% effective-width proxy (512 CSS px) ${profile.id}/${density.id}`;
+        const popover = await menuViewportAndOpen(page, label);
+        const layout = await page.evaluate(() => {
+          const root = document.documentElement;
+          const rows = [...document.querySelectorAll(".ts-grid tbody tr")].slice(0, 2).map((row) => row.getBoundingClientRect().top);
+          const grid = document.querySelector(".ts-grid-scroll");
+          const command = document.querySelector(".ts-appearance-trigger");
+          const commandStyle = getComputedStyle(command);
+          const profilePitch = Number.parseFloat(getComputedStyle(root).getPropertyValue("--ts-profile-grid-row-pitch"));
+          const densityTarget = Number.parseFloat(getComputedStyle(root).getPropertyValue("--ts-profile-command-target-min-height"));
+          return {
+            pageWidth: root.scrollWidth,
+            viewportWidth: innerWidth,
+            gridClientHeight: grid.clientHeight,
+            gridPaintedHeight: grid.getBoundingClientRect().height,
+            rowPitch: rows.length === 2 ? rows[1] - rows[0] : null,
+            configuredPitch: profilePitch,
+            commandTarget: Number.parseFloat(commandStyle.minHeight),
+            configuredTarget: densityTarget,
+            commandPaintedHeight: command.getBoundingClientRect().height,
+          };
+        });
+        evidence(layout.viewportWidth === 512, `${label} uses a 512 CSS px effective viewport`, layout);
+        evidence(layout.pageWidth <= layout.viewportWidth, `${label} has no horizontal page overflow`, layout);
+        evidence(layout.gridClientHeight >= 168, `${label} keeps the 168px grid floor`, layout);
+        evidence(layout.configuredPitch === density.pitch && layout.rowPitch === density.pitch,
+          `${label} preserves ${density.pitch}px CSS row pitch`, layout);
+        const expectedCommand = density.id === "compact" ? 32 : 36;
+        evidence(layout.commandTarget >= expectedCommand && layout.commandPaintedHeight >= expectedCommand,
+          `${label} preserves ${expectedCommand}px CSS command target`, layout);
+        observations.push({ enlargedWidthProxy: label, popover, ...layout });
+        await page.getByRole("button", { name: "Close", exact: true }).click();
+      }
+    }
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -390,14 +429,16 @@ async function main() {
       "long CJK workbook title clips with visible ellipsis instead of widening header", titleState);
     evidence(titleState.pageWidth <= titleState.viewportWidth, "long CJK title does not cause horizontal page overflow", titleState);
 
-    // CSS zoom is only a text-enlargement/layout proxy; it does not claim to
-    // emulate OS text scaling, a screen reader, or physical browser zoom.
-    const zoomProxy = await page.evaluate(() => {
+    // Separate layout stress for enlarged painted text. This is not a claim
+    // about browser zoom, OS text scaling, or assistive technology.
+    const textEnlargementProxy = await page.evaluate(() => {
       document.documentElement.style.zoom = "1.5";
-      return { label: "CSS zoom 150% layout proxy", pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth, titleClientWidth: document.querySelector(".ts-title").clientWidth };
+      return { label: "CSS zoom 150% painted-layout proxy", pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth, titleClientWidth: document.querySelector(".ts-title").clientWidth };
     });
-    evidence(zoomProxy.pageWidth <= zoomProxy.viewportWidth, "150% CSS zoom text-enlargement proxy keeps page within viewport", zoomProxy);
-    observations.push({ zoomProxy });
+    evidence(textEnlargementProxy.pageWidth <= textEnlargementProxy.viewportWidth,
+      "150% painted-layout proxy keeps the page within its viewport", textEnlargementProxy);
+    observations.push({ textEnlargementProxy });
+
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
   } finally {
@@ -412,7 +453,11 @@ async function main() {
     noticeProfiles: profiles.length,
     forcedColorModes: ["light", "dark"],
     contrastBackgrounds: "computed browser backgrounds composited over ancestors; screenshot fallback for gradients; text foreground from computed styles",
-    zoom: "CSS zoom 150% layout proxy only",
+    effective200PercentProxy: {
+      label: "512 CSS px effective-width proxy for 200% zoom; CSS sizes remain unchanged; not actual browser zoom or OS text scaling",
+      combinations: observations.filter((item) => item.enlargedWidthProxy).length,
+    },
+    textEnlargementProxy: "CSS zoom 150% painted-layout proxy only; not actual browser zoom or OS text scaling",
     physicalAtOrImeClaim: false,
     focusGeometry: {
       keyboardAppearanceRadio: observations.find((item) => item.keyboardFocusGeometry)?.keyboardFocusGeometry ?? null,
