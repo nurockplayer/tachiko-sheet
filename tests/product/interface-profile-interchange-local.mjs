@@ -211,11 +211,26 @@ try {
     const [apply, cancel] = node.querySelectorAll(".ts-appearance-candidate__actions button");
     const applyBounds = apply.getBoundingClientRect();
     const cancelBounds = cancel.getBoundingClientRect();
-    return { left: bounds.left, right: bounds.right, width: bounds.width, contentScroll: content.scrollHeight > content.clientHeight,
+    return { left: bounds.left, right: bounds.right, bottom: bounds.bottom, width: bounds.width, contentScroll: content.scrollHeight > content.clientHeight,
       candidateActionsSameRow: Math.abs(applyBounds.top - cancelBounds.top) < 1 };
   });
-  assert.ok(narrow.left >= 0 && narrow.right <= 320 && narrow.width >= 280 && narrow.contentScroll && narrow.candidateActionsSameRow,
+  assert.ok(narrow.left >= 0 && narrow.right <= 320 && narrow.bottom <= 600 && narrow.width >= 280 && narrow.contentScroll && narrow.candidateActionsSameRow,
     "320px staged view fits, scrolls internally, and keeps Apply/Cancel together");
+  await page.setViewportSize({ width: 320, height: 640 });
+  const narrowTall = await page.locator(".ts-appearance-popover").evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    return { top: bounds.top, bottom: bounds.bottom };
+  });
+  assert.ok(narrowTall.top >= 0 && narrowTall.bottom <= 640,
+    `320×640 staged panel stays reachable: ${JSON.stringify(narrowTall)}`);
+  await page.setViewportSize({ width: 320, height: 480 });
+  const narrowShort = await page.locator(".ts-appearance-popover").evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    const content = node.querySelector(".ts-appearance-content");
+    return { top: bounds.top, bottom: bounds.bottom, contentScroll: content.scrollHeight > content.clientHeight };
+  });
+  assert.ok(narrowShort.top >= 0 && narrowShort.bottom <= 480 && narrowShort.contentScroll,
+    `320×480 staged panel stays reachable: ${JSON.stringify(narrowShort)}`);
   for (const colorScheme of ["light", "dark"]) {
     await page.emulateMedia({ forcedColors: "active", colorScheme });
     const paint = await candidate.evaluate((node) => {
@@ -233,9 +248,10 @@ try {
   const shortView = await page.locator(".ts-appearance-popover").evaluate((node) => {
     const bounds = node.getBoundingClientRect();
     const content = node.querySelector(".ts-appearance-content");
-    return { bottom: bounds.bottom, contentScroll: content.scrollHeight > content.clientHeight };
+    return { top: bounds.top, bottom: bounds.bottom, contentScroll: content.scrollHeight > content.clientHeight };
   });
-  assert.ok(shortView.bottom <= 450 && shortView.contentScroll, "short viewport keeps the staged panel reachable");
+  assert.ok(shortView.bottom <= 450 && shortView.contentScroll,
+    `short viewport keeps the staged panel reachable: ${JSON.stringify(shortView)}`);
   await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await editor.press("Escape");
@@ -256,7 +272,7 @@ try {
 
   console.log(JSON.stringify({ case: "#70 real-entry profile interchange", status: "PASS", rejected: rejected.map(([name]) => name),
     builtInBytes: builtInBytes.byteLength, importedBytes: exported.byteLength, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"),
-    networkDelta: network.length - networkBefore, narrow, shortView }));
+    networkDelta: network.length - networkBefore, narrow, narrowTall, narrowShort, shortView }));
 } finally {
   await context?.close();
   await rm(profileDir, { recursive: true, force: true });

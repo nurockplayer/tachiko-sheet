@@ -401,7 +401,19 @@
   }
 }
 
+@media (max-height: 600px) {
+  .ts-appearance-popover {
+    max-height: calc(100vh - 128px);
+    max-height: calc(100dvh - 128px);
+  }
+}
+
 @media (max-width: 380px) {
+  .ts-appearance-popover {
+    max-height: calc(100vh - 160px);
+    max-height: calc(100dvh - 160px);
+  }
+
   .ts-appearance-custom-actions {
     grid-template-columns: minmax(0, 1fr);
   }
