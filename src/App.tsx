@@ -119,10 +119,11 @@ export function startInitialExampleOnce(
   attempted: { current: boolean },
   openExample: () => Promise<void>,
   onKnownFailure: (error: unknown) => void,
+  onSettled: () => void = () => undefined,
 ): void {
   if (attempted.current) return;
   attempted.current = true;
-  void openExample().catch(onKnownFailure);
+  void openExample().catch(onKnownFailure).finally(onSettled);
 }
 
 /** A confirmed import is a new occurrence and cannot inherit a prior report attachment. */
@@ -194,6 +195,7 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
  */
 export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [view, setView] = useState<WorkbookView | null>(null);
+  const [initialLaunchPending, setInitialLaunchPending] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [currentness, setCurrentness] = useState<Currentness>("current");
@@ -747,7 +749,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     // starts, while manual Open routes remain available after a known failure.
     startInitialExampleOnce(initialExampleAttemptedRef, openExample, (error) => {
       setMessage(describe(error, "The example work could not be opened."));
-    });
+    }, () => setInitialLaunchPending(false));
   }, []);
 
   async function openJ4Canary(): Promise<void> {
@@ -1601,48 +1603,67 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       data-work-dirty={dirty ? "true" : "false"}
       data-work-currentness={view ? currentness : undefined}
     >
-      <SheetShell
-        appearancePreference={appearancePreference}
-        view={view}
-        busy={busy}
-        dirty={dirty}
-        currentness={currentness}
-        outcome={outcome}
-        saveStatus={saveStatus}
-        message={message}
-        copies={savedCopies}
-        onOpenFiles={openFiles}
-        onOpenExample={openExample}
-        onOpenSaved={openSaved}
-        onSelectCollection={selectCollection}
-        onCommit={commit}
-        onCreateCopy={createCopy}
-        onClose={close}
-        onRefresh={refresh}
-        onDraftChange={onDraftChange}
-        onReportDraftChange={onReportDraftChange}
-        j4Results={j4Results}
-        j4DefinitionIds={j4DefinitionIds}
-        onPrepareJ4Bindings={prepareJ4Bindings}
-        onCreateJ4={createJ4}
-        onRefreshJ4={refreshJ4}
-        onOpenJ4Canary={openJ4Canary}
-        report={report}
-        onCreateReport={createReport}
-        onUpdateReport={updateReport}
-        onExportReportPng={exportReportPng}
-        onRemoveReport={removeReport}
-        interop={interop}
-        onInspectImport={inspectImport}
-        onImportCandidate={importCandidate}
-        onCancelImport={cancelImport}
-        onPreviewTrim={previewTrim}
-        onPreviewDeduplicate={previewDeduplicate}
-        onCommitCleanup={commitCleanup}
-        onCancelCleanup={cancelCleanup}
-        onPrepareDownload={prepareDownload}
-        onDownload={download}
-      />
+      {initialLaunchPending ? (
+        <main className="ts-home">
+          <header className="ts-home-head">
+            <div className="ts-home-heading">
+              <h1 className="ts-brand">Tachiko Sheet</h1>
+              <p
+                className="ts-subtle"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                data-testid="initial-launch"
+              >
+                Opening your work…
+              </p>
+            </div>
+          </header>
+        </main>
+      ) : (
+        <SheetShell
+          appearancePreference={appearancePreference}
+          view={view}
+          busy={busy}
+          dirty={dirty}
+          currentness={currentness}
+          outcome={outcome}
+          saveStatus={saveStatus}
+          message={message}
+          copies={savedCopies}
+          onOpenFiles={openFiles}
+          onOpenExample={openExample}
+          onOpenSaved={openSaved}
+          onSelectCollection={selectCollection}
+          onCommit={commit}
+          onCreateCopy={createCopy}
+          onClose={close}
+          onRefresh={refresh}
+          onDraftChange={onDraftChange}
+          onReportDraftChange={onReportDraftChange}
+          j4Results={j4Results}
+          j4DefinitionIds={j4DefinitionIds}
+          onPrepareJ4Bindings={prepareJ4Bindings}
+          onCreateJ4={createJ4}
+          onRefreshJ4={refreshJ4}
+          onOpenJ4Canary={openJ4Canary}
+          report={report}
+          onCreateReport={createReport}
+          onUpdateReport={updateReport}
+          onExportReportPng={exportReportPng}
+          onRemoveReport={removeReport}
+          interop={interop}
+          onInspectImport={inspectImport}
+          onImportCandidate={importCandidate}
+          onCancelImport={cancelImport}
+          onPreviewTrim={previewTrim}
+          onPreviewDeduplicate={previewDeduplicate}
+          onCommitCleanup={commitCleanup}
+          onCancelCleanup={cancelCleanup}
+          onPrepareDownload={prepareDownload}
+          onDownload={download}
+        />
+      )}
       <footer className="ts-notices">
         <span>Tachiko Sheet · experimental core kit notices: </span>
         <a href="/core-kit/notices/THIRD_PARTY_LICENSES.md">third-party licenses</a>

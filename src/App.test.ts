@@ -202,13 +202,16 @@ describe("first-entry example launch", () => {
     const failure = new Error("fixture unavailable");
     const openExample = vi.fn(async () => { throw failure; });
     const onKnownFailure = vi.fn();
+    const onSettled = vi.fn();
 
-    startInitialExampleOnce(attempted, openExample, onKnownFailure);
-    startInitialExampleOnce(attempted, openExample, onKnownFailure);
+    startInitialExampleOnce(attempted, openExample, onKnownFailure, onSettled);
+    startInitialExampleOnce(attempted, openExample, onKnownFailure, onSettled);
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(openExample).toHaveBeenCalledTimes(1);
     expect(onKnownFailure).toHaveBeenCalledWith(failure);
+    expect(onSettled).toHaveBeenCalledTimes(1);
     expect(attempted.current).toBe(true);
   });
 
@@ -216,12 +219,15 @@ describe("first-entry example launch", () => {
     const attempted = { current: false };
     const openExample = vi.fn(async () => undefined);
 
-    startInitialExampleOnce(attempted, openExample, vi.fn());
+    const onSettled = vi.fn();
+    startInitialExampleOnce(attempted, openExample, vi.fn(), onSettled);
     await Promise.resolve();
     // Close deliberately does not reset the mount-scoped latch.
-    startInitialExampleOnce(attempted, openExample, vi.fn());
+    startInitialExampleOnce(attempted, openExample, vi.fn(), onSettled);
+    await Promise.resolve();
 
     expect(openExample).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledTimes(1);
     expect(attempted.current).toBe(true);
   });
 });
