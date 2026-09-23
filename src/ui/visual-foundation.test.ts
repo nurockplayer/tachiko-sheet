@@ -40,6 +40,13 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain(".ts-app :focus-visible { outline-color: Highlight; }");
   });
 
+  it("keeps system colors on every enabled app primary action in forced colors", () => {
+    expect(css).toContain(".ts-app .ts-button--primary:not(:disabled) {");
+    expect(css).toContain("forced-color-adjust: none;");
+    expect(css).toContain(".ts-button:disabled {");
+    expect(css).not.toContain(".ts-header-actions .ts-button--primary:not(:disabled)");
+  });
+
   it("keeps public profile bindings private and wires the approved role mappings", () => {
     expect(css).toContain(alias("--ts-surface-chrome-tint", "surface.chrome.tint"));
     expect(css).toContain(alias("--ts-grid-canvas", "grid.canvas"));

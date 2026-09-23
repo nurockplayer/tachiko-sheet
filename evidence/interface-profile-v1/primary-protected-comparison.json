@@ -1,0 +1,286 @@
+{
+  "status": "PASS",
+  "baselineHead": "cbfed47c584b149bd50da96194530d0b20f157a8",
+  "controls": [
+    "disabled Create copy",
+    "secondary Cancel",
+    "destructive Close without saving",
+    "secondary Keep editing"
+  ],
+  "palettes": [
+    "normal",
+    "forced-light",
+    "forced-dark"
+  ],
+  "pixelAndPropertiesEqual": 12,
+  "manifests": {
+    "primary-protected-before": "855dedc4fbda7dbee901b889de1058eef7776b3c0b4b8b94455ded9d73d59e1a",
+    "primary-protected-after": "855dedc4fbda7dbee901b889de1058eef7776b3c0b4b8b94455ded9d73d59e1a"
+  },
+  "samples": [
+    {
+      "label": "disabled-create-copy",
+      "palette": "normal",
+      "file": "disabled-create-copy-normal.png",
+      "sha256": "5711a08e932ce3b42dd9c8edf25ddb8fdb59388c2633e969eb3306962ececc61",
+      "properties": {
+        "disabled": true,
+        "class": "ts-button ts-button--primary",
+        "text": "Create copy",
+        "color": "rgb(140, 148, 156)",
+        "background": "rgb(245, 246, 249)",
+        "border": "rgb(223, 226, 234)",
+        "outline": "rgb(140, 148, 156) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "14px / 20px Inter, ui-sans-serif, system-ui, -apple-system, \"Hiragino Sans\", \"Noto Sans TC\", \"Microsoft JhengHei\", sans-serif",
+        "x": 744.46875,
+        "y": 460,
+        "w": 104.53125,
+        "h": 32
+      }
+    },
+    {
+      "label": "disabled-create-copy",
+      "palette": "forced-light",
+      "file": "disabled-create-copy-forced-light.png",
+      "sha256": "b341db6b74f2ce0b6c16dc935511feb26bf23f090a80080e705fee1a5db5a22b",
+      "properties": {
+        "disabled": true,
+        "class": "ts-button ts-button--primary",
+        "text": "Create copy",
+        "color": "rgb(96, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(96, 0, 0)",
+        "outline": "rgb(96, 0, 0) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 744.46875,
+        "y": 460,
+        "w": 104.53125,
+        "h": 32
+      }
+    },
+    {
+      "label": "disabled-create-copy",
+      "palette": "forced-dark",
+      "file": "disabled-create-copy-forced-dark.png",
+      "sha256": "ea065d6dae97faf3ebfe52d098174eb2cd5eb94531075e0457775c3f485fc654",
+      "properties": {
+        "disabled": true,
+        "class": "ts-button ts-button--primary",
+        "text": "Create copy",
+        "color": "rgb(63, 242, 63)",
+        "background": "rgb(0, 0, 0)",
+        "border": "rgb(63, 242, 63)",
+        "outline": "rgb(63, 242, 63) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 744.46875,
+        "y": 460,
+        "w": 104.53125,
+        "h": 32
+      }
+    },
+    {
+      "label": "secondary-cancel",
+      "palette": "normal",
+      "file": "secondary-cancel-normal.png",
+      "sha256": "b28e98138c1870bee159fdf9cd03f4761249948ddb21447dc6987d0444bc8bb5",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button",
+        "text": "Cancel",
+        "color": "rgb(37, 39, 53)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(133, 139, 156)",
+        "outline": "rgb(37, 39, 53) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "14px / 20px Inter, ui-sans-serif, system-ui, -apple-system, \"Hiragino Sans\", \"Noto Sans TC\", \"Microsoft JhengHei\", sans-serif",
+        "x": 666.546875,
+        "y": 460,
+        "w": 69.921875,
+        "h": 32
+      }
+    },
+    {
+      "label": "secondary-cancel",
+      "palette": "forced-light",
+      "file": "secondary-cancel-forced-light.png",
+      "sha256": "aed06adec9b7f087c73b3d15f5360419ca5c00352a4938540f43239db5513e1c",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button",
+        "text": "Cancel",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(0, 0, 0)",
+        "outline": "rgb(0, 0, 0) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 666.546875,
+        "y": 460,
+        "w": 69.921875,
+        "h": 32
+      }
+    },
+    {
+      "label": "secondary-cancel",
+      "palette": "forced-dark",
+      "file": "secondary-cancel-forced-dark.png",
+      "sha256": "bc82760316adc025ce4af756f6e67edb097d2d932139f3268b54672ce4db14d8",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button",
+        "text": "Cancel",
+        "color": "rgb(255, 255, 255)",
+        "background": "rgb(0, 0, 0)",
+        "border": "rgb(255, 255, 255)",
+        "outline": "rgb(255, 255, 255) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 666.546875,
+        "y": 460,
+        "w": 69.921875,
+        "h": 32
+      }
+    },
+    {
+      "label": "destructive-close",
+      "palette": "normal",
+      "file": "destructive-close-normal.png",
+      "sha256": "37e3816efe82f0a9c205bf0ffc19ea51745519d2791a4de08a52fc8e839cfd05",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button ts-button--danger",
+        "text": "Close without saving",
+        "color": "rgb(138, 47, 28)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(180, 85, 63)",
+        "outline": "rgb(138, 47, 28) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "14px / 20px Inter, ui-sans-serif, system-ui, -apple-system, \"Hiragino Sans\", \"Noto Sans TC\", \"Microsoft JhengHei\", sans-serif",
+        "x": 687.4375,
+        "y": 438,
+        "w": 161.5625,
+        "h": 32
+      }
+    },
+    {
+      "label": "destructive-close",
+      "palette": "forced-light",
+      "file": "destructive-close-forced-light.png",
+      "sha256": "83c64537300c459283f892bdd9b08af8b114afd6ab94a339466b01c7c41f470d",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button ts-button--danger",
+        "text": "Close without saving",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(0, 0, 0)",
+        "outline": "rgb(0, 0, 0) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 687.4375,
+        "y": 438,
+        "w": 161.5625,
+        "h": 32
+      }
+    },
+    {
+      "label": "destructive-close",
+      "palette": "forced-dark",
+      "file": "destructive-close-forced-dark.png",
+      "sha256": "39d54778666a98c732285d087aecf8ba4f713e3f0d047f9ed0b9e5e2a6fdc97b",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button ts-button--danger",
+        "text": "Close without saving",
+        "color": "rgb(255, 255, 255)",
+        "background": "rgb(0, 0, 0)",
+        "border": "rgb(255, 255, 255)",
+        "outline": "rgb(255, 255, 255) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 687.4375,
+        "y": 438,
+        "w": 161.5625,
+        "h": 32
+      }
+    },
+    {
+      "label": "secondary-keep-editing",
+      "palette": "normal",
+      "file": "secondary-keep-editing-normal.png",
+      "sha256": "1d66577bfc57af6617bda635bb964c4ad805a8c308a339a2b197333ea9bdcd2a",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button",
+        "text": "Keep editing",
+        "color": "rgb(37, 39, 53)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(133, 139, 156)",
+        "outline": "rgb(37, 39, 53) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "14px / 20px Inter, ui-sans-serif, system-ui, -apple-system, \"Hiragino Sans\", \"Noto Sans TC\", \"Microsoft JhengHei\", sans-serif",
+        "x": 572.796875,
+        "y": 438,
+        "w": 106.640625,
+        "h": 32
+      }
+    },
+    {
+      "label": "secondary-keep-editing",
+      "palette": "forced-light",
+      "file": "secondary-keep-editing-forced-light.png",
+      "sha256": "dcdf11086c7fda55889a9da938819d6f6157655c454477056582bbca954a88b9",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button",
+        "text": "Keep editing",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "border": "rgb(0, 0, 0)",
+        "outline": "rgb(0, 0, 0) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 572.796875,
+        "y": 438,
+        "w": 106.640625,
+        "h": 32
+      }
+    },
+    {
+      "label": "secondary-keep-editing",
+      "palette": "forced-dark",
+      "file": "secondary-keep-editing-forced-dark.png",
+      "sha256": "3752184a98c23c6d56203fed0dfde2d5baee8386af068d350a94213c377ecaba",
+      "properties": {
+        "disabled": false,
+        "class": "ts-button",
+        "text": "Keep editing",
+        "color": "rgb(255, 255, 255)",
+        "background": "rgb(0, 0, 0)",
+        "border": "rgb(255, 255, 255)",
+        "outline": "rgb(255, 255, 255) none 3px",
+        "outlineOffset": "0px",
+        "forcedColorAdjust": "auto",
+        "font": "",
+        "x": 572.796875,
+        "y": 438,
+        "w": 106.640625,
+        "h": 32
+      }
+    }
+  ]
+}

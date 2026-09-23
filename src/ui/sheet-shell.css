@@ -939,7 +939,7 @@
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
-  .ts-header-actions .ts-button--primary:not(:disabled) {
+  .ts-app .ts-button--primary:not(:disabled) {
     background: Highlight;
     color: HighlightText;
     border-color: Highlight;

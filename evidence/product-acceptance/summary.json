@@ -39,6 +39,12 @@
       "log": "/Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/evidence/product-acceptance/interface-profile-local-transport.log"
     },
     {
+      "step": "primary-actions-forced-colors-local-transport",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/evidence/product-acceptance/primary-actions-forced-colors-local-transport.log"
+    },
+    {
       "step": "j3-normal-ui-local-transport",
       "status": "PASS",
       "exitCode": 0,

@@ -1,19 +1,437 @@
 {
   "status": "PASS",
-  "previousReviewedHead": "87bfd26fbdc6074d3815eec2234d1463b65c114f",
-  "stewardAuthorization": "https://github.com/nurockplayer/tachiko-sheet/issues/68#issuecomment-5775343376",
+  "previousReviewedHead": "cbfed47c584b149bd50da96194530d0b20f157a8",
+  "decision": "https://github.com/nurockplayer/tachiko-sheet/pull/75#issuecomment-5788796424",
   "viewportCount": 12,
   "totalStates": 84,
   "unchangedNormalStates": 72,
-  "changedForcedStates": 12,
+  "unchangedForcedStates": 12,
   "geometryFontBackgroundOutlineEqualStates": 84,
-  "outsideAuthorizedForcedConsumers": 0,
-  "consumerPaintOutsetPixels": 1,
+  "note": "This inherited seven-state matrix contains the already-repaired header Save/selected text, not newly repaired enabled modal/action states. Separate primary consumer probe proves those new deltas.",
   "manifestSha256": {
-    "approved-canonical-consumers": "f48ed2a80435886c44c56d5bd9099576ba12568b08a2b5bf752f67d9d0a41d0e",
-    "forced-repair-candidate": "3e54ded116bd1a623d73890ef3ad0e7339a5473ec40f9aa4aa87cc1e5064ff6c"
+    "forced-repair-candidate": "3e54ded116bd1a623d73890ef3ad0e7339a5473ec40f9aa4aa87cc1e5064ff6c",
+    "primary-family-candidate": "3e54ded116bd1a623d73890ef3ad0e7339a5473ec40f9aa4aa87cc1e5064ff6c"
   },
-  "fullComparisonSha256": "41375c306f7ea68a2d36aed925c4ac28e7f45a64f431cf355d9e5c8b7fa6221c",
-  "artifactRoot": "/Users/tachikoma/.codex/artifacts/tachiko-sheet-68",
-  "normalColorBaselineEvidence": "pre-forced-repair-parity-summary.json"
+  "states": [
+    {
+      "file": "320x640-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "320x640-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "320x640-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "320x640-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "320x640-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "320x640-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "320x640-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "360x640-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "600x640-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "720x450-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1023x768-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1024x768-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1280x800-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1440x900-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1512x982-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "1920x1080-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "2560x1440-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-first-entry.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-home.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-grid.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-focus.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-draft.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-save-dialog.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    },
+    {
+      "file": "3840x2160-forced-colors.png",
+      "pixelEqual": true,
+      "geometryEqual": true
+    }
+  ]
 }

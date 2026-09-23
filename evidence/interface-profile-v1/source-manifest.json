@@ -1,13 +1,14 @@
 {
   "src/main.tsx": "b6f01957b0da9a1c195b2583d22b2f2de4f51517299c5b3a21bc0b41126b5cd8",
   "src/acceptance/sheet-foundation.ts": "9f001cb3a64139c1835175a948d1c3b64c27dd259102e88593c41b890b7c24a3",
-  "src/ui/sheet-shell.css": "02f4897f778bdb0dd95b9727cc97154eb3d3321c3f8c597656dd4bba739ed311",
-  "src/ui/visual-foundation.test.ts": "58e92e45796adf49a778f7536db741b8d259447f351aa29bd9ed2e52cba86f43",
+  "src/ui/sheet-shell.css": "f03004ddd8a04cf9d46f6e3cf23f4c07278853feb0042a154dd2e6b04bfe2bcb",
+  "src/ui/visual-foundation.test.ts": "15ad08ccb77c58154724650845097ad4fa717b524d68d85830435b01cace129e",
   "tests/product/interface-profile-local.mjs": "4e69464649c319e6bc41cc213706c423de193dd26cca0b9ed6cefd3dcf5fe9ab",
-  "scripts/run-product-acceptance.mjs": "24c0d4b8c239d7a4477fcba3a357613d56bc89c444c33de384e3438f2e61e711",
+  "scripts/run-product-acceptance.mjs": "dc0c433bbd11093192cd6ba3b10da37576923bac6f2e8e4de2f1123d03f0aa2d",
   "docs/design/interface-profile-v1-mapping.json": "86bfea48279b0df89979a5226593e926c2f35256fad9ff2803786cff39868c57",
   "docs/design/interface-profile-v1-mapping.md": "4861cdf6751f7884f786340503e80bb9f8bb8b3a1d0a6e82ea6365fed6f79dbf",
   "src/ui/interface-profile/index.ts": "c3b4d48bf5027f81ff6a2a9ee3ed5d480063c6de481f101cde08f35af26ccb4c",
   "src/ui/interface-profile/profile.test.ts": "98304fcb927b22f0c5454908d10205c43c96dee3edc0996e40406d38b2db5c12",
-  "src/ui/interface-profile/profile.ts": "94ac62faac5bc1870952aabafa84fb20f5889ce162d25a275d5b8419db4b7033"
+  "src/ui/interface-profile/profile.ts": "94ac62faac5bc1870952aabafa84fb20f5889ce162d25a275d5b8419db4b7033",
+  "tests/product/primary-actions-forced-colors-local.mjs": "ff09a7f646fb615084fa9c5fbef3966912374b48b5f5704e2367b5298bb1b048"
 }
