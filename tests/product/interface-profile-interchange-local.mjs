@@ -160,6 +160,33 @@ try {
   assert.deepEqual(await appearanceState(page), applied, "cancelled IME queue leaves imported active and persisted");
   await uploadProfile(page, exported);
   await candidate.locator(".ts-appearance-candidate__name bdi").getByText("My Local Profile", { exact: true }).waitFor();
+  const candidateSurface = await candidate.evaluate((node) => ({
+    painted: getComputedStyle(node).backgroundColor,
+    admitted: getComputedStyle(node.closest(".ts-appearance-popover")).backgroundColor,
+  }));
+  assert.equal(candidateSurface.painted, candidateSurface.admitted,
+    "second import paints candidate text and focus against the admitted active-profile content surface");
+  await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  const nonwhite = { ...imported, name: "Nonwhite Local Profile", colors: { ...imported.colors, "surface.content": "#F8FAFF" } };
+  await uploadProfile(page, Buffer.from(JSON.stringify(nonwhite), "utf8"));
+  await candidate.getByRole("button", { name: "Apply profile", exact: true }).click();
+  await page.getByRole("radio", { name: /Imported Nonwhite Local Profile/ }).waitFor();
+  await uploadProfile(page, importBytes);
+  await candidate.waitFor();
+  const candidateBoundary = await candidate.evaluate((node) => {
+    const paint = getComputedStyle(node);
+    const rgb = (value) => [...value.matchAll(/\d+/g)].slice(0, 3).map(([channel]) => Number(channel));
+    const luminance = (value) => rgb(value).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const foreground = luminance(paint.borderColor);
+    const background = luminance(paint.backgroundColor);
+    return { background: paint.backgroundColor, borderContrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05) };
+  });
+  assert.equal(candidateBoundary.background, "rgb(248, 250, 255)", "candidate follows nonwhite admitted profile surface");
+  assert.ok(candidateBoundary.borderContrast >= 3, `candidate boundary stays visible on admitted nonwhite surface: ${JSON.stringify(candidateBoundary)}`);
   await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
 
   const rejected = [

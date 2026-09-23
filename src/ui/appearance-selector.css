@@ -223,9 +223,9 @@
   min-width: 0;
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid #b7a8ff;
+  border: 1px solid var(--ts-focus, #6551ce);
   border-radius: 8px;
-  background: #faf9ff;
+  background: var(--ts-surface, #fff);
 }
 
 .ts-appearance-candidate__name {
