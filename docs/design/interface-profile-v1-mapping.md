@@ -10,7 +10,7 @@ The retained Figma evidence is a painted/readback artifact. It contains no
 verified variable, collection, or mode binding identifiers, so each role's
 `binding` slot carries `variableId`, `collectionId`, and `modeId` as `null`.
 The shared reason is `unavailable: painted/readback frames contain no verified
-binding IDs`. No IDs are inferred from names or screenshots.
+binding IDs`. No IDs are inferred from names or screenshots. **Native binding IDs are not a v1 authority prerequisite**: accepted semantic role/value mapping plus the exact approved Figma nodes are sufficient authority for v1 when binding identifiers are unavailable.
 
 The three values below correct prior implementation drift under the explicit
 [Steward disposition](https://github.com/nurockplayer/tachiko-sheet/issues/68#issuecomment-5774025721).
