@@ -14,7 +14,13 @@ const preference = (overrides: Partial<AppearancePreferenceSnapshot> = {}): Appe
 });
 
 const renderSelector = (snapshot: AppearancePreferenceSnapshot) =>
-  renderToStaticMarkup(<AppearanceSelector preference={snapshot} onSelectProfile={vi.fn()} onSelectDensity={vi.fn()} />);
+  renderToStaticMarkup(
+    <AppearanceSelector
+      preference={snapshot}
+      onSelectProfile={vi.fn(() => snapshot)}
+      onSelectDensity={vi.fn(() => snapshot)}
+    />,
+  );
 
 describe("AppearanceSelector semantic rendering", () => {
   it("exposes a labelled application control and nonmodal dialog with separate native radio groups", () => {

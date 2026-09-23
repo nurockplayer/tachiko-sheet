@@ -1,17 +1,18 @@
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import type {
   AppearanceDensity,
   AppearancePreferenceSnapshot,
   AppearanceProfileId,
+  AppearanceSelection,
 } from "../application/appearance-preference.js";
 import { APPEARANCE_PROFILE_IDS } from "../application/appearance-preference.js";
 import "./appearance-selector.css";
 
 export type AppearanceSelectorProps = Readonly<{
   preference: AppearancePreferenceSnapshot;
-  onSelectProfile: (profileId: AppearanceProfileId) => void;
-  onSelectDensity: (density: AppearanceDensity) => void;
+  onSelectProfile: (profileId: AppearanceProfileId) => AppearancePreferenceSnapshot;
+  onSelectDensity: (density: AppearanceDensity) => AppearancePreferenceSnapshot;
 }>;
 
 const PROFILE_LABELS: Readonly<Record<AppearanceProfileId, string>> = Object.freeze({
@@ -28,12 +29,28 @@ const DENSITIES: readonly Readonly<{ id: AppearanceDensity; label: string }>[] =
 /** Application-scoped, controlled appearance preference popover. */
 export function AppearanceSelector({ preference, onSelectProfile, onSelectDensity }: AppearanceSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [pendingPresentation, setPendingPresentation] = useState<AppearanceSelection | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
   const dialogId = `appearance-dialog-${id}`;
   const profileGroupName = `appearance-profile-${id}`;
   const densityGroupName = `appearance-density-${id}`;
-  const selection = preference.pendingSelection ?? preference.selection;
+  const selection = pendingPresentation ?? preference.pendingSelection ?? preference.selection;
+
+  useEffect(() => {
+    if (
+      pendingPresentation !== null &&
+      preference.pendingSelection === null &&
+      preference.selection.profileId === pendingPresentation.profileId &&
+      preference.selection.density === pendingPresentation.density
+    ) {
+      setPendingPresentation(null);
+    }
+  }, [pendingPresentation, preference]);
+
+  const syncPendingPresentation = (snapshot: AppearancePreferenceSnapshot): void => {
+    setPendingPresentation(snapshot.pendingSelection);
+  };
 
   const closeAndReturnFocus = () => {
     setOpen(false);
@@ -95,7 +112,7 @@ export function AppearanceSelector({ preference, onSelectProfile, onSelectDensit
                   name={profileGroupName}
                   value={profileId}
                   checked={selection.profileId === profileId}
-                  onChange={() => onSelectProfile(profileId)}
+                  onChange={() => syncPendingPresentation(onSelectProfile(profileId))}
                 />
                 <span>{PROFILE_LABELS[profileId]}</span>
               </label>
@@ -116,7 +133,7 @@ export function AppearanceSelector({ preference, onSelectProfile, onSelectDensit
                   name={densityGroupName}
                   value={density}
                   checked={selection.density === density}
-                  onChange={() => onSelectDensity(density)}
+                  onChange={() => syncPendingPresentation(onSelectDensity(density))}
                 />
                 <span>{label}</span>
               </label>

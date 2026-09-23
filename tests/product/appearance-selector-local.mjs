@@ -242,6 +242,59 @@ try {
   }
 
   await setAppearance(page, "tachiko", "compact");
+  {
+    const runtimeAtStart = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+    const methodsAtStart = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+    const writesAtStart = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+    const saveAtStart = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+    const before = await page.evaluate((storageKey) => ({
+      chrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
+      density: document.documentElement.getAttribute("data-ts-profile-density"),
+      preference: localStorage.getItem(storageKey),
+    }), key);
+    assert.deepEqual({ chrome: before.chrome, density: before.density }, { chrome: "porcelain", density: "compact" });
+    assert.equal(before.preference, JSON.stringify({ schemaVersion: 1, profileId: "tachiko", density: "compact" }));
+
+    await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    await page.getByRole("button", { name: "Appearance", exact: true }).click();
+    const familiar = page.getByRole("radio", { name: "Familiar Spreadsheet" });
+    const tachiko = page.getByRole("radio", { name: "Tachiko" });
+    const comfortable = page.getByRole("radio", { name: "Comfortable" });
+    const compact = page.getByRole("radio", { name: "Compact" });
+
+    await page.locator(".ts-appearance-profile-option").filter({ hasText: "Familiar Spreadsheet" }).click();
+    assert.equal(await familiar.isChecked(), true, "queued profile is shown as the selected radio during composition");
+    await page.locator(".ts-appearance-density-option").filter({ hasText: "Comfortable" }).click();
+    assert.equal(await comfortable.isChecked(), true, "queued density is shown as the selected radio during composition");
+    await page.locator(".ts-appearance-density-option").filter({ hasText: "Compact" }).click();
+    assert.equal(await compact.isChecked(), true, "density can be reverted to the applied value during composition");
+    await page.locator(".ts-appearance-profile-option").filter({ hasText: "Tachiko" }).click();
+    assert.equal(await tachiko.isChecked(), true, "profile can be reverted to the applied value during composition");
+
+    const queued = await page.evaluate((storageKey) => ({
+      chrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
+      density: document.documentElement.getAttribute("data-ts-profile-density"),
+      preference: localStorage.getItem(storageKey),
+    }), key);
+    assert.deepEqual(queued, before, "reverted pending choices leave applied CSS and preference unchanged before compositionend");
+    await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: input.value })));
+    await page.waitForTimeout(0);
+    assert.deepEqual(await page.evaluate((storageKey) => ({
+      chrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
+      density: document.documentElement.getAttribute("data-ts-profile-density"),
+      preference: localStorage.getItem(storageKey),
+    }), key), before, "cancelled composition choices remain unapplied and unpersisted after compositionend");
+    assert.equal(await shellHandle.evaluate((node) => node.isConnected && node === document.querySelector(".ts-app")), true, "cancel keeps the same SheetShell mounted");
+    assert.equal(await editorHandle.evaluate((node) => node.isConnected && node === document.querySelector('[aria-label="Edit cell"]')), true, "cancel keeps the editor mounted");
+    assert.equal(await cellHandle.evaluate((node) => node.isConnected && node.classList.contains("ts-cell--focused")), true, "cancel keeps the selected cell");
+    assert.deepEqual(await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]), draftBefore, "cancel preserves editor draft and selection");
+    assert.equal(await editError.textContent(), "The work did not accept this value. The draft was kept so you can correct it.", "cancel preserves the rejected-edit alert");
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts()), methodsAtStart, "cancel dispatches no Work method");
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), writesAtStart, "cancel dispatches no copy write");
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.saveObservation()), saveAtStart, "cancel leaves save observation unchanged");
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot()), runtimeAtStart, "cancel leaves runtime revision and opaque bytes unchanged");
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+  }
   await assertCompositionAxisMerge("profile-first");
   await setAppearance(page, "tachiko", "compact");
   await assertCompositionAxisMerge("density-first");
@@ -357,7 +410,7 @@ try {
     combinations: combos.length,
     workMethodDelta: Object.entries(methodsAfter).reduce((sum, [name, count]) => sum + count - (methodsBefore[name] ?? 0), 0),
     reportPngBytes: pngBefore.length,
-    composition: "both-axis profile-first and density-first synthetic composition regressions; no physical IME claim",
+    composition: "queued radio presentation, two-axis revert/cancel, and both-axis profile-first/density-first synthetic regressions; no physical IME claim",
     storageCases: ["exact record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap"],
   }));
 } finally {

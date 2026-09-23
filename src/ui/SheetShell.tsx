@@ -11,7 +11,11 @@ import {
 } from "react";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
-import type { AppearanceDensity, AppearanceProfileId } from "../application/appearance-preference.js";
+import type {
+  AppearanceDensity,
+  AppearancePreferenceSnapshot,
+  AppearanceProfileId,
+} from "../application/appearance-preference.js";
 import type {
   Currentness,
   ImportSelection,
@@ -160,20 +164,22 @@ export function SheetShell(props: SheetShellProps) {
     if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
   }, []);
 
-  function selectAppearanceProfile(profileId: AppearanceProfileId): void {
+  function selectAppearanceProfile(profileId: AppearanceProfileId): AppearancePreferenceSnapshot {
     const current = props.appearancePreference.getSnapshot();
     const composing = current.composing;
     const selection = current.pendingSelection ?? current.selection;
     const snapshot = props.appearancePreference.select(profileId, selection.density);
     if (!composing) setAppearanceSnapshot(snapshot);
+    return snapshot;
   }
 
-  function selectAppearanceDensity(density: AppearanceDensity): void {
+  function selectAppearanceDensity(density: AppearanceDensity): AppearancePreferenceSnapshot {
     const current = props.appearancePreference.getSnapshot();
     const composing = current.composing;
     const selection = current.pendingSelection ?? current.selection;
     const snapshot = props.appearancePreference.select(selection.profileId, density);
     if (!composing) setAppearanceSnapshot(snapshot);
+    return snapshot;
   }
 
   function beginAppearanceComposition(): void {
