@@ -10,7 +10,8 @@ import "./appearance-selector.css";
 
 export type AppearanceSelectorProps = Readonly<{
   preference: AppearancePreferenceSnapshot;
-  onSelect: (profileId: AppearanceProfileId, density: AppearanceDensity) => void;
+  onSelectProfile: (profileId: AppearanceProfileId) => void;
+  onSelectDensity: (density: AppearanceDensity) => void;
 }>;
 
 const PROFILE_LABELS: Readonly<Record<AppearanceProfileId, string>> = Object.freeze({
@@ -25,7 +26,7 @@ const DENSITIES: readonly Readonly<{ id: AppearanceDensity; label: string }>[] =
 ]);
 
 /** Application-scoped, controlled appearance preference popover. */
-export function AppearanceSelector({ preference, onSelect }: AppearanceSelectorProps) {
+export function AppearanceSelector({ preference, onSelectProfile, onSelectDensity }: AppearanceSelectorProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
@@ -94,7 +95,7 @@ export function AppearanceSelector({ preference, onSelect }: AppearanceSelectorP
                   name={profileGroupName}
                   value={profileId}
                   checked={selection.profileId === profileId}
-                  onChange={() => onSelect(profileId, selection.density)}
+                  onChange={() => onSelectProfile(profileId)}
                 />
                 <span>{PROFILE_LABELS[profileId]}</span>
               </label>
@@ -115,7 +116,7 @@ export function AppearanceSelector({ preference, onSelect }: AppearanceSelectorP
                   name={densityGroupName}
                   value={density}
                   checked={selection.density === density}
-                  onChange={() => onSelect(selection.profileId, density)}
+                  onChange={() => onSelectDensity(density)}
                 />
                 <span>{label}</span>
               </label>

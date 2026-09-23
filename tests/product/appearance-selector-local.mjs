@@ -30,7 +30,7 @@ async function openApp(page) {
   await page.locator(".ts-app").waitFor();
 }
 
-async function setAppearance(page, profileId, density, { compositionInput = null } = {}) {
+async function setAppearance(page, profileId, density, { compositionInput = null, axisOrder = "profile-first" } = {}) {
   const profile = profiles.find((item) => item.id === profileId);
   const densityOption = densities.find((item) => item.id === density);
   assert.ok(profile && densityOption, "probe only selects a closed built-in profile/density");
@@ -46,8 +46,15 @@ async function setAppearance(page, profileId, density, { compositionInput = null
     await compositionInput.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
   }
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
-  await page.locator(".ts-appearance-profile-option").filter({ hasText: profile.label }).click();
-  await page.locator(".ts-appearance-density-option").filter({ hasText: densityOption.label }).click();
+  const selectProfile = () => page.locator(".ts-appearance-profile-option").filter({ hasText: profile.label }).click();
+  const selectDensity = () => page.locator(".ts-appearance-density-option").filter({ hasText: densityOption.label }).click();
+  if (axisOrder === "density-first") {
+    await selectDensity();
+    await selectProfile();
+  } else {
+    await selectProfile();
+    await selectDensity();
+  }
 
   if (compositionInput) {
     const queued = await page.evaluate(() => ({
@@ -202,17 +209,52 @@ try {
   assert.ok(shellHandle && editorHandle && cellHandle);
   const draftBefore = await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]);
   assert.deepEqual(draftBefore.slice(0, 3), ["not a number", 3, 7], "rejected numeric draft and selection remain in the editor");
-  const runtimeBefore = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
-  const methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
-  const writesBefore = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
-  const saveBefore = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+  let runtimeBefore = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  let methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  let writesBefore = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  let saveBefore = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
   const inventory = await headerInventory(page);
+
+  async function assertCompositionAxisMerge(axisOrder) {
+    const runtimeAtStart = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+    const methodsAtStart = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+    const writesAtStart = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+    const saveAtStart = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+    const before = await page.evaluate((storageKey) => ({
+      chrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
+      density: document.documentElement.getAttribute("data-ts-profile-density"),
+      preference: localStorage.getItem(storageKey),
+    }), key);
+    assert.deepEqual({ chrome: before.chrome, density: before.density }, { chrome: "porcelain", density: "compact" });
+    assert.equal(before.preference, JSON.stringify({ schemaVersion: 1, profileId: "tachiko", density: "compact" }));
+
+    await setAppearance(page, "familiar-spreadsheet", "comfortable", { compositionInput: editor, axisOrder });
+    assert.equal(await shellHandle.evaluate((node) => node.isConnected && node === document.querySelector(".ts-app")), true, `${axisOrder} keeps the same SheetShell mounted`);
+    assert.equal(await editorHandle.evaluate((node) => node.isConnected && node === document.querySelector('[aria-label="Edit cell"]')), true, `${axisOrder} keeps the editor mounted`);
+    assert.equal(await cellHandle.evaluate((node) => node.isConnected && node.classList.contains("ts-cell--focused")), true, `${axisOrder} keeps the selected cell`);
+    assert.deepEqual(await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]), draftBefore, `${axisOrder} preserves editor draft and selection`);
+    assert.equal(await editError.textContent(), "The work did not accept this value. The draft was kept so you can correct it.", `${axisOrder} preserves the rejected-edit alert`);
+    assert.deepEqual(await headerInventory(page), inventory, `${axisOrder} leaves commands and views unchanged`);
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts()), methodsAtStart, `${axisOrder} dispatches no Work method`);
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), writesAtStart, `${axisOrder} dispatches no copy write`);
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.saveObservation()), saveAtStart, `${axisOrder} leaves save observation unchanged`);
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot()), runtimeAtStart, `${axisOrder} leaves runtime revision and opaque bytes unchanged`);
+  }
+
+  await setAppearance(page, "tachiko", "compact");
+  await assertCompositionAxisMerge("profile-first");
+  await setAppearance(page, "tachiko", "compact");
+  await assertCompositionAxisMerge("density-first");
+  await setAppearance(page, "tachiko", "compact");
+  runtimeBefore = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  writesBefore = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  saveBefore = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
 
   const combos = profiles.flatMap((profileOption) => densities.map((densityOption) => ({ profile: profileOption.id, density: densityOption.id })));
   const profileSurfaces = new Map();
   for (const combo of combos) {
-    const compositionInput = combo.profile === "minimal-focus" && combo.density === "comfortable" ? editor : null;
-    const rootState = await setAppearance(page, combo.profile, combo.density, { compositionInput });
+    const rootState = await setAppearance(page, combo.profile, combo.density);
     profileSurfaces.set(combo.profile, rootState.surface);
     assert.equal(await shellHandle.evaluate((node) => node.isConnected && node === document.querySelector(".ts-app")), true, "SheetShell root remains mounted");
     assert.equal(await editorHandle.evaluate((node) => node.isConnected && node === document.querySelector('[aria-label="Edit cell"]')), true, "editor remains mounted");
@@ -315,7 +357,7 @@ try {
     combinations: combos.length,
     workMethodDelta: Object.entries(methodsAfter).reduce((sum, [name, count]) => sum + count - (methodsBefore[name] ?? 0), 0),
     reportPngBytes: pngBefore.length,
-    composition: "synthetic composition events; no physical IME claim",
+    composition: "both-axis profile-first and density-first synthetic composition regressions; no physical IME claim",
     storageCases: ["exact record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap"],
   }));
 } finally {

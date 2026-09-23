@@ -160,9 +160,19 @@ export function SheetShell(props: SheetShellProps) {
     if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
   }, []);
 
-  function selectAppearance(profileId: AppearanceProfileId, density: AppearanceDensity): void {
-    const composing = props.appearancePreference.getSnapshot().composing;
-    const snapshot = props.appearancePreference.select(profileId, density);
+  function selectAppearanceProfile(profileId: AppearanceProfileId): void {
+    const current = props.appearancePreference.getSnapshot();
+    const composing = current.composing;
+    const selection = current.pendingSelection ?? current.selection;
+    const snapshot = props.appearancePreference.select(profileId, selection.density);
+    if (!composing) setAppearanceSnapshot(snapshot);
+  }
+
+  function selectAppearanceDensity(density: AppearanceDensity): void {
+    const current = props.appearancePreference.getSnapshot();
+    const composing = current.composing;
+    const selection = current.pendingSelection ?? current.selection;
+    const snapshot = props.appearancePreference.select(selection.profileId, density);
     if (!composing) setAppearanceSnapshot(snapshot);
   }
 
@@ -192,7 +202,13 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function renderAppearanceSelector(): ReactNode {
-    return <AppearanceSelector preference={appearanceSnapshot} onSelect={selectAppearance} />;
+    return (
+      <AppearanceSelector
+        preference={appearanceSnapshot}
+        onSelectProfile={selectAppearanceProfile}
+        onSelectDensity={selectAppearanceDensity}
+      />
+    );
   }
 
   const [tab, setTab] = useState<ActiveTab>("table");
