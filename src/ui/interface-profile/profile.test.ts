@@ -81,6 +81,55 @@ describe("Interface Profile v1 closed contract", () => {
     expect(TACHIKO_COMPACT_PORCELAIN_PROFILE.colors["grid.header.foreground"]).toBe("#5B6072");
   });
 
+  it("keeps Tachiko's control boundary at least 3:1 against the Porcelain tint endpoint", () => {
+    const luminance = (hex: string): number => {
+      const channels = hex.slice(1).match(/.{2}/g)?.map((part) => Number.parseInt(part, 16) / 255);
+      if (!channels || channels.length !== 3) throw new Error(`Invalid RGB color: ${hex}`);
+      const linear = channels.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!;
+    };
+    const border = TACHIKO_COMPACT_PORCELAIN_PROFILE.colors["border.control"];
+    const tintEndpoint = TACHIKO_COMPACT_PORCELAIN_PROFILE.colors["surface.chrome.tint"];
+    const [lighter, darker] = [luminance(border), luminance(tintEndpoint)].sort((a, b) => b - a);
+
+    expect((lighter + 0.05) / (darker + 0.05)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("accepts names of 1 to 80 Unicode scalar values and preserves their spelling", () => {
+    const oneScalar = validInput();
+    oneScalar.name = "漢";
+    const one = validateInterfaceProfile(oneScalar);
+    expect(one.ok).toBe(true);
+    if (one.ok) expect(one.value.name).toBe("漢");
+
+    const eightyScalars = validInput();
+    eightyScalars.name = "🙂".repeat(80);
+    const eighty = validateInterfaceProfile(eightyScalars);
+    expect(eighty.ok).toBe(true);
+    if (eighty.ok) expect([...eighty.value.name]).toHaveLength(80);
+
+    const decomposed = validInput();
+    decomposed.name = "e\u0301";
+    const preserved = validateInterfaceProfile(decomposed);
+    expect(preserved.ok).toBe(true);
+    if (preserved.ok) expect(preserved.value.name).toBe("e\u0301");
+  });
+
+  it.each([
+    ["", "empty"],
+    ["a".repeat(81), "more than 80 scalars"],
+    ["name\u0000", "C0 control"],
+    ["name\u0085", "C1 control"],
+    ["\uD800", "lone high surrogate"],
+    ["\uDC00", "lone low surrogate"],
+  ])("rejects invalid profile name (%s)", (name) => {
+    const input = validInput();
+    input.name = name;
+    const result = validateInterfaceProfile(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((error) => error.path === "name")).toBe(true);
+  });
+
   it.each(["schemaVersion", "name", "colorScheme", "typography", "density", "chrome", "colors"])(
     "rejects missing field %s",
     (key) => {
@@ -374,7 +423,7 @@ describe("Interface Profile v1 closed contract", () => {
         })));
       }
       expect(edges.map(({ control }) => control)).toEqual([
-        "rgb(133, 139, 156)",
+        "rgb(129, 135, 152)",
         "rgb(122, 132, 145)",
         "rgb(137, 135, 147)",
       ]);

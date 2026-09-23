@@ -11,6 +11,8 @@ import {
 } from "react";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
+import { appearanceDensity } from "../application/appearance-preference.js";
+import { sameAppearanceChoice } from "../application/appearance-model.js";
 import type {
   AppearanceDensity,
   AppearancePreferenceSnapshot,
@@ -28,6 +30,7 @@ import type {
   ViewWitness,
   WorkbookView,
 } from "../contracts.js";
+import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { reportPresentationTextLimitViolation } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
@@ -105,6 +108,15 @@ export function reportRenderResetKey(
   });
 }
 
+/** Publish queued appearance state only after the controller commits that same complete choice. */
+export function shouldPublishAppearanceCompositionEnd(
+  queued: AppearancePreferenceSnapshot["pendingSelection"],
+  snapshot: AppearancePreferenceSnapshot,
+): boolean {
+  return queued !== null && snapshot.pendingSelection === null &&
+    sameAppearanceChoice(snapshot.selection, queued);
+}
+
 /** Available grid viewport below its measured document chrome, with a usable floor. */
 function availableGridScrollHeight(
   viewportHeight: number,
@@ -166,19 +178,23 @@ export function SheetShell(props: SheetShellProps) {
 
   function selectAppearanceProfile(profileId: AppearanceProfileId): AppearancePreferenceSnapshot {
     const current = props.appearancePreference.getSnapshot();
-    const composing = current.composing;
-    const selection = current.pendingSelection ?? current.selection;
-    const snapshot = props.appearancePreference.select(profileId, selection.density);
-    if (!composing) setAppearanceSnapshot(snapshot);
+    const choice = current.pendingSelection ?? current.selection;
+    const snapshot = props.appearancePreference.selectBuiltIn(profileId, appearanceDensity(choice));
+    if (!current.composing) setAppearanceSnapshot(snapshot);
     return snapshot;
   }
 
   function selectAppearanceDensity(density: AppearanceDensity): AppearancePreferenceSnapshot {
     const current = props.appearancePreference.getSnapshot();
-    const composing = current.composing;
-    const selection = current.pendingSelection ?? current.selection;
-    const snapshot = props.appearancePreference.select(selection.profileId, density);
-    if (!composing) setAppearanceSnapshot(snapshot);
+    const snapshot = props.appearancePreference.selectDensity(density);
+    if (!current.composing) setAppearanceSnapshot(snapshot);
+    return snapshot;
+  }
+
+  function selectImportedAppearanceProfile(profile: InterfaceProfileV1): AppearancePreferenceSnapshot {
+    const current = props.appearancePreference.getSnapshot();
+    const snapshot = props.appearancePreference.selectImported(profile);
+    if (!current.composing) setAppearanceSnapshot(snapshot);
     return snapshot;
   }
 
@@ -196,12 +212,7 @@ export function SheetShell(props: SheetShellProps) {
       compositionEndTimer.current = null;
       const queued = props.appearancePreference.getSnapshot().pendingSelection;
       const snapshot = props.appearancePreference.endComposition();
-      if (
-        queued !== null &&
-        snapshot.selection.profileId === queued.profileId &&
-        snapshot.selection.density === queued.density &&
-        snapshot.pendingSelection === null
-      ) {
+      if (shouldPublishAppearanceCompositionEnd(queued, snapshot)) {
         setAppearanceSnapshot(snapshot);
       }
     }, 0);
@@ -213,6 +224,7 @@ export function SheetShell(props: SheetShellProps) {
         preference={appearanceSnapshot}
         onSelectProfile={selectAppearanceProfile}
         onSelectDensity={selectAppearanceDensity}
+        onSelectImported={selectImportedAppearanceProfile}
       />
     );
   }

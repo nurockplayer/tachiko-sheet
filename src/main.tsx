@@ -8,6 +8,7 @@ import { createAppearancePreferenceController } from "./application/appearance-p
 import {
   applyResolvedProfile,
   resolveBuiltInInterfaceProfile,
+  resolveInterfaceProfile,
 } from "./ui/interface-profile/index.js";
 import type { KitLoader } from "./contracts.js";
 
@@ -23,10 +24,12 @@ async function boot(): Promise<void> {
 
   const appearancePreference = createAppearancePreferenceController(
     createBrowserAppearancePreferencePort(),
-    (selection) => {
-      const resolvedProfile = resolveBuiltInInterfaceProfile(selection.profileId, selection.density);
+    (choice) => {
+      const resolvedProfile = choice.kind === "built-in"
+        ? resolveBuiltInInterfaceProfile(choice.profileId, choice.density)
+        : resolveInterfaceProfile(choice.profile);
       if (!resolvedProfile.ok || !applyResolvedProfile(document.documentElement, resolvedProfile.value)) {
-        throw new Error("The selected built-in interface profile could not be applied.");
+        throw new Error("The selected interface profile could not be applied.");
       }
     },
   );
