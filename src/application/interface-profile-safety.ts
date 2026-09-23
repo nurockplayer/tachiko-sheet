@@ -138,11 +138,19 @@ const EXTRA_ACTUAL_USE_PAIRS: readonly Pair[] = Object.freeze([
   textPair("text.secondary", "selection.active.background", "secondary selected editor text"),
   textPair("text.reference", "grid.canvas", "reference grid text on grid canvas"),
   textPair("text.reference", "selection.active.background", "reference selected editor text"),
+  ...(["action.primary.background", "action.primary.hover", "action.primary.pressed"] as const).flatMap((foreground) => [
+    indicatorPair(foreground, "surface.content", `${foreground} primary control boundary on content surface`),
+    indicatorPair(foreground, "surface.chrome", `${foreground} primary control boundary on chrome surface`),
+  ]),
+  indicatorPair("action.primary.background", "grid.header.background", "selected row header state on grid header"),
   indicatorPair("action.primary.background", "accent.background", "selected Appearance radio marker"),
   indicatorPair("selection.active.border", "grid.canvas", "active cell border on grid canvas"),
   indicatorPair("selection.active.border", "selection.active.background", "active cell border on selected editor"),
   indicatorPair("focus.ring", "accent.background", "Appearance keyboard focus against selected option"),
   indicatorPair("focus.ring", "selection.active.background", "keyboard focus against active cell"),
+  indicatorPair("focus.ring", "grid.canvas", "keyboard focus indicator against grid canvas"),
+  indicatorPair("border.control", "grid.canvas", "essential control boundary against grid canvas"),
+  indicatorPair("border.control", "selection.row.background", "essential control boundary against selected row"),
 ]);
 
 const FIXED_STATUS_PAIRS = Object.freeze([
@@ -223,9 +231,10 @@ export function admitInterfaceProfileContrast(input: unknown): ProfileSafetyResu
     check(pair.context, "#865015", colors[pair.background], 4.5);
   }
 
-  // Porcelain uses a CSS gradient from chrome.tint to chrome. Sampling 257
-  // sRGB points catches contrast loss inside the actual-use interval; the
-  // final browser evidence must still qualify the painted CSS gradient.
+  // Porcelain uses a CSS gradient from chrome.tint to chrome. Sample both
+  // text and each primary-action fill state over the full shared header
+  // backdrop as a conservative guard for responsive and zoomed placements.
+  // Browser evidence still qualifies the actually painted CSS gradient.
   if (profile.chrome === "porcelain") {
     for (let step = 0; step <= 256; step += 1) {
       const background = interpolateSrgb(colors["surface.chrome.tint"], colors["surface.chrome"], step / 256);
@@ -235,6 +244,21 @@ export function admitInterfaceProfileContrast(input: unknown): ProfileSafetyResu
           colors[foreground],
           background,
           4.5,
+        );
+      }
+    }
+    for (const foreground of [
+      "action.primary.background",
+      "action.primary.hover",
+      "action.primary.pressed",
+    ] as const) {
+      for (let step = 0; step <= 256; step += 1) {
+        const background = interpolateSrgb(colors["surface.chrome.tint"], colors["surface.chrome"], step / 256);
+        check(
+          `Porcelain chrome gradient step ${step}/256: ${foreground} primary control boundary`,
+          colors[foreground],
+          background,
+          3,
         );
       }
     }

@@ -201,6 +201,19 @@ try {
     ["invalid-name", Buffer.from(JSON.stringify({ ...imported, name: "bad\nname" }), "utf8")],
     ["invalid-color", Buffer.from(JSON.stringify({ ...imported, colors: { ...imported.colors, "text.primary": "url(https://example.invalid/x)" } }), "utf8")],
     ["unsafe-contrast", Buffer.from(JSON.stringify({ ...imported, colors: { ...imported.colors, "text.primary": imported.colors["surface.app"] } }), "utf8")],
+    ["unsafe-primary-boundary", Buffer.from(JSON.stringify({ ...imported, name: "Unsafe Primary Boundary", colors: {
+      ...imported.colors,
+      "surface.content": "#FFFFFF", "surface.chrome": "#FFFFFF", "surface.chrome.tint": "#FFFFFF", "surface.inset": "#FFFFFF",
+      "grid.canvas": "#FFFFFF", "grid.header.background": "#FFFFFF", "selection.row.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF",
+      "text.primary": "#767676", "text.secondary": "#767676", "text.onTint": "#767676",
+      "text.link": "#767676", "text.reference": "#767676", "accent.foreground": "#767676",
+      "grid.header.foreground": "#767676", "selection.header.foreground": "#767676",
+      "border.control": "#767676", "selection.active.border": "#767676", "focus.ring": "#767676",
+      "accent.background": "#000000", "selection.header.background": "#000000",
+      "action.primary.background": "#FFFFFF", "action.primary.hover": "#FFFFFF", "action.primary.pressed": "#FFFFFF",
+      "action.primary.foreground": "#767676",
+    } }), "utf8")],
     ["executable", Buffer.from(JSON.stringify({ ...imported, script: "alert(1)", colors: { ...imported.colors, "surface.app": "#FFFFFF" } }), "utf8")],
   ];
   const rejectionState = await appearanceState(page);
@@ -211,6 +224,10 @@ try {
     assert.equal(await alert.evaluate((node) => document.activeElement === node), true, `${name}: rejection receives focus`);
     assert.equal(await candidate.count(), 0, `${name}: no candidate is staged`);
     assert.deepEqual(await appearanceState(page), rejectionState, `${name}: rejection preserves active profile and product state`);
+    if (name === "unsafe-primary-boundary") {
+      assert.match(await alert.innerText(), /action\.primary\.background primary control boundary on content surface/,
+        "the Oracle-style previously admitted profile is rejected by the new actual-use boundary rule");
+    }
     if (name === "malformed-json") {
       const rejectionPaint = await alert.evaluate((node) => {
         const style = getComputedStyle(node);
@@ -289,7 +306,8 @@ try {
   const midtone = { ...builtIn, name: "Midtone Local Profile", colors: { ...builtIn.colors,
     "surface.content": "#B5B5B5", "text.secondary": "#3F3F3F", "text.onTint": "#333333",
     "text.link": "#333333", "text.reference": "#333333", "accent.foreground": "#333333", "focus.ring": "#4936AB",
-    "border.control": "#555555", "selection.active.border": "#4936AB" } };
+    "border.control": "#555555", "selection.active.border": "#4936AB",
+    "action.primary.background": "#4936AB", "action.primary.hover": "#3E2F98", "action.primary.pressed": "#352780" } };
   const midtoneBefore = await appearanceState(page);
   const midtoneNetworkBefore = network.length;
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
@@ -297,9 +315,90 @@ try {
   await uploadProfile(page, Buffer.from(JSON.stringify(midtone), "utf8"));
   await page.locator(".ts-appearance-candidate, .ts-appearance-notice--rejected").waitFor();
   assert.equal(await page.locator(".ts-appearance-notice--rejected").count(), 0,
-    "midtone profile import is admitted");
+    `midtone profile import is admitted: ${await page.locator(".ts-appearance-notice--rejected").innerText().catch(() => "no rejection text")}`);
   await page.locator(".ts-appearance-candidate").getByRole("button", { name: "Apply profile", exact: true }).click();
   await page.getByRole("radio", { name: /Imported Midtone Local Profile/ }).waitFor();
+  const primary = page.getByRole("button", { name: "Save a copy", exact: true });
+  const primaryPaint = [];
+  await page.mouse.move(1, 1);
+  primaryPaint.push(await primary.evaluate((node) => {
+    const style = getComputedStyle(node);
+    const chrome = getComputedStyle(document.documentElement).getPropertyValue("--ts-surface-chrome").trim();
+    const channels = chrome.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)?.slice(1).map((part) => Number.parseInt(part, 16));
+    return { state: "normal", fill: style.backgroundColor, border: style.borderColor,
+      adjacent: channels ? `rgb(${channels.join(", ")})` : chrome };
+  }));
+  await primary.hover();
+  primaryPaint.push(await primary.evaluate((node) => {
+    const style = getComputedStyle(node);
+    const chrome = getComputedStyle(document.documentElement).getPropertyValue("--ts-surface-chrome").trim();
+    const channels = chrome.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)?.slice(1).map((part) => Number.parseInt(part, 16));
+    return { state: "hover", fill: style.backgroundColor, border: style.borderColor,
+      adjacent: channels ? `rgb(${channels.join(", ")})` : chrome };
+  }));
+  await page.mouse.down();
+  primaryPaint.push(await primary.evaluate((node) => {
+    const style = getComputedStyle(node);
+    const chrome = getComputedStyle(document.documentElement).getPropertyValue("--ts-surface-chrome").trim();
+    const channels = chrome.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)?.slice(1).map((part) => Number.parseInt(part, 16));
+    return { state: "pressed", fill: style.backgroundColor, border: style.borderColor,
+      adjacent: channels ? `rgb(${channels.join(", ")})` : chrome };
+  }));
+  await page.mouse.up();
+  const expectedPrimaryFills = [midtone.colors["action.primary.background"], midtone.colors["action.primary.hover"], midtone.colors["action.primary.pressed"]]
+    .map((hex) => `rgb(${[1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`);
+  assert.deepEqual(primaryPaint.map((paint) => paint.fill), expectedPrimaryFills,
+    "normal, hover, and pressed CSS states route to their respective imported primary roles");
+  assert.equal(new Set(primaryPaint.map((paint) => paint.fill)).size, 3,
+    "computed normal, hover, and pressed fills are distinct");
+  const densityPaint = await page.evaluate(() => {
+    const rgb = (value) => [...value.matchAll(/\d+/g)].slice(0, 3).map(([channel]) => Number(channel));
+    const luminance = (value) => rgb(value).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (first, second) => {
+      const a = luminance(first); const b = luminance(second);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const density = document.querySelector(".ts-appearance-density-option--selected");
+    if (!density) throw new Error("Expected rendered selected Density control");
+    const densityPaint = getComputedStyle(density);
+    const contentSurface = getComputedStyle(document.querySelector(".ts-appearance-popover")).backgroundColor;
+    return { fill: densityPaint.backgroundColor, border: densityPaint.borderColor, surface: contentSurface,
+      contrast: contrast(densityPaint.backgroundColor, contentSurface) };
+  });
+  for (const paint of primaryPaint) {
+    const ratio = await page.evaluate(({ fill, adjacent }) => {
+      const luminance = (value) => [...value.matchAll(/\d+/g)].slice(0, 3).map(([channel]) => {
+        const normalized = Number(channel) / 255;
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+      const a = luminance(fill); const b = luminance(adjacent);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    }, paint);
+    assert.ok(ratio >= 3, `${paint.state} primary action boundary retains 3:1 contrast: ${JSON.stringify({ ...paint, ratio })}`);
+  }
+  assert.ok(densityPaint.contrast >= 3, `selected Density boundary retains 3:1: ${JSON.stringify(densityPaint)}`);
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.locator(".ts-row-head").first().click();
+  const rowHeaderPaint = await page.evaluate(() => {
+    const rgb = (value) => [...value.matchAll(/\d+/g)].slice(0, 3).map(([channel]) => Number(channel));
+    const luminance = (value) => rgb(value).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const row = document.querySelector(".ts-row--selected .ts-row-head");
+    const header = document.querySelector('table[aria-label="Table"] th[scope="col"]');
+    if (!row || !header) throw new Error("Expected rendered selected row and column headers");
+    const fill = getComputedStyle(row).backgroundColor;
+    const gridHeader = getComputedStyle(header).backgroundColor;
+    const a = luminance(fill); const b = luminance(gridHeader);
+    return { fill, gridHeader, contrast: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+  });
+  assert.ok(rowHeaderPaint.contrast >= 3,
+    `selected row header state retains 3:1 against grid header: ${JSON.stringify(rowHeaderPaint)}`);
   const statusPaint = await page.evaluate(() => {
     const card = document.createElement("section");
     card.className = "ts-card";

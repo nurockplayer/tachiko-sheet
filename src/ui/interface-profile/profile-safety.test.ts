@@ -77,6 +77,86 @@ describe("interface profile contrast admission", () => {
     expect(matchingContext(table, /Table selector text on selected header/).length).toBeGreaterThan(0);
   });
 
+  it("rejects each primary fill state when its painted boundary disappears on a consumer surface", () => {
+    const base = builtIn("tachiko", "compact");
+    const primaryStates = [
+      ["action.primary.background", "action.primary.background primary control boundary on content surface"],
+      ["action.primary.hover", "action.primary.hover primary control boundary on content surface"],
+      ["action.primary.pressed", "action.primary.pressed primary control boundary on content surface"],
+    ] as const;
+    for (const [role, context] of primaryStates) {
+      const result = admitInterfaceProfileContrast(mutant(base, {
+        [role]: "#FFFFFF",
+        "surface.content": "#FFFFFF",
+      }));
+      expect(matchingContext(result, new RegExp(context.replaceAll(".", "\\.")))).toEqual(
+        expect.arrayContaining([expect.objectContaining({ required: 3, ratio: 1 })]),
+      );
+    }
+
+    // Mirrors Oracle's all-white content/header/action-fill counterexample;
+    // every pre-existing pair passes: foreground roles are gray on white or
+    // black, and the Appearance radio marker is white against black accent.
+    const oracleManifest = mutant(base, {
+      "surface.content": "#FFFFFF",
+      "surface.chrome": "#FFFFFF",
+      "surface.chrome.tint": "#FFFFFF",
+      "surface.inset": "#FFFFFF",
+      "grid.canvas": "#FFFFFF",
+      "grid.header.background": "#FFFFFF",
+      "selection.row.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF",
+      "text.primary": "#767676",
+      "text.secondary": "#767676",
+      "text.onTint": "#767676",
+      "text.link": "#767676",
+      "text.reference": "#767676",
+      "action.primary.background": "#FFFFFF",
+      "action.primary.hover": "#FFFFFF",
+      "action.primary.pressed": "#FFFFFF",
+      "action.primary.foreground": "#767676",
+      "accent.foreground": "#767676",
+      "accent.background": "#000000",
+      "grid.header.foreground": "#767676",
+      "selection.header.foreground": "#767676",
+      "selection.header.background": "#000000",
+      "border.control": "#767676",
+      "selection.active.border": "#767676",
+      "focus.ring": "#767676",
+    });
+    const oracleResult = admitInterfaceProfileContrast(oracleManifest);
+    const contentBoundary = matchingContext(oracleResult, /primary control boundary on content surface/);
+    const rowHeader = matchingContext(oracleResult, /selected row header state on grid header/);
+    expect(contentBoundary.length).toBeGreaterThan(0);
+    expect(rowHeader.length).toBeGreaterThan(0);
+    expect(oracleResult.ok).toBe(false);
+  });
+
+  it("guards all primary fill states over Porcelain chrome and checks focused grid pairs", () => {
+    const base = builtIn("tachiko", "compact");
+    const gradient = admitInterfaceProfileContrast(mutant(base, {
+      "action.primary.background": "#F8F8FC",
+      "action.primary.hover": "#F8F8FC",
+      "action.primary.pressed": "#F8F8FC",
+      "surface.chrome.tint": "#F8F8FC",
+      "surface.chrome": "#F8F8FC",
+    }));
+    for (const role of ["action.primary.background", "action.primary.hover", "action.primary.pressed"] as const) {
+      expect(matchingContext(gradient, new RegExp(`Porcelain chrome gradient step \\d+/256: ${role.replaceAll(".", "\\.")} primary control boundary`)).length)
+        .toBeGreaterThan(0);
+    }
+
+    const focus = admitInterfaceProfileContrast(mutant(base, { "focus.ring": "#FFFFFF", "grid.canvas": "#FFFFFF" }));
+    expect(matchingContext(focus, /keyboard focus indicator against grid canvas/).length).toBeGreaterThan(0);
+    const control = admitInterfaceProfileContrast(mutant(base, {
+      "border.control": "#FFFFFF",
+      "grid.canvas": "#FFFFFF",
+      "selection.row.background": "#FFFFFF",
+    }));
+    expect(matchingContext(control, /essential control boundary against grid canvas/).length).toBeGreaterThan(0);
+    expect(matchingContext(control, /essential control boundary against selected row/).length).toBeGreaterThan(0);
+  });
+
   it("checks warning text on actual grid backgrounds and primary action hover/pressed states", () => {
     const base = builtIn("familiar-spreadsheet", "compact");
     const warning = admitInterfaceProfileContrast(mutant(base, { "grid.canvas": "#000000" }));
