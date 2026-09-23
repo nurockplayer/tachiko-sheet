@@ -130,7 +130,9 @@ try {
   await openApp(page);
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("button", { name: "Close project", exact: true }).click();
-  assert.equal(await page.locator(".ts-home-head .ts-appearance-selector").count(), 1, "Home owns the application selector");
+  const homeSelector = page.locator(".ts-home-head .ts-appearance-selector");
+  await homeSelector.waitFor({ state: "visible" });
+  assert.equal(await homeSelector.count(), 1, "Home owns the application selector");
 
   const homeTrigger = page.getByRole("button", { name: "Appearance", exact: true });
   await homeTrigger.focus();
