@@ -156,8 +156,14 @@ export function SheetShell(props: SheetShellProps) {
   );
   const compositionEndTimer = useRef<number | null>(null);
 
+  useEffect(() => () => {
+    if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
+  }, []);
+
   function selectAppearance(profileId: AppearanceProfileId, density: AppearanceDensity): void {
-    setAppearanceSnapshot(props.appearancePreference.select(profileId, density));
+    const composing = props.appearancePreference.getSnapshot().composing;
+    const snapshot = props.appearancePreference.select(profileId, density);
+    if (!composing) setAppearanceSnapshot(snapshot);
   }
 
   function beginAppearanceComposition(): void {
@@ -166,14 +172,22 @@ export function SheetShell(props: SheetShellProps) {
       compositionEndTimer.current = null;
     }
     props.appearancePreference.beginComposition();
-    setAppearanceSnapshot(props.appearancePreference.getSnapshot());
   }
 
   function scheduleAppearanceCompositionEnd(): void {
     if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
     compositionEndTimer.current = window.setTimeout(() => {
       compositionEndTimer.current = null;
-      setAppearanceSnapshot(props.appearancePreference.endComposition());
+      const queued = props.appearancePreference.getSnapshot().pendingSelection;
+      const snapshot = props.appearancePreference.endComposition();
+      if (
+        queued !== null &&
+        snapshot.selection.profileId === queued.profileId &&
+        snapshot.selection.density === queued.density &&
+        snapshot.pendingSelection === null
+      ) {
+        setAppearanceSnapshot(snapshot);
+      }
     }, 0);
   }
 
