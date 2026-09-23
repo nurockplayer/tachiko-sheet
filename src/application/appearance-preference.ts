@@ -24,7 +24,7 @@ export type AppearancePreferenceSnapshot = Readonly<{
   selection: AppearanceSelection;
   /** A selection queued during IME composition, if any. */
   pendingSelection: AppearanceSelection | null;
-  /** Why a stored choice could not be loaded; cleared by a successful save. */
+  /** Why a stored choice could not be loaded; cleared when a different session choice is applied. */
   notice: AppearancePreferenceNotice | null;
   /** Sticky after a failed save until a later successful save. */
   notSaved: boolean;
@@ -156,6 +156,9 @@ export function createAppearancePreferenceController(
 
     selection = next;
     pendingSelection = null;
+    // The load fallback no longer describes the active session after a new
+    // choice is applied, even when persistence of that choice fails.
+    notice = null;
     // Apply first so a failed write never rolls back the user's session choice.
     applyAppearance(selection);
     try {

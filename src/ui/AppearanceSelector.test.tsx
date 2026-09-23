@@ -52,13 +52,24 @@ describe("AppearanceSelector semantic rendering", () => {
     expect(html).not.toContain('value="compact" checked=""');
   });
 
-  it("renders distinct load-fallback and unsaved-session disclosures accessibly", () => {
-    const html = renderSelector(preference({ notice: "invalid-preference", notSaved: true }));
-
+  it("renders the load-fallback disclosure accessibly", () => {
+    const html = renderSelector(preference({ notice: "invalid-preference" }));
     expect(html).toContain("Saved appearance could not be loaded. Using Tachiko for this session.");
+    expect(html).not.toContain("Appearance changed for this session, but could not be saved.");
+    expect((html.match(/role=\"status\"/g) ?? [])).toHaveLength(1);
+    expect((html.match(/aria-live=\"polite\"/g) ?? [])).toHaveLength(1);
+  });
+
+  it("renders only the active session write-failure disclosure after a changed choice", () => {
+    const html = renderSelector(preference({
+      selection: { profileId: "familiar-spreadsheet", density: "compact" },
+      notSaved: true,
+    }));
+
+    expect(html).not.toContain("Saved appearance could not be loaded. Using Tachiko for this session.");
     expect(html).toContain("Appearance changed for this session, but could not be saved.");
-    expect((html.match(/role=\"status\"/g) ?? [])).toHaveLength(2);
-    expect((html.match(/aria-live=\"polite\"/g) ?? [])).toHaveLength(2);
+    expect((html.match(/role=\"status\"/g) ?? [])).toHaveLength(1);
+    expect((html.match(/aria-live=\"polite\"/g) ?? [])).toHaveLength(1);
     expect(html).not.toMatch(/<button[^>]*>Save<\/button>/);
   });
 });

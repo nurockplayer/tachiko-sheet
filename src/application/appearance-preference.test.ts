@@ -118,6 +118,34 @@ describe("application appearance preference", () => {
     expect(saved).toEqual(['{"schemaVersion":1,"profileId":"familiar-spreadsheet","density":"compact"}']);
   });
 
+  it.each([
+    ["corrupt saved preference", (): string | null => "{broken", "invalid-preference"],
+    ["unavailable preference storage", (): string | null => { throw new Error("storage disabled"); }, "preference-unavailable"],
+  ] as const)("replaces the stale %s fallback after a failed choice save and successful retry", (_label, read, expectedNotice) => {
+    let failWrites = true;
+    const saved: string[] = [];
+    const controller = createAppearancePreferenceController({
+      read,
+      write: (value) => {
+        if (failWrites) throw new Error("quota");
+        saved.push(value);
+      },
+    }, () => {});
+
+    expect(controller.getSnapshot().selection).toEqual(DEFAULT_APPEARANCE_SELECTION);
+    expect(controller.getSnapshot().notice).toBe(expectedNotice);
+    controller.select("familiar-spreadsheet", "compact");
+    expect(controller.getSnapshot().selection).toEqual({ profileId: "familiar-spreadsheet", density: "compact" });
+    expect(controller.getSnapshot().notice).toBeNull();
+    expect(controller.getSnapshot().notSaved).toBe(true);
+
+    failWrites = false;
+    controller.select("familiar-spreadsheet", "compact");
+    expect(controller.getSnapshot().notice).toBeNull();
+    expect(controller.getSnapshot().notSaved).toBe(false);
+    expect(saved).toEqual(['{"schemaVersion":1,"profileId":"familiar-spreadsheet","density":"compact"}']);
+  });
+
   it("queues only the latest choice during composition and defers apply and persistence", () => {
     const applied: string[] = [];
     const writes: string[] = [];

@@ -250,7 +250,14 @@ try {
   assert.equal(await restarted.evaluate((storageKey) => localStorage.getItem(storageKey), key), preferenceBeforeRestart, "restart restores exact local preference");
 
   const corrupt = await context.newPage();
-  await corrupt.addInitScript((storageKey) => localStorage.setItem(storageKey, "{broken"), key);
+  await corrupt.addInitScript((storageKey) => {
+    localStorage.setItem(storageKey, "{broken");
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (itemKey, value) {
+      if (itemKey === storageKey) throw new Error("blocked write after corrupt preference");
+      return original.call(this, itemKey, value);
+    };
+  }, key);
   await openApp(corrupt);
   await corrupt.getByTestId("project-ready").waitFor();
   assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
@@ -259,6 +266,14 @@ try {
   const corruptNotice = corrupt.getByText("Saved appearance could not be loaded. Using Tachiko for this session.", { exact: true });
   await corruptNotice.waitFor();
   assert.equal(await corruptNotice.getAttribute("role"), "status");
+  await corrupt.locator(".ts-appearance-profile-option").filter({ hasText: "Familiar Spreadsheet" }).click();
+  const corruptWriteNotice = corrupt.getByText("Appearance changed for this session, but could not be saved.", { exact: true });
+  await corruptWriteNotice.waitFor();
+  assert.equal(await corruptWriteNotice.getAttribute("role"), "status");
+  assert.equal(await corruptNotice.count(), 0, "a different session choice removes the stale Tachiko fallback claim");
+  assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "structured", "the selected profile remains active after the failed write");
+  assert.equal(await corrupt.evaluate((storageKey) => localStorage.getItem(storageKey), key), "{broken", "failed persistence leaves the malformed stored value unchanged");
+  assert.equal(await corrupt.getByRole("radio", { name: "Familiar Spreadsheet", exact: true }).isChecked(), true);
 
   const readFailure = await context.newPage();
   await readFailure.addInitScript((storageKey) => {
@@ -301,7 +316,7 @@ try {
     workMethodDelta: Object.entries(methodsAfter).reduce((sum, [name, count]) => sum + count - (methodsBefore[name] ?? 0), 0),
     reportPngBytes: pngBefore.length,
     composition: "synthetic composition events; no physical IME claim",
-    storageCases: ["exact record", "restart restore", "corrupt read", "blocked read", "blocked write", "cross-tab no live swap"],
+    storageCases: ["exact record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap"],
   }));
 } finally {
   await context?.close();
