@@ -11,7 +11,9 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const profile = await mkdtemp(path.join(tmpdir(), "tachiko-appearance-product-"));
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
-const key = "tachiko-sheet:appearance-preference:v1";
+const key = "tachiko-sheet:appearance-preference:v2";
+const legacyKey = "tachiko-sheet:appearance-preference:v1";
+const builtInRecord = (profileId, density) => JSON.stringify({ schemaVersion: 2, kind: "built-in", profileId, density });
 const profiles = [
   { id: "tachiko", label: "Tachiko", chrome: "porcelain", typography: "tachiko-local" },
   { id: "familiar-spreadsheet", label: "Familiar Spreadsheet", chrome: "structured", typography: "system-local" },
@@ -80,7 +82,7 @@ async function setAppearance(page, profileId, density, { compositionInput = null
   }
 
   const raw = await page.evaluate((storageKey) => localStorage.getItem(storageKey), key);
-  assert.equal(raw, JSON.stringify({ schemaVersion: 1, profileId, density }), "preference is the exact namespaced v1 record");
+  assert.equal(raw, builtInRecord(profileId, density), "preference is the exact namespaced v2 built-in record");
   const rootState = await page.evaluate(() => {
     const rootElement = document.documentElement;
     const style = getComputedStyle(rootElement);
@@ -280,7 +282,7 @@ try {
       preference: localStorage.getItem(storageKey),
     }), key);
     assert.deepEqual({ chrome: before.chrome, density: before.density }, { chrome: "porcelain", density: "compact" });
-    assert.equal(before.preference, JSON.stringify({ schemaVersion: 1, profileId: "tachiko", density: "compact" }));
+    assert.equal(before.preference, builtInRecord("tachiko", "compact"));
 
     await setAppearance(page, "familiar-spreadsheet", "comfortable", { compositionInput: editor, axisOrder });
     assert.equal(await shellHandle.evaluate((node) => node.isConnected && node === document.querySelector(".ts-app")), true, `${axisOrder} keeps the same SheetShell mounted`);
@@ -307,7 +309,7 @@ try {
       preference: localStorage.getItem(storageKey),
     }), key);
     assert.deepEqual({ chrome: before.chrome, density: before.density }, { chrome: "porcelain", density: "compact" });
-    assert.equal(before.preference, JSON.stringify({ schemaVersion: 1, profileId: "tachiko", density: "compact" }));
+    assert.equal(before.preference, builtInRecord("tachiko", "compact"));
 
     await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
     await page.getByRole("button", { name: "Appearance", exact: true }).click();
@@ -382,7 +384,7 @@ try {
   assert.deepEqual(runtimeAfter, runtimeBefore, "runtime revision and opaque bytes remain unchanged");
 
   const preferenceBeforeRestart = await page.evaluate((storageKey) => localStorage.getItem(storageKey), key);
-  assert.equal(preferenceBeforeRestart, JSON.stringify({ schemaVersion: 1, profileId: "minimal-focus", density: "comfortable" }));
+  assert.equal(preferenceBeforeRestart, builtInRecord("minimal-focus", "comfortable"));
   await editor.press("Escape");
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   await setAppearance(page, "tachiko", "compact");
@@ -398,7 +400,7 @@ try {
   }
   assert.equal(
     await page.evaluate((storageKey) => localStorage.getItem(storageKey), key),
-    JSON.stringify({ schemaVersion: 1, profileId: "minimal-focus", density: "comfortable" }),
+    builtInRecord("minimal-focus", "comfortable"),
     "the six-recipe report check leaves Minimal-Focus/comfortable stored for restart",
   );
 
@@ -473,6 +475,30 @@ try {
   assert.equal(await writeFailure.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "structured", "failed persistence keeps the session choice applied");
   assert.equal(await writeFailure.evaluate((storageKey) => localStorage.getItem(storageKey), key), unsavedPreference, "failed persistence leaves the prior record untouched");
 
+  const legacyRecord = JSON.stringify({ schemaVersion: 1, profileId: "familiar-spreadsheet", density: "comfortable" });
+  const legacy = await context.newPage();
+  await legacy.addInitScript(({ currentKey, oldKey, raw }) => {
+    localStorage.removeItem(currentKey);
+    localStorage.setItem(oldKey, raw);
+  }, { currentKey: key, oldKey: legacyKey, raw: legacyRecord });
+  await openApp(legacy);
+  await legacy.getByTestId("project-ready").waitFor();
+  assert.equal(await legacy.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "structured", "missing v2 reads the exact legacy built-in preference");
+  assert.equal(await legacy.evaluate(() => document.documentElement.getAttribute("data-ts-profile-density")), "comfortable");
+  assert.deepEqual(await legacy.evaluate(({ currentKey, oldKey }) => [localStorage.getItem(currentKey), localStorage.getItem(oldKey)],
+    { currentKey: key, oldKey: legacyKey }), [null, legacyRecord], "legacy startup does not migrate or rewrite either preference key");
+
+  const corruptV2WithLegacy = await context.newPage();
+  await corruptV2WithLegacy.addInitScript(({ currentKey, oldKey, raw }) => {
+    localStorage.setItem(oldKey, raw);
+    localStorage.setItem(currentKey, "{broken");
+  }, { currentKey: key, oldKey: legacyKey, raw: legacyRecord });
+  await openApp(corruptV2WithLegacy);
+  await corruptV2WithLegacy.getByTestId("project-ready").waitFor();
+  assert.equal(await corruptV2WithLegacy.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain", "present corrupt v2 never revives a stale valid v1 choice");
+  await corruptV2WithLegacy.getByRole("button", { name: "Appearance", exact: true }).click();
+  await corruptV2WithLegacy.getByText("Saved appearance could not be loaded. Using Tachiko for this session.", { exact: true }).waitFor();
+
   console.log(JSON.stringify({
     case: "real-entry Appearance selector",
     status: "PASS",
@@ -481,7 +507,7 @@ try {
     reportPngBytes: reportPngBaseline.length,
     reportAppearanceMatrix: combos.map(({ profile: profileId, density }) => `${profileId}/${density}`),
     composition: "queued radio presentation, two-axis revert/cancel, both-axis merge orders, and isComposing/keyCode-229 Escape guards; no physical IME claim",
-    storageCases: ["exact record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap"],
+    storageCases: ["exact v2 record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap", "v1 read-only fallback", "corrupt v2 precedence"],
   }));
 } finally {
   await context?.close();
