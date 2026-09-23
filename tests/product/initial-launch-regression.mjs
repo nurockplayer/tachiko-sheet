@@ -96,12 +96,8 @@ async function launch(mode) {
 
   let markRequested;
   const manifestGate = new Promise((resolve) => { releaseManifest = resolve; });
-  const manifestRequested = new Promise((resolve, reject) => {
+  const manifestRequested = new Promise((resolve) => {
     markRequested = resolve;
-    observationTimer = setTimeout(
-      () => reject(new Error(`initial release-plan manifest was not requested within ${MANIFEST_OBSERVATION_TIMEOUT_MS}ms`)),
-      MANIFEST_OBSERVATION_TIMEOUT_MS,
-    );
   });
   let manifestRequests = 0;
   const cleanup = async () => {
@@ -137,14 +133,22 @@ async function launch(mode) {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     const launchStatus = page.getByTestId("initial-launch");
     await launchStatus.waitFor();
-    await manifestRequested;
+    await Promise.race([
+      manifestRequested,
+      new Promise((_, reject) => {
+        observationTimer = setTimeout(
+          () => reject(new Error(`initial release-plan manifest was not requested within ${MANIFEST_OBSERVATION_TIMEOUT_MS}ms`)),
+          MANIFEST_OBSERVATION_TIMEOUT_MS,
+        );
+      }),
+    ]);
     clearTimeout(observationTimer);
     assert.equal((await launchStatus.textContent()).trim(), "Opening your work…");
     assert.equal(await launchStatus.getAttribute("aria-busy"), "true");
     assert.equal(await page.locator(".ts-app-root.ts-app").count(), 1, "the pending frame must use the approved app typography and surface recipe");
     await page.waitForFunction(() => document.styleSheets.length > 0);
     assert.match(await launchStatus.evaluate((node) => getComputedStyle(node).fontFamily), /Inter|system-ui/, "pending text must not fall back to browser serif typography");
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(
       await page.evaluate(() => window.__initialLaunchLegacyHomeMounts.length),
       0,
