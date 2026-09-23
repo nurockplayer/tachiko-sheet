@@ -203,6 +203,29 @@ async function menuViewportAndOpen(page, tag) {
   return bounds;
 }
 
+async function screenshotPixel(page, x, y) {
+  const pngData = (await page.screenshot({ animations: "disabled" })).toString("base64");
+  return page.evaluate(async ({ pngData: encoded, x: sampleX, y: sampleY }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${encoded}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const scaleX = image.naturalWidth / innerWidth;
+    const scaleY = image.naturalHeight / innerHeight;
+    const pixel = context.getImageData(
+      Math.max(0, Math.min(canvas.width - 1, Math.round(sampleX * scaleX))),
+      Math.max(0, Math.min(canvas.height - 1, Math.round(sampleY * scaleY))),
+      1,
+      1,
+    ).data;
+    return `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+  }, { pngData, x, y });
+}
+
 async function geometry(page, width, combo) {
   const result = await page.evaluate(() => {
     const root = document.documentElement;
@@ -247,12 +270,33 @@ async function focusAudit(page, tag) {
       focusContainer: option?.className ?? null,
       outlineWidth: style.outlineWidth,
       outlineOffset: style.outlineOffset,
+      outlineColor: style.outlineColor,
+      rect: option ? (() => {
+        const rect = option.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      })() : null,
       expanded: document.querySelector(".ts-appearance-trigger")?.getAttribute("aria-expanded"),
     };
   });
   evidence(focus.focused && focus.expanded === "true" && focus.outlineWidth === "3px" && focus.outlineOffset === "2px",
     `${tag} keyboard-focused radio has 3px outline and 2px clearance`, focus);
-  observations.push({ keyboardFocusGeometry: focus });
+  let focusContrast = null;
+  if (focus.rect && focus.outlineWidth === "3px" && focus.outlineOffset === "2px") {
+    const centerX = focus.rect.x + focus.rect.width / 2;
+    const outlineWidth = Number.parseFloat(focus.outlineWidth);
+    const outlineOffset = Number.parseFloat(focus.outlineOffset);
+    const outerBackground = await screenshotPixel(page, centerX, focus.rect.y - outlineOffset - outlineWidth - 1);
+    const innerBackground = await screenshotPixel(page, centerX, focus.rect.y - outlineOffset + 1);
+    const paintedOutline = await screenshotPixel(page, centerX, focus.rect.y - outlineOffset - outlineWidth / 2);
+    const outerRatio = contrast(rgb(paintedOutline), rgb(outerBackground));
+    const innerRatio = contrast(rgb(paintedOutline), rgb(innerBackground));
+    focusContrast = { paintedOutline, outerBackground, innerBackground, outerRatio, innerRatio };
+    evidence(outerRatio !== null && outerRatio >= 3 && innerRatio !== null && innerRatio >= 3,
+      `${tag} keyboard focus paint contrasts at least 3:1 against both adjacent surfaces`, focusContrast);
+  } else {
+    evidence(false, `${tag} keyboard focus outline can be sampled`, focus);
+  }
+  observations.push({ keyboardFocusGeometry: focus, keyboardFocusContrast: focusContrast, focusTag: tag });
   await page.keyboard.press("Escape");
   evidence(await trigger.evaluate((button) => document.activeElement === button && button.getAttribute("aria-expanded") === "false"),
     `${tag} Escape closes popover and returns focus`, null);
@@ -279,32 +323,38 @@ async function auditFocusModes(context, page) {
     await openCanary(context, page);
     const signatures = [];
     for (const profile of profiles) {
-      await choose(page, profile.id, "compact");
-      await menuViewportAndOpen(page, `forced-colors ${scheme} ${profile.id}`);
-      const values = await page.evaluate(() => {
-        const button = document.querySelector(".ts-button--primary");
-        const selected = document.querySelector(".ts-appearance-profile-option--selected");
-        const notice = document.querySelector(".ts-appearance-notice");
-        return {
-          primaryBg: getComputedStyle(button).backgroundColor,
-          primaryFg: getComputedStyle(button).color,
-          selectedBg: getComputedStyle(selected).backgroundColor,
-          selectedFg: getComputedStyle(selected).color,
-          noticeBg: notice ? getComputedStyle(notice).backgroundColor : null,
-        };
-      });
-      signatures.push(values);
-      const selectedSamples = await auditContrast(page, [
-        ["primary command", ".ts-header-actions .ts-button--primary"],
-        ["selected profile radio label", ".ts-appearance-profile-option--selected"],
-      ], `forced-colors-${scheme}-${profile.id}`);
-      observations.push({ forcedColors: scheme, profile: profile.id, values, sampleCount: selectedSamples.length });
-      await page.getByRole("button", { name: "Close", exact: true }).click();
+      for (const density of densities) {
+        await choose(page, profile.id, density.id);
+        const tag = `forced-colors ${scheme} ${profile.id}/${density.id}`;
+        await menuViewportAndOpen(page, tag);
+        const values = await page.evaluate(() => {
+          const button = document.querySelector(".ts-button--primary");
+          const selected = document.querySelector(".ts-appearance-profile-option--selected");
+          const density = document.querySelector(".ts-appearance-density-option--selected");
+          return {
+            primaryBg: getComputedStyle(button).backgroundColor,
+            primaryFg: getComputedStyle(button).color,
+            selectedBg: getComputedStyle(selected).backgroundColor,
+            selectedFg: getComputedStyle(selected).color,
+            densityBg: getComputedStyle(density).backgroundColor,
+            densityFg: getComputedStyle(density).color,
+          };
+        });
+        signatures.push({ ...values, profile: profile.id, density: density.id });
+        const selectedSamples = await auditContrast(page, [
+          ["primary command", ".ts-header-actions .ts-button--primary"],
+          ["selected profile radio label", ".ts-appearance-profile-option--selected"],
+          ["selected density radio label", ".ts-appearance-density-option--selected"],
+        ], tag);
+        observations.push({ forcedColors: scheme, profile: profile.id, density: density.id, values, sampleCount: selectedSamples.length });
+        await page.getByRole("button", { name: "Close", exact: true }).click();
+        await focusAudit(page, `forced-colors ${scheme} ${profile.id}/${density.id}`);
+      }
     }
     const first = signatures[0];
-    for (const [index, signature] of signatures.entries()) {
-      evidence(signature.primaryBg === first.primaryBg && signature.primaryFg === first.primaryFg && signature.selectedBg === first.selectedBg && signature.selectedFg === first.selectedFg,
-        `forced-colors ${scheme} overrides remain product-owned under ${profiles[index].id}`, { reference: first, actual: signature });
+    for (const signature of signatures) {
+      evidence(signature.primaryBg === first.primaryBg && signature.primaryFg === first.primaryFg && signature.selectedBg === first.selectedBg && signature.selectedFg === first.selectedFg && signature.densityBg === first.densityBg && signature.densityFg === first.densityFg,
+        `forced-colors ${scheme} overrides remain product-owned under ${signature.profile}/${signature.density}`, { reference: first, actual: signature });
     }
     await page.emulateMedia({ forcedColors: "none", colorScheme: "light" });
   }
@@ -368,6 +418,7 @@ async function main() {
           const geometryState = await geometry(page, width, combo);
           observations.push({ width, ...combo, menuBounds, ...geometryState });
           await page.getByRole("button", { name: "Close", exact: true }).click();
+          if (width === 1024) await focusAudit(page, `keyboard focus ${profile.id}/${density.id}`);
           await auditFocusedControlBoundary(page, `${width}px ${profile.id}/${density.id}`);
         }
       }
@@ -418,6 +469,33 @@ async function main() {
       }
     }
 
+    await page.setViewportSize({ width: 512, height: 450 });
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(page, profile.id, density.id);
+        const combo = { profile: profile.id, density: density.id, pitch: density.pitch };
+        const label = `512x450 short viewport ${profile.id}/${density.id}`;
+        const menuBounds = await menuViewportAndOpen(page, label);
+        const geometryState = await geometry(page, 512, combo);
+        const scrollState = await page.locator(".ts-appearance-popover").evaluate((popover) => ({
+          overflowY: getComputedStyle(popover).overflowY,
+          clientHeight: popover.clientHeight,
+          scrollHeight: popover.scrollHeight,
+        }));
+        evidence((scrollState.overflowY === "auto" || scrollState.overflowY === "scroll") && scrollState.scrollHeight > scrollState.clientHeight,
+          `${label} keeps long menu contents internally scrollable`, scrollState);
+        const command = await page.locator(".ts-appearance-trigger").evaluate((button) => ({
+          minHeight: Number.parseFloat(getComputedStyle(button).minHeight),
+          paintedHeight: button.getBoundingClientRect().height,
+        }));
+        const targetFloor = density.id === "compact" ? 32 : 36;
+        evidence(command.minHeight >= targetFloor && command.paintedHeight >= targetFloor,
+          `${label} preserves the ${targetFloor}px command target`, command);
+        observations.push({ shortViewportCase: label, ...combo, menuBounds, ...geometryState, command, scrollState });
+        await page.getByRole("button", { name: "Close", exact: true }).click();
+      }
+    }
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -457,10 +535,26 @@ async function main() {
       label: "512 CSS px effective-width proxy for 200% zoom; CSS sizes remain unchanged; not actual browser zoom or OS text scaling",
       combinations: observations.filter((item) => item.enlargedWidthProxy).length,
     },
+    shortViewport: {
+      label: "512x450 CSS px viewport; no actual zoom claim",
+      combinations: observations.filter((item) => item.shortViewportCase).length,
+      cases: observations.filter((item) => item.shortViewportCase).map(({ shortViewportCase, menuBounds, pageWidth, viewportWidth, gridHeight, rowPitch, command, scrollState }) => ({
+        shortViewportCase,
+        menuBounds,
+        pageWidth,
+        viewportWidth,
+        gridHeight,
+        rowPitch,
+        command,
+        scrollState,
+      })),
+    },
     textEnlargementProxy: "CSS zoom 150% painted-layout proxy only; not actual browser zoom or OS text scaling",
     physicalAtOrImeClaim: false,
     focusGeometry: {
       keyboardAppearanceRadio: observations.find((item) => item.keyboardFocusGeometry)?.keyboardFocusGeometry ?? null,
+      keyboardAuditCases: observations.filter((item) => item.focusTag).map(({ focusTag, keyboardFocusGeometry, keyboardFocusContrast }) => ({ focusTag, keyboardFocusGeometry, keyboardFocusContrast })),
+      forcedColorsAuditCases: observations.filter((item) => item.focusTag?.startsWith("forced-colors")).length,
       activeCellSelectionIndicators: observations.filter((item) => item.cellSelectionIndicator),
     },
     statusBorderObservations: observations.filter((item) => item.noticeBorder),
