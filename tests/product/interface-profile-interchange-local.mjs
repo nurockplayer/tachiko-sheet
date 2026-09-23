@@ -16,6 +16,16 @@ const filename = "appearance.tachiko-profile.json";
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 let context;
 
+function contrastRgb(first, second) {
+  const luminance = (value) => [...value.matchAll(/\d+/g)].slice(0, 3).map(([channel]) => {
+    const normalized = Number(channel) / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const a = luminance(first);
+  const b = luminance(second);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 async function downloadProfile(page) {
   const pending = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export selected profile…" }).click();
@@ -214,6 +224,13 @@ try {
       "action.primary.background": "#FFFFFF", "action.primary.hover": "#FFFFFF", "action.primary.pressed": "#FFFFFF",
       "action.primary.foreground": "#767676",
     } }), "utf8")],
+    ["unsafe-computed-indicator", Buffer.from(JSON.stringify({ ...imported, name: "Unsafe Computed Indicator", colors: {
+      ...imported.colors,
+      "selection.active.background": "#D5D5D5",
+      "text.secondary": "#3F3F3F",
+      "text.reference": "#333333",
+      "border.control": "#818798",
+    } }), "utf8")],
     ["executable", Buffer.from(JSON.stringify({ ...imported, script: "alert(1)", colors: { ...imported.colors, "surface.app": "#FFFFFF" } }), "utf8")],
   ];
   const rejectionState = await appearanceState(page);
@@ -227,6 +244,10 @@ try {
     if (name === "unsafe-primary-boundary") {
       assert.match(await alert.innerText(), /action\.primary\.background primary control boundary on content surface/,
         "the Oracle-style previously admitted profile is rejected by the new actual-use boundary rule");
+    }
+    if (name === "unsafe-computed-indicator") {
+      assert.match(await alert.innerText(), /computed-cell dotted state indicator against selected active cell/,
+        "the previously admitted focused computed-cell counterexample is rejected by its actual-use rule");
     }
     if (name === "malformed-json") {
       const rejectionPaint = await alert.evaluate((node) => {
@@ -442,6 +463,43 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot()), runtimeBefore,
     "midtone import and apply leave runtime revision and opaque bytes unchanged");
 
+  const computedPage = await context.newPage();
+  await computedPage.goto(LOCAL_ORIGIN);
+  await computedPage.getByTestId("project-ready").waitFor();
+  await computedPage.getByRole("tab", { name: "Table", exact: true }).click();
+  const formulaCell = computedPage.locator(".ts-cell--computed").first();
+  await formulaCell.waitFor();
+  const safeComputed = { ...imported, name: "Computed Contrast Safe", colors: {
+    ...imported.colors, "selection.active.background": "#F5F5F5",
+  } };
+  await computedPage.getByRole("button", { name: "Appearance", exact: true }).click();
+  await uploadProfile(computedPage, Buffer.from(JSON.stringify(safeComputed), "utf8"));
+  await computedPage.locator(".ts-appearance-candidate").getByRole("button", { name: "Apply profile", exact: true }).click();
+  await computedPage.getByRole("radio", { name: /Imported Computed Contrast Safe/ }).waitFor();
+  await formulaCell.focus();
+  await computedPage.locator(".ts-cell--computed.ts-cell--focused").waitFor();
+  const computedPaint = await formulaCell.evaluate((cell) => {
+    const cue = cell.querySelector(".ts-cell-value");
+    if (!cue) throw new Error("Expected rendered computed-cell state indicator");
+    const indicator = getComputedStyle(cue);
+    return {
+      selected: cell.parentElement?.classList.contains("ts-row--selected"),
+      border: indicator.borderBottomColor,
+      style: indicator.borderBottomStyle,
+      width: indicator.borderBottomWidth,
+      background: getComputedStyle(cell).backgroundColor,
+    };
+  });
+  assert.equal(computedPaint.selected, true, "focused computed cell is in the selected row");
+  assert.equal(computedPaint.style, "dotted", "formula result keeps its visible computed-state cue");
+  assert.equal(computedPaint.width, "1px", "computed-state cue has its expected painted geometry");
+  assert.equal(computedPaint.border, "rgb(129, 135, 152)", "computed-state cue uses imported border.control");
+  assert.equal(computedPaint.background, "rgb(245, 245, 245)", "focused computed cell uses custom imported active background");
+  const computedContrast = contrastRgb(computedPaint.border, computedPaint.background);
+  assert.ok(computedContrast >= 3,
+    `imported focused computed-state cue retains 3:1 against its painted background: ${JSON.stringify({ ...computedPaint, contrast: computedContrast })}`);
+  await computedPage.close();
+
   const corrupt = await context.newPage();
   await corrupt.addInitScript(({ storageKey, manifest }) => {
     localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "imported", profile: manifest }));
@@ -455,7 +513,8 @@ try {
 
   console.log(JSON.stringify({ case: "#70 real-entry profile interchange", status: "PASS", rejected: rejected.map(([name]) => name),
     builtInBytes: builtInBytes.byteLength, importedBytes: exported.byteLength, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"),
-    networkDelta: network.length - networkBefore, narrow, narrowTall, narrowShort, shortView }));
+    networkDelta: network.length - networkBefore, computedPaint: { ...computedPaint, contrast: computedContrast },
+    narrow, narrowTall, narrowShort, shortView }));
 } finally {
   await context?.close();
   await rm(profileDir, { recursive: true, force: true });

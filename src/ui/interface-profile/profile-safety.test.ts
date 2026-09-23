@@ -182,6 +182,24 @@ describe("interface profile contrast admission", () => {
     expect(matchingContext(active, /active cell border on grid canvas/).length).toBeGreaterThan(0);
   });
 
+  it("rejects a computed-cell indicator that fades on a selected active cell", () => {
+    const tachikoDerived = mutant(builtIn("tachiko", "compact"), {
+      "selection.active.background": "#D5D5D5",
+      "text.secondary": "#3F3F3F",
+      "text.reference": "#333333",
+      "border.control": "#818798",
+    });
+    const result = admitInterfaceProfileContrast(tachikoDerived);
+    const computedIndicator = matchingContext(result, /computed-cell dotted state indicator against selected active cell/);
+
+    expect(computedIndicator).toEqual([
+      expect.objectContaining({ foreground: "#818798", background: "#D5D5D5", required: 3 }),
+    ]);
+    const failure = computedIndicator[0];
+    if (!failure || !("ratio" in failure)) throw new Error("Expected a computed-cell contrast failure");
+    expect(failure.ratio).toBeLessThan(3);
+  });
+
   it("samples Porcelain chrome gradient intermediates, not just its endpoints", () => {
     const base = builtIn("tachiko", "compact");
     const gradient = admitInterfaceProfileContrast(mutant(base, {

@@ -146,6 +146,11 @@ const EXTRA_ACTUAL_USE_PAIRS: readonly Pair[] = Object.freeze([
   indicatorPair("action.primary.background", "accent.background", "selected Appearance radio marker"),
   indicatorPair("selection.active.border", "grid.canvas", "active cell border on grid canvas"),
   indicatorPair("selection.active.border", "selection.active.background", "active cell border on selected editor"),
+  indicatorPair(
+    "border.control",
+    "selection.active.background",
+    "computed-cell dotted state indicator against selected active cell",
+  ),
   indicatorPair("focus.ring", "accent.background", "Appearance keyboard focus against selected option"),
   indicatorPair("focus.ring", "selection.active.background", "keyboard focus against active cell"),
   indicatorPair("focus.ring", "grid.canvas", "keyboard focus indicator against grid canvas"),
