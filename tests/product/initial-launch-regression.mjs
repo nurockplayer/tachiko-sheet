@@ -58,6 +58,9 @@ async function launch(mode) {
   await manifestRequested;
   assert.equal((await launchStatus.textContent()).trim(), "Opening your work…");
   assert.equal(await launchStatus.getAttribute("aria-busy"), "true");
+  assert.equal(await page.locator(".ts-app-root.ts-app").count(), 1, "the pending frame must use the approved app typography and surface recipe");
+  await page.waitForFunction(() => document.styleSheets.length > 0);
+  assert.match(await launchStatus.evaluate((node) => getComputedStyle(node).fontFamily), /Inter|system-ui/, "pending text must not fall back to browser serif typography");
   assert.equal(await page.getByLabel("Open project folder", { exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Try example", exact: true }).count(), 0);
   assert.equal(await page.getByRole("heading", { name: "Import CSV or XLSX", exact: true }).count(), 0);

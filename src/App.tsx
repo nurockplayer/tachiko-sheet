@@ -1599,7 +1599,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   return (
     <div
-      className="ts-app-root"
+      className={initialLaunchPending ? "ts-app-root ts-app" : "ts-app-root"}
       data-work-dirty={dirty ? "true" : "false"}
       data-work-currentness={view ? currentness : undefined}
     >
