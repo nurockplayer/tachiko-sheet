@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPEARANCE_PROFILE_IDS as controllerProfileIds,
   DEFAULT_APPEARANCE_SELECTION,
   createAppearancePreferenceController,
   type AppearanceSelection,
   type RawAppearancePreferencePort,
 } from "./appearance-preference.js";
+import { APPEARANCE_PROFILE_IDS as modelProfileIds } from "./appearance-model.js";
 
 const record = (profileId = "familiar-spreadsheet", density = "comfortable") =>
   JSON.stringify({ schemaVersion: 1, profileId, density });
@@ -48,6 +50,10 @@ describe("application appearance preference", () => {
     expect(storage.writes).toEqual([]);
   });
 
+  it("keeps the model identifiers available through the controller's existing exports", () => {
+    expect(controllerProfileIds).toBe(modelProfileIds);
+  });
+
   it.each([
     ["malformed JSON", "{"],
     ["unsupported schema", JSON.stringify({ schemaVersion: 2, profileId: "tachiko", density: "compact" })],
@@ -55,6 +61,7 @@ describe("application appearance preference", () => {
     ["unknown density", record("minimal-focus", "spacious")],
     ["extra field", JSON.stringify({ schemaVersion: 1, profileId: "tachiko", density: "compact", extra: 1 })],
     ["prototype-shaped extra field", '{"schemaVersion":1,"profileId":"tachiko","density":"compact","__proto__":{}}'],
+    ["duplicate decoded key", '{"schemaVersion":1,"profileId":"tachiko","profileId":"minimal-focus","density":"compact"}'],
     ["non-object", "null"],
   ])("falls back and discloses %s", (_label, raw) => {
     const storage = memoryPort(raw);

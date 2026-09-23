@@ -4,7 +4,8 @@ import {
   type AppearanceDensity,
   type AppearanceProfileId,
   type AppearanceSelection,
-} from "./appearance-preference.js";
+} from "./appearance-model.js";
+import { validateStrictJson } from "./strict-json.js";
 import { admitInterfaceProfileContrast } from "../ui/interface-profile/profile-safety.js";
 import {
   COLOR_ROLES,
@@ -91,158 +92,13 @@ function fail<T = never>(
   });
 }
 
-/** Duplicate-aware bounded JSON syntax scan used before JSON.parse. */
-class StoredJsonScanner {
-  private index = 0;
-
-  constructor(private readonly source: string) {}
-
-  validate(): void {
-    this.whitespace();
-    this.value(0);
-    this.whitespace();
-    if (this.index !== this.source.length) this.invalid("trailing data after the JSON value");
-  }
-
-  private invalid(message: string): never {
-    throw new SyntaxError(`${message} at character ${this.index}`);
-  }
-
-  private whitespace(): void {
-    while (/^[\x20\x09\x0a\x0d]$/.test(this.source[this.index] ?? "")) this.index += 1;
-  }
-
-  private value(depth: number): void {
-    if (depth > 64) this.invalid("JSON nesting limit exceeded");
-    const next = this.source[this.index];
-    if (next === "{") this.object(depth + 1);
-    else if (next === "[") this.array(depth + 1);
-    else if (next === '"') this.string();
-    else if (next === "t") this.literal("true");
-    else if (next === "f") this.literal("false");
-    else if (next === "n") this.literal("null");
-    else if (next === "-" || (next !== undefined && next >= "0" && next <= "9")) this.number();
-    else this.invalid("expected a JSON value");
-  }
-
-  private object(depth: number): void {
-    this.index += 1;
-    this.whitespace();
-    if (this.source[this.index] === "}") {
-      this.index += 1;
-      return;
-    }
-    const keys = new Set<string>();
-    while (true) {
-      if (this.source[this.index] !== '"') this.invalid("expected an object key");
-      const key = this.string();
-      if (keys.has(key)) this.invalid(`duplicate object key ${JSON.stringify(key)}`);
-      keys.add(key);
-      this.whitespace();
-      if (this.source[this.index] !== ":") this.invalid("expected ':' after object key");
-      this.index += 1;
-      this.whitespace();
-      this.value(depth);
-      this.whitespace();
-      const delimiter = this.source[this.index];
-      if (delimiter === "}") {
-        this.index += 1;
-        return;
-      }
-      if (delimiter !== ",") this.invalid("expected ',' or '}' after object value");
-      this.index += 1;
-      this.whitespace();
-    }
-  }
-
-  private array(depth: number): void {
-    this.index += 1;
-    this.whitespace();
-    if (this.source[this.index] === "]") {
-      this.index += 1;
-      return;
-    }
-    while (true) {
-      this.value(depth);
-      this.whitespace();
-      const delimiter = this.source[this.index];
-      if (delimiter === "]") {
-        this.index += 1;
-        return;
-      }
-      if (delimiter !== ",") this.invalid("expected ',' or ']' after array value");
-      this.index += 1;
-      this.whitespace();
-    }
-  }
-
-  private string(): string {
-    const start = this.index++;
-    while (this.index < this.source.length) {
-      const code = this.source.charCodeAt(this.index);
-      if (code === 0x22) {
-        this.index += 1;
-        return JSON.parse(this.source.slice(start, this.index)) as string;
-      }
-      if (code <= 0x1f) this.invalid("unescaped control character in JSON string");
-      if (code !== 0x5c) {
-        this.index += 1;
-        continue;
-      }
-      this.index += 1;
-      const escaped = this.source[this.index];
-      if (escaped === "u") {
-        if (!/^[\da-fA-F]{4}$/.test(this.source.slice(this.index + 1, this.index + 5))) {
-          this.invalid("invalid Unicode escape");
-        }
-        this.index += 5;
-      } else if (escaped === '"' || escaped === "\\" || escaped === "/" || "bfnrt".includes(escaped ?? "")) {
-        this.index += 1;
-      } else {
-        this.invalid("invalid JSON string escape");
-      }
-    }
-    this.invalid("unterminated JSON string");
-  }
-
-  private literal(expected: "true" | "false" | "null"): void {
-    if (this.source.slice(this.index, this.index + expected.length) !== expected) this.invalid("invalid JSON literal");
-    this.index += expected.length;
-  }
-
-  private number(): void {
-    if (this.source[this.index] === "-") this.index += 1;
-    const first = this.source[this.index];
-    if (first === "0") this.index += 1;
-    else if (first !== undefined && first >= "1" && first <= "9") {
-      this.index += 1;
-      while (this.digit(this.source[this.index])) this.index += 1;
-    } else this.invalid("invalid JSON number");
-    if (this.source[this.index] === ".") {
-      this.index += 1;
-      if (!this.digit(this.source[this.index])) this.invalid("fraction requires digits");
-      while (this.digit(this.source[this.index])) this.index += 1;
-    }
-    if (this.source[this.index] === "e" || this.source[this.index] === "E") {
-      this.index += 1;
-      if (this.source[this.index] === "+" || this.source[this.index] === "-") this.index += 1;
-      if (!this.digit(this.source[this.index])) this.invalid("exponent requires digits");
-      while (this.digit(this.source[this.index])) this.index += 1;
-    }
-  }
-
-  private digit(value: string | undefined): boolean {
-    return value !== undefined && value >= "0" && value <= "9";
-  }
-}
-
 function parseBoundedJson(raw: unknown): AppearancePreferenceCodecResult<unknown> {
   if (typeof raw !== "string") return fail("invalid-input", "$", "stored preference must be a string");
   if (exceedsUtf8ByteLimit(raw, APPEARANCE_PREFERENCE_MAX_BYTES)) {
     return fail("too-large", "$", `stored preference exceeds ${APPEARANCE_PREFERENCE_MAX_BYTES} UTF-8 bytes`);
   }
   try {
-    new StoredJsonScanner(raw).validate();
+    validateStrictJson(raw);
     return Object.freeze({ ok: true, value: JSON.parse(raw) as unknown });
   } catch (error) {
     return fail("invalid-json", "$", error instanceof Error ? error.message : "invalid stored JSON");

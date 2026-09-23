@@ -2,20 +2,16 @@
  * Local application appearance choice. This controller deliberately knows
  * nothing about React, the DOM, workbook state, or the host persistence API.
  */
+import {
+  APPEARANCE_PROFILE_IDS,
+  type AppearanceDensity,
+  type AppearanceProfileId,
+  type AppearanceSelection,
+} from "./appearance-model.js";
+import { decodeLegacyAppearancePreferenceV1 } from "./appearance-preference-codec.js";
 
-export const APPEARANCE_PROFILE_IDS = Object.freeze([
-  "tachiko",
-  "familiar-spreadsheet",
-  "minimal-focus",
-] as const);
-
-export type AppearanceProfileId = (typeof APPEARANCE_PROFILE_IDS)[number];
-export type AppearanceDensity = "compact" | "comfortable";
-
-export type AppearanceSelection = Readonly<{
-  profileId: AppearanceProfileId;
-  density: AppearanceDensity;
-}>;
+export { APPEARANCE_PROFILE_IDS };
+export type { AppearanceDensity, AppearanceProfileId, AppearanceSelection };
 
 export type AppearancePreferenceNotice = "invalid-preference" | "preference-unavailable";
 
@@ -60,34 +56,9 @@ const freezeSelection = (profileId: AppearanceProfileId, density: AppearanceDens
   Object.freeze({ profileId, density });
 
 function decodePreference(raw: string): AppearanceSelection {
-  const value: unknown = JSON.parse(raw);
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("Appearance preference must be an object.");
-  }
-
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError("Appearance preference must be a plain object.");
-  }
-
-  const keys = Reflect.ownKeys(value);
-  const expected = ["schemaVersion", "profileId", "density"];
-  if (keys.length !== expected.length || keys.some((key) => typeof key !== "string" || !expected.includes(key))) {
-    throw new TypeError("Appearance preference has unexpected fields.");
-  }
-
-  for (const key of expected) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !("value" in descriptor)) {
-      throw new TypeError("Appearance preference fields must be data properties.");
-    }
-  }
-
-  const record = value as Record<string, unknown>;
-  if (record.schemaVersion !== 1 || !isProfileId(record.profileId) || !isDensity(record.density)) {
-    throw new TypeError("Appearance preference contains an unsupported value.");
-  }
-  return freezeSelection(record.profileId, record.density);
+  const decoded = decodeLegacyAppearancePreferenceV1(raw);
+  if (!decoded.ok) throw new TypeError(decoded.errors[0]?.message ?? "Invalid legacy appearance preference.");
+  return freezeSelection(decoded.value.profileId, decoded.value.density);
 }
 
 function encodePreference(selection: AppearanceSelection): string {
