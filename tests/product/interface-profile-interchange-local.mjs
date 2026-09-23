@@ -286,6 +286,63 @@ try {
   const pngAfter = await reportPng(page);
   assert.deepEqual(pngAfter, pngBefore, "report PNG bytes remain unchanged after import, export, apply, and rejection");
 
+  const midtone = { ...builtIn, name: "Midtone Local Profile", colors: { ...builtIn.colors,
+    "surface.content": "#B5B5B5", "text.secondary": "#3F3F3F", "text.onTint": "#333333",
+    "text.link": "#333333", "text.reference": "#333333", "accent.foreground": "#333333", "focus.ring": "#4936AB",
+    "border.control": "#555555", "selection.active.border": "#4936AB" } };
+  const midtoneBefore = await appearanceState(page);
+  const midtoneNetworkBefore = network.length;
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  await page.locator(".ts-appearance-popover").waitFor({ state: "visible" });
+  await uploadProfile(page, Buffer.from(JSON.stringify(midtone), "utf8"));
+  await page.locator(".ts-appearance-candidate, .ts-appearance-notice--rejected").waitFor();
+  assert.equal(await page.locator(".ts-appearance-notice--rejected").count(), 0,
+    "midtone profile import is admitted");
+  await page.locator(".ts-appearance-candidate").getByRole("button", { name: "Apply profile", exact: true }).click();
+  await page.getByRole("radio", { name: /Imported Midtone Local Profile/ }).waitFor();
+  const statusPaint = await page.evaluate(() => {
+    const card = document.createElement("section");
+    card.className = "ts-card";
+    const status = document.createElement("span");
+    status.className = "ts-status";
+    status.setAttribute("role", "status");
+    status.textContent = "Opening…";
+    card.append(status);
+    document.querySelector(".ts-app")?.append(card);
+    const cardStyle = getComputedStyle(card);
+    const statusStyle = getComputedStyle(status);
+    const rgb = (value) => [...value.matchAll(/\d+/g)].slice(0, 3).map(([channel]) => Number(channel));
+    const luminance = (value) => rgb(value).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const foreground = luminance(statusStyle.color);
+    const background = luminance(statusStyle.backgroundColor);
+    const bounds = status.getBoundingClientRect();
+    const result = {
+      cardBackground: cardStyle.backgroundColor,
+      text: statusStyle.color,
+      background: statusStyle.backgroundColor,
+      border: statusStyle.borderColor,
+      padding: statusStyle.padding,
+      contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+      hasGeometry: bounds.width > 0 && bounds.height > 0,
+    };
+    card.remove();
+    return result;
+  });
+  assert.equal(statusPaint.cardBackground, "rgb(181, 181, 181)", "midtone profile is active on the containing Home card");
+  assert.equal(statusPaint.background, "rgb(255, 255, 255)", "protected status paints on its owned white surface");
+  assert.ok(statusPaint.contrast >= 4.5, `protected status text retains ordinary text contrast: ${JSON.stringify(statusPaint)}`);
+  assert.equal(statusPaint.hasGeometry, true, "protected status surface has painted geometry");
+  const midtoneState = await appearanceState(page);
+  assert.deepEqual({ methods: midtoneState.methods, writes: midtoneState.writes, save: midtoneState.save },
+    { methods: midtoneBefore.methods, writes: midtoneBefore.writes, save: midtoneBefore.save },
+    "midtone import and apply change only local appearance preference");
+  assert.deepEqual(network.slice(midtoneNetworkBefore), [], "midtone import and apply issue no network requests");
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot()), runtimeBefore,
+    "midtone import and apply leave runtime revision and opaque bytes unchanged");
+
   const corrupt = await context.newPage();
   await corrupt.addInitScript(({ storageKey, manifest }) => {
     localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "imported", profile: manifest }));
