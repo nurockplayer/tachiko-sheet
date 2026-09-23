@@ -95,7 +95,7 @@ export const TACHIKO_COMPACT_PORCELAIN_PROFILE: InterfaceProfileV1 = freezeProfi
     "text.link": "#5542B5",
     "text.reference": "#4F54AD",
     "border.subtle": "#DFE2EA",
-    "border.control": "#858B9C",
+    "border.control": "#818798",
     "action.primary.background": "#6350D2",
     "action.primary.hover": "#5541C2",
     "action.primary.pressed": "#4936AB",

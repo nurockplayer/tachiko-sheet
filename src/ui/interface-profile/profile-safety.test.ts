@@ -191,6 +191,24 @@ describe("interface profile contrast admission", () => {
     const failures = matchingContext(gradient, /Porcelain chrome gradient step/);
     expect(failures.length).toBeGreaterThan(0);
     expect(failures.some((error) => error.context.includes("step 1/256"))).toBe(true);
+
+    const middleStep = admitInterfaceProfileContrast(mutant(base, {
+      "surface.chrome.tint": "#FFFFFF",
+      "surface.chrome": "#000000",
+      "border.control": "#777777",
+    }));
+    const borderFailures = matchingContext(middleStep, /border\.control Appearance trigger boundary/);
+    expect(borderFailures.some((error) => error.context.includes("step 128/256"))).toBe(true);
+  });
+
+  it("rejects the superseded Tachiko control boundary against its Porcelain gradient", () => {
+    const oldTachiko = mutant(builtIn("tachiko", "compact"), { "border.control": "#858B9C" });
+    const result = admitInterfaceProfileContrast(oldTachiko);
+    const failures = matchingContext(result, /border\.control Appearance trigger boundary/);
+    expect(failures.some((error) => error.context.includes("step 0/256"))).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(admitInterfaceProfileContrast(builtIn("tachiko", "compact")).ok).toBe(true);
+    expect(admitInterfaceProfileContrast(builtIn("tachiko", "comfortable")).ok).toBe(true);
   });
 
   it("does not impose contrast on decorative grid lattice or subtle borders", () => {

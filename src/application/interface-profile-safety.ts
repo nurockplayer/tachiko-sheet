@@ -262,6 +262,15 @@ export function admitInterfaceProfileContrast(input: unknown): ProfileSafetyResu
         );
       }
     }
+    for (let step = 0; step <= 256; step += 1) {
+      const background = interpolateSrgb(colors["surface.chrome.tint"], colors["surface.chrome"], step / 256);
+      check(
+        `Porcelain chrome gradient step ${step}/256: border.control Appearance trigger boundary`,
+        colors["border.control"],
+        background,
+        3,
+      );
+    }
   }
 
   if (errors.length > 0) return Object.freeze({ ok: false, errors: Object.freeze(errors) });

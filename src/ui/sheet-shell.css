@@ -5,8 +5,8 @@
   --ts-ink-soft: var(--ts-profile-text-secondary, #646879);
   --ts-ink-on-tint: var(--ts-profile-text-on-tint, #5b6072);
   --ts-line: var(--ts-profile-border-subtle, #dfe2ea);
-  /* #858b9c against white: 3.42:1, above the 3:1 interactive-boundary floor. */
-  --ts-line-strong: var(--ts-profile-border-control, #858b9c);
+  /* Tachiko #818798 keeps the porcelain control boundary above the 3:1 floor. */
+  --ts-line-strong: var(--ts-profile-border-control, #818798);
   --ts-surface: var(--ts-profile-surface-content, #ffffff);
   --ts-surface-chrome: var(--ts-profile-surface-chrome, #f8f8fc);
   --ts-surface-chrome-tint: var(--ts-profile-surface-chrome-tint, #f0edfd);

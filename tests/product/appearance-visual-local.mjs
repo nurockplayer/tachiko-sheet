@@ -226,6 +226,69 @@ async function screenshotPixel(page, x, y) {
   }, { pngData, x, y });
 }
 
+async function auditAppearanceTriggerBoundary(page, width) {
+  const button = page.locator(".ts-appearance-trigger");
+  await button.evaluate((element) => element.blur());
+  const layout = await button.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const x = rect.x + Math.floor(rect.width / 2);
+    const y = rect.y + Math.floor(rect.height / 2);
+    return {
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      borderTopColor: style.borderTopColor,
+      borderLeftColor: style.borderLeftColor,
+      borderTopWidth: style.borderTopWidth,
+      borderLeftWidth: style.borderLeftWidth,
+      borderTopStyle: style.borderTopStyle,
+      borderLeftStyle: style.borderLeftStyle,
+      outlineColor: style.outlineColor,
+      boxShadow: style.boxShadow,
+      focused: document.activeElement === element,
+      visible: style.visibility === "visible" && style.display !== "none" && rect.width > 0 && rect.height > 0,
+      topPaintTarget: document.elementFromPoint(x, rect.y) === element,
+      leftPaintTarget: document.elementFromPoint(rect.x, y) === element,
+    };
+  });
+  if (!layout.visible || layout.rect.x < 1 || layout.rect.y < 1) {
+    evidence(false, `${width}px Appearance trigger border is visible and has exterior sample space`, layout);
+    return;
+  }
+
+  const topPaint = await screenshotPixel(page, layout.rect.x + Math.floor(layout.rect.width / 2), layout.rect.y);
+  const topOutside = await screenshotPixel(page, layout.rect.x + Math.floor(layout.rect.width / 2), layout.rect.y - 1);
+  const topInside = await screenshotPixel(page, layout.rect.x + Math.floor(layout.rect.width / 2), layout.rect.y + 1);
+  const leftPaint = await screenshotPixel(page, layout.rect.x, layout.rect.y + Math.floor(layout.rect.height / 2));
+  const leftOutside = await screenshotPixel(page, layout.rect.x - 1, layout.rect.y + Math.floor(layout.rect.height / 2));
+  const leftInside = await screenshotPixel(page, layout.rect.x + 1, layout.rect.y + Math.floor(layout.rect.height / 2));
+  const topRatio = contrast(rgb(topPaint), rgb(topOutside));
+  const leftRatio = contrast(rgb(leftPaint), rgb(leftOutside));
+  const sameRgb = (first, second) => {
+    const a = rgb(first);
+    const b = rgb(second);
+    return Boolean(a && b && a.slice(0, 3).every((channel, index) => channel === b[index]));
+  };
+  const detail = {
+    ...layout,
+    top: { borderPixel: topPaint, computedBorder: layout.borderTopColor, outside: topOutside, inside: topInside, contrast: topRatio },
+    left: { borderPixel: leftPaint, computedBorder: layout.borderLeftColor, outside: leftOutside, inside: leftInside, contrast: leftRatio },
+  };
+  evidence(layout.borderTopWidth === "1px" && layout.borderLeftWidth === "1px" &&
+    layout.borderTopStyle === "solid" && layout.borderLeftStyle === "solid" &&
+    !layout.focused && layout.boxShadow === "none" &&
+    layout.topPaintTarget && layout.leftPaintTarget,
+  `${width}px samples land on the visible Appearance trigger's 1px exterior border`, detail);
+  evidence(sameRgb(topPaint, layout.borderTopColor) && sameRgb(leftPaint, layout.borderLeftColor),
+    `${width}px Appearance trigger edge pixels match the computed border color`, detail);
+  evidence(!sameRgb(topOutside, layout.outlineColor) && !sameRgb(leftOutside, layout.outlineColor),
+    `${width}px exterior samples do not hit focus-outline paint`, detail);
+  evidence(topRatio !== null && topRatio >= 3 && leftRatio !== null && leftRatio >= 3,
+    `${width}px Appearance trigger exterior border contrasts at least 3:1 against adjacent header paint`, detail);
+  evidence(contrast(rgb(topPaint), rgb(topInside)) >= 3 && contrast(rgb(leftPaint), rgb(leftInside)) >= 3,
+    `${width}px Appearance trigger border remains distinct from its interior surface`, detail);
+  observations.push({ appearanceTriggerBoundary: width, ...detail });
+}
+
 async function auditSelectedProfileRadioPaint(page, tag) {
   const radio = page.locator(".ts-appearance-profile-option--selected input[type=radio]");
   const layout = await radio.evaluate((input) => {
@@ -454,6 +517,9 @@ async function main() {
           const geometryState = await geometry(page, width, combo);
           observations.push({ width, ...combo, menuBounds, ...geometryState });
           await page.getByRole("button", { name: "Close", exact: true }).click();
+          if (profile.id === "tachiko") {
+            await auditAppearanceTriggerBoundary(page, width);
+          }
           if (width === 1024) await focusAudit(page, `keyboard focus ${profile.id}/${density.id}`);
           await auditFocusedControlBoundary(page, `${width}px ${profile.id}/${density.id}`);
         }
@@ -606,6 +672,13 @@ async function main() {
       activeCellSelectionIndicators: observations.filter((item) => item.cellSelectionIndicator),
     },
     statusBorderObservations: observations.filter((item) => item.noticeBorder),
+    appearanceTriggerBoundaries: observations
+      .filter((item) => item.appearanceTriggerBoundary)
+      .map(({ appearanceTriggerBoundary, top, left }) => ({
+        width: appearanceTriggerBoundary,
+        topContrast: top.contrast,
+        leftContrast: left.contrast,
+      })),
     failures,
   }));
   assert.equal(failures.length, 0, `${failures.length} rendered visual/accessibility finding(s)`);

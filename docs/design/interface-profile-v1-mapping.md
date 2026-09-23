@@ -12,6 +12,15 @@ verified variable, collection, or mode binding identifiers, so each role's
 The shared reason is `unavailable: painted/readback frames contain no verified
 binding IDs`. No IDs are inferred from names or screenshots. **Native binding IDs are not a v1 authority prerequisite**: accepted semantic role/value mapping plus the exact approved Figma nodes are sufficient authority for v1 when binding identifiers are unavailable.
 
+The historical role-board evidence and its recorded source hashes remain
+unchanged as the original 29-role snapshot. The `border.control` row is superseded by the
+approved canonical node 32:75 in the same Figma file: its approved value is
+`#818798`, as recorded by the #70 design amendment and independent review
+([PASS receipt](https://github.com/nurockplayer/tachiko-sheet/issues/70#issuecomment-5799633002)).
+Its row points directly to that node. The original role-board node and source
+hashes above remain historical provenance; they are not rewritten to imply
+that the amendment came from the old board.
+
 The three values below correct prior implementation drift under the explicit
 [Steward disposition](https://github.com/nurockplayer/tachiko-sheet/issues/68#issuecomment-5774025721).
 Their canonical values are wired through private aliases:
