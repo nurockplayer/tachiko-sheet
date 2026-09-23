@@ -81,6 +81,41 @@ describe("Interface Profile v1 closed contract", () => {
     expect(TACHIKO_COMPACT_PORCELAIN_PROFILE.colors["grid.header.foreground"]).toBe("#5B6072");
   });
 
+  it("accepts names of 1 to 80 Unicode scalar values and preserves their spelling", () => {
+    const oneScalar = validInput();
+    oneScalar.name = "漢";
+    const one = validateInterfaceProfile(oneScalar);
+    expect(one.ok).toBe(true);
+    if (one.ok) expect(one.value.name).toBe("漢");
+
+    const eightyScalars = validInput();
+    eightyScalars.name = "🙂".repeat(80);
+    const eighty = validateInterfaceProfile(eightyScalars);
+    expect(eighty.ok).toBe(true);
+    if (eighty.ok) expect([...eighty.value.name]).toHaveLength(80);
+
+    const decomposed = validInput();
+    decomposed.name = "e\u0301";
+    const preserved = validateInterfaceProfile(decomposed);
+    expect(preserved.ok).toBe(true);
+    if (preserved.ok) expect(preserved.value.name).toBe("e\u0301");
+  });
+
+  it.each([
+    ["", "empty"],
+    ["a".repeat(81), "more than 80 scalars"],
+    ["name\u0000", "C0 control"],
+    ["name\u0085", "C1 control"],
+    ["\uD800", "lone high surrogate"],
+    ["\uDC00", "lone low surrogate"],
+  ])("rejects invalid profile name (%s)", (name) => {
+    const input = validInput();
+    input.name = name;
+    const result = validateInterfaceProfile(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((error) => error.path === "name")).toBe(true);
+  });
+
   it.each(["schemaVersion", "name", "colorScheme", "typography", "density", "chrome", "colors"])(
     "rejects missing field %s",
     (key) => {

@@ -179,6 +179,32 @@ export function validateInterfaceProfile(input: unknown): ProfileValidationResul
   }
   if (typeof profile?.name !== "string") {
     errors.push({ path: "name", message: "must be a string" });
+  } else {
+    let scalarCount = 0;
+    let invalidName = false;
+    for (let index = 0; index < profile.name.length;) {
+      const first = profile.name.charCodeAt(index);
+      let codePoint = first;
+      let units = 1;
+      if (first >= 0xd800 && first <= 0xdbff) {
+        const second = profile.name.charCodeAt(index + 1);
+        if (!(second >= 0xdc00 && second <= 0xdfff)) {
+          invalidName = true;
+          break;
+        }
+        codePoint = 0x10000 + ((first - 0xd800) << 10) + (second - 0xdc00);
+        units = 2;
+      } else if (first >= 0xdc00 && first <= 0xdfff) {
+        invalidName = true;
+        break;
+      }
+      if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) invalidName = true;
+      scalarCount += 1;
+      index += units;
+    }
+    if (invalidName || scalarCount < 1 || scalarCount > 80) {
+      errors.push({ path: "name", message: "must contain 1 to 80 Unicode scalar values and no control characters" });
+    }
   }
   for (const key of ["colorScheme", "typography", "density", "chrome"] as const) {
     if (!(ENUMS[key] as readonly unknown[]).includes(profile?.[key])) {
