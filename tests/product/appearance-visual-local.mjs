@@ -226,6 +226,36 @@ async function screenshotPixel(page, x, y) {
   }, { pngData, x, y });
 }
 
+async function auditSelectedProfileRadioPaint(page, tag) {
+  const radio = page.locator(".ts-appearance-profile-option--selected input[type=radio]");
+  const layout = await radio.evaluate((input) => {
+    const rect = input.getBoundingClientRect();
+    const label = input.closest(".ts-appearance-profile-option");
+    const style = getComputedStyle(input);
+    const labelStyle = label ? getComputedStyle(label) : null;
+    return {
+      checked: input.checked,
+      accentColor: style.accentColor,
+      forcedColorAdjust: style.forcedColorAdjust,
+      labelForeground: labelStyle?.color ?? null,
+      labelBackground: labelStyle?.backgroundColor ?? null,
+      markerPoint: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+      adjacentPoint: { x: rect.right + 4, y: rect.y + rect.height / 2 },
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    };
+  });
+  const markerPaint = await screenshotPixel(page, layout.markerPoint.x, layout.markerPoint.y);
+  const adjacentPaint = await screenshotPixel(page, layout.adjacentPoint.x, layout.adjacentPoint.y);
+  const markerContrast = contrast(rgb(markerPaint), rgb(adjacentPaint));
+  const detail = { ...layout, markerPaint, adjacentPaint, markerContrast, required: 3 };
+  evidence(layout.checked, `${tag} selected Profile radio is checked`, detail);
+  evidence(layout.accentColor === layout.labelForeground,
+    `${tag} selected Profile radio uses the system HighlightText label color as its accent`, detail);
+  evidence(markerContrast !== null && markerContrast >= 3,
+    `${tag} selected Profile radio marker paint contrasts at least 3:1 with its actual adjacent selected-label paint`, detail);
+  observations.push({ selectedProfileRadioPaint: tag, ...detail });
+}
+
 async function geometry(page, width, combo) {
   const result = await page.evaluate(() => {
     const root = document.documentElement;
@@ -341,6 +371,7 @@ async function auditFocusModes(context, page) {
           };
         });
         signatures.push({ ...values, profile: profile.id, density: density.id });
+        await auditSelectedProfileRadioPaint(page, tag);
         const selectedSamples = await auditContrast(page, [
           ["primary command", ".ts-header-actions .ts-button--primary"],
           ["selected profile radio label", ".ts-appearance-profile-option--selected"],
@@ -551,6 +582,18 @@ async function main() {
     },
     textEnlargementProxy: "CSS zoom 150% painted-layout proxy only; not actual browser zoom or OS text scaling",
     physicalAtOrImeClaim: false,
+    forcedColorSelectedProfileRadioPaint: observations
+      .filter((item) => item.selectedProfileRadioPaint)
+      .map(({ selectedProfileRadioPaint, accentColor, forcedColorAdjust, labelForeground, labelBackground, markerPaint, adjacentPaint, markerContrast }) => ({
+        tag: selectedProfileRadioPaint,
+        accentColor,
+        forcedColorAdjust,
+        labelForeground,
+        labelBackground,
+        markerPaint,
+        adjacentPaint,
+        markerContrast,
+      })),
     focusGeometry: {
       keyboardAppearanceRadio: observations.find((item) => item.keyboardFocusGeometry)?.keyboardFocusGeometry ?? null,
       keyboardAuditCases: observations.filter((item) => item.focusTag).map(({ focusTag, keyboardFocusGeometry, keyboardFocusContrast }) => ({ focusTag, keyboardFocusGeometry, keyboardFocusContrast })),

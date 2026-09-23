@@ -223,6 +223,10 @@
     forced-color-adjust: none;
   }
 
+  .ts-appearance-profile-option input {
+    accent-color: HighlightText;
+  }
+
   .ts-appearance-notice {
     border-color: ButtonText;
     background: Canvas;
