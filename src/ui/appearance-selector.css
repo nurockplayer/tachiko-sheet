@@ -1,0 +1,231 @@
+.ts-appearance-selector {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  z-index: 20;
+  font: inherit;
+  color: var(--ts-ink, #252735);
+}
+
+.ts-appearance-trigger {
+  width: 112px;
+  min-width: 112px;
+}
+
+.ts-appearance-selector :focus-visible {
+  outline: 3px solid var(--ts-focus, #6551ce);
+  outline-offset: 2px;
+}
+
+.ts-appearance-popover {
+  position: absolute;
+  z-index: 1000;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(348px, calc(100vw - 24px));
+  max-height: min(556px, calc(100vh - 24px));
+  max-height: min(556px, calc(100dvh - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--ts-line, #dfe2ea);
+  border-radius: 10px;
+  background: var(--ts-surface, #fff);
+  color: var(--ts-ink, #252735);
+  box-shadow: 0 10px 30px -8px rgba(39, 33, 57, 0.15), 0 2px 6px rgba(39, 33, 57, 0.05);
+}
+
+.ts-appearance-popover[hidden] {
+  display: none;
+}
+
+.ts-appearance-popover__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.ts-appearance-popover__header h2 {
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.ts-appearance-close {
+  min-width: 56px;
+  padding-inline: 8px;
+}
+
+.ts-appearance-description,
+.ts-appearance-footnote {
+  margin: 12px 0 0;
+  color: var(--ts-ink-soft, #646879);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.ts-appearance-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ts-appearance-group legend {
+  margin: 16px 0 10px;
+  padding: 0;
+  color: var(--ts-ink, #252735);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.ts-appearance-profile-options {
+  display: grid;
+  gap: 4px;
+}
+
+.ts-appearance-profile-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ts-ink, #252735);
+  cursor: pointer;
+  line-height: 20px;
+}
+
+.ts-appearance-profile-option--selected {
+  background: var(--ts-accent-soft, #f0edfd);
+}
+
+.ts-appearance-profile-option:focus-within {
+  outline: 3px solid var(--ts-focus, #6551ce);
+  outline-offset: 2px;
+}
+
+.ts-appearance-profile-option input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ts-accent, #6350d2);
+}
+
+.ts-appearance-profile-option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ts-appearance-group--density {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ts-line, #dfe2ea);
+}
+
+.ts-appearance-group--density legend {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.ts-appearance-density-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ts-appearance-density-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--ts-line-strong, #858b9c);
+  border-radius: 4px;
+  background: var(--ts-surface, #fff);
+  color: var(--ts-ink, #252735);
+  cursor: pointer;
+  text-align: center;
+  line-height: 20px;
+}
+
+.ts-appearance-density-option--selected {
+  border-color: var(--ts-accent, #6350d2);
+  background: var(--ts-accent, #6350d2);
+  color: var(--ts-action-primary-foreground, #fff);
+}
+
+.ts-appearance-density-option:focus-within {
+  outline: 3px solid var(--ts-focus, #6551ce);
+  outline-offset: 2px;
+}
+
+.ts-appearance-density-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ts-appearance-footnote {
+  margin-top: 20px;
+}
+
+.ts-appearance-notice {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #e6c79d;
+  border-radius: 4px;
+  background: var(--ts-warn-bg, #fff3dd);
+  color: var(--ts-warn, #865015);
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+@media (forced-colors: active) {
+  .ts-appearance-popover {
+    border-color: ButtonText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+
+  .ts-appearance-selector :focus-visible,
+  .ts-appearance-profile-option:focus-within,
+  .ts-appearance-density-option:focus-within {
+    outline-color: Highlight;
+  }
+
+  .ts-appearance-profile-option--selected,
+  .ts-appearance-density-option--selected {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .ts-appearance-notice {
+    border-color: ButtonText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
