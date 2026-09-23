@@ -174,8 +174,16 @@
 
 .ts-home-head {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ts-home-heading {
+  display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .ts-brand {
@@ -923,6 +931,11 @@
 }
 
 @media (max-width: 1023px) {
+  .ts-workbook-head .ts-appearance-selector .ts-appearance-popover {
+    left: 12px;
+    right: auto;
+    width: min(348px, calc(100vw - 48px));
+  }
   .ts-workbook-head {
     align-content: center;
     flex-wrap: wrap;
@@ -934,11 +947,20 @@
 
 @media (max-width: 599px) {
   .ts-home { margin-top: 14px; }
+  .ts-home-head { align-items: flex-start; flex-wrap: wrap; }
+  .ts-home-heading { flex: 1 1 100%; }
+  .ts-appearance-selector .ts-appearance-popover { left: 0; right: auto; }
   .ts-workbook-head {
     align-items: flex-start;
     min-height: 136px;
     padding-inline: 16px;
   }
+  .ts-workbook-head .ts-appearance-selector .ts-appearance-popover {
+    left: auto;
+    right: -12px;
+    width: min(348px, calc(100vw - 24px));
+  }
+  .ts-document-identity { flex-basis: calc(100% - 124px); }
   .ts-header-actions { width: 100%; }
   .ts-header-actions .ts-button { flex: 1 1 auto; padding-inline: 8px; }
   .ts-work-context {

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
+import type { AppearancePreferenceController, AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
 import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { missingKeyedGroupedSumDefinitionIds, reportRenderResetKey, SheetShell } from "./SheetShell.js";
@@ -11,6 +12,21 @@ import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
 const entityA = "entity-a";
 const entityB = "entity-b";
+
+const appearanceSnapshot: AppearancePreferenceSnapshot = {
+  selection: { profileId: "tachiko", density: "compact" },
+  pendingSelection: null,
+  notice: null,
+  notSaved: false,
+  composing: false,
+};
+
+const appearancePreference: AppearancePreferenceController = {
+  getSnapshot: () => appearanceSnapshot,
+  select: () => appearanceSnapshot,
+  beginComposition: () => undefined,
+  endComposition: () => appearanceSnapshot,
+};
 
 function projected(
   entity: string,
@@ -93,6 +109,7 @@ function summaryResult(definitionId: string, value: number): KeyedGroupedSumResu
 
 function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
   return {
+    appearancePreference,
     view: null,
     busy: false,
     dirty: false,
@@ -253,12 +270,12 @@ describe("recovery presentation", () => {
 
   it("keeps every workbook command available in the responsive document header", () => {
     const markup = render({ view: makeView() });
-    const header = markup.match(/<header class="ts-workbook-head">([\s\S]*?)<\/header>/)?.[1];
+    const commands = markup.match(/<div class="ts-actions ts-header-actions"[\s\S]*?<\/div>/)?.[0];
     const context = markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0];
-    expect(header).toContain('aria-label="Document commands"');
-    expect(header).toContain(">Refresh</button>");
-    expect(header).toContain(">Save a copy</button>");
-    expect(header).toContain(">Close project</button>");
+    expect(commands).toContain('aria-label="Document commands"');
+    expect(commands).toContain(">Refresh</button>");
+    expect(commands).toContain(">Save a copy</button>");
+    expect(commands).toContain(">Close project</button>");
     expect(context).toContain('aria-label="Workbook actions"');
     expect(context).toContain('id="ts-active-table"');
   });
@@ -330,6 +347,31 @@ describe("projection access", () => {
 });
 
 describe("SheetShell static rendering", () => {
+  it("places the controlled selector in Home and reports preference load notices", () => {
+    const markup = render({});
+    const homeHeader = markup.slice(markup.indexOf("ts-home-head"), markup.indexOf("</header>"));
+    expect(homeHeader).toContain('aria-haspopup="dialog"');
+    expect(homeHeader).toContain(">Appearance</button>");
+    expect(homeHeader).toContain("Tachiko Sheet");
+
+    const warned = render({ appearancePreference: {
+      ...appearancePreference,
+      getSnapshot: () => ({ ...appearanceSnapshot, notice: "invalid-preference" }),
+    } });
+    expect(warned).toContain("Saved appearance could not be loaded. Using Tachiko for this session.");
+  });
+
+  it("places Appearance before document commands and outside workbook Views", () => {
+    const markup = render({ view: makeView() });
+    const headerStart = markup.indexOf("ts-workbook-head");
+    const selectorStart = markup.indexOf("ts-appearance-selector", headerStart);
+    const commandsStart = markup.indexOf('aria-label="Document commands"', headerStart);
+    const viewsStart = markup.indexOf('aria-label="Workbook views"', headerStart);
+    expect(selectorStart).toBeGreaterThan(headerStart);
+    expect(selectorStart).toBeLessThan(commandsStart);
+    expect(commandsStart).toBeLessThan(viewsStart);
+  });
+
   it("renders linked Brief facts with the actual projection identity", () => {
     const view = makeView();
     const markup = renderToStaticMarkup(

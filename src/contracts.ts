@@ -18,6 +18,7 @@ import type {
   SpreadsheetExport,
   SpreadsheetFormat,
 } from "../public/core-kit/runtime/interop-protocol.js";
+import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 export type {
   CleanupOperation,
   CleanupPreview,
@@ -204,6 +205,7 @@ export type Currentness = "current" | "pending" | "unknown";
 export type OperationOutcome = "idle" | "pending" | "unknown";
 export type SaveStatus = "not-saved" | "saving" | "saved" | "failed";
 export interface SheetShellProps {
+  appearancePreference: AppearancePreferenceController;
   view: WorkbookView | null;
   busy: boolean;
   dirty: boolean;

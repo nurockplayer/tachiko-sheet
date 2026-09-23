@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import {
   UnknownOperationOutcomeError,
   type CanonicalProjectFile,
@@ -42,6 +43,7 @@ const EXAMPLE_FILES: readonly string[] = [
 export interface AppProps {
   runtime: SheetRuntime;
   copies: LocalCopies;
+  appearancePreference: AppearancePreferenceController;
 }
 
 export type RecoveryDraftBoundary = "reobserve" | "replacement" | "close";
@@ -190,7 +192,7 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
  * this component keeps only the disposable projection, pending/currentness
  * status, draft presence and the save receipt keyed to the exported revision.
  */
-export function App({ runtime, copies }: AppProps) {
+export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [view, setView] = useState<WorkbookView | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -1600,6 +1602,7 @@ export function App({ runtime, copies }: AppProps) {
       data-work-currentness={view ? currentness : undefined}
     >
       <SheetShell
+        appearancePreference={appearancePreference}
         view={view}
         busy={busy}
         dirty={dirty}

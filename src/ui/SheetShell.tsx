@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
+import type { AppearanceDensity, AppearanceProfileId } from "../application/appearance-preference.js";
 import type {
   Currentness,
   ImportSelection,
@@ -25,6 +26,7 @@ import type {
 } from "../contracts.js";
 import { reportPresentationTextLimitViolation } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
+import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
   cellKey,
@@ -139,6 +141,36 @@ export function SheetShell(props: SheetShellProps) {
     onExportReportPng = () => false,
     onRemoveReport = () => false,
   } = props;
+
+  const [appearanceSnapshot, setAppearanceSnapshot] = useState(() =>
+    props.appearancePreference.getSnapshot(),
+  );
+  const compositionEndTimer = useRef<number | null>(null);
+
+  function selectAppearance(profileId: AppearanceProfileId, density: AppearanceDensity): void {
+    setAppearanceSnapshot(props.appearancePreference.select(profileId, density));
+  }
+
+  function beginAppearanceComposition(): void {
+    if (compositionEndTimer.current !== null) {
+      window.clearTimeout(compositionEndTimer.current);
+      compositionEndTimer.current = null;
+    }
+    props.appearancePreference.beginComposition();
+    setAppearanceSnapshot(props.appearancePreference.getSnapshot());
+  }
+
+  function scheduleAppearanceCompositionEnd(): void {
+    if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
+    compositionEndTimer.current = window.setTimeout(() => {
+      compositionEndTimer.current = null;
+      setAppearanceSnapshot(props.appearancePreference.endComposition());
+    }, 0);
+  }
+
+  function renderAppearanceSelector(): ReactNode {
+    return <AppearanceSelector preference={appearanceSnapshot} onSelect={selectAppearance} />;
+  }
 
   const [tab, setTab] = useState<ActiveTab>("table");
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
@@ -713,8 +745,11 @@ export function SheetShell(props: SheetShellProps) {
           </section>
         ) : null}
         <header className="ts-home-head">
-          <h1 className="ts-brand">Tachiko Sheet</h1>
-          <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>
+          <div className="ts-home-heading">
+            <h1 className="ts-brand">Tachiko Sheet</h1>
+            <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>
+          </div>
+          {renderAppearanceSelector()}
         </header>
         <section className="ts-card" aria-label="Open project">
           <h2 className="ts-h2">Open</h2>
@@ -814,6 +849,7 @@ export function SheetShell(props: SheetShellProps) {
             <h1 className="ts-title">{view ? view.title : ""}</h1>
           </div>
         </div>
+        {renderAppearanceSelector()}
         {renderWorkbookActions()}
       </header>
     );
@@ -1379,7 +1415,12 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   return (
-    <div className="ts-app" data-view={view ? "workbook" : "home"}>
+    <div
+      className="ts-app"
+      data-view={view ? "workbook" : "home"}
+      onCompositionStartCapture={beginAppearanceComposition}
+      onCompositionEndCapture={scheduleAppearanceCompositionEnd}
+    >
       {errorMessage ? (
         <div className="ts-error" role="alert">
           {errorMessage}
