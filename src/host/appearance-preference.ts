@@ -1,6 +1,7 @@
 /** Browser-origin storage adapter for the local application appearance choice. */
 
-export const APPEARANCE_PREFERENCE_STORAGE_KEY = "tachiko-sheet:appearance-preference:v1";
+export const APPEARANCE_PREFERENCE_V2_STORAGE_KEY = "tachiko-sheet:appearance-preference:v2";
+export const APPEARANCE_PREFERENCE_LEGACY_V1_STORAGE_KEY = "tachiko-sheet:appearance-preference:v1";
 
 export interface StringPreferenceStorage {
   getItem(key: string): string | null;
@@ -14,13 +15,17 @@ export interface StringPreferenceStorage {
  */
 export function createBrowserAppearancePreferencePort(storage?: StringPreferenceStorage) {
   return Object.freeze({
-    read(): string | null {
+    readV2(): string | null {
       const target = storage ?? window.localStorage;
-      return target.getItem(APPEARANCE_PREFERENCE_STORAGE_KEY);
+      return target.getItem(APPEARANCE_PREFERENCE_V2_STORAGE_KEY);
     },
-    write(value: string): void {
+    readLegacyV1(): string | null {
       const target = storage ?? window.localStorage;
-      target.setItem(APPEARANCE_PREFERENCE_STORAGE_KEY, value);
+      return target.getItem(APPEARANCE_PREFERENCE_LEGACY_V1_STORAGE_KEY);
+    },
+    writeV2(value: string): void {
+      const target = storage ?? window.localStorage;
+      target.setItem(APPEARANCE_PREFERENCE_V2_STORAGE_KEY, value);
     },
   });
 }

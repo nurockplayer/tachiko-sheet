@@ -6,7 +6,13 @@ import type { FieldProjection } from "../../public/core-kit/experimental-client.
 import type { AppearancePreferenceController, AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
 import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
-import { missingKeyedGroupedSumDefinitionIds, reportRenderResetKey, SheetShell } from "./SheetShell.js";
+import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
+import {
+  missingKeyedGroupedSumDefinitionIds,
+  reportRenderResetKey,
+  shouldPublishAppearanceCompositionEnd,
+  SheetShell,
+} from "./SheetShell.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
@@ -14,7 +20,7 @@ const entityA = "entity-a";
 const entityB = "entity-b";
 
 const appearanceSnapshot: AppearancePreferenceSnapshot = {
-  selection: { profileId: "tachiko", density: "compact" },
+  selection: { kind: "built-in", profileId: "tachiko", density: "compact" },
   pendingSelection: null,
   notice: null,
   notSaved: false,
@@ -23,7 +29,9 @@ const appearanceSnapshot: AppearancePreferenceSnapshot = {
 
 const appearancePreference: AppearancePreferenceController = {
   getSnapshot: () => appearanceSnapshot,
-  select: () => appearanceSnapshot,
+  selectBuiltIn: () => appearanceSnapshot,
+  selectDensity: () => appearanceSnapshot,
+  selectImported: () => appearanceSnapshot,
   beginComposition: () => undefined,
   endComposition: () => appearanceSnapshot,
 };
@@ -347,6 +355,35 @@ describe("projection access", () => {
 });
 
 describe("SheetShell static rendering", () => {
+  it("publishes only the completed queued appearance after composition ends", () => {
+    const queued = { kind: "built-in", profileId: "minimal-focus", density: "comfortable" } as const;
+    expect(shouldPublishAppearanceCompositionEnd(queued, {
+      ...appearanceSnapshot,
+      selection: queued,
+      pendingSelection: null,
+      composing: false,
+    })).toBe(true);
+    expect(shouldPublishAppearanceCompositionEnd(queued, {
+      ...appearanceSnapshot,
+      pendingSelection: queued,
+      composing: true,
+    })).toBe(false);
+    expect(shouldPublishAppearanceCompositionEnd(queued, {
+      ...appearanceSnapshot,
+      selection: { kind: "built-in", profileId: "tachiko", density: "compact" },
+      pendingSelection: null,
+      composing: false,
+    })).toBe(false);
+
+    const imported = { kind: "imported", profile: TACHIKO_COMPACT_PORCELAIN_PROFILE } as const;
+    expect(shouldPublishAppearanceCompositionEnd(imported, {
+      ...appearanceSnapshot,
+      selection: { kind: "imported", profile: { ...TACHIKO_COMPACT_PORCELAIN_PROFILE } },
+      pendingSelection: null,
+      composing: false,
+    })).toBe(true);
+  });
+
   it("places the controlled selector in Home and reports preference load notices", () => {
     const markup = render({});
     const homeHeader = markup.slice(markup.indexOf("ts-home-head"), markup.indexOf("</header>"));

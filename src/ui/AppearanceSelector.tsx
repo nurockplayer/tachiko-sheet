@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 
+import { APPEARANCE_PROFILE_IDS, appearanceDensity } from "../application/appearance-preference.js";
+import { sameAppearanceChoice } from "../application/appearance-model.js";
 import type {
+  AppearanceChoice,
   AppearanceDensity,
   AppearancePreferenceSnapshot,
   AppearanceProfileId,
-  AppearanceSelection,
 } from "../application/appearance-preference.js";
-import { APPEARANCE_PROFILE_IDS } from "../application/appearance-preference.js";
 import "./appearance-selector.css";
 
 export type AppearanceSelectorProps = Readonly<{
@@ -29,20 +30,22 @@ const DENSITIES: readonly Readonly<{ id: AppearanceDensity; label: string }>[] =
 /** Application-scoped, controlled appearance preference popover. */
 export function AppearanceSelector({ preference, onSelectProfile, onSelectDensity }: AppearanceSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [pendingPresentation, setPendingPresentation] = useState<AppearanceSelection | null>(null);
+  const [pendingPresentation, setPendingPresentation] = useState<AppearanceChoice | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
   const dialogId = `appearance-dialog-${id}`;
   const profileGroupName = `appearance-profile-${id}`;
   const densityGroupName = `appearance-density-${id}`;
   const selection = pendingPresentation ?? preference.pendingSelection ?? preference.selection;
+  const selectedProfileId = selection.kind === "built-in" ? selection.profileId : null;
+  const selectedDensity = appearanceDensity(selection);
 
   useEffect(() => {
     if (
       pendingPresentation !== null &&
+      !preference.composing &&
       preference.pendingSelection === null &&
-      preference.selection.profileId === pendingPresentation.profileId &&
-      preference.selection.density === pendingPresentation.density
+      sameAppearanceChoice(preference.selection, pendingPresentation)
     ) {
       setPendingPresentation(null);
     }
@@ -114,14 +117,14 @@ export function AppearanceSelector({ preference, onSelectProfile, onSelectDensit
           <div className="ts-appearance-profile-options">
             {APPEARANCE_PROFILE_IDS.map((profileId) => (
               <label
-                className={`ts-appearance-profile-option${selection.profileId === profileId ? " ts-appearance-profile-option--selected" : ""}`}
+                className={`ts-appearance-profile-option${selectedProfileId === profileId ? " ts-appearance-profile-option--selected" : ""}`}
                 key={profileId}
               >
                 <input
                   type="radio"
                   name={profileGroupName}
                   value={profileId}
-                  checked={selection.profileId === profileId}
+                  checked={selectedProfileId === profileId}
                   onChange={() => syncPendingPresentation(onSelectProfile(profileId))}
                 />
                 <span>{PROFILE_LABELS[profileId]}</span>
@@ -135,14 +138,14 @@ export function AppearanceSelector({ preference, onSelectProfile, onSelectDensit
           <div className="ts-appearance-density-options">
             {DENSITIES.map(({ id: density, label }) => (
               <label
-                className={`ts-appearance-density-option${selection.density === density ? " ts-appearance-density-option--selected" : ""}`}
+                className={`ts-appearance-density-option${selectedDensity === density ? " ts-appearance-density-option--selected" : ""}`}
                 key={density}
               >
                 <input
                   type="radio"
                   name={densityGroupName}
                   value={density}
-                  checked={selection.density === density}
+                  checked={selectedDensity === density}
                   onChange={() => syncPendingPresentation(onSelectDensity(density))}
                 />
                 <span>{label}</span>

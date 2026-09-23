@@ -5,7 +5,7 @@ import type { AppearancePreferenceSnapshot } from "../application/appearance-pre
 import { AppearanceSelector } from "./AppearanceSelector.js";
 
 const preference = (overrides: Partial<AppearancePreferenceSnapshot> = {}): AppearancePreferenceSnapshot => ({
-  selection: { profileId: "tachiko", density: "compact" },
+  selection: { kind: "built-in", profileId: "tachiko", density: "compact" },
   pendingSelection: null,
   notice: null,
   notSaved: false,
@@ -47,8 +47,8 @@ describe("AppearanceSelector semantic rendering", () => {
 
   it("reflects the latest queued selection in checked radios while keeping source state controlled", () => {
     const html = renderSelector(preference({
-      selection: { profileId: "tachiko", density: "compact" },
-      pendingSelection: { profileId: "familiar-spreadsheet", density: "comfortable" },
+      selection: { kind: "built-in", profileId: "tachiko", density: "compact" },
+      pendingSelection: { kind: "built-in", profileId: "familiar-spreadsheet", density: "comfortable" },
       composing: true,
     }));
 
@@ -68,7 +68,7 @@ describe("AppearanceSelector semantic rendering", () => {
 
   it("renders only the active session write-failure disclosure after a changed choice", () => {
     const html = renderSelector(preference({
-      selection: { profileId: "familiar-spreadsheet", density: "compact" },
+      selection: { kind: "built-in", profileId: "familiar-spreadsheet", density: "compact" },
       notSaved: true,
     }));
 
