@@ -1,0 +1,263 @@
+// #70 real-entry interchange probe: browser file selection, explicit Apply, and actual downloads.
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright-core";
+import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
+const profileDir = await mkdtemp(path.join(tmpdir(), "tachiko-interchange-product-"));
+const key = "tachiko-sheet:appearance-preference:v2";
+const filename = "appearance.tachiko-profile.json";
+const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+let context;
+
+async function downloadProfile(page) {
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export selected profile…" }).click();
+  const download = await pending;
+  assert.equal(download.suggestedFilename(), filename);
+  const bytes = await readFile(await download.path());
+  assert.ok(bytes.byteLength > 0 && bytes.byteLength <= 32768);
+  await page.getByText(`Download requested: ${filename}. Browser save completion is not reported.`, { exact: true }).waitFor();
+  return bytes;
+}
+
+async function uploadProfile(page, bytes) {
+  await page.locator(".ts-appearance-file-input").setInputFiles({ name: filename, mimeType: "application/json", buffer: bytes });
+}
+
+async function appearanceState(page) {
+  return page.evaluate((storageKey) => ({
+    chrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
+    density: document.documentElement.getAttribute("data-ts-profile-density"),
+    raw: localStorage.getItem(storageKey),
+    methods: window.__tachikoAcceptance.workMethodCounts(),
+    writes: window.__tachikoAcceptance.copyWriteDispatchCounts(),
+    save: window.__tachikoAcceptance.saveObservation(),
+  }), key);
+}
+
+async function reportPng(page) {
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export current PNG", exact: true }).click();
+  return readFile(await (await pending).path());
+}
+
+async function bindReport(page) {
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
+  for (const [label, value] of [
+    ["Orders table", "sales"], ["Order lookup key", "product_code"], ["Order quantity", "quantity"],
+    ["Products table", "catalog"], ["Product key", "code"], ["Product category", "category"], ["Product price", "price"],
+  ]) await page.getByLabel(label, { exact: true }).selectOption(value);
+  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Create bar report", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Profile interchange boundary");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await page.locator('.ts-report-canvas[data-report-ready="true"]').waitFor();
+}
+
+try {
+  context = await chromium.launchPersistentContext(profileDir, launchOptions);
+  await installDistRoutes(context, dist);
+  const page = await context.newPage();
+  page.setDefaultTimeout(10000);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const network = [];
+  page.on("request", (request) => network.push(request.url()));
+  await page.goto(LOCAL_ORIGIN);
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await bindReport(page);
+  const pngBefore = await reportPng(page);
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  assert.ok(priceIndex >= 0);
+  const cell = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
+  await cell.focus();
+  await cell.press("Enter");
+  const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await editor.fill("not a number");
+  await editor.evaluate((input) => input.setSelectionRange(3, 7));
+  await editor.press("Enter");
+  await page.getByText("The work did not accept this value. The draft was kept so you can correct it.", { exact: true }).waitFor();
+  const shellHandle = await page.locator(".ts-app").elementHandle();
+  const editorHandle = await editor.elementHandle();
+  const cellHandle = await page.locator(".ts-cell--focused").elementHandle();
+  assert.ok(shellHandle && editorHandle && cellHandle);
+  const draftBefore = await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd]);
+  assert.deepEqual(draftBefore, ["not a number", 3, 7]);
+  const runtimeBefore = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  const before = await appearanceState(page);
+  const networkBefore = network.length;
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  const builtInBytes = await downloadProfile(page);
+  const builtIn = JSON.parse(builtInBytes.toString("utf8"));
+  assert.equal(builtIn.name, "Tachiko");
+  assert.equal(builtIn.schemaVersion, 1);
+  assert.equal(builtIn.colors["surface.chrome"].startsWith("#"), true);
+  assert.deepEqual(await downloadProfile(page), builtInBytes, "active built-in export is deterministic");
+
+  const imported = { ...builtIn, name: "My Local Profile", density: "comfortable" };
+  const importBytes = Buffer.from(`${JSON.stringify(imported, null, 2)}\n`, "utf8");
+  await uploadProfile(page, importBytes);
+  const candidate = page.locator(".ts-appearance-candidate");
+  await candidate.locator(".ts-appearance-candidate__name bdi").getByText("My Local Profile", { exact: true }).waitFor();
+  assert.equal(await candidate.evaluate((node) => document.activeElement === node), true, "staged candidate receives review focus");
+  const desktopLayout = await page.locator(".ts-appearance-popover").evaluate((node) => {
+    const content = node.querySelector(".ts-appearance-content");
+    const density = node.querySelector(".ts-appearance-group--density").getBoundingClientRect();
+    const footnote = node.querySelector(".ts-appearance-footnote").getBoundingClientRect();
+    const bounds = node.getBoundingClientRect();
+    return { scroll: content.scrollHeight > content.clientHeight, densityVisible: density.bottom <= bounds.bottom,
+      footnoteVisible: footnote.bottom <= bounds.bottom };
+  });
+  assert.deepEqual(desktopLayout, { scroll: false, densityVisible: true, footnoteVisible: true },
+    "desktop staged panel shows Density and footnote without inner scroll");
+  assert.deepEqual(await appearanceState(page), before, "staging has no appearance, preference, Work, copy, or Save effect");
+  assert.deepEqual(await downloadProfile(page), builtInBytes, "export during staging uses the active profile");
+  await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(await candidate.count(), 0);
+  assert.deepEqual(await appearanceState(page), before, "Cancel leaves active state unchanged");
+
+  await uploadProfile(page, importBytes);
+  await candidate.getByRole("button", { name: "Apply profile", exact: true }).click();
+  await page.getByRole("radio", { name: /Imported My Local Profile/ }).waitFor();
+  assert.equal(await page.getByRole("radio", { name: /Imported My Local Profile/ }).isChecked(), true);
+  const applied = await appearanceState(page);
+  assert.equal(applied.chrome, "porcelain");
+  assert.equal(applied.density, "comfortable");
+  assert.deepEqual(JSON.parse(applied.raw), { schemaVersion: 2, kind: "imported", profile: imported });
+  assert.deepEqual({ methods: applied.methods, writes: applied.writes, save: applied.save },
+    { methods: before.methods, writes: before.writes, save: before.save },
+    "Apply changes only local appearance preference");
+  const exported = await downloadProfile(page);
+  assert.deepEqual(exported, importBytes, "normalized imported export round-trips deterministically");
+  await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+  await page.locator(".ts-appearance-profile-option").filter({ hasText: "Familiar Spreadsheet" }).click();
+  await page.getByRole("button", { name: "Export active profile…" }).waitFor();
+  await page.getByText("The queued choice applies after editing; export uses the active profile.", { exact: true }).waitFor();
+  const pendingExport = await (async () => {
+    const pending = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export active profile…" }).click();
+    return readFile(await (await pending).path());
+  })();
+  assert.deepEqual(pendingExport, exported, "queued IME choice does not alter active export bytes");
+  await page.locator(".ts-appearance-profile-option--imported").click();
+  await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: input.value })));
+  assert.equal(await page.getByRole("radio", { name: /Imported My Local Profile/ }).isChecked(), true);
+  assert.deepEqual(await appearanceState(page), applied, "cancelled IME queue leaves imported active and persisted");
+  await uploadProfile(page, exported);
+  await candidate.locator(".ts-appearance-candidate__name bdi").getByText("My Local Profile", { exact: true }).waitFor();
+  await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  const rejected = [
+    ["oversize", Buffer.alloc(32769, 0x20)],
+    ["invalid-utf8", Buffer.from([0xc3, 0x28])],
+    ["malformed-json", Buffer.from("{bad", "utf8")],
+    ["duplicate-key", Buffer.from(importBytes.toString("utf8").replace('"schemaVersion": 1,', '"schemaVersion": 1, "schemaVersion": 1,'), "utf8")],
+    ["unknown-field", Buffer.from(JSON.stringify({ ...imported, extra: "no" }), "utf8")],
+    ["missing-field", Buffer.from(JSON.stringify((({ density, ...rest }) => rest)(imported)), "utf8")],
+    ["unsupported-version", Buffer.from(JSON.stringify({ ...imported, schemaVersion: 2 }), "utf8")],
+    ["invalid-enum", Buffer.from(JSON.stringify({ ...imported, chrome: "remote" }), "utf8")],
+    ["invalid-name", Buffer.from(JSON.stringify({ ...imported, name: "bad\nname" }), "utf8")],
+    ["invalid-color", Buffer.from(JSON.stringify({ ...imported, colors: { ...imported.colors, "text.primary": "url(https://example.invalid/x)" } }), "utf8")],
+    ["unsafe-contrast", Buffer.from(JSON.stringify({ ...imported, colors: { ...imported.colors, "text.primary": imported.colors["surface.app"] } }), "utf8")],
+    ["executable", Buffer.from(JSON.stringify({ ...imported, script: "alert(1)", colors: { ...imported.colors, "surface.app": "#FFFFFF" } }), "utf8")],
+  ];
+  const rejectionState = await appearanceState(page);
+  for (const [name, bytes] of rejected) {
+    await uploadProfile(page, bytes);
+    const alert = page.locator(".ts-appearance-notice--rejected");
+    await alert.getByText("Profile not imported", { exact: true }).waitFor();
+    assert.equal(await alert.evaluate((node) => document.activeElement === node), true, `${name}: rejection receives focus`);
+    assert.equal(await candidate.count(), 0, `${name}: no candidate is staged`);
+    assert.deepEqual(await appearanceState(page), rejectionState, `${name}: rejection preserves active profile and product state`);
+    if (name === "malformed-json") {
+      const rejectionPaint = await alert.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { color: style.color, background: style.backgroundColor, borderLeftWidth: style.borderLeftWidth };
+      });
+      assert.equal(rejectionPaint.background, "rgb(255, 244, 241)", "rejection uses approved red-tinted panel");
+      assert.equal(rejectionPaint.color, "rgb(115, 48, 38)", "rejection uses approved red text");
+      assert.equal(rejectionPaint.borderLeftWidth, "4px", "rejection keeps its red left rule");
+    }
+  }
+  assert.equal(await shellHandle.evaluate((node) => node.isConnected && node === document.querySelector(".ts-app")), true);
+  assert.equal(await editorHandle.evaluate((node) => node.isConnected && node === document.querySelector('[aria-label="Edit cell"]')), true);
+  assert.equal(await cellHandle.evaluate((node) => node.isConnected && node.classList.contains("ts-cell--focused")), true);
+  assert.deepEqual(await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd]), draftBefore);
+  assert.deepEqual(network.slice(networkBefore), [], "profile actions issue no network requests");
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot()), runtimeBefore,
+    "profile actions leave runtime revision and opaque bytes unchanged");
+
+  await page.setViewportSize({ width: 320, height: 600 });
+  await uploadProfile(page, importBytes);
+  await candidate.waitFor();
+  const narrow = await page.locator(".ts-appearance-popover").evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    const content = node.querySelector(".ts-appearance-content");
+    const [apply, cancel] = node.querySelectorAll(".ts-appearance-candidate__actions button");
+    const applyBounds = apply.getBoundingClientRect();
+    const cancelBounds = cancel.getBoundingClientRect();
+    return { left: bounds.left, right: bounds.right, width: bounds.width, contentScroll: content.scrollHeight > content.clientHeight,
+      candidateActionsSameRow: Math.abs(applyBounds.top - cancelBounds.top) < 1 };
+  });
+  assert.ok(narrow.left >= 0 && narrow.right <= 320 && narrow.width >= 280 && narrow.contentScroll && narrow.candidateActionsSameRow,
+    "320px staged view fits, scrolls internally, and keeps Apply/Cancel together");
+  for (const colorScheme of ["light", "dark"]) {
+    await page.emulateMedia({ forcedColors: "active", colorScheme });
+    const paint = await candidate.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { border: style.borderColor, background: style.backgroundColor, color: style.color };
+    });
+    assert.notEqual(paint.border, paint.background, `${colorScheme} forced colors retain candidate boundary`);
+    assert.notEqual(paint.color, paint.background, `${colorScheme} forced colors retain text contrast`);
+  }
+  await page.emulateMedia({ forcedColors: "none" });
+  await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 450 });
+  await uploadProfile(page, importBytes);
+  await candidate.waitFor();
+  const shortView = await page.locator(".ts-appearance-popover").evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    const content = node.querySelector(".ts-appearance-content");
+    return { bottom: bounds.bottom, contentScroll: content.scrollHeight > content.clientHeight };
+  });
+  assert.ok(shortView.bottom <= 450 && shortView.contentScroll, "short viewport keeps the staged panel reachable");
+  await candidate.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await editor.press("Escape");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  const pngAfter = await reportPng(page);
+  assert.deepEqual(pngAfter, pngBefore, "report PNG bytes remain unchanged after import, export, apply, and rejection");
+
+  const corrupt = await context.newPage();
+  await corrupt.addInitScript(({ storageKey, manifest }) => {
+    localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "imported", profile: manifest }));
+  }, { storageKey: key, manifest: { ...imported, colors: { ...imported.colors, "text.primary": imported.colors["surface.app"] } } });
+  await corrupt.goto(LOCAL_ORIGIN);
+  await corrupt.getByTestId("project-ready").waitFor();
+  assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
+  assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-density")), "compact");
+  await corrupt.getByRole("button", { name: "Appearance", exact: true }).click();
+  await corrupt.getByText("Saved appearance could not be loaded. Using Tachiko for this session.", { exact: true }).waitFor();
+
+  console.log(JSON.stringify({ case: "#70 real-entry profile interchange", status: "PASS", rejected: rejected.map(([name]) => name),
+    builtInBytes: builtInBytes.byteLength, importedBytes: exported.byteLength, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"),
+    networkDelta: network.length - networkBefore, narrow, shortView }));
+} finally {
+  await context?.close();
+  await rm(profileDir, { recursive: true, force: true });
+}

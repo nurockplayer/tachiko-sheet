@@ -30,6 +30,7 @@ import type {
   ViewWitness,
   WorkbookView,
 } from "../contracts.js";
+import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { reportPresentationTextLimitViolation } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
@@ -190,6 +191,13 @@ export function SheetShell(props: SheetShellProps) {
     return snapshot;
   }
 
+  function selectImportedAppearanceProfile(profile: InterfaceProfileV1): AppearancePreferenceSnapshot {
+    const current = props.appearancePreference.getSnapshot();
+    const snapshot = props.appearancePreference.selectImported(profile);
+    if (!current.composing) setAppearanceSnapshot(snapshot);
+    return snapshot;
+  }
+
   function beginAppearanceComposition(): void {
     if (compositionEndTimer.current !== null) {
       window.clearTimeout(compositionEndTimer.current);
@@ -216,6 +224,7 @@ export function SheetShell(props: SheetShellProps) {
         preference={appearanceSnapshot}
         onSelectProfile={selectAppearanceProfile}
         onSelectDensity={selectAppearanceDensity}
+        onSelectImported={selectImportedAppearanceProfile}
       />
     );
   }

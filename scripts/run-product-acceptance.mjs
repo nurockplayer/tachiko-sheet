@@ -166,6 +166,11 @@ try {
     [path.join(root, 'tests', 'product', 'appearance-visual-local.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const profileInterchange = await runStep(
+    'interface-profile-interchange-local',
+    [path.join(root, 'tests', 'product', 'interface-profile-interchange-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
   const primaryActions = await runStep(
     'primary-actions-forced-colors-local-transport',
     [path.join(root, 'tests', 'product', 'primary-actions-forced-colors-local.mjs')],
@@ -190,7 +195,7 @@ try {
       [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && primaryActions === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0;
+    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -215,7 +220,7 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
-    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
+    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && focus === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {

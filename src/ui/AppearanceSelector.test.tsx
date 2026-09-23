@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
+import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 
 const preference = (overrides: Partial<AppearancePreferenceSnapshot> = {}): AppearancePreferenceSnapshot => ({
@@ -19,6 +20,7 @@ const renderSelector = (snapshot: AppearancePreferenceSnapshot) =>
       preference={snapshot}
       onSelectProfile={vi.fn(() => snapshot)}
       onSelectDensity={vi.fn(() => snapshot)}
+      onSelectImported={vi.fn(() => snapshot)}
     />,
   );
 
@@ -35,6 +37,10 @@ describe("AppearanceSelector semantic rendering", () => {
     expect(html).toContain("aria-labelledby=\"appearance-dialog-");
     expect(html).toContain("<legend>Interface profile</legend>");
     expect(html).toContain("<legend>Density</legend>");
+    expect(html).toContain("Custom profile");
+    expect(html).toContain("Import profile…");
+    expect(html).toContain("Export selected profile…");
+    expect(html).toContain('type="file"');
     expect((html.match(/type=\"radio\"/g) ?? [])).toHaveLength(5);
 
     const groupNames = [...html.matchAll(/type=\"radio\"[^>]*name=\"([^\"]+)\"/g)].map((match) => match[1]);
@@ -43,6 +49,45 @@ describe("AppearanceSelector semantic rendering", () => {
     expect(new Set(groupNames.slice(3)).size).toBe(1);
     expect(groupNames[0]).not.toBe(groupNames[3]);
     expect(html).toContain("Changes appearance only. No workbook save.");
+  });
+
+  it("shows an active imported profile as its own radio with isolated plain-text name", () => {
+    const html = renderSelector(preference({
+      selection: { kind: "imported", profile: { ...TACHIKO_COMPACT_PORCELAIN_PROFILE, name: "Imported Tachiko" } },
+    }));
+
+    expect((html.match(/type="radio"/g) ?? [])).toHaveLength(6);
+    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="imported"/);
+    expect(html).toContain('<bdi dir="auto">Imported Tachiko</bdi>');
+    expect(html).toContain("Export requests normalized v1 JSON for the active profile.");
+    expect(html).not.toContain('value="tachiko" checked=""');
+  });
+
+  it("keeps an imported IME choice pending and separate from the built-in identifiers", () => {
+    const imported = { ...TACHIKO_COMPACT_PORCELAIN_PROFILE, name: "Tachiko" };
+    const html = renderSelector(preference({
+      selection: { kind: "built-in", profileId: "tachiko", density: "compact" },
+      pendingSelection: { kind: "imported", profile: imported },
+      composing: true,
+    }));
+
+    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="imported"/);
+    expect(html).toContain('<bdi dir="auto">Tachiko</bdi>');
+    expect(html).not.toContain('value="tachiko" checked=""');
+    expect(html).toMatch(/value="comfortable"/);
+  });
+
+  it("keeps an active imported choice available while a built-in IME choice is pending", () => {
+    const active = { ...TACHIKO_COMPACT_PORCELAIN_PROFILE, name: "Active Import" };
+    const html = renderSelector(preference({
+      selection: { kind: "imported", profile: active },
+      pendingSelection: { kind: "built-in", profileId: "minimal-focus", density: "compact" },
+      composing: true,
+    }));
+
+    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="minimal-focus"/);
+    expect(html).toContain('value="imported"');
+    expect(html).toContain('<bdi dir="auto">Active Import</bdi>');
   });
 
   it("reflects the latest queued selection in checked radios while keeping source state controlled", () => {

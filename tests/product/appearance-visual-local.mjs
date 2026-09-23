@@ -9,7 +9,7 @@ import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
-const key = "tachiko-sheet:appearance-preference:v1";
+const key = "tachiko-sheet:appearance-preference:v2";
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const profiles = [
   { id: "tachiko", label: "Tachiko", chrome: "porcelain" },
@@ -399,7 +399,7 @@ async function auditFocusModes(context, page) {
 async function auditNotice(context, profile) {
   const page = await context.newPage();
   await page.addInitScript(({ storageKey, selected }) => {
-    localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 1, profileId: selected, density: "compact" }));
+    localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "built-in", profileId: selected, density: "compact" }));
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = function (itemKey, value) {
       if (itemKey === storageKey) throw new Error("blocked appearance write for visual audit");
@@ -513,10 +513,10 @@ async function main() {
         const label = `512x450 short viewport ${profile.id}/${density.id}`;
         const menuBounds = await menuViewportAndOpen(page, label);
         const geometryState = await geometry(page, 512, combo);
-        const scrollState = await page.locator(".ts-appearance-popover").evaluate((popover) => ({
-          overflowY: getComputedStyle(popover).overflowY,
-          clientHeight: popover.clientHeight,
-          scrollHeight: popover.scrollHeight,
+        const scrollState = await page.locator(".ts-appearance-content").evaluate((content) => ({
+          overflowY: getComputedStyle(content).overflowY,
+          clientHeight: content.clientHeight,
+          scrollHeight: content.scrollHeight,
         }));
         evidence((scrollState.overflowY === "auto" || scrollState.overflowY === "scroll") && scrollState.scrollHeight > scrollState.clientHeight,
           `${label} keeps long menu contents internally scrollable`, scrollState);
