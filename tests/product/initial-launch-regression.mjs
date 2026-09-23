@@ -115,7 +115,19 @@ try {
     await attempt.context.close();
   }
 
-  console.log(JSON.stringify({ case: "delayed initial launch success, known failure, unknown recovery and explicit Close", status: "PASS" }));
+  {
+    const attempt = await launch("success-delayed");
+    await attempt.page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+    attempt.releaseManifest();
+    await attempt.page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+    assert.equal(await attempt.page.getByTestId("initial-launch").count(), 0, "acknowledged Open projection failure must leave booting");
+    assert.equal(await attempt.page.getByTestId("project-ready").count(), 0, "unconfirmed projection must not expose a workbook");
+    assert.equal(await attempt.page.getByRole("button", { name: "Refresh", exact: true }).isEnabled(), true);
+    assert.equal(await attempt.page.getByRole("button", { name: "Close and abandon recovery", exact: true }).isEnabled(), true);
+    await attempt.context.close();
+  }
+
+  console.log(JSON.stringify({ case: "delayed initial launch success, known failure, unknown-open and acknowledged-open recovery, and explicit Close", status: "PASS" }));
 } finally {
   await browser.close();
 }
