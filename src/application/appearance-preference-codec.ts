@@ -6,12 +6,12 @@ import {
   type AppearanceSelection,
 } from "./appearance-model.js";
 import { validateStrictJson } from "./strict-json.js";
-import { admitInterfaceProfileContrast } from "../ui/interface-profile/profile-safety.js";
+import { admitInterfaceProfileContrast } from "./interface-profile-safety.js";
 import {
   COLOR_ROLES,
   type ColorRoleV1,
   type InterfaceProfileV1,
-} from "../ui/interface-profile/profile.js";
+} from "./interface-profile-contract.js";
 
 export const APPEARANCE_PREFERENCE_V2_SCHEMA_VERSION = 2 as const;
 export const APPEARANCE_PREFERENCE_MAX_BYTES = 32_768;
