@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "contract": "InterfaceProfileV1",
+  "source": {
+    "figmaFile": "ouZ5nm77N0WneqAsLhzqnL",
+    "roleBoardNode": "22:95095",
+    "roleBoardUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095",
+    "bindingAvailability": "unavailable: painted/readback frames contain no verified binding IDs",
+    "sha256": {
+      "system-scenes.js": "9035b18ac0e13911cc7fc83362f0b514ca149627b29aeb00766ab5c18453a63b",
+      "profiles-scenes.js": "10d968d4afb431e11772d52a68211e2f9d7469a68abf00ebdf0c9c008121b40d",
+      "profiles-final-evidence.json": "8724ebb08f4c333d921633af5bc262618c505ba13c403abefe1246ceba99a028",
+      "mission-final-registry.json": "84adf0658ac7adb4b37c7e575686fa8a5e88c2ddb0927cce83f8216a15975343"
+    }
+  },
+  "collection": {
+    "collectionId": null,
+    "modeId": null,
+    "reason": "unavailable: painted/readback frames contain no verified binding IDs",
+    "semantics": "The retained evidence is a painted/readback board. Collection and mode binding identifiers are unavailable and are intentionally not inferred."
+  },
+  "privateCssVariablePrefix": "--ts-profile-",
+  "roles": [
+    {"role": "surface.app", "value": "#FFFFFF", "privateCssName": "--ts-profile-surface-app", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "surface.chrome", "value": "#F8F8FC", "privateCssName": "--ts-profile-surface-chrome", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "surface.chrome.tint", "value": "#F0EDFD", "privateCssName": "--ts-profile-surface-chrome-tint", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "surface.content", "value": "#FFFFFF", "privateCssName": "--ts-profile-surface-content", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "surface.inset", "value": "#F5F6F9", "privateCssName": "--ts-profile-surface-inset", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "text.primary", "value": "#252735", "privateCssName": "--ts-profile-text-primary", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "text.secondary", "value": "#646879", "privateCssName": "--ts-profile-text-secondary", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "text.onTint", "value": "#5B6072", "privateCssName": "--ts-profile-text-on-tint", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "text.link", "value": "#5542B5", "privateCssName": "--ts-profile-text-link", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "text.reference", "value": "#4F54AD", "privateCssName": "--ts-profile-text-reference", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "border.subtle", "value": "#DFE2EA", "privateCssName": "--ts-profile-border-subtle", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "border.control", "value": "#858B9C", "privateCssName": "--ts-profile-border-control", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "action.primary.background", "value": "#6350D2", "privateCssName": "--ts-profile-action-primary-background", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "action.primary.hover", "value": "#5541C2", "privateCssName": "--ts-profile-action-primary-hover", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "action.primary.pressed", "value": "#4936AB", "privateCssName": "--ts-profile-action-primary-pressed", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "action.primary.foreground", "value": "#FFFFFF", "privateCssName": "--ts-profile-action-primary-foreground", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "accent.foreground", "value": "#5542B5", "privateCssName": "--ts-profile-accent-foreground", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "accent.background", "value": "#F0EDFD", "privateCssName": "--ts-profile-accent-background", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "grid.canvas", "value": "#FFFFFF", "privateCssName": "--ts-profile-grid-canvas", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "grid.line.horizontal", "value": "#E9EBF1", "privateCssName": "--ts-profile-grid-line-horizontal", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "grid.line.vertical", "value": "#EEF0F4", "privateCssName": "--ts-profile-grid-line-vertical", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "grid.header.background", "value": "#F7F8FB", "privateCssName": "--ts-profile-grid-header-background", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "grid.header.foreground", "value": "#5B6072", "privateCssName": "--ts-profile-grid-header-foreground", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "selection.row.background", "value": "#F6F4FE", "privateCssName": "--ts-profile-selection-row-background", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "selection.header.background", "value": "#ECE9FE", "privateCssName": "--ts-profile-selection-header-background", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "selection.header.foreground", "value": "#5542B5", "privateCssName": "--ts-profile-selection-header-foreground", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "selection.active.background", "value": "#FFFFFF", "privateCssName": "--ts-profile-selection-active-background", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "selection.active.border", "value": "#6551CE", "privateCssName": "--ts-profile-selection-active-border", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}},
+    {"role": "focus.ring", "value": "#6551CE", "privateCssName": "--ts-profile-focus-ring", "nodeUri": "https://www.figma.com/design/ouZ5nm77N0WneqAsLhzqnL?node-id=22-95095", "binding": {"variableId": null, "collectionId": null, "modeId": null}}
+  ]
+}

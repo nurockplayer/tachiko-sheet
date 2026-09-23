@@ -1,11 +1,11 @@
 vite v8.3.0 building client environment for acceptance...
 transforming...
-✓ 28 modules transformed.
+✓ 30 modules transformed.
 rendering chunks...
 computing gzip size...
 dist-acceptance/index.html                             0.39 kB │ gzip:  0.26 kB
-dist-acceptance/assets/index-CEBEx3oN.css             11.09 kB │ gzip:  2.80 kB
-dist-acceptance/assets/sheet-foundation-w4neLRbI.js    7.76 kB │ gzip:  2.97 kB │ map:    31.14 kB
-dist-acceptance/assets/index-CqxivkX5.js             309.34 kB │ gzip: 92.55 kB │ map: 1,276.24 kB
+dist-acceptance/assets/index-D10GX_XF.css             17.47 kB │ gzip:  3.96 kB
+dist-acceptance/assets/sheet-foundation-D3E-GISl.js    8.92 kB │ gzip:  3.29 kB │ map:    35.59 kB
+dist-acceptance/assets/index-B6TJ2bWT.js             316.51 kB │ gzip: 94.60 kB │ map: 1,295.92 kB
 
-✓ built in 1.02s
+✓ built in 250ms

@@ -1,25 +1,46 @@
 :root {
-  --ts-ink: #252735;
-  --ts-ink-soft: #646879;
-  --ts-ink-on-tint: #5b6072;
-  --ts-line: #dfe2ea;
+  /* Public profile roles resolve through private aliases; protected recipes below stay fixed. */
+  --ts-surface-app: var(--ts-profile-surface-app, #ffffff);
+  --ts-ink: var(--ts-profile-text-primary, #252735);
+  --ts-ink-soft: var(--ts-profile-text-secondary, #646879);
+  --ts-ink-on-tint: var(--ts-profile-text-on-tint, #5b6072);
+  --ts-line: var(--ts-profile-border-subtle, #dfe2ea);
   /* #858b9c against white: 3.42:1, above the 3:1 interactive-boundary floor. */
-  --ts-line-strong: #858b9c;
-  --ts-surface: #ffffff;
-  --ts-surface-chrome: #f8f8fc;
-  --ts-surface-sunken: #f5f6f9;
+  --ts-line-strong: var(--ts-profile-border-control, #858b9c);
+  --ts-surface: var(--ts-profile-surface-content, #ffffff);
+  --ts-surface-chrome: var(--ts-profile-surface-chrome, #f8f8fc);
+  --ts-surface-chrome-tint: var(--ts-profile-surface-chrome-tint, #f0edfd);
+  --ts-surface-sunken: var(--ts-profile-surface-inset, #f5f6f9);
   --ts-surface-head: #eceef4;
-  --ts-grid-head: #f7f8fb;
-  --ts-selected: #ece9fe;
-  --ts-selected-row: #f6f4fe;
-  --ts-focus: #6551ce;
-  --ts-accent: #6350d2;
-  --ts-accent-hover: #5541c2;
-  --ts-accent-pressed: #4936ab;
-  --ts-accent-ink: #5542b5;
-  --ts-accent-soft: #f0edfd;
-  --ts-grid-horizontal: #e9ebf1;
-  --ts-grid-vertical: #eef0f4;
+  --ts-grid-head: var(--ts-profile-grid-header-background, #f7f8fb);
+  --ts-grid-canvas: var(--ts-profile-grid-canvas, #ffffff);
+  --ts-selected: var(--ts-profile-selection-header-background, #ece9fe);
+  --ts-selected-row: var(--ts-profile-selection-row-background, #f6f4fe);
+  --ts-selection-active-background: var(--ts-profile-selection-active-background, #ffffff);
+  --ts-selection-active-border: var(--ts-profile-selection-active-border, #6551ce);
+  --ts-focus: var(--ts-profile-focus-ring, #6551ce);
+  --ts-accent: var(--ts-profile-action-primary-background, #6350d2);
+  --ts-accent-hover: var(--ts-profile-action-primary-hover, #5541c2);
+  --ts-accent-pressed: var(--ts-profile-action-primary-pressed, #4936ab);
+  --ts-accent-ink: var(--ts-profile-accent-foreground, #5542b5);
+  --ts-accent-soft: var(--ts-profile-accent-background, #f0edfd);
+  --ts-grid-horizontal: var(--ts-profile-grid-line-horizontal, #e9ebf1);
+  --ts-grid-vertical: var(--ts-profile-grid-line-vertical, #eef0f4);
+  --ts-action-primary-foreground: var(--ts-profile-action-primary-foreground, #ffffff);
+  --ts-selection-header-foreground: var(--ts-profile-selection-header-foreground, #5542b5);
+  --ts-text-link: var(--ts-profile-text-link, #5542b5);
+  --ts-text-reference: var(--ts-profile-text-reference, #4f54ad);
+  --ts-grid-header-foreground: var(--ts-profile-grid-header-foreground, #5b6072);
+  /* Product-owned status, disabled, destructive, and chip recipes never consume profile roles. */
+  --ts-protected-surface: #ffffff;
+  --ts-protected-surface-inset: #f5f6f9;
+  --ts-protected-text-primary: #252735;
+  --ts-protected-text-secondary: #646879;
+  --ts-protected-border-subtle: #dfe2ea;
+  --ts-protected-border-control: #858b9c;
+  --ts-protected-disabled-foreground: #8c949c;
+  --ts-protected-destructive-foreground: #8a2f1c;
+  --ts-protected-destructive-border: #b4553f;
   --ts-warn: #865015;
   --ts-warn-bg: #fff3dd;
   --ts-error-ink: #a02d42;
@@ -64,7 +85,7 @@
   font-size: 11px;
 }
 
-.ts-notices a { color: #245d9f; }
+.ts-notices a { color: var(--ts-text-link); }
 
 .ts-subtle {
   color: var(--ts-ink-soft);
@@ -155,6 +176,11 @@
   max-width: 100%;
 }
 
+.ts-file-input:disabled {
+  border-color: var(--ts-protected-border-control);
+  background: var(--ts-protected-surface);
+}
+
 .ts-row-actions {
   display: flex;
   align-items: center;
@@ -223,15 +249,15 @@
 
 .ts-button:disabled {
   cursor: not-allowed;
-  color: #8c949c;
-  background: var(--ts-surface-sunken);
-  border-color: var(--ts-line);
+  color: var(--ts-protected-disabled-foreground);
+  background: var(--ts-protected-surface-inset);
+  border-color: var(--ts-protected-border-subtle);
 }
 
 .ts-button--primary {
   background: var(--ts-accent);
   border-color: var(--ts-accent);
-  color: #ffffff;
+  color: var(--ts-action-primary-foreground);
   box-shadow: 0 1px 2px rgba(48, 37, 100, 0.09);
 }
 
@@ -246,8 +272,13 @@
 }
 
 .ts-button--danger {
-  border-color: #b4553f;
-  color: #8a2f1c;
+  border-color: var(--ts-protected-destructive-border);
+  color: var(--ts-protected-destructive-foreground);
+  background: var(--ts-protected-surface);
+}
+
+.ts-button--danger:hover:not(:disabled) {
+  background: var(--ts-protected-surface-inset);
 }
 
 .ts-button--ghost {
@@ -276,7 +307,7 @@
   gap: 12px;
   min-height: 60px;
   padding: 8px clamp(16px, 3vw, 40px);
-  background: linear-gradient(108deg, var(--ts-accent-soft) 0%, var(--ts-surface-chrome) 35%, var(--ts-surface-chrome) 100%);
+  background: linear-gradient(108deg, var(--ts-surface-chrome-tint) 0%, var(--ts-surface-chrome) 35%, var(--ts-surface-chrome) 100%);
   border-bottom: 1px solid var(--ts-line);
 }
 
@@ -333,8 +364,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--ts-line);
-  background: var(--ts-surface);
+  border: 1px solid var(--ts-protected-border-subtle);
+  background: var(--ts-protected-surface);
+  color: var(--ts-protected-text-primary);
   border-radius: 4px;
   padding: 2px 7px;
   font-size: 12px;
@@ -401,7 +433,7 @@
 }
 
 .ts-chip--muted {
-  color: var(--ts-ink-soft);
+  color: var(--ts-protected-text-secondary);
 }
 
 .ts-chip--edited {
@@ -467,8 +499,9 @@
 }
 
 .ts-context-table select:disabled {
-  color: var(--ts-ink-soft);
-  background: var(--ts-surface-sunken);
+  border-color: var(--ts-protected-border-subtle);
+  color: var(--ts-protected-text-secondary);
+  background: var(--ts-protected-surface-inset);
 }
 
 .ts-tabs {
@@ -542,7 +575,7 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  background: var(--ts-surface);
+  background: var(--ts-grid-canvas);
 }
 
 .ts-grid {
@@ -576,7 +609,7 @@
   background: var(--ts-grid-head);
   font-weight: 500;
   font-size: 12px;
-  color: var(--ts-ink-soft);
+  color: var(--ts-grid-header-foreground);
 }
 
 .ts-col-head {
@@ -590,7 +623,7 @@
   z-index: 1;
   background: var(--ts-grid-head);
   font-weight: 500;
-  color: var(--ts-ink-soft);
+  color: var(--ts-grid-header-foreground);
 }
 
 .ts-gutter-head {
@@ -598,7 +631,7 @@
 }
 
 .ts-row--selected .ts-row-head {
-  color: #ffffff;
+  color: var(--ts-action-primary-foreground);
   background: var(--ts-accent);
 }
 
@@ -626,25 +659,25 @@
 }
 
 .ts-cell--reference .ts-cell-value {
-  color: #23508a;
+  color: var(--ts-text-reference);
   text-decoration: underline dotted;
 }
 
 .ts-cell--focused {
-  outline: 2px solid var(--ts-focus);
+  outline: 2px solid var(--ts-selection-active-border);
   outline-offset: -2px;
   position: relative;
   z-index: 1;
-  box-shadow: inset 0 -2px 0 var(--ts-focus), inset 0 0 0 1px #fff;
+  box-shadow: inset 0 -2px 0 var(--ts-selection-active-border), inset 0 0 0 1px var(--ts-selection-active-background);
 }
 
 .ts-row--selected .ts-cell--focused {
-  background: var(--ts-surface);
+  background: var(--ts-selection-active-background);
 }
 
 .ts-cell--editing {
   padding: 0;
-  background: var(--ts-surface);
+  background: var(--ts-selection-active-background);
 }
 
 .ts-cell-input {
@@ -655,8 +688,13 @@
   border: none;
   min-height: 27px;
   padding: 4px 10px;
-  background: var(--ts-surface);
+  background: var(--ts-selection-active-background);
   color: var(--ts-ink);
+}
+
+.ts-cell-input:disabled {
+  background: var(--ts-protected-surface);
+  color: var(--ts-protected-text-primary);
 }
 
 .ts-cell-input:focus {
@@ -722,8 +760,9 @@
 }
 
 .ts-notes:disabled {
-  background: var(--ts-surface-sunken);
-  color: var(--ts-ink-soft);
+  border-color: var(--ts-protected-border-control);
+  background: var(--ts-protected-surface-inset);
+  color: var(--ts-protected-text-secondary);
 }
 
 /* ---------- Modal ---------- */
@@ -778,7 +817,7 @@
 }
 
 .ts-status {
-  color: var(--ts-ink-soft);
+  color: var(--ts-protected-text-secondary);
 }
 
 .ts-report-controls {
@@ -796,6 +835,12 @@
   border-radius: var(--ts-radius);
   background: var(--ts-surface);
   color: var(--ts-ink);
+}
+
+.ts-report-controls input:not([type="checkbox"]):disabled {
+  border-color: var(--ts-protected-border-control);
+  background: var(--ts-protected-surface);
+  color: var(--ts-protected-text-primary);
 }
 
 .ts-check {
@@ -894,8 +939,20 @@
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .ts-app .ts-button--primary:not(:disabled) {
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+    box-shadow: none;
+    forced-color-adjust: none;
+  }
   .ts-app :focus-visible { outline-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
+  .ts-row--selected .ts-cell-value, .ts-row--selected .ts-row-head {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
   .ts-app .ts-cell--focused {
     outline: 3px solid Highlight !important;
     outline-offset: -3px;

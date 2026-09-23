@@ -1,0 +1,17 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Create copy: rendered contrast 1.00:1 is below 4.5:1
+    at paint (file:///Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/tests/product/primary-actions-forced-colors-local.mjs:68:10)
+    at async sample (file:///Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/tests/product/primary-actions-forced-colors-local.mjs:78:78)
+    at async file:///Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/tests/product/primary-actions-forced-colors-local.mjs:98:19 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.15.0

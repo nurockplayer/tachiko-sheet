@@ -1,0 +1,31 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: canonical profile / light: .ts-header-actions .ts-button--primary:not(:disabled) rendered contrast 1.00 is too low; .ts-row--selected .ts-cell--focused .ts-cell-value rendered contrast 1.00 is too low; .ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value rendered contrast 1.00 is too low; .ts-row--selected .ts-row-head rendered contrast 1.00 is too low
++ actual - expected
+
++ [
++   '.ts-header-actions .ts-button--primary:not(:disabled) rendered contrast 1.00 is too low',
++   '.ts-row--selected .ts-cell--focused .ts-cell-value rendered contrast 1.00 is too low',
++   '.ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value rendered contrast 1.00 is too low',
++   '.ts-row--selected .ts-row-head rendered contrast 1.00 is too low'
++ ]
+- []
+
+    at forcedColorPaintEvidence (file:///Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/tests/product/interface-profile-local.mjs:125:10)
+    at async file:///Users/tachikoma/.codex/worktrees/37b3/tachiko-sheet/tests/product/interface-profile-local.mjs:166:32 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: [
+    '.ts-header-actions .ts-button--primary:not(:disabled) rendered contrast 1.00 is too low',
+    '.ts-row--selected .ts-cell--focused .ts-cell-value rendered contrast 1.00 is too low',
+    '.ts-row--selected .ts-cell:not(.ts-cell--focused) .ts-cell-value rendered contrast 1.00 is too low',
+    '.ts-row--selected .ts-row-head rendered contrast 1.00 is too low'
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.15.0

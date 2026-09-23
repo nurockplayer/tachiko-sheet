@@ -3,6 +3,11 @@ import { App } from "./App.js";
 import { loadCoreKit } from "./core-loader.js";
 import { createLocalCopies } from "./host/local-copies.js";
 import { createSheetRuntime } from "./runtime/session.js";
+import {
+  TACHIKO_COMPACT_PORCELAIN_PROFILE,
+  applyResolvedProfile,
+  resolveInterfaceProfile,
+} from "./ui/interface-profile/index.js";
 import type { KitLoader } from "./contracts.js";
 
 /**
@@ -14,6 +19,14 @@ import type { KitLoader } from "./contracts.js";
 async function boot(): Promise<void> {
   const root = document.getElementById("root");
   if (!root) throw new Error("The application root element is missing.");
+
+  const resolvedProfile = resolveInterfaceProfile(TACHIKO_COMPACT_PORCELAIN_PROFILE);
+  if (!resolvedProfile.ok) {
+    throw new Error("The built-in Tachiko interface profile is invalid.");
+  }
+  if (!applyResolvedProfile(document.documentElement, resolvedProfile.value)) {
+    throw new Error("The built-in Tachiko interface profile could not be applied.");
+  }
 
   let kitLoader: KitLoader = loadCoreKit;
   if (import.meta.env.MODE === "acceptance") {

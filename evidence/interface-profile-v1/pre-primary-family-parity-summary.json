@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "previousReviewedHead": "87bfd26fbdc6074d3815eec2234d1463b65c114f",
+  "stewardAuthorization": "https://github.com/nurockplayer/tachiko-sheet/issues/68#issuecomment-5775343376",
+  "viewportCount": 12,
+  "totalStates": 84,
+  "unchangedNormalStates": 72,
+  "changedForcedStates": 12,
+  "geometryFontBackgroundOutlineEqualStates": 84,
+  "outsideAuthorizedForcedConsumers": 0,
+  "consumerPaintOutsetPixels": 1,
+  "manifestSha256": {
+    "approved-canonical-consumers": "f48ed2a80435886c44c56d5bd9099576ba12568b08a2b5bf752f67d9d0a41d0e",
+    "forced-repair-candidate": "3e54ded116bd1a623d73890ef3ad0e7339a5473ec40f9aa4aa87cc1e5064ff6c"
+  },
+  "fullComparisonSha256": "41375c306f7ea68a2d36aed925c4ac28e7f45a64f431cf355d9e5c8b7fa6221c",
+  "artifactRoot": "/Users/tachikoma/.codex/artifacts/tachiko-sheet-68",
+  "normalColorBaselineEvidence": "pre-forced-repair-parity-summary.json"
+}
