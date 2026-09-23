@@ -6,9 +6,15 @@ Status: proposed execution aid under #1 and DELIVERY.md; effective after reviewe
 
 Read live #1, #2, AGENTS.md, DELIVERY.md and the active Issue/PR. Read PRODUCT-PRINCIPLES.md once at intake; load detailed acceptance and upstream specs only for the next boundary. Research is background, not a requirement to repeat a large investigation each session.
 
-Record one active **Astra** Mission Lead and writer ownership in #2 before mutation. Use the strongest practical reasoning level for the long-running mission; never run two competing leaders. A handover names the old/new session, exact branch/HEAD, active workers and unresolved review debt, and confirms prior writers stopped or transferred. An old timestamp is not proof a writer stopped.
+Record one active **GPT-6 Sol** Mission Lead and writer ownership in #2 before product mutation. Never run two competing leaders. A handover names old/new session, exact branch/HEAD, active writer and unresolved review debt, and confirms prior writers stopped or transferred.
 
-Route bounded implementation/unit-test packages through **worker-luna**. Astra keeps architecture/integration/authority judgment and one-writer coordination. Workers return any new discretionary engineering choice to Astra and do not decide around Steward authority. At a stable Final Candidate, use one eligible fresh independent Sol exact-HEAD review. Sol remains read-only, and Astra/Conductor performs the guarded merge after all gates pass. If worker-luna is unavailable, record it in #2 and continue independent eligible work instead of silently substituting a different worker policy.
+Route one bounded implementation/unit-test package at a time through **GPT-6 Luna**. Sol keeps architecture/integration judgment and is the highest engineering decision authority inside settled product/specification/semantic/storage/acceptance boundaries. Material Sol decisions are recorded durably with concise rationale and rollback when relevant. Workers return new discretionary choices to Sol.
+
+For genuinely difficult or architectural questions Sol may consult **Astra** read-only and record the advice plus Sol's final disposition. Astra is advisory only. At a stable Final Candidate, use one fresh independent **Oracle latest Extra High** exact-HEAD review; Oracle stays read-only. Sol/Conductor performs the guarded merge after all exact-head gates and the required `No blocking findings.` receipt pass.
+
+Production implementation is serial. Read-only qualification/review may overlap if it cannot create a competing writer. After a qualified merge, re-read #1/#2 and select the next genuinely Ready successor. Following the #77 transition, the first intended production successor is #69 Phase B; #70 remains dependent on qualified #69.
+
+At minute 20 of each hour, the external ChatGPT Steward reads #1/#2, current main, active Issue/PR and open backlog to reconcile stale handoff, blockers or missing gates and to give Sol/Codex a concrete next action when useful. That stewardship loop does not take writer ownership or override Sol's engineering decisions inside settled authority.
 
 ## Existing queue, not a second roadmap
 
@@ -32,7 +38,7 @@ For each of the 15 bundles and six journeys record:
 
 Use `UNVERIFIED`, `BLOCKED`, `FAIL` and `PASS` literally. Initially this preparation supplies no product PASS. A bundle-to-journey mapping is only coverage intent; every required behavior within a bundle still needs a test/trace or an explicit Steward-approved profile decision. Do not equate “core exists,” “button exists,” “fixture imports” and “user can do the task.”
 
-The default next visible milestone after #3 is #4's working loop, not another architecture document. Then favor a complete J1/J2 user workflow over many disconnected controls, subject to actual upstream availability. Headless kernel work, UI work and independent acceptance can be delegated in non-overlapping batches; follow DELIVERY.md's lane and review limits.
+The default next visible milestone after #3 is #4's working loop, not another architecture document. Then favor a complete J1/J2 user workflow over many disconnected controls, subject to actual upstream availability. Read-only qualification and independent acceptance can overlap when safe; production implementation remains serial under DELIVERY.md.
 
 ## Whole-product checks at each meaningful slice
 
