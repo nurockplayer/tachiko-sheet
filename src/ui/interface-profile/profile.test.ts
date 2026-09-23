@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
+import { chromium } from "playwright";
 import {
+  BUILT_IN_INTERFACE_PROFILE_IDS,
   COLOR_ROLES,
   PRIVATE_CSS_VARIABLES,
   TACHIKO_COMPACT_PORCELAIN_PROFILE,
   applyResolvedProfile,
+  resolveBuiltInInterfaceProfile,
   resolveInterfaceProfile,
   validateInterfaceProfile,
 } from "./profile.js";
@@ -13,6 +17,60 @@ const validInput = (): Record<string, unknown> => ({
   ...TACHIKO_COMPACT_PORCELAIN_PROFILE,
   colors: { ...TACHIKO_COMPACT_PORCELAIN_PROFILE.colors },
 });
+
+const approvedOverrides = {
+  "familiar-spreadsheet": {
+    "surface.chrome": "#F3F4F6",
+    "surface.chrome.tint": "#EFF1F4",
+    "surface.inset": "#F0F2F5",
+    "text.primary": "#24292F",
+    "text.secondary": "#57606A",
+    "text.onTint": "#4B5563",
+    "text.link": "#1755B5",
+    "text.reference": "#1755B5",
+    "border.subtle": "#CCD1D8",
+    "border.control": "#7A8491",
+    "action.primary.background": "#245EB8",
+    "action.primary.hover": "#1D4E9B",
+    "action.primary.pressed": "#183F80",
+    "accent.foreground": "#1755B5",
+    "accent.background": "#EAF1FC",
+    "grid.line.horizontal": "#D7DCE2",
+    "grid.line.vertical": "#DFE3E8",
+    "grid.header.background": "#EBEDF0",
+    "grid.header.foreground": "#4B5563",
+    "selection.row.background": "#F0F5FD",
+    "selection.header.background": "#DDE9FA",
+    "selection.header.foreground": "#1755B5",
+    "selection.active.border": "#245EB8",
+    "focus.ring": "#245EB8",
+  },
+  "minimal-focus": {
+    "surface.chrome": "#FCFCFD",
+    "surface.chrome.tint": "#FCFCFD",
+    "surface.inset": "#F7F7F9",
+    "text.secondary": "#656570",
+    "text.onTint": "#5F606B",
+    "text.link": "#62528C",
+    "text.reference": "#62528C",
+    "border.subtle": "#E5E5EB",
+    "border.control": "#898793",
+    "action.primary.background": "#6C5B95",
+    "action.primary.hover": "#5E4D86",
+    "action.primary.pressed": "#514173",
+    "accent.foreground": "#62528C",
+    "accent.background": "#F5F2FA",
+    "grid.line.horizontal": "#EBEBF0",
+    "grid.line.vertical": "#F1F1F4",
+    "grid.header.background": "#FAFAFC",
+    "grid.header.foreground": "#5F606B",
+    "selection.row.background": "#F8F6FC",
+    "selection.header.background": "#F0ECF7",
+    "selection.header.foreground": "#62528C",
+    "selection.active.border": "#6C5B95",
+    "focus.ring": "#6C5B95",
+  },
+} as const;
 
 describe("Interface Profile v1 closed contract", () => {
   it("has exactly the canonical 29 roles and canonical Tachiko values", () => {
@@ -226,4 +284,104 @@ describe("Interface Profile v1 closed contract", () => {
       "data-ts-profile-chrome",
     ]);
   });
+
+  it.each(BUILT_IN_INTERFACE_PROFILE_IDS.flatMap((profileId) =>
+    (["compact", "comfortable"] as const).map((density) => [profileId, density] as const),
+  ))("resolves the closed built-in recipe %s at %s density", (profileId, density) => {
+    const result = resolveBuiltInInterfaceProfile(profileId, density);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const metadata = {
+      tachiko: { name: "Tachiko", typography: "tachiko-local", chrome: "porcelain" },
+      "familiar-spreadsheet": { name: "Familiar Spreadsheet", typography: "system-local", chrome: "structured" },
+      "minimal-focus": { name: "Minimal-Focus", typography: "tachiko-local", chrome: "quiet" },
+    }[profileId];
+    expect(result.value.profile).toMatchObject(metadata);
+    expect(result.value.profile.density).toBe(density);
+    expect(result.value.profile.colors).toHaveProperty("surface.app");
+    expect(Object.keys(result.value.variables)).toHaveLength(COLOR_ROLES.length);
+    expect(result.value.attributes["data-ts-profile-density"]).toBe(density);
+    expect(result.value.attributes["data-ts-profile-color-scheme"]).toBe("light");
+    expect(Object.isFrozen(result.value.profile.colors)).toBe(true);
+  });
+
+  it("matches all Phase A Familiar and Minimal role values and preserves Tachiko parity elsewhere", () => {
+    for (const [profileId, overrides] of Object.entries(approvedOverrides)) {
+      const result = resolveBuiltInInterfaceProfile(profileId, "compact");
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const { profile } = result.value;
+      for (const role of COLOR_ROLES) {
+        const expected = role in overrides
+          ? overrides[role as keyof typeof overrides]
+          : TACHIKO_COMPACT_PORCELAIN_PROFILE.colors[role];
+        expect(profile.colors[role], `${profileId}: ${role}`).toBe(expected);
+      }
+    }
+  });
+
+  it("preserves the original Tachiko compact recipe exactly and varies only density for the other combinations", () => {
+    const tachiko = resolveBuiltInInterfaceProfile("tachiko", "compact");
+    expect(tachiko.ok).toBe(true);
+    if (tachiko.ok) expect(tachiko.value.profile).toEqual(TACHIKO_COMPACT_PORCELAIN_PROFILE);
+
+    for (const profileId of BUILT_IN_INTERFACE_PROFILE_IDS) {
+      const compact = resolveBuiltInInterfaceProfile(profileId, "compact");
+      const comfortable = resolveBuiltInInterfaceProfile(profileId, "comfortable");
+      expect(compact.ok).toBe(true);
+      expect(comfortable.ok).toBe(true);
+      if (!compact.ok || !comfortable.ok) continue;
+      expect(comfortable.value.profile.colors).toEqual(compact.value.profile.colors);
+      expect(comfortable.value.profile.name).toBe(compact.value.profile.name);
+      expect(comfortable.value.profile.typography).toBe(compact.value.profile.typography);
+      expect(comfortable.value.profile.chrome).toBe(compact.value.profile.chrome);
+    }
+  });
+
+  it.each([
+    ["custom", "compact", "profileId"],
+    [{ schemaVersion: 1, name: "Tachiko" }, "compact", "profileId"],
+    ["tachiko", "spacious", "density"],
+    ["minimal-focus", null, "density"],
+  ] as const)("rejects non-built-in resolver input %j / %j", (profileId, density, path) => {
+    const result = resolveBuiltInInterfaceProfile(profileId, density);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((error) => error.path === path)).toBe(true);
+  });
+
+  it("keeps the report canvas border fixed while ordinary controls follow profile borders", async () => {
+    const css = await readFile(new URL("../sheet-shell.css", import.meta.url), "utf8");
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<style>${css}</style><button class="ts-button"></button><canvas class="ts-report-canvas"></canvas>`);
+      const edges: Array<{ control: string; report: string }> = [];
+      for (const profileId of BUILT_IN_INTERFACE_PROFILE_IDS) {
+        const resolved = resolveBuiltInInterfaceProfile(profileId, "compact");
+        expect(resolved.ok).toBe(true);
+        if (!resolved.ok) continue;
+        await page.evaluate(({ variables, attributes }) => {
+          const root = document.documentElement;
+          for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
+          for (const [name, value] of Object.entries(attributes)) root.setAttribute(name, value);
+        }, resolved.value);
+        edges.push(await page.evaluate(() => ({
+          control: getComputedStyle(document.querySelector(".ts-button")!).borderTopColor,
+          report: getComputedStyle(document.querySelector(".ts-report-canvas")!).borderTopColor,
+        })));
+      }
+      expect(edges.map(({ control }) => control)).toEqual([
+        "rgb(133, 139, 156)",
+        "rgb(122, 132, 145)",
+        "rgb(137, 135, 147)",
+      ]);
+      expect(edges.map(({ report }) => report)).toEqual([
+        "rgb(133, 139, 156)",
+        "rgb(133, 139, 156)",
+        "rgb(133, 139, 156)",
+      ]);
+    } finally {
+      await browser.close();
+    }
+  }, 15_000);
 });
