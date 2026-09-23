@@ -178,6 +178,26 @@ try {
       commands.compareDocumentPosition(views) & Node.DOCUMENT_POSITION_FOLLOWING;
   });
   assert.ok(selectorPosition, "Appearance precedes Document commands and remains outside Views");
+  const workbookTrigger = page.getByRole("button", { name: "Appearance", exact: true });
+  await workbookTrigger.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await workbookTrigger.getAttribute("aria-expanded"), "true", "keyboard opens the nonmodal Appearance popover");
+  let focusLeftPopover = false;
+  for (let tabCount = 0; tabCount < 10; tabCount += 1) {
+    await page.keyboard.press("Tab");
+    focusLeftPopover = await page.evaluate(() => {
+      const active = document.activeElement;
+      return Boolean(active && !active.closest(".ts-appearance-selector") && active.closest(".ts-header-actions"));
+    });
+    if (focusLeftPopover) break;
+  }
+  assert.equal(focusLeftPopover, true, "ordinary Tab order can move from Appearance into sibling Document commands");
+  await page.keyboard.press("Escape");
+  assert.equal(
+    await workbookTrigger.evaluate((button) => document.activeElement === button && button.getAttribute("aria-expanded") === "false"),
+    true,
+    "Escape closes the nonmodal popover and returns focus after focus has left it",
+  );
   await bindReport(page);
 
   await page.getByRole("tab", { name: "Table", exact: true }).click();
@@ -213,6 +233,41 @@ try {
   let writesBefore = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
   let saveBefore = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
   const inventory = await headerInventory(page);
+
+  await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+  await workbookTrigger.click();
+  await editor.focus();
+  const compositionEscapes = await editor.evaluate((input) => {
+    const results = [];
+    for (const { isComposing, keyCode } of [{ isComposing: true, keyCode: 0 }, { isComposing: false, keyCode: 229 }]) {
+      const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, isComposing });
+      if (keyCode === 229) Object.defineProperty(event, "keyCode", { value: 229 });
+      input.dispatchEvent(event);
+      results.push({ defaultPrevented: event.defaultPrevented, stillFocused: document.activeElement === input });
+    }
+    return results;
+  });
+  assert.deepEqual(compositionEscapes, [
+    { defaultPrevented: false, stillFocused: true },
+    { defaultPrevented: false, stillFocused: true },
+  ], "composing Escape variants do not prevent the editor event or transfer focus");
+  assert.equal(await workbookTrigger.getAttribute("aria-expanded"), "true", "composing Escape keeps the nonmodal popover open");
+  await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: input.value })));
+  await page.waitForTimeout(0);
+  await page.locator(".ts-header-actions button").first().focus();
+  await page.keyboard.press("Escape");
+  assert.equal(
+    await workbookTrigger.evaluate((button) => document.activeElement === button && button.getAttribute("aria-expanded") === "false"),
+    true,
+    "ordinary Escape from a sibling command still closes the popover and returns focus",
+  );
+  await editor.focus();
+  assert.deepEqual(
+    await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]),
+    draftBefore,
+    "composition Escape regression keeps the editor draft and selection",
+  );
+  assert.equal(await editError.textContent(), "The work did not accept this value. The draft was kept so you can correct it.");
 
   async function assertCompositionAxisMerge(axisOrder) {
     const runtimeAtStart = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
@@ -425,7 +480,7 @@ try {
     workMethodDelta: Object.entries(methodsAfter).reduce((sum, [name, count]) => sum + count - (methodsBefore[name] ?? 0), 0),
     reportPngBytes: reportPngBaseline.length,
     reportAppearanceMatrix: combos.map(({ profile: profileId, density }) => `${profileId}/${density}`),
-    composition: "queued radio presentation, two-axis revert/cancel, and both-axis profile-first/density-first synthetic regressions; no physical IME claim",
+    composition: "queued radio presentation, two-axis revert/cancel, both-axis merge orders, and isComposing/keyCode-229 Escape guards; no physical IME claim",
     storageCases: ["exact record", "restart restore", "corrupt read", "corrupt read + blocked write", "blocked read", "blocked write", "cross-tab no live swap"],
   }));
 } finally {

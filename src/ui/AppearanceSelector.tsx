@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import type {
   AppearanceDensity,
@@ -57,16 +57,26 @@ export function AppearanceSelector({ preference, onSelectProfile, onSelectDensit
     triggerRef.current?.focus();
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (open && event.key === "Escape") {
+  useEffect(() => {
+    if (!open) return;
+    const onDocumentKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.keyCode === 229
+      ) return;
       event.preventDefault();
       event.stopPropagation();
-      closeAndReturnFocus();
-    }
-  };
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", onDocumentKeyDown);
+    return () => document.removeEventListener("keydown", onDocumentKeyDown);
+  }, [open]);
 
   return (
-    <div className="ts-appearance-selector" onKeyDown={onKeyDown}>
+    <div className="ts-appearance-selector">
       <button
         ref={triggerRef}
         type="button"

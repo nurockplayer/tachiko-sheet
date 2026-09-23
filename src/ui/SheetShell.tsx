@@ -432,7 +432,7 @@ export function SheetShell(props: SheetShellProps) {
       if (frame !== null) window.cancelAnimationFrame(frame);
       grid.style.removeProperty("--ts-grid-available-height");
     };
-  }, [view, tab, currentness, errorMessage]);
+  }, [view, tab, currentness, errorMessage, busy, commitPending]);
 
   useEffect(() => {
     onDraftChangeRef.current(draftActive);

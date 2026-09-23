@@ -351,7 +351,10 @@ describe("Interface Profile v1 closed contract", () => {
 
   it("keeps the report canvas border fixed while ordinary controls follow profile borders", async () => {
     const css = await readFile(new URL("../sheet-shell.css", import.meta.url), "utf8");
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({
+      headless: true,
+      ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}),
+    });
     try {
       const page = await browser.newPage();
       await page.setContent(`<style>${css}</style><button class="ts-button"></button><canvas class="ts-report-canvas"></canvas>`);
