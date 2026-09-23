@@ -48,12 +48,16 @@
   --ts-ok-ink: #206c4e;
   --ts-ok-bg: #e9f6f0;
   --ts-radius: 7px;
+  --ts-profile-font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Hiragino Sans", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --ts-profile-command-target-min-height: 32px;
+  --ts-profile-grid-row-pitch: 28px;
+  --ts-profile-workbook-head-background: linear-gradient(108deg, var(--ts-surface-chrome-tint) 0%, var(--ts-surface-chrome) 35%, var(--ts-surface-chrome) 100%);
   --ts-shadow: 0 10px 30px -8px rgba(39, 33, 57, 0.15), 0 2px 6px rgba(39, 33, 57, 0.05);
 }
 
 .ts-app {
   color: var(--ts-ink);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Hiragino Sans", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-family: var(--ts-profile-font-family);
   font-size: 14px;
   line-height: 20px;
   min-height: 100vh;
@@ -63,6 +67,36 @@
   gap: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+:root[data-ts-profile-typography="system-local"] {
+  --ts-profile-font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+
+:root[data-ts-profile-density="comfortable"] {
+  --ts-profile-command-target-min-height: 36px;
+  --ts-profile-grid-row-pitch: 32px;
+}
+
+:root[data-ts-profile-chrome="porcelain"] {
+  --ts-radius: 7px;
+}
+
+:root[data-ts-profile-chrome="structured"] {
+  --ts-radius: 2px;
+  --ts-profile-workbook-head-background: var(--ts-surface-chrome);
+}
+
+:root[data-ts-profile-chrome="quiet"] {
+  --ts-radius: 4px;
+  --ts-profile-workbook-head-background: var(--ts-surface-chrome);
+}
+
+:root[data-ts-profile-chrome="structured"] .ts-button,
+:root[data-ts-profile-chrome="structured"] .ts-tab,
+:root[data-ts-profile-chrome="quiet"] .ts-button,
+:root[data-ts-profile-chrome="quiet"] .ts-tab {
+  box-shadow: none;
 }
 
 .ts-app *,
@@ -115,7 +149,7 @@
   background: var(--ts-error-bg);
   color: var(--ts-error-ink);
   padding: 9px 12px;
-  border-radius: var(--ts-radius);
+  border-radius: 7px;
   box-shadow: var(--ts-shadow);
 }
 
@@ -125,7 +159,7 @@
   border: 1px solid #e4c9a2;
   background: var(--ts-warn-bg);
   color: var(--ts-warn);
-  border-radius: var(--ts-radius);
+  border-radius: 7px;
 }
 
 /* ---------- Home ---------- */
@@ -140,8 +174,16 @@
 
 .ts-home-head {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ts-home-heading {
+  display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .ts-brand {
@@ -234,7 +276,7 @@
 
 .ts-button {
   font: inherit;
-  min-height: 32px;
+  min-height: var(--ts-profile-command-target-min-height);
   padding: 5px 11px;
   border: 1px solid var(--ts-line-strong);
   border-radius: var(--ts-radius);
@@ -307,7 +349,7 @@
   gap: 12px;
   min-height: 60px;
   padding: 8px clamp(16px, 3vw, 40px);
-  background: linear-gradient(108deg, var(--ts-surface-chrome-tint) 0%, var(--ts-surface-chrome) 35%, var(--ts-surface-chrome) 100%);
+  background: var(--ts-profile-workbook-head-background);
   border-bottom: 1px solid var(--ts-line);
 }
 
@@ -485,7 +527,7 @@
 }
 
 .ts-context-table select {
-  height: 32px;
+  height: var(--ts-profile-command-target-min-height);
   min-width: 160px;
   max-width: min(32vw, 320px);
   padding: 4px 28px 4px 9px;
@@ -519,7 +561,7 @@
 .ts-tab {
   font: inherit;
   flex: 0 0 auto;
-  min-height: 32px;
+  min-height: var(--ts-profile-command-target-min-height);
   font-size: 12px;
   font-weight: 500;
   color: var(--ts-ink-soft);
@@ -571,7 +613,8 @@
 
 .ts-grid-scroll {
   overflow: auto;
-  max-height: max(168px, calc(100vh - 164px));
+  min-height: 168px;
+  max-height: max(168px, var(--ts-grid-available-height, 100vh));
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -589,10 +632,10 @@
 
 .ts-grid th,
 .ts-grid td {
-  height: 28px;
+  height: var(--ts-profile-grid-row-pitch);
   border-right: 1px solid var(--ts-grid-vertical);
   border-bottom: 1px solid var(--ts-grid-horizontal);
-  padding: 4px 10px;
+  padding: 3px 10px;
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
@@ -882,28 +925,42 @@
   width: auto;
   min-width: 720px;
   height: auto;
-  border: 1px solid var(--ts-line-strong);
-  border-radius: var(--ts-radius);
+  border: 1px solid var(--ts-protected-border-control);
+  /* The exported report document stays independent of the app appearance. */
+  border-radius: 7px;
   background: #fff;
 }
 
 @media (max-width: 1023px) {
+  .ts-workbook-head .ts-appearance-selector .ts-appearance-popover {
+    left: 12px;
+    right: auto;
+    width: min(348px, calc(100vw - 48px));
+  }
   .ts-workbook-head {
     align-content: center;
     flex-wrap: wrap;
     min-height: 96px;
   }
   .ts-document-identity { flex-basis: 100%; }
-  .ts-grid-scroll { max-height: max(168px, calc(100vh - 200px)); }
 }
 
 @media (max-width: 599px) {
   .ts-home { margin-top: 14px; }
+  .ts-home-head { align-items: flex-start; flex-wrap: wrap; }
+  .ts-home-heading { flex: 1 1 100%; }
+  .ts-appearance-selector .ts-appearance-popover { left: 0; right: auto; }
   .ts-workbook-head {
     align-items: flex-start;
     min-height: 136px;
     padding-inline: 16px;
   }
+  .ts-workbook-head .ts-appearance-selector .ts-appearance-popover {
+    left: auto;
+    right: -12px;
+    width: min(348px, calc(100vw - 24px));
+  }
+  .ts-document-identity { flex-basis: calc(100% - 124px); }
   .ts-header-actions { width: 100%; }
   .ts-header-actions .ts-button { flex: 1 1 auto; padding-inline: 8px; }
   .ts-work-context {
@@ -921,7 +978,6 @@
   .ts-tabs, .ts-workbook-status { padding-inline: 16px; }
   .ts-workbook-status { min-height: 44px; }
   .ts-status-strip { flex-wrap: wrap; min-width: 0; }
-  .ts-grid-scroll { max-height: max(168px, calc(100vh - 304px)); }
   .ts-report-controls { grid-template-columns: 1fr; }
 }
 

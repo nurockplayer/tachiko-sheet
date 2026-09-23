@@ -3,10 +3,11 @@ import { App } from "./App.js";
 import { loadCoreKit } from "./core-loader.js";
 import { createLocalCopies } from "./host/local-copies.js";
 import { createSheetRuntime } from "./runtime/session.js";
+import { createBrowserAppearancePreferencePort } from "./host/appearance-preference.js";
+import { createAppearancePreferenceController } from "./application/appearance-preference.js";
 import {
-  TACHIKO_COMPACT_PORCELAIN_PROFILE,
   applyResolvedProfile,
-  resolveInterfaceProfile,
+  resolveBuiltInInterfaceProfile,
 } from "./ui/interface-profile/index.js";
 import type { KitLoader } from "./contracts.js";
 
@@ -20,13 +21,15 @@ async function boot(): Promise<void> {
   const root = document.getElementById("root");
   if (!root) throw new Error("The application root element is missing.");
 
-  const resolvedProfile = resolveInterfaceProfile(TACHIKO_COMPACT_PORCELAIN_PROFILE);
-  if (!resolvedProfile.ok) {
-    throw new Error("The built-in Tachiko interface profile is invalid.");
-  }
-  if (!applyResolvedProfile(document.documentElement, resolvedProfile.value)) {
-    throw new Error("The built-in Tachiko interface profile could not be applied.");
-  }
+  const appearancePreference = createAppearancePreferenceController(
+    createBrowserAppearancePreferencePort(),
+    (selection) => {
+      const resolvedProfile = resolveBuiltInInterfaceProfile(selection.profileId, selection.density);
+      if (!resolvedProfile.ok || !applyResolvedProfile(document.documentElement, resolvedProfile.value)) {
+        throw new Error("The selected built-in interface profile could not be applied.");
+      }
+    },
+  );
 
   let kitLoader: KitLoader = loadCoreKit;
   if (import.meta.env.MODE === "acceptance") {
@@ -35,13 +38,13 @@ async function boot(): Promise<void> {
     const runtime = createSheetRuntime(kitLoader);
     const copies = createLocalCopies();
     acceptance.installAcceptance({ runtime, copies });
-    createRoot(root).render(<App runtime={runtime} copies={copies} />);
+    createRoot(root).render(<App runtime={runtime} copies={copies} appearancePreference={appearancePreference} />);
     return;
   }
 
   const runtime = createSheetRuntime(kitLoader);
   const copies = createLocalCopies();
-  createRoot(root).render(<App runtime={runtime} copies={copies} />);
+  createRoot(root).render(<App runtime={runtime} copies={copies} appearancePreference={appearancePreference} />);
 }
 
 void boot();

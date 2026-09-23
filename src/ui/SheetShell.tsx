@@ -12,6 +12,11 @@ import {
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type {
+  AppearanceDensity,
+  AppearancePreferenceSnapshot,
+  AppearanceProfileId,
+} from "../application/appearance-preference.js";
+import type {
   Currentness,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
@@ -25,6 +30,7 @@ import type {
 } from "../contracts.js";
 import { reportPresentationTextLimitViolation } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
+import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
   cellKey,
@@ -99,6 +105,15 @@ export function reportRenderResetKey(
   });
 }
 
+/** Available grid viewport below its measured document chrome, with a usable floor. */
+function availableGridScrollHeight(
+  viewportHeight: number,
+  gridTop: number,
+  bottomGap = 12,
+): number {
+  return Math.max(168, Math.floor(viewportHeight - gridTop - bottomGap));
+}
+
 export function SheetShell(props: SheetShellProps) {
   const {
     view,
@@ -140,6 +155,68 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveReport = () => false,
   } = props;
 
+  const [appearanceSnapshot, setAppearanceSnapshot] = useState(() =>
+    props.appearancePreference.getSnapshot(),
+  );
+  const compositionEndTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
+  }, []);
+
+  function selectAppearanceProfile(profileId: AppearanceProfileId): AppearancePreferenceSnapshot {
+    const current = props.appearancePreference.getSnapshot();
+    const composing = current.composing;
+    const selection = current.pendingSelection ?? current.selection;
+    const snapshot = props.appearancePreference.select(profileId, selection.density);
+    if (!composing) setAppearanceSnapshot(snapshot);
+    return snapshot;
+  }
+
+  function selectAppearanceDensity(density: AppearanceDensity): AppearancePreferenceSnapshot {
+    const current = props.appearancePreference.getSnapshot();
+    const composing = current.composing;
+    const selection = current.pendingSelection ?? current.selection;
+    const snapshot = props.appearancePreference.select(selection.profileId, density);
+    if (!composing) setAppearanceSnapshot(snapshot);
+    return snapshot;
+  }
+
+  function beginAppearanceComposition(): void {
+    if (compositionEndTimer.current !== null) {
+      window.clearTimeout(compositionEndTimer.current);
+      compositionEndTimer.current = null;
+    }
+    props.appearancePreference.beginComposition();
+  }
+
+  function scheduleAppearanceCompositionEnd(): void {
+    if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
+    compositionEndTimer.current = window.setTimeout(() => {
+      compositionEndTimer.current = null;
+      const queued = props.appearancePreference.getSnapshot().pendingSelection;
+      const snapshot = props.appearancePreference.endComposition();
+      if (
+        queued !== null &&
+        snapshot.selection.profileId === queued.profileId &&
+        snapshot.selection.density === queued.density &&
+        snapshot.pendingSelection === null
+      ) {
+        setAppearanceSnapshot(snapshot);
+      }
+    }, 0);
+  }
+
+  function renderAppearanceSelector(): ReactNode {
+    return (
+      <AppearanceSelector
+        preference={appearanceSnapshot}
+        onSelectProfile={selectAppearanceProfile}
+        onSelectDensity={selectAppearanceDensity}
+      />
+    );
+  }
+
   const [tab, setTab] = useState<ActiveTab>("table");
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -172,6 +249,7 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
@@ -305,6 +383,56 @@ export function SheetShell(props: SheetShellProps) {
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
+
+  useLayoutEffect(() => {
+    const grid = gridScrollRef.current;
+    const appRoot = grid?.closest<HTMLElement>(".ts-app");
+    if (!grid || !appRoot || !view || tab !== "table") return;
+
+    let frame: number | null = null;
+    const measure = () => {
+      frame = null;
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const gridTop = grid.getBoundingClientRect().top;
+      grid.style.setProperty(
+        "--ts-grid-available-height",
+        `${availableGridScrollHeight(viewportHeight, gridTop)}px`,
+      );
+    };
+    const scheduleMeasure = () => {
+      if (frame === null) frame = window.requestAnimationFrame(measure);
+    };
+
+    measure();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
+    if (resizeObserver) {
+      appRoot.querySelectorAll<HTMLElement>(
+        ".ts-workbook-head, .ts-work-context, .ts-tabs, .ts-workbook-status, .ts-hint, .ts-notice, .ts-error",
+      ).forEach((element) => resizeObserver.observe(element));
+    }
+    const profileObserver = new MutationObserver(scheduleMeasure);
+    profileObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [
+        "data-ts-profile-color-scheme",
+        "data-ts-profile-typography",
+        "data-ts-profile-density",
+        "data-ts-profile-chrome",
+      ],
+    });
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", scheduleMeasure);
+    visualViewport?.addEventListener("resize", scheduleMeasure);
+
+    return () => {
+      window.removeEventListener("resize", scheduleMeasure);
+      visualViewport?.removeEventListener("resize", scheduleMeasure);
+      resizeObserver?.disconnect();
+      profileObserver.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      grid.style.removeProperty("--ts-grid-available-height");
+    };
+  }, [view, tab, currentness, errorMessage, busy, commitPending]);
 
   useEffect(() => {
     onDraftChangeRef.current(draftActive);
@@ -713,8 +841,11 @@ export function SheetShell(props: SheetShellProps) {
           </section>
         ) : null}
         <header className="ts-home-head">
-          <h1 className="ts-brand">Tachiko Sheet</h1>
-          <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>
+          <div className="ts-home-heading">
+            <h1 className="ts-brand">Tachiko Sheet</h1>
+            <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>
+          </div>
+          {renderAppearanceSelector()}
         </header>
         <section className="ts-card" aria-label="Open project">
           <h2 className="ts-h2">Open</h2>
@@ -814,6 +945,7 @@ export function SheetShell(props: SheetShellProps) {
             <h1 className="ts-title">{view ? view.title : ""}</h1>
           </div>
         </div>
+        {renderAppearanceSelector()}
         {renderWorkbookActions()}
       </header>
     );
@@ -885,7 +1017,7 @@ export function SheetShell(props: SheetShellProps) {
     return (
       <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className="ts-panel">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
-        <div className="ts-grid-scroll">
+        <div className="ts-grid-scroll" ref={gridScrollRef}>
           <table className="ts-grid" role="grid" aria-label="Table" aria-busy={busy}>
             <thead>
               <tr>
@@ -1379,7 +1511,12 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   return (
-    <div className="ts-app" data-view={view ? "workbook" : "home"}>
+    <div
+      className="ts-app"
+      data-view={view ? "workbook" : "home"}
+      onCompositionStartCapture={beginAppearanceComposition}
+      onCompositionEndCapture={scheduleAppearanceCompositionEnd}
+    >
       {errorMessage ? (
         <div className="ts-error" role="alert">
           {errorMessage}

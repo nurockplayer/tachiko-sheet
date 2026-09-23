@@ -255,6 +255,90 @@ export const TACHIKO_COMPACT_PORCELAIN_PROFILE: InterfaceProfileV1 = freezeProfi
   },
 });
 
+export type BuiltInInterfaceProfileId = "tachiko" | "familiar-spreadsheet" | "minimal-focus";
+export const BUILT_IN_INTERFACE_PROFILE_IDS: readonly BuiltInInterfaceProfileId[] = Object.freeze([
+  "tachiko",
+  "familiar-spreadsheet",
+  "minimal-focus",
+]);
+
+const FAMILIAR_SPREADSHEET_COLORS: Record<ColorRoleV1, HexColor> = {
+  ...TACHIKO_COMPACT_PORCELAIN_PROFILE.colors,
+  "surface.chrome": "#F3F4F6",
+  "surface.chrome.tint": "#EFF1F4",
+  "surface.inset": "#F0F2F5",
+  "text.primary": "#24292F",
+  "text.secondary": "#57606A",
+  "text.onTint": "#4B5563",
+  "text.link": "#1755B5",
+  "text.reference": "#1755B5",
+  "border.subtle": "#CCD1D8",
+  "border.control": "#7A8491",
+  "action.primary.background": "#245EB8",
+  "action.primary.hover": "#1D4E9B",
+  "action.primary.pressed": "#183F80",
+  "accent.foreground": "#1755B5",
+  "accent.background": "#EAF1FC",
+  "grid.line.horizontal": "#D7DCE2",
+  "grid.line.vertical": "#DFE3E8",
+  "grid.header.background": "#EBEDF0",
+  "grid.header.foreground": "#4B5563",
+  "selection.row.background": "#F0F5FD",
+  "selection.header.background": "#DDE9FA",
+  "selection.header.foreground": "#1755B5",
+  "selection.active.border": "#245EB8",
+  "focus.ring": "#245EB8",
+};
+
+const MINIMAL_FOCUS_COLORS: Record<ColorRoleV1, HexColor> = {
+  ...TACHIKO_COMPACT_PORCELAIN_PROFILE.colors,
+  "surface.chrome": "#FCFCFD",
+  "surface.chrome.tint": "#FCFCFD",
+  "surface.inset": "#F7F7F9",
+  "text.secondary": "#656570",
+  "text.onTint": "#5F606B",
+  "text.link": "#62528C",
+  "text.reference": "#62528C",
+  "border.subtle": "#E5E5EB",
+  "border.control": "#898793",
+  "action.primary.background": "#6C5B95",
+  "action.primary.hover": "#5E4D86",
+  "action.primary.pressed": "#514173",
+  "accent.foreground": "#62528C",
+  "accent.background": "#F5F2FA",
+  "grid.line.horizontal": "#EBEBF0",
+  "grid.line.vertical": "#F1F1F4",
+  "grid.header.background": "#FAFAFC",
+  "grid.header.foreground": "#5F606B",
+  "selection.row.background": "#F8F6FC",
+  "selection.header.background": "#F0ECF7",
+  "selection.header.foreground": "#62528C",
+  "selection.active.border": "#6C5B95",
+  "focus.ring": "#6C5B95",
+};
+
+const BUILT_IN_PROFILE_TEMPLATES: Readonly<Record<BuiltInInterfaceProfileId, InterfaceProfileV1>> = Object.freeze({
+  tachiko: TACHIKO_COMPACT_PORCELAIN_PROFILE,
+  "familiar-spreadsheet": freezeProfile({
+    schemaVersion: 1,
+    name: "Familiar Spreadsheet",
+    colorScheme: "light",
+    typography: "system-local",
+    density: "compact",
+    chrome: "structured",
+    colors: FAMILIAR_SPREADSHEET_COLORS,
+  }),
+  "minimal-focus": freezeProfile({
+    schemaVersion: 1,
+    name: "Minimal-Focus",
+    colorScheme: "light",
+    typography: "tachiko-local",
+    density: "compact",
+    chrome: "quiet",
+    colors: MINIMAL_FOCUS_COLORS,
+  }),
+});
+
 export type ResolvedInterfaceProfile = Readonly<{
   profile: InterfaceProfileV1;
   variables: Readonly<Record<`--${string}`, HexColor>>;
@@ -294,6 +378,32 @@ export function resolveInterfaceProfile(input: unknown): ProfileResolutionResult
   });
   resolvedProfiles.add(resolved);
   return { ok: true, value: resolved };
+}
+
+/**
+ * Resolve one of the three application-owned recipes at one of two fixed
+ * densities. This is the supported UI entry point; it accepts no caller-built
+ * profile object or custom profile identifier.
+ */
+export function resolveBuiltInInterfaceProfile(
+  profileId: unknown,
+  density: unknown,
+): ProfileResolutionResult {
+  const errors: ProfileValidationError[] = [];
+  if (!(BUILT_IN_INTERFACE_PROFILE_IDS as readonly unknown[]).includes(profileId)) {
+    errors.push({ path: "profileId", message: `must be one of: ${BUILT_IN_INTERFACE_PROFILE_IDS.join(", ")}` });
+  }
+  if (density !== "compact" && density !== "comfortable") {
+    errors.push({ path: "density", message: "must be one of: compact, comfortable" });
+  }
+  if (errors.length > 0) return { ok: false, errors: Object.freeze(errors) };
+
+  const template = BUILT_IN_PROFILE_TEMPLATES[profileId as BuiltInInterfaceProfileId];
+  return resolveInterfaceProfile(freezeProfile({
+    ...template,
+    density: density as DensityV1,
+    colors: { ...template.colors },
+  }));
 }
 
 const isStyleTarget = (target: unknown): target is { style: { setProperty(name: string, value: string): void } } =>
