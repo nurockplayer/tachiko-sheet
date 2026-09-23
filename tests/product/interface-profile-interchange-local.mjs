@@ -58,6 +58,49 @@ async function reportPng(page) {
   return readFile(await (await pending).path());
 }
 
+async function headerFocusPaint(page, target) {
+  await page.keyboard.press("Tab");
+  await target.focus();
+  const geometry = await target.evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return {
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y,
+      visible: node.matches(":focus-visible"),
+      color: style.outlineColor,
+      width: style.outlineWidth,
+      offset: style.outlineOffset,
+      expanded: node.getAttribute("aria-expanded"),
+    };
+  });
+  assert.equal(geometry.visible, true, "keyboard focus is visible on the closed header control");
+  assert.equal(geometry.width, "3px");
+  assert.equal(geometry.offset, "2px");
+  const pngData = (await page.screenshot({ animations: "disabled" })).toString("base64");
+  const pixels = await page.evaluate(async ({ encoded, x, y }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${encoded}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const scaleX = image.naturalWidth / innerWidth;
+    const scaleY = image.naturalHeight / innerHeight;
+    const sample = (sampleY) => {
+      const value = context.getImageData(Math.round(x * scaleX), Math.round(sampleY * scaleY), 1, 1).data;
+      return `rgb(${value[0]}, ${value[1]}, ${value[2]})`;
+    };
+    return { ring: sample(y - 3), adjacent: sample(y - 8) };
+  }, { encoded: pngData, x: geometry.x, y: geometry.y });
+  const contrast = contrastRgb(pixels.ring, pixels.adjacent);
+  assert.equal(pixels.ring, geometry.color, "screenshot samples the rendered 3px focus outline");
+  assert.ok(contrast >= 3, `header focus outline contrasts with adjacent rendered gradient: ${JSON.stringify({ ...geometry, ...pixels, contrast })}`);
+  return { ...geometry, ...pixels, contrast };
+}
+
 async function bindReport(page) {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
@@ -231,6 +274,20 @@ try {
       "text.reference": "#333333",
       "border.control": "#818798",
     } }), "utf8")],
+    ["unsafe-header-focus", Buffer.from(JSON.stringify({ ...imported, name: "Unsafe Header Focus", colors: {
+      ...imported.colors,
+      "surface.chrome.tint": "#949494", "surface.chrome": "#FFFFFF", "focus.ring": "#949494",
+      "surface.app": "#FFFFFF", "surface.content": "#FFFFFF", "surface.inset": "#FFFFFF",
+      "grid.canvas": "#FFFFFF", "grid.header.background": "#FFFFFF", "selection.row.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF", "selection.header.background": "#FFFFFF",
+      "accent.background": "#FFFFFF", "action.primary.background": "#000000",
+      "action.primary.hover": "#000000", "action.primary.pressed": "#000000",
+      "text.primary": "#000000", "text.secondary": "#000000", "text.onTint": "#000000",
+      "text.link": "#000000", "text.reference": "#000000", "accent.foreground": "#000000",
+      "grid.header.foreground": "#000000", "selection.header.foreground": "#000000",
+      "action.primary.foreground": "#FFFFFF", "border.control": "#000000",
+      "selection.active.border": "#000000",
+    } }), "utf8")],
     ["executable", Buffer.from(JSON.stringify({ ...imported, script: "alert(1)", colors: { ...imported.colors, "surface.app": "#FFFFFF" } }), "utf8")],
   ];
   const rejectionState = await appearanceState(page);
@@ -248,6 +305,10 @@ try {
     if (name === "unsafe-computed-indicator") {
       assert.match(await alert.innerText(), /computed-cell dotted state indicator against selected active cell/,
         "the previously admitted focused computed-cell counterexample is rejected by its actual-use rule");
+    }
+    if (name === "unsafe-header-focus") {
+      assert.match(await alert.innerText(), /header keyboard focus indicator/,
+        "Oracle's formerly admitted Porcelain tint/focus counterexample is rejected");
     }
     if (name === "malformed-json") {
       const rejectionPaint = await alert.evaluate((node) => {
@@ -500,6 +561,31 @@ try {
     `imported focused computed-state cue retains 3:1 against its painted background: ${JSON.stringify({ ...computedPaint, contrast: computedContrast })}`);
   await computedPage.close();
 
+  const headerFocus = [];
+  const focusPage = await context.newPage();
+  await focusPage.goto(LOCAL_ORIGIN);
+  await focusPage.getByTestId("project-ready").waitFor();
+  for (const density of ["compact", "comfortable"]) {
+    const safeHeader = { ...imported, name: `Safe Header ${density}`, density, colors: {
+      ...imported.colors, "focus.ring": "#818798",
+    } };
+    await focusPage.getByRole("button", { name: "Appearance", exact: true }).click();
+    await uploadProfile(focusPage, Buffer.from(JSON.stringify(safeHeader), "utf8"));
+    await focusPage.locator(".ts-appearance-candidate").getByRole("button", { name: "Apply profile", exact: true }).click();
+    await focusPage.getByRole("radio", { name: new RegExp(`Imported Safe Header ${density}`) }).waitFor();
+    await focusPage.keyboard.press("Escape");
+    for (const width of [320, 600, 1023, 1024]) {
+      await focusPage.setViewportSize({ width, height: 900 });
+      const appearance = focusPage.locator(".ts-appearance-trigger");
+      const appearancePaint = await headerFocusPaint(focusPage, appearance);
+      assert.equal(appearancePaint.expanded, "false", "Appearance remains closed for the header focus sample");
+      const command = focusPage.getByRole("group", { name: "Document commands" }).getByRole("button", { name: "Refresh", exact: true });
+      const commandPaint = await headerFocusPaint(focusPage, command);
+      headerFocus.push({ density, width, appearance: appearancePaint.contrast, command: commandPaint.contrast });
+    }
+  }
+  await focusPage.close();
+
   const corrupt = await context.newPage();
   await corrupt.addInitScript(({ storageKey, manifest }) => {
     localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "imported", profile: manifest }));
@@ -513,7 +599,7 @@ try {
 
   console.log(JSON.stringify({ case: "#70 real-entry profile interchange", status: "PASS", rejected: rejected.map(([name]) => name),
     builtInBytes: builtInBytes.byteLength, importedBytes: exported.byteLength, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"),
-    networkDelta: network.length - networkBefore, computedPaint: { ...computedPaint, contrast: computedContrast },
+    networkDelta: network.length - networkBefore, computedPaint: { ...computedPaint, contrast: computedContrast }, headerFocus,
     narrow, narrowTall, narrowShort, shortView }));
 } finally {
   await context?.close();

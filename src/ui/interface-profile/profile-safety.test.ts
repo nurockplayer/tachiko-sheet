@@ -132,6 +132,50 @@ describe("interface profile contrast admission", () => {
     expect(oracleResult.ok).toBe(false);
   });
 
+  it("rejects the formerly admitted Tachiko-derived profile whose header focus fades on the tint endpoint", () => {
+    const base = builtIn("tachiko", "compact");
+    const formerlyAdmitted = mutant(base, {
+      "surface.chrome.tint": "#949494",
+      "surface.chrome": "#FFFFFF",
+      "surface.content": "#FFFFFF",
+      "surface.inset": "#FFFFFF",
+      "grid.canvas": "#FFFFFF",
+      "grid.header.background": "#FFFFFF",
+      "selection.row.background": "#FFFFFF",
+      "selection.header.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF",
+      "accent.background": "#FFFFFF",
+      "focus.ring": "#949494",
+      "text.primary": "#000000",
+      "text.secondary": "#000000",
+      "text.onTint": "#000000",
+      "text.link": "#000000",
+      "text.reference": "#000000",
+      "grid.header.foreground": "#000000",
+      "selection.header.foreground": "#000000",
+      "accent.foreground": "#000000",
+      "border.control": "#000000",
+      "selection.active.border": "#000000",
+      "action.primary.background": "#000000",
+      "action.primary.hover": "#000000",
+      "action.primary.pressed": "#000000",
+      "action.primary.foreground": "#FFFFFF",
+    });
+
+    const result = admitInterfaceProfileContrast(formerlyAdmitted);
+    const headerFocus = matchingContext(
+      result,
+      /Porcelain chrome gradient step 0\/256: header keyboard focus indicator/,
+    );
+    expect(headerFocus).toEqual([
+      expect.objectContaining({ foreground: "#949494", background: "#949494", required: 3, ratio: 1 }),
+    ]);
+    if (result.ok) throw new Error("Expected the header focus contrast gap to reject this profile");
+    expect(result.errors.every((error) =>
+      "context" in error && error.context.includes("header keyboard focus indicator"),
+    )).toBe(true);
+  });
+
   it("guards all primary fill states over Porcelain chrome and checks focused grid pairs", () => {
     const base = builtIn("tachiko", "compact");
     const gradient = admitInterfaceProfileContrast(mutant(base, {
@@ -214,9 +258,12 @@ describe("interface profile contrast admission", () => {
       "surface.chrome.tint": "#FFFFFF",
       "surface.chrome": "#000000",
       "border.control": "#777777",
+      "focus.ring": "#777777",
     }));
     const borderFailures = matchingContext(middleStep, /border\.control Appearance trigger boundary/);
     expect(borderFailures.some((error) => error.context.includes("step 128/256"))).toBe(true);
+    const focusFailures = matchingContext(middleStep, /header keyboard focus indicator/);
+    expect(focusFailures.some((error) => error.context.includes("step 128/256"))).toBe(true);
   });
 
   it("rejects the superseded Tachiko control boundary against its Porcelain gradient", () => {

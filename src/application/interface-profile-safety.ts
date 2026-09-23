@@ -101,6 +101,39 @@ type Pair = Readonly<{
   required: 3 | 4.5;
 }>;
 
+type PorcelainGradientConsumer = Readonly<{
+  foreground: ColorRoleV1;
+  context: (step: number) => string;
+  required: 3 | 4.5;
+}>;
+
+const PORCELAIN_GRADIENT_CONSUMERS: readonly PorcelainGradientConsumer[] = Object.freeze([
+  ...TEXT_ROLES.map((foreground) => Object.freeze({
+    foreground,
+    context: (step: number) => `Porcelain chrome gradient step ${step}/256: ${foreground} text`,
+    required: 4.5 as const,
+  })),
+  ...([
+    "action.primary.background",
+    "action.primary.hover",
+    "action.primary.pressed",
+  ] as const).map((foreground) => Object.freeze({
+    foreground,
+    context: (step: number) => `Porcelain chrome gradient step ${step}/256: ${foreground} primary control boundary`,
+    required: 3 as const,
+  })),
+  Object.freeze({
+    foreground: "border.control",
+    context: (step: number) => `Porcelain chrome gradient step ${step}/256: border.control Appearance trigger boundary`,
+    required: 3 as const,
+  }),
+  Object.freeze({
+    foreground: "focus.ring",
+    context: (step: number) => `Porcelain chrome gradient step ${step}/256: header keyboard focus indicator`,
+    required: 3 as const,
+  }),
+]);
+
 const APPROVED_PAIRS: readonly Pair[] = Object.freeze([
   ...TEXT_ROLES.flatMap((foreground) => TEXT_SURFACES.map((background) =>
     textPair(foreground, background, `${foreground} text on ${background}`),
@@ -236,45 +269,15 @@ export function admitInterfaceProfileContrast(input: unknown): ProfileSafetyResu
     check(pair.context, "#865015", colors[pair.background], 4.5);
   }
 
-  // Porcelain uses a CSS gradient from chrome.tint to chrome. Sample both
-  // text and each primary-action fill state over the full shared header
-  // backdrop as a conservative guard for responsive and zoomed placements.
-  // Browser evidence still qualifies the actually painted CSS gradient.
+  // Porcelain uses a CSS gradient from chrome.tint to chrome. Sample every
+  // named painted consumer over the full backdrop, including the header's
+  // keyboard focus outline. Browser evidence still qualifies the actual CSS.
   if (profile.chrome === "porcelain") {
     for (let step = 0; step <= 256; step += 1) {
       const background = interpolateSrgb(colors["surface.chrome.tint"], colors["surface.chrome"], step / 256);
-      for (const foreground of TEXT_ROLES) {
-        check(
-          `Porcelain chrome gradient step ${step}/256: ${foreground} text`,
-          colors[foreground],
-          background,
-          4.5,
-        );
+      for (const consumer of PORCELAIN_GRADIENT_CONSUMERS) {
+        check(consumer.context(step), colors[consumer.foreground], background, consumer.required);
       }
-    }
-    for (const foreground of [
-      "action.primary.background",
-      "action.primary.hover",
-      "action.primary.pressed",
-    ] as const) {
-      for (let step = 0; step <= 256; step += 1) {
-        const background = interpolateSrgb(colors["surface.chrome.tint"], colors["surface.chrome"], step / 256);
-        check(
-          `Porcelain chrome gradient step ${step}/256: ${foreground} primary control boundary`,
-          colors[foreground],
-          background,
-          3,
-        );
-      }
-    }
-    for (let step = 0; step <= 256; step += 1) {
-      const background = interpolateSrgb(colors["surface.chrome.tint"], colors["surface.chrome"], step / 256);
-      check(
-        `Porcelain chrome gradient step ${step}/256: border.control Appearance trigger boundary`,
-        colors["border.control"],
-        background,
-        3,
-      );
     }
   }
 
