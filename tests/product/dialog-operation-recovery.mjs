@@ -54,11 +54,13 @@ try {
   // During that pending interval every user dismissal route stays blocked.
   await page.evaluate(() => window.__tachikoAcceptance.deferNextImportApplication());
   const importAction = importDialog.getByRole("button", { name: "Import candidate", exact: true });
-  await importAction.click();
+  await importAction.focus();
+  await importAction.press("Enter");
   await page.waitForFunction(() => window.__tachikoAcceptance.importSpreadsheetRequestCount() > 0);
-  await importDialog.locator("select").first().focus();
   assert.equal(await importAction.isDisabled(), true, "dispatched Import disables its action");
   assert.equal(await importDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true, "dispatched Import disables Cancel");
+  assert.equal(await importDialog.locator("h2").evaluate((heading) => heading === document.activeElement), true, "pending Import moves focus naturally to the enabled dialog heading before disabling its action");
+  assert.equal(await importDialog.evaluate((dialog) => dialog.contains(document.activeElement)), true, "pending Import focus remains contained in the dialog");
   await page.keyboard.press("Escape");
   assert.equal(await importDialog.count(), 1, "Escape cannot dismiss dispatched Import");
   await page.locator(".ts-modal-backdrop").click({ position: { x: 1, y: 1 } });

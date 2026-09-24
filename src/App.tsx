@@ -48,6 +48,19 @@ export interface AppProps {
 
 export type RecoveryDraftBoundary = "reobserve" | "replacement" | "close";
 
+/** A completed copy is saved only for its exact current revision with no retained draft. */
+export function settledSaveStatus(
+  previous: SaveStatus,
+  savedRevision: string | null,
+  liveRevision: string | null,
+  hasUncommittedDraft: boolean,
+): SaveStatus {
+  if (previous === "failed") return previous;
+  return savedRevision !== null && liveRevision !== null && savedRevision === liveRevision && !hasUncommittedDraft
+    ? "saved"
+    : "not-saved";
+}
+
 /** Keep an unknown-edit draft only while reobserving its own occurrence. */
 export function recoveryDraftAfterBoundary(
   draft: string | null,
@@ -414,9 +427,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function evaluateSavedStatus(): void {
     const live = viewRef.current;
     const saved = savedRevisionRef.current;
-    if (saveInFlightRef.current || saved === null || live === null) return;
-    if (live.revision !== saved || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current) return;
-    setSaveStatus((previous) => (previous === "failed" ? previous : "saved"));
+    if (saveInFlightRef.current) return;
+    const hasUncommittedDraft =
+      draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current;
+    setSaveStatus((previous) => settledSaveStatus(previous, saved, live?.revision ?? null, hasUncommittedDraft));
   }
 
   function guardReplacement(): void {

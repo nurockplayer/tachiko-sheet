@@ -419,6 +419,31 @@ const cases = [
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
     },
   ],
+  [
+    "product-focus-05 completed copy settles status while retaining notes draft",
+    async (page) => {
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+      const retainedDraft = "unapplied notes retained across copy creation";
+      await notes.fill(retainedDraft);
+      await page.waitForFunction(() => document.querySelector("[data-work-dirty]")?.getAttribute("data-work-dirty") === "true");
+
+      const saveTrigger = page.getByRole("button", { name: "Save a copy", exact: true });
+      await saveTrigger.click();
+      const dialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+      const copyName = `retained-draft-${Date.now()}`;
+      await dialog.getByRole("textbox", { name: "Copy name", exact: true }).fill(copyName);
+      await dialog.getByRole("button", { name: "Create copy", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+
+      const saveStatus = page.getByTestId("save-status");
+      await page.waitForFunction(() => document.querySelector('[data-testid="save-status"]')?.textContent?.trim() === "Not saved yet");
+      assert.equal(await saveStatus.textContent(), "Not saved yet", "completed copy with a retained draft does not claim saved or remain pending");
+      assert.equal(await saveTrigger.isEnabled(), true, "completed copy re-enables Save a copy");
+      assert.equal(await notes.inputValue(), retainedDraft, "the local notes draft remains available after copy creation");
+      assert.ok(await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), copyName), "the older committed work was durably copied");
+    },
+  ],
 ];
 
 let failures = 0;

@@ -265,6 +265,8 @@ export function SheetShell(props: SheetShellProps) {
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const importPendingFocusRef = useRef<HTMLHeadingElement | null>(null);
   const copyNameInputRef = useRef<HTMLInputElement | null>(null);
   const copyParentMessageAtAttemptRef = useRef<string | null>(message);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -737,6 +739,9 @@ export function SheetShell(props: SheetShellProps) {
     const inspection = interop?.importInspection;
     if (!inspection || importPending) return;
     setImportError(null);
+    // Keep focus inside the modal before React disables the activated Import
+    // button for this non-abortable dispatched operation.
+    importPendingFocusRef.current?.focus();
     setImportPending(true);
     const selection: ImportSelection = {
       column_types: importTypes as ImportSelection["column_types"],
@@ -852,6 +857,13 @@ export function SheetShell(props: SheetShellProps) {
   function keepEditing(): void {
     setCloseOpen(false);
     requestAnimationFrame(() => {
+      if (!view) {
+        const recoveryTrigger = recoveryCloseTriggerRef.current;
+        if (recoveryTrigger?.isConnected) {
+          recoveryTrigger.focus();
+          return;
+        }
+      }
       const prior = lastCellRef.current;
       if (prior?.isConnected && prior.closest('table[aria-label="Table"]')) {
         prior.focus();
@@ -897,7 +909,7 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
             </button>
-            <button type="button" className="ts-button ts-button--ghost" onClick={() => void requestClose()} disabled={busy || commitPending}>
+            <button type="button" className="ts-button ts-button--ghost" ref={recoveryCloseTriggerRef} onClick={() => void requestClose()} disabled={busy || commitPending}>
               Close and abandon recovery
             </button>
           </section>
@@ -1665,8 +1677,9 @@ export function SheetShell(props: SheetShellProps) {
         <Modal variant="import" label="Review import candidate" onCancel={cancelImport} dismissDisabled={importPending}>
           <div className="ts-dialog-intro">
             <h2
+              ref={importPendingFocusRef}
               className="ts-h2"
-              tabIndex={interop.importInspection.source.ledger.length ? 0 : undefined}
+              tabIndex={interop.importInspection.source.ledger.length ? 0 : -1}
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
             >Review import candidate</h2>
             <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
