@@ -135,6 +135,10 @@ try {
   await page.waitForFunction(() => window.__tachikoAcceptance.importSpreadsheetRequestCount() > 0);
   assert.equal(await importAction.isDisabled(), true, "dispatched Import disables its action");
   assert.equal(await importDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true, "dispatched Import disables Cancel");
+  const pendingSelectors = importDialog.locator(".ts-import-columns select");
+  const submittedTypeChoices = await pendingSelectors.evaluateAll((selectors) => selectors.map((selector) => selector.value));
+  assert.ok(submittedTypeChoices.length > 0, "the candidate has visible type choices before dispatch");
+  assert.equal(await pendingSelectors.evaluateAll((selectors) => selectors.every((selector) => selector.disabled)), true, "dispatched Import visibly freezes all type selectors");
   const importHeading = importDialog.locator("h2");
   assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "pending Import moves focus naturally to the dialog heading before disabling its action");
   await page.keyboard.press("Tab");
@@ -148,11 +152,36 @@ try {
   }), true, "Shift+Tab from the pending heading wraps to the last enabled modal target");
   await page.keyboard.press("Tab");
   assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Tab from the last pending modal target wraps to its first target");
+  assert.deepEqual(await pendingSelectors.evaluateAll((selectors) => selectors.map((selector) => selector.value)), submittedTypeChoices, "pending focus traversal preserves the submitted type choices");
   await page.keyboard.press("Escape");
   assert.equal(await importDialog.count(), 1, "Escape cannot dismiss dispatched Import");
   await page.locator(".ts-modal-backdrop").click({ position: { x: 1, y: 1 } });
   assert.equal(await importDialog.count(), 1, "backdrop cannot dismiss dispatched Import");
   await page.evaluate(() => window.__tachikoAcceptance.releaseImportApplication());
+  await importDialog.waitFor({ state: "detached" });
+  await page.getByTestId("project-ready").waitFor();
+
+  // A delayed rejected application keeps the submitted choice visible while
+  // pending, then restores editable selectors for correction and retry.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  const postImportUnsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  if (await postImportUnsaved.count()) await postImportUnsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await input.setInputFiles(invalidNumberCsv);
+  await importDialog.waitFor();
+  const rejectedSelector = importDialog.locator(".ts-import-columns select").first();
+  await rejectedSelector.selectOption("number");
+  await page.evaluate(() => window.__tachikoAcceptance.deferNextImportApplication());
+  const previousImportRequests = await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount());
+  await importDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await page.waitForFunction((previous) => window.__tachikoAcceptance.importSpreadsheetRequestCount() > previous, previousImportRequests);
+  assert.equal(await rejectedSelector.isDisabled(), true, "type selector is frozen during the dispatched Import");
+  assert.equal(await rejectedSelector.inputValue(), "number", "the pending selector continues to show its submitted type");
+  await page.evaluate(() => window.__tachikoAcceptance.releaseImportApplication());
+  await importDialog.getByRole("alert").waitFor();
+  assert.equal(await rejectedSelector.isEnabled(), true, "a rejected Import re-enables candidate type correction");
+  assert.equal(await rejectedSelector.inputValue(), "number", "rejection retains the type that was actually submitted");
+  await rejectedSelector.selectOption("text");
+  await importDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   await importDialog.waitFor({ state: "detached" });
   await page.getByTestId("project-ready").waitFor();
 
