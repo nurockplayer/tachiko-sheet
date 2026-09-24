@@ -1556,31 +1556,34 @@ export function SheetShell(props: SheetShellProps) {
       ) : null}
       {view ? renderWorkbook() : renderHome()}
       {copyOpen ? (
-        <Modal label="Save a copy" onCancel={closeCopyDialog}>
-          <h2 className="ts-h2">Save a copy</h2>
-          <p className="ts-subtle">Creates a new copy in this browser profile. It does not update an existing one.</p>
-          <label className="ts-field-label" htmlFor={copyNameId}>
-            Copy name
-          </label>
-          <input
-            id={copyNameId}
-            className="ts-text-input"
-            data-autofocus="true"
-            value={copyName}
-            aria-describedby={copyError ? copyErrorId : undefined}
-            onChange={(event) => {
-              setCopyError(null);
-              setCopyName(event.currentTarget.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !isComposingEvent(event)) {
-                event.preventDefault();
-                void createCopy();
-              }
-            }}
-          />
+        <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog}>
+          <div className="ts-dialog-intro">
+            <h2 className="ts-h2">Save a copy</h2>
+            <p className="ts-subtle">Creates a new copy in this browser profile. It does not update an existing one.</p>
+          </div>
+          <div className="ts-dialog-field">
+            <label className="ts-field-label" htmlFor={copyNameId}>Copy name</label>
+            <input
+              id={copyNameId}
+              className="ts-text-input"
+              data-autofocus="true"
+              value={copyName}
+              disabled={copyPending}
+              aria-describedby={copyError ? copyErrorId : undefined}
+              onChange={(event) => {
+                setCopyError(null);
+                setCopyName(event.currentTarget.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !isComposingEvent(event)) {
+                  event.preventDefault();
+                  void createCopy();
+                }
+              }}
+            />
+          </div>
           {copyError ? (
-            <p className="ts-dialog-error" id={copyErrorId}>
+            <p className="ts-dialog-error" id={copyErrorId} role="alert">
               {copyError}
             </p>
           ) : null}
@@ -1600,26 +1603,32 @@ export function SheetShell(props: SheetShellProps) {
               disabled={copyPending || copyName.trim() === "" || hasInvalidReportDraft}
               aria-busy={copyPending}
             >
-              Create copy
+              {copyPending ? "Working…" : "Create copy"}
             </button>
           </div>
         </Modal>
       ) : null}
       {interop?.importInspection ? (
-        <Modal label="Review import candidate" onCancel={cancelImport}>
-          <h2 className="ts-h2">Review import candidate</h2>
-          <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
-          {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint">No source-fidelity findings were reported for this candidate.</p>}
-          <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
-          {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
+        <Modal variant="import" label="Review import candidate" onCancel={cancelImport}>
+          <div className="ts-dialog-intro">
+            <h2 className="ts-h2">Review import candidate</h2>
+            <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
+          </div>
+          <div className="ts-dialog-scroll">
+            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
+            {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No source-fidelity findings were reported for this candidate.</p>}
+            {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
+          </div>
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal label="Confirm download" onCancel={cancelDownload}><h2 className="ts-h2">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p>{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint">The exporter reported no fidelity findings for this output.</p>}<div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) cancelDownload(); }); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) cancelDownload(); }); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
-        <Modal label="Unsaved work" onCancel={keepEditing}>
-          <h2 className="ts-h2">Unsaved work</h2>
-          <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+        <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
+          <div className="ts-dialog-intro">
+            <h2 className="ts-h2">Unsaved work</h2>
+            <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+          </div>
           <div className="ts-dialog-actions">
             <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
               Keep editing
@@ -1634,7 +1643,7 @@ export function SheetShell(props: SheetShellProps) {
   );
 }
 
-function Modal({ label, onCancel, children }: { label: string; onCancel: () => void; children: ReactNode }) {
+function Modal({ label, onCancel, children, variant = "review" }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review" }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1678,7 +1687,7 @@ function Modal({ label, onCancel, children }: { label: string; onCancel: () => v
     >
       <div
         ref={ref}
-        className="ts-modal"
+        className={`ts-modal ts-modal--${variant}`}
         role="dialog"
         aria-modal="true"
         aria-label={label}

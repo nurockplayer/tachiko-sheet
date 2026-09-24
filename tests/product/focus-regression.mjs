@@ -55,6 +55,42 @@ async function editImpact(page, value) {
 
 const cases = [
   [
+    "product-focus-00 shared dialog geometry follows desktop and phone references",
+    async (page) => {
+      const saveTrigger = page.getByRole("button", { name: "Save a copy", exact: true });
+      await saveTrigger.click();
+      const save = page.getByRole("dialog", { name: "Save a copy", exact: true });
+      const desktopSave = await save.boundingBox();
+      assert.equal(Math.round(desktopSave.width), 600);
+      assert.equal(Math.round(desktopSave.height), 360);
+      await page.keyboard.press("Escape");
+      assert.equal(await saveTrigger.evaluate((element) => element === document.activeElement), true);
+
+      await page.setViewportSize({ width: 320, height: 640 });
+      await saveTrigger.click();
+      const compactSave = await save.boundingBox();
+      assert.equal(Math.round(compactSave.x), 16);
+      assert.equal(Math.round(compactSave.width), 288);
+      const saveActions = await save.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().top),
+      );
+      assert.ok(Math.abs(saveActions[0] - saveActions[1]) < 1, "Save actions remain side by side on phone");
+      await save.getByRole("button", { name: "Cancel", exact: true }).click();
+
+      await editImpact(page, "3");
+      await page.locator(".ts-command-overflow > summary").click();
+      await page.getByRole("button", { name: "Close project", exact: true }).click();
+      const close = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+      const compactClose = await close.boundingBox();
+      assert.equal(Math.round(compactClose.x), 16);
+      assert.equal(Math.round(compactClose.width), 288);
+      const closeActions = await close.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().top),
+      );
+      assert.ok(closeActions[1] > closeActions[0], "Close choices stack on phone in approved order");
+    },
+  ],
+  [
     "product-focus-00 a published edit visibly distinguishes edited unsaved work",
     async (page) => {
       assert.equal(
