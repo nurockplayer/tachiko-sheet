@@ -88,7 +88,7 @@ async function openCanary(context, page) {
       await page.locator(".ts-command-overflow > button").click();
     }
   }
-  const canary = page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true });
+  const canary = page.getByRole("button", { name: "Try sales example", exact: true });
   try {
     await canary.waitFor({ state: "visible", timeout: 2500 });
   } catch (error) {
@@ -547,6 +547,33 @@ async function auditHomeViewportBounds(page) {
   await page.locator('.ts-app[data-view="home"]').waitFor();
 
   const savedCopy = page.getByRole("button", { name: "Open saved Viewport home probe", exact: true });
+  const homePresentation = await page.evaluate(() => ({
+    sections: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => section.getAttribute("aria-label")),
+    homeCards: document.querySelectorAll(".ts-home > .ts-card").length,
+    appearance: document.querySelectorAll(".ts-home-head .ts-appearance-selector").length,
+    openLabel: document.querySelector(".ts-home-open-actions .ts-home-file-action")?.textContent?.trim(),
+    importLabel: document.querySelector(".ts-home-import-action")?.textContent?.trim(),
+    savedTimestamp: document.querySelector(".ts-copy-meta")?.textContent?.trim(),
+  }));
+  assert.deepEqual(homePresentation.sections, ["Open project", "Import spreadsheet", "Saved copies"]);
+  assert.equal(homePresentation.homeCards, 0, "Home tasks use the approved divider hierarchy without elevated cards");
+  assert.equal(homePresentation.appearance, 1, "Home keeps Appearance available");
+  assert.equal(homePresentation.openLabel, "Open project folder");
+  assert.equal(homePresentation.importLabel, "Choose CSV or XLSX");
+  assert.match(homePresentation.savedTimestamp, /^Saved \d+ /);
+  const folderInput = page.getByTestId("open-project");
+  await page.getByRole("button", { name: "Appearance", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  const folderFocus = await folderInput.evaluate((input) => ({
+    active: document.activeElement === input,
+    focusVisible: input.matches(":focus-visible"),
+    outlineStyle: getComputedStyle(input.parentElement).outlineStyle,
+    outlineWidth: getComputedStyle(input.parentElement).outlineWidth,
+  }));
+  assert.equal(folderFocus.active, true, "Tab reaches the real folder input after Appearance");
+  assert.equal(folderFocus.focusVisible, true, "the real folder input remains keyboard focusable");
+  assert.equal(folderFocus.outlineStyle, "solid", "the visible folder action shows keyboard focus");
+  assert.equal(folderFocus.outlineWidth, "3px");
   for (const [width, height] of [[320, 640], [1512, 982]]) {
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.scrollTo(0, 0));

@@ -459,8 +459,13 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain('data-testid="open-project"');
     expect(markup).toContain("webkitdirectory");
     expect(markup).toContain("Try example");
+    expect(markup).toContain("Try sales example");
+    expect(markup).toContain("Choose a local project folder. Its source stays unchanged.");
+    expect(markup).toContain("Review the source and column types before importing.");
     expect(markup).toContain("Open saved review-copy");
-    expect(markup).toContain("2026-09-12T10:00:00.000Z");
+    expect(markup).toContain("Saved 12 September 2026, 10:00");
+    expect(markup).toContain('class="ts-home-section" aria-label="Open project"');
+    expect(markup).not.toContain('class="ts-card" aria-label="Open project"');
     expect(markup).not.toContain('data-testid="project-ready"');
   });
 
