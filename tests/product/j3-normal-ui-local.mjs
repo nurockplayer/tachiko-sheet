@@ -132,7 +132,28 @@ try {
     dialog.locator(".ts-dialog-actions").boundingBox(),
   ]);
   assert.ok(alertBox && actionBox && alertBox.y + alertBox.height <= actionBox.y, "visible import feedback precedes the reachable fixed actions");
+  await page.setViewportSize({ width: 320, height: 350 });
+  const shortImport = await dialog.boundingBox();
+  assert.ok(shortImport.height <= 302 && shortImport.y >= 0 && shortImport.y + shortImport.height <= 350, `short Import dialog stays within the viewport: ${JSON.stringify(shortImport)}`);
+  const shortImportScroll = await dialog.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+    contentOverflowY: getComputedStyle(element.querySelector(".ts-dialog-scroll")).overflowY,
+  }));
+  assert.ok(shortImportScroll.scrollHeight > shortImportScroll.clientHeight, `short Import uses parent scrolling: ${JSON.stringify(shortImportScroll)}`);
+  assert.equal(shortImportScroll.overflowY, "auto");
+  assert.equal(shortImportScroll.contentOverflowY, "visible", "short Import exposes content to parent scrolling");
+  const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
+  await dialog.locator("select").first().focus();
+  for (let index = 0; index < 13; index += 1) await page.keyboard.press("Tab");
+  assert.equal(await importAction.evaluate((element) => element === document.activeElement), true, "keyboard navigation reaches the Import action after the long candidate");
+  const [shortErrorBox, shortActionBox] = await Promise.all([importAlert.boundingBox(), importAction.boundingBox()]);
+  const scrolledImport = await dialog.boundingBox();
+  assert.ok(shortErrorBox && shortActionBox && shortErrorBox.y >= scrolledImport.y && shortErrorBox.y + shortErrorBox.height <= scrolledImport.y + scrolledImport.height, "long Import error scrolls into the visible modal with the action");
+  assert.ok(shortActionBox.y >= scrolledImport.y && shortActionBox.y + shortActionBox.height <= scrolledImport.y + scrolledImport.height, "keyboard-focused Import action scrolls into the visible modal");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
 
   // I01/I07: normal CSV selection, visible candidate and explicit choices.

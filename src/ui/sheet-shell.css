@@ -1297,6 +1297,20 @@ body { margin: 0; }
   }
 }
 
+@media (max-height: 639px) {
+  .ts-modal--import,
+  .ts-modal--review {
+    height: auto;
+    overflow-y: auto;
+  }
+  .ts-modal--import .ts-dialog-scroll,
+  .ts-modal--review .ts-dialog-scroll {
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+  }
+}
+
 @media (forced-colors: active) {
   .ts-app { background: Canvas; color: CanvasText; }
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }

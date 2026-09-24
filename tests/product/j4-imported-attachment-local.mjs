@@ -361,10 +361,36 @@ try {
   assert.equal(downloadActions[1].x + downloadActions[1].width - Math.round(downloadPanel.x), 577);
   assert.equal(downloadActions[1].width, 120);
   assert.equal(downloadActions[0].height, 32);
+  await page.setViewportSize({ width: 320, height: 300 });
+  const shortDownloadPanel = await downloadReview.boundingBox();
+  assert.ok(shortDownloadPanel.height <= 252 && shortDownloadPanel.y >= 0 && shortDownloadPanel.y + shortDownloadPanel.height <= 300, `short Download dialog stays within the viewport: ${JSON.stringify(shortDownloadPanel)}`);
+  const downloadExplanation = downloadReview.locator(".ts-dialog-intro p");
+  const explanationBox = await downloadExplanation.boundingBox();
+  assert.ok(explanationBox && explanationBox.y >= shortDownloadPanel.y && explanationBox.y + explanationBox.height <= shortDownloadPanel.y + shortDownloadPanel.height, "Download consent explanation is visible before scrolling to its action");
+  const shortDownloadScroll = await downloadReview.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+    contentOverflowY: getComputedStyle(element.querySelector(".ts-dialog-scroll")).overflowY,
+  }));
+  assert.ok(shortDownloadScroll.scrollHeight > shortDownloadScroll.clientHeight, `short Download uses parent scrolling: ${JSON.stringify(shortDownloadScroll)}`);
+  assert.equal(shortDownloadScroll.overflowY, "auto");
+  assert.equal(shortDownloadScroll.contentOverflowY, "visible", "short Download exposes review content to parent scrolling");
+  const downloadButton = downloadReview.getByRole("button", { name: "Download", exact: true });
+  await downloadReview.getByRole("button", { name: "Cancel", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await downloadButton.evaluate((element) => element === document.activeElement), true, "keyboard navigation reaches Download consent after Cancel");
+  const [shortDownloadAction, scrolledDownloadPanel] = await Promise.all([
+    downloadButton.boundingBox(),
+    downloadReview.boundingBox(),
+  ]);
+  assert.ok(shortDownloadAction && shortDownloadPanel.y <= shortDownloadAction.y && shortDownloadAction.y + shortDownloadAction.height <= shortDownloadPanel.y + shortDownloadPanel.height, `Download consent action scrolls into the short dialog: ${JSON.stringify({ initialPanel: shortDownloadPanel, currentPanel: scrolledDownloadPanel, action: shortDownloadAction, scroll: await downloadReview.evaluate((element) => ({ scrollTop: element.scrollTop, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, overflowY: getComputedStyle(element).overflowY })) })}`);
+  assert.ok(await downloadReview.evaluate((element) => element.scrollTop > 0), "keyboard focus scrolls the short Download dialog to its consent action");
   const downloaded = page.waitForEvent("download");
-  await downloadReview.getByRole("button", { name: "Download", exact: true }).click();
+  await downloadButton.click();
   const exported = path.join(fixtureDirectory, "reopened-export.xlsx");
   await (await downloaded).saveAs(exported);
+  await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   // The exported source is now independent evidence. If the reopened project
   // is still dirty, take the normal explicit close path before importing it.
