@@ -246,7 +246,7 @@ try {
 
   const shellHandle = await page.locator(".ts-app").elementHandle();
   const editorHandle = await editor.elementHandle();
-  const cellHandle = await page.locator(".ts-cell--focused").elementHandle();
+  const cellHandle = await editor.evaluateHandle((input) => input.closest("td"));
   assert.ok(shellHandle && editorHandle && cellHandle);
   const draftBefore = await editor.evaluate((input) => [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]);
   assert.deepEqual(draftBefore.slice(0, 3), ["not a number", 3, 7], "rejected numeric draft and selection remain in the editor");

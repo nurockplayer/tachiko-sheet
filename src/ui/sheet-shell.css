@@ -69,6 +69,13 @@
   box-sizing: border-box;
 }
 
+body { margin: 0; }
+
+.ts-app[data-view="workbook"] {
+  height: 100%;
+  min-height: 0;
+}
+
 :root[data-ts-profile-typography="system-local"] {
   --ts-profile-font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
 }
@@ -109,6 +116,12 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.ts-app-root:has(> .ts-app[data-view="workbook"]) {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
 }
 
 .ts-notices {
@@ -683,7 +696,8 @@
 
 .ts-panel {
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  overflow: auto;
 }
 
 /* ---------- Grid ---------- */

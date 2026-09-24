@@ -2,6 +2,7 @@
 // from computed browser styles, with a screenshot fallback for gradients.
 // This is a proxy, not physical AT or browser zoom.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -374,6 +375,198 @@ async function geometry(page, width, combo) {
   return result;
 }
 
+async function auditWorkbookViewportBounds(page, width, height, profile) {
+  await page.setViewportSize({ width, height });
+  for (const viewName of ["Table", "Brief", "Import & export"]) {
+    await page.getByRole("tab", { name: viewName, exact: true }).click();
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector('[role="tabpanel"]');
+      const footer = document.querySelector(".ts-workspace-footer");
+      const grid = document.querySelector(".ts-grid-scroll");
+      const panelRect = panel?.getBoundingClientRect();
+      const footerRect = footer?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        scrollY,
+        panelTop: panelRect?.top ?? null,
+        panelBottom: panelRect?.bottom ?? null,
+        panelHeight: panelRect?.height ?? null,
+        panelClientHeight: panel?.clientHeight ?? null,
+        panelScrollHeight: panel?.scrollHeight ?? null,
+        panelOverflowY: panel ? getComputedStyle(panel).overflowY : "missing",
+        gridClientWidth: grid?.clientWidth ?? null,
+        gridScrollWidth: grid?.scrollWidth ?? null,
+        gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
+        footerTop: footerRect?.top ?? null,
+        footerBottom: footerRect?.bottom ?? null,
+      };
+    });
+    const label = `${width}x${height} ${profile} ${viewName}`;
+    evidence(layout.panelOverflowY === "auto", `${label} panel can scroll its own long content`, layout);
+    evidence(layout.panelBottom <= layout.footerTop + 1, `${label} panel ends before the Views/status footer`, layout);
+    evidence(layout.footerBottom <= height + 1, `${label} keeps the complete Views/status footer in the viewport`, layout);
+    evidence(layout.pageHeight <= height + 1 && layout.scrollY === 0, `${label} does not push the document beyond the viewport`, layout);
+    if (width === 320 && viewName === "Brief") {
+      evidence(layout.panelScrollHeight > layout.panelClientHeight,
+        `${label} scrolls the long Brief content inside its panel`, layout);
+    }
+    if (width === 320 && viewName === "Table") {
+      evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth,
+        `${label} preserves the Table's own horizontal grid scroller`, layout);
+    }
+    observations.push({ workbookViewport: label, ...layout });
+  }
+}
+
+async function auditHomeViewportBounds(page) {
+  await page.setViewportSize({ width: 1512, height: 982 });
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Viewport home probe");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save a copy" }).waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const savedCopy = page.getByRole("button", { name: "Open saved Viewport home probe", exact: true });
+  for (const [width, height] of [[320, 640], [1512, 982]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const layout = await page.evaluate(() => {
+      const root = document.querySelector(".ts-app-root");
+      const app = document.querySelector('.ts-app[data-view="home"]');
+      const home = document.querySelector(".ts-home");
+      const notices = document.querySelector(".ts-notices");
+      const rootRect = root?.getBoundingClientRect();
+      const appRect = app?.getBoundingClientRect();
+      const noticesRect = notices?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        appHeight: app?.getBoundingClientRect().height ?? null,
+        homeHeight: home?.scrollHeight ?? null,
+        rootHeight: rootRect?.height ?? null,
+        rootHeightStyle: root ? getComputedStyle(root).height : null,
+        rootMinHeightStyle: root ? getComputedStyle(root).minHeight : null,
+        appBottom: appRect?.bottom ?? null,
+        noticesTop: noticesRect?.top ?? null,
+        noticesBottom: noticesRect?.bottom ?? null,
+      };
+    });
+    evidence(layout.pageWidth <= width, `${width}x${height} Home with a saved copy has no horizontal overflow`, layout);
+    evidence(layout.pageHeight >= height, `${width}x${height} Home retains natural document height`, layout);
+    evidence(layout.rootHeight >= layout.appHeight && layout.rootMinHeightStyle !== "0px",
+      `${width}x${height} Home root expands with its content`, layout);
+    if (layout.appBottom !== null && layout.noticesTop !== null) {
+      evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,
+        `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);
+    }
+    await savedCopy.scrollIntoViewIfNeeded();
+    const copyRect = await savedCopy.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
+    });
+    evidence(copyRect.top >= 0 && copyRect.bottom <= height,
+      `${width}x${height} saved copy action can be reached by scrolling Home`, { ...layout, copyRect });
+    observations.push({ homeViewport: `${width}x${height}`, ...layout, copyRect });
+  }
+}
+
+async function auditFirstEntryStates(browser, dist) {
+  const sizes = [[320, 640], [1512, 982]];
+  const pendingContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(pendingContext, dist);
+  let releaseManifest;
+  let markManifestRequested;
+  const manifestGate = new Promise((resolve) => { releaseManifest = resolve; });
+  const manifestRequested = new Promise((resolve) => { markManifestRequested = resolve; });
+  const pendingPage = await pendingContext.newPage();
+  await pendingPage.route("**/examples/release-plan/manifest.json", async (route) => {
+    markManifestRequested();
+    await manifestGate;
+    const manifest = await readFile(path.join(dist, "examples/release-plan/manifest.json"));
+    await route.fulfill({ status: 200, contentType: "application/json", body: manifest });
+  });
+  await pendingPage.goto(LOCAL_ORIGIN, { waitUntil: "domcontentloaded" });
+  await pendingPage.getByTestId("initial-launch").waitFor();
+  await manifestRequested;
+  for (const [width, height] of sizes) {
+    await pendingPage.setViewportSize({ width, height });
+    const layout = await pendingPage.evaluate(() => {
+      const root = document.querySelector(".ts-app-root");
+      const content = document.querySelector('[data-testid="initial-launch"]');
+      const rootRect = root?.getBoundingClientRect();
+      const contentRect = content?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        rootBottom: rootRect?.bottom ?? null,
+        contentLeft: contentRect?.left ?? null,
+        contentRight: contentRect?.right ?? null,
+        contentTop: contentRect?.top ?? null,
+        contentBottom: contentRect?.bottom ?? null,
+        notices: document.querySelector(".ts-notices")?.getBoundingClientRect().toJSON() ?? null,
+      };
+    });
+    evidence(layout.pageWidth <= width, `${width}x${height} first-entry loading has no horizontal overflow`, layout);
+    evidence(layout.contentLeft >= 0 && layout.contentRight <= width && layout.contentTop >= 0 && layout.contentBottom <= layout.rootBottom,
+      `${width}x${height} first-entry loading content fits its natural root`, layout);
+    if (layout.notices) evidence(layout.notices.top >= layout.contentBottom - 1 && layout.notices.bottom <= layout.pageHeight + 1,
+      `${width}x${height} first-entry loading legal notice follows content without clipping`, layout);
+    observations.push({ firstEntry: `loading ${width}x${height}`, ...layout });
+  }
+  releaseManifest();
+  await pendingPage.getByTestId("project-ready").waitFor();
+  await pendingContext.close();
+
+  const failureContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(failureContext, dist);
+  const failurePage = await failureContext.newPage();
+  await failurePage.route("**/examples/release-plan/manifest.json", (route) =>
+    route.fulfill({ status: 503, contentType: "text/plain", body: "controlled initial-open failure" }));
+  await failurePage.goto(LOCAL_ORIGIN, { waitUntil: "domcontentloaded" });
+  const alert = failurePage.getByRole("alert").filter({ hasText: "example file manifest.json is unavailable (503)" });
+  await alert.waitFor();
+  for (const [width, height] of sizes) {
+    await failurePage.setViewportSize({ width, height });
+    const layout = await failurePage.evaluate(() => {
+      const root = document.querySelector(".ts-app-root");
+      const app = document.querySelector('.ts-app[data-view="home"]');
+      const alert = document.querySelector(".ts-error");
+      const rootRect = root?.getBoundingClientRect();
+      const appRect = app?.getBoundingClientRect();
+      const alertRect = alert?.getBoundingClientRect();
+      const noticesRect = document.querySelector(".ts-notices")?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        rootBottom: rootRect?.bottom ?? null,
+        appBottom: appRect?.bottom ?? null,
+        alertLeft: alertRect?.left ?? null,
+        alertRight: alertRect?.right ?? null,
+        alertTop: alertRect?.top ?? null,
+        alertBottom: alertRect?.bottom ?? null,
+        noticesTop: noticesRect?.top ?? null,
+      };
+    });
+    evidence(layout.pageWidth <= width, `${width}x${height} first-entry error has no horizontal overflow`, layout);
+    evidence(layout.alertLeft >= 0 && layout.alertRight <= width && layout.alertTop >= 0 && layout.alertBottom <= layout.appBottom,
+      `${width}x${height} first-entry error remains within Home content`, layout);
+    if (layout.noticesTop !== null) evidence(layout.noticesTop >= layout.appBottom - 1,
+      `${width}x${height} first-entry error legal notice does not overlap Home`, layout);
+    observations.push({ firstEntry: `error ${width}x${height}`, ...layout });
+  }
+  await failureContext.close();
+}
+
 async function focusAudit(page, tag) {
   const trigger = page.getByRole("button", { name: "Appearance", exact: true });
   await trigger.focus();
@@ -626,6 +819,12 @@ async function main() {
       }
     }
 
+    for (const profile of profiles) {
+      await choose(page, profile.id, "comfortable");
+      await auditWorkbookViewportBounds(page, 320, 640, profile.id);
+      await auditWorkbookViewportBounds(page, 1512, 982, profile.id);
+    }
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -695,6 +894,8 @@ async function main() {
 
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
+    await auditHomeViewportBounds(page);
+    await auditFirstEntryStates(browser, dist);
   } finally {
     await browser.close();
   }
@@ -725,6 +926,9 @@ async function main() {
         scrollState,
       })),
     },
+    workbookViewportAudit: observations.filter((item) => item.workbookViewport),
+    homeViewportAudit: observations.filter((item) => item.homeViewport),
+    firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,
     forcedColorSelectedProfileRadioPaint: observations
