@@ -916,16 +916,16 @@ body { margin: 0; }
 
 .ts-modal {
   background: var(--ts-surface);
-  border: 1px solid var(--ts-line);
-  border-radius: 10px;
-  padding: 24px;
+  border: 1px solid #dfe2ea;
+  border-radius: 12px;
+  padding: 24px 22px 24px 24px;
   width: min(600px, 100%);
   max-height: calc(100dvh - 48px);
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0;
-  box-shadow: 0 16px 36px rgba(37, 39, 57, 0.16), 0 2px 8px rgba(37, 39, 57, 0.08);
+  box-shadow: 0 16px 48px -12px rgba(37, 39, 53, 0.24);
 }
 
 .ts-modal--save { min-height: 360px; }
@@ -944,25 +944,24 @@ body { margin: 0; }
 
 .ts-modal .ts-dialog-intro {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .ts-modal .ts-h2 {
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 600;
   line-height: 28px;
-  letter-spacing: -0.01em;
 }
 
 .ts-modal p { line-height: 20px; }
 
 .ts-modal--save .ts-dialog-field {
   display: grid;
-  gap: 6px;
-  margin-top: 40px;
+  gap: 4px;
+  margin-top: 48px;
 }
 
-.ts-modal--save .ts-text-input { min-height: 36px; }
+.ts-modal--save .ts-text-input { min-height: 32px; }
 
 .ts-modal .ts-dialog-error {
   margin-top: 8px;
@@ -974,6 +973,7 @@ body { margin: 0; }
   margin-top: auto;
   padding-top: 24px;
   gap: 12px;
+  justify-content: space-between;
 }
 
 .ts-modal--review,
@@ -1035,17 +1035,19 @@ body { margin: 0; }
 
 .ts-modal--save .ts-dialog-actions > .ts-button--primary { min-width: 144px; }
 
-.ts-modal--review .ts-dialog-actions > .ts-button--primary { min-width: 124px; }
+.ts-modal--review .ts-dialog-actions > .ts-button--primary { min-width: 120px; }
 
-.ts-modal--import .ts-dialog-actions > .ts-button--primary { min-width: 172px; }
+.ts-modal--import .ts-dialog-actions > .ts-button--primary { min-width: 168px; }
 
-.ts-modal .ts-dialog-actions > .ts-button:not(.ts-button--primary) { min-width: 88px; }
+.ts-modal--save .ts-dialog-actions > .ts-button:first-child,
+.ts-modal--import .ts-dialog-actions > .ts-button:first-child,
+.ts-modal--review .ts-dialog-actions > .ts-button:first-child { min-width: 88px; }
 
-.ts-modal--close .ts-dialog-actions > .ts-button { min-width: 164px; }
+.ts-modal--close .ts-dialog-actions > .ts-button:first-child { min-width: 128px; }
+
+.ts-modal--close .ts-dialog-actions > .ts-button--danger { min-width: 196px; }
 
 .ts-modal .ts-dialog-error:empty { display: none; }
-
-.ts-dialog-actions > .ts-button { min-height: 36px; }
 
 .ts-dialog-field .ts-field-label { font-weight: 400; }
 

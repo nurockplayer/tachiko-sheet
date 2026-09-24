@@ -57,14 +57,70 @@ const cases = [
   [
     "product-focus-00 shared dialog geometry follows desktop and phone references",
     async (page) => {
+      await page.setViewportSize({ width: 1512, height: 982 });
       const saveTrigger = page.getByRole("button", { name: "Save a copy", exact: true });
       await saveTrigger.click();
       const save = page.getByRole("dialog", { name: "Save a copy", exact: true });
       const desktopSave = await save.boundingBox();
       assert.equal(Math.round(desktopSave.width), 600);
       assert.equal(Math.round(desktopSave.height), 360);
+      assert.equal(Math.round(desktopSave.x), 456);
+      assert.equal(Math.round(desktopSave.y), 311);
+      const saveMaterial = await save.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const title = getComputedStyle(element.querySelector("h2"));
+        return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow, titleSize: title.fontSize, titleLine: title.lineHeight, titleWeight: title.fontWeight };
+      });
+      assert.deepEqual(saveMaterial, {
+        radius: "12px",
+        border: "rgb(223, 226, 234)",
+        shadow: "rgba(37, 39, 53, 0.24) 0px 16px 48px -12px",
+        titleSize: "20px",
+        titleLine: "28px",
+        titleWeight: "600",
+      });
+      assert.match(await save.locator(".ts-dialog-intro p").evaluate((paragraph) => paragraph.innerHTML), /profile\.<br>/);
+      const desktopSaveActions = await save.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+        }),
+      );
+      assert.equal(desktopSaveActions[0].x - Math.round(desktopSave.x), 25);
+      assert.equal(desktopSaveActions[0].width, 88);
+      assert.equal(desktopSaveActions[1].x + desktopSaveActions[1].width - Math.round(desktopSave.x), 577);
+      assert.equal(desktopSaveActions[1].width, 144);
+      assert.equal(desktopSaveActions[0].height, 32);
       await page.keyboard.press("Escape");
       assert.equal(await saveTrigger.evaluate((element) => element === document.activeElement), true);
+
+      await editImpact(page, "3");
+      await page.getByRole("button", { name: "Close project", exact: true }).click();
+      const desktopClose = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+      const desktopClosePanel = await desktopClose.boundingBox();
+      assert.equal(Math.round(desktopClosePanel.width), 600);
+      assert.equal(Math.round(desktopClosePanel.height), 260);
+      assert.equal(Math.round(desktopClosePanel.x), 456);
+      assert.equal(Math.round(desktopClosePanel.y), 361);
+      const closeMaterial = await desktopClose.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
+      });
+      assert.equal(closeMaterial.radius, "12px");
+      assert.equal(closeMaterial.border, "rgb(223, 226, 234)");
+      assert.equal(closeMaterial.shadow, saveMaterial.shadow);
+      const desktopCloseActions = await desktopClose.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+        }),
+      );
+      assert.equal(desktopCloseActions[0].x - Math.round(desktopClosePanel.x), 25);
+      assert.equal(desktopCloseActions[0].width, 128);
+      assert.equal(desktopCloseActions[1].x + desktopCloseActions[1].width - Math.round(desktopClosePanel.x), 577);
+      assert.equal(desktopCloseActions[1].width, 196);
+      assert.equal(desktopCloseActions[0].height, 32);
+      await desktopClose.getByRole("button", { name: "Keep editing", exact: true }).click();
 
       await page.setViewportSize({ width: 320, height: 640 });
       await saveTrigger.click();
@@ -77,7 +133,6 @@ const cases = [
       assert.ok(Math.abs(saveActions[0] - saveActions[1]) < 1, "Save actions remain side by side on phone");
       await save.getByRole("button", { name: "Cancel", exact: true }).click();
 
-      await editImpact(page, "3");
       await page.locator(".ts-command-overflow > summary").click();
       await page.getByRole("button", { name: "Close project", exact: true }).click();
       const close = page.getByRole("dialog", { name: "Unsaved work", exact: true });

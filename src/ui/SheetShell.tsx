@@ -1559,7 +1559,7 @@ export function SheetShell(props: SheetShellProps) {
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog}>
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Save a copy</h2>
-            <p className="ts-subtle">Creates a new copy in this browser profile. It does not update an existing one.</p>
+            <p className="ts-subtle">Creates a new copy in this browser profile.<br />It does not update an existing one.</p>
           </div>
           <div className="ts-dialog-field">
             <label className="ts-field-label" htmlFor={copyNameId}>Copy name</label>

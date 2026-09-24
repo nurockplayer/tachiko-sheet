@@ -57,12 +57,33 @@ async function waitForHomeOpen(page) {
 }
 
 async function importFixture(page) {
+  await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
   const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await dialog.waitFor();
   const approvedPanel = await dialog.boundingBox();
   assert.equal(Math.round(approvedPanel.width), 600, "import review uses the approved desktop panel width");
   assert.equal(Math.round(approvedPanel.height), 584, "import review retains its approved content frame");
+  assert.equal(Math.round(approvedPanel.x), 456);
+  assert.equal(Math.round(approvedPanel.y), 199);
+  const importMaterial = await dialog.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
+  });
+  assert.equal(importMaterial.radius, "12px");
+  assert.equal(importMaterial.border, "rgb(223, 226, 234)");
+  assert.equal(importMaterial.shadow, "rgba(37, 39, 53, 0.24) 0px 16px 48px -12px");
+  const importActions = await dialog.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+    }),
+  );
+  assert.equal(importActions[0].x - Math.round(approvedPanel.x), 25);
+  assert.equal(importActions[0].width, 88);
+  assert.equal(importActions[1].x + importActions[1].width - Math.round(approvedPanel.x), 577);
+  assert.equal(importActions[1].width, 168);
+  assert.equal(importActions[0].height, 32);
   assert.match(await dialog.textContent(), /2 sheet\(s\)/, "the normal import review must expose both source sheets");
   const columns = dialog.locator("select");
   await page.setViewportSize({ width: 320, height: 640 });
@@ -312,12 +333,35 @@ try {
   assert.match(await page.getByLabel("Cross-table diagnostics", { exact: true }).textContent(), /lookup\.missing_key: PEN/);
 
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  const downloaded = page.waitForEvent("download");
+  await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
   const downloadReview = page.getByRole("dialog", { name: "Confirm download", exact: true });
   const downloadPanel = await downloadReview.boundingBox();
   assert.equal(Math.round(downloadPanel.width), 600, "download review uses the approved desktop panel width");
   assert.equal(Math.round(downloadPanel.height), 360, "download review retains its approved content frame");
+  assert.equal(Math.round(downloadPanel.x), 456);
+  assert.equal(Math.round(downloadPanel.y), 311);
+  const downloadMaterial = await downloadReview.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
+  });
+  assert.deepEqual(downloadMaterial, {
+    radius: "12px",
+    border: "rgb(223, 226, 234)",
+    shadow: "rgba(37, 39, 53, 0.24) 0px 16px 48px -12px",
+  });
+  const downloadActions = await downloadReview.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+    }),
+  );
+  assert.equal(downloadActions[0].x - Math.round(downloadPanel.x), 25);
+  assert.equal(downloadActions[0].width, 88);
+  assert.equal(downloadActions[1].x + downloadActions[1].width - Math.round(downloadPanel.x), 577);
+  assert.equal(downloadActions[1].width, 120);
+  assert.equal(downloadActions[0].height, 32);
+  const downloaded = page.waitForEvent("download");
   await downloadReview.getByRole("button", { name: "Download", exact: true }).click();
   const exported = path.join(fixtureDirectory, "reopened-export.xlsx");
   await (await downloaded).saveAs(exported);
