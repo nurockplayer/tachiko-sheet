@@ -171,6 +171,31 @@ try {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
 
+  // A rejected real Number import belongs to the active candidate dialog.
+  // Correcting its type and succeeding must clear the stale parent failure.
+  const correctedNumberCsv = path.join(output, "corrected-number.csv");
+  await writeFile(correctedNumberCsv, "value\nnot-a-number\n", "utf8");
+  dialog = await choose(page, correctedNumberCsv);
+  await dialog.locator("select").first().selectOption("number");
+  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  const correctedImportAlert = dialog.getByRole("alert");
+  await correctedImportAlert.waitFor();
+  assert.equal(await page.getByRole("alert").count(), 1, "failed Import exposes one accessible alert");
+  assert.equal(await correctedImportAlert.evaluate((alert) => alert.closest('[role="dialog"]')?.getAttribute("aria-modal")), "true", "failed Import alert is owned by the active candidate dialog");
+  const specificImportFailure = (await correctedImportAlert.textContent())?.trim() ?? "";
+  assert.ok(specificImportFailure.length > 0, "failed Import retains a recovery explanation");
+  assert.notEqual(specificImportFailure, "The import was not applied. Your source selection is still available.", "candidate shows the specific parent recovery detail in place of the generic Shell fallback");
+  await dialog.locator("select").first().selectOption("text");
+  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.getByRole("alert").count(), 0, "successful corrected Import clears the stale failure alert");
+  assert.match(await page.locator("[role=grid]").textContent(), /not-a-number/, "corrected Text Import preserves the source value");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  const correctedImportClose = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  await correctedImportClose.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await page.getByLabel("Choose CSV or XLSX", { exact: true }).waitFor();
+
   // I01/I07: normal CSV selection, visible candidate and explicit choices.
   await importWithTypes(page, messyCsv);
   console.log("J3 normal UI: imported CSV");

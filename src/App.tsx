@@ -885,6 +885,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (!pending || !bytes || !begin()) return false;
     try {
       guardReplacement();
+      // A valid retry owns the visible status from this point. Recovery gates
+      // above retain their message and fail-closed state unchanged.
+      setMessage(null);
       // Inspection is not dispatch. Replace the earlier inspection snapshot
       // at the actual import boundary so unknown-import recovery restores the
       // latest same-occurrence report, dirty marker, and save receipt.

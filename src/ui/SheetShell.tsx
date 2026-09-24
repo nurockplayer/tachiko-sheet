@@ -410,8 +410,14 @@ export function SheetShell(props: SheetShellProps) {
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
+  const importErrorMessage = interop?.importInspection
+    ? (importError && message && message.length > 0 ? message : importError)
+    : importError;
   const copyErrorIsInline = copyOpen && localError === null && (
     copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
+  );
+  const importErrorIsInline = Boolean(
+    interop?.importInspection && message && errorMessage === message && importErrorMessage === message,
   );
 
   useLayoutEffect(() => {
@@ -716,6 +722,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function inspectSpreadsheet(file: File | null): Promise<void> {
     if (!file) return;
+    setLocalError(null);
     setImportError(null);
     try { await onInspectImport(file); }
     catch (error) { setImportError(explain(error, "The spreadsheet could not be inspected.")); }
@@ -724,6 +731,7 @@ export function SheetShell(props: SheetShellProps) {
   async function importCandidate(): Promise<void> {
     const inspection = interop?.importInspection;
     if (!inspection) return;
+    setImportError(null);
     const selection: ImportSelection = {
       column_types: importTypes as ImportSelection["column_types"],
       extra_columns: inspection.source.sheets.map(() => []),
@@ -1578,7 +1586,7 @@ export function SheetShell(props: SheetShellProps) {
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
     >
-      {errorMessage && !copyErrorIsInline ? (
+      {errorMessage && !copyErrorIsInline && !importErrorIsInline ? (
         <div className="ts-error" role="alert">
           {errorMessage}
         </div>
@@ -1651,7 +1659,7 @@ export function SheetShell(props: SheetShellProps) {
             {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No source-fidelity findings were reported for this candidate.</p>}
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
           </div>
-          {importError ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importError}</p> : null}
+          {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
         </Modal>
       ) : null}
