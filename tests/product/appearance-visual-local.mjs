@@ -824,6 +824,96 @@ async function auditFocusModes(context, page) {
   }
 }
 
+async function sampleButtonBorderStates(page, button, tag) {
+  await page.mouse.move(1, 1);
+  const read = () => button.evaluate((element) => ({
+    border: getComputedStyle(element).borderTopColor,
+    active: element.matches(":active"),
+  }));
+  const rest = await read();
+  await button.hover();
+  const hover = await read();
+  const bounds = await button.boundingBox();
+  assert.ok(bounds, `${tag} button has a rendered box`);
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  const pressed = await read();
+  evidence(pressed.active, `${tag} sample reaches the real pressed state`, pressed);
+  // Release outside the button so this state probe does not invoke its command.
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
+  return { rest: rest.border, hover: hover.border, pressed: pressed.border };
+}
+
+async function forcedSystemButtonText(page) {
+  return page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "ButtonText";
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+}
+
+async function auditButtonVariantBoundaries(browser) {
+  const ghostContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(ghostContext, dist);
+  const ghostPage = await ghostContext.newPage();
+  await openApp(ghostContext, ghostPage);
+  await openCanary(ghostContext, ghostPage);
+  const overflow = ghostPage.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
+  await overflow.click();
+  const ghost = ghostPage.locator(".ts-command-overflow > button.ts-button--ghost");
+  await ghost.waitFor({ state: "visible" });
+  for (const forcedColors of ["none", "active"]) {
+    await ghostPage.emulateMedia({ forcedColors, colorScheme: "light" });
+    const states = await sampleButtonBorderStates(ghostPage, ghost, `ghost ${forcedColors}`);
+    if (forcedColors === "active") {
+      const systemText = await forcedSystemButtonText(ghostPage);
+      evidence(Object.values(states).every((color) => color === systemText),
+        "forced-colors ghost rest, hover, and pressed borders retain ButtonText", { states, systemText });
+    } else {
+      const alpha = rgb(states.rest)?.[3] ?? null;
+      evidence(alpha === 0 && states.hover === states.rest && states.pressed === states.rest,
+        "ghost rest, hover, and pressed borders remain transparent in normal colors", { states, alpha });
+    }
+    observations.push({ buttonVariantState: "ghost", forcedColors, states });
+  }
+  await ghostContext.close();
+
+  const dangerContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await installDistRoutes(dangerContext, dist);
+  const dangerPage = await dangerContext.newPage();
+  await openApp(dangerContext, dangerPage);
+  await openCanary(dangerContext, dangerPage);
+  await dangerPage.locator(".ts-grid tbody tr").first().locator("td").first().dblclick();
+  const editor = dangerPage.getByRole("textbox", { name: "Edit cell", exact: true });
+  await editor.fill("Danger border visual probe");
+  await editor.press("Enter");
+  await dangerPage.waitForFunction(() => document.querySelector("[data-work-dirty]")?.getAttribute("data-work-dirty") === "true");
+  await dangerPage.getByRole("button", { name: "Close project", exact: true }).click();
+  const dialog = dangerPage.getByRole("dialog", { name: "Unsaved work", exact: true });
+  await dialog.waitFor();
+  const keepEditing = dialog.getByRole("button", { name: "Keep editing", exact: true });
+  const danger = dialog.getByRole("button", { name: "Close without saving", exact: true });
+  const neutralBorder = await keepEditing.evaluate((element) => getComputedStyle(element).borderTopColor);
+  for (const forcedColors of ["none", "active"]) {
+    await dangerPage.emulateMedia({ forcedColors, colorScheme: "light" });
+    const states = await sampleButtonBorderStates(dangerPage, danger, `danger ${forcedColors}`);
+    if (forcedColors === "active") {
+      const systemText = await forcedSystemButtonText(dangerPage);
+      evidence(Object.values(states).every((color) => color === systemText),
+        "forced-colors danger rest, hover, and pressed borders retain ButtonText", { states, systemText });
+    } else {
+      evidence(states.rest !== neutralBorder && states.hover === states.rest && states.pressed === states.rest,
+        "danger rest, hover, and pressed borders retain the destructive variant boundary", { states, neutralBorder });
+    }
+    observations.push({ buttonVariantState: "danger", forcedColors, states, neutralBorder });
+  }
+  await dangerContext.close();
+}
+
 async function auditNotice(context, profile) {
   const page = await context.newPage();
   await page.addInitScript(({ storageKey, selected }) => {
@@ -1042,6 +1132,7 @@ async function main() {
 
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
+    await auditButtonVariantBoundaries(browser);
     await auditHomeViewportBounds(page);
     await auditFirstEntryStates(browser, dist);
   } finally {
@@ -1055,6 +1146,7 @@ async function main() {
     geometryCases: observations.filter((item) => typeof item.width === "number").length,
     noticeProfiles: profiles.length,
     forcedColorModes: ["light", "dark"],
+    buttonVariantStates: observations.filter((item) => item.buttonVariantState),
     contrastBackgrounds: "computed browser backgrounds composited over ancestors; screenshot fallback for gradients; text foreground from computed styles",
     effective200PercentProxy: {
       label: "512 CSS px effective-width proxy for 200% zoom; CSS sizes remain unchanged; not actual browser zoom or OS text scaling",

@@ -300,12 +300,10 @@ body { margin: 0; }
 
 .ts-button:hover:not(:disabled) {
   background: var(--ts-surface-sunken);
-  border-color: var(--ts-line-strong);
 }
 
 .ts-button:active:not(:disabled) {
   background: var(--ts-surface-sunken);
-  border-color: var(--ts-line-strong);
 }
 
 .ts-button:disabled {
@@ -344,11 +342,6 @@ body { margin: 0; }
 
 .ts-button--ghost {
   background: transparent;
-  border-color: transparent;
-}
-
-.ts-button--ghost:hover:not(:disabled),
-.ts-button--ghost:active:not(:disabled) {
   border-color: transparent;
 }
 
