@@ -582,6 +582,39 @@ async function auditHomeViewportBounds(page) {
   await page.locator(".ts-home-import-action").click();
   const importChooser = await importChooserReady;
   assert.equal(importChooser.isMultiple(), false, "the visible import action opens the existing single-file picker");
+  const disabledReference = await page.evaluate(() => {
+    const home = document.querySelector(".ts-home");
+    const reference = document.createElement("button");
+    reference.className = "ts-button";
+    reference.disabled = true;
+    home.append(reference);
+    const style = getComputedStyle(reference);
+    const paint = { color: style.color, background: style.backgroundColor, border: style.borderTopColor, cursor: style.cursor };
+    reference.remove();
+    for (const label of document.querySelectorAll(".ts-home-file-action")) {
+      label.classList.add("ts-home-file-action--disabled");
+      label.setAttribute("aria-disabled", "true");
+      label.querySelector('input[type="file"]').disabled = true;
+    }
+    return paint;
+  });
+  for (const selector of [".ts-home-open-actions .ts-home-file-action", ".ts-home-import-action"]) {
+    const label = page.locator(selector);
+    const rect = await label.boundingBox();
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    const paint = await label.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { color: style.color, background: style.backgroundColor, border: style.borderTopColor, cursor: style.cursor };
+    });
+    assert.deepEqual(paint, disabledReference, `${selector} keeps disabled paint while hovered`);
+  }
+  await page.evaluate(() => {
+    for (const label of document.querySelectorAll(".ts-home-file-action")) {
+      label.classList.remove("ts-home-file-action--disabled");
+      label.setAttribute("aria-disabled", "false");
+      label.querySelector('input[type="file"]').disabled = false;
+    }
+  });
   for (const [width, height] of [[320, 640], [1512, 982]]) {
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.scrollTo(0, 0));

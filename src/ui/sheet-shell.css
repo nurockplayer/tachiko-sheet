@@ -261,14 +261,6 @@ body { margin: 0; }
   outline-offset: 2px;
 }
 
-.ts-home-file-action--disabled {
-  cursor: not-allowed;
-  color: var(--ts-protected-disabled-foreground);
-  background: var(--ts-protected-surface-inset);
-  border-color: var(--ts-protected-border-subtle);
-  pointer-events: none;
-}
-
 .ts-home-file-action--disabled input { cursor: not-allowed; }
 
 .ts-home-open-actions > .ts-home-file-action { min-width: 184px; }
@@ -423,6 +415,13 @@ body { margin: 0; }
 
 .ts-button--ghost {
   background: transparent;
+}
+
+.ts-app .ts-home-file-action--disabled[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--ts-protected-disabled-foreground);
+  background: var(--ts-protected-surface-inset);
+  border-color: var(--ts-protected-border-subtle);
 }
 
 .ts-app :focus-visible {

@@ -323,6 +323,8 @@ describe("recovery presentation", () => {
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
     expect(markup).toContain("Close and abandon recovery");
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
+    expect(markup).toContain('class="ts-button ts-button--primary ts-home-file-action ts-home-file-action--disabled" aria-disabled="true"');
+    expect(markup).toContain('class="ts-button ts-home-file-action ts-home-import-action ts-home-file-action--disabled" aria-disabled="true"');
     expect(markup).toContain('data-testid="open-project" type="file" multiple="" disabled=""');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Try example<\/button>/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Open saved copy<\/button>/);
