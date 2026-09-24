@@ -16,21 +16,17 @@ At a stable Final Candidate, use one eligible fresh independent **Oracle latest 
 
 At meaningful stages record durable GitHub checkpoints on the owning Issue/PR: INTAKE, PLAN/DECISION, IMPLEMENTED, VALIDATED, `FINAL_CANDIDATE <sha>`, ORACLE REVIEW, and MERGED/BLOCKED/HANDOFF. Keep #2 as the concise recoverable handoff. Do not spam per-command comments.
 
-Use the following three-level SCD loop without weakening Ready, acceptance, reviewer-independence, exact-head or merge gates:
+For active implementation, repair, validation, Final Candidate, or resume work,
+use the repository-local `$tachiko-sheet-scd-delivery` Skill. It owns the
+repeatable inner-loop / repair-batch / Final Candidate procedure, wait behavior,
+durable checkpoint cadence, and runtime-continuity steps.
 
-1. **Inner loop:** implementation and already-authorized mechanical repair may use granular local commits and focused local tests. Do not request fresh independent Oracle final review for a WIP head, and do not rerun full hosted gates merely because one small repair commit exists.
-2. **Repair-batch checkpoint:** collect the complete currently known finding set and classify it together. Repair mechanical findings inside already-authorized bounds as one coherent batch; scope, durable-product, acceptance or authority conflicts return to ChatGPT Steward. Then run affected regression/integration checks and push at coherent checkpoint boundaries when practical. Do not manually request final review for intermediate WIP heads.
-3. **Final Candidate:** record `FINAL_CANDIDATE <sha>` only when no known code mutation remains, no blocking finding or discretionary/Steward decision remains unresolved, applicable focused and affected-regression checks are green, and the PR is otherwise believed merge-ready. Only then run full applicable hosted gates and one fresh independent exact-HEAD review from an eligible fresh Oracle latest Extra High session. A material commit after that checkpoint invalidates Final Candidate status and requires the applicable exact-head gates and review again.
-
-If final review fails, first collect the complete finding set, invalidate Final Candidate, classify once, complete one bounded repair batch and then establish a new Final Candidate. If the same defect/failure family survives two bounded repair batches, stop patching and perform a root-cause checkpoint before another high-cost final-review cycle. Keep #2 as a concise current handoff replaced in place; detailed and historical checkpoints belong in their owning Issue or PR.
+The Skill is operational guidance only. Live #1/#2, `docs/DELIVERY.md`, the
+owning Issue/PR, and relevant upstream authority remain superior.
 
 Own the finished spreadsheet experience, not only passing component tests. Existing Designer code is runtime/interop evidence, never the new UI design baseline. Brief means auxiliary Sheet notes/reporting, not a full Docs client. The first three-row fixture is a canary, not Mission completion.
 
 Continue the qualified delivery loop across child Issues and PRs. There is no unconditional preflight-stop or ask-the-founder-between-tickets rule. Conditional readiness and Sheet-local merge authority are defined in `docs/DELIVERY.md`; upstream authority is separate. Do not author your own independent approval, weaken acceptance, bypass protections or force-push.
-
-Prefer event/blocking waits. If polling is necessary, wait at least **180 seconds** between unchanged status checks. Do not rescan the repo or rerun full tests merely to wait. Run focused checks in the inner loop, affected regression at integration, and full/platform checks at the appropriate gate. Repeated failure without new information calls for diagnosis, not blind reruns.
-
-At material stages, and at least once per active hour when meaningful durable work exists, update #2 and the owning PR evidence with exact refs, active writer, actual checks, unresolved findings and next action. Include material decision records or durable links rather than leaving them only in ephemeral chat. Pending CI/review/worker is not completion. Before a run ends, preserve recoverable Git work; an Issue is not a scheduler or automatic wake-up mechanism.
 
 Use pnpm for JavaScript dependencies, explicit packageManager and a real lockfile. Do not add install lifecycle scripts, incidental toolchain migrations, secrets, remote fonts, telemetry or provider calls. Follow the installed frontend taste skill when available, adapted to dense spreadsheet ergonomics, not a landing page.
 
