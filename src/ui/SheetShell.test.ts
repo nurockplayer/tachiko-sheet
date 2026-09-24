@@ -278,12 +278,15 @@ describe("recovery presentation", () => {
 
   it("keeps every workbook command available in the responsive document header", () => {
     const markup = render({ view: makeView() });
-    const commands = markup.match(/<div class="ts-actions ts-header-actions"[\s\S]*?<\/div>/)?.[0];
     const context = markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0];
-    expect(commands).toContain('aria-label="Document commands"');
-    expect(commands).toContain(">Refresh</button>");
-    expect(commands).toContain(">Save a copy</button>");
-    expect(commands).toContain(">Close project</button>");
+    expect(markup).toContain('aria-label="Document commands"');
+    expect(markup).toContain(">Refresh</button>");
+    expect(markup).toContain(">Save a copy</button>");
+    expect(markup).toContain(">Close project</button>");
+    expect(markup).toContain('<details class="ts-command-overflow">');
+    expect(markup).toContain('aria-label="More document commands"');
+    expect(markup.indexOf(">Refresh</button>")).toBeLessThan(markup.indexOf("ts-save-status"));
+    expect(markup.indexOf("ts-save-status")).toBeLessThan(markup.indexOf(">Save a copy</button>"));
     expect(context).toContain('aria-label="Workbook actions"');
     expect(context).toContain('id="ts-active-table"');
   });
@@ -407,6 +410,23 @@ describe("SheetShell static rendering", () => {
     expect(selectorStart).toBeGreaterThan(headerStart);
     expect(selectorStart).toBeLessThan(commandsStart);
     expect(commandsStart).toBeLessThan(viewsStart);
+  });
+
+  it("puts native Views before each panel while keeping truthful status in the footer", () => {
+    const markup = render({ view: makeView(), currentness: "pending", dirty: true, outcome: "pending" });
+    const headerStart = markup.indexOf("ts-workbook-head");
+    const contextStart = markup.indexOf("ts-work-context", headerStart);
+    const panelStart = markup.indexOf('class="ts-panel');
+    const footerStart = markup.indexOf("ts-workspace-footer");
+    expect(markup.slice(headerStart, contextStart)).toContain('data-testid="save-status"');
+    expect(markup.slice(headerStart, contextStart)).toContain("Copies: this browser on this device");
+    expect(footerStart).toBeGreaterThan(contextStart);
+    expect(panelStart).toBeGreaterThan(footerStart);
+    expect(markup.slice(footerStart)).toContain('aria-label="Workbook views"');
+    expect(markup.slice(footerStart)).toContain("Work:");
+    expect(markup.slice(footerStart)).toContain("Values:");
+    expect(markup.slice(footerStart)).toContain('data-testid="operation-outcome"');
+    expect(markup.slice(footerStart)).toContain("2 rows · 4 columns");
   });
 
   it("renders linked Brief facts with the actual projection identity", () => {

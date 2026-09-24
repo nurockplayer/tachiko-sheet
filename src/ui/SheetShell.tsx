@@ -117,13 +117,9 @@ export function shouldPublishAppearanceCompositionEnd(
     sameAppearanceChoice(snapshot.selection, queued);
 }
 
-/** Available grid viewport below its measured document chrome, with a usable floor. */
-function availableGridScrollHeight(
-  viewportHeight: number,
-  gridTop: number,
-  bottomGap = 12,
-): number {
-  return Math.max(168, Math.floor(viewportHeight - gridTop - bottomGap));
+/** Available grid viewport inside the active panel, before the panel itself must scroll. */
+function availableGridScrollHeight(gridTop: number, panelBottom: number): number {
+  return Math.max(0, Math.floor(panelBottom - gridTop));
 }
 
 export function SheetShell(props: SheetShellProps) {
@@ -399,16 +395,16 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
     const appRoot = grid?.closest<HTMLElement>(".ts-app");
-    if (!grid || !appRoot || !view || tab !== "table") return;
+    const panel = grid?.closest<HTMLElement>(".ts-panel");
+    if (!grid || !appRoot || !panel || !view || tab !== "table") return;
 
     let frame: number | null = null;
     const measure = () => {
       frame = null;
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
       const gridTop = grid.getBoundingClientRect().top;
       grid.style.setProperty(
         "--ts-grid-available-height",
-        `${availableGridScrollHeight(viewportHeight, gridTop)}px`,
+        `${availableGridScrollHeight(gridTop, panel.getBoundingClientRect().bottom)}px`,
       );
     };
     const scheduleMeasure = () => {
@@ -418,8 +414,9 @@ export function SheetShell(props: SheetShellProps) {
     measure();
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
     if (resizeObserver) {
+      resizeObserver.observe(panel);
       appRoot.querySelectorAll<HTMLElement>(
-        ".ts-workbook-head, .ts-work-context, .ts-tabs, .ts-workbook-status, .ts-hint, .ts-notice, .ts-error",
+        ".ts-workbook-head, .ts-work-context, .ts-workspace-footer, .ts-hint, .ts-notice, .ts-error",
       ).forEach((element) => resizeObserver.observe(element));
     }
     const profileObserver = new MutationObserver(scheduleMeasure);
@@ -958,12 +955,25 @@ export function SheetShell(props: SheetShellProps) {
           </div>
         </div>
         {renderAppearanceSelector()}
-        {renderWorkbookActions()}
+        <div className="ts-header-commands">
+          {renderWorkbookActions()}
+        </div>
       </header>
     );
   }
 
   function renderWorkbookActions(): ReactNode {
+    const closeButton = (className = "ts-button") => (
+      <button
+        type="button"
+        className={className}
+        onClick={() => void requestClose()}
+        disabled={busy}
+        aria-describedby={busy ? lockNoteId : undefined}
+      >
+        Close project
+      </button>
+    );
     return (
       <div className="ts-actions ts-header-actions" role="group" aria-label="Document commands">
         <button
@@ -975,6 +985,12 @@ export function SheetShell(props: SheetShellProps) {
         >
           Refresh
         </button>
+        <div className={`ts-save-status ts-save-status--${saveStatus}`} role="status">
+          <span className={`ts-save-indicator ts-chip--${saveStatus}`} data-testid="save-status">
+            {saveLabel(saveStatus)}
+          </span>
+          <span className="ts-save-scope">Copies: this browser on this device</span>
+        </div>
         <button
           type="button"
           className="ts-button ts-button--primary"
@@ -985,15 +1001,11 @@ export function SheetShell(props: SheetShellProps) {
         >
           Save a copy
         </button>
-        <button
-          type="button"
-          className="ts-button"
-          onClick={() => void requestClose()}
-          disabled={busy}
-          aria-describedby={busy ? lockNoteId : undefined}
-        >
-          Close project
-        </button>
+        {closeButton("ts-button ts-close-project-desktop")}
+        <details className="ts-command-overflow">
+          <summary aria-label="More document commands">…</summary>
+          {closeButton("ts-button ts-button--ghost")}
+        </details>
       </div>
     );
   }
@@ -1001,25 +1013,30 @@ export function SheetShell(props: SheetShellProps) {
   function renderStatusStrip(): ReactNode {
     return (
         <div className="ts-status-strip">
-          <span className={`ts-chip ts-chip--${currentness}`} data-testid="currentness" data-currentness={currentness}>
+          <span className="ts-status-pair">
+            <span className="ts-status-label">Work:</span>
+            <span
+              className={`ts-chip ${dirty ? "ts-chip--edited" : "ts-chip--unchanged"}`}
+              data-testid="work-state"
+              data-work-state={dirty ? "edited" : "unchanged"}
+            >
+              {workStateLabel(dirty)}
+            </span>
+          </span>
+          <span className="ts-status-pair">
+            <span className="ts-status-label">Values:</span>
+            <span className={`ts-chip ts-chip--${currentness}`} data-testid="currentness" data-currentness={currentness}>
             {currentnessLabel(currentness)}
+            </span>
           </span>
-          <span
-            className={`ts-chip ${dirty ? "ts-chip--edited" : "ts-chip--unchanged"}`}
-            data-testid="work-state"
-            data-work-state={dirty ? "edited" : "unchanged"}
-          >
-            {workStateLabel(dirty)}
-          </span>
-          <span className={`ts-chip ts-chip--${saveStatus}`} data-testid="save-status">
-            {saveLabel(saveStatus)}
-          </span>
-          <span className="ts-workbook-row-count">{table ? `${table.rows.length} rows` : ""}</span>
           {outcome !== "idle" ? (
             <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
               {outcomeLabel(outcome)}
             </span>
           ) : null}
+          <span className="ts-workbook-row-count">
+            {table ? `${table.rows.length} rows · ${columns.length} columns` : ""}
+          </span>
         </div>
     );
   }
@@ -1473,8 +1490,10 @@ export function SheetShell(props: SheetShellProps) {
             An operation is in progress; editing is disabled until it finishes.
           </p>
         ) : null}
-        <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
-          <button
+        <footer className="ts-workspace-footer">
+          <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
+            <span className="ts-views-label" aria-hidden="true">Views</span>
+            <button
             type="button"
             role="tab"
             id={tabId("table")}
@@ -1485,10 +1504,10 @@ export function SheetShell(props: SheetShellProps) {
             onClick={() => selectTab("table")}
           >
             Table
-          </button>
-          <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
-          <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
-          <button
+            </button>
+            <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
+            <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
+            <button
             type="button"
             role="tab"
             id={tabId("brief")}
@@ -1499,10 +1518,11 @@ export function SheetShell(props: SheetShellProps) {
             onClick={() => selectTab("brief")}
           >
             Brief
-          </button>
-          <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
-        </div>
-        <div className="ts-workbook-status">{renderStatusStrip()}</div>
+            </button>
+            <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
+          </div>
+          <div className="ts-workbook-status">{renderStatusStrip()}</div>
+        </footer>
         {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
