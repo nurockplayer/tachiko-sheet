@@ -134,7 +134,7 @@ Use the cheapest evidence that can answer the current question:
 When no known material mutation, blocking finding or unresolved discretionary/Steward decision remains, and focused/affected checks are green, record `FINAL_CANDIDATE <sha>` for the exact HEAD. Then run the final gates against that SHA:
 
 - full applicable local product acceptance;
-- production build / trust-pin checks;
+- production build / trust-pin checks required by the owning contract;
 - required hosted checks on the exact HEAD;
 - one fresh independent Oracle review.
 
@@ -247,11 +247,9 @@ Before merge, recheck:
 - PR HEAD and base still match the reviewed candidate;
 - all required hosted checks are SUCCESS on that HEAD;
 - all valid blocking findings are resolved, and normal GitHub review/thread protections are satisfied;
-- stale PR descriptions/status text no longer point at an invalidated candidate;
-- worktree/branch state is clean/recoverable;
 - GitHub reports the PR mergeable under normal protections.
 
-Reply to old findings with the repair evidence before resolving them. Never use admin bypass to skip review-thread or protection state.
+As operational hygiene, correct stale PR descriptions/status text and preserve recoverable work. These are not separate universal merge gates; if stale text obscures exact-head evidence or work cannot be recovered, resolve that underlying blocker under the existing gates. Reply to findings with relevant repair evidence when resolving them, and never use admin bypass to skip review-thread or protection state.
 
 ## 12. Handoff discipline
 
@@ -263,6 +261,7 @@ A good #2 state contains only:
 - current writer/worktree/branch, or “no active writer”;
 - exact main and candidate refs;
 - current stage;
+- actual checks run and concise qualification status;
 - active blocker/review debt;
 - next recoverable action;
 - important HOLD/external gates.
