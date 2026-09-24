@@ -354,11 +354,15 @@ async function geometry(page, width, combo) {
     const title = document.querySelector(".ts-title");
     const app = document.querySelector(".ts-app");
     const tableSelector = document.querySelector(".ts-context-table select");
+    const panel = document.querySelector(".ts-panel");
+    const panelRect = panel?.getBoundingClientRect();
+    const gridRect = grid?.getBoundingClientRect();
     return {
       pageWidth: root.scrollWidth,
       viewportWidth: innerWidth,
       appWidth: app?.getBoundingClientRect().width ?? 0,
       gridHeight: grid?.clientHeight ?? 0,
+      gridAvailableHeight: panelRect && gridRect ? Math.max(0, Math.floor(panelRect.bottom - gridRect.top)) : 0,
       tableSelectorHeight: tableSelector?.getBoundingClientRect().height ?? null,
       rowPitch: rows.length === 2 ? rows[1] - rows[0] : null,
       headerBackground: head ? getComputedStyle(head).backgroundImage : "missing",
@@ -367,7 +371,8 @@ async function geometry(page, width, combo) {
     };
   });
   evidence(result.pageWidth <= width, `${width}px page has no horizontal overflow`, { ...result, combo });
-  evidence(result.gridHeight >= 168, `${width}px grid retains 168px usable minimum`, { ...result, combo });
+  evidence(result.gridHeight + 1 >= Math.min(168, result.gridAvailableHeight),
+    `${width}px grid keeps the 168px floor when space permits`, { ...result, combo });
   evidence(result.rowPitch === combo.pitch, `${width}px rendered row pitch equals ${combo.pitch}px`, { ...result, combo });
   const expectedTarget = combo.density === "comfortable" ? 36 : 32;
   evidence(result.tableSelectorHeight === expectedTarget,
@@ -419,6 +424,117 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
     }
     observations.push({ workbookViewport: label, ...layout });
   }
+}
+
+async function auditTallGridLayoutOnly(page) {
+  const clonedRows = await page.evaluate(() => {
+    const body = document.querySelector(".ts-grid tbody");
+    const source = body?.firstElementChild;
+    if (!body || !source) return 0;
+    const startingCount = body.children.length;
+    for (let index = startingCount; index < 120; index += 1) {
+      const clone = source.cloneNode(true);
+      clone.setAttribute("data-layout-stress-row", "true");
+      body.append(clone);
+    }
+    return body.children.length;
+  });
+  evidence(clonedRows === 120, "layout-only DOM stress creates 120 painted rows", { clonedRows });
+
+  for (const [width, height] of [[1512, 982], [320, 640]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-panel");
+      const grid = document.querySelector(".ts-grid-scroll");
+      const footer = document.querySelector(".ts-workspace-footer");
+      const tabs = document.querySelector('[role="tablist"][aria-label="Workbook views"]');
+      const status = document.querySelector(".ts-workbook-status");
+      const notices = document.querySelector(".ts-notices");
+      const rect = (element) => element?.getBoundingClientRect();
+      const panelRect = rect(panel);
+      const gridRect = rect(grid);
+      const footerRect = rect(footer);
+      const tabsRect = rect(tabs);
+      const statusRect = rect(status);
+      const noticesRect = rect(notices);
+      const gridStyle = grid ? getComputedStyle(grid) : null;
+      if (grid) {
+        grid.scrollTop = grid.scrollHeight;
+        grid.scrollLeft = grid.scrollWidth;
+      }
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        panelBottom: panelRect?.bottom ?? null,
+        panelClientHeight: panel?.clientHeight ?? null,
+        panelScrollHeight: panel?.scrollHeight ?? null,
+        gridTop: gridRect?.top ?? null,
+        gridBottom: gridRect?.bottom ?? null,
+        gridHeight: gridRect?.height ?? null,
+        gridClientHeight: grid?.clientHeight ?? null,
+        gridScrollHeight: grid?.scrollHeight ?? null,
+        gridClientWidth: grid?.clientWidth ?? null,
+        gridScrollWidth: grid?.scrollWidth ?? null,
+        gridScrollTop: grid?.scrollTop ?? null,
+        gridScrollLeft: grid?.scrollLeft ?? null,
+        gridOverflowY: gridStyle?.overflowY ?? null,
+        gridOverflowX: gridStyle?.overflowX ?? null,
+        footerBottom: footerRect?.bottom ?? null,
+        tabsTop: tabsRect?.top ?? null,
+        tabsBottom: tabsRect?.bottom ?? null,
+        statusTop: statusRect?.top ?? null,
+        statusBottom: statusRect?.bottom ?? null,
+        noticesTop: noticesRect?.top ?? null,
+        noticesBottom: noticesRect?.bottom ?? null,
+      };
+    });
+    const label = `${width}x${height} tall-grid layout-only stress`;
+    evidence(layout.pageWidth <= width, `${label} has no horizontal document overflow`, layout);
+    evidence(layout.gridBottom <= layout.panelBottom + 1, `${label} grid stays within the actual panel boundary`, layout);
+    evidence(layout.panelScrollHeight <= layout.panelClientHeight + 1, `${label} avoids nested panel scrolling`, layout);
+    evidence(layout.gridOverflowY === "auto" && layout.gridScrollHeight > layout.gridClientHeight && layout.gridScrollTop > 0,
+      `${label} reaches the grid's own vertical scrollbar`, layout);
+    evidence(layout.gridHeight >= Math.min(168, layout.panelBottom - layout.gridTop),
+      `${label} keeps the 168px grid floor when available space permits`, layout);
+    evidence(layout.tabsTop >= 0 && layout.tabsBottom <= height && layout.statusTop >= 0 && layout.statusBottom <= height,
+      `${label} keeps Views and status visible`, layout);
+    evidence(layout.tabsTop >= layout.panelBottom - 1 && layout.statusTop >= layout.tabsBottom - 1 && layout.noticesTop >= layout.footerBottom - 1,
+      `${label} keeps the panel, Views, status, and legal notices in a non-overlapping sequence`, layout);
+    evidence(layout.noticesTop >= 0 && layout.noticesBottom <= height,
+      `${label} keeps legal notices visible`, layout);
+    if (width === 320) {
+      evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth && layout.gridScrollLeft > 0,
+        `${label} reaches the grid's own horizontal scrollbar`, layout);
+    }
+    observations.push({ tallGridLayoutOnly: label, ...layout });
+  }
+
+  await page.setViewportSize({ width: 1512, height: 982 });
+  await page.evaluate(() => {
+    const panel = document.querySelector(".ts-panel");
+    if (panel) panel.style.flex = "0 0 300px";
+  });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const resizedPanel = await page.evaluate(() => {
+    const panel = document.querySelector(".ts-panel");
+    const grid = document.querySelector(".ts-grid-scroll");
+    return {
+      panelHeight: panel?.getBoundingClientRect().height ?? null,
+      gridBottom: grid?.getBoundingClientRect().bottom ?? null,
+      panelBottom: panel?.getBoundingClientRect().bottom ?? null,
+      availableHeight: Number.parseFloat(grid?.style.getPropertyValue("--ts-grid-available-height") ?? "NaN"),
+    };
+  });
+  evidence(resizedPanel.panelHeight === 300 && resizedPanel.gridBottom <= resizedPanel.panelBottom + 1 && resizedPanel.availableHeight <= 300,
+    "panel ResizeObserver updates the grid cap when the panel changes size without a viewport resize", resizedPanel);
+  observations.push({ tallGridPanelResize: resizedPanel });
+  await page.evaluate(() => {
+    document.querySelector(".ts-panel")?.style.removeProperty("flex");
+    document.querySelectorAll("[data-layout-stress-row]").forEach((row) => row.remove());
+  });
 }
 
 async function auditHomeViewportBounds(page) {
@@ -723,6 +839,7 @@ async function main() {
     await focusAudit(page, "Appearance selector");
     await openCanary(context, page);
     await page.locator(".ts-workbook-head > .ts-appearance-selector").waitFor();
+    await auditTallGridLayoutOnly(page);
 
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });
@@ -927,6 +1044,7 @@ async function main() {
       })),
     },
     workbookViewportAudit: observations.filter((item) => item.workbookViewport),
+    tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
     homeViewportAudit: observations.filter((item) => item.homeViewport),
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,

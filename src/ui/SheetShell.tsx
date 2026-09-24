@@ -117,14 +117,9 @@ export function shouldPublishAppearanceCompositionEnd(
     sameAppearanceChoice(snapshot.selection, queued);
 }
 
-/** Available grid viewport below its measured document chrome, with a usable floor. */
-function availableGridScrollHeight(
-  viewportHeight: number,
-  gridTop: number,
-  footerHeight: number,
-  bottomGap = 12,
-): number {
-  return Math.max(168, Math.floor(viewportHeight - gridTop - footerHeight - bottomGap));
+/** Available grid viewport inside the active panel, before the panel itself must scroll. */
+function availableGridScrollHeight(gridTop: number, panelBottom: number): number {
+  return Math.max(0, Math.floor(panelBottom - gridTop));
 }
 
 export function SheetShell(props: SheetShellProps) {
@@ -400,17 +395,16 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
     const appRoot = grid?.closest<HTMLElement>(".ts-app");
-    if (!grid || !appRoot || !view || tab !== "table") return;
+    const panel = grid?.closest<HTMLElement>(".ts-panel");
+    if (!grid || !appRoot || !panel || !view || tab !== "table") return;
 
     let frame: number | null = null;
     const measure = () => {
       frame = null;
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
       const gridTop = grid.getBoundingClientRect().top;
-      const footerHeight = appRoot.querySelector<HTMLElement>(".ts-workspace-footer")?.getBoundingClientRect().height ?? 0;
       grid.style.setProperty(
         "--ts-grid-available-height",
-        `${availableGridScrollHeight(viewportHeight, gridTop, footerHeight)}px`,
+        `${availableGridScrollHeight(gridTop, panel.getBoundingClientRect().bottom)}px`,
       );
     };
     const scheduleMeasure = () => {
@@ -420,6 +414,7 @@ export function SheetShell(props: SheetShellProps) {
     measure();
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
     if (resizeObserver) {
+      resizeObserver.observe(panel);
       appRoot.querySelectorAll<HTMLElement>(
         ".ts-workbook-head, .ts-work-context, .ts-workspace-footer, .ts-hint, .ts-notice, .ts-error",
       ).forEach((element) => resizeObserver.observe(element));

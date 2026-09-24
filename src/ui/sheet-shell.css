@@ -706,8 +706,8 @@ body { margin: 0; }
 
 .ts-grid-scroll {
   overflow: auto;
-  min-height: 168px;
-  max-height: max(168px, var(--ts-grid-available-height, 100vh));
+  min-height: min(168px, var(--ts-grid-available-height, 100vh));
+  max-height: var(--ts-grid-available-height, 100vh);
   border: 0;
   border-radius: 0;
   box-shadow: none;
