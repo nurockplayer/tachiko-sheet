@@ -391,7 +391,7 @@ export function SheetShell(props: SheetShellProps) {
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
-  const copyErrorIsInline = copyOpen && copyError !== null && errorMessage === copyError;
+  const copyErrorIsInline = copyOpen && copyError !== null && localError === null;
 
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
