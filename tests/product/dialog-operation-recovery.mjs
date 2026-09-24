@@ -59,8 +59,19 @@ try {
   await page.waitForFunction(() => window.__tachikoAcceptance.importSpreadsheetRequestCount() > 0);
   assert.equal(await importAction.isDisabled(), true, "dispatched Import disables its action");
   assert.equal(await importDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true, "dispatched Import disables Cancel");
-  assert.equal(await importDialog.locator("h2").evaluate((heading) => heading === document.activeElement), true, "pending Import moves focus naturally to the enabled dialog heading before disabling its action");
-  assert.equal(await importDialog.evaluate((dialog) => dialog.contains(document.activeElement)), true, "pending Import focus remains contained in the dialog");
+  const importHeading = importDialog.locator("h2");
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "pending Import moves focus naturally to the dialog heading before disabling its action");
+  await page.keyboard.press("Tab");
+  assert.equal(await importDialog.evaluate((dialog) => dialog.contains(document.activeElement)), true, "Tab from the natural pending heading stays in the dialog");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Shift+Tab returns to the first pending dialog focus target");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await importDialog.evaluate((dialog) => {
+    const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+    return focusable.at(-1) === document.activeElement;
+  }), true, "Shift+Tab from the pending heading wraps to the last enabled modal target");
+  await page.keyboard.press("Tab");
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Tab from the last pending modal target wraps to its first target");
   await page.keyboard.press("Escape");
   assert.equal(await importDialog.count(), 1, "Escape cannot dismiss dispatched Import");
   await page.locator(".ts-modal-backdrop").click({ position: { x: 1, y: 1 } });
@@ -132,6 +143,7 @@ try {
   assert.equal(await page.getByRole("alert").count(), 1, "handoff failure has one alert owner");
   assert.equal(await downloadPanel.getByRole("alert").count(), 1, "handoff failure returns to an actionable panel alert");
   assert.match(await handoffFailure.textContent(), /rejected browser download handoff once/i);
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("button")).some((element) => element.textContent?.trim() === "Prepare XLSX" && element === document.activeElement), null, { timeout: 2_000 });
   assert.equal(await prepare.evaluate((element) => element === document.activeElement), true, "handoff failure restores focus to Prepare");
   await page.evaluate(() => {
     URL.createObjectURL = window.__issue97OriginalCreateObjectURL;
