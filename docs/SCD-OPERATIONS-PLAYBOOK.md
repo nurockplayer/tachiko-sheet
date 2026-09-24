@@ -40,7 +40,8 @@ Rules:
 - one active production writer/worktree for the current package;
 - Sol remains the engineering decision-maker and integrator;
 - Sol does not concurrently edit the same source while Luna owns the package;
-- the next writer starts only after the current writer returns/releases ownership;
+- a worker handback releases the current writer slot but does not by itself start another production package;
+- the next package starts only after the current package is merged/closed, explicitly blocked and released, or ownership is durably transferred;
 - read-only research, CI watching, Astra advice and review may overlap only if they cannot mutate the candidate;
 - update #2 when ownership materially changes.
 
@@ -241,7 +242,7 @@ Before merge, recheck:
 
 - PR HEAD and base still match the reviewed candidate;
 - all required hosted checks are SUCCESS on that HEAD;
-- all valid review threads are resolved;
+- all valid blocking findings are resolved, and normal GitHub review/thread protections are satisfied;
 - stale PR descriptions/status text no longer point at an invalidated candidate;
 - worktree/branch state is clean/recoverable;
 - GitHub reports the PR mergeable under normal protections.
@@ -292,7 +293,7 @@ Immediately before Sol executes the normal merge:
 - [ ] applicable local product evidence green;
 - [ ] required hosted checks SUCCESS on exact HEAD;
 - [ ] fresh independent Oracle verdict is literally `No blocking findings.`;
-- [ ] all valid review threads resolved;
+- [ ] all valid blocking findings resolved, with normal GitHub review/thread requirements satisfied;
 - [ ] no unresolved HOLD/external gate applies to this merge;
 - [ ] GitHub reports normal mergeability/protections satisfied;
 - [ ] no force push/admin bypass/fabricated PASS.
