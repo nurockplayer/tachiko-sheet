@@ -133,11 +133,47 @@ async function bindReport(page) {
   await page.locator('.ts-report-canvas[data-report-ready="true"]').waitFor();
 }
 
+async function assertViewsTabBeforePanelKeyboardOrder(page) {
+  const byName = (name) => page.getByRole("tab", { name, exact: true });
+  const selectByArrow = async (name) => {
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction((label) => {
+      const tab = [...document.querySelectorAll('[role="tab"]')].find((candidate) => candidate.textContent.trim() === label);
+      return tab?.getAttribute("aria-selected") === "true" && document.activeElement === tab;
+    }, name);
+  };
+
+  const table = byName("Table");
+  await table.focus();
+  for (const name of ["Cross-table summary", "Report", "Brief"]) await selectByArrow(name);
+  await page.keyboard.press("Tab");
+  const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+  assert.equal(await notes.isEnabled(), true, "the release-plan Decision notes control is natively enabled");
+  assert.equal(await notes.evaluate((control) => document.activeElement === control), true,
+    "Arrow-selecting Table through Report to Brief puts Decision notes next in native Tab order");
+  const briefGeometry = await page.evaluate(() => {
+    const panel = document.querySelector('[role="tabpanel"]')?.getBoundingClientRect();
+    const footer = document.querySelector(".ts-workspace-footer")?.getBoundingClientRect();
+    return { panelBottom: panel?.bottom ?? null, footerTop: footer?.top ?? null };
+  });
+  assert.ok(briefGeometry.panelBottom !== null && briefGeometry.footerTop !== null && briefGeometry.panelBottom <= briefGeometry.footerTop + 1,
+    "CSS flex ordering keeps the footer visually below the active Brief panel");
+
+  await table.focus();
+  await selectByArrow("Cross-table summary");
+  await page.keyboard.press("Tab");
+  const chooseBindings = page.getByRole("button", { name: "Choose tables and fields", exact: true });
+  assert.equal(await chooseBindings.isEnabled(), true, "the Summary view's initial native action is enabled");
+  assert.equal(await chooseBindings.evaluate((control) => document.activeElement === control), true,
+    "Arrow-selecting Cross-table summary puts its first action next in native Tab order");
+}
+
 try {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   const page = await context.newPage();
   await openApp(page);
   await page.getByTestId("project-ready").waitFor();
+  await assertViewsTabBeforePanelKeyboardOrder(page);
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const homeSelector = page.locator(".ts-home-head .ts-appearance-selector");
   await homeSelector.waitFor({ state: "visible" });

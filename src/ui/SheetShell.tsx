@@ -1495,7 +1495,6 @@ export function SheetShell(props: SheetShellProps) {
             An operation is in progress; editing is disabled until it finishes.
           </p>
         ) : null}
-        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
         <footer className="ts-workspace-footer">
           <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
             <span className="ts-views-label" aria-hidden="true">Views</span>
@@ -1529,6 +1528,7 @@ export function SheetShell(props: SheetShellProps) {
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}</div>
         </footer>
+        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
       </div>
     );
   }

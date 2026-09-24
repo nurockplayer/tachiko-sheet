@@ -412,7 +412,7 @@ describe("SheetShell static rendering", () => {
     expect(commandsStart).toBeLessThan(viewsStart);
   });
 
-  it("keeps truthful save scope in the header and Views with work/value status after each workspace", () => {
+  it("puts native Views before each panel while keeping truthful status in the footer", () => {
     const markup = render({ view: makeView(), currentness: "pending", dirty: true, outcome: "pending" });
     const headerStart = markup.indexOf("ts-workbook-head");
     const contextStart = markup.indexOf("ts-work-context", headerStart);
@@ -420,7 +420,8 @@ describe("SheetShell static rendering", () => {
     const footerStart = markup.indexOf("ts-workspace-footer");
     expect(markup.slice(headerStart, contextStart)).toContain('data-testid="save-status"');
     expect(markup.slice(headerStart, contextStart)).toContain("Copies: this browser on this device");
-    expect(footerStart).toBeGreaterThan(panelStart);
+    expect(footerStart).toBeGreaterThan(contextStart);
+    expect(panelStart).toBeGreaterThan(footerStart);
     expect(markup.slice(footerStart)).toContain('aria-label="Workbook views"');
     expect(markup.slice(footerStart)).toContain("Work:");
     expect(markup.slice(footerStart)).toContain("Values:");

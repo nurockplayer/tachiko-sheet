@@ -671,6 +671,7 @@ body { margin: 0; }
 }
 
 .ts-workspace-footer {
+  order: 2;
   flex: 0 0 auto;
   background: var(--ts-surface-chrome);
   border-top: 1px solid var(--ts-line);
@@ -695,6 +696,7 @@ body { margin: 0; }
 }
 
 .ts-panel {
+  order: 1;
   min-height: 0;
   flex: 1 1 0;
   overflow: auto;
