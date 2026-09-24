@@ -293,15 +293,28 @@ try {
   // review and cannot be mistaken for generic XLSX support.
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await page.setViewportSize({ width: 320, height: 350 });
   dialog = await choose(page, mergedXlsx);
   const producerLedger = dialog.getByLabel("Candidate source fidelity ledger", { exact: true });
   const importColumns = dialog.locator(".ts-import-columns");
   assert.match(await producerLedger.textContent(), /merged/i);
   assert.equal(await producerLedger.isVisible(), true, "real merged-cell fidelity warning is visible during candidate review");
+  const importHeading = dialog.getByRole("heading", { name: "Review import candidate", exact: true });
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "warning-bearing short Import enters on its heading");
   const [producerLedgerBox, importColumnsBox] = await Promise.all([producerLedger.boundingBox(), importColumns.boundingBox()]);
   assert.ok(producerLedgerBox && importColumnsBox && producerLedgerBox.y + producerLedgerBox.height <= importColumnsBox.y, `real producer warning appears before long column choices: ${JSON.stringify({ producerLedgerBox, importColumnsBox })}`);
+  const [shortWarning, shortImportDialog] = await Promise.all([producerLedger.locator("li").first().boundingBox(), dialog.boundingBox()]);
+  assert.ok(shortWarning && shortImportDialog && shortWarning.y >= shortImportDialog.y && shortWarning.y + shortWarning.height <= shortImportDialog.y + shortImportDialog.height, `first real producer warning begins in the initial short viewport: ${JSON.stringify({ shortWarning, shortImportDialog })}`);
   assert.equal(await producerLedger.evaluate((ledger, columns) => Boolean(ledger.compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING), await importColumns.elementHandle()), true, "warning precedes column consent in source order");
-  await dialog.press("Escape");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await dialog.evaluate((root) => root.contains(document.activeElement)), true, "Shift+Tab from warning heading stays trapped in Import");
+  await page.keyboard.press("Tab");
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Tab wraps from the last action to the warning heading");
+  await page.keyboard.press("Tab");
+  assert.equal(await dialog.locator("select").first().evaluate((select) => select === document.activeElement), true, "Tab from warning heading enters candidate choices");
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
   console.log(JSON.stringify({ case: "J3 normal UI CSV/XLSX, cleanup, consent, restart", status: "PASS", manualBoundary: "Real CJK IME and assistive-technology walkthrough remain manual." }));
 } finally {
   if (context) await context.close().catch(() => {});
