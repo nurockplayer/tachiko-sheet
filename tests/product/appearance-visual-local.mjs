@@ -437,6 +437,13 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       evidence(layout.sections.every((section) => section.background === "rgba(0, 0, 0, 0)" && section.boxShadow === "none" &&
         section.borderTopWidth === "0px" && section.borderRightWidth === "0px" && section.borderLeftWidth === "0px"),
       `${label} uses open sections without raised card borders`, layout);
+      if (viewName === "Report") {
+        evidence(layout.sections.length === 1 && layout.sections[0].borderBottomWidth === "0px",
+          `${label} single no-report section has no trailing divider`, layout);
+      } else {
+        evidence(layout.sections.every((section) => section.borderBottomWidth === "1px"),
+          `${label} keeps the established dividers on multi-section workbook panels`, layout);
+      }
     }
     if (width === 320 && viewName === "Brief") {
       evidence(layout.panelScrollHeight > layout.panelClientHeight,

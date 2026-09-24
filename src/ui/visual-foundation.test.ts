@@ -54,6 +54,7 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain(".ts-button:active:not(:disabled)");
     expect(css).toContain(".ts-button--ghost:hover:not(:disabled)");
     expect(css).toContain(".ts-panel.ts-brief > .ts-card");
+    expect(css).toContain(".ts-panel.ts-brief > .ts-report-card:only-child");
     expect(css).toContain("background: transparent;");
     expect(css).toContain("box-shadow: none;");
     expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea)");

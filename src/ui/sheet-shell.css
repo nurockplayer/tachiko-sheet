@@ -732,6 +732,10 @@ body { margin: 0; }
   box-shadow: none;
 }
 
+.ts-panel.ts-brief > .ts-report-card:only-child {
+  border-bottom: 0;
+}
+
 .ts-panel.ts-brief :is(select, input:not([type="checkbox"]), textarea) {
   font: inherit;
   min-height: var(--ts-profile-command-target-min-height);
