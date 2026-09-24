@@ -916,7 +916,7 @@ body { margin: 0; }
 
 .ts-modal {
   background: var(--ts-surface);
-  border: 1px solid #dfe2ea;
+  border: 1px solid var(--ts-line);
   border-radius: 12px;
   padding: 24px 22px 24px 24px;
   width: min(600px, 100%);

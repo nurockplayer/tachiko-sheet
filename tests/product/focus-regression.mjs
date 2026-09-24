@@ -55,7 +55,7 @@ async function editImpact(page, value) {
 
 const cases = [
   [
-    "product-focus-00 shared dialog geometry follows desktop and phone references",
+    "product-focus-00 shared dialog geometry and profile-aware Save states follow references",
     async (page) => {
       await page.setViewportSize({ width: 1512, height: 982 });
       const saveTrigger = page.getByRole("button", { name: "Save a copy", exact: true });
@@ -143,6 +143,59 @@ const cases = [
         buttons.map((button) => button.getBoundingClientRect().top),
       );
       assert.ok(closeActions[1] > closeActions[0], "Close choices stack on phone in approved order");
+      await close.getByRole("button", { name: "Keep editing", exact: true }).click();
+
+      await page.setViewportSize({ width: 1512, height: 982 });
+      for (const profile of [
+        { id: "tachiko", label: "Tachiko", chrome: "porcelain", border: "rgb(223, 226, 234)" },
+        { id: "familiar-spreadsheet", label: "Familiar Spreadsheet", chrome: "structured", border: "rgb(204, 209, 216)" },
+        { id: "minimal-focus", label: "Minimal-Focus", chrome: "quiet", border: "rgb(229, 229, 235)" },
+      ]) {
+        const appearance = page.getByRole("button", { name: "Appearance", exact: true });
+        if (await appearance.getAttribute("aria-expanded") !== "true") await appearance.click();
+        await page.locator(".ts-appearance-profile-option").filter({ hasText: profile.label }).click();
+        await page.waitForFunction(({ chrome }) =>
+          document.documentElement.getAttribute("data-ts-profile-chrome") === chrome,
+        { chrome: profile.chrome });
+
+        await saveTrigger.click();
+        const profileSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+        assert.equal(
+          await profileSave.evaluate((element) => getComputedStyle(element).borderColor),
+          profile.border,
+          `${profile.label} dialog border follows its resolved border.subtle role`,
+        );
+        const profileName = `issue97-${profile.id}-failure`;
+        const nameInput = profileSave.getByRole("textbox", { name: "Copy name", exact: true });
+        await nameInput.fill(profileName);
+        const createButton = profileSave.getByRole("button", { name: "Create copy", exact: true });
+        assert.equal(await createButton.getAttribute("aria-busy"), "false", `${profile.label} Save starts idle`);
+        assert.equal(await createButton.isDisabled(), false, `${profile.label} idle Save is enabled for a valid name`);
+        assert.equal(await profileSave.getByRole("alert").count(), 0, `${profile.label} idle Save has no error`);
+
+        const beforeFailure = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+        const writesBeforeFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+        await page.evaluate(() => window.__tachikoAcceptance.failNextSave());
+        await createButton.click();
+        const saveError = profileSave.getByRole("alert");
+        await saveError.waitFor();
+        assert.match(await saveError.textContent(), new RegExp(profileName));
+        assert.equal(await nameInput.inputValue(), profileName, `${profile.label} keeps the failed destination available to correct`);
+        assert.equal(await createButton.getAttribute("aria-busy"), "false", `${profile.label} Save returns from busy after the failed transaction`);
+        assert.equal(await createButton.isDisabled(), false, `${profile.label} failed Save can be retried`);
+        const afterFailure = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+        assert.equal(afterFailure.saved, false, `${profile.label} failure cannot claim the copy was saved`);
+        assert.equal(afterFailure.dirty, beforeFailure.dirty, `${profile.label} failure preserves edit dirty state`);
+        assert.equal(afterFailure.currentness, beforeFailure.currentness, `${profile.label} failure preserves fact currentness`);
+        assert.deepEqual(
+          await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), profileName),
+          null,
+          `${profile.label} failed transaction created no saved copy`,
+        );
+        const writesAfterFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+        assert.equal(writesAfterFailure.canonical, writesBeforeFailure.canonical + 1, `${profile.label} exercised one real canonical copy write`);
+        await profileSave.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
     },
   ],
   [
