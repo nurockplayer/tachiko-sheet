@@ -51,7 +51,7 @@ A worker handback is not automatically integration PASS. Sol still reviews the d
 
 ## 3. Use Figma as authority without forcing Figma-native authoring
 
-For material UI work governed by #44, use approved editable Figma nodes as implementation authority. Authoring may be Figma-native. If using the valid render-first route, follow this workflow:
+For material UI work governed by #44, use approved editable Figma nodes as implementation authority. Authoring may be Figma-native. The render-first/import route is also valid:
 
 ```text
 settled product/interaction contract
@@ -60,28 +60,27 @@ ephemeral HTML/CSS visual harness outside product source
         ↓
 browser render inspection at representative sizes/states
         ↓
-qualified official Figma bridge import_html_layers
+qualified official Figma bridge import_html_layers (if using this route)
         ↓
-editable canonical Figma nodes + native screenshots/readback
+editable candidate nodes in the canonical Figma file
         ↓
 independent design/interaction review
         ↓
-APPROVED nodes become implementation authority
+approved nodes become implementation authority
         ↓
 product implementation
 ```
 
 The HTML/CSS harness is disposable design tooling. It must not become product/runtime authority.
 
-Before calling a design gate PASS, prove the common requirements:
+For the design review, confirm:
 
 - the canonical file is the target;
-- the approved result is editable and inspectable in the canonical Figma file;
-- exact approved node IDs/URLs are recorded as implementation authority;
+- candidate nodes are editable and inspectable in the canonical Figma file;
 - responsive/compact/short-window and protected states are represented where applicable;
 - an independent reviewer returns no blocking design/interaction finding.
 
-When using the render-first/import route, also verify the qualified bridge/plugin pair, editable imported nodes rather than a flattened image, and native screenshots/readback.
+After approval, record the exact approved node IDs/URLs as implementation authority. When using the render-first/import route, verify the qualified bridge/plugin pair and that imported layers remain editable and inspectable. The #70 run recorded native screenshots/readback as evidence; that is an example from the case study, not a universal additional gate.
 
 A later implementation defect may expose a genuine flaw in approved design authority. If fixing source alone would drift from the approved role/value mapping, amend Figma narrowly, review that amendment independently, then align source/tests to the amended authority. Do not weaken mapping tests merely to make a source-only repair pass.
 
