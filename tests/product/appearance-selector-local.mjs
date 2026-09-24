@@ -224,6 +224,26 @@ try {
     "invalid numeric edit reports a retained-draft error before appearance changes",
   );
 
+  await page.setViewportSize({ width: 320, height: 900 });
+  const commandOverflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
+  await commandOverflow.waitFor({ state: "visible" });
+  await commandOverflow.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".ts-command-overflow").getAttribute("open"), "", "keyboard opens mobile document command disclosure");
+  await page.keyboard.press("Tab");
+  assert.equal(
+    await page.locator(".ts-command-overflow > button").evaluate((button) => document.activeElement === button),
+    true,
+    "Tab reaches Close project inside the open mobile disclosure",
+  );
+  await page.keyboard.press("Enter");
+  await page.getByRole("dialog", { name: "Unsaved work" }).waitFor();
+  assert.equal(await page.locator(".ts-command-overflow").getAttribute("open"), "", "Close keeps its disclosure open while the dialog is active");
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Unsaved work" }).waitFor({ state: "detached" });
+  assert.equal(await page.locator(".ts-command-overflow").getAttribute("open"), "", "Cancel preserves disclosure state and its Close focus target");
+  await page.setViewportSize({ width: 1024, height: 900 });
+
   const shellHandle = await page.locator(".ts-app").elementHandle();
   const editorHandle = await editor.elementHandle();
   const cellHandle = await page.locator(".ts-cell--focused").elementHandle();

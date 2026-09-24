@@ -80,9 +80,30 @@ async function openCanary(context, page) {
   const closeProject = page.getByRole("button", { name: "Close project", exact: true });
   if (await closeProject.count()) {
     await closeProject.click();
-    await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).waitFor({ state: "visible" });
+  } else {
+    const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
+    if (await overflow.isVisible()) {
+      await overflow.click();
+      await page.locator(".ts-command-overflow > button").click();
+    }
   }
-  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  const canary = page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true });
+  try {
+    await canary.waitFor({ state: "visible", timeout: 2500 });
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      view: document.querySelector(".ts-app")?.getAttribute("data-view") ?? null,
+      projectReady: Boolean(document.querySelector('[data-testid="project-ready"]')),
+      openDetails: [...document.querySelectorAll("details")].filter((details) => details.open).map((details) => details.className),
+      visibleCloseButtons: [...document.querySelectorAll('button')]
+        .filter((button) => button.textContent?.trim() === "Close project" && button.getClientRects().length > 0)
+        .length,
+      dialogs: [...document.querySelectorAll('[role="dialog"]')].map((dialog) => dialog.getAttribute("aria-label")),
+      dirty: document.querySelector('[data-testid="work-state"]')?.getAttribute("data-work-state") ?? null,
+    }));
+    throw new Error(`Could not return to Home before opening the canary: ${JSON.stringify(state)}; ${error instanceof Error ? error.message : String(error)}`);
+  }
+  await canary.click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Table", exact: true }).waitFor();
   const firstCell = page.locator(".ts-grid tbody .ts-cell").first();
@@ -113,7 +134,11 @@ async function paintedSamples(page, targets) {
       samples.push({ label, missing: true });
       continue;
     }
-    await locator.scrollIntoViewIfNeeded();
+    try {
+      await locator.scrollIntoViewIfNeeded();
+    } catch (error) {
+      throw new Error(`Could not reveal ${label} (${selector}) for visual sampling: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const pngData = (await page.screenshot({ animations: "disabled" })).toString("base64");
     const styleInfo = await locator.evaluate((element) => {
       const rect = element.getBoundingClientRect();
@@ -513,7 +538,10 @@ async function main() {
           await choose(page, profile.id, density.id);
           const combo = { profile: profile.id, density: density.id, pitch: density.pitch };
           const menuBounds = await menuViewportAndOpen(page, `${width}px ${profile.id}/${density.id}`);
-          await auditContrast(page, colorTargets, `${width}px ${profile.id}/${density.id}`);
+          const visibleColorTargets = width === 320
+            ? colorTargets.filter(([label]) => label !== "workbook wordmark")
+            : colorTargets;
+          await auditContrast(page, visibleColorTargets, `${width}px ${profile.id}/${density.id}`);
           const geometryState = await geometry(page, width, combo);
           observations.push({ width, ...combo, menuBounds, ...geometryState });
           await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -613,10 +641,56 @@ async function main() {
     // about browser zoom, OS text scaling, or assistive technology.
     const textEnlargementProxy = await page.evaluate(() => {
       document.documentElement.style.zoom = "1.5";
-      return { label: "CSS zoom 150% painted-layout proxy", pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth, titleClientWidth: document.querySelector(".ts-title").clientWidth };
+      const dimensions = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          x: rect.x,
+          width: rect.width,
+          scrollWidth: element.scrollWidth,
+          minWidth: style.minWidth,
+          flexBasis: style.flexBasis,
+          gridColumn: style.gridColumn,
+          display: style.display,
+        };
+      };
+      const overflowSources = [...document.querySelectorAll("body *")]
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return { tag: element.tagName, className: typeof element.className === "string" ? element.className : "", right: rect.right, width: rect.width, overflowX: style.overflowX, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, text: element.childElementCount === 0 ? element.textContent?.trim().slice(0, 45) : "" };
+        })
+        .filter((item) => item.right > innerWidth + 1 && item.right < 1000)
+        .sort((a, b) => b.right - a.right)
+        .slice(0, 20);
+      return {
+        label: "CSS zoom 150% painted-layout proxy",
+        pageWidth: document.documentElement.scrollWidth,
+        viewportWidth: innerWidth,
+        titleClientWidth: document.querySelector(".ts-title").clientWidth,
+        header: dimensions(".ts-workbook-head"),
+        identity: dimensions(".ts-document-identity"),
+        titleBlock: dimensions(".ts-title-block"),
+        title: dimensions(".ts-title"),
+        appearance: dimensions(".ts-workbook-head > .ts-appearance-selector"),
+        commands: dimensions(".ts-header-commands"),
+        actions: dimensions(".ts-header-actions"),
+        saveStatus: dimensions(".ts-save-status"),
+        overflow: dimensions(".ts-command-overflow"),
+        overflowSources,
+        pageBoxes: ["html", "body", ".ts-app", ".ts-workbook", ".ts-workbook-head", ".ts-grid-scroll"].map((selector) => {
+          const element = document.querySelector(selector);
+          const rect = element?.getBoundingClientRect();
+          return { selector, x: rect?.x, right: rect?.right, width: rect?.width, scrollWidth: element?.scrollWidth, clientWidth: element?.clientWidth, overflowX: element && getComputedStyle(element).overflowX };
+        }),
+      };
     });
     evidence(textEnlargementProxy.pageWidth <= textEnlargementProxy.viewportWidth,
       "150% painted-layout proxy keeps the page within its viewport", textEnlargementProxy);
+    evidence(textEnlargementProxy.titleClientWidth >= 48,
+      "150% painted-layout proxy keeps a meaningful workbook title width", textEnlargementProxy);
     observations.push({ textEnlargementProxy });
 
     for (const profile of profiles) await auditNotice(context, profile);
@@ -651,7 +725,7 @@ async function main() {
         scrollState,
       })),
     },
-    textEnlargementProxy: "CSS zoom 150% painted-layout proxy only; not actual browser zoom or OS text scaling",
+    textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,
     forcedColorSelectedProfileRadioPaint: observations
       .filter((item) => item.selectedProfileRadioPaint)
