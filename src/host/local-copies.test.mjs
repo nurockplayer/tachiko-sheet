@@ -255,6 +255,127 @@ test("the v1 canonical store is readable after the format-2 schema upgrade", asy
   assert.deepEqual(result.listed, [{name: "Legacy", savedAt: "2026-09-13T00:00:00.000Z", kind: "canonical"}]);
 }));
 
+test("stored kind/version admission is closed, lists unsupported metadata, and never rewrites records", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    await host.list(); // Create the current schema before seeding raw records.
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const canonical = (name, envelope = {}) => ({
+      ...envelope,
+      name,
+      savedAt: "2026-09-24T00:00:00.000Z",
+      revision: `revision-${name}`,
+      files: [{path: "manifest.json", bytes: new Uint8Array([1, 2, 3]).buffer}],
+    });
+    const opaque = (name, envelope = {}) => ({
+      ...envelope,
+      name,
+      savedAt: "2026-09-24T00:00:00.000Z",
+      revision: `revision-${name}`,
+      bytes: new Uint8Array([4, 5, 6]).buffer,
+    });
+    const supported = [
+      canonical("Legacy envelope"),
+      canonical("Canonical envelope", {kind: "canonical"}),
+    ];
+    const rejectedCanonical = [
+      canonical("Canonical declared version", {kind: "canonical", formatVersion: 2}),
+      canonical("Unknown kind", {kind: "future"}),
+      canonical("Unknown nonopaque version", {kind: "future", formatVersion: 2}),
+      canonical("Undefined kind", {kind: undefined}),
+      canonical("Undefined version", {formatVersion: undefined}),
+    ];
+    const supportedOpaque = opaque("Opaque v2", {kind: "opaque", formatVersion: 2});
+    const rejectedOpaque = [
+      opaque("Opaque future version", {kind: "opaque", formatVersion: 3}),
+      opaque("Opaque missing version", {kind: "opaque"}),
+      opaque("Opaque string version", {kind: "opaque", formatVersion: "2"}),
+    ];
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(["copies", window.localOpaqueCopiesStore], "readwrite");
+      for (const record of [...supported, ...rejectedCanonical]) tx.objectStore("copies").add(record);
+      for (const record of [supportedOpaque, ...rejectedOpaque]) tx.objectStore(window.localOpaqueCopiesStore).add(record);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    const snapshot = (value) => {
+      if (value === undefined) return {type: "undefined"};
+      if (value instanceof ArrayBuffer) return {type: "ArrayBuffer", bytes: Array.from(new Uint8Array(value))};
+      if (Array.isArray(value)) return {type: "Array", values: value.map(snapshot)};
+      if (typeof value === "object" && value !== null) {
+        return {type: "Object", entries: Object.keys(value).sort().map((key) => [key, snapshot(value[key])])};
+      }
+      return {type: typeof value, value};
+    };
+    const readRaw = async (storeName, name) => new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readonly");
+      const request = tx.objectStore(storeName).get(name);
+      request.onsuccess = () => resolve(snapshot(request.result));
+      request.onerror = () => reject(request.error);
+    });
+    const rawBefore = await Promise.all([
+      ...[...supported, ...rejectedCanonical].map((record) => readRaw("copies", record.name)),
+      ...[supportedOpaque, ...rejectedOpaque].map((record) => readRaw(window.localOpaqueCopiesStore, record.name)),
+    ]);
+
+    const listed = await host.list();
+    const reads = [];
+    for (const record of [...supported, ...rejectedCanonical, supportedOpaque, ...rejectedOpaque]) {
+      let failure = null;
+      let copy = null;
+      try {
+        copy = await host.readAny(record.name);
+      } catch (error) {
+        failure = {name: error?.name ?? null, message: String(error?.message ?? error)};
+      }
+      reads.push({name: record.name, kind: copy?.kind ?? null, failure});
+    }
+    let conflict = null;
+    try {
+      await host.create("Opaque future version", {revision: "replacement", files: []});
+    } catch (error) {
+      conflict = error?.name ?? null;
+    }
+    const canonicalOnlyRead = await host.read("Legacy envelope");
+    const rawAfter = await Promise.all([
+      ...[...supported, ...rejectedCanonical].map((record) => readRaw("copies", record.name)),
+      ...[supportedOpaque, ...rejectedOpaque].map((record) => readRaw(window.localOpaqueCopiesStore, record.name)),
+    ]);
+    db.close();
+    return {
+      listed,
+      reads,
+      conflict,
+      canonicalOnlyRead: {name: canonicalOnlyRead?.name ?? null, kind: canonicalOnlyRead?.kind ?? null},
+      unchanged: JSON.stringify(rawBefore) === JSON.stringify(rawAfter),
+    };
+  }));
+
+  const listedByName = new Map(result.listed.map((entry) => [entry.name, entry]));
+  assert.deepEqual(listedByName.get("Legacy envelope"), {name: "Legacy envelope", savedAt: "2026-09-24T00:00:00.000Z", kind: "canonical"});
+  assert.deepEqual(listedByName.get("Canonical envelope"), {name: "Canonical envelope", savedAt: "2026-09-24T00:00:00.000Z", kind: "canonical"});
+  assert.deepEqual(listedByName.get("Opaque v2"), {name: "Opaque v2", savedAt: "2026-09-24T00:00:00.000Z", kind: "opaque"});
+  for (const name of ["Canonical declared version", "Unknown kind", "Unknown nonopaque version", "Undefined kind", "Undefined version", "Opaque future version", "Opaque missing version", "Opaque string version"]) {
+    assert.deepEqual(listedByName.get(name), {name, savedAt: "2026-09-24T00:00:00.000Z"});
+  }
+  assert.equal(result.listed.length, 11);
+  assert.deepEqual(result.reads.filter((entry) => !entry.failure).map(({name, kind}) => ({name, kind})), [
+    {name: "Legacy envelope", kind: "canonical"},
+    {name: "Canonical envelope", kind: "canonical"},
+    {name: "Opaque v2", kind: "opaque"},
+  ]);
+  assert.ok(result.reads.filter((entry) => entry.failure).every((entry) => entry.failure.name === "TypeError" && /unsupported record kind or format version/.test(entry.failure.message)));
+  assert.equal(result.conflict, "ConstraintError", "unsupported records continue to reserve their names");
+  assert.deepEqual(result.canonicalOnlyRead, {name: "Legacy envelope", kind: "canonical"});
+  assert.equal(result.unchanged, true, "listing, reads, and rejected create must leave all persisted envelopes and bytes unchanged");
+}));
+
 test("opaque format-2 bytes are cloned, persisted, and explicitly discriminated", async () => withBrowser(async (browser) => {
   const result = await withPage(browser, (page) => page.evaluate(async () => {
     const host = window.createLocalCopiesUnderTest();
