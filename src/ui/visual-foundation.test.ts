@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SHARED_CONTROL_PRESSED_SURFACE } from "../application/interface-profile-safety.js";
 import {
   PRIVATE_CSS_VARIABLES,
   TACHIKO_COMPACT_PORCELAIN_PROFILE,
@@ -50,6 +51,8 @@ describe("visual foundation CSS contract", () => {
   });
 
   it("uses a shared quiet workbook control and open section recipe", () => {
+    const pressedSurface = css.match(/--ts-surface-head:\s*(#[0-9a-f]{6});/i)?.[1];
+    expect(pressedSurface?.toUpperCase()).toBe(SHARED_CONTROL_PRESSED_SURFACE);
     expect(css).toContain("border: 1px solid var(--ts-line);");
     const genericHover = css.match(/\.ts-button:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
     const genericPressed = css.match(/\.ts-button:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";

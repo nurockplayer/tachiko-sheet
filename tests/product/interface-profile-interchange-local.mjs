@@ -41,6 +41,22 @@ async function uploadProfile(page, bytes) {
   await page.locator(".ts-appearance-file-input").setInputFiles({ name: filename, mimeType: "application/json", buffer: bytes });
 }
 
+async function sampleControlStates(page, control) {
+  const paint = () => control.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { foreground: style.color, background: style.backgroundColor, border: style.borderColor };
+  });
+  await page.mouse.move(1, 1);
+  const rest = await paint();
+  await control.hover();
+  const hover = await paint();
+  await page.mouse.down();
+  const pressed = await paint();
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
+  return { rest, hover, pressed };
+}
+
 async function appearanceState(page) {
   return page.evaluate((storageKey) => ({
     chrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
@@ -163,6 +179,13 @@ try {
   assert.deepEqual(await downloadProfile(page), builtInBytes, "active built-in export is deterministic");
 
   const imported = { ...builtIn, name: "My Local Profile", density: "comfortable" };
+  const pressedUnsafe = { ...imported, name: "Unsafe Pressed Control", chrome: "structured", colors: {
+    ...imported.colors,
+    "surface.chrome": "#FFFFFF", "surface.chrome.tint": "#FFFFFF", "surface.content": "#FFFFFF",
+    "surface.inset": "#FAFAFA", "grid.canvas": "#FFFFFF", "grid.header.background": "#FFFFFF",
+    "selection.row.background": "#FFFFFF", "selection.active.background": "#FFFFFF",
+    "selection.header.background": "#FFFFFF", "accent.background": "#FFFFFF", "text.primary": "#707070",
+  } };
   const importBytes = Buffer.from(`${JSON.stringify(imported, null, 2)}\n`, "utf8");
   await uploadProfile(page, importBytes);
   const candidate = page.locator(".ts-appearance-candidate");
@@ -254,6 +277,7 @@ try {
     ["invalid-name", Buffer.from(JSON.stringify({ ...imported, name: "bad\nname" }), "utf8")],
     ["invalid-color", Buffer.from(JSON.stringify({ ...imported, colors: { ...imported.colors, "text.primary": "url(https://example.invalid/x)" } }), "utf8")],
     ["unsafe-contrast", Buffer.from(JSON.stringify({ ...imported, colors: { ...imported.colors, "text.primary": imported.colors["surface.app"] } }), "utf8")],
+    ["unsafe-pressed-control", Buffer.from(JSON.stringify(pressedUnsafe), "utf8")],
     ["unsafe-primary-boundary", Buffer.from(JSON.stringify({ ...imported, name: "Unsafe Primary Boundary", colors: {
       ...imported.colors,
       "surface.content": "#FFFFFF", "surface.chrome": "#FFFFFF", "surface.chrome.tint": "#FFFFFF", "surface.inset": "#FFFFFF",
@@ -301,6 +325,10 @@ try {
     if (name === "unsafe-primary-boundary") {
       assert.match(await alert.innerText(), /action\.primary\.background primary control boundary on content surface/,
         "the Oracle-style previously admitted profile is rejected by the new actual-use boundary rule");
+    }
+    if (name === "unsafe-pressed-control") {
+      assert.match(await alert.innerText(), /text\.primary text on shared control pressed surface.*4\.27:1 contrast/,
+        "the formerly admitted custom profile is rejected for its actual pressed control text contrast");
     }
     if (name === "unsafe-computed-indicator") {
       assert.match(await alert.innerText(), /computed-cell dotted state indicator against selected active cell/,
@@ -400,6 +428,15 @@ try {
     `midtone profile import is admitted: ${await page.locator(".ts-appearance-notice--rejected").innerText().catch(() => "no rejection text")}`);
   await page.locator(".ts-appearance-candidate").getByRole("button", { name: "Apply profile", exact: true }).click();
   await page.getByRole("radio", { name: /Imported Midtone Local Profile/ }).waitFor();
+  await page.keyboard.press("Escape");
+  const ordinaryStates = await sampleControlStates(page, page.getByRole("button", { name: "Refresh", exact: true }));
+  assert.equal(ordinaryStates.pressed.background, "rgb(236, 238, 244)", "admitted imported profile paints the admitted fixed pressed surface");
+  for (const [state, paint] of Object.entries(ordinaryStates)) {
+    assert.ok(contrastRgb(paint.foreground, paint.background) >= 4.5,
+      `admitted imported ordinary control ${state} text keeps 4.5:1 contrast: ${JSON.stringify(paint)}`);
+  }
+  assert.equal(new Set(Object.values(ordinaryStates).map((paint) => paint.background)).size, 3,
+    "admitted imported ordinary control has distinct rest, hover, and pressed surfaces");
   const primary = page.getByRole("button", { name: "Save a copy", exact: true });
   const primaryPaint = [];
   await page.mouse.move(1, 1);
@@ -586,6 +623,41 @@ try {
   }
   await focusPage.close();
 
+  const ghostPage = await context.newPage();
+  await ghostPage.setViewportSize({ width: 320, height: 640 });
+  await ghostPage.goto(LOCAL_ORIGIN);
+  await ghostPage.getByTestId("project-ready").waitFor();
+  assert.equal(await ghostPage.getByRole("radio", { name: /Imported Safe Header comfortable/ }).isChecked(), true,
+    "ghost control samples the admitted persisted imported profile");
+  await ghostPage.locator('.ts-command-overflow > summary[aria-label="More document commands"]').click();
+  const ghost = ghostPage.locator(".ts-command-overflow > button.ts-button--ghost");
+  await ghost.waitFor({ state: "visible" });
+  const ghostStates = await sampleControlStates(ghostPage, ghost);
+  assert.equal(ghostStates.rest.background, "rgba(0, 0, 0, 0)", "admitted imported ghost control keeps transparent rest");
+  assert.equal(ghostStates.pressed.background, "rgb(236, 238, 244)", "admitted imported ghost control paints the admitted fixed pressed surface");
+  for (const state of ["hover", "pressed"]) {
+    const paint = ghostStates[state];
+    assert.ok(contrastRgb(paint.foreground, paint.background) >= 4.5,
+      `admitted imported ghost control ${state} text keeps 4.5:1 contrast: ${JSON.stringify(paint)}`);
+  }
+  assert.notEqual(ghostStates.hover.background, ghostStates.pressed.background,
+    "admitted imported ghost control has distinct hover and pressed surfaces");
+  await ghostPage.close();
+
+  const newlyUnsafeStored = await context.newPage();
+  const newlyUnsafeRaw = JSON.stringify({ schemaVersion: 2, kind: "imported", profile: pressedUnsafe });
+  await newlyUnsafeStored.addInitScript(({ storageKey, raw }) => localStorage.setItem(storageKey, raw),
+    { storageKey: key, raw: newlyUnsafeRaw });
+  await newlyUnsafeStored.goto(LOCAL_ORIGIN);
+  await newlyUnsafeStored.getByTestId("project-ready").waitFor();
+  assert.equal(await newlyUnsafeStored.evaluate((storageKey) => localStorage.getItem(storageKey), key), newlyUnsafeRaw,
+    "fallback preserves the old custom preference record without rewriting it");
+  assert.equal(await newlyUnsafeStored.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
+  assert.equal(await newlyUnsafeStored.evaluate(() => document.documentElement.getAttribute("data-ts-profile-density")), "compact");
+  await newlyUnsafeStored.getByRole("button", { name: "Appearance", exact: true }).click();
+  await newlyUnsafeStored.getByText("Saved appearance could not be loaded. Using Tachiko for this session.", { exact: true }).waitFor();
+  await newlyUnsafeStored.close();
+
   const corrupt = await context.newPage();
   await corrupt.addInitScript(({ storageKey, manifest }) => {
     localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "imported", profile: manifest }));
@@ -600,7 +672,7 @@ try {
   console.log(JSON.stringify({ case: "#70 real-entry profile interchange", status: "PASS", rejected: rejected.map(([name]) => name),
     builtInBytes: builtInBytes.byteLength, importedBytes: exported.byteLength, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"),
     networkDelta: network.length - networkBefore, computedPaint: { ...computedPaint, contrast: computedContrast }, headerFocus,
-    narrow, narrowTall, narrowShort, shortView }));
+    ordinaryStates, ghostStates, narrow, narrowTall, narrowShort, shortView }));
 } finally {
   await context?.close();
   await rm(profileDir, { recursive: true, force: true });
