@@ -2,6 +2,7 @@
 // from computed browser styles, with a screenshot fallback for gradients.
 // This is a proxy, not physical AT or browser zoom.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -80,9 +81,30 @@ async function openCanary(context, page) {
   const closeProject = page.getByRole("button", { name: "Close project", exact: true });
   if (await closeProject.count()) {
     await closeProject.click();
-    await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).waitFor({ state: "visible" });
+  } else {
+    const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
+    if (await overflow.isVisible()) {
+      await overflow.click();
+      await page.locator(".ts-command-overflow > button").click();
+    }
   }
-  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  const canary = page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true });
+  try {
+    await canary.waitFor({ state: "visible", timeout: 2500 });
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      view: document.querySelector(".ts-app")?.getAttribute("data-view") ?? null,
+      projectReady: Boolean(document.querySelector('[data-testid="project-ready"]')),
+      openDetails: [...document.querySelectorAll("details")].filter((details) => details.open).map((details) => details.className),
+      visibleCloseButtons: [...document.querySelectorAll('button')]
+        .filter((button) => button.textContent?.trim() === "Close project" && button.getClientRects().length > 0)
+        .length,
+      dialogs: [...document.querySelectorAll('[role="dialog"]')].map((dialog) => dialog.getAttribute("aria-label")),
+      dirty: document.querySelector('[data-testid="work-state"]')?.getAttribute("data-work-state") ?? null,
+    }));
+    throw new Error(`Could not return to Home before opening the canary: ${JSON.stringify(state)}; ${error instanceof Error ? error.message : String(error)}`);
+  }
+  await canary.click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Table", exact: true }).waitFor();
   const firstCell = page.locator(".ts-grid tbody .ts-cell").first();
@@ -113,7 +135,11 @@ async function paintedSamples(page, targets) {
       samples.push({ label, missing: true });
       continue;
     }
-    await locator.scrollIntoViewIfNeeded();
+    try {
+      await locator.scrollIntoViewIfNeeded();
+    } catch (error) {
+      throw new Error(`Could not reveal ${label} (${selector}) for visual sampling: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const pngData = (await page.screenshot({ animations: "disabled" })).toString("base64");
     const styleInfo = await locator.evaluate((element) => {
       const rect = element.getBoundingClientRect();
@@ -328,11 +354,15 @@ async function geometry(page, width, combo) {
     const title = document.querySelector(".ts-title");
     const app = document.querySelector(".ts-app");
     const tableSelector = document.querySelector(".ts-context-table select");
+    const panel = document.querySelector(".ts-panel");
+    const panelRect = panel?.getBoundingClientRect();
+    const gridRect = grid?.getBoundingClientRect();
     return {
       pageWidth: root.scrollWidth,
       viewportWidth: innerWidth,
       appWidth: app?.getBoundingClientRect().width ?? 0,
       gridHeight: grid?.clientHeight ?? 0,
+      gridAvailableHeight: panelRect && gridRect ? Math.max(0, Math.floor(panelRect.bottom - gridRect.top)) : 0,
       tableSelectorHeight: tableSelector?.getBoundingClientRect().height ?? null,
       rowPitch: rows.length === 2 ? rows[1] - rows[0] : null,
       headerBackground: head ? getComputedStyle(head).backgroundImage : "missing",
@@ -341,12 +371,316 @@ async function geometry(page, width, combo) {
     };
   });
   evidence(result.pageWidth <= width, `${width}px page has no horizontal overflow`, { ...result, combo });
-  evidence(result.gridHeight >= 168, `${width}px grid retains 168px usable minimum`, { ...result, combo });
+  evidence(result.gridHeight + 1 >= Math.min(168, result.gridAvailableHeight),
+    `${width}px grid keeps the 168px floor when space permits`, { ...result, combo });
   evidence(result.rowPitch === combo.pitch, `${width}px rendered row pitch equals ${combo.pitch}px`, { ...result, combo });
   const expectedTarget = combo.density === "comfortable" ? 36 : 32;
   evidence(result.tableSelectorHeight === expectedTarget,
     `${width}px Table selector height equals the ${expectedTarget}px ${combo.density} target`, { ...result, combo, expectedTarget });
   return result;
+}
+
+async function auditWorkbookViewportBounds(page, width, height, profile) {
+  await page.setViewportSize({ width, height });
+  for (const viewName of ["Table", "Brief", "Import & export"]) {
+    await page.getByRole("tab", { name: viewName, exact: true }).click();
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector('[role="tabpanel"]');
+      const footer = document.querySelector(".ts-workspace-footer");
+      const grid = document.querySelector(".ts-grid-scroll");
+      const panelRect = panel?.getBoundingClientRect();
+      const footerRect = footer?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        scrollY,
+        panelTop: panelRect?.top ?? null,
+        panelBottom: panelRect?.bottom ?? null,
+        panelHeight: panelRect?.height ?? null,
+        panelClientHeight: panel?.clientHeight ?? null,
+        panelScrollHeight: panel?.scrollHeight ?? null,
+        panelOverflowY: panel ? getComputedStyle(panel).overflowY : "missing",
+        gridClientWidth: grid?.clientWidth ?? null,
+        gridScrollWidth: grid?.scrollWidth ?? null,
+        gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
+        footerTop: footerRect?.top ?? null,
+        footerBottom: footerRect?.bottom ?? null,
+      };
+    });
+    const label = `${width}x${height} ${profile} ${viewName}`;
+    evidence(layout.panelOverflowY === "auto", `${label} panel can scroll its own long content`, layout);
+    evidence(layout.panelBottom <= layout.footerTop + 1, `${label} panel ends before the Views/status footer`, layout);
+    evidence(layout.footerBottom <= height + 1, `${label} keeps the complete Views/status footer in the viewport`, layout);
+    evidence(layout.pageHeight <= height + 1 && layout.scrollY === 0, `${label} does not push the document beyond the viewport`, layout);
+    if (width === 320 && viewName === "Brief") {
+      evidence(layout.panelScrollHeight > layout.panelClientHeight,
+        `${label} scrolls the long Brief content inside its panel`, layout);
+    }
+    if (width === 320 && viewName === "Table") {
+      evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth,
+        `${label} preserves the Table's own horizontal grid scroller`, layout);
+    }
+    observations.push({ workbookViewport: label, ...layout });
+  }
+}
+
+async function auditTallGridLayoutOnly(page) {
+  const clonedRows = await page.evaluate(() => {
+    const body = document.querySelector(".ts-grid tbody");
+    const source = body?.firstElementChild;
+    if (!body || !source) return 0;
+    const startingCount = body.children.length;
+    for (let index = startingCount; index < 120; index += 1) {
+      const clone = source.cloneNode(true);
+      clone.setAttribute("data-layout-stress-row", "true");
+      body.append(clone);
+    }
+    return body.children.length;
+  });
+  evidence(clonedRows === 120, "layout-only DOM stress creates 120 painted rows", { clonedRows });
+
+  for (const [width, height] of [[1512, 982], [320, 640]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-panel");
+      const grid = document.querySelector(".ts-grid-scroll");
+      const footer = document.querySelector(".ts-workspace-footer");
+      const tabs = document.querySelector('[role="tablist"][aria-label="Workbook views"]');
+      const status = document.querySelector(".ts-workbook-status");
+      const notices = document.querySelector(".ts-notices");
+      const rect = (element) => element?.getBoundingClientRect();
+      const panelRect = rect(panel);
+      const gridRect = rect(grid);
+      const footerRect = rect(footer);
+      const tabsRect = rect(tabs);
+      const statusRect = rect(status);
+      const noticesRect = rect(notices);
+      const gridStyle = grid ? getComputedStyle(grid) : null;
+      if (grid) {
+        grid.scrollTop = grid.scrollHeight;
+        grid.scrollLeft = grid.scrollWidth;
+      }
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        panelBottom: panelRect?.bottom ?? null,
+        panelClientHeight: panel?.clientHeight ?? null,
+        panelScrollHeight: panel?.scrollHeight ?? null,
+        gridTop: gridRect?.top ?? null,
+        gridBottom: gridRect?.bottom ?? null,
+        gridHeight: gridRect?.height ?? null,
+        gridClientHeight: grid?.clientHeight ?? null,
+        gridScrollHeight: grid?.scrollHeight ?? null,
+        gridClientWidth: grid?.clientWidth ?? null,
+        gridScrollWidth: grid?.scrollWidth ?? null,
+        gridScrollTop: grid?.scrollTop ?? null,
+        gridScrollLeft: grid?.scrollLeft ?? null,
+        gridOverflowY: gridStyle?.overflowY ?? null,
+        gridOverflowX: gridStyle?.overflowX ?? null,
+        footerBottom: footerRect?.bottom ?? null,
+        tabsTop: tabsRect?.top ?? null,
+        tabsBottom: tabsRect?.bottom ?? null,
+        statusTop: statusRect?.top ?? null,
+        statusBottom: statusRect?.bottom ?? null,
+        noticesTop: noticesRect?.top ?? null,
+        noticesBottom: noticesRect?.bottom ?? null,
+      };
+    });
+    const label = `${width}x${height} tall-grid layout-only stress`;
+    evidence(layout.pageWidth <= width, `${label} has no horizontal document overflow`, layout);
+    evidence(layout.gridBottom <= layout.panelBottom + 1, `${label} grid stays within the actual panel boundary`, layout);
+    evidence(layout.panelScrollHeight <= layout.panelClientHeight + 1, `${label} avoids nested panel scrolling`, layout);
+    evidence(layout.gridOverflowY === "auto" && layout.gridScrollHeight > layout.gridClientHeight && layout.gridScrollTop > 0,
+      `${label} reaches the grid's own vertical scrollbar`, layout);
+    evidence(layout.gridHeight >= Math.min(168, layout.panelBottom - layout.gridTop),
+      `${label} keeps the 168px grid floor when available space permits`, layout);
+    evidence(layout.tabsTop >= 0 && layout.tabsBottom <= height && layout.statusTop >= 0 && layout.statusBottom <= height,
+      `${label} keeps Views and status visible`, layout);
+    evidence(layout.tabsTop >= layout.panelBottom - 1 && layout.statusTop >= layout.tabsBottom - 1 && layout.noticesTop >= layout.footerBottom - 1,
+      `${label} keeps the panel, Views, status, and legal notices in a non-overlapping sequence`, layout);
+    evidence(layout.noticesTop >= 0 && layout.noticesBottom <= height,
+      `${label} keeps legal notices visible`, layout);
+    if (width === 320) {
+      evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth && layout.gridScrollLeft > 0,
+        `${label} reaches the grid's own horizontal scrollbar`, layout);
+    }
+    observations.push({ tallGridLayoutOnly: label, ...layout });
+  }
+
+  await page.setViewportSize({ width: 1512, height: 982 });
+  await page.evaluate(() => {
+    const panel = document.querySelector(".ts-panel");
+    if (panel) panel.style.flex = "0 0 300px";
+  });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const resizedPanel = await page.evaluate(() => {
+    const panel = document.querySelector(".ts-panel");
+    const grid = document.querySelector(".ts-grid-scroll");
+    return {
+      panelHeight: panel?.getBoundingClientRect().height ?? null,
+      gridBottom: grid?.getBoundingClientRect().bottom ?? null,
+      panelBottom: panel?.getBoundingClientRect().bottom ?? null,
+      availableHeight: Number.parseFloat(grid?.style.getPropertyValue("--ts-grid-available-height") ?? "NaN"),
+    };
+  });
+  evidence(resizedPanel.panelHeight === 300 && resizedPanel.gridBottom <= resizedPanel.panelBottom + 1 && resizedPanel.availableHeight <= 300,
+    "panel ResizeObserver updates the grid cap when the panel changes size without a viewport resize", resizedPanel);
+  observations.push({ tallGridPanelResize: resizedPanel });
+  await page.evaluate(() => {
+    document.querySelector(".ts-panel")?.style.removeProperty("flex");
+    document.querySelectorAll("[data-layout-stress-row]").forEach((row) => row.remove());
+  });
+}
+
+async function auditHomeViewportBounds(page) {
+  await page.setViewportSize({ width: 1512, height: 982 });
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Viewport home probe");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save a copy" }).waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const savedCopy = page.getByRole("button", { name: "Open saved Viewport home probe", exact: true });
+  for (const [width, height] of [[320, 640], [1512, 982]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const layout = await page.evaluate(() => {
+      const root = document.querySelector(".ts-app-root");
+      const app = document.querySelector('.ts-app[data-view="home"]');
+      const home = document.querySelector(".ts-home");
+      const notices = document.querySelector(".ts-notices");
+      const rootRect = root?.getBoundingClientRect();
+      const appRect = app?.getBoundingClientRect();
+      const noticesRect = notices?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        appHeight: app?.getBoundingClientRect().height ?? null,
+        homeHeight: home?.scrollHeight ?? null,
+        rootHeight: rootRect?.height ?? null,
+        rootHeightStyle: root ? getComputedStyle(root).height : null,
+        rootMinHeightStyle: root ? getComputedStyle(root).minHeight : null,
+        appBottom: appRect?.bottom ?? null,
+        noticesTop: noticesRect?.top ?? null,
+        noticesBottom: noticesRect?.bottom ?? null,
+      };
+    });
+    evidence(layout.pageWidth <= width, `${width}x${height} Home with a saved copy has no horizontal overflow`, layout);
+    evidence(layout.pageHeight >= height, `${width}x${height} Home retains natural document height`, layout);
+    evidence(layout.rootHeight >= layout.appHeight && layout.rootMinHeightStyle !== "0px",
+      `${width}x${height} Home root expands with its content`, layout);
+    if (layout.appBottom !== null && layout.noticesTop !== null) {
+      evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,
+        `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);
+    }
+    await savedCopy.scrollIntoViewIfNeeded();
+    const copyRect = await savedCopy.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
+    });
+    evidence(copyRect.top >= 0 && copyRect.bottom <= height,
+      `${width}x${height} saved copy action can be reached by scrolling Home`, { ...layout, copyRect });
+    observations.push({ homeViewport: `${width}x${height}`, ...layout, copyRect });
+  }
+}
+
+async function auditFirstEntryStates(browser, dist) {
+  const sizes = [[320, 640], [1512, 982]];
+  const pendingContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(pendingContext, dist);
+  let releaseManifest;
+  let markManifestRequested;
+  const manifestGate = new Promise((resolve) => { releaseManifest = resolve; });
+  const manifestRequested = new Promise((resolve) => { markManifestRequested = resolve; });
+  const pendingPage = await pendingContext.newPage();
+  await pendingPage.route("**/examples/release-plan/manifest.json", async (route) => {
+    markManifestRequested();
+    await manifestGate;
+    const manifest = await readFile(path.join(dist, "examples/release-plan/manifest.json"));
+    await route.fulfill({ status: 200, contentType: "application/json", body: manifest });
+  });
+  await pendingPage.goto(LOCAL_ORIGIN, { waitUntil: "domcontentloaded" });
+  await pendingPage.getByTestId("initial-launch").waitFor();
+  await manifestRequested;
+  for (const [width, height] of sizes) {
+    await pendingPage.setViewportSize({ width, height });
+    const layout = await pendingPage.evaluate(() => {
+      const root = document.querySelector(".ts-app-root");
+      const content = document.querySelector('[data-testid="initial-launch"]');
+      const rootRect = root?.getBoundingClientRect();
+      const contentRect = content?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        rootBottom: rootRect?.bottom ?? null,
+        contentLeft: contentRect?.left ?? null,
+        contentRight: contentRect?.right ?? null,
+        contentTop: contentRect?.top ?? null,
+        contentBottom: contentRect?.bottom ?? null,
+        notices: document.querySelector(".ts-notices")?.getBoundingClientRect().toJSON() ?? null,
+      };
+    });
+    evidence(layout.pageWidth <= width, `${width}x${height} first-entry loading has no horizontal overflow`, layout);
+    evidence(layout.contentLeft >= 0 && layout.contentRight <= width && layout.contentTop >= 0 && layout.contentBottom <= layout.rootBottom,
+      `${width}x${height} first-entry loading content fits its natural root`, layout);
+    if (layout.notices) evidence(layout.notices.top >= layout.contentBottom - 1 && layout.notices.bottom <= layout.pageHeight + 1,
+      `${width}x${height} first-entry loading legal notice follows content without clipping`, layout);
+    observations.push({ firstEntry: `loading ${width}x${height}`, ...layout });
+  }
+  releaseManifest();
+  await pendingPage.getByTestId("project-ready").waitFor();
+  await pendingContext.close();
+
+  const failureContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(failureContext, dist);
+  const failurePage = await failureContext.newPage();
+  await failurePage.route("**/examples/release-plan/manifest.json", (route) =>
+    route.fulfill({ status: 503, contentType: "text/plain", body: "controlled initial-open failure" }));
+  await failurePage.goto(LOCAL_ORIGIN, { waitUntil: "domcontentloaded" });
+  const alert = failurePage.getByRole("alert").filter({ hasText: "example file manifest.json is unavailable (503)" });
+  await alert.waitFor();
+  for (const [width, height] of sizes) {
+    await failurePage.setViewportSize({ width, height });
+    const layout = await failurePage.evaluate(() => {
+      const root = document.querySelector(".ts-app-root");
+      const app = document.querySelector('.ts-app[data-view="home"]');
+      const alert = document.querySelector(".ts-error");
+      const rootRect = root?.getBoundingClientRect();
+      const appRect = app?.getBoundingClientRect();
+      const alertRect = alert?.getBoundingClientRect();
+      const noticesRect = document.querySelector(".ts-notices")?.getBoundingClientRect();
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        rootBottom: rootRect?.bottom ?? null,
+        appBottom: appRect?.bottom ?? null,
+        alertLeft: alertRect?.left ?? null,
+        alertRight: alertRect?.right ?? null,
+        alertTop: alertRect?.top ?? null,
+        alertBottom: alertRect?.bottom ?? null,
+        noticesTop: noticesRect?.top ?? null,
+      };
+    });
+    evidence(layout.pageWidth <= width, `${width}x${height} first-entry error has no horizontal overflow`, layout);
+    evidence(layout.alertLeft >= 0 && layout.alertRight <= width && layout.alertTop >= 0 && layout.alertBottom <= layout.appBottom,
+      `${width}x${height} first-entry error remains within Home content`, layout);
+    if (layout.noticesTop !== null) evidence(layout.noticesTop >= layout.appBottom - 1,
+      `${width}x${height} first-entry error legal notice does not overlap Home`, layout);
+    observations.push({ firstEntry: `error ${width}x${height}`, ...layout });
+  }
+  await failureContext.close();
 }
 
 async function focusAudit(page, tag) {
@@ -505,6 +839,7 @@ async function main() {
     await focusAudit(page, "Appearance selector");
     await openCanary(context, page);
     await page.locator(".ts-workbook-head > .ts-appearance-selector").waitFor();
+    await auditTallGridLayoutOnly(page);
 
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });
@@ -513,7 +848,10 @@ async function main() {
           await choose(page, profile.id, density.id);
           const combo = { profile: profile.id, density: density.id, pitch: density.pitch };
           const menuBounds = await menuViewportAndOpen(page, `${width}px ${profile.id}/${density.id}`);
-          await auditContrast(page, colorTargets, `${width}px ${profile.id}/${density.id}`);
+          const visibleColorTargets = width === 320
+            ? colorTargets.filter(([label]) => label !== "workbook wordmark")
+            : colorTargets;
+          await auditContrast(page, visibleColorTargets, `${width}px ${profile.id}/${density.id}`);
           const geometryState = await geometry(page, width, combo);
           observations.push({ width, ...combo, menuBounds, ...geometryState });
           await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -598,6 +936,12 @@ async function main() {
       }
     }
 
+    for (const profile of profiles) {
+      await choose(page, profile.id, "comfortable");
+      await auditWorkbookViewportBounds(page, 320, 640, profile.id);
+      await auditWorkbookViewportBounds(page, 1512, 982, profile.id);
+    }
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -613,14 +957,62 @@ async function main() {
     // about browser zoom, OS text scaling, or assistive technology.
     const textEnlargementProxy = await page.evaluate(() => {
       document.documentElement.style.zoom = "1.5";
-      return { label: "CSS zoom 150% painted-layout proxy", pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth, titleClientWidth: document.querySelector(".ts-title").clientWidth };
+      const dimensions = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          x: rect.x,
+          width: rect.width,
+          scrollWidth: element.scrollWidth,
+          minWidth: style.minWidth,
+          flexBasis: style.flexBasis,
+          gridColumn: style.gridColumn,
+          display: style.display,
+        };
+      };
+      const overflowSources = [...document.querySelectorAll("body *")]
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return { tag: element.tagName, className: typeof element.className === "string" ? element.className : "", right: rect.right, width: rect.width, overflowX: style.overflowX, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, text: element.childElementCount === 0 ? element.textContent?.trim().slice(0, 45) : "" };
+        })
+        .filter((item) => item.right > innerWidth + 1 && item.right < 1000)
+        .sort((a, b) => b.right - a.right)
+        .slice(0, 20);
+      return {
+        label: "CSS zoom 150% painted-layout proxy",
+        pageWidth: document.documentElement.scrollWidth,
+        viewportWidth: innerWidth,
+        titleClientWidth: document.querySelector(".ts-title").clientWidth,
+        header: dimensions(".ts-workbook-head"),
+        identity: dimensions(".ts-document-identity"),
+        titleBlock: dimensions(".ts-title-block"),
+        title: dimensions(".ts-title"),
+        appearance: dimensions(".ts-workbook-head > .ts-appearance-selector"),
+        commands: dimensions(".ts-header-commands"),
+        actions: dimensions(".ts-header-actions"),
+        saveStatus: dimensions(".ts-save-status"),
+        overflow: dimensions(".ts-command-overflow"),
+        overflowSources,
+        pageBoxes: ["html", "body", ".ts-app", ".ts-workbook", ".ts-workbook-head", ".ts-grid-scroll"].map((selector) => {
+          const element = document.querySelector(selector);
+          const rect = element?.getBoundingClientRect();
+          return { selector, x: rect?.x, right: rect?.right, width: rect?.width, scrollWidth: element?.scrollWidth, clientWidth: element?.clientWidth, overflowX: element && getComputedStyle(element).overflowX };
+        }),
+      };
     });
     evidence(textEnlargementProxy.pageWidth <= textEnlargementProxy.viewportWidth,
       "150% painted-layout proxy keeps the page within its viewport", textEnlargementProxy);
+    evidence(textEnlargementProxy.titleClientWidth >= 48,
+      "150% painted-layout proxy keeps a meaningful workbook title width", textEnlargementProxy);
     observations.push({ textEnlargementProxy });
 
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
+    await auditHomeViewportBounds(page);
+    await auditFirstEntryStates(browser, dist);
   } finally {
     await browser.close();
   }
@@ -651,7 +1043,11 @@ async function main() {
         scrollState,
       })),
     },
-    textEnlargementProxy: "CSS zoom 150% painted-layout proxy only; not actual browser zoom or OS text scaling",
+    workbookViewportAudit: observations.filter((item) => item.workbookViewport),
+    tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
+    homeViewportAudit: observations.filter((item) => item.homeViewport),
+    firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
+    textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,
     forcedColorSelectedProfileRadioPaint: observations
       .filter((item) => item.selectedProfileRadioPaint)

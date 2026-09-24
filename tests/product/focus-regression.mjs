@@ -55,6 +55,223 @@ async function editImpact(page, value) {
 
 const cases = [
   [
+    "product-focus-00 shared dialog geometry and profile-aware Save states follow references",
+    async (page) => {
+      await page.setViewportSize({ width: 1512, height: 982 });
+      const saveTrigger = page.getByRole("button", { name: "Save a copy", exact: true });
+      await saveTrigger.click();
+      const save = page.getByRole("dialog", { name: "Save a copy", exact: true });
+      const desktopSave = await save.boundingBox();
+      assert.equal(Math.round(desktopSave.width), 600);
+      assert.equal(Math.round(desktopSave.height), 360);
+      assert.equal(Math.round(desktopSave.x), 456);
+      assert.equal(Math.round(desktopSave.y), 311);
+      const saveMaterial = await save.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const title = getComputedStyle(element.querySelector("h2"));
+        return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow, titleSize: title.fontSize, titleLine: title.lineHeight, titleWeight: title.fontWeight };
+      });
+      assert.deepEqual(saveMaterial, {
+        radius: "12px",
+        border: "rgb(223, 226, 234)",
+        shadow: "rgba(37, 39, 53, 0.24) 0px 16px 48px -12px",
+        titleSize: "20px",
+        titleLine: "28px",
+        titleWeight: "600",
+      });
+      assert.match(await save.locator(".ts-dialog-intro p").evaluate((paragraph) => paragraph.innerHTML), /profile\.<br>/);
+      const desktopSaveActions = await save.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+        }),
+      );
+      assert.equal(desktopSaveActions[0].x - Math.round(desktopSave.x), 25);
+      assert.equal(desktopSaveActions[0].width, 88);
+      assert.equal(desktopSaveActions[1].x + desktopSaveActions[1].width - Math.round(desktopSave.x), 577);
+      assert.equal(desktopSaveActions[1].width, 144);
+      assert.equal(desktopSaveActions[0].height, 32);
+      await page.keyboard.press("Escape");
+      assert.equal(await saveTrigger.evaluate((element) => element === document.activeElement), true);
+
+      await editImpact(page, "3");
+      await page.getByRole("button", { name: "Close project", exact: true }).click();
+      const desktopClose = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+      const desktopClosePanel = await desktopClose.boundingBox();
+      assert.equal(Math.round(desktopClosePanel.width), 600);
+      assert.equal(Math.round(desktopClosePanel.height), 260);
+      assert.equal(Math.round(desktopClosePanel.x), 456);
+      assert.equal(Math.round(desktopClosePanel.y), 361);
+      const closeMaterial = await desktopClose.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
+      });
+      assert.equal(closeMaterial.radius, "12px");
+      assert.equal(closeMaterial.border, "rgb(223, 226, 234)");
+      assert.equal(closeMaterial.shadow, saveMaterial.shadow);
+      const desktopCloseActions = await desktopClose.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+        }),
+      );
+      assert.equal(desktopCloseActions[0].x - Math.round(desktopClosePanel.x), 25);
+      assert.equal(desktopCloseActions[0].width, 128);
+      assert.equal(desktopCloseActions[1].x + desktopCloseActions[1].width - Math.round(desktopClosePanel.x), 577);
+      assert.equal(desktopCloseActions[1].width, 196);
+      assert.equal(desktopCloseActions[0].height, 32);
+      await desktopClose.getByRole("button", { name: "Keep editing", exact: true }).click();
+
+      await page.setViewportSize({ width: 320, height: 640 });
+      await saveTrigger.click();
+      const compactSave = await save.boundingBox();
+      assert.equal(Math.round(compactSave.x), 16);
+      assert.equal(Math.round(compactSave.width), 288);
+      const saveActions = await save.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().top),
+      );
+      assert.ok(Math.abs(saveActions[0] - saveActions[1]) < 1, "Save actions remain side by side on phone");
+      await save.getByRole("button", { name: "Cancel", exact: true }).click();
+
+      await page.setViewportSize({ width: 320, height: 350 });
+      await saveTrigger.click();
+      const shortSave = await save.boundingBox();
+      assert.equal(Math.round(shortSave.x), 16);
+      assert.ok(shortSave.height <= 302, `short Save fits the viewport's 302px modal area: ${JSON.stringify(shortSave)}`);
+      assert.ok(shortSave.y >= 0 && shortSave.y + shortSave.height <= 350, `short Save frame remains in the viewport: ${JSON.stringify(shortSave)}`);
+      await save.getByRole("textbox", { name: "Copy name", exact: true }).fill("short-viewport-copy");
+      const shortSaveAction = save.getByRole("button", { name: "Create copy", exact: true });
+      await shortSaveAction.focus();
+      const reachedSaveAction = await shortSaveAction.boundingBox();
+      const reachedSavePanel = await save.boundingBox();
+      assert.ok(reachedSaveAction.y >= reachedSavePanel.y && reachedSaveAction.y + reachedSaveAction.height <= reachedSavePanel.y + reachedSavePanel.height, "short Save action is reachable inside its scrollable dialog");
+      await save.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.setViewportSize({ width: 320, height: 640 });
+
+      await page.locator(".ts-command-overflow > summary").click();
+      await page.getByRole("button", { name: "Close project", exact: true }).click();
+      const close = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+      const compactClose = await close.boundingBox();
+      assert.equal(Math.round(compactClose.x), 16);
+      assert.equal(Math.round(compactClose.width), 288);
+      const closeActions = await close.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().top),
+      );
+      assert.ok(closeActions[1] > closeActions[0], "Close choices stack on phone in approved order");
+      await page.setViewportSize({ width: 320, height: 250 });
+      const shortClose = await close.boundingBox();
+      assert.ok(shortClose.height <= 202, `short Close fits the viewport's 202px modal area: ${JSON.stringify(shortClose)}`);
+      assert.ok(shortClose.y >= 0 && shortClose.y + shortClose.height <= 250, `short Close frame remains in the viewport: ${JSON.stringify(shortClose)}`);
+      const destructiveClose = close.getByRole("button", { name: "Close without saving", exact: true });
+      await destructiveClose.focus();
+      const reachedCloseAction = await destructiveClose.boundingBox();
+      const reachedClosePanel = await close.boundingBox();
+      assert.ok(reachedCloseAction.y >= reachedClosePanel.y && reachedCloseAction.y + reachedCloseAction.height <= reachedClosePanel.y + reachedClosePanel.height, "short Close action is reachable inside its scrollable dialog");
+      await close.getByRole("button", { name: "Keep editing", exact: true }).click();
+
+      await page.setViewportSize({ width: 1512, height: 982 });
+      const pendingSaveTransitions = [];
+      for (const profile of [
+        { id: "tachiko", label: "Tachiko", chrome: "porcelain", border: "rgb(223, 226, 234)" },
+        { id: "familiar-spreadsheet", label: "Familiar Spreadsheet", chrome: "structured", border: "rgb(204, 209, 216)" },
+        { id: "minimal-focus", label: "Minimal-Focus", chrome: "quiet", border: "rgb(229, 229, 235)" },
+      ]) {
+        const appearance = page.getByRole("button", { name: "Appearance", exact: true });
+        if (await appearance.getAttribute("aria-expanded") !== "true") await appearance.click();
+        await page.locator(".ts-appearance-profile-option").filter({ hasText: profile.label }).click();
+        await page.waitForFunction(({ chrome }) =>
+          document.documentElement.getAttribute("data-ts-profile-chrome") === chrome,
+        { chrome: profile.chrome });
+
+        await saveTrigger.click();
+        const profileSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+        assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} reopens Save without a stale parent failure alert`);
+        assert.equal(
+          await profileSave.evaluate((element) => getComputedStyle(element).borderColor),
+          profile.border,
+          `${profile.label} dialog border follows its resolved border.subtle role`,
+        );
+        const profileName = `issue97-${profile.id}-failure`;
+        const nameInput = profileSave.getByRole("textbox", { name: "Copy name", exact: true });
+        await nameInput.fill(profileName);
+        const createButton = profileSave.getByRole("button", { name: "Create copy", exact: true });
+        assert.equal(await createButton.getAttribute("aria-busy"), "false", `${profile.label} Save starts idle`);
+        assert.equal(await createButton.isDisabled(), false, `${profile.label} idle Save is enabled for a valid name`);
+        assert.equal(await profileSave.getByRole("alert").count(), 0, `${profile.label} idle Save has no error`);
+
+        const beforeFailure = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+        const writesBeforeFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+        await page.evaluate(() => window.__tachikoAcceptance.failNextSave());
+        await profileSave.evaluate((dialog) => {
+          const input = dialog.querySelector(".ts-text-input");
+          const button = Array.from(dialog.querySelectorAll("button")).find((candidate) =>
+            candidate.textContent.includes("Create copy") || candidate.textContent.includes("Working"),
+          );
+          const transitions = [];
+          const capture = () => transitions.push({
+            ariaBusy: button?.getAttribute("aria-busy"),
+            inputDisabled: input?.disabled ?? false,
+            focusInside: dialog.contains(document.activeElement),
+            nameFocused: document.activeElement === input,
+            workingLabel: button?.textContent.trim() === "Working…",
+          });
+          capture();
+          const observer = new MutationObserver(capture);
+          observer.observe(dialog, { attributes: true, childList: true, subtree: true, attributeFilter: ["aria-busy", "disabled"] });
+          window.__issue97SavePendingProbe = { observer, transitions };
+        });
+        await createButton.click();
+        const saveError = profileSave.getByRole("alert");
+        await saveError.waitFor();
+        assert.equal(await profileSave.getByRole("alert").count(), 1, `${profile.label} Save error remains inline and associated with the name`);
+        assert.equal(await page.getByRole("alert").count(), 1, `${profile.label} failed Save exposes one accessible alert`);
+        const transitions = await profileSave.evaluate(() => {
+          const probe = window.__issue97SavePendingProbe;
+          probe.observer.disconnect();
+          delete window.__issue97SavePendingProbe;
+          return probe.transitions;
+        });
+        pendingSaveTransitions.push({ profile: profile.label, transitions });
+        assert.match(await saveError.textContent(), new RegExp(profileName));
+        assert.equal(await nameInput.inputValue(), profileName, `${profile.label} keeps the failed destination available to correct`);
+        assert.equal(await createButton.getAttribute("aria-busy"), "false", `${profile.label} Save returns from busy after the failed transaction`);
+        assert.equal(await createButton.isDisabled(), false, `${profile.label} failed Save can be retried`);
+        const afterFailure = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
+        assert.equal(afterFailure.saved, false, `${profile.label} failure cannot claim the copy was saved`);
+        assert.equal(afterFailure.dirty, beforeFailure.dirty, `${profile.label} failure preserves edit dirty state`);
+        assert.equal(afterFailure.currentness, beforeFailure.currentness, `${profile.label} failure preserves fact currentness`);
+        assert.deepEqual(
+          await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), profileName),
+          null,
+          `${profile.label} failed transaction created no saved copy`,
+        );
+        const writesAfterFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+        assert.equal(writesAfterFailure.canonical, writesBeforeFailure.canonical + 1, `${profile.label} exercised one real canonical copy write`);
+        await nameInput.fill(`${profileName}-corrected`);
+        assert.equal(await profileSave.getByRole("alert").count(), 0, `${profile.label} correction clears only the inline Save failure`);
+        assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} correction does not reveal the stale parent Save failure behind the modal`);
+        assert.equal(await nameInput.inputValue(), `${profileName}-corrected`);
+        await profileSave.getByRole("button", { name: "Cancel", exact: true }).click();
+        const restoredParentError = page.getByRole("alert");
+        await restoredParentError.waitFor();
+        assert.equal(await page.getByRole("alert").count(), 1, `${profile.label} closing Save restores the parent failure status`);
+        assert.match(await restoredParentError.textContent(), /copy could not be saved/i);
+        await saveTrigger.click();
+        const reopenedSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+        await reopenedSave.waitFor();
+        assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} reopening Save suppresses its stale parent failure for the modal lifetime`);
+        await reopenedSave.getByRole("button", { name: "Cancel", exact: true }).click();
+        assert.equal(await page.getByRole("alert").count(), 1, `${profile.label} closing reopened Save restores the parent failure status`);
+      }
+      for (const { profile, transitions } of pendingSaveTransitions) {
+        assert.ok(transitions.some((transition) => transition.ariaBusy === "true"), `${profile} renders aria-busy while Create copy is pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.ariaBusy === "true" && !transition.inputDisabled), `${profile} keeps Copy name enabled while pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.ariaBusy === "true" && transition.focusInside && transition.nameFocused), `${profile} keeps keyboard focus in editable Copy name while pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.workingLabel), `${profile} renders the Working… label while pending: ${JSON.stringify(transitions)}`);
+      }
+    },
+  ],
+  [
     "product-focus-00 a published edit visibly distinguishes edited unsaved work",
     async (page) => {
       assert.equal(
@@ -200,6 +417,31 @@ const cases = [
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+    },
+  ],
+  [
+    "product-focus-05 completed copy settles status while retaining notes draft",
+    async (page) => {
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      const notes = page.getByRole("textbox", { name: "Decision notes", exact: true });
+      const retainedDraft = "unapplied notes retained across copy creation";
+      await notes.fill(retainedDraft);
+      await page.waitForFunction(() => document.querySelector("[data-work-dirty]")?.getAttribute("data-work-dirty") === "true");
+
+      const saveTrigger = page.getByRole("button", { name: "Save a copy", exact: true });
+      await saveTrigger.click();
+      const dialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+      const copyName = `retained-draft-${Date.now()}`;
+      await dialog.getByRole("textbox", { name: "Copy name", exact: true }).fill(copyName);
+      await dialog.getByRole("button", { name: "Create copy", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+
+      const saveStatus = page.getByTestId("save-status");
+      await page.waitForFunction(() => document.querySelector('[data-testid="save-status"]')?.textContent?.trim() === "Not saved yet");
+      assert.equal(await saveStatus.textContent(), "Not saved yet", "completed copy with a retained draft does not claim saved or remain pending");
+      assert.equal(await saveTrigger.isEnabled(), true, "completed copy re-enables Save a copy");
+      assert.equal(await notes.inputValue(), retainedDraft, "the local notes draft remains available after copy creation");
+      assert.ok(await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), copyName), "the older committed work was durably copied");
     },
   ],
 ];

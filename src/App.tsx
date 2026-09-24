@@ -48,6 +48,19 @@ export interface AppProps {
 
 export type RecoveryDraftBoundary = "reobserve" | "replacement" | "close";
 
+/** A completed copy is saved only for its exact current revision with no retained draft. */
+export function settledSaveStatus(
+  previous: SaveStatus,
+  savedRevision: string | null,
+  liveRevision: string | null,
+  hasUncommittedDraft: boolean,
+): SaveStatus {
+  if (previous === "failed") return previous;
+  return savedRevision !== null && liveRevision !== null && savedRevision === liveRevision && !hasUncommittedDraft
+    ? "saved"
+    : "not-saved";
+}
+
 /** Keep an unknown-edit draft only while reobserving its own occurrence. */
 export function recoveryDraftAfterBoundary(
   draft: string | null,
@@ -119,10 +132,11 @@ export function startInitialExampleOnce(
   attempted: { current: boolean },
   openExample: () => Promise<void>,
   onKnownFailure: (error: unknown) => void,
+  onSettled: () => void = () => undefined,
 ): void {
   if (attempted.current) return;
   attempted.current = true;
-  void openExample().catch(onKnownFailure);
+  void openExample().catch(onKnownFailure).finally(onSettled);
 }
 
 /** A confirmed import is a new occurrence and cannot inherit a prior report attachment. */
@@ -194,6 +208,7 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
  */
 export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [view, setView] = useState<WorkbookView | null>(null);
+  const [initialLaunchPending, setInitialLaunchPending] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [currentness, setCurrentness] = useState<Currentness>("current");
@@ -357,7 +372,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     };
     setInterop((current) => current
       ? { ...current, cleanupPreview: preview }
-      : { importInspection: null, metadata: null, ledger: [], cleanupPreview: preview, downloadStatus: "idle" });
+      : { importInspection: null, metadata: null, ledger: [], cleanupPreview: preview, downloadStatus: "idle", downloadError: null });
   }
 
   function upsertJ4Result(result: KeyedGroupedSumResult): void {
@@ -412,9 +427,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function evaluateSavedStatus(): void {
     const live = viewRef.current;
     const saved = savedRevisionRef.current;
-    if (saveInFlightRef.current || saved === null || live === null) return;
-    if (live.revision !== saved || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current) return;
-    setSaveStatus((previous) => (previous === "failed" ? previous : "saved"));
+    if (saveInFlightRef.current) return;
+    const hasUncommittedDraft =
+      draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current;
+    setSaveStatus((previous) => settledSaveStatus(previous, saved, live?.revision ?? null, hasUncommittedDraft));
   }
 
   function guardReplacement(): void {
@@ -635,7 +651,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     // Publication is known; only projection freshness remains unknown.
     setOutcome("idle");
     // The old preview targeted the projection we just discarded.
-    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
     cleanupPreviewContextRef.current = null;
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
   }
@@ -650,7 +666,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     markNotSaved();
     setCurrentness("unknown");
     setOutcome("unknown");
-    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
     cleanupPreviewContextRef.current = null;
     setMessage("The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
@@ -747,7 +763,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     // starts, while manual Open routes remain available after a known failure.
     startInitialExampleOnce(initialExampleAttemptedRef, openExample, (error) => {
       setMessage(describe(error, "The example work could not be opened."));
-    });
+    }, () => setInitialLaunchPending(false));
   }, []);
 
   async function openJ4Canary(): Promise<void> {
@@ -787,7 +803,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       const candidateInterop = copy.importedSource ? {
         importInspection: null, metadata: copy.importedSource.metadata, ledger: copy.importedSource.ledger,
-        cleanupPreview: null, downloadStatus: "idle" as const,
+        cleanupPreview: null, downloadStatus: "idle" as const, downloadError: null,
       } : null;
       // Validate the optional presentation before replacing the resident work.
       // A hash failure is a known refusal to open this copy, not a failed Open
@@ -857,6 +873,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the resident work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
     try {
+      setMessage(null);
       guardReplacement();
       checkpointBeforeOpen();
       const lower = file.name.toLowerCase();
@@ -866,12 +883,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: ",", header: true });
       const inspection = { name: file.name, format, source } as ImportInspection;
       importBytesRef.current = bytes.slice(0);
-      setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       setMessage(null);
       return inspection;
     } catch (error) {
       clearOpenCheckpoint();
-      setMessage(describe(error, "The selected spreadsheet could not be inspected."));
       throw error;
     } finally { end(); }
   }
@@ -883,6 +899,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (!pending || !bytes || !begin()) return false;
     try {
       guardReplacement();
+      // A valid retry owns the visible status from this point. Recovery gates
+      // above retain their message and fail-closed state unchanged.
+      setMessage(null);
       // Inspection is not dispatch. Replace the earlier inspection snapshot
       // at the actual import boundary so unknown-import recovery restores the
       // latest same-occurrence report, dirty marker, and save receipt.
@@ -900,7 +919,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       pendingDirtyRef.current = true;
       syncDirty();
       markNotSaved();
-      setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       cleanupPreviewContextRef.current = null;
       importedSourceRef.current = { name: pending.name, format: pending.format, bytes: bytes.slice(0), metadata: imported.metadata, ledger: imported.ledger };
       setCurrentness("current");
@@ -1024,17 +1043,20 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const live = viewRef.current;
     const metadata = interop?.metadata;
     if (!live || !metadata || !begin()) return false;
+    setMessage(null);
+    setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
     try {
       const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
       preparedDownloadRef.current = { format, revision: exported.revision, bytes: exported.bytes.slice(0) };
-      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent" } : current);
+      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent", downloadError: null } : current);
       setOutcome("idle");
       return true;
     } catch (error) {
       preparedDownloadRef.current = null;
       setOutcome("idle");
-      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
-      setMessage(describe(error, "The export could not be prepared for review.")); return false;
+      const detail = describe(error, "The export could not be prepared for review.");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed", downloadError: detail } : current);
+      setMessage(detail); return false;
     } finally { end(); }
   }
 
@@ -1043,6 +1065,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const live = viewRef.current;
     const prepared = preparedDownloadRef.current;
     if (!live || !prepared || prepared.format !== format || prepared.revision !== live.revision || !begin()) return false;
+    setMessage(null);
+    setInterop((current) => current ? { ...current, downloadError: null } : current);
     try {
       const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
@@ -1051,14 +1075,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       document.body.append(anchor); anchor.click(); anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       preparedDownloadRef.current = null;
-      setInterop((current) => current ? { ...current, downloadStatus: "idle" } : current);
+      setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
       setOutcome("idle");
       return true;
     } catch (error) {
       preparedDownloadRef.current = null;
       setOutcome("idle");
-      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
-      setMessage(describe(error, "The download was not created.")); return false;
+      const detail = describe(error, "The download was not created.");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed", downloadError: detail } : current);
+      setMessage(detail); return false;
     } finally { end(); }
   }
 
@@ -1425,7 +1450,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         if (sameReplacement) {
           importedSourceRef.current = pendingReplacement.importedSource;
           setInterop(pendingReplacement.interop
-            ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle" }
+            ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle", downloadError: null }
             : null);
           const recoveredReport = pendingReplacement.presentation
             ? recoverPresentationAfterAcknowledgedOpen(
@@ -1481,6 +1506,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
               ...checkpoint.interop,
               cleanupPreview: checkpoint.revision === next.revision ? checkpoint.interop.cleanupPreview : null,
               downloadStatus: "idle",
+              downloadError: null,
             }
           : null);
         cleanupPreviewContextRef.current = checkpoint.cleanupPreviewContext &&
@@ -1597,52 +1623,71 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   return (
     <div
-      className="ts-app-root"
+      className={initialLaunchPending ? "ts-app-root ts-app" : "ts-app-root"}
       data-work-dirty={dirty ? "true" : "false"}
       data-work-currentness={view ? currentness : undefined}
     >
-      <SheetShell
-        appearancePreference={appearancePreference}
-        view={view}
-        busy={busy}
-        dirty={dirty}
-        currentness={currentness}
-        outcome={outcome}
-        saveStatus={saveStatus}
-        message={message}
-        copies={savedCopies}
-        onOpenFiles={openFiles}
-        onOpenExample={openExample}
-        onOpenSaved={openSaved}
-        onSelectCollection={selectCollection}
-        onCommit={commit}
-        onCreateCopy={createCopy}
-        onClose={close}
-        onRefresh={refresh}
-        onDraftChange={onDraftChange}
-        onReportDraftChange={onReportDraftChange}
-        j4Results={j4Results}
-        j4DefinitionIds={j4DefinitionIds}
-        onPrepareJ4Bindings={prepareJ4Bindings}
-        onCreateJ4={createJ4}
-        onRefreshJ4={refreshJ4}
-        onOpenJ4Canary={openJ4Canary}
-        report={report}
-        onCreateReport={createReport}
-        onUpdateReport={updateReport}
-        onExportReportPng={exportReportPng}
-        onRemoveReport={removeReport}
-        interop={interop}
-        onInspectImport={inspectImport}
-        onImportCandidate={importCandidate}
-        onCancelImport={cancelImport}
-        onPreviewTrim={previewTrim}
-        onPreviewDeduplicate={previewDeduplicate}
-        onCommitCleanup={commitCleanup}
-        onCancelCleanup={cancelCleanup}
-        onPrepareDownload={prepareDownload}
-        onDownload={download}
-      />
+      {initialLaunchPending ? (
+        <main className="ts-home">
+          <header className="ts-home-head">
+            <div className="ts-home-heading">
+              <h1 className="ts-brand">Tachiko Sheet</h1>
+              <p
+                className="ts-subtle"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                data-testid="initial-launch"
+              >
+                Opening your work…
+              </p>
+            </div>
+          </header>
+        </main>
+      ) : (
+        <SheetShell
+          appearancePreference={appearancePreference}
+          view={view}
+          busy={busy}
+          dirty={dirty}
+          currentness={currentness}
+          outcome={outcome}
+          saveStatus={saveStatus}
+          message={message}
+          copies={savedCopies}
+          onOpenFiles={openFiles}
+          onOpenExample={openExample}
+          onOpenSaved={openSaved}
+          onSelectCollection={selectCollection}
+          onCommit={commit}
+          onCreateCopy={createCopy}
+          onClose={close}
+          onRefresh={refresh}
+          onDraftChange={onDraftChange}
+          onReportDraftChange={onReportDraftChange}
+          j4Results={j4Results}
+          j4DefinitionIds={j4DefinitionIds}
+          onPrepareJ4Bindings={prepareJ4Bindings}
+          onCreateJ4={createJ4}
+          onRefreshJ4={refreshJ4}
+          onOpenJ4Canary={openJ4Canary}
+          report={report}
+          onCreateReport={createReport}
+          onUpdateReport={updateReport}
+          onExportReportPng={exportReportPng}
+          onRemoveReport={removeReport}
+          interop={interop}
+          onInspectImport={inspectImport}
+          onImportCandidate={importCandidate}
+          onCancelImport={cancelImport}
+          onPreviewTrim={previewTrim}
+          onPreviewDeduplicate={previewDeduplicate}
+          onCommitCleanup={commitCleanup}
+          onCancelCleanup={cancelCleanup}
+          onPrepareDownload={prepareDownload}
+          onDownload={download}
+        />
+      )}
       <footer className="ts-notices">
         <span>Tachiko Sheet · experimental core kit notices: </span>
         <a href="/core-kit/notices/THIRD_PARTY_LICENSES.md">third-party licenses</a>

@@ -262,6 +262,7 @@ export interface InteropState {
   ledger: FidelityFinding[];
   cleanupPreview: CleanupPreview | null;
   downloadStatus: "idle" | "consent" | "failed";
+  downloadError: string | null;
 }
 
 /** A dispatched operation has no trustworthy publication result. */

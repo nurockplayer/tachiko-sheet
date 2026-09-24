@@ -14,6 +14,14 @@ const profile = await mkdtemp(path.join(tmpdir(), "tachiko-j5-product-"));
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 let context;
 
+async function closeProject(page) {
+  const close = page.getByRole("button", { name: "Close project", exact: true });
+  if (!await close.isVisible()) {
+    await page.locator('.ts-command-overflow > summary[aria-label="More document commands"]').click();
+  }
+  await close.click();
+}
+
 async function start(viewport) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
@@ -22,7 +30,7 @@ async function start(viewport) {
   page.setDefaultTimeout(5000);
   await page.goto(LOCAL_ORIGIN);
   await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await closeProject(page);
   return page;
 }
 
@@ -350,7 +358,7 @@ try {
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("blocked-invalid-presentation");
   assert.equal(await page.getByRole("button", { name: "Create copy", exact: true }).isDisabled(), true, "an invalid report draft must block a new copy without treating its copy name as the report draft");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await closeProject(page);
   await page.getByRole("heading", { name: "Unsaved work", exact: true }).waitFor();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   assert.equal(await title.inputValue(), titleOverLimit, "keeping an invalid report draft must preserve its exact text");
@@ -587,7 +595,7 @@ try {
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-overlimit");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await closeProject(page);
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await replaceSavedReportText(page, "j5-overlimit", "title", titleOverLimit);
   await page.getByRole("button", { name: "Open saved j5-overlimit", exact: true }).click();
@@ -600,7 +608,7 @@ try {
 
   // An acknowledged Open can lose its first projection. Refresh must bind the
   // saved presentation only after the same replacement and clean J4 discovery.
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await closeProject(page);
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
   await page.getByRole("button", { name: "Open saved j5-report", exact: true }).click();
@@ -618,7 +626,7 @@ try {
   // byte digest checks while referring to a non-current definition. Opening
   // that partial pair must stay in recoverable state: no current facts, saved
   // receipt or unpaired save may be published, including after repeat Refresh.
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await closeProject(page);
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await replaceSavedReportDefinition(page, "j5-report", "missing-current-definition");
   await page.getByRole("button", { name: "Open saved j5-report", exact: true }).click();
