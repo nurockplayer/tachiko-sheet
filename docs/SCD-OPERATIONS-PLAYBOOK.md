@@ -12,10 +12,12 @@ At intake, takeover, resume, post-merge recalibration, or after a long wait:
 
 1. read live #1;
 2. read the current #2 body;
-3. read `AGENTS.md` and `docs/DELIVERY.md`;
-4. read the active Issue/PR;
-5. verify current `main`, PR HEAD/base, open PRs, checks and review threads;
-6. only then use old session logs or historical comments to explain discrepancies.
+3. read `AGENTS.md`;
+4. read `docs/DELIVERY.md`;
+5. read `docs/MVP-EXECUTION.md`;
+6. read the active Issue/PR and relevant upstream authority;
+7. verify current `main`, PR HEAD/base, open PRs, checks and review threads;
+8. only then use old session logs or historical comments to explain discrepancies.
 
 Historical transcripts are **audit evidence**, not current instructions. A previous session saying “design pending” or “review running” does not override a later merged PR or closed Issue.
 
@@ -49,7 +51,7 @@ A worker handback is not automatically integration PASS. Sol still reviews the d
 
 ## 3. Use Figma as authority without forcing Figma-native authoring
 
-For material UI work governed by #44, prefer the proven render-first workflow:
+For material UI work governed by #44, use approved editable Figma nodes as implementation authority. Authoring may be Figma-native. If using the valid render-first route, follow this workflow:
 
 ```text
 settled product/interaction contract
@@ -71,14 +73,15 @@ product implementation
 
 The HTML/CSS harness is disposable design tooling. It must not become product/runtime authority.
 
-Before calling a design gate PASS, prove:
+Before calling a design gate PASS, prove the common requirements:
 
 - the canonical file is the target;
-- the qualified bridge/plugin pair is connected;
-- imported content is editable nodes, not a flattened image;
-- exact node IDs and native screenshots/readback are recorded;
+- the approved result is editable and inspectable in the canonical Figma file;
+- exact approved node IDs/URLs are recorded as implementation authority;
 - responsive/compact/short-window and protected states are represented where applicable;
 - an independent reviewer returns no blocking design/interaction finding.
+
+When using the render-first/import route, also verify the qualified bridge/plugin pair, editable imported nodes rather than a flattened image, and native screenshots/readback.
 
 A later implementation defect may expose a genuine flaw in approved design authority. If fixing source alone would drift from the approved role/value mapping, amend Figma narrowly, review that amendment independently, then align source/tests to the amended authority. Do not weaken mapping tests merely to make a source-only repair pass.
 
@@ -222,13 +225,14 @@ Tool failure is not `No blocking findings.`.
 
 ## 10. Convert reviewer counterexamples into regression evidence
 
-For every valid blocker:
+For a valid finding with a reproducible product-behavior counterexample, use the relevant regression seam:
 
-1. reproduce the reviewer counterexample against the current implementation;
-2. prove the old implementation incorrectly accepted/rendered it;
-3. add the narrow unit/admission regression;
-4. add a real browser/runtime regression when the defect depends on actual paint, focus, geometry, host effect or lifecycle;
-5. verify a nearby valid positive case still works.
+1. reproduce the counterexample against the current implementation and establish the incorrect behavior;
+2. add a focused regression at the relevant unit/admission/runtime/browser seam;
+3. add browser/runtime coverage when the defect depends on actual paint, focus, geometry, host effect or lifecycle;
+4. verify a nearby valid positive case when applicable.
+
+For documentation, governance, CI and other findings without a product-behavior counterexample, run the affected checks appropriate to the defect and governing acceptance.
 
 This avoids “fixing the test” without proving the product boundary.
 
@@ -301,10 +305,12 @@ Immediately before Sol executes the normal merge:
 After merge:
 
 1. record merge SHA and post-merge evidence where applicable;
-2. update #2;
-3. re-read live backlog;
-4. continue the next genuinely Ready non-overlapping lane;
-5. do not reopen a completed design/implementation gate because an old session remembers it as pending.
+2. verify integrated `main` at the affected boundary;
+3. reconcile any surviving review debt;
+4. update #2;
+5. re-read live backlog;
+6. continue the next genuinely Ready non-overlapping lane;
+7. do not reopen a completed design/implementation gate because an old session remembers it as pending.
 
 ## 15. Anti-patterns
 
@@ -319,7 +325,7 @@ Do not:
 - retry failing CI without diagnosing the first failure;
 - weaken an accepted Figma/source mapping test to accommodate an unreviewed visual change;
 - treat Oracle transport silence as PASS;
-- merge with unresolved valid review threads;
+- merge with unresolved valid blocking findings or while required GitHub review/thread protections are unsatisfied;
 - reopen already-merged work because the current session is stale;
 - substitute synthetic/manual evidence for a physical/manual gate.
 
