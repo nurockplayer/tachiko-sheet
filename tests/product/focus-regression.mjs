@@ -146,6 +146,7 @@ const cases = [
       await close.getByRole("button", { name: "Keep editing", exact: true }).click();
 
       await page.setViewportSize({ width: 1512, height: 982 });
+      const pendingSaveTransitions = [];
       for (const profile of [
         { id: "tachiko", label: "Tachiko", chrome: "porcelain", border: "rgb(223, 226, 234)" },
         { id: "familiar-spreadsheet", label: "Familiar Spreadsheet", chrome: "structured", border: "rgb(204, 209, 216)" },
@@ -176,9 +177,32 @@ const cases = [
         const beforeFailure = await page.evaluate(() => window.__tachikoAcceptance.saveObservation());
         const writesBeforeFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
         await page.evaluate(() => window.__tachikoAcceptance.failNextSave());
+        await profileSave.evaluate((dialog) => {
+          const input = dialog.querySelector(".ts-text-input");
+          const button = Array.from(dialog.querySelectorAll("button")).find((candidate) =>
+            candidate.textContent.includes("Create copy") || candidate.textContent.includes("Working"),
+          );
+          const transitions = [];
+          const capture = () => transitions.push({
+            ariaBusy: button?.getAttribute("aria-busy"),
+            inputDisabled: input?.disabled ?? false,
+            workingLabel: button?.textContent.trim() === "Working…",
+          });
+          capture();
+          const observer = new MutationObserver(capture);
+          observer.observe(dialog, { attributes: true, childList: true, subtree: true, attributeFilter: ["aria-busy", "disabled"] });
+          window.__issue97SavePendingProbe = { observer, transitions };
+        });
         await createButton.click();
         const saveError = profileSave.getByRole("alert");
         await saveError.waitFor();
+        const transitions = await profileSave.evaluate(() => {
+          const probe = window.__issue97SavePendingProbe;
+          probe.observer.disconnect();
+          delete window.__issue97SavePendingProbe;
+          return probe.transitions;
+        });
+        pendingSaveTransitions.push({ profile: profile.label, transitions });
         assert.match(await saveError.textContent(), new RegExp(profileName));
         assert.equal(await nameInput.inputValue(), profileName, `${profile.label} keeps the failed destination available to correct`);
         assert.equal(await createButton.getAttribute("aria-busy"), "false", `${profile.label} Save returns from busy after the failed transaction`);
@@ -195,6 +219,11 @@ const cases = [
         const writesAfterFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
         assert.equal(writesAfterFailure.canonical, writesBeforeFailure.canonical + 1, `${profile.label} exercised one real canonical copy write`);
         await profileSave.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
+      for (const { profile, transitions } of pendingSaveTransitions) {
+        assert.ok(transitions.some((transition) => transition.ariaBusy === "true"), `${profile} renders aria-busy while Create copy is pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.inputDisabled), `${profile} disables the copy name while pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.workingLabel), `${profile} renders the Working… label while pending: ${JSON.stringify(transitions)}`);
       }
     },
   ],
