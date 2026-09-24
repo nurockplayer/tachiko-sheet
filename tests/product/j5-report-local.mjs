@@ -35,7 +35,7 @@ async function start(viewport) {
 }
 
 async function bindSummary(page) {
-  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByTestId("save-status").filter({ hasText: "Not saved yet" }).waitFor();
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();

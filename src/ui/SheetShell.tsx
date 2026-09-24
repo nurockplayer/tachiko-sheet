@@ -89,6 +89,22 @@ export function missingKeyedGroupedSumDefinitionIds(
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
 const directoryInputAttributes: Record<string, string> = { webkitdirectory: "", directory: "" };
 
+function formatHomeSavedAt(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  const dateLabel = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+  const timeLabel = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+  return `${dateLabel}, ${timeLabel}`;
+}
+
 /** Report pixels follow their source result, not the selected table. */
 export function reportRenderResetKey(
   view: Pick<WorkbookView, "occurrence" | "revision"> | null,
@@ -155,7 +171,7 @@ export function SheetShell(props: SheetShellProps) {
     onPrepareJ4Bindings = async () => ({ collections: [] }),
     onCreateJ4 = async () => false,
     onRefreshJ4 = async () => false,
-    onOpenJ4Canary = async () => { throw new Error("The Catalog/Sales canary is unavailable."); },
+    onOpenJ4Canary = async () => { throw new Error("The sales example is unavailable."); },
     report = null,
     onCreateReport = () => undefined,
     onUpdateReport = () => undefined,
@@ -678,7 +694,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       await onOpenJ4Canary();
     } catch (error) {
-      setLocalError(explain(error, "Could not open the Catalog/Sales canary."));
+      setLocalError(explain(error, "Could not open the sales example."));
     }
   }
 
@@ -825,6 +841,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderHome(): ReactNode {
     const recoveryLocked = currentness === "unknown";
+    const fileActionsLocked = controlsLocked || recoveryLocked;
     return (
       <main className="ts-home">
         {currentness === "unknown" ? (
@@ -850,73 +867,53 @@ export function SheetShell(props: SheetShellProps) {
           </section>
         ) : null}
         <header className="ts-home-head">
-          <div className="ts-home-heading">
-            <h1 className="ts-brand">Tachiko Sheet</h1>
-            <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>
-          </div>
+          <h1 className="ts-brand">Tachiko Sheet</h1>
           {renderAppearanceSelector()}
         </header>
-        <section className="ts-card" aria-label="Open project">
+        <p className="ts-home-intro">Open a project folder, or reopen a copy saved in this browser profile.</p>
+        <section className="ts-home-section" aria-label="Open project">
           <h2 className="ts-h2">Open</h2>
-          <label className="ts-field-label" htmlFor={fileInputId}>
-            Open project folder
-          </label>
-          <input
-            id={fileInputId}
-            className="ts-file-input"
-            data-testid="open-project"
-            type="file"
-            multiple
-            disabled={controlsLocked || recoveryLocked}
-            aria-describedby={busy ? lockNoteId : undefined}
-            onChange={(event) => {
-              const input = event.currentTarget;
-              const files = input.files;
-              void openFiles(files).finally(() => {
-                input.value = "";
-              });
-            }}
-            {...directoryInputAttributes}
-          />
-          <div className="ts-row-actions">
-              <button
-              type="button"
-              className="ts-button"
-              onClick={() => void openExample()}
-                disabled={controlsLocked || recoveryLocked}
-              aria-describedby={busy ? lockNoteId : undefined}
-            >
+          <div className="ts-row-actions ts-home-open-actions">
+            <label className={`ts-button ts-button--primary ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
+              <span>Open project folder</span>
+              <input
+                id={fileInputId}
+                data-testid="open-project"
+                type="file"
+                multiple
+                disabled={fileActionsLocked}
+                aria-describedby={busy ? lockNoteId : undefined}
+                onChange={(event) => {
+                  const input = event.currentTarget;
+                  const files = input.files;
+                  void openFiles(files).finally(() => {
+                    input.value = "";
+                  });
+                }}
+                {...directoryInputAttributes}
+              />
+            </label>
+            <button type="button" className="ts-button" onClick={() => void openExample()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
               Try example
             </button>
-            <button
-              type="button"
-              className="ts-button"
-              onClick={() => void openJ4Canary()}
-              disabled={controlsLocked || recoveryLocked}
-              aria-describedby={busy ? lockNoteId : undefined}
-            >
-              Try Catalog/Sales canary
+            <button type="button" className="ts-button" onClick={() => void openJ4Canary()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
+              Try sales example
             </button>
-            {busy ? (
-              <span className="ts-status" role="status">
-                Opening…
-              </span>
-            ) : null}
+            {busy ? <span className="ts-status" role="status">Opening…</span> : null}
           </div>
-          {busy ? (
-            <p className="ts-hint" id={lockNoteId} role="note">
-              An operation is in progress; controls are disabled until it finishes.
-            </p>
-          ) : null}
+          <p className="ts-subtle">Choose a local project folder. Its source stays unchanged.</p>
+          {busy ? <p className="ts-hint" id={lockNoteId} role="note">An operation is in progress; controls are disabled until it finishes.</p> : null}
         </section>
-        <section className="ts-card" aria-label="Import spreadsheet">
+        <section className="ts-home-section" aria-label="Import spreadsheet">
           <h2 className="ts-h2">Import CSV or XLSX</h2>
-          <p className="ts-subtle">Sheet asks the core kit to inspect the source before creating an import candidate.</p>
-          <label className="ts-field-label" htmlFor={spreadsheetInputId}>Choose CSV or XLSX</label>
-          <input ref={spreadsheetInputRef} id={spreadsheetInputId} className="ts-file-input" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={controlsLocked || recoveryLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+          <p className="ts-subtle">Review the source and column types before importing.</p>
+          <label className={`ts-button ts-home-file-action ts-home-import-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
+            <span>Choose CSV or XLSX</span>
+            <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+          </label>
           {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
         </section>
-        <section className="ts-card" aria-label="Saved copies">
+        <section className={`ts-home-section ts-home-saved${copies.length ? " ts-home-saved--populated" : ""}`} aria-label="Saved copies">
           <h2 className="ts-h2">Saved copies</h2>
           <p className="ts-subtle">Stored in this browser profile on this device.</p>
           {copies.length === 0 ? (
@@ -934,7 +931,7 @@ export function SheetShell(props: SheetShellProps) {
                   >
                     {`Open saved ${copy.name}`}
                   </button>
-                  <span className="ts-copy-meta">{copy.savedAt}</span>
+                  <span className="ts-copy-meta">Saved {formatHomeSavedAt(copy.savedAt)}</span>
                 </li>
               ))}
             </ul>

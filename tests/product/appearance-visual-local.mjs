@@ -88,7 +88,7 @@ async function openCanary(context, page) {
       await page.locator(".ts-command-overflow > button").click();
     }
   }
-  const canary = page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true });
+  const canary = page.getByRole("button", { name: "Try sales example", exact: true });
   try {
     await canary.waitFor({ state: "visible", timeout: 2500 });
   } catch (error) {
@@ -538,6 +538,7 @@ async function auditTallGridLayoutOnly(page) {
 }
 
 async function auditHomeViewportBounds(page) {
+  await choose(page, "tachiko", "compact");
   await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Viewport home probe");
@@ -547,7 +548,76 @@ async function auditHomeViewportBounds(page) {
   await page.locator('.ts-app[data-view="home"]').waitFor();
 
   const savedCopy = page.getByRole("button", { name: "Open saved Viewport home probe", exact: true });
-  for (const [width, height] of [[320, 640], [1512, 982]]) {
+  const homePresentation = await page.evaluate(() => ({
+    sections: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => section.getAttribute("aria-label")),
+    homeCards: document.querySelectorAll(".ts-home > .ts-card").length,
+    appearance: document.querySelectorAll(".ts-home-head .ts-appearance-selector").length,
+    openLabel: document.querySelector(".ts-home-open-actions .ts-home-file-action")?.textContent?.trim(),
+    importLabel: document.querySelector(".ts-home-import-action")?.textContent?.trim(),
+    savedTimestamp: document.querySelector(".ts-copy-meta")?.textContent?.trim(),
+  }));
+  assert.deepEqual(homePresentation.sections, ["Open project", "Import spreadsheet", "Saved copies"]);
+  assert.equal(homePresentation.homeCards, 0, "Home tasks use the approved divider hierarchy without elevated cards");
+  assert.equal(homePresentation.appearance, 1, "Home keeps Appearance available");
+  assert.equal(homePresentation.openLabel, "Open project folder");
+  assert.equal(homePresentation.importLabel, "Choose CSV or XLSX");
+  assert.match(homePresentation.savedTimestamp, /^Saved \d+ /);
+  const folderInput = page.getByTestId("open-project");
+  await page.getByRole("button", { name: "Appearance", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  const folderFocus = await folderInput.evaluate((input) => ({
+    active: document.activeElement === input,
+    focusVisible: input.matches(":focus-visible"),
+    outlineStyle: getComputedStyle(input.parentElement).outlineStyle,
+    outlineWidth: getComputedStyle(input.parentElement).outlineWidth,
+  }));
+  assert.equal(folderFocus.active, true, "Tab reaches the real folder input after Appearance");
+  assert.equal(folderFocus.focusVisible, true, "the real folder input remains keyboard focusable");
+  assert.equal(folderFocus.outlineStyle, "solid", "the visible folder action shows keyboard focus");
+  assert.equal(folderFocus.outlineWidth, "3px");
+  const folderChooserReady = page.waitForEvent("filechooser");
+  await page.locator(".ts-home-open-actions .ts-home-file-action").click();
+  const folderChooser = await folderChooserReady;
+  assert.equal(folderChooser.isMultiple(), true, "the visible folder action opens the existing directory picker");
+  const importChooserReady = page.waitForEvent("filechooser");
+  await page.locator(".ts-home-import-action").click();
+  const importChooser = await importChooserReady;
+  assert.equal(importChooser.isMultiple(), false, "the visible import action opens the existing single-file picker");
+  const disabledReference = await page.evaluate(() => {
+    const home = document.querySelector(".ts-home");
+    const reference = document.createElement("button");
+    reference.className = "ts-button";
+    reference.disabled = true;
+    home.append(reference);
+    const style = getComputedStyle(reference);
+    const paint = { color: style.color, background: style.backgroundColor, border: style.borderTopColor, cursor: style.cursor };
+    reference.remove();
+    for (const label of document.querySelectorAll(".ts-home-file-action")) {
+      label.classList.add("ts-home-file-action--disabled");
+      label.setAttribute("aria-disabled", "true");
+      label.querySelector('input[type="file"]').disabled = true;
+    }
+    return paint;
+  });
+  for (const selector of [".ts-home-open-actions .ts-home-file-action", ".ts-home-import-action"]) {
+    const label = page.locator(selector);
+    const rect = await label.boundingBox();
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    const paint = await label.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { color: style.color, background: style.backgroundColor, border: style.borderTopColor, cursor: style.cursor };
+    });
+    assert.deepEqual(paint, disabledReference, `${selector} keeps disabled paint while hovered`);
+  }
+  await page.evaluate(() => {
+    for (const label of document.querySelectorAll(".ts-home-file-action")) {
+      label.classList.remove("ts-home-file-action--disabled");
+      label.setAttribute("aria-disabled", "false");
+      label.querySelector('input[type="file"]').disabled = false;
+    }
+  });
+  for (const [width, height] of [[1512, 982], [320, 640]]) {
+    if (width === 320) await choose(page, "tachiko", "comfortable");
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.scrollTo(0, 0));
     const layout = await page.evaluate(() => {
@@ -571,12 +641,72 @@ async function auditHomeViewportBounds(page) {
         appBottom: appRect?.bottom ?? null,
         noticesTop: noticesRect?.top ?? null,
         noticesBottom: noticesRect?.bottom ?? null,
+        pageSurface: getComputedStyle(app).backgroundColor,
+        openActionsWidth: document.querySelector(".ts-home-open-actions")?.getBoundingClientRect().width ?? null,
+        openActions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
+          const rect = action.getBoundingClientRect();
+          return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        }),
+        importAction: (() => {
+          const rect = document.querySelector(".ts-home-import-action")?.getBoundingClientRect();
+          return rect ? { x: rect.x, y: rect.y, width: rect.width } : null;
+        })(),
+        sectionLines: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => ({
+          label: section.getAttribute("aria-label"),
+          top: section.getBoundingClientRect().top,
+          bottom: section.getBoundingClientRect().bottom,
+        })),
+        savedAction: (() => {
+          const action = document.querySelector(".ts-copy-item .ts-button");
+          const rect = action?.getBoundingClientRect();
+          return rect ? {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            borderColor: getComputedStyle(action).borderTopColor,
+          } : null;
+        })(),
+        savedMetadataX: document.querySelector(".ts-copy-meta")?.getBoundingClientRect().x ?? null,
+        strongBorderColor: (() => {
+          const probe = document.createElement("span");
+          probe.style.borderTop = "1px solid var(--ts-line-strong)";
+          document.body.append(probe);
+          const color = getComputedStyle(probe).borderTopColor;
+          probe.remove();
+          return color;
+        })(),
       };
     });
     evidence(layout.pageWidth <= width, `${width}x${height} Home with a saved copy has no horizontal overflow`, layout);
     evidence(layout.pageHeight >= height, `${width}x${height} Home retains natural document height`, layout);
     evidence(layout.rootHeight >= layout.appHeight && layout.rootMinHeightStyle !== "0px",
       `${width}x${height} Home root expands with its content`, layout);
+    if (width === 1512) {
+      assert.equal(layout.pageSurface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
+      assert.deepEqual(layout.openActions.map(({ x, y, width: actionWidth }) => [x, y, actionWidth]), [
+        [32, 220, 184], [228, 220, 128], [368, 220, 224],
+      ], "desktop Open actions match the approved positions and widths");
+      assert.deepEqual(layout.sectionLines.map(({ top }) => top), [144, 344, 552]);
+      assert.deepEqual(layout.importAction && [layout.importAction.x, layout.importAction.y, layout.importAction.width], [32, 468, 196]);
+      assert.deepEqual(layout.savedAction && [layout.savedAction.x, layout.savedAction.y, layout.savedAction.width], [32, 684, 288]);
+      assert.equal(layout.savedAction?.borderColor, "rgba(0, 0, 0, 0)",
+        "the saved-copy ghost action keeps its approved transparent border");
+      assert.equal(layout.savedMetadataX, 352);
+      assert.equal(layout.sectionLines.at(-1).bottom - 1, 732, "the saved section's final divider sits at approved y=732");
+    } else {
+      assert.ok(layout.openActions.every(({ width }) => width === layout.openActionsWidth),
+        "all three Open actions use the full available width at 320px");
+      assert.ok(layout.openActions.every(({ height }) => height >= 36),
+        "Comfortable density keeps all three 320px Open actions at least 36px tall");
+      assert.equal(layout.savedAction?.x, 16);
+      assert.equal(layout.savedAction?.width, layout.openActionsWidth,
+        "the 320px saved-copy action uses the full available width");
+      assert.ok(layout.savedAction.height >= 36,
+        "the 320px saved-copy action retains the Comfortable target height");
+      assert.equal(layout.savedAction?.borderColor, layout.strongBorderColor,
+        "the 320px saved-copy action retains the inherited shared border pending #96");
+    }
     if (layout.appBottom !== null && layout.noticesTop !== null) {
       evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,
         `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);

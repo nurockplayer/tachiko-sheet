@@ -177,34 +177,111 @@ body { margin: 0; }
 
 /* ---------- Home ---------- */
 
+.ts-app[data-view="home"] {
+  background: var(--ts-surface-app);
+}
+
 .ts-home {
-  width: min(920px, 100%);
-  margin: clamp(18px, 7vh, 72px) auto 0;
+  width: min(1040px, calc(100% - 64px));
+  margin: 28px 32px 48px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 
 .ts-home-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-}
-
-.ts-home-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 16px;
 }
 
 .ts-brand {
-  font-size: clamp(21px, 3vw, 28px);
-  font-weight: 700;
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
   margin: 0;
-  letter-spacing: -0.01em;
 }
+
+.ts-home-intro {
+  color: var(--ts-ink-soft);
+  margin: 16px 0 44px;
+  line-height: 20px;
+}
+
+.ts-home-section {
+  border-top: 1px solid var(--ts-line);
+  padding: 24px 0 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.ts-home-section .ts-h2 {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.ts-home-open-actions {
+  margin-top: 23px;
+  gap: 12px;
+}
+
+.ts-home-section > .ts-subtle + .ts-home-file-action {
+  margin-top: 20px;
+}
+
+.ts-home-section > .ts-subtle:not(:first-child) {
+  margin-top: 20px;
+}
+
+.ts-home-file-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 196px;
+  min-height: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.ts-home-file-action input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ts-home-file-action:has(input:focus-visible) {
+  outline: 3px solid var(--ts-focus);
+  outline-offset: 2px;
+}
+
+.ts-home-file-action--disabled input { cursor: not-allowed; }
+
+.ts-home-open-actions > .ts-home-file-action { width: 184px; min-width: 184px; }
+.ts-home-open-actions > button:first-of-type { width: 128px; }
+.ts-home-open-actions > button:last-of-type { width: 224px; min-width: 224px; }
+
+.ts-home-import-action { min-width: 196px; }
+
+.ts-home-section.ts-home-saved {
+  padding: 27px 0 16px;
+}
+
+.ts-home .ts-home-section.ts-home-saved > .ts-subtle { margin-top: 16px; }
+
+.ts-home-saved.ts-home-saved--populated { border-bottom: 1px solid var(--ts-line); }
+
+.ts-home-saved > .ts-empty { margin-top: 40px; padding: 0; }
 
 .ts-card {
   background: var(--ts-surface);
@@ -243,24 +320,40 @@ body { margin: 0; }
   flex-wrap: wrap;
 }
 
+.ts-home .ts-home-open-actions { gap: 12px; }
+
+[aria-label="Import spreadsheet"].ts-home-section > .ts-subtle + .ts-home-file-action {
+  margin-top: 31px;
+}
+
 .ts-copy-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
+  width: 100%;
+  margin-top: 40px;
 }
 
 .ts-copy-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  border: 1px solid var(--ts-line);
-  border-radius: 4px;
-  padding: 4px 8px;
-  background: var(--ts-surface-sunken);
+  gap: 32px;
+  justify-content: flex-start;
+  min-height: var(--ts-profile-command-target-min-height);
+  padding: 0;
+}
+
+.ts-copy-item .ts-button {
+  width: 288px;
+  min-width: 288px;
+  text-align: center;
+}
+
+@media (min-width: 600px) {
+  .ts-copy-item .ts-button { border-color: transparent; }
 }
 
 .ts-copy-meta {
@@ -338,6 +431,13 @@ body { margin: 0; }
 
 .ts-button--ghost {
   background: transparent;
+}
+
+.ts-app .ts-home-file-action--disabled[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--ts-protected-disabled-foreground);
+  background: var(--ts-protected-surface-inset);
+  border-color: var(--ts-protected-border-subtle);
 }
 
 .ts-app :focus-visible {
@@ -1044,9 +1144,25 @@ body { margin: 0; }
 }
 
 @media (max-width: 599px) {
-  .ts-home { margin-top: 14px; }
+  .ts-home { width: calc(100% - 32px); margin: 28px auto 32px; }
   .ts-home-head { align-items: flex-start; flex-wrap: wrap; }
-  .ts-home-heading { flex: 1 1 100%; }
+  .ts-home-intro { margin-top: 12px; margin-bottom: 28px; }
+  .ts-home-section { padding-top: 24px; padding-bottom: 36px; }
+  .ts-home-open-actions { width: 100%; align-items: stretch; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .ts-home-open-actions > .ts-button,
+  .ts-home-open-actions > .ts-home-file-action { width: 100%; min-width: 0; }
+  .ts-home-open-actions > button:first-of-type,
+  .ts-home-open-actions > button:last-of-type { width: 100%; min-width: 0; }
+  .ts-home-section > .ts-subtle:not(:first-child) { margin-top: 16px; }
+  .ts-home-section > .ts-subtle + .ts-home-file-action { margin-top: 20px; }
+  [aria-label="Import spreadsheet"].ts-home-section > .ts-subtle + .ts-home-file-action { margin-top: 20px; }
+  .ts-home-section.ts-home-saved { padding: 24px 0 36px; }
+  .ts-home-section.ts-home-saved > .ts-subtle { margin-top: 16px; }
+  .ts-home-import-action { width: 100%; }
+  .ts-home-saved > .ts-empty { margin-top: 32px; }
+  .ts-copy-list { margin-top: 32px; }
+  .ts-copy-item { align-items: flex-start; flex-direction: column; gap: 4px; padding: 0; }
+  .ts-copy-item .ts-button { width: 100%; min-width: 0; }
   .ts-appearance-selector .ts-appearance-popover { left: 0; right: auto; }
   .ts-workbook-head {
     display: grid;
@@ -1160,6 +1276,14 @@ body { margin: 0; }
     box-shadow: none;
     forced-color-adjust: none;
   }
+  .ts-app .ts-home-file-action[aria-disabled="true"] {
+    background: Canvas;
+    color: GrayText;
+    border-color: GrayText;
+    box-shadow: none;
+    forced-color-adjust: auto;
+  }
+  .ts-home-file-action:has(input:focus-visible) { outline-color: Highlight; }
   .ts-app :focus-visible { outline-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
   .ts-row--selected .ts-cell-value, .ts-row--selected .ts-row-head {

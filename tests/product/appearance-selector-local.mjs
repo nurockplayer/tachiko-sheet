@@ -205,7 +205,7 @@ try {
   );
   await setAppearance(page, "tachiko", "compact");
 
-  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   assert.equal(await page.locator(".ts-workbook-head > .ts-appearance-selector").count(), 1, "workbook application header owns the selector");
   const selectorPosition = await page.evaluate(() => {
