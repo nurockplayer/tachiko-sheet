@@ -63,36 +63,66 @@ try {
   await importDialog.waitFor();
   assert.equal(await page.getByRole("alert").count(), 0, "valid inspection opens a clean candidate dialog");
 
-  // A rejected typed Import retains its heading focus after pending ends. The
-  // retained focus target stays in the modal's explicit keyboard loop.
+  // A rejected typed Import in a long short-viewport candidate must reveal
+  // the error and retry actions together with visible keyboard focus.
   await importDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await importDialog.waitFor({ state: "detached" });
+  await page.setViewportSize({ width: 320, height: 350 });
   const invalidNumberCsv = path.join(output, "invalid-number.csv");
-  await writeFile(invalidNumberCsv, "value\nnot-a-number\n", "utf8");
+  const longHeaders = Array.from({ length: 12 }, (_, index) => `field_${index + 1}`);
+  const longRows = [longHeaders.join(",")];
+  for (let row = 0; row < 4; row += 1) {
+    longRows.push(longHeaders.map((_, column) => column === 0 ? `invalid-${row}` : `value-${row}-${column}`).join(","));
+  }
+  await writeFile(invalidNumberCsv, `${longRows.join("\n")}\n`, "utf8");
   await input.setInputFiles(invalidNumberCsv);
   const failedImportDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await failedImportDialog.waitFor();
   await failedImportDialog.locator("select").first().selectOption("number");
-  await failedImportDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  const failedImportAction = failedImportDialog.getByRole("button", { name: "Import candidate", exact: true });
+  await failedImportAction.scrollIntoViewIfNeeded();
+  const scrolledAction = await failedImportDialog.evaluate((dialog) => ({
+    scrollTop: dialog.scrollTop,
+    dialog: dialog.getBoundingClientRect().toJSON(),
+    action: dialog.querySelector(".ts-dialog-actions")?.getBoundingClientRect().toJSON(),
+  }));
+  assert.ok(scrolledAction.scrollTop > 0, `long candidate reaches the Import action through real outer-modal scrolling: ${JSON.stringify(scrolledAction)}`);
+  assert.ok(scrolledAction.action && scrolledAction.action.top >= scrolledAction.dialog.top && scrolledAction.action.bottom <= scrolledAction.dialog.bottom, `Import action is visible before dispatch: ${JSON.stringify(scrolledAction)}`);
+  await failedImportAction.click();
   const failedImportAlert = failedImportDialog.getByRole("alert");
   await failedImportAlert.waitFor();
   assert.match(await failedImportAlert.textContent(), /import was not applied/i, "invalid Number Import retains an actionable candidate failure");
+  const failedImportVisibility = await failedImportDialog.evaluate((dialog) => {
+    const alert = dialog.querySelector('[role="alert"]')?.getBoundingClientRect();
+    const actions = dialog.querySelector(".ts-dialog-actions")?.getBoundingClientRect();
+    const action = Array.from(dialog.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Import candidate");
+    const frame = dialog.getBoundingClientRect();
+    return {
+      scrollTop: dialog.scrollTop,
+      alert: alert?.toJSON(),
+      actions: actions?.toJSON(),
+      frame: frame.toJSON(),
+      alertVisible: Boolean(alert && alert.top >= frame.top && alert.bottom <= frame.bottom),
+      actionsVisible: Boolean(actions && actions.top >= frame.top && actions.bottom <= frame.bottom),
+      retryFocused: action === document.activeElement,
+    };
+  });
+  assert.ok(failedImportVisibility.scrollTop > 0, `failure feedback returns the outer modal to the candidate actions: ${JSON.stringify(failedImportVisibility)}`);
+  assert.equal(failedImportVisibility.alertVisible, true, `failed Import detail is revealed in the short viewport: ${JSON.stringify(failedImportVisibility)}`);
+  assert.equal(failedImportVisibility.actionsVisible, true, `failed Import retry actions are visible with the detail: ${JSON.stringify(failedImportVisibility)}`);
+  assert.equal(failedImportVisibility.retryFocused, true, "failed Import focuses the visible retry action");
   const failedImportHeading = failedImportDialog.locator("h2");
-  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "failed Import retains natural focus on its heading");
   await page.keyboard.press("Tab");
-  assert.equal(await failedImportDialog.evaluate((dialog) => dialog.contains(document.activeElement)), true, "Tab from the retained failed heading remains in the dialog");
-  await page.keyboard.press("Shift+Tab");
-  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "Shift+Tab returns to the first failed-dialog focus target");
+  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "Tab from visible retry wraps to the failed dialog's first focus target");
   await page.keyboard.press("Shift+Tab");
   assert.equal(await failedImportDialog.evaluate((dialog) => {
     const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
     return focusable.at(-1) === document.activeElement;
-  }), true, "Shift+Tab from the failed heading wraps to the last enabled dialog target");
-  await page.keyboard.press("Tab");
-  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "Tab from the last failed-dialog target wraps to its heading");
+  }), true, "Shift+Tab from the failed dialog's first focus target wraps to the visible retry action");
   await failedImportDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await failedImportDialog.waitFor({ state: "detached" });
 
+  await page.setViewportSize({ width: 1280, height: 720 });
   await input.setInputFiles(fixture);
   await importDialog.waitFor();
 

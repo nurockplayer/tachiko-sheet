@@ -267,6 +267,7 @@ export function SheetShell(props: SheetShellProps) {
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const importPendingFocusRef = useRef<HTMLHeadingElement | null>(null);
+  const importRetryButtonRef = useRef<HTMLButtonElement | null>(null);
   const copyNameInputRef = useRef<HTMLInputElement | null>(null);
   const copyParentMessageAtAttemptRef = useRef<string | null>(message);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -427,6 +428,15 @@ export function SheetShell(props: SheetShellProps) {
     tab === "interop" && interop?.downloadStatus === "failed" &&
       interop.downloadError !== null && errorMessage === message && message === interop.downloadError,
   );
+
+  useLayoutEffect(() => {
+    if (!importPending && importError && interop?.importInspection) {
+      // A short Import dialog scrolls as one outer frame. Return focus to its
+      // enabled retry action after rejection so the error and retry controls
+      // are both visible after the pending heading handoff.
+      importRetryButtonRef.current?.focus();
+    }
+  }, [importPending, importError, interop?.importInspection]);
 
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
@@ -1690,7 +1700,7 @@ export function SheetShell(props: SheetShellProps) {
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
-          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
         </Modal>
       ) : null}
       {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
