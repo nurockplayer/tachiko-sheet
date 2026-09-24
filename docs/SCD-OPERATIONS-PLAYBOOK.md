@@ -95,6 +95,8 @@ Before each Luna package, Sol records a compact decision when one is material:
 
 Give Luna only the settled implementation/test package. If implementation reveals a new architecture, product, semantic, storage, security, data-integrity or acceptance choice, return it to Sol rather than letting the worker improvise.
 
+Before freezing an architecture decision or assigning Luna a package, Sol checks live #1 for mandatory Astra consultation and any conditional Pro escalation, and completes the applicable steps when a trigger applies.
+
 Prefer packages that can be independently checked, for example:
 
 - pure parser/admission logic;
