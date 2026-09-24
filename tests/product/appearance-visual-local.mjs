@@ -382,7 +382,7 @@ async function geometry(page, width, combo) {
 
 async function auditWorkbookViewportBounds(page, width, height, profile) {
   await page.setViewportSize({ width, height });
-  for (const viewName of ["Table", "Brief", "Import & export"]) {
+  for (const viewName of ["Table", "Cross-table summary", "Report", "Brief", "Import & export"]) {
     await page.getByRole("tab", { name: viewName, exact: true }).click();
     const layout = await page.evaluate(() => {
       const panel = document.querySelector('[role="tabpanel"]');
@@ -390,6 +390,18 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       const grid = document.querySelector(".ts-grid-scroll");
       const panelRect = panel?.getBoundingClientRect();
       const footerRect = footer?.getBoundingClientRect();
+      const sections = [...document.querySelectorAll(".ts-panel.ts-brief > .ts-card")].map((section) => {
+        const style = getComputedStyle(section);
+        return {
+          background: style.backgroundColor,
+          boxShadow: style.boxShadow,
+          borderTopWidth: style.borderTopWidth,
+          borderRightWidth: style.borderRightWidth,
+          borderBottomWidth: style.borderBottomWidth,
+          borderLeftWidth: style.borderLeftWidth,
+        };
+      });
+      const panelStyle = panel ? getComputedStyle(panel) : null;
       return {
         viewportWidth: innerWidth,
         viewportHeight: innerHeight,
@@ -402,6 +414,10 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         panelClientHeight: panel?.clientHeight ?? null,
         panelScrollHeight: panel?.scrollHeight ?? null,
         panelOverflowY: panel ? getComputedStyle(panel).overflowY : "missing",
+        panelClientWidth: panel?.clientWidth ?? null,
+        panelScrollWidth: panel?.scrollWidth ?? null,
+        panelBackground: panelStyle?.backgroundColor ?? null,
+        sections,
         gridClientWidth: grid?.clientWidth ?? null,
         gridScrollWidth: grid?.scrollWidth ?? null,
         gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
@@ -414,6 +430,14 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
     evidence(layout.panelBottom <= layout.footerTop + 1, `${label} panel ends before the Views/status footer`, layout);
     evidence(layout.footerBottom <= height + 1, `${label} keeps the complete Views/status footer in the viewport`, layout);
     evidence(layout.pageHeight <= height + 1 && layout.scrollY === 0, `${label} does not push the document beyond the viewport`, layout);
+    if (viewName !== "Table") {
+      evidence(layout.sections.length > 0, `${label} renders its shared workbook sections`, layout);
+      evidence(layout.panelScrollWidth <= layout.panelClientWidth + 1,
+        `${label} sections fit the viewport without horizontal panel overflow`, layout);
+      evidence(layout.sections.every((section) => section.background === "rgba(0, 0, 0, 0)" && section.boxShadow === "none" &&
+        section.borderTopWidth === "0px" && section.borderRightWidth === "0px" && section.borderLeftWidth === "0px"),
+      `${label} uses open sections without raised card borders`, layout);
+    }
     if (width === 320 && viewName === "Brief") {
       evidence(layout.panelScrollHeight > layout.panelClientHeight,
         `${label} scrolls the long Brief content inside its panel`, layout);

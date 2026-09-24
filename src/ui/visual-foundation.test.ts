@@ -49,6 +49,21 @@ describe("visual foundation CSS contract", () => {
     expect(css).not.toContain(".ts-header-actions .ts-button--primary:not(:disabled)");
   });
 
+  it("uses a shared quiet workbook control and open section recipe", () => {
+    expect(css).toContain("border: 1px solid var(--ts-line);");
+    expect(css).toContain(".ts-button:active:not(:disabled)");
+    expect(css).toContain(".ts-button--ghost:hover:not(:disabled)");
+    expect(css).toContain(".ts-panel.ts-brief > .ts-card");
+    expect(css).toContain("background: transparent;");
+    expect(css).toContain("box-shadow: none;");
+    expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea)");
+    expect(css).toContain("min-height: var(--ts-profile-command-target-min-height);");
+    expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea):disabled");
+    expect(css).toContain("@media (forced-colors: active)");
+    expect(css).toContain(".ts-panel.ts-brief { background: Canvas; }");
+    expect(css).not.toContain(".ts-panel.ts-brief select { appearance: none");
+  });
+
   it("keeps public profile bindings private and wires the approved role mappings", () => {
     expect(css).toContain(alias("--ts-surface-chrome-tint", "surface.chrome.tint"));
     expect(css).toContain(alias("--ts-grid-canvas", "grid.canvas"));

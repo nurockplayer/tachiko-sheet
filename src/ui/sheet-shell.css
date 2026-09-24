@@ -300,6 +300,12 @@ body { margin: 0; }
 
 .ts-button:hover:not(:disabled) {
   background: var(--ts-surface-sunken);
+  border-color: var(--ts-line-strong);
+}
+
+.ts-button:active:not(:disabled) {
+  background: var(--ts-surface-sunken);
+  border-color: var(--ts-line-strong);
 }
 
 .ts-button:disabled {
@@ -338,6 +344,12 @@ body { margin: 0; }
 
 .ts-button--ghost {
   background: transparent;
+  border-color: transparent;
+}
+
+.ts-button--ghost:hover:not(:disabled),
+.ts-button--ghost:active:not(:disabled) {
+  border-color: transparent;
 }
 
 .ts-app :focus-visible {
@@ -702,6 +714,57 @@ body { margin: 0; }
   overflow: auto;
 }
 
+/* ---------- Shared workbook sections ---------- */
+
+.ts-panel.ts-brief {
+  padding: 16px clamp(16px, 3vw, 40px);
+  gap: 20px clamp(24px, 4vw, 48px);
+  background: var(--ts-surface);
+}
+
+.ts-panel.ts-brief > .ts-card {
+  min-width: 0;
+  padding: 0 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--ts-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ts-panel.ts-brief :is(select, input:not([type="checkbox"]), textarea) {
+  font: inherit;
+  min-height: var(--ts-profile-command-target-min-height);
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+}
+
+.ts-panel.ts-brief select {
+  width: 100%;
+}
+
+.ts-panel.ts-brief :is(select, input:not([type="checkbox"]), textarea):disabled {
+  border-color: var(--ts-protected-border-control);
+  background: var(--ts-protected-surface-inset);
+  color: var(--ts-protected-disabled-foreground);
+}
+
+.ts-panel.ts-brief .ts-fact-list {
+  border: 0;
+  border-radius: 0;
+}
+
+.ts-panel.ts-brief .ts-report-data div {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ts-line);
+  border-radius: 0;
+}
+
 /* ---------- Grid ---------- */
 
 .ts-grid-scroll {
@@ -969,21 +1032,6 @@ body { margin: 0; }
   margin-bottom: 14px;
 }
 
-.ts-report-controls input:not([type="checkbox"]) {
-  min-height: 34px;
-  padding: 7px 9px;
-  border: 1px solid var(--ts-line-strong);
-  border-radius: var(--ts-radius);
-  background: var(--ts-surface);
-  color: var(--ts-ink);
-}
-
-.ts-report-controls input:not([type="checkbox"]):disabled {
-  border-color: var(--ts-protected-border-control);
-  background: var(--ts-protected-surface);
-  color: var(--ts-protected-text-primary);
-}
-
 .ts-check {
   grid-column: 1 / -1;
   display: inline-flex;
@@ -1150,6 +1198,17 @@ body { margin: 0; }
 @media (forced-colors: active) {
   .ts-app { background: Canvas; color: CanvasText; }
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
+  .ts-panel.ts-brief { background: Canvas; }
+  .ts-panel.ts-brief > .ts-card { border-color: ButtonText; }
+  .ts-panel.ts-brief :is(select, input:not([type="checkbox"]), textarea) {
+    color: CanvasText;
+    background: Canvas;
+    border-color: ButtonText;
+  }
+  .ts-panel.ts-brief :is(select, input:not([type="checkbox"]), textarea):disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
   .ts-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
