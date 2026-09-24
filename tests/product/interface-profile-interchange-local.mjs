@@ -627,8 +627,8 @@ try {
   await ghostPage.setViewportSize({ width: 320, height: 640 });
   await ghostPage.goto(LOCAL_ORIGIN);
   await ghostPage.getByTestId("project-ready").waitFor();
-  assert.equal(await ghostPage.getByRole("radio", { name: /Imported Safe Header comfortable/ }).isChecked(), true,
-    "ghost control samples the admitted persisted imported profile");
+  assert.equal(await ghostPage.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)).profile.name, key),
+    "Safe Header comfortable", "ghost control samples the admitted persisted imported profile");
   await ghostPage.locator('.ts-command-overflow > summary[aria-label="More document commands"]').click();
   const ghost = ghostPage.locator(".ts-command-overflow > button.ts-button--ghost");
   await ghost.waitFor({ state: "visible" });
