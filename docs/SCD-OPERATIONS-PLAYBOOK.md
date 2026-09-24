@@ -96,7 +96,7 @@ Before each Luna package, Sol records a compact decision when one is material:
 - relevant rejected alternative;
 - rollback/reversal path when material.
 
-Give Luna only the settled implementation/test package. If implementation reveals a new architecture, product, semantic, storage, security, data-integrity or acceptance choice, return it to Sol rather than letting the worker improvise.
+Give Luna only the settled implementation/test package. If implementation reveals a new choice, return it to Sol to classify against the governing authority rather than letting the worker improvise. Sol decides choices inside settled engineering boundaries; product scope, specifications or material acceptance choices go to ChatGPT Steward; conflicts with Accepted semantics, storage or authorization go to the relevant upstream authority, with Steward included when product scope or acceptance is involved. Do not freeze a follow-on Luna package or declare a Final Candidate until the required outside authority resolves the question. Complete any applicable #1 Astra/Pro consultation separately; it does not replace this authority routing.
 
 Before freezing an architecture decision or assigning Luna a package, Sol checks live #1 for mandatory Astra consultation and any conditional Pro escalation, and completes the applicable steps when a trigger applies.
 
@@ -125,8 +125,9 @@ Use the cheapest evidence that can answer the current question:
 
 - affected unit/integration tests;
 - real browser journey for the changed boundary;
+- for material UI governed by #44, exact-build visual/interaction comparison with approved Figma;
 - product-owned invariant checks;
-- exact visual/pixel checks where the defect is paint/geometry related.
+- exact pixel/geometry checks when the defect or acceptance specifically depends on paint/geometry.
 
 ### Final Candidate
 
@@ -145,11 +146,12 @@ Do not use a unit PASS to claim browser/product PASS. Do not use a browser scree
 
 Immediately invalidate the Final Candidate when any of these happens:
 
-- a valid P1/P2 blocker is found;
+- a valid blocking P1/P2 finding is found;
 - a material source/test/acceptance commit is added;
-- the review shows the candidate violates accepted authority;
-- a required hosted gate fails for a real candidate defect;
-- previously unresolved review debt still applies.
+- a required hosted gate fails because of an actual candidate defect;
+- required GitHub review/protection state is unsatisfied.
+
+Ordinary nonblocking review debt does not invalidate the candidate unless it is a valid blocking finding or leaves required GitHub review/protection state unsatisfied.
 
 After invalidation:
 
@@ -237,7 +239,7 @@ This avoids “fixing the test” without proving the product boundary.
 
 When a review finding touches design authority, verify whether the correct fix is source logic or a reviewed Figma amendment.
 
-## 11. Resolve review debt before merge
+## 11. Clear blocking findings and satisfy protections before merge
 
 A clean Oracle verdict is necessary but not sufficient.
 
