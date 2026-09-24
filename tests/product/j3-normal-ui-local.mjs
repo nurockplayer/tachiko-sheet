@@ -3,7 +3,7 @@
 // data or invokes an import/cleanup/export capability on the app's behalf.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,14 +97,41 @@ try {
   await dialog.waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
   assert.equal(await page.getByLabel("Choose CSV or XLSX", { exact: true }).evaluate((input) => document.activeElement === input), true, "cancel must restore focus to the spreadsheet trigger");
+  // A long candidate keeps its real rejected-import alert visible outside the
+  // internally scrolling column/ledger region.
+  const longInvalidCsv = path.join(output, "long-invalid.csv");
+  const longHeaders = Array.from({ length: 12 }, (_, index) => `field_${String(index + 1).padStart(2, "0")}`);
+  const longRows = [longHeaders.join(",")];
+  for (let row = 0; row < 4; row += 1) {
+    longRows.push(longHeaders.map((_, column) => column === 0 ? `invalid-${row}` : `value-${row}-${column}`).join(","));
+  }
+  await writeFile(longInvalidCsv, `${longRows.join("\n")}\n`, "utf8");
   // Invalid typing stays a rejected import candidate; it never opens or replaces work.
-  dialog = await choose(page, messyCsv);
+  dialog = await choose(page, longInvalidCsv);
+  await dialog.waitFor();
+  const importScroll = dialog.locator(".ts-dialog-scroll");
+  const longCandidateMetrics = await importScroll.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    columns: element.querySelectorAll(".ts-import-column").length,
+  }));
+  assert.equal(longCandidateMetrics.columns, 12, "long real candidate exposes all 12 column choices");
+  assert.ok(longCandidateMetrics.scrollHeight > longCandidateMetrics.clientHeight, `long candidate overflows its review scroller: ${JSON.stringify(longCandidateMetrics)}`);
   await dialog.locator("select").first().selectOption("number");
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   const importAlert = dialog.getByRole("alert");
   await importAlert.waitFor();
   assert.match(await importAlert.textContent(), /import was not applied/i);
   assert.equal(await importAlert.evaluate((alert) => alert.closest('[role="dialog"]')?.getAttribute("aria-modal")), "true", "rejection alert must remain inside the active modal");
+  assert.equal(await importAlert.evaluate((alert) => alert.closest(".ts-dialog-scroll")), null, "rejection alert stays outside the candidate scroller");
+  assert.equal(await importAlert.isVisible(), true, "rejection alert remains visible with long candidate content");
+  assert.equal(await dialog.locator("select").count(), 12, "failed import retains all candidate choices");
+  assert.equal(await dialog.locator("select").first().inputValue(), "number", "failed import retains the rejected type choice for correction");
+  const [alertBox, actionBox] = await Promise.all([
+    importAlert.boundingBox(),
+    dialog.locator(".ts-dialog-actions").boundingBox(),
+  ]);
+  assert.ok(alertBox && actionBox && alertBox.y + alertBox.height <= actionBox.y, "visible import feedback precedes the reachable fixed actions");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
 

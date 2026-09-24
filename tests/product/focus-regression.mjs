@@ -133,6 +133,21 @@ const cases = [
       assert.ok(Math.abs(saveActions[0] - saveActions[1]) < 1, "Save actions remain side by side on phone");
       await save.getByRole("button", { name: "Cancel", exact: true }).click();
 
+      await page.setViewportSize({ width: 320, height: 350 });
+      await saveTrigger.click();
+      const shortSave = await save.boundingBox();
+      assert.equal(Math.round(shortSave.x), 16);
+      assert.ok(shortSave.height <= 302, `short Save fits the viewport's 302px modal area: ${JSON.stringify(shortSave)}`);
+      assert.ok(shortSave.y >= 0 && shortSave.y + shortSave.height <= 350, `short Save frame remains in the viewport: ${JSON.stringify(shortSave)}`);
+      await save.getByRole("textbox", { name: "Copy name", exact: true }).fill("short-viewport-copy");
+      const shortSaveAction = save.getByRole("button", { name: "Create copy", exact: true });
+      await shortSaveAction.focus();
+      const reachedSaveAction = await shortSaveAction.boundingBox();
+      const reachedSavePanel = await save.boundingBox();
+      assert.ok(reachedSaveAction.y >= reachedSavePanel.y && reachedSaveAction.y + reachedSaveAction.height <= reachedSavePanel.y + reachedSavePanel.height, "short Save action is reachable inside its scrollable dialog");
+      await save.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.setViewportSize({ width: 320, height: 640 });
+
       await page.locator(".ts-command-overflow > summary").click();
       await page.getByRole("button", { name: "Close project", exact: true }).click();
       const close = page.getByRole("dialog", { name: "Unsaved work", exact: true });
@@ -143,6 +158,15 @@ const cases = [
         buttons.map((button) => button.getBoundingClientRect().top),
       );
       assert.ok(closeActions[1] > closeActions[0], "Close choices stack on phone in approved order");
+      await page.setViewportSize({ width: 320, height: 250 });
+      const shortClose = await close.boundingBox();
+      assert.ok(shortClose.height <= 202, `short Close fits the viewport's 202px modal area: ${JSON.stringify(shortClose)}`);
+      assert.ok(shortClose.y >= 0 && shortClose.y + shortClose.height <= 250, `short Close frame remains in the viewport: ${JSON.stringify(shortClose)}`);
+      const destructiveClose = close.getByRole("button", { name: "Close without saving", exact: true });
+      await destructiveClose.focus();
+      const reachedCloseAction = await destructiveClose.boundingBox();
+      const reachedClosePanel = await close.boundingBox();
+      assert.ok(reachedCloseAction.y >= reachedClosePanel.y && reachedCloseAction.y + reachedCloseAction.height <= reachedClosePanel.y + reachedClosePanel.height, "short Close action is reachable inside its scrollable dialog");
       await close.getByRole("button", { name: "Keep editing", exact: true }).click();
 
       await page.setViewportSize({ width: 1512, height: 982 });
@@ -186,6 +210,8 @@ const cases = [
           const capture = () => transitions.push({
             ariaBusy: button?.getAttribute("aria-busy"),
             inputDisabled: input?.disabled ?? false,
+            focusInside: dialog.contains(document.activeElement),
+            nameFocused: document.activeElement === input,
             workingLabel: button?.textContent.trim() === "Working…",
           });
           capture();
@@ -224,7 +250,8 @@ const cases = [
       }
       for (const { profile, transitions } of pendingSaveTransitions) {
         assert.ok(transitions.some((transition) => transition.ariaBusy === "true"), `${profile} renders aria-busy while Create copy is pending: ${JSON.stringify(transitions)}`);
-        assert.ok(transitions.some((transition) => transition.inputDisabled), `${profile} disables the copy name while pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.ariaBusy === "true" && !transition.inputDisabled), `${profile} keeps Copy name enabled while pending: ${JSON.stringify(transitions)}`);
+        assert.ok(transitions.some((transition) => transition.ariaBusy === "true" && transition.focusInside && transition.nameFocused), `${profile} keeps keyboard focus in editable Copy name while pending: ${JSON.stringify(transitions)}`);
         assert.ok(transitions.some((transition) => transition.workingLabel), `${profile} renders the Working… label while pending: ${JSON.stringify(transitions)}`);
       }
     },

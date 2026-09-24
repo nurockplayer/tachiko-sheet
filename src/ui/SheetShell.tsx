@@ -262,6 +262,7 @@ export function SheetShell(props: SheetShellProps) {
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const copyNameInputRef = useRef<HTMLInputElement | null>(null);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
@@ -759,6 +760,7 @@ export function SheetShell(props: SheetShellProps) {
       setCopyError("Correct the invalid report presentation text before creating a copy.");
       return;
     }
+    copyNameInputRef.current?.focus();
     setCopyPending(true);
     setLocalError(null);
     try {
@@ -1567,9 +1569,9 @@ export function SheetShell(props: SheetShellProps) {
             <input
               id={copyNameId}
               className="ts-text-input"
+              ref={copyNameInputRef}
               data-autofocus="true"
               value={copyName}
-              disabled={copyPending}
               aria-describedby={copyError ? copyErrorId : undefined}
               onChange={(event) => {
                 setCopyError(null);
@@ -1618,8 +1620,8 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-scroll">
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No source-fidelity findings were reported for this candidate.</p>}
-            {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
           </div>
+          {importError ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importError}</p> : null}
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
         </Modal>
       ) : null}

@@ -928,7 +928,7 @@ body { margin: 0; }
   box-shadow: 0 16px 48px -12px rgba(37, 39, 53, 0.24);
 }
 
-.ts-modal--save { min-height: 360px; }
+.ts-modal--save { min-height: min(360px, calc(100dvh - 48px)); }
 
 .ts-modal--review {
   height: 360px;
@@ -940,7 +940,7 @@ body { margin: 0; }
   overflow: hidden;
 }
 
-.ts-modal--close { min-height: 260px; }
+.ts-modal--close { min-height: min(260px, calc(100dvh - 48px)); }
 
 .ts-modal .ts-dialog-intro {
   display: grid;
@@ -968,6 +968,8 @@ body { margin: 0; }
   border-color: #e0b4b4;
   padding: 6px 10px;
 }
+
+.ts-modal--import > .ts-dialog-error--import { flex: 0 0 auto; }
 
 .ts-modal .ts-dialog-actions {
   margin-top: auto;
