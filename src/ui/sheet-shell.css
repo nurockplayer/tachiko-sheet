@@ -350,6 +350,11 @@ body { margin: 0; }
   border-color: transparent;
 }
 
+.ts-button--ghost:hover:not(:disabled),
+.ts-button--ghost:active:not(:disabled) {
+  border-color: var(--ts-line-strong);
+}
+
 .ts-app :focus-visible {
   outline: 3px solid var(--ts-focus);
   outline-offset: 2px;
@@ -1213,6 +1218,8 @@ body { margin: 0; }
   }
   .ts-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
+  .ts-app .ts-button--ghost:hover:not(:disabled),
+  .ts-app .ts-button--ghost:active:not(:disabled) { border-color: ButtonText; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
   .ts-app .ts-button--primary:not(:disabled) {
     background: Highlight;

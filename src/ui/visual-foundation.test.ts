@@ -66,8 +66,8 @@ describe("visual foundation CSS contract", () => {
     expect(dangerPressed).not.toContain("border-color:");
     expect(css).toContain("--ts-protected-destructive-pressed: #eceef4;");
     expect(css).toContain(".ts-button--ghost {\n  background: transparent;\n  border-color: transparent;");
-    expect(css).not.toContain(".ts-button--ghost:hover:not(:disabled)");
-    expect(css).not.toContain(".ts-button--ghost:active:not(:disabled)");
+    expect(css).toContain(`.ts-button--ghost:hover:not(:disabled),\n.ts-button--ghost:active:not(:disabled) {\n  border-color: var(--ts-line-strong);\n}`);
+    expect(css).toContain(".ts-app .ts-button--ghost:hover:not(:disabled),\n  .ts-app .ts-button--ghost:active:not(:disabled) { border-color: ButtonText; }");
     expect(css).toContain(".ts-panel.ts-brief > .ts-card");
     expect(css).toContain(".ts-panel.ts-brief > .ts-report-card:only-child");
     expect(css).toContain("background: transparent;");

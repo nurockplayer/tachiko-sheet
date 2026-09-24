@@ -22,6 +22,20 @@ const densities = [
   { id: "comfortable", label: "Comfortable", pitch: 32 },
 ];
 const widths = [320, 600, 1023, 1024];
+const safeImportedGhostPreference = JSON.stringify({
+  schemaVersion: 2,
+  kind: "imported",
+  profile: {
+    schemaVersion: 1,
+    name: "Safe Ghost Probe",
+    colorScheme: "light",
+    typography: "tachiko-local",
+    density: "compact",
+    chrome: "structured",
+    colors: Object.fromEntries(JSON.parse(await readFile(path.join(root, "docs/design/interface-profile-v1-mapping.json"), "utf8"))
+      .roles.map(({ role, value }) => [role, value])),
+  },
+});
 const failures = [];
 const observations = [];
 const evidence = (condition, label, details = null) => {
@@ -871,6 +885,48 @@ async function computedControlTokens(page, tokens) {
   }, tokens);
 }
 
+async function auditGhostInteractionStates(page, profileLabel) {
+  const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
+  await overflow.click();
+  const ghost = page.locator(".ts-command-overflow > button.ts-button--ghost");
+  await ghost.waitFor({ state: "visible" });
+  const ghostStatesByMode = {};
+  for (const { forcedColors, colorScheme } of [
+    { forcedColors: "none", colorScheme: "light" },
+    { forcedColors: "active", colorScheme: "light" },
+    { forcedColors: "active", colorScheme: "dark" },
+  ]) {
+    await page.emulateMedia({ forcedColors, colorScheme });
+    const modeLabel = forcedColors === "none" ? "normal" : `forced-${colorScheme}`;
+    const states = await sampleButtonStates(page, ghost, `ghost ${profileLabel} ${modeLabel}`);
+    if (forcedColors === "active") {
+      const systemCanvas = await forcedSystemColor(page, "Canvas");
+      const systemText = await forcedSystemColor(page, "ButtonText");
+      const systemForeground = await forcedSystemColor(page, "CanvasText");
+      evidence(Object.values(states).every(({ background, border, foreground }) =>
+        background === systemCanvas && border === systemText && foreground === systemForeground),
+      `ghost ${profileLabel} ${modeLabel} retains Canvas, ButtonText, and CanvasText`, { states, systemCanvas, systemText, systemForeground });
+    } else {
+      const surfaces = await computedControlTokens(page, [
+        ["hover", "backgroundColor", "--ts-surface-sunken"],
+        ["pressed", "backgroundColor", "--ts-surface-head"],
+        ["strongBorder", "borderColor", "--ts-line-strong"],
+      ]);
+      const transparentBackground = (rgb(states.rest.background)?.[3] ?? 1) === 0;
+      const transparentRestBorder = (rgb(states.rest.border)?.[3] ?? 1) === 0;
+      evidence(transparentBackground && transparentRestBorder &&
+        states.hover.background === surfaces.hover && states.pressed.background === surfaces.pressed &&
+        states.hover.background !== states.pressed.background &&
+        states.hover.border === surfaces.strongBorder && states.pressed.border === surfaces.strongBorder,
+      `ghost ${profileLabel} has transparent rest and strong hover/pressed borders`, { states, surfaces });
+      evidence([states.hover, states.pressed].every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5),
+        `ghost ${profileLabel} text remains at least 4.5:1 on hover and pressed surfaces`, states);
+    }
+    ghostStatesByMode[forcedColors === "none" ? "normal" : `forced-${colorScheme}`] = states;
+  }
+  observations.push({ buttonVariantState: "ghost", profile: profileLabel, states: ghostStatesByMode });
+}
+
 async function auditButtonVariantBoundaries(browser) {
   for (const profile of profiles) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -963,38 +1019,25 @@ async function auditButtonVariantBoundaries(browser) {
     await openCanary(ghostContext, ghostPage);
     await choose(ghostPage, profile.id, "compact");
     await ghostPage.keyboard.press("Escape");
-    const overflow = ghostPage.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
-    await overflow.click();
-    const ghost = ghostPage.locator(".ts-command-overflow > button.ts-button--ghost");
-    await ghost.waitFor({ state: "visible" });
-    const ghostStatesByMode = {};
-    for (const forcedColors of ["none", "active"]) {
-      await ghostPage.emulateMedia({ forcedColors, colorScheme: "light" });
-      const states = await sampleButtonStates(ghostPage, ghost, `ghost ${profile.id} ${forcedColors}`);
-      if (forcedColors === "active") {
-        const systemCanvas = await forcedSystemColor(ghostPage, "Canvas");
-        const systemText = await forcedSystemColor(ghostPage, "ButtonText");
-        const systemForeground = await forcedSystemColor(ghostPage, "CanvasText");
-        evidence(Object.values(states).every(({ background, border, foreground }) =>
-          background === systemCanvas && border === systemText && foreground === systemForeground),
-          `ghost ${profile.id} forced-colors states retain Canvas and ButtonText`, { states, systemCanvas, systemText });
-      } else {
-        const surfaces = await computedControlTokens(ghostPage, [
-          ["hover", "backgroundColor", "--ts-surface-sunken"],
-          ["pressed", "backgroundColor", "--ts-surface-head"],
-        ]);
-        const alpha = rgb(states.rest.background)?.[3] ?? null;
-        evidence(alpha === 0 && states.hover.background === surfaces.hover && states.pressed.background === surfaces.pressed &&
-          states.hover.background !== states.pressed.background && Object.values(states).every((state) => (rgb(state.border)?.[3] ?? 1) === 0),
-        `ghost ${profile.id} retains transparent rest/outline and distinct hover/pressed surfaces`, { states, surfaces, alpha });
-        evidence([states.hover, states.pressed].every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5),
-          `ghost ${profile.id} text remains at least 4.5:1 on hover and pressed surfaces`, states);
-      }
-      ghostStatesByMode[forcedColors] = states;
-    }
-    observations.push({ buttonVariantState: "ghost", profile: profile.id, states: ghostStatesByMode });
+    await auditGhostInteractionStates(ghostPage, profile.id);
     await ghostContext.close();
   }
+
+  const importedContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(importedContext, dist);
+  await importedContext.addInitScript(({ storageKey, rawPreference }) => {
+    localStorage.setItem(storageKey, rawPreference);
+  }, { storageKey: key, rawPreference: safeImportedGhostPreference });
+  const importedPage = await importedContext.newPage();
+  await openApp(importedContext, importedPage);
+  await importedPage.getByRole("button", { name: "Appearance", exact: true }).click();
+  const importedRadio = importedPage.getByRole("radio", { name: "Imported Safe Ghost Probe", exact: true });
+  evidence(await importedRadio.isChecked(), "safe imported appearance loads for the ghost control probe", null);
+  await importedPage.keyboard.press("Escape");
+  await openCanary(importedContext, importedPage);
+  await importedPage.keyboard.press("Escape");
+  await auditGhostInteractionStates(importedPage, "safe imported");
+  await importedContext.close();
 }
 
 async function auditNotice(context, profile) {
