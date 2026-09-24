@@ -1645,6 +1645,7 @@ export function SheetShell(props: SheetShellProps) {
               ref={copyNameInputRef}
               data-autofocus="true"
               value={copyName}
+              readOnly={copyPending}
               aria-describedby={copyError ? copyErrorId : undefined}
               onChange={(event) => {
                 setCopyError(null);

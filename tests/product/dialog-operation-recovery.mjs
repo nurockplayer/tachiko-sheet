@@ -200,11 +200,19 @@ try {
   const saveFailure = saveDialog.getByRole("alert");
   await saveFailure.waitFor();
   assert.equal(await page.getByRole("alert").count(), 1, "failed Save has one accessible alert");
+  assert.equal(await nameInput.evaluate((input) => input.readOnly), false, "rejected Save unlocks the name for correction");
+  const correctedName = `${name}-corrected`;
+  await nameInput.fill(correctedName);
   await page.evaluate(() => window.__tachikoAcceptance.deferNextCopyWrite());
   await saveDialog.getByRole("button", { name: "Create copy", exact: true }).click();
   const workingSave = saveDialog.getByRole("button", { name: "Working…", exact: true });
   await workingSave.waitFor();
-  assert.equal(await saveDialog.getByRole("alert").count(), 0, "same-name retry clears the previous failure before Working");
+  assert.equal(await nameInput.evaluate((input) => input.readOnly), true, "pending Save keeps its durable name read-only");
+  assert.equal(await nameInput.evaluate((input) => input === document.activeElement), true, "read-only pending name retains focus");
+  assert.equal(await nameInput.inputValue(), correctedName, "pending field shows the corrected name captured for the retry");
+  await page.keyboard.insertText("tampered-name");
+  assert.equal(await nameInput.inputValue(), correctedName, "typing cannot change the displayed name during the pending write");
+  assert.equal(await saveDialog.getByRole("alert").count(), 0, "corrected retry clears the previous failure before Working");
   assert.equal(await page.getByRole("alert").count(), 0, "same-name retry has no stale parent failure");
   assert.equal(await saveDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true, "pending Save disables Cancel");
   await page.keyboard.press("Escape");
@@ -213,7 +221,7 @@ try {
   assert.equal(await saveDialog.count(), 1, "backdrop cannot dismiss pending Save");
   await page.evaluate(() => window.__tachikoAcceptance.releaseCopyWrite());
   await saveDialog.waitFor({ state: "detached" });
-  assert.ok(await page.evaluate((copyName) => window.__tachikoAcceptance.savedSnapshot(copyName), name), "released real copy write completes");
+  assert.ok(await page.evaluate((copyName) => window.__tachikoAcceptance.savedSnapshot(copyName), correctedName), "released real copy write completes under the displayed corrected name");
 
   // Prepare failure is reported once in the active Download panel. A retry
   // removes that failure before consent, and a handoff failure returns to the
