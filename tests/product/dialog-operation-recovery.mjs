@@ -39,8 +39,21 @@ try {
   const malformed = path.join(output, "malformed.xlsx");
   await writeFile(malformed, "not an xlsx workbook", "utf8");
   await input.setInputFiles(malformed);
-  await page.getByRole("alert").waitFor();
+  const inspectionFailure = page.getByRole("alert");
+  await inspectionFailure.waitFor();
+  const inspectionFailureText = (await inspectionFailure.textContent())?.trim() ?? "";
+  assert.ok(inspectionFailureText.length > 0, "inspection failure has a visible detail");
   assert.equal(await page.getByRole("alert").count(), 1, "inspection failure has one alert owner");
+  await page.route("**/examples/release-plan/manifest.json", (route) =>
+    route.fulfill({ status: 503, contentType: "text/plain", body: "controlled follow-up open failure" }));
+  await page.getByRole("button", { name: "Try example", exact: true }).click();
+  const followUpOpenError = page.getByRole("alert").filter({ hasText: "example file manifest.json is unavailable (503)" });
+  await followUpOpenError.waitFor();
+  assert.equal(await page.getByRole("alert").count(), 2, "a failed Home open does not get hidden by the stale Import alert");
+  assert.equal(await page.getByRole("alert").filter({ hasText: inspectionFailureText }).count(), 1, "the original inline inspection failure remains visible");
+  assert.match(await followUpOpenError.textContent(), /manifest\.json is unavailable \(503\)/i, "the newer Home failure remains globally visible");
+  await page.unroute("**/examples/release-plan/manifest.json");
+
   await page.evaluate(() => window.__tachikoAcceptance.deferNextImportInspection());
   await input.setInputFiles(fixture);
   await page.waitForFunction(() => document.querySelector('input[type="file"][accept*=".csv"]')?.disabled === true);
@@ -49,6 +62,39 @@ try {
   const importDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await importDialog.waitFor();
   assert.equal(await page.getByRole("alert").count(), 0, "valid inspection opens a clean candidate dialog");
+
+  // A rejected typed Import retains its heading focus after pending ends. The
+  // retained focus target stays in the modal's explicit keyboard loop.
+  await importDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await importDialog.waitFor({ state: "detached" });
+  const invalidNumberCsv = path.join(output, "invalid-number.csv");
+  await writeFile(invalidNumberCsv, "value\nnot-a-number\n", "utf8");
+  await input.setInputFiles(invalidNumberCsv);
+  const failedImportDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  await failedImportDialog.waitFor();
+  await failedImportDialog.locator("select").first().selectOption("number");
+  await failedImportDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  const failedImportAlert = failedImportDialog.getByRole("alert");
+  await failedImportAlert.waitFor();
+  assert.match(await failedImportAlert.textContent(), /import was not applied/i, "invalid Number Import retains an actionable candidate failure");
+  const failedImportHeading = failedImportDialog.locator("h2");
+  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "failed Import retains natural focus on its heading");
+  await page.keyboard.press("Tab");
+  assert.equal(await failedImportDialog.evaluate((dialog) => dialog.contains(document.activeElement)), true, "Tab from the retained failed heading remains in the dialog");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "Shift+Tab returns to the first failed-dialog focus target");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await failedImportDialog.evaluate((dialog) => {
+    const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+    return focusable.at(-1) === document.activeElement;
+  }), true, "Shift+Tab from the failed heading wraps to the last enabled dialog target");
+  await page.keyboard.press("Tab");
+  assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "Tab from the last failed-dialog target wraps to its heading");
+  await failedImportDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await failedImportDialog.waitFor({ state: "detached" });
+
+  await input.setInputFiles(fixture);
+  await importDialog.waitFor();
 
   // The real import resolves before the acceptance gate releases its reply.
   // During that pending interval every user dismissal route stays blocked.

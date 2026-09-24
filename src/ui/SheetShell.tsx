@@ -420,7 +420,8 @@ export function SheetShell(props: SheetShellProps) {
     copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
   );
   const importErrorIsInline = Boolean(
-    importError && (!view || (message && errorMessage === message && importErrorMessage === message)),
+    importError && localError === null && copyError === null &&
+      errorMessage !== null && errorMessage === importErrorMessage,
   );
   const downloadErrorIsInline = Boolean(
     tab === "interop" && interop?.downloadStatus === "failed" &&
@@ -1679,7 +1680,7 @@ export function SheetShell(props: SheetShellProps) {
             <h2
               ref={importPendingFocusRef}
               className="ts-h2"
-              tabIndex={interop.importInspection.source.ledger.length || importPending ? 0 : -1}
+              tabIndex={interop.importInspection.source.ledger.length || importPending || Boolean(importError) ? 0 : -1}
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
             >Review import candidate</h2>
             <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
