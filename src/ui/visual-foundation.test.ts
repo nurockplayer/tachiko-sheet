@@ -54,9 +54,14 @@ describe("visual foundation CSS contract", () => {
     const genericHover = css.match(/\.ts-button:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
     const genericPressed = css.match(/\.ts-button:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
     const dangerHover = css.match(/\.ts-button--danger:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const dangerPressed = css.match(/\.ts-button--danger:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
     expect(genericHover).not.toContain("border-color:");
+    expect(genericPressed).toContain("background: var(--ts-surface-head);");
     expect(genericPressed).not.toContain("border-color:");
     expect(dangerHover).not.toContain("border-color:");
+    expect(dangerPressed).toContain("background: var(--ts-protected-destructive-pressed);");
+    expect(dangerPressed).not.toContain("border-color:");
+    expect(css).toContain("--ts-protected-destructive-pressed: #eceef4;");
     expect(css).toContain(".ts-button--ghost {\n  background: transparent;\n  border-color: transparent;");
     expect(css).not.toContain(".ts-button--ghost:hover:not(:disabled)");
     expect(css).not.toContain(".ts-button--ghost:active:not(:disabled)");

@@ -41,6 +41,7 @@
   --ts-protected-disabled-foreground: #8c949c;
   --ts-protected-destructive-foreground: #8a2f1c;
   --ts-protected-destructive-border: #b4553f;
+  --ts-protected-destructive-pressed: #eceef4;
   --ts-warn: #865015;
   --ts-warn-bg: #fff3dd;
   --ts-error-ink: #a02d42;
@@ -303,7 +304,7 @@ body { margin: 0; }
 }
 
 .ts-button:active:not(:disabled) {
-  background: var(--ts-surface-sunken);
+  background: var(--ts-surface-head);
 }
 
 .ts-button:disabled {
@@ -338,6 +339,10 @@ body { margin: 0; }
 
 .ts-button--danger:hover:not(:disabled) {
   background: var(--ts-protected-surface-inset);
+}
+
+.ts-button--danger:active:not(:disabled) {
+  background: var(--ts-protected-destructive-pressed);
 }
 
 .ts-button--ghost {
