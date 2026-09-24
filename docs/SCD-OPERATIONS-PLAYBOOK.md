@@ -192,7 +192,7 @@ When local full acceptance passes but a required hosted gate fails:
    - transient/infrastructure failure;
 4. repair only the proven cause.
 
-A retry of the **same unchanged HEAD** is acceptable when the failure has been diagnosed as transient/flaky/environmental and the retry is itself recorded. A retry must not erase the original failure from the evidence trail.
+Retry the **same unchanged HEAD** only when evidence shows a transient external infrastructure/environment incident, such as a CI service or runner outage, unrelated to the candidate, its tests/harness, or genuine platform behavior. Preserve the original failure and diagnosis in the evidence trail; a passing retry does not erase them. Product, harness and real platform defects remain blocking until repaired, then rerun the affected checks against the appropriate HEAD.
 
 If source/test behavior changes, establish a new HEAD and rerun the applicable exact-head gates.
 
@@ -203,7 +203,7 @@ Use one fresh, independent Oracle latest Extra High session only after the candi
 Required behavior:
 
 - attach the exact HEAD/base and complete relevant diff/context;
-- require concrete P1/P2 findings with trigger/file/line when applicable;
+- require every valid blocking finding with its appropriate priority and concrete evidence, including trigger/file/line when applicable;
 - require literal terminal verdict `No blocking findings.` only when there are no blockers;
 - keep Oracle read-only;
 - do not grant final-review credit to anyone who authored the design, implementation, acceptance, or review evidence, materially participated in the consulted solution direction, or is merely the earlier finding author re-approving their own fix.
