@@ -7,6 +7,8 @@ not import upstream permissions or change the existing clauses below.
 
 Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-23 Sol-led amendment in #77 supersedes the 2026-09-22 Astra-led amendment in #73, the 2026-09-12 Terra single-lead amendment and the 2026-09-20 Oracle-only routing amendment.
 
+Operational procedures, failure-handling patterns and merge checklists are collected in [`SCD-OPERATIONS-PLAYBOOK.md`](SCD-OPERATIONS-PLAYBOOK.md). That document is guidance only: it does not add authority or gates, and live #1/#2 plus this DELIVERY policy and the active Issue/PR always take precedence.
+
 ## Authority and roles
 
 Upstream Product Constitution, foundational principles and relevant Accepted semantic/storage/authorization ADRs/specs constrain this client. Sheet #1 owns the finite product goal; this policy owns local dispatch; active children own their bounded implementation. Evidence is not architecture authority. Issue #2 is operational state only.
