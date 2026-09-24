@@ -421,7 +421,8 @@ export function SheetShell(props: SheetShellProps) {
     importError && (!view || (message && errorMessage === message && importErrorMessage === message)),
   );
   const downloadErrorIsInline = Boolean(
-    tab === "interop" && interop?.downloadStatus === "failed" && message,
+    tab === "interop" && interop?.downloadStatus === "failed" &&
+      interop.downloadError !== null && errorMessage === message && message === interop.downloadError,
   );
 
   useLayoutEffect(() => {
@@ -1300,7 +1301,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Download</h2>
         <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
         <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button></div>
-        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{message ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
+        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
   }

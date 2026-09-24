@@ -72,6 +72,7 @@ export interface AcceptanceApi {
   savedHash(name: string): Promise<string | null>;
   failNextSave(): void;
   failNextSpreadsheetExport(): void;
+  failNextCleanupPreview(): void;
   deferNextImportInspection(): void;
   releaseImportInspection(): void;
   deferNextImportApplication(): void;
@@ -141,6 +142,7 @@ let settlePendingFault: (() => void) | null = null;
 let pendingFault: Promise<void> | null = null;
 let lastCoreFailureProbe: AcceptanceCoreFailureProbe | null = null;
 let spreadsheetExportFaultArmed = false;
+let cleanupPreviewFaultArmed = false;
 
 function operationGate() {
   let armed = false;
@@ -301,6 +303,15 @@ function instrumentClient(client: PublicClient): PublicClient {
           if (spreadsheetExportFaultArmed) {
             spreadsheetExportFaultArmed = false;
             throw new Error("The acceptance probe rejected spreadsheet export once.");
+          }
+          return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+        };
+      }
+      if (property === "previewCleanup") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          if (cleanupPreviewFaultArmed) {
+            cleanupPreviewFaultArmed = false;
+            throw new Error("The acceptance probe rejected cleanup preview once.");
           }
           return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
         };
@@ -528,6 +539,11 @@ export function failNextSpreadsheetExport(): void {
   spreadsheetExportFaultArmed = true;
 }
 
+/** One-shot acceptance-only cleanup preview failure; later previews use the real kit. */
+export function failNextCleanupPreview(): void {
+  cleanupPreviewFaultArmed = true;
+}
+
 export function deferNextImportInspection(): void {
   importInspectionGate.defer();
 }
@@ -736,6 +752,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
     savedHash,
     failNextSave,
     failNextSpreadsheetExport,
+    failNextCleanupPreview,
     deferNextImportInspection,
     releaseImportInspection,
     deferNextImportApplication,

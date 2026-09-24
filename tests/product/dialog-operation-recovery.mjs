@@ -107,6 +107,13 @@ try {
   assert.equal(await page.getByRole("alert").count(), 1, "Prepare failure has one alert owner");
   assert.equal(await downloadPanel.getByRole("alert").count(), 1, "Prepare failure is actionable in the Download panel");
   assert.match(await prepareFailure.textContent(), /export could not be prepared/i);
+  await page.evaluate(() => window.__tachikoAcceptance.failNextCleanupPreview());
+  await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+  const alerts = page.getByRole("alert");
+  await alerts.filter({ hasText: "A cleanup preview could not be created." }).waitFor();
+  assert.equal(await alerts.count(), 2, "cleanup failure keeps its global alert while the prior Download failure remains actionable");
+  assert.match(await downloadPanel.getByRole("alert").textContent(), /export could not be prepared/i, "Download retains its own failure detail");
+  assert.match(await alerts.nth(0).textContent(), /cleanup preview could not be created/i, "cleanup failure remains owned by the global alert");
   await prepare.click();
   const downloadDialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await downloadDialog.waitFor();

@@ -359,7 +359,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     };
     setInterop((current) => current
       ? { ...current, cleanupPreview: preview }
-      : { importInspection: null, metadata: null, ledger: [], cleanupPreview: preview, downloadStatus: "idle" });
+      : { importInspection: null, metadata: null, ledger: [], cleanupPreview: preview, downloadStatus: "idle", downloadError: null });
   }
 
   function upsertJ4Result(result: KeyedGroupedSumResult): void {
@@ -637,7 +637,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     // Publication is known; only projection freshness remains unknown.
     setOutcome("idle");
     // The old preview targeted the projection we just discarded.
-    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
     cleanupPreviewContextRef.current = null;
     setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
   }
@@ -652,7 +652,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     markNotSaved();
     setCurrentness("unknown");
     setOutcome("unknown");
-    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle" } : current);
+    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
     cleanupPreviewContextRef.current = null;
     setMessage("The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
@@ -789,7 +789,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       const candidateInterop = copy.importedSource ? {
         importInspection: null, metadata: copy.importedSource.metadata, ledger: copy.importedSource.ledger,
-        cleanupPreview: null, downloadStatus: "idle" as const,
+        cleanupPreview: null, downloadStatus: "idle" as const, downloadError: null,
       } : null;
       // Validate the optional presentation before replacing the resident work.
       // A hash failure is a known refusal to open this copy, not a failed Open
@@ -869,7 +869,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: ",", header: true });
       const inspection = { name: file.name, format, source } as ImportInspection;
       importBytesRef.current = bytes.slice(0);
-      setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       setMessage(null);
       return inspection;
     } catch (error) {
@@ -905,7 +905,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       pendingDirtyRef.current = true;
       syncDirty();
       markNotSaved();
-      setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle" });
+      setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       cleanupPreviewContextRef.current = null;
       importedSourceRef.current = { name: pending.name, format: pending.format, bytes: bytes.slice(0), metadata: imported.metadata, ledger: imported.ledger };
       setCurrentness("current");
@@ -1030,18 +1030,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const metadata = interop?.metadata;
     if (!live || !metadata || !begin()) return false;
     setMessage(null);
-    setInterop((current) => current ? { ...current, downloadStatus: "idle" } : current);
+    setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
     try {
       const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
       preparedDownloadRef.current = { format, revision: exported.revision, bytes: exported.bytes.slice(0) };
-      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent" } : current);
+      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent", downloadError: null } : current);
       setOutcome("idle");
       return true;
     } catch (error) {
       preparedDownloadRef.current = null;
       setOutcome("idle");
-      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
-      setMessage(describe(error, "The export could not be prepared for review.")); return false;
+      const detail = describe(error, "The export could not be prepared for review.");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed", downloadError: detail } : current);
+      setMessage(detail); return false;
     } finally { end(); }
   }
 
@@ -1051,6 +1052,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const prepared = preparedDownloadRef.current;
     if (!live || !prepared || prepared.format !== format || prepared.revision !== live.revision || !begin()) return false;
     setMessage(null);
+    setInterop((current) => current ? { ...current, downloadError: null } : current);
     try {
       const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
@@ -1059,14 +1061,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       document.body.append(anchor); anchor.click(); anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       preparedDownloadRef.current = null;
-      setInterop((current) => current ? { ...current, downloadStatus: "idle" } : current);
+      setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
       setOutcome("idle");
       return true;
     } catch (error) {
       preparedDownloadRef.current = null;
       setOutcome("idle");
-      setInterop((current) => current ? { ...current, downloadStatus: "failed" } : current);
-      setMessage(describe(error, "The download was not created.")); return false;
+      const detail = describe(error, "The download was not created.");
+      setInterop((current) => current ? { ...current, downloadStatus: "failed", downloadError: detail } : current);
+      setMessage(detail); return false;
     } finally { end(); }
   }
 
@@ -1433,7 +1436,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         if (sameReplacement) {
           importedSourceRef.current = pendingReplacement.importedSource;
           setInterop(pendingReplacement.interop
-            ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle" }
+            ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle", downloadError: null }
             : null);
           const recoveredReport = pendingReplacement.presentation
             ? recoverPresentationAfterAcknowledgedOpen(
@@ -1489,6 +1492,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
               ...checkpoint.interop,
               cleanupPreview: checkpoint.revision === next.revision ? checkpoint.interop.cleanupPreview : null,
               downloadStatus: "idle",
+              downloadError: null,
             }
           : null);
         cleanupPreviewContextRef.current = checkpoint.cleanupPreviewContext &&
