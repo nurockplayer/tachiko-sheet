@@ -179,7 +179,7 @@ body { margin: 0; }
 
 .ts-home {
   width: min(1040px, calc(100% - 64px));
-  margin: 28px auto 48px;
+  margin: 28px 32px 48px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1262,6 +1262,7 @@ body { margin: 0; }
     box-shadow: none;
     forced-color-adjust: auto;
   }
+  .ts-home-file-action:has(input:focus-visible) { outline-color: Highlight; }
   .ts-app :focus-visible { outline-color: Highlight; }
   .ts-row--selected td, .ts-row--selected .ts-row-head { background: Highlight; color: HighlightText; }
   .ts-row--selected .ts-cell-value, .ts-row--selected .ts-row-head {

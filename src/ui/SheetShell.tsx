@@ -96,13 +96,11 @@ function formatHomeSavedAt(value: string): string {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
   }).format(date);
   const timeLabel = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-    timeZone: "UTC",
   }).format(date);
   return `${dateLabel}, ${timeLabel}`;
 }

@@ -463,7 +463,8 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("Choose a local project folder. Its source stays unchanged.");
     expect(markup).toContain("Review the source and column types before importing.");
     expect(markup).toContain("Open saved review-copy");
-    expect(markup).toContain("Saved 12 September 2026, 10:00");
+    const localHour = new Date("2026-09-12T10:00:00.000Z").getHours().toString().padStart(2, "0");
+    expect(markup).toContain(`, ${localHour}:00`);
     expect(markup).toContain('class="ts-home-section" aria-label="Open project"');
     expect(markup).not.toContain('class="ts-card" aria-label="Open project"');
     expect(markup).not.toContain('data-testid="project-ready"');

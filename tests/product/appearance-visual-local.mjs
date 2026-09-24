@@ -574,6 +574,14 @@ async function auditHomeViewportBounds(page) {
   assert.equal(folderFocus.focusVisible, true, "the real folder input remains keyboard focusable");
   assert.equal(folderFocus.outlineStyle, "solid", "the visible folder action shows keyboard focus");
   assert.equal(folderFocus.outlineWidth, "3px");
+  const folderChooserReady = page.waitForEvent("filechooser");
+  await page.locator(".ts-home-open-actions .ts-home-file-action").click();
+  const folderChooser = await folderChooserReady;
+  assert.equal(folderChooser.isMultiple(), true, "the visible folder action opens the existing directory picker");
+  const importChooserReady = page.waitForEvent("filechooser");
+  await page.locator(".ts-home-import-action").click();
+  const importChooser = await importChooserReady;
+  assert.equal(importChooser.isMultiple(), false, "the visible import action opens the existing single-file picker");
   for (const [width, height] of [[320, 640], [1512, 982]]) {
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.scrollTo(0, 0));
