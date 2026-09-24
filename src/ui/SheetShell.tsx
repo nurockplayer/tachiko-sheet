@@ -391,6 +391,7 @@ export function SheetShell(props: SheetShellProps) {
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
+  const copyErrorIsInline = copyOpen && copyError !== null && errorMessage === copyError;
 
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
@@ -1549,7 +1550,7 @@ export function SheetShell(props: SheetShellProps) {
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
     >
-      {errorMessage ? (
+      {errorMessage && !copyErrorIsInline ? (
         <div className="ts-error" role="alert">
           {errorMessage}
         </div>

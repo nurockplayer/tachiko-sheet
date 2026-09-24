@@ -196,6 +196,8 @@ const cases = [
         await createButton.click();
         const saveError = profileSave.getByRole("alert");
         await saveError.waitFor();
+        assert.equal(await profileSave.getByRole("alert").count(), 1, `${profile.label} Save error remains inline and associated with the name`);
+        assert.equal(await page.getByRole("alert").count(), 1, `${profile.label} failed Save exposes one accessible alert`);
         const transitions = await profileSave.evaluate(() => {
           const probe = window.__issue97SavePendingProbe;
           probe.observer.disconnect();
