@@ -19,8 +19,8 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain(".ts-cell--focused");
     expect(css).toContain("@media (max-width: 1023px)");
     expect(css).toContain("@media (max-width: 599px)");
-    expect(css).toContain("min-height: 168px");
-    expect(css).toContain("max-height: max(168px, var(--ts-grid-available-height, 100vh))");
+    expect(css).toContain("min-height: min(168px, var(--ts-grid-available-height, 100vh))");
+    expect(css).toContain("max-height: var(--ts-grid-available-height, 100vh)");
     expect(css).not.toContain("calc(100vh - 164px)");
     expect(css).not.toContain("calc(100vh - 200px)");
     expect(css).not.toContain("calc(100vh - 304px)");
