@@ -23,7 +23,10 @@ const output = await mkdtemp(path.join(tmpdir(), "tachiko-sheet-dialog-recovery-
 let context;
 
 try {
-  context = await chromium.launchPersistentContext(profile, { headless: true });
+  context = await chromium.launchPersistentContext(profile, {
+    headless: true,
+    ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}),
+  });
   await installDistRoutes(context, dist);
   const page = context.pages()[0] ?? await context.newPage();
   page.setDefaultTimeout(8_000);
