@@ -1309,12 +1309,14 @@ body { margin: 0; }
     height: auto;
     overflow-y: auto;
   }
+  .ts-modal--review .ts-dialog-intro { gap: 12px; }
   .ts-modal--import .ts-dialog-scroll,
   .ts-modal--review .ts-dialog-scroll {
     flex: 0 0 auto;
     min-height: auto;
     overflow: visible;
   }
+  .ts-modal--review .ts-dialog-scroll { margin-top: 8px; }
 }
 
 @media (forced-colors: active) {
