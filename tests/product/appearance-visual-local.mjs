@@ -642,6 +642,7 @@ async function auditHomeViewportBounds(page) {
         noticesTop: noticesRect?.top ?? null,
         noticesBottom: noticesRect?.bottom ?? null,
         pageSurface: getComputedStyle(app).backgroundColor,
+        openActionsWidth: document.querySelector(".ts-home-open-actions")?.getBoundingClientRect().width ?? null,
         openActions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
           const rect = action.getBoundingClientRect();
           return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
@@ -656,10 +657,25 @@ async function auditHomeViewportBounds(page) {
           bottom: section.getBoundingClientRect().bottom,
         })),
         savedAction: (() => {
-          const rect = document.querySelector(".ts-copy-item .ts-button")?.getBoundingClientRect();
-          return rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null;
+          const action = document.querySelector(".ts-copy-item .ts-button");
+          const rect = action?.getBoundingClientRect();
+          return rect ? {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            borderColor: getComputedStyle(action).borderTopColor,
+          } : null;
         })(),
         savedMetadataX: document.querySelector(".ts-copy-meta")?.getBoundingClientRect().x ?? null,
+        strongBorderColor: (() => {
+          const probe = document.createElement("span");
+          probe.style.borderTop = "1px solid var(--ts-line-strong)";
+          document.body.append(probe);
+          const color = getComputedStyle(probe).borderTopColor;
+          probe.remove();
+          return color;
+        })(),
       };
     });
     evidence(layout.pageWidth <= width, `${width}x${height} Home with a saved copy has no horizontal overflow`, layout);
@@ -674,11 +690,22 @@ async function auditHomeViewportBounds(page) {
       assert.deepEqual(layout.sectionLines.map(({ top }) => top), [144, 344, 552]);
       assert.deepEqual(layout.importAction && [layout.importAction.x, layout.importAction.y, layout.importAction.width], [32, 468, 196]);
       assert.deepEqual(layout.savedAction && [layout.savedAction.x, layout.savedAction.y, layout.savedAction.width], [32, 684, 288]);
+      assert.equal(layout.savedAction?.borderColor, "rgba(0, 0, 0, 0)",
+        "the saved-copy ghost action keeps its approved transparent border");
       assert.equal(layout.savedMetadataX, 352);
       assert.equal(layout.sectionLines.at(-1).bottom - 1, 732, "the saved section's final divider sits at approved y=732");
     } else {
+      assert.ok(layout.openActions.every(({ width }) => width === layout.openActionsWidth),
+        "all three Open actions use the full available width at 320px");
       assert.ok(layout.openActions.every(({ height }) => height >= 36),
         "Comfortable density keeps all three 320px Open actions at least 36px tall");
+      assert.equal(layout.savedAction?.x, 16);
+      assert.equal(layout.savedAction?.width, layout.openActionsWidth,
+        "the 320px saved-copy action uses the full available width");
+      assert.ok(layout.savedAction.height >= 36,
+        "the 320px saved-copy action retains the Comfortable target height");
+      assert.equal(layout.savedAction?.borderColor, layout.strongBorderColor,
+        "the 320px saved-copy action retains the inherited shared border pending #96");
     }
     if (layout.appBottom !== null && layout.noticesTop !== null) {
       evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,

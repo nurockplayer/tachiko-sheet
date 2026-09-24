@@ -352,6 +352,10 @@ body { margin: 0; }
   text-align: center;
 }
 
+@media (min-width: 600px) {
+  .ts-copy-item .ts-button { border-color: transparent; }
+}
+
 .ts-copy-meta {
   color: var(--ts-ink-soft);
   font-size: 12px;
@@ -1146,7 +1150,9 @@ body { margin: 0; }
   .ts-home-section { padding-top: 24px; padding-bottom: 36px; }
   .ts-home-open-actions { width: 100%; align-items: stretch; flex-direction: column; gap: 12px; margin-top: 16px; }
   .ts-home-open-actions > .ts-button,
-  .ts-home-open-actions > .ts-home-file-action { width: 100%; }
+  .ts-home-open-actions > .ts-home-file-action { width: 100%; min-width: 0; }
+  .ts-home-open-actions > button:first-of-type,
+  .ts-home-open-actions > button:last-of-type { width: 100%; min-width: 0; }
   .ts-home-section > .ts-subtle:not(:first-child) { margin-top: 16px; }
   .ts-home-section > .ts-subtle + .ts-home-file-action { margin-top: 20px; }
   [aria-label="Import spreadsheet"].ts-home-section > .ts-subtle + .ts-home-file-action { margin-top: 20px; }
