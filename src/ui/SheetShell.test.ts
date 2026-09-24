@@ -457,7 +457,8 @@ describe("SheetShell static rendering", () => {
   });
 
   it("renders home open controls and saved copies by actual name", () => {
-    const markup = render({ copies: [{ name: "review-copy", savedAt: "2026-09-12T10:00:00.000Z" }] });
+    const savedAt = "2026-09-12T10:00:00.000Z";
+    const markup = render({ copies: [{ name: "review-copy", savedAt }] });
     expect(markup).toContain('data-testid="open-project"');
     expect(markup).toContain("webkitdirectory");
     expect(markup).toContain("Try example");
@@ -465,8 +466,12 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("Choose a local project folder. Its source stays unchanged.");
     expect(markup).toContain("Review the source and column types before importing.");
     expect(markup).toContain("Open saved review-copy");
-    const localHour = new Date("2026-09-12T10:00:00.000Z").getHours().toString().padStart(2, "0");
-    expect(markup).toContain(`, ${localHour}:00`);
+    const localTime = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(savedAt));
+    expect(markup).toContain(`, ${localTime}`);
     expect(markup).toContain('class="ts-home-section" aria-label="Open project"');
     expect(markup).not.toContain('class="ts-card" aria-label="Open project"');
     expect(markup).not.toContain('data-testid="project-ready"');
