@@ -146,12 +146,11 @@ Do not use a unit PASS to claim browser/product PASS. Do not use a browser scree
 
 Immediately invalidate the Final Candidate when any of these happens:
 
-- a valid blocking P1/P2 finding is found;
-- a material source/test/acceptance commit is added;
+- any valid blocking finding is found, regardless of label or severity;
+- any material commit is added;
 - a required hosted gate fails because of an actual candidate defect;
-- required GitHub review/protection state is unsatisfied.
 
-Ordinary nonblocking review debt does not invalidate the candidate unless it is a valid blocking finding or leaves required GitHub review/protection state unsatisfied.
+Pending required reviews or checks, and unsatisfied protection state by themselves, remain merge gates but do not invalidate the candidate. If review or protection state reveals an actual blocking finding or candidate defect, classify that finding under the rules above. Ordinary nonblocking review debt alone does not invalidate the candidate.
 
 After invalidation:
 
