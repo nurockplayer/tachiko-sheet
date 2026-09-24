@@ -240,6 +240,7 @@ export function SheetShell(props: SheetShellProps) {
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
   const [importTypes, setImportTypes] = useState<string[][]>([]);
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
@@ -417,7 +418,10 @@ export function SheetShell(props: SheetShellProps) {
     copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
   );
   const importErrorIsInline = Boolean(
-    interop?.importInspection && message && errorMessage === message && importErrorMessage === message,
+    importError && (!view || (message && errorMessage === message && importErrorMessage === message)),
+  );
+  const downloadErrorIsInline = Boolean(
+    tab === "interop" && interop?.downloadStatus === "failed" && message,
   );
 
   useLayoutEffect(() => {
@@ -730,17 +734,25 @@ export function SheetShell(props: SheetShellProps) {
 
   async function importCandidate(): Promise<void> {
     const inspection = interop?.importInspection;
-    if (!inspection) return;
+    if (!inspection || importPending) return;
     setImportError(null);
+    setImportPending(true);
     const selection: ImportSelection = {
       column_types: importTypes as ImportSelection["column_types"],
       extra_columns: inspection.source.sheets.map(() => []),
     };
-    const accepted = await onImportCandidate(selection);
-    if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
+    try {
+      const accepted = await onImportCandidate(selection);
+      if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
+    } catch (error) {
+      setImportError(explain(error, "The import was not applied. Your source selection is still available."));
+    } finally {
+      setImportPending(false);
+    }
   }
 
   function cancelImport(): void {
+    if (importPending) return;
     setImportError(null);
     onCancelImport();
     // Wait for React to remove the dialog; focusing before that commit would
@@ -750,6 +762,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function prepareDownload(format: "csv" | "xlsx", trigger: HTMLButtonElement): Promise<void> {
     downloadTriggerRef.current = trigger;
+    setLocalError(null);
     if (await onPrepareDownload(format)) setDownloadFormat(format);
   }
 
@@ -776,6 +789,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function closeCopyDialog(): void {
+    if (copyPending) return;
     setCopyOpen(false);
     setCopyError(null);
     setCopyName("");
@@ -791,6 +805,7 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     copyNameInputRef.current?.focus();
+    setCopyError(null);
     copyParentMessageAtAttemptRef.current = message;
     setCaptureCopyParentFailure(true);
     setCopyPending(true);
@@ -1285,7 +1300,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Download</h2>
         <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
         <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button></div>
-        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">The download failed; the current work is still open and unsaved changes were preserved.</p> : null}
+        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{message ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
   }
@@ -1586,14 +1601,14 @@ export function SheetShell(props: SheetShellProps) {
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
     >
-      {errorMessage && !copyErrorIsInline && !importErrorIsInline ? (
+      {errorMessage && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
         <div className="ts-error" role="alert">
           {errorMessage}
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
       {copyOpen ? (
-        <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog}>
+        <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Save a copy</h2>
             <p className="ts-subtle">Creates a new copy in this browser profile.<br />It does not update an existing one.</p>
@@ -1646,7 +1661,7 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
       ) : null}
       {interop?.importInspection ? (
-        <Modal variant="import" label="Review import candidate" onCancel={cancelImport}>
+        <Modal variant="import" label="Review import candidate" onCancel={cancelImport} dismissDisabled={importPending}>
           <div className="ts-dialog-intro">
             <h2
               className="ts-h2"
@@ -1660,10 +1675,10 @@ export function SheetShell(props: SheetShellProps) {
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
-          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) cancelDownload(); }); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
@@ -1684,7 +1699,7 @@ export function SheetShell(props: SheetShellProps) {
   );
 }
 
-function Modal({ label, onCancel, children, variant = "review" }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review" }) {
+function Modal({ label, onCancel, children, variant = "review", dismissDisabled = false }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review"; dismissDisabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1699,7 +1714,7 @@ function Modal({ label, onCancel, children, variant = "review" }: { label: strin
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      onCancel();
+      if (!dismissDisabled) onCancel();
       return;
     }
     if (event.key !== "Tab") return;
@@ -1723,7 +1738,7 @@ function Modal({ label, onCancel, children, variant = "review" }: { label: strin
     <div
       className="ts-modal-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+        if (!dismissDisabled && event.target === event.currentTarget) onCancel();
       }}
     >
       <div

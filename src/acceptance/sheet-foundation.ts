@@ -71,6 +71,13 @@ export interface AcceptanceApi {
   observe(): Promise<AcceptanceObservation>;
   savedHash(name: string): Promise<string | null>;
   failNextSave(): void;
+  failNextSpreadsheetExport(): void;
+  deferNextImportInspection(): void;
+  releaseImportInspection(): void;
+  deferNextImportApplication(): void;
+  releaseImportApplication(): void;
+  deferNextCopyWrite(): void;
+  releaseCopyWrite(): void;
   loseNextExecuteReply(): void;
   loseNextOpenReply(): void;
   loseNextImportBeforeDispatch(): void;
@@ -133,6 +140,39 @@ let lastReceiptValue: PublicationProjection | null = null;
 let settlePendingFault: (() => void) | null = null;
 let pendingFault: Promise<void> | null = null;
 let lastCoreFailureProbe: AcceptanceCoreFailureProbe | null = null;
+let spreadsheetExportFaultArmed = false;
+
+function operationGate() {
+  let armed = false;
+  let active = false;
+  let pending: Promise<void> | null = null;
+  let releasePending: (() => void) | null = null;
+  return {
+    defer(): void {
+      if (armed || active) return;
+      armed = true;
+      pending = new Promise<void>((resolve) => { releasePending = resolve; });
+    },
+    async pause(): Promise<void> {
+      if (!armed || !pending) return;
+      armed = false;
+      active = true;
+      const wait = pending;
+      pending = null;
+      await wait;
+      active = false;
+    },
+    release(): void {
+      const resolve = releasePending;
+      releasePending = null;
+      resolve?.();
+    },
+  };
+}
+
+const importInspectionGate = operationGate();
+const importApplicationGate = operationGate();
+const copyWriteGate = operationGate();
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -206,6 +246,13 @@ function instrumentClient(client: PublicClient): PublicClient {
           return result;
         };
       }
+      if (property === "inspectSpreadsheet") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          await importInspectionGate.pause();
+          return result;
+        };
+      }
       if (property === "createKeyedGroupedSum") {
         return async (...args: unknown[]): Promise<unknown> => {
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -238,6 +285,7 @@ function instrumentClient(client: PublicClient): PublicClient {
           importReplyAfterDispatchFaultArmed = false;
           importSpreadsheetDispatchCount += 1;
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          await importApplicationGate.pause();
           if (loseReplyAfterDispatch) {
             throw new UnknownOperationOutcomeError("The dispatched import reply was lost after the real transport replied.");
           }
@@ -246,6 +294,15 @@ function instrumentClient(client: PublicClient): PublicClient {
             importProjectionFaultArmed = true;
           }
           return result;
+        };
+      }
+      if (property === "exportSpreadsheet") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          if (spreadsheetExportFaultArmed) {
+            spreadsheetExportFaultArmed = false;
+            throw new Error("The acceptance probe rejected spreadsheet export once.");
+          }
+          return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
         };
       }
       if (property === "exportCanonicalTree") {
@@ -466,6 +523,35 @@ export function failNextSave(): void {
   };
 }
 
+/** One-shot acceptance-only Prepare failure; the next export uses the real kit. */
+export function failNextSpreadsheetExport(): void {
+  spreadsheetExportFaultArmed = true;
+}
+
+export function deferNextImportInspection(): void {
+  importInspectionGate.defer();
+}
+
+export function releaseImportInspection(): void {
+  importInspectionGate.release();
+}
+
+export function deferNextImportApplication(): void {
+  importApplicationGate.defer();
+}
+
+export function releaseImportApplication(): void {
+  importApplicationGate.release();
+}
+
+export function deferNextCopyWrite(): void {
+  copyWriteGate.defer();
+}
+
+export function releaseCopyWrite(): void {
+  copyWriteGate.release();
+}
+
 function restore(): void {
   restoreTransaction?.();
 }
@@ -628,13 +714,17 @@ export function installAcceptance(next: AcceptanceWiring): void {
   if (typeof create === "function") {
     next.copies.create = async (...args) => {
       copyCanonicalDispatchCount += 1;
-      return create.apply(next.copies, args);
+      const result = await create.apply(next.copies, args);
+      await copyWriteGate.pause();
+      return result;
     };
   }
   if (typeof createOpaque === "function") {
     next.copies.createOpaque = async (...args) => {
       copyOpaqueDispatchCount += 1;
-      return createOpaque.apply(next.copies, args);
+      const result = await createOpaque.apply(next.copies, args);
+      await copyWriteGate.pause();
+      return result;
     };
   }
   window.__tachikoAcceptance = {
@@ -645,6 +735,13 @@ export function installAcceptance(next: AcceptanceWiring): void {
     observe,
     savedHash,
     failNextSave,
+    failNextSpreadsheetExport,
+    deferNextImportInspection,
+    releaseImportInspection,
+    deferNextImportApplication,
+    releaseImportApplication,
+    deferNextCopyWrite,
+    releaseCopyWrite,
     loseNextExecuteReply,
     loseNextOpenReply,
     loseNextImportBeforeDispatch,

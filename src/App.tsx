@@ -859,6 +859,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the resident work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
     try {
+      setMessage(null);
       guardReplacement();
       checkpointBeforeOpen();
       const lower = file.name.toLowerCase();
@@ -873,7 +874,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       return inspection;
     } catch (error) {
       clearOpenCheckpoint();
-      setMessage(describe(error, "The selected spreadsheet could not be inspected."));
       throw error;
     } finally { end(); }
   }
@@ -1029,6 +1029,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const live = viewRef.current;
     const metadata = interop?.metadata;
     if (!live || !metadata || !begin()) return false;
+    setMessage(null);
+    setInterop((current) => current ? { ...current, downloadStatus: "idle" } : current);
     try {
       const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
       preparedDownloadRef.current = { format, revision: exported.revision, bytes: exported.bytes.slice(0) };
@@ -1048,6 +1050,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const live = viewRef.current;
     const prepared = preparedDownloadRef.current;
     if (!live || !prepared || prepared.format !== format || prepared.revision !== live.revision || !begin()) return false;
+    setMessage(null);
     try {
       const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
