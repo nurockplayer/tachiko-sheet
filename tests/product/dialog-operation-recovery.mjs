@@ -223,6 +223,35 @@ try {
   await saveDialog.waitFor({ state: "detached" });
   assert.ok(await page.evaluate((copyName) => window.__tachikoAcceptance.savedSnapshot(copyName), correctedName), "released real copy write completes under the displayed corrected name");
 
+  // Save Copy Enter must not dispatch while either the native composition
+  // flag or the legacy IME keyCode says the candidate is still composing.
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const composingSaveDialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+  const composingNameInput = composingSaveDialog.getByRole("textbox", { name: "Copy name", exact: true });
+  const composingName = `dialog-ime-${Date.now()}-かな`;
+  await composingNameInput.fill(composingName);
+  const copyDispatchesBeforeComposition = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  await composingNameInput.evaluate((input) => {
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "かな" }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, keyCode: 229 }));
+  });
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copyDispatchesBeforeComposition, "native and legacy composing Enter do not dispatch a copy write");
+  assert.equal(await composingSaveDialog.count(), 1, "composing Enter keeps the Save dialog open");
+  assert.equal(await composingSaveDialog.getByRole("button", { name: "Working…", exact: true }).count(), 0, "composing Enter does not enter Working");
+  assert.equal(await composingNameInput.inputValue(), composingName, "composing Enter preserves the provisional name");
+  await composingNameInput.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "かな" })));
+  await composingNameInput.press("Enter");
+  await composingSaveDialog.waitFor({ state: "detached" });
+  const copyDispatchesAfterComposition = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  assert.equal(
+    copyDispatchesAfterComposition.canonical + copyDispatchesAfterComposition.opaque -
+      copyDispatchesBeforeComposition.canonical - copyDispatchesBeforeComposition.opaque,
+    1,
+    "normal Enter after composition dispatches exactly one copy write",
+  );
+  assert.ok(await page.evaluate((copyName) => window.__tachikoAcceptance.savedSnapshot(copyName), composingName), "normal Enter after composition durably creates the provisional name");
+
   // Prepare failure is reported once in the active Download panel. A retry
   // removes that failure before consent, and a handoff failure returns to the
   // panel so the user can Prepare again and complete a real browser download.
