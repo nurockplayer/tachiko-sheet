@@ -8,10 +8,20 @@ import {
   recoverPresentationAfterAcknowledgedOpen,
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
+  settledSaveStatus,
   startInitialExampleOnce,
 } from "./App.js";
 import { reportPresentationLimitViolation, reportPresentationTextLimitViolation } from "./contracts.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
+
+describe("completed copy save status", () => {
+  it("does not leave a completed write pending or claim a retained draft is saved", () => {
+    expect(settledSaveStatus("saving", "revision-1", "revision-1", true)).toBe("not-saved");
+    expect(settledSaveStatus("saving", "revision-1", "revision-1", false)).toBe("saved");
+    expect(settledSaveStatus("saving", "revision-1", "revision-2", false)).toBe("not-saved");
+    expect(settledSaveStatus("failed", "revision-1", "revision-1", false)).toBe("failed");
+  });
+});
 
 describe("report presentation Unicode bounds", () => {
   it("counts code points rather than UTF-16 code units and preserves blank values", () => {
