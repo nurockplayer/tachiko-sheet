@@ -17,6 +17,28 @@ const builtInProfile = (profileId: (typeof BUILT_IN_INTERFACE_PROFILE_IDS)[numbe
   return resolved.value.profile;
 };
 
+const formerlyAdmittedPressedUnsafe = (): InterfaceProfileV1 => {
+  const safe = builtInProfile("tachiko", "compact");
+  return {
+    ...safe,
+    chrome: "structured",
+    colors: {
+      ...safe.colors,
+      "surface.chrome": "#FFFFFF",
+      "surface.chrome.tint": "#FFFFFF",
+      "surface.content": "#FFFFFF",
+      "surface.inset": "#FAFAFA",
+      "grid.canvas": "#FFFFFF",
+      "grid.header.background": "#FFFFFF",
+      "selection.row.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF",
+      "selection.header.background": "#FFFFFF",
+      "accent.background": "#FFFFFF",
+      "text.primary": "#707070",
+    },
+  };
+};
+
 const record = (value: unknown) => JSON.stringify(value);
 
 describe("appearance preference v2 codec", () => {
@@ -115,6 +137,27 @@ describe("appearance preference v2 codec", () => {
     const invalidDecode = decodeAppearancePreferenceV2(rawUnsafe);
     expect(invalidDecode.ok).toBe(false);
     if (!invalidDecode.ok) expect(invalidDecode.errors.some((error) => error.code === "unsafe-profile")).toBe(true);
+  });
+
+  it("rejects formerly admitted v2 custom JSON when its text misses the fixed pressed surface", () => {
+    const rawPersistedV2 = record({
+      schemaVersion: 2,
+      kind: "imported",
+      profile: formerlyAdmittedPressedUnsafe(),
+    });
+    const decoded = decodeAppearancePreferenceV2(rawPersistedV2);
+    expect(decoded.ok).toBe(false);
+    if (!decoded.ok) {
+      expect(decoded.errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "unsafe-profile",
+          context: "text.primary text on shared control pressed surface",
+          message: expect.stringContaining("4.27:1 contrast; requires at least 4.5:1"),
+        }),
+      ]));
+      expect(decoded.errors.every((error) => error.code === "unsafe-profile" &&
+        error.context === "text.primary text on shared control pressed surface")).toBe(true);
+    }
   });
 
   it("decodes only the exact legacy v1 built-in record shape", () => {

@@ -17,6 +17,27 @@ const builtInManifest = (): InterfaceProfileV1 => {
   };
 };
 
+const formerlyAdmittedPressedUnsafe = (): InterfaceProfileV1 => {
+  const safe = builtInManifest();
+  return {
+    ...safe,
+    colors: {
+      ...safe.colors,
+      "surface.chrome": "#FFFFFF",
+      "surface.chrome.tint": "#FFFFFF",
+      "surface.content": "#FFFFFF",
+      "surface.inset": "#FAFAFA",
+      "grid.canvas": "#FFFFFF",
+      "grid.header.background": "#FFFFFF",
+      "selection.row.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF",
+      "selection.header.background": "#FFFFFF",
+      "accent.background": "#FFFFFF",
+      "text.primary": "#707070",
+    },
+  };
+};
+
 const bytesOf = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 describe("Interface Profile import staging", () => {
@@ -65,6 +86,24 @@ describe("Interface Profile import staging", () => {
         context: expect.stringContaining("text.primary"),
         required: 4.5,
       });
+    }
+  });
+
+  it("rejects a formerly admitted text color specifically for the fixed pressed-control use", () => {
+    const result = stageInterfaceProfileImport(bytesOf(formerlyAdmittedPressedUnsafe()));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          stage: "safety",
+          context: "text.primary text on shared control pressed surface",
+          foreground: "#707070",
+          background: "#ECEEF4",
+          required: 4.5,
+        }),
+      ]));
+      expect(result.errors.every((error) => error.stage === "safety" &&
+        error.context === "text.primary text on shared control pressed surface")).toBe(true);
     }
   });
 });
