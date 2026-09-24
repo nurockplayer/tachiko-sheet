@@ -131,12 +131,12 @@ Use the cheapest evidence that can answer the current question:
 
 ### Final Candidate
 
-Only after no known mutation/finding remains:
+When no known material mutation, blocking finding or unresolved discretionary/Steward decision remains, and focused/affected checks are green, record `FINAL_CANDIDATE <sha>` for the exact HEAD. Then run the final gates against that SHA:
 
 - full applicable local product acceptance;
 - production build / trust-pin checks;
 - required hosted checks on the exact HEAD;
-- fresh independent Oracle review.
+- one fresh independent Oracle review.
 
 Do not use a unit PASS to claim browser/product PASS. Do not use a browser screenshot to claim semantic or persistence PASS.
 
