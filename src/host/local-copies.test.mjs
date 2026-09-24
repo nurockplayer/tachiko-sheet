@@ -370,10 +370,111 @@ test("stored kind/version admission is closed, lists unsupported metadata, and n
     {name: "Canonical envelope", kind: "canonical"},
     {name: "Opaque v2", kind: "opaque"},
   ]);
-  assert.ok(result.reads.filter((entry) => entry.failure).every((entry) => entry.failure.name === "TypeError" && /unsupported record kind or format version/.test(entry.failure.message)));
+  assert.ok(result.reads.filter((entry) => entry.failure).every((entry) => entry.failure.name === "TypeError" && /unsupported record envelope or storage location/.test(entry.failure.message)));
   assert.equal(result.conflict, "ConstraintError", "unsupported records continue to reserve their names");
   assert.deepEqual(result.canonicalOnlyRead, {name: "Legacy envelope", kind: "canonical"});
   assert.equal(result.unchanged, true, "listing, reads, and rejected create must leave all persisted envelopes and bytes unchanged");
+}));
+
+test("supported-looking envelopes in the wrong IndexedDB store remain untyped and unreadable", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    await host.list();
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const canonical = (name, envelope = {}) => ({
+      ...envelope,
+      name,
+      savedAt: "2026-09-24T00:00:00.000Z",
+      revision: `revision-${name}`,
+      files: [{path: "manifest.json", bytes: new Uint8Array([1, 2, 3]).buffer}],
+    });
+    const opaque = (name, envelope = {}) => ({
+      ...envelope,
+      name,
+      savedAt: "2026-09-24T00:00:00.000Z",
+      revision: `revision-${name}`,
+      bytes: new Uint8Array([4, 5, 6]).buffer,
+    });
+    const healthyCanonical = canonical("Healthy canonical", {kind: "canonical"});
+    const healthyOpaque = opaque("Healthy opaque", {kind: "opaque", formatVersion: 2});
+    const wrongStore = [
+      {store: "opaque", record: canonical("Legacy canonical in opaque store")},
+      {store: "opaque", record: canonical("Current canonical in opaque store", {kind: "canonical"})},
+      {store: "canonical", record: opaque("Opaque v2 in canonical store", {kind: "opaque", formatVersion: 2})},
+    ];
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(["copies", window.localOpaqueCopiesStore], "readwrite");
+      tx.objectStore("copies").add(healthyCanonical);
+      tx.objectStore(window.localOpaqueCopiesStore).add(healthyOpaque);
+      for (const fixture of wrongStore) {
+        tx.objectStore(fixture.store === "canonical" ? "copies" : window.localOpaqueCopiesStore).add(fixture.record);
+      }
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    const snapshot = (value) => {
+      if (value === undefined) return {type: "undefined"};
+      if (value instanceof ArrayBuffer) return {type: "ArrayBuffer", bytes: Array.from(new Uint8Array(value))};
+      if (Array.isArray(value)) return {type: "Array", values: value.map(snapshot)};
+      if (typeof value === "object" && value !== null) {
+        return {type: "Object", entries: Object.keys(value).sort().map((key) => [key, snapshot(value[key])])};
+      }
+      return {type: typeof value, value};
+    };
+    const readRaw = async (storeName, name) => new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readonly");
+      const request = tx.objectStore(storeName).get(name);
+      request.onsuccess = () => resolve(snapshot(request.result));
+      request.onerror = () => reject(request.error);
+    });
+    const allFixtures = [
+      {storeName: "copies", record: healthyCanonical},
+      {storeName: window.localOpaqueCopiesStore, record: healthyOpaque},
+      ...wrongStore.map(({store, record}) => ({storeName: store === "canonical" ? "copies" : window.localOpaqueCopiesStore, record})),
+    ];
+    const rawBefore = await Promise.all(allFixtures.map(({storeName, record}) => readRaw(storeName, record.name)));
+    const listed = await host.list();
+    const reads = [];
+    for (const {record} of allFixtures) {
+      let failure = null;
+      let kind = null;
+      try {
+        kind = (await host.readAny(record.name))?.kind ?? null;
+      } catch (error) {
+        failure = {name: error?.name ?? null, message: String(error?.message ?? error)};
+      }
+      reads.push({name: record.name, kind, failure});
+    }
+    let conflict = null;
+    try {
+      await host.create("Opaque v2 in canonical store", {revision: "replacement", files: []});
+    } catch (error) {
+      conflict = error?.name ?? null;
+    }
+    const rawAfter = await Promise.all(allFixtures.map(({storeName, record}) => readRaw(storeName, record.name)));
+    db.close();
+    return {listed, reads, conflict, unchanged: JSON.stringify(rawBefore) === JSON.stringify(rawAfter)};
+  }));
+
+  const listedByName = new Map(result.listed.map((entry) => [entry.name, entry]));
+  assert.deepEqual(listedByName.get("Healthy canonical"), {name: "Healthy canonical", savedAt: "2026-09-24T00:00:00.000Z", kind: "canonical"});
+  assert.deepEqual(listedByName.get("Healthy opaque"), {name: "Healthy opaque", savedAt: "2026-09-24T00:00:00.000Z", kind: "opaque"});
+  for (const name of ["Legacy canonical in opaque store", "Current canonical in opaque store", "Opaque v2 in canonical store"]) {
+    assert.deepEqual(listedByName.get(name), {name, savedAt: "2026-09-24T00:00:00.000Z"});
+  }
+  assert.deepEqual(result.reads.filter((entry) => !entry.failure).map(({name, kind}) => ({name, kind})), [
+    {name: "Healthy canonical", kind: "canonical"},
+    {name: "Healthy opaque", kind: "opaque"},
+  ]);
+  assert.ok(result.reads.filter((entry) => entry.failure).every((entry) => entry.failure.name === "TypeError" && /unsupported record envelope or storage location/.test(entry.failure.message)));
+  assert.equal(result.conflict, "ConstraintError", "a wrong-store envelope still reserves its name");
+  assert.equal(result.unchanged, true, "wrong-store records and bytes remain unchanged after listing, rejected reads, and conflict checks");
 }));
 
 test("opaque format-2 bytes are cloned, persisted, and explicitly discriminated", async () => withBrowser(async (browser) => {

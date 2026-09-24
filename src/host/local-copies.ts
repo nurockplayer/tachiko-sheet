@@ -254,8 +254,18 @@ function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | St
   });
 }
 
-function summarize(record: StoredCopy | StoredOpaqueCopy): SavedCopySummary {
-  const kind = classifyStoredEnvelope(record);
+interface StoredListingEntry {
+  record: unknown;
+  storeName: typeof LOCAL_COPIES_STORE | typeof LOCAL_OPAQUE_COPIES_STORE;
+}
+
+interface SummaryMetadata {
+  name: string;
+  savedAt: string;
+}
+
+function summarize(record: SummaryMetadata, storeName: StoredListingEntry["storeName"]): SavedCopySummary {
+  const kind = classifyStoredEnvelope(record, storeName);
   return {
     name: record.name,
     savedAt: record.savedAt,
@@ -268,28 +278,28 @@ function summarize(record: StoredCopy | StoredOpaqueCopy): SavedCopySummary {
  * The v1 IndexedDB canonical records intentionally have neither property;
  * their schema version is not a canonical record format version.
  */
-function classifyStoredEnvelope(record: unknown): SavedCopySummary["kind"] | undefined {
+function classifyStoredEnvelope(record: unknown, storeName: StoredListingEntry["storeName"]): SavedCopySummary["kind"] | undefined {
   if (typeof record !== "object" || record === null) return undefined;
   const envelope = record as Record<string, unknown>;
   const hasKind = Object.prototype.hasOwnProperty.call(envelope, "kind");
   const hasFormatVersion = Object.prototype.hasOwnProperty.call(envelope, "formatVersion");
 
-  if (!hasKind && !hasFormatVersion) return "canonical";
-  if (hasKind && envelope.kind === "canonical" && !hasFormatVersion) return "canonical";
-  if (hasKind && envelope.kind === "opaque" && hasFormatVersion &&
+  if (storeName === LOCAL_COPIES_STORE && !hasKind && !hasFormatVersion) return "canonical";
+  if (storeName === LOCAL_COPIES_STORE && hasKind && envelope.kind === "canonical" && !hasFormatVersion) return "canonical";
+  if (storeName === LOCAL_OPAQUE_COPIES_STORE && hasKind && envelope.kind === "opaque" && hasFormatVersion &&
       typeof envelope.formatVersion === "number" && envelope.formatVersion === OPAQUE_COPY_FORMAT_VERSION) {
     return "opaque";
   }
   return undefined;
 }
 
-function hasUsableSummaryMetadata(record: unknown): record is StoredCopy | StoredOpaqueCopy {
+function hasUsableSummaryMetadata(record: unknown): record is Record<string, unknown> & SummaryMetadata {
   if (typeof record !== "object" || record === null) return false;
   const candidate = record as Record<string, unknown>;
   return typeof candidate.name === "string" && typeof candidate.savedAt === "string";
 }
 
-function compareSummaries(left: StoredCopy | StoredOpaqueCopy, right: StoredCopy | StoredOpaqueCopy): number {
+function compareSummaries(left: SummaryMetadata, right: SummaryMetadata): number {
   if (left.savedAt !== right.savedAt) return left.savedAt < right.savedAt ? 1 : -1;
   return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
 }
@@ -298,13 +308,16 @@ export function createLocalCopies(): LocalCopies {
   return {
     async list(): Promise<SavedCopySummary[]> {
       const db = await openDatabase();
-      const records = await new Promise<unknown[]>((resolve, reject) => {
+      const records = await new Promise<StoredListingEntry[]>((resolve, reject) => {
         const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readonly");
         let canonical: unknown[] | undefined;
         let opaque: unknown[] | undefined;
         const finish = () => {
           if (!canonical || !opaque) return;
-          resolve([...canonical, ...opaque]);
+          resolve([
+            ...canonical.map((record): StoredListingEntry => ({record, storeName: LOCAL_COPIES_STORE})),
+            ...opaque.map((record): StoredListingEntry => ({record, storeName: LOCAL_OPAQUE_COPIES_STORE})),
+          ]);
         };
         const canonicalRequest = tx.objectStore(LOCAL_COPIES_STORE).getAll();
         canonicalRequest.onsuccess = () => {
@@ -320,44 +333,56 @@ export function createLocalCopies(): LocalCopies {
         opaqueRequest.onerror = () => reject(opaqueRequest.error ?? new Error("Unable to read opaque local copies."));
         tx.onabort = () => reject(tx.error ?? new Error("The local-copy read was aborted."));
       });
-      return records.filter(hasUsableSummaryMetadata).sort(compareSummaries).map(summarize);
+      return records
+        .filter((entry): entry is StoredListingEntry & {record: Record<string, unknown> & SummaryMetadata} => hasUsableSummaryMetadata(entry.record))
+        .sort((left, right) => compareSummaries(left.record, right.record))
+        .map((entry) => summarize(entry.record, entry.storeName));
     },
 
     async readAny(name: string): Promise<AnySavedCopy | null> {
       const db = await openDatabase();
-      const record = await new Promise<StoredCopy | StoredOpaqueCopy | null>((resolve, reject) => {
+      const entry = await new Promise<StoredListingEntry | null>((resolve, reject) => {
         const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readonly");
-        let canonical: StoredCopy | undefined;
-        let opaque: StoredOpaqueCopy | undefined;
+        let canonical: unknown;
+        let opaque: unknown;
         let completed = 0;
         const finish = () => {
           completed += 1;
           if (completed !== 2) return;
-          if (canonical && opaque) {
+          if (canonical !== undefined && opaque !== undefined) {
             reject(new Error(`The local-copy name "${name}" exists in multiple stores.`));
+          } else if (canonical !== undefined) {
+            resolve({record: canonical, storeName: LOCAL_COPIES_STORE});
+          } else if (opaque !== undefined) {
+            resolve({record: opaque, storeName: LOCAL_OPAQUE_COPIES_STORE});
           } else {
-            resolve(canonical ?? opaque ?? null);
+            resolve(null);
           }
         };
         const canonicalRequest = tx.objectStore(LOCAL_COPIES_STORE).get(name);
         canonicalRequest.onsuccess = () => {
-          canonical = canonicalRequest.result as StoredCopy | undefined;
+          canonical = canonicalRequest.result;
           finish();
         };
         canonicalRequest.onerror = () => reject(canonicalRequest.error ?? new Error("Unable to read canonical local copy."));
         const opaqueRequest = tx.objectStore(LOCAL_OPAQUE_COPIES_STORE).get(name);
         opaqueRequest.onsuccess = () => {
-          opaque = opaqueRequest.result as StoredOpaqueCopy | undefined;
+          opaque = opaqueRequest.result;
           finish();
         };
         opaqueRequest.onerror = () => reject(opaqueRequest.error ?? new Error("Unable to read opaque local copy."));
         tx.onabort = () => reject(tx.error ?? new Error("The local-copy read was aborted."));
       });
-      if (!record || record.name !== name) return null;
-      const kind = classifyStoredEnvelope(record);
+      if (!entry) return null;
+      const record = entry.record;
+      if (typeof record !== "object" || record === null) {
+        throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
+      }
+      if ((record as Record<string, unknown>).name !== name) return null;
+      const kind = classifyStoredEnvelope(record, entry.storeName);
       if (kind === "opaque") return toOpaqueSavedCopy(record as StoredOpaqueCopy);
       if (kind === "canonical") return toCanonicalSavedCopy(record as StoredCopy);
-      throw new TypeError(`The local copy "${name}" uses an unsupported record kind or format version.`);
+      throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
     },
 
     async read(name: string): Promise<SavedCopy | null> {
