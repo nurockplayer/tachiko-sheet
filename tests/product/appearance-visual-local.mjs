@@ -538,6 +538,7 @@ async function auditTallGridLayoutOnly(page) {
 }
 
 async function auditHomeViewportBounds(page) {
+  await choose(page, "tachiko", "compact");
   await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Viewport home probe");
@@ -615,7 +616,8 @@ async function auditHomeViewportBounds(page) {
       label.querySelector('input[type="file"]').disabled = false;
     }
   });
-  for (const [width, height] of [[320, 640], [1512, 982]]) {
+  for (const [width, height] of [[1512, 982], [320, 640]]) {
+    if (width === 320) await choose(page, "tachiko", "comfortable");
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.scrollTo(0, 0));
     const layout = await page.evaluate(() => {
@@ -639,12 +641,45 @@ async function auditHomeViewportBounds(page) {
         appBottom: appRect?.bottom ?? null,
         noticesTop: noticesRect?.top ?? null,
         noticesBottom: noticesRect?.bottom ?? null,
+        pageSurface: getComputedStyle(app).backgroundColor,
+        openActions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
+          const rect = action.getBoundingClientRect();
+          return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        }),
+        importAction: (() => {
+          const rect = document.querySelector(".ts-home-import-action")?.getBoundingClientRect();
+          return rect ? { x: rect.x, y: rect.y, width: rect.width } : null;
+        })(),
+        sectionLines: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => ({
+          label: section.getAttribute("aria-label"),
+          top: section.getBoundingClientRect().top,
+          bottom: section.getBoundingClientRect().bottom,
+        })),
+        savedAction: (() => {
+          const rect = document.querySelector(".ts-copy-item .ts-button")?.getBoundingClientRect();
+          return rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null;
+        })(),
+        savedMetadataX: document.querySelector(".ts-copy-meta")?.getBoundingClientRect().x ?? null,
       };
     });
     evidence(layout.pageWidth <= width, `${width}x${height} Home with a saved copy has no horizontal overflow`, layout);
     evidence(layout.pageHeight >= height, `${width}x${height} Home retains natural document height`, layout);
     evidence(layout.rootHeight >= layout.appHeight && layout.rootMinHeightStyle !== "0px",
       `${width}x${height} Home root expands with its content`, layout);
+    if (width === 1512) {
+      assert.equal(layout.pageSurface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
+      assert.deepEqual(layout.openActions.map(({ x, y, width: actionWidth }) => [x, y, actionWidth]), [
+        [32, 220, 184], [228, 220, 128], [368, 220, 224],
+      ], "desktop Open actions match the approved positions and widths");
+      assert.deepEqual(layout.sectionLines.map(({ top }) => top), [144, 344, 552]);
+      assert.deepEqual(layout.importAction && [layout.importAction.x, layout.importAction.y, layout.importAction.width], [32, 468, 196]);
+      assert.deepEqual(layout.savedAction && [layout.savedAction.x, layout.savedAction.y, layout.savedAction.width], [32, 684, 288]);
+      assert.equal(layout.savedMetadataX, 352);
+      assert.equal(layout.sectionLines.at(-1).bottom - 1, 732, "the saved section's final divider sits at approved y=732");
+    } else {
+      assert.ok(layout.openActions.every(({ height }) => height >= 36),
+        "Comfortable density keeps all three 320px Open actions at least 36px tall");
+    }
     if (layout.appBottom !== null && layout.noticesTop !== null) {
       evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,
         `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);

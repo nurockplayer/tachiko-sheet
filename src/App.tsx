@@ -769,7 +769,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       setCurrentness("current");
       setOutcome("idle");
-      throw new Error(describe(error, "The Catalog/Sales canary could not be opened."));
+      throw new Error(describe(error, "Could not open the sales example."));
     } finally {
       end();
     }

@@ -171,7 +171,7 @@ export function SheetShell(props: SheetShellProps) {
     onPrepareJ4Bindings = async () => ({ collections: [] }),
     onCreateJ4 = async () => false,
     onRefreshJ4 = async () => false,
-    onOpenJ4Canary = async () => { throw new Error("The Catalog/Sales canary is unavailable."); },
+    onOpenJ4Canary = async () => { throw new Error("The sales example is unavailable."); },
     report = null,
     onCreateReport = () => undefined,
     onUpdateReport = () => undefined,
@@ -694,7 +694,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       await onOpenJ4Canary();
     } catch (error) {
-      setLocalError(explain(error, "Could not open the Catalog/Sales canary."));
+      setLocalError(explain(error, "Could not open the sales example."));
     }
   }
 
