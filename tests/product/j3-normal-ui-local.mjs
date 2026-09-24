@@ -152,6 +152,21 @@ try {
   const scrolledImport = await dialog.boundingBox();
   assert.ok(shortErrorBox && shortActionBox && shortErrorBox.y >= scrolledImport.y && shortErrorBox.y + shortErrorBox.height <= scrolledImport.y + scrolledImport.height, "long Import error scrolls into the visible modal with the action");
   assert.ok(shortActionBox.y >= scrolledImport.y && shortActionBox.y + shortActionBox.height <= scrolledImport.y + scrolledImport.height, "keyboard-focused Import action scrolls into the visible modal");
+  const compactActionBoxes = await dialog.locator(".ts-dialog-actions > .ts-button").evaluateAll((buttons) => buttons.map((button) => {
+    const rect = button.getBoundingClientRect();
+    return { name: button.textContent.trim(), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+  }));
+  assert.equal(compactActionBoxes.length, 2, `short Import exposes both actions: ${JSON.stringify(compactActionBoxes)}`);
+  for (const action of compactActionBoxes) {
+    assert.ok(action.width > 0 && action.height > 0, `short Import action has a full rendered box: ${JSON.stringify(action)}`);
+    assert.ok(action.left >= 0 && action.right <= 320, `short Import action fits the viewport width: ${JSON.stringify(action)}`);
+    assert.ok(action.left >= scrolledImport.x && action.right <= scrolledImport.x + scrolledImport.width, `short Import action fits the modal width: ${JSON.stringify({ action, scrolledImport })}`);
+    assert.ok(action.top >= scrolledImport.y && action.bottom <= scrolledImport.y + scrolledImport.height, `short Import action fits the modal frame: ${JSON.stringify(action)}`);
+  }
+  assert.ok(compactActionBoxes[0].right <= compactActionBoxes[1].left, `short Import actions do not overlap: ${JSON.stringify(compactActionBoxes)}`);
+  await importAction.click();
+  await importAlert.waitFor();
+  assert.match(await importAlert.textContent(), /import was not applied/i, "pointer-reached Import preserves the rejected candidate and its failure truth");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
@@ -279,7 +294,13 @@ try {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   dialog = await choose(page, mergedXlsx);
-  assert.match(await dialog.getByLabel("Candidate source fidelity ledger", { exact: true }).textContent(), /merged/i);
+  const producerLedger = dialog.getByLabel("Candidate source fidelity ledger", { exact: true });
+  const importColumns = dialog.locator(".ts-import-columns");
+  assert.match(await producerLedger.textContent(), /merged/i);
+  assert.equal(await producerLedger.isVisible(), true, "real merged-cell fidelity warning is visible during candidate review");
+  const [producerLedgerBox, importColumnsBox] = await Promise.all([producerLedger.boundingBox(), importColumns.boundingBox()]);
+  assert.ok(producerLedgerBox && importColumnsBox && producerLedgerBox.y + producerLedgerBox.height <= importColumnsBox.y, `real producer warning appears before long column choices: ${JSON.stringify({ producerLedgerBox, importColumnsBox })}`);
+  assert.equal(await producerLedger.evaluate((ledger, columns) => Boolean(ledger.compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING), await importColumns.elementHandle()), true, "warning precedes column consent in source order");
   await dialog.press("Escape");
   console.log(JSON.stringify({ case: "J3 normal UI CSV/XLSX, cleanup, consent, restart", status: "PASS", manualBoundary: "Real CJK IME and assistive-technology walkthrough remain manual." }));
 } finally {

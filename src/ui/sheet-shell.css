@@ -1192,6 +1192,12 @@ body { margin: 0; }
     align-items: stretch;
   }
   .ts-modal--close .ts-dialog-actions > .ts-button { width: 100%; }
+  .ts-modal--import .ts-dialog-actions { gap: 8px; }
+  .ts-modal--import .ts-dialog-actions > .ts-button {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding-inline: 8px;
+  }
   .ts-modal--review,
   .ts-modal--import { gap: 0; }
   .ts-home { margin-top: 14px; }

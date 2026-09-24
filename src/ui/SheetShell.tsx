@@ -235,6 +235,8 @@ export function SheetShell(props: SheetShellProps) {
   const [copyName, setCopyName] = useState("");
   const [copyPending, setCopyPending] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
+  const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -263,6 +265,7 @@ export function SheetShell(props: SheetShellProps) {
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const copyNameInputRef = useRef<HTMLInputElement | null>(null);
+  const copyParentMessageAtAttemptRef = useRef<string | null>(message);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
@@ -387,12 +390,29 @@ export function SheetShell(props: SheetShellProps) {
   const anyNotesDraft = notesDrafts.length > 0;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
+  useEffect(() => {
+    if (captureCopyParentFailure) {
+      if (message === null) {
+        copyParentMessageAtAttemptRef.current = null;
+      } else if (message !== copyParentMessageAtAttemptRef.current) {
+        setCopyParentFailureMessage(message);
+        setCaptureCopyParentFailure(false);
+      }
+      return;
+    }
+    if (copyParentFailureMessage !== null && message !== copyParentFailureMessage) {
+      setCopyParentFailureMessage(null);
+    }
+  }, [captureCopyParentFailure, copyParentFailureMessage, message]);
+
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
-  const copyErrorIsInline = copyOpen && copyError !== null && localError === null;
+  const copyErrorIsInline = copyOpen && localError === null && (
+    copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
+  );
 
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
@@ -743,6 +763,7 @@ export function SheetShell(props: SheetShellProps) {
     setCopyError(null);
     setLocalError(null);
     setCopyName("");
+    setCaptureCopyParentFailure(false);
     setCopyOpen(true);
   }
 
@@ -750,6 +771,7 @@ export function SheetShell(props: SheetShellProps) {
     setCopyOpen(false);
     setCopyError(null);
     setCopyName("");
+    setCaptureCopyParentFailure(false);
     saveCopyButtonRef.current?.focus();
   }
 
@@ -761,11 +783,15 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     copyNameInputRef.current?.focus();
+    copyParentMessageAtAttemptRef.current = message;
+    setCaptureCopyParentFailure(true);
     setCopyPending(true);
     setLocalError(null);
     try {
       const created = await onCreateCopy(name);
       if (created) {
+        setCaptureCopyParentFailure(false);
+        setCopyParentFailureMessage(null);
         setCopyOpen(false);
         setCopyError(null);
         setCopyName("");
@@ -1618,8 +1644,8 @@ export function SheetShell(props: SheetShellProps) {
             <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
           </div>
           <div className="ts-dialog-scroll">
-            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No source-fidelity findings were reported for this candidate.</p>}
+            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
           </div>
           {importError ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importError}</p> : null}
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>

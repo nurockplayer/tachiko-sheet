@@ -185,6 +185,7 @@ const cases = [
 
         await saveTrigger.click();
         const profileSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+        assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} reopens Save without a stale parent failure alert`);
         assert.equal(
           await profileSave.evaluate((element) => getComputedStyle(element).borderColor),
           profile.border,
@@ -246,7 +247,21 @@ const cases = [
         );
         const writesAfterFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
         assert.equal(writesAfterFailure.canonical, writesBeforeFailure.canonical + 1, `${profile.label} exercised one real canonical copy write`);
+        await nameInput.fill(`${profileName}-corrected`);
+        assert.equal(await profileSave.getByRole("alert").count(), 0, `${profile.label} correction clears only the inline Save failure`);
+        assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} correction does not reveal the stale parent Save failure behind the modal`);
+        assert.equal(await nameInput.inputValue(), `${profileName}-corrected`);
         await profileSave.getByRole("button", { name: "Cancel", exact: true }).click();
+        const restoredParentError = page.getByRole("alert");
+        await restoredParentError.waitFor();
+        assert.equal(await page.getByRole("alert").count(), 1, `${profile.label} closing Save restores the parent failure status`);
+        assert.match(await restoredParentError.textContent(), /copy could not be saved/i);
+        await saveTrigger.click();
+        const reopenedSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+        await reopenedSave.waitFor();
+        assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} reopening Save suppresses its stale parent failure for the modal lifetime`);
+        await reopenedSave.getByRole("button", { name: "Cancel", exact: true }).click();
+        assert.equal(await page.getByRole("alert").count(), 1, `${profile.label} closing reopened Save restores the parent failure status`);
       }
       for (const { profile, transitions } of pendingSaveTransitions) {
         assert.ok(transitions.some((transition) => transition.ariaBusy === "true"), `${profile} renders aria-busy while Create copy is pending: ${JSON.stringify(transitions)}`);
