@@ -200,7 +200,12 @@ try {
       [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0;
+    const localDialogRecovery = await runStep(
+      'dialog-operation-recovery-local-transport',
+      [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
+      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    );
+    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -232,7 +237,14 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
-    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && focus === 0 ? 0 : 1;
+    // This focused suite installs its own disk routes; keep it supplemental
+    // local-transport evidence even when the canonical server is available.
+    const dialogRecovery = await runStep(
+      'dialog-operation-recovery-local-transport',
+      [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
+      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    );
+    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
