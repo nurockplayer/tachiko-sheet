@@ -719,6 +719,11 @@ body {
 
 /* ---------- Grid ---------- */
 
+/* The Table panel paints the grid canvas so a short table reads as a sheet, not a strip above chrome. */
+.ts-panel:has(> .ts-grid-scroll) {
+  background: var(--ts-grid-canvas);
+}
+
 .ts-grid-scroll {
   overflow: auto;
   min-height: min(168px, var(--ts-grid-available-height, 100vh));
@@ -777,6 +782,21 @@ body {
   color: var(--ts-grid-header-foreground);
 }
 
+/*
+ * FES45 row locator: a fixed 48px gutter. With table-layout: fixed the header
+ * cell sets the column width, so data columns share the rest instead of the
+ * row numbers taking an equal data-column share.
+ */
+.ts-grid .ts-gutter-head {
+  width: 48px;
+}
+
+.ts-grid .ts-gutter-head,
+.ts-grid .ts-row-head {
+  padding-inline: 4px;
+  text-align: center;
+}
+
 .ts-gutter-head {
   z-index: 3;
 }
@@ -793,6 +813,11 @@ body {
 .ts-cell {
   cursor: cell;
   min-width: 72px;
+}
+
+/* Stored leading/trailing spaces stay visible; line breaks still collapse onto one dense row. */
+.ts-cell-value {
+  white-space-collapse: preserve-spaces;
 }
 
 .ts-cell--computed .ts-cell-value {
@@ -826,20 +851,23 @@ body {
   background: var(--ts-selection-active-background);
 }
 
+/* The editor overlays its cell so entering edit never changes the row pitch (UI quality contract §1.2). */
 .ts-cell--editing {
-  padding: 0;
+  position: relative;
   background: var(--ts-selection-active-background);
 }
 
 .ts-cell-input {
+  position: absolute;
+  inset: 0;
   font: inherit;
   font-variant-numeric: tabular-nums;
   width: 100%;
-  min-width: 90px;
+  height: 100%;
   border: none;
-  min-height: 27px;
-  padding: 4px 10px;
-  background: var(--ts-selection-active-background);
+  padding: 3px 10px 4px;
+  /* The cell paints the active background, focus perimeter and underline beneath the text. */
+  background: transparent;
   color: var(--ts-ink);
 }
 
