@@ -69,7 +69,10 @@
   box-sizing: border-box;
 }
 
-body { margin: 0; }
+body {
+  margin: 0;
+  background: var(--ts-surface-chrome);
+}
 
 .ts-app[data-view="workbook"] {
   height: 100%;
@@ -129,7 +132,19 @@ body { margin: 0; }
   margin: 0 auto;
   padding: 0 0 10px;
   color: var(--ts-ink-soft);
+  /* The notice sits outside .ts-app, so it must name the product face instead of inheriting UA serif. */
+  font-family: var(--ts-profile-font-family);
   font-size: 11px;
+  line-height: 16px;
+}
+
+/* In a workbook the notice is the last line of the chrome band, aligned with the header gutter. */
+.ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 2px clamp(16px, 3vw, 40px) 6px;
+  background: var(--ts-surface-chrome);
 }
 
 .ts-notices a { color: var(--ts-text-link); }
