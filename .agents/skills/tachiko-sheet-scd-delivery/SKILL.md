@@ -36,7 +36,7 @@ Record `FINAL_CANDIDATE <sha>` only when:
 - applicable focused and affected-regression checks are green;
 - the PR is otherwise believed merge-ready.
 
-Only then run full applicable hosted gates and one fresh independent exact-HEAD Oracle review through the qualified **ego-lite → Oracle** transport. Run deterministic/hosted gates first; GPT-5.6 Sol **High** is the ordinary material-review default, while **Extra High** requires an explicit high/critical-risk reason recorded on the owning Issue/PR. Verify requested/effective model and effort fail-closed before review credit.
+Only then run full applicable hosted gates and one fresh independent exact-HEAD **Oracle latest Extra High** review through the qualified **ego-lite → Oracle** transport. Run deterministic/hosted gates first and verify requested/effective model and **Extra High** effort fail-closed before review credit.
 
 A material commit after that checkpoint invalidates Final Candidate status and requires the applicable exact-head gates and review again.
 
@@ -49,6 +49,7 @@ ego-lite is the default Oracle execution transport for Sheet. It does not change
 - do not start a duplicate review merely because one is slow;
 - a material HEAD change invalidates the candidate-bound receipt;
 - GPT-6 Pro/Opus/Astra remain separate judgment/architecture consultation paths, not hidden Oracle fallbacks.
+- ego-lite changes the transport path only; it does not lower the required Extra High review effort.
 
 ## Review failure and root-cause checkpoint
 
