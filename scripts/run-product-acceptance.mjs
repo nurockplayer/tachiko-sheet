@@ -181,6 +181,12 @@ try {
     [path.join(root, 'tests', 'product', 'initial-launch-regression.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const cellEditing = await runStep(
+    'cell-editing-regression',
+    [path.join(root, 'tests', 'product', 'cell-editing-regression.mjs')],
+    { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : { WORK_DIST: acceptanceDir }), ...singleProcessEnv,
+      ...(chromiumSupport.executablePath ? { WORK_CHROMIUM: chromiumSupport.executablePath } : {}) },
+  );
   const normalUi = await runStep(
     'j3-normal-ui-local-transport',
     [path.join(root, 'tests', 'product', 'j3-normal-ui-local.mjs')],
@@ -205,7 +211,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
+    const localOk = cellEditing === 0 && j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -244,7 +250,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
+    exitCode = cellEditing === 0 && j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
