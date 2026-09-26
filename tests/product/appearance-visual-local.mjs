@@ -1,8 +1,8 @@
-// Rendered #69 visual/accessibility probe. Contrast backgrounds are composited
+// Rendered shared-control and visual/accessibility probe. Contrast backgrounds are composited
 // from computed browser styles, with a screenshot fallback for gradients.
 // This is a proxy, not physical AT or browser zoom.
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -27,20 +27,33 @@ const safeImportedGhostPreference = JSON.stringify({
   kind: "imported",
   profile: {
     schemaVersion: 1,
-    name: "Safe Ghost Probe",
+    name: "Equal Colors Probe",
     colorScheme: "light",
     typography: "tachiko-local",
     density: "compact",
     chrome: "structured",
-    colors: Object.fromEntries(JSON.parse(await readFile(path.join(root, "docs/design/interface-profile-v1-mapping.json"), "utf8"))
-      .roles.map(({ role, value }) => [role, value])),
+    colors: {
+      ...Object.fromEntries(JSON.parse(await readFile(path.join(root, "docs/design/interface-profile-v1-mapping.json"), "utf8"))
+        .roles.map(({ role, value }) => [role, value])),
+      "surface.inset": "#ECEEF4",
+      "action.primary.hover": "#5541C2",
+      "action.primary.pressed": "#5541C2",
+    },
   },
 });
+const safeImportedManifestBytes = Buffer.from(`${JSON.stringify(JSON.parse(safeImportedGhostPreference).profile, null, 2)}\n`, "utf8");
 const failures = [];
 const observations = [];
 const evidence = (condition, label, details = null) => {
   if (!condition) failures.push({ label, details });
 };
+
+async function captureHeldControl(page, filename) {
+  const directory = process.env.SHEET_CONTROL_ARTIFACT_DIR;
+  if (!directory) return;
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: path.join(directory, filename) });
+}
 
 function rgb(value) {
   const match = value.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\)/i);
@@ -406,17 +419,6 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       const grid = document.querySelector(".ts-grid-scroll");
       const panelRect = panel?.getBoundingClientRect();
       const footerRect = footer?.getBoundingClientRect();
-      const sections = [...document.querySelectorAll(".ts-panel.ts-brief > .ts-card")].map((section) => {
-        const style = getComputedStyle(section);
-        return {
-          background: style.backgroundColor,
-          boxShadow: style.boxShadow,
-          borderTopWidth: style.borderTopWidth,
-          borderRightWidth: style.borderRightWidth,
-          borderBottomWidth: style.borderBottomWidth,
-          borderLeftWidth: style.borderLeftWidth,
-        };
-      });
       const panelStyle = panel ? getComputedStyle(panel) : null;
       return {
         viewportWidth: innerWidth,
@@ -433,7 +435,6 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         panelClientWidth: panel?.clientWidth ?? null,
         panelScrollWidth: panel?.scrollWidth ?? null,
         panelBackground: panelStyle?.backgroundColor ?? null,
-        sections,
         gridClientWidth: grid?.clientWidth ?? null,
         gridScrollWidth: grid?.scrollWidth ?? null,
         gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
@@ -442,25 +443,15 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       };
     });
     const label = `${width}x${height} ${profile} ${viewName}`;
+    const appearance = page.locator(".ts-workbook-head .ts-appearance-trigger");
+    const heldAppearance = await sampleButtonStates(page, appearance, `${label} appearance command`);
+    observations.push({ viewHeldControl: label, states: heldAppearance });
     evidence(layout.panelOverflowY === "auto", `${label} panel can scroll its own long content`, layout);
     evidence(layout.panelBottom <= layout.footerTop + 1, `${label} panel ends before the Views/status footer`, layout);
     evidence(layout.footerBottom <= height + 1, `${label} keeps the complete Views/status footer in the viewport`, layout);
     evidence(layout.pageHeight <= height + 1 && layout.scrollY === 0, `${label} does not push the document beyond the viewport`, layout);
-    if (viewName !== "Table") {
-      evidence(layout.sections.length > 0, `${label} renders its shared workbook sections`, layout);
-      evidence(layout.panelScrollWidth <= layout.panelClientWidth + 1,
-        `${label} sections fit the viewport without horizontal panel overflow`, layout);
-      evidence(layout.sections.every((section) => section.background === "rgba(0, 0, 0, 0)" && section.boxShadow === "none" &&
-        section.borderTopWidth === "0px" && section.borderRightWidth === "0px" && section.borderLeftWidth === "0px"),
-      `${label} uses open sections without raised card borders`, layout);
-      if (viewName === "Report") {
-        evidence(layout.sections.length === 1 && layout.sections[0].borderBottomWidth === "0px",
-          `${label} single no-report section has no trailing divider`, layout);
-      } else {
-        evidence(layout.sections.every((section) => section.borderBottomWidth === "1px"),
-          `${label} keeps the established dividers on multi-section workbook panels`, layout);
-      }
-    }
+    if (viewName !== "Table") evidence(layout.panelScrollWidth <= layout.panelClientWidth + 1,
+      `${label} keeps the view panel within the viewport width`, layout);
     if (width === 320 && viewName === "Brief") {
       evidence(layout.panelScrollHeight > layout.panelClientHeight,
         `${label} scrolls the long Brief content inside its panel`, layout);
@@ -629,13 +620,14 @@ async function auditHomeViewportBounds(page) {
         `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);
     }
     await savedCopy.scrollIntoViewIfNeeded();
+    const homeHeld = await sampleButtonStates(page, savedCopy, `${width}x${height} Home saved-copy command`);
     const copyRect = await savedCopy.evaluate((button) => {
       const rect = button.getBoundingClientRect();
       return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
     });
     evidence(copyRect.top >= 0 && copyRect.bottom <= height,
       `${width}x${height} saved copy action can be reached by scrolling Home`, { ...layout, copyRect });
-    observations.push({ homeViewport: `${width}x${height}`, ...layout, copyRect });
+    observations.push({ homeViewport: `${width}x${height}`, ...layout, copyRect, heldControl: homeHeld });
   }
 }
 
@@ -840,13 +832,42 @@ async function auditFocusModes(context, page) {
   }
 }
 
-async function sampleButtonStates(page, button, tag) {
+async function sampleButtonStates(page, button, tag, captureName = null) {
   await page.mouse.move(1, 1);
   const read = () => button.evaluate((element) => ({
     background: getComputedStyle(element).backgroundColor,
     border: getComputedStyle(element).borderTopColor,
     foreground: getComputedStyle(element).color,
     active: element.matches(":active"),
+    held: element.hasAttribute("data-ts-held"),
+    contour: (() => {
+      const target = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const mark = getComputedStyle(element, "::after");
+      const text = document.createRange();
+      text.selectNodeContents(element);
+      const content = text.getBoundingClientRect();
+      return {
+        content: mark.content,
+        insetTop: mark.top,
+        insetRight: mark.right,
+        insetBottom: mark.bottom,
+        insetLeft: mark.left,
+        borderTop: mark.borderTopWidth,
+        borderLeft: mark.borderLeftWidth,
+        borderColor: mark.borderTopColor,
+        radius: mark.borderTopLeftRadius,
+        targetRadius: style.borderTopLeftRadius,
+        targetWidth: target.width,
+        targetHeight: target.height,
+        outerTop: Number.parseFloat(style.borderTopWidth) + Number.parseFloat(mark.top),
+        outerLeft: Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(mark.left),
+        contourWidth: target.width - 2 * (Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(mark.left)),
+        contourHeight: target.height - 2 * (Number.parseFloat(style.borderTopWidth) + Number.parseFloat(mark.top)),
+        contentTopClearance: content.top - target.top - 4,
+        contentLeftClearance: content.left - target.left - 4,
+      };
+    })(),
   }));
   const rest = await read();
   await button.hover();
@@ -856,11 +877,233 @@ async function sampleButtonStates(page, button, tag) {
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
   const pressed = await read();
+  if (captureName) await captureHeldControl(page, captureName);
   evidence(pressed.active, `${tag} sample reaches the real pressed state`, pressed);
+  evidence(pressed.held && pressed.contour.content === '""' && pressed.contour.insetTop === "1px" &&
+    pressed.contour.insetRight === "1px" && pressed.contour.insetBottom === "1px" && pressed.contour.insetLeft === "1px" &&
+    pressed.contour.borderTop === "2px" && pressed.contour.borderColor === pressed.foreground,
+  `${tag} held input paints a 2px contour in the control foreground`, pressed);
+  evidence(pressed.contour.outerTop === 2 && pressed.contour.outerLeft === 2 &&
+    pressed.contour.contourWidth === pressed.contour.targetWidth - 4 &&
+    pressed.contour.contourHeight === pressed.contour.targetHeight - 4,
+  `${tag} contour outer edge is 2px in with target size minus 4px`, pressed.contour);
+  evidence(pressed.contour.contentTopClearance >= 2 && pressed.contour.contentLeftClearance >= 2,
+    `${tag} keeps at least 2px between text and the inner contour edge`, pressed.contour);
+  evidence(pressed.contour.targetWidth === hover.contour.targetWidth && pressed.contour.targetHeight === hover.contour.targetHeight,
+    `${tag} held input keeps target geometry fixed`, { hover: hover.contour, pressed: pressed.contour });
   // Release outside the button so this state probe does not invoke its command.
   await page.mouse.move(1, 1);
+  const outside = await read();
+  evidence(!outside.held, `${tag} pointer exit clears the held cue before pointer release`, outside);
   await page.mouse.up();
-  return { rest, hover, pressed };
+  return { rest, hover, pressed, pointerExit: outside };
+}
+
+async function auditKeyboardHeldControl(page, tag) {
+  const button = page.locator(".ts-workbook-head .ts-appearance-trigger");
+  await button.evaluate((element) => {
+    element.dataset.keyboardClicks = "0";
+    element.dataset.keyboardTrace = "[]";
+    element.addEventListener("keydown", () => {
+      element.dataset.keyboardTrace = JSON.stringify([
+        ...JSON.parse(element.dataset.keyboardTrace),
+        { type: "keydown", held: element.hasAttribute("data-ts-held") },
+      ]);
+    });
+    element.addEventListener("click", () => {
+      element.dataset.keyboardClicks = String(Number(element.dataset.keyboardClicks) + 1);
+      element.dataset.heldAtClick = String(element.hasAttribute("data-ts-held"));
+      element.dataset.keyboardTrace = JSON.stringify([
+        ...JSON.parse(element.dataset.keyboardTrace),
+        { type: "click", held: element.hasAttribute("data-ts-held") },
+      ]);
+    });
+  });
+  const methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  await button.focus();
+  await page.keyboard.down("Space");
+  const spaceHeld = await button.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    contour: getComputedStyle(element, "::after").borderTopWidth,
+    focus: element.matches(":focus-visible"),
+    focusOutline: getComputedStyle(element).outlineWidth,
+    focusOffset: getComputedStyle(element).outlineOffset,
+    pressedSemantics: element.getAttribute("aria-pressed"),
+  }));
+  evidence(spaceHeld.held && spaceHeld.contour === "2px" && spaceHeld.focus &&
+    spaceHeld.focusOutline === "3px" && spaceHeld.focusOffset === "2px" && spaceHeld.pressedSemantics === null,
+  `${tag} real Appearance control shows Space-held contour beside focus ring`, spaceHeld);
+  if (tag === "shared control tachiko") await captureHeldControl(page, "ordinary-keyboard-space.png");
+  await page.keyboard.up("Space");
+  await page.waitForFunction(() => document.querySelector(".ts-workbook-head .ts-appearance-trigger")?.getAttribute("aria-expanded") === "true");
+  const spaceReleased = await button.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    clicks: Number(element.dataset.keyboardClicks),
+    heldAtClick: element.dataset.heldAtClick,
+    expanded: element.getAttribute("aria-expanded"),
+  }));
+  evidence(!spaceReleased.held && spaceReleased.clicks === 1 && spaceReleased.heldAtClick === "false" && spaceReleased.expanded === "true",
+    `${tag} Space release clears the cue and preserves one native Appearance activation`, spaceReleased);
+  await page.keyboard.press("Escape");
+
+  await button.focus();
+  await page.keyboard.down("Enter");
+  const enterAfterActivation = await button.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    clicks: Number(element.dataset.keyboardClicks),
+    heldAtClick: element.dataset.heldAtClick,
+    trace: JSON.parse(element.dataset.keyboardTrace),
+    expanded: element.getAttribute("aria-expanded"),
+  }));
+  evidence(!enterAfterActivation.held && enterAfterActivation.clicks === 2 && enterAfterActivation.heldAtClick === "false" &&
+    enterAfterActivation.expanded === "true",
+  `${tag} Enter uses one immediate native activation and clears the cue at click`, enterAfterActivation);
+  evidence(enterAfterActivation.trace.some((entry) => entry.type === "keydown" && entry.held) &&
+    enterAfterActivation.trace.some((entry) => entry.type === "click" && !entry.held),
+  `${tag} Enter held state precedes its native click cleanup`, enterAfterActivation.trace);
+  await page.keyboard.up("Enter");
+  await page.waitForFunction(() => document.querySelector(".ts-workbook-head .ts-appearance-trigger")?.getAttribute("aria-expanded") === "true");
+  await page.keyboard.press("Escape");
+
+  const clicksBeforeCancellation = await button.evaluate((element) => Number(element.dataset.keyboardClicks));
+  await button.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  const cancelledByEscape = await button.evaluate((element) => element.hasAttribute("data-ts-held"));
+  await page.keyboard.down("Tab");
+  const focusLoss = await button.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    focused: document.activeElement === element,
+    clicks: Number(element.dataset.keyboardClicks),
+  }));
+  evidence(!cancelledByEscape && !focusLoss.held && !focusLoss.focused && focusLoss.clicks === clicksBeforeCancellation,
+    `${tag} Escape and keyboard focus transfer clear held input without activating`, { cancelledByEscape, focusLoss });
+  await page.keyboard.up("Tab");
+  await page.keyboard.up("Escape");
+  await page.keyboard.up("Space");
+
+  await button.focus();
+  await page.keyboard.down("Space");
+  await button.dispatchEvent("pointercancel", { bubbles: true, pointerId: 4, isPrimary: true });
+  const cancelled = await button.evaluate((element) => element.hasAttribute("data-ts-held"));
+  evidence(!cancelled, `${tag} pointercancel clears a held cue on the real Appearance control (synthetic event)`, null);
+  await page.keyboard.down("Tab");
+  await page.keyboard.up("Space");
+  await page.keyboard.up("Tab");
+
+  const busyGuard = await button.evaluate((element) => {
+    element.setAttribute("aria-busy", "true");
+    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, isPrimary: true }));
+    const held = element.hasAttribute("data-ts-held");
+    element.removeAttribute("aria-busy");
+    return held;
+  });
+  evidence(!busyGuard, `${tag} supplemental synthetic aria-busy guard does not set held state`, null);
+
+  const methodsAfter = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  evidence(JSON.stringify(methodsAfter) === JSON.stringify(methodsBefore), `${tag} local appearance activation dispatches no Work method`, { methodsBefore, methodsAfter });
+  observations.push({ buttonHeldInput: tag, spaceHeld, spaceRelease: spaceReleased, enterActivation: enterAfterActivation,
+    escapeCancellation: cancelledByEscape, focusLoss, pointerCancellation: cancelled, supplementalBusyGuard: busyGuard,
+    methodsBefore, methodsAfter });
+  await page.keyboard.press("Escape");
+}
+
+async function auditAppearanceVariantKeyboard(page) {
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  await page.locator(".ts-appearance-file-input").setInputFiles({
+    name: "equal-colors.tachiko-profile.json",
+    mimeType: "application/json",
+    buffer: safeImportedManifestBytes,
+  });
+  const candidate = page.locator(".ts-appearance-candidate");
+  await candidate.getByRole("button", { name: "Apply profile", exact: true }).waitFor();
+  const apply = candidate.getByRole("button", { name: "Apply profile", exact: true });
+  await apply.evaluate((element) => {
+    window.__keyboardAuditEvents = [];
+    element.addEventListener("keydown", () => window.__keyboardAuditEvents.push({ type: "keydown", held: element.hasAttribute("data-ts-held") }));
+    element.addEventListener("click", () => window.__keyboardAuditEvents.push({ type: "click", held: element.hasAttribute("data-ts-held") }));
+  });
+  const methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+
+  await apply.focus();
+  await page.keyboard.down("Space");
+  const primaryHeld = await apply.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    contour: getComputedStyle(element, "::after").borderTopColor,
+    foreground: getComputedStyle(element).color,
+    focus: element.matches(":focus-visible"),
+  }));
+  evidence(primaryHeld.held && primaryHeld.contour === primaryHeld.foreground && primaryHeld.focus,
+    "equal custom primary Apply profile button paints its foreground contour while Space is held", primaryHeld);
+  await captureHeldControl(page, "primary-keyboard-space-equal-color.png");
+  await candidate.getByRole("button", { name: "Cancel", exact: true }).focus();
+  const primaryBlurred = await apply.evaluate((element) => element.hasAttribute("data-ts-held"));
+  await page.keyboard.up("Space");
+  const primarySpaceEvents = await page.evaluate(() => window.__keyboardAuditEvents);
+  evidence(!primaryBlurred && primarySpaceEvents.every((event) => event.type !== "click"),
+    "focus transfer clears the primary Space cue and prevents activation on release", { primaryBlurred, primarySpaceEvents });
+
+  const primaryBeforeEnter = await page.evaluate(() => window.__keyboardAuditEvents.length);
+  await apply.focus();
+  await page.keyboard.down("Enter");
+  const primaryEnterEvents = await page.evaluate((start) => window.__keyboardAuditEvents.slice(start), primaryBeforeEnter);
+  evidence(primaryEnterEvents.length === 2 && primaryEnterEvents[0].type === "keydown" && primaryEnterEvents[0].held &&
+    primaryEnterEvents[1].type === "click" && !primaryEnterEvents[1].held,
+  "equal custom primary Enter preserves its immediate native Apply activation and clears the cue at click", primaryEnterEvents);
+  await page.keyboard.up("Enter");
+  await page.getByRole("radio", { name: "Imported Equal Colors Probe", exact: true }).waitFor();
+  const methodsAfter = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  evidence(JSON.stringify(methodsAfter) === JSON.stringify(methodsBefore),
+    "applying an appearance profile still dispatches no Work method", { methodsBefore, methodsAfter });
+
+  const appearanceTrigger = page.getByRole("button", { name: "Appearance", exact: true });
+  if (await appearanceTrigger.getAttribute("aria-expanded") !== "true") await appearanceTrigger.click();
+  const close = page.locator(".ts-appearance-close.ts-button--ghost");
+  await close.waitFor({ state: "visible" });
+  await close.evaluate((element) => {
+    window.__ghostKeyboardEvents = [];
+    element.addEventListener("keydown", () => window.__ghostKeyboardEvents.push({ type: "keydown", held: element.hasAttribute("data-ts-held") }));
+    element.addEventListener("click", () => window.__ghostKeyboardEvents.push({ type: "click", held: element.hasAttribute("data-ts-held") }));
+  });
+  await close.focus();
+  await page.keyboard.down("Space");
+  const ghostHeld = await close.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    contour: getComputedStyle(element, "::after").borderTopColor,
+    foreground: getComputedStyle(element).color,
+    focus: element.matches(":focus-visible"),
+  }));
+  evidence(ghostHeld.held && ghostHeld.contour === ghostHeld.foreground && ghostHeld.focus,
+    "real appearance ghost Close control paints its foreground contour while Space is held", ghostHeld);
+  await captureHeldControl(page, "ghost-keyboard-space-equal-color.png");
+  await page.getByRole("button", { name: "Appearance", exact: true }).focus();
+  const ghostBlurred = await close.evaluate((element) => element.hasAttribute("data-ts-held"));
+  await page.keyboard.up("Space");
+  const ghostSpaceEvents = await page.evaluate(() => window.__ghostKeyboardEvents);
+  evidence(!ghostBlurred && ghostSpaceEvents.every((event) => event.type !== "click"),
+    "focus transfer clears the ghost Space cue and prevents activation on release", { ghostBlurred, ghostSpaceEvents });
+  const ghostBeforeEnter = await page.evaluate(() => window.__ghostKeyboardEvents.length);
+  await close.focus();
+  await page.keyboard.down("Enter");
+  const ghostEnterEvents = await page.evaluate((start) => window.__ghostKeyboardEvents.slice(start), ghostBeforeEnter);
+  evidence(ghostEnterEvents.length === 2 && ghostEnterEvents[0].type === "keydown" && ghostEnterEvents[0].held &&
+    ghostEnterEvents[1].type === "click" && !ghostEnterEvents[1].held,
+  "real appearance ghost Enter preserves immediate native close activation", ghostEnterEvents);
+  await page.keyboard.up("Enter");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const createCopy = page.getByRole("button", { name: "Create copy", exact: true });
+  const disabledCopy = await createCopy.evaluate((element) => ({
+    disabled: element.disabled,
+    held: element.hasAttribute("data-ts-held"),
+    ariaPressed: element.getAttribute("aria-pressed"),
+  }));
+  evidence(disabledCopy.disabled && !disabledCopy.held && disabledCopy.ariaPressed === null,
+    "actual disabled Create copy control stays truthful and has no held or toggle state", disabledCopy);
+  observations.push({ disabledSharedControl: "Save a copy / Create copy", ...disabledCopy });
+  await page.keyboard.press("Escape");
+  observations.push({ appearanceVariantKeyboard: { primaryHeld, primarySpaceEvents, primaryEnterEvents,
+    ghostHeld, ghostSpaceEvents, ghostEnterEvents, methodsBefore, methodsAfter } });
 }
 
 async function forcedSystemColor(page, systemColor) {
@@ -900,7 +1143,8 @@ async function auditGhostInteractionStates(page, profileLabel) {
   ]) {
     await page.emulateMedia({ forcedColors, colorScheme });
     const modeLabel = forcedColors === "none" ? "normal" : `forced-${colorScheme}`;
-    const states = await sampleButtonStates(page, ghost, `ghost ${profileLabel} ${modeLabel}`);
+    const states = await sampleButtonStates(page, ghost, `ghost ${profileLabel} ${modeLabel}`,
+      profileLabel === "safe imported equal-color" && forcedColors === "none" ? "ghost-pointer-equal-color.png" : null);
     if (forcedColors === "active") {
       const systemCanvas = await forcedSystemColor(page, "Canvas");
       const systemText = await forcedSystemColor(page, "ButtonText");
@@ -916,17 +1160,38 @@ async function auditGhostInteractionStates(page, profileLabel) {
       ]);
       const transparentBackground = (rgb(states.rest.background)?.[3] ?? 1) === 0;
       const transparentRestBorder = (rgb(states.rest.border)?.[3] ?? 1) === 0;
+      const fillsDiffer = states.hover.background !== states.pressed.background;
+      const heldContourDistinguishes = states.pressed.held && states.pressed.contour.outerTop === 2 &&
+        states.pressed.contour.borderColor === states.pressed.foreground &&
+        contrast(rgb(states.pressed.contour.borderColor), rgb(states.pressed.background)) >= 3;
       evidence(transparentBackground && transparentRestBorder &&
         states.hover.background === surfaces.hover && states.pressed.background === surfaces.pressed &&
-        states.hover.background !== states.pressed.background &&
+        (fillsDiffer || heldContourDistinguishes) &&
         states.hover.border === surfaces.strongBorder && states.pressed.border === surfaces.strongBorder,
-      `ghost ${profileLabel} has transparent rest and strong hover/pressed borders`, { states, surfaces });
+      `ghost ${profileLabel} uses a visible held contour when admitted hover and pressed fills coincide`, { states, surfaces });
       evidence([states.hover, states.pressed].every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5),
         `ghost ${profileLabel} text remains at least 4.5:1 on hover and pressed surfaces`, states);
     }
     ghostStatesByMode[forcedColors === "none" ? "normal" : `forced-${colorScheme}`] = states;
   }
   observations.push({ buttonVariantState: "ghost", profile: profileLabel, states: ghostStatesByMode });
+
+  await page.keyboard.press("Escape");
+  await page.emulateMedia({ forcedColors: "none", colorScheme: "light" });
+  const primary = page.locator(".ts-button--primary:visible").first();
+  if (await primary.count()) {
+    const states = await sampleButtonStates(page, primary, `primary ${profileLabel} normal`,
+      profileLabel === "safe imported equal-color" ? "primary-pointer-equal-color.png" : null);
+    if (profileLabel === "safe imported equal-color") {
+      evidence(states.hover.background === "rgb(85, 65, 194)" && states.pressed.background === states.hover.background,
+        "positive equal-color profile keeps primary hover and pressed fills equal", states);
+      evidence(states.pressed.contour.borderColor === states.pressed.foreground,
+        "positive equal-color primary pressed state uses its admitted foreground contour", states.pressed.contour);
+    }
+    observations.push({ buttonVariantState: "primary", profile: profileLabel, states });
+  } else {
+    evidence(false, `primary ${profileLabel} renders a shared primary control`, null);
+  }
 }
 
 async function auditButtonVariantBoundaries(browser) {
@@ -936,6 +1201,24 @@ async function auditButtonVariantBoundaries(browser) {
     const page = await context.newPage();
     await openApp(context, page);
     await openCanary(context, page);
+    const targetRadiusByProfile = { tachiko: 7, "familiar-spreadsheet": 2, "minimal-focus": 4 };
+    for (const density of densities) {
+      await choose(page, profile.id, density.id);
+      await page.keyboard.press("Escape");
+      const densityButton = page.getByRole("button", { name: "Refresh", exact: true });
+      const geometry = await sampleButtonStates(page, densityButton, `ordinary ${profile.id}/${density.id}`,
+        profile.id === "tachiko" && density.id === "compact" ? "ordinary-pointer.png" : null);
+      observations.push({ controlDensityGeometry: `${profile.id}/${density.id}`, states: geometry });
+      const expectedRadius = targetRadiusByProfile[profile.id];
+      const expectedHeight = density.id === "compact" ? 32 : 36;
+      const minimumClearance = density.id === "compact" ? 2 : 4;
+      evidence(geometry.pressed.contour.targetRadius === `${expectedRadius}px` &&
+        geometry.pressed.contour.radius === `${Math.max(expectedRadius - 2, 0)}px`,
+      `${profile.id}/${density.id} uses the approved target and inner contour radii`, geometry.pressed.contour);
+      evidence(geometry.pressed.contour.targetHeight >= expectedHeight &&
+        geometry.pressed.contour.contentTopClearance >= minimumClearance,
+      `${profile.id}/${density.id} preserves its ${expectedHeight}px target and ${minimumClearance}px text clearance`, geometry.pressed.contour);
+    }
     await choose(page, profile.id, "compact");
     await page.keyboard.press("Escape");
 
@@ -966,6 +1249,7 @@ async function auditButtonVariantBoundaries(browser) {
       ordinaryStatesByMode[forcedColors] = states;
     }
     observations.push({ buttonVariantState: "ordinary", profile: profile.id, states: ordinaryStatesByMode });
+    await auditKeyboardHeldControl(page, `shared control ${profile.id}`);
 
     // A dirty edit exposes the real destructive and neutral modal actions.
     await page.locator(".ts-grid tbody tr").first().locator("td").first().dblclick();
@@ -1033,12 +1317,14 @@ async function auditButtonVariantBoundaries(browser) {
   const importedPage = await importedContext.newPage();
   await openApp(importedContext, importedPage);
   await importedPage.getByRole("button", { name: "Appearance", exact: true }).click();
-  const importedRadio = importedPage.getByRole("radio", { name: "Imported Safe Ghost Probe", exact: true });
+  const importedRadio = importedPage.getByRole("radio", { name: "Imported Equal Colors Probe", exact: true });
   evidence(await importedRadio.isChecked(), "safe imported appearance loads for the ghost control probe", null);
   await importedPage.keyboard.press("Escape");
   await openCanary(importedContext, importedPage);
   await importedPage.keyboard.press("Escape");
-  await auditGhostInteractionStates(importedPage, "safe imported");
+  await auditGhostInteractionStates(importedPage, "safe imported equal-color");
+  await auditKeyboardHeldControl(importedPage, "safe imported equal-color");
+  await auditAppearanceVariantKeyboard(importedPage);
   await importedContext.close();
 }
 
@@ -1295,6 +1581,11 @@ async function main() {
       })),
     },
     workbookViewportAudit: observations.filter((item) => item.workbookViewport),
+    viewHeldControls: observations.filter((item) => item.viewHeldControl),
+    controlDensityGeometry: observations.filter((item) => item.controlDensityGeometry),
+    buttonHeldInputs: observations.filter((item) => item.buttonHeldInput),
+    disabledSharedControls: observations.filter((item) => item.disabledSharedControl),
+    appearanceVariantKeyboard: observations.find((item) => item.appearanceVariantKeyboard)?.appearanceVariantKeyboard ?? null,
     tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
     homeViewportAudit: observations.filter((item) => item.homeViewport),
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),

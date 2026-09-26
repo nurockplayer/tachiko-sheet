@@ -122,6 +122,27 @@ function availableGridScrollHeight(gridTop: number, panelBottom: number): number
   return Math.max(0, Math.floor(panelBottom - gridTop));
 }
 
+function sharedButtonFromTarget(target: EventTarget | null): HTMLButtonElement | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLButtonElement>(".ts-app .ts-button");
+}
+
+function holdSharedButton(target: EventTarget | null): void {
+  const button = sharedButtonFromTarget(target);
+  if (!button || button.disabled || button.getAttribute("aria-disabled") === "true" || button.getAttribute("aria-busy") === "true") return;
+  button.setAttribute("data-ts-held", "");
+}
+
+function releaseSharedButton(target: EventTarget | null): void {
+  sharedButtonFromTarget(target)?.removeAttribute("data-ts-held");
+}
+
+function clearHeldSharedButtons(): void {
+  document.querySelectorAll<HTMLButtonElement>(".ts-app .ts-button[data-ts-held]").forEach((button) => {
+    button.removeAttribute("data-ts-held");
+  });
+}
+
 export function SheetShell(props: SheetShellProps) {
   const {
     view,
@@ -514,6 +535,18 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     onDraftChangeRef.current(draftActive);
   }, [draftActive]);
+
+  useEffect(() => {
+    window.addEventListener("blur", clearHeldSharedButtons);
+    document.addEventListener("pointerup", clearHeldSharedButtons, true);
+    document.addEventListener("pointercancel", clearHeldSharedButtons, true);
+    return () => {
+      window.removeEventListener("blur", clearHeldSharedButtons);
+      document.removeEventListener("pointerup", clearHeldSharedButtons, true);
+      document.removeEventListener("pointercancel", clearHeldSharedButtons, true);
+      clearHeldSharedButtons();
+    };
+  }, []);
 
   useEffect(() => {
     onReportDraftChangeRef.current(hasInvalidReportDraft);
@@ -1656,6 +1689,25 @@ export function SheetShell(props: SheetShellProps) {
       data-view={view ? "workbook" : "home"}
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
+      onPointerDownCapture={(event) => {
+        if (event.button === 0 && event.isPrimary) holdSharedButton(event.target);
+      }}
+      onPointerUpCapture={(event) => releaseSharedButton(event.target)}
+      onPointerCancelCapture={(event) => releaseSharedButton(event.target)}
+      onPointerOutCapture={(event) => {
+        const button = sharedButtonFromTarget(event.target);
+        const next = event.relatedTarget;
+        if (button && (!(next instanceof Node) || !button.contains(next))) releaseSharedButton(event.target);
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === "Enter" || event.key === " ") holdSharedButton(event.target);
+        else if (event.key === "Escape") releaseSharedButton(event.target);
+      }}
+      onKeyUpCapture={(event) => {
+        if (event.key === "Enter" || event.key === " ") releaseSharedButton(event.target);
+      }}
+      onClickCapture={(event) => releaseSharedButton(event.target)}
+      onBlurCapture={(event) => releaseSharedButton(event.target)}
     >
       {errorMessage && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
         <div className="ts-error" role="alert">

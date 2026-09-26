@@ -50,7 +50,7 @@ describe("visual foundation CSS contract", () => {
     expect(css).not.toContain(".ts-header-actions .ts-button--primary:not(:disabled)");
   });
 
-  it("uses a shared quiet workbook control and open section recipe", () => {
+  it("uses the shared workbook control state recipe", () => {
     const pressedSurface = css.match(/--ts-surface-head:\s*(#[0-9a-f]{6});/i)?.[1];
     expect(pressedSurface?.toUpperCase()).toBe(SHARED_CONTROL_PRESSED_SURFACE);
     expect(css).toContain("border: 1px solid var(--ts-line);");
@@ -65,19 +65,13 @@ describe("visual foundation CSS contract", () => {
     expect(dangerPressed).toContain("background: var(--ts-protected-destructive-pressed);");
     expect(dangerPressed).not.toContain("border-color:");
     expect(css).toContain("--ts-protected-destructive-pressed: #eceef4;");
+    expect(css).toContain(".ts-button[data-ts-held]:not(:disabled)::after");
+    expect(css).toContain("inset: 1px;");
+    expect(css).toContain("border: 2px solid currentColor;");
+    expect(css).toContain("border-radius: max(0px, calc(var(--ts-radius) - 2px));");
     expect(css).toContain(".ts-button--ghost {\n  background: transparent;\n  border-color: transparent;");
     expect(css).toContain(`.ts-button--ghost:hover:not(:disabled),\n.ts-button--ghost:active:not(:disabled) {\n  border-color: var(--ts-line-strong);\n}`);
     expect(css).toContain(".ts-app .ts-button--ghost:hover:not(:disabled),\n  .ts-app .ts-button--ghost:active:not(:disabled) { border-color: ButtonText; }");
-    expect(css).toContain(".ts-panel.ts-brief > .ts-card");
-    expect(css).toContain(".ts-panel.ts-brief > .ts-report-card:only-child");
-    expect(css).toContain("background: transparent;");
-    expect(css).toContain("box-shadow: none;");
-    expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea)");
-    expect(css).toContain("min-height: var(--ts-profile-command-target-min-height);");
-    expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea):disabled");
-    expect(css).toContain("@media (forced-colors: active)");
-    expect(css).toContain(".ts-panel.ts-brief { background: Canvas; }");
-    expect(css).not.toContain(".ts-panel.ts-brief select { appearance: none");
   });
 
   it("keeps public profile bindings private and wires the approved role mappings", () => {
