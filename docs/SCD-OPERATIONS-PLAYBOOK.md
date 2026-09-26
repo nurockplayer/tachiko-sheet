@@ -198,12 +198,12 @@ If source/test behavior changes, establish a new HEAD and rerun the applicable e
 
 ## 9. Oracle is a final reviewer, not a linter or progress meter
 
-Use one fresh, independent Oracle session only after the candidate is stable. Sheet's default execution route is the qualified **ego-lite → Oracle** transport. Finish deterministic/hosted gates first. GPT-5.6 Sol **High** is the ordinary material-review default; **Extra High** is reserved for explicitly high/critical-risk review with the reason recorded on the owning Issue/PR.
+Use one fresh, independent **Oracle latest Extra High** session only after the candidate is stable. Sheet's default execution route is the qualified **ego-lite → Oracle** transport. Finish deterministic/hosted gates first; ego-lite changes transport only and does not lower the required Extra High review effort.
 
 Required behavior:
 
 - use ego-lite by default rather than launching the browser Oracle path directly;
-- verify requested/effective reviewer model and effort fail-closed before granting review credit;
+- verify requested/effective reviewer model and **Extra High** effort fail-closed before granting review credit;
 - attach the exact HEAD/base and complete relevant diff/context;
 - require every valid blocking finding with its appropriate priority and concrete evidence, including trigger/file/line when applicable;
 - require literal terminal verdict `No blocking findings.` only when there are no blockers;
@@ -223,7 +223,7 @@ If the browser/transport loses the response, distinguish:
 - **review content existed and can be recovered read-only**: inspect the complete recovered response and treat its findings normally;
 - **no complete recoverable verdict exists**: mark review incomplete and keep merge blocked.
 
-Tool failure is not `No blocking findings.`. Direct browser transport is a fallback/debug path only when the qualified ego-lite path is unavailable or being repaired, and its use must be recorded; it does not lower any gate. GPT-6 Pro remains separate judgment capacity, never an implicit reviewer fallback.
+Tool failure is not `No blocking findings.`. Direct browser transport is a fallback/debug path only when the qualified ego-lite path is unavailable or being repaired, and its use must be recorded; it does not lower any gate or the required Extra High effort. GPT-6 Pro remains separate judgment capacity, never an implicit reviewer fallback.
 
 ## 10. Convert reviewer counterexamples into regression evidence
 
