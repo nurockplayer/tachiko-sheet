@@ -800,11 +800,6 @@ body { margin: 0; }
   min-width: 72px;
 }
 
-/* Stored leading/trailing spaces stay visible; line breaks still collapse onto one dense row. */
-.ts-cell-value {
-  white-space-collapse: preserve-spaces;
-}
-
 .ts-cell--computed .ts-cell-value {
   border-bottom: 1px dotted var(--ts-line-strong);
 }
