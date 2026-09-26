@@ -1,0 +1,236 @@
+{
+  "status": "PASS",
+  "boundary": "Exact source adapter, real pinned WASM, bounded read-reply faults; not normal UI save proof",
+  "sources": [
+    {
+      "file": "src/contracts.ts",
+      "sha256": "82c40bd9c426ece8d514a82bf15d75c14af4cb77e369e2d3c6856f58ddf0e81e"
+    },
+    {
+      "file": "src/runtime/session.ts",
+      "sha256": "2cee7dd15e95329f5c50b114105411fb1fb0bbc15f3f68543683a6d0d79ad9e5"
+    }
+  ],
+  "receipts": [
+    {
+      "fault": "stale-witness",
+      "error": {
+        "name": "SheetSessionError",
+        "message": "The witness does not match the live occurrence and revision."
+      },
+      "creates": 0,
+      "catalog": {
+        "collections": [
+          {
+            "key": "sheet_1",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_2",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_3",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_3",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "date"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeHash": "73955338f4e87accf4d107be0ceaa176e59d4b781b2d6feeaeb11cedc2f68c3e",
+      "afterHash": "73955338f4e87accf4d107be0ceaa176e59d4b781b2d6feeaeb11cedc2f68c3e",
+      "beforeRevision": "resident/0",
+      "afterRevision": "resident/0"
+    },
+    {
+      "fault": "stale-bootstrap",
+      "error": {
+        "name": "SheetSessionError",
+        "message": "The binding catalog does not match the live revision."
+      },
+      "creates": 0,
+      "catalog": {
+        "collections": [
+          {
+            "key": "sheet_1",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_2",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_3",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_3",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "date"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeHash": "e9dced766e4148bafd86cb72b81ba612fcf4906c4097a7d810df9dcfdd423d1c",
+      "afterHash": "e9dced766e4148bafd86cb72b81ba612fcf4906c4097a7d810df9dcfdd423d1c",
+      "beforeRevision": "resident/0",
+      "afterRevision": "resident/0"
+    },
+    {
+      "fault": "stale-table",
+      "error": {
+        "name": "SheetSessionError",
+        "message": "The table sheet_1 does not match the live revision."
+      },
+      "creates": 0,
+      "catalog": {
+        "collections": [
+          {
+            "key": "sheet_1",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_2",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_3",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_3",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "date"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeHash": "53eb861156a8c39820de9e50b2fae108f45a6aa2d8639aa97029f28b34c275b4",
+      "afterHash": "53eb861156a8c39820de9e50b2fae108f45a6aa2d8639aa97029f28b34c275b4",
+      "beforeRevision": "resident/0",
+      "afterRevision": "resident/0"
+    },
+    {
+      "fault": "unavailable-unrelated-table",
+      "error": {
+        "name": "UnknownOperationOutcomeError",
+        "message": "The runtime did not report a trustworthy result for the dispatched operation."
+      },
+      "creates": 0,
+      "catalog": {
+        "collections": [
+          {
+            "key": "sheet_1",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_2",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_2",
+                "fieldType": "text"
+              },
+              {
+                "key": "column_3",
+                "fieldType": "number"
+              }
+            ]
+          },
+          {
+            "key": "sheet_3",
+            "fields": [
+              {
+                "key": "column_1",
+                "fieldType": "date"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeHash": "2dbe468a3b51e1ff86073b56e6bfac82a8bb04f5f4a813889fa15383b785d545",
+      "afterHash": "2dbe468a3b51e1ff86073b56e6bfac82a8bb04f5f4a813889fa15383b785d545",
+      "beforeRevision": "resident/0",
+      "afterRevision": "resident/0"
+    }
+  ]
+}

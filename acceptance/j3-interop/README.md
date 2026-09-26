@@ -13,7 +13,7 @@ The kit probe creates core-native setup occurrences directly. **It is not normal
 
 ## Qualification commands
 
-From a complete checkout of the eventual #17 PR, with repository-locked dependencies and the real checked-in kit:
+For the original #17 preparation, use a complete checkout with repository-locked dependencies and the real checked-in kit:
 
 ```sh
 python3 acceptance/j3-interop/check.py
@@ -45,9 +45,9 @@ Real browser/host cases remain a preparation requirement; this mapping is not an
 
 ## Delivery and continuation
 
-Keep one coherent #17 PR: qualify this seed, complete mechanical normal-product/host binding, independently assess the full bounded contract, record Ready under `docs/DELIVERY.md`, then implement the actual user workflow with unit tests on the same PR. Never merge this as a stand-alone preflight micro-PR and then create a second implementation PR.
+These were preparation instructions for #17 while it was open. Issue #17 closed on 2026-09-13; this section is historical and does not authorize reopening it or dispatching the completed work. To reuse this evidence, first reconcile live #2 and the owning Issue/PR for completion, authority, acceptance and current Ready state. Any newly qualified work needs its own current owner and child; preserve the fixed acceptance in this document and its referenced oracle.
 
-The sole Sol Mission Lead remains the integrator under live DELIVERY.md. The preparation author is not an independent reviewer. Fresh Oracle latest Extra High exact-final-HEAD Guarded review must be independent of both implementation and acceptance/evidence authorship and return `No blocking findings.` Keep upstream #315/#373 and all other producer owners separate; never solve a missing Rust behavior with React validation or a client codec.
+The sole Sol Mission Lead remains the integrator under live DELIVERY.md. The preparation author is not an independent reviewer. Fresh **Oracle latest Extra High** exact-final-HEAD Guarded review follows live `docs/DELIVERY.md` transport policy, must be independent of both implementation and acceptance/evidence authorship, and must return `No blocking findings.` Keep upstream #315/#373 and all other producer owners separate; never solve a missing Rust behavior with React validation or a client codec.
 
 #5 still owns ordinary active-table find/replace (#319 upstream), clipboard/paste, sort/filter, fixed authoritative total 1600, broader cleanup and all complete J1–J6/15-bundle/platform evidence. #17 closes only its declared coherent subjourney. #13 stays completed; #16 physical QA and #7 packaged macOS remain RC/support gates rather than blanket implementation-start blockers.
 

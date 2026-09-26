@@ -235,9 +235,12 @@ export function SheetShell(props: SheetShellProps) {
   const [copyName, setCopyName] = useState("");
   const [copyPending, setCopyPending] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
+  const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
   const [importTypes, setImportTypes] = useState<string[][]>([]);
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
@@ -257,15 +260,30 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const editorInputRef = useRef<HTMLInputElement | null>(null);
+  const selectEditorValueOnFocusRef = useRef(true);
+  const focusRejectedEditorRef = useRef(false);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const importPendingFocusRef = useRef<HTMLHeadingElement | null>(null);
+  const importRetryButtonRef = useRef<HTMLButtonElement | null>(null);
+  const copyNameInputRef = useRef<HTMLInputElement | null>(null);
+  const copyParentMessageAtAttemptRef = useRef<string | null>(message);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const onReportDraftChangeRef = useRef(props.onReportDraftChange);
+  const focusEditorInput = useCallback((node: HTMLInputElement | null) => {
+    editorInputRef.current = node;
+    if (!node || node.ownerDocument.activeElement === node) return;
+    node.focus();
+    if (selectEditorValueOnFocusRef.current) node.select();
+    else node.setSelectionRange(node.value.length, node.value.length);
+  }, []);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
@@ -333,6 +351,18 @@ export function SheetShell(props: SheetShellProps) {
     lastCollectionIdentityRef.current = collectionIdentity;
   }, [collectionIdentity]);
 
+  useLayoutEffect(() => {
+    if (commitPending || !focusRejectedEditorRef.current) return;
+    const input = editorInputRef.current;
+    if (!editor || !input) {
+      focusRejectedEditorRef.current = false;
+      return;
+    }
+    if (props.busy || currentness === "unknown" || input.disabled) return;
+    focusRejectedEditorRef.current = false;
+    input.focus();
+  }, [commitPending, currentness, editor, props.busy]);
+
   useEffect(() => {
     if (!view) {
       setSelectedEntity(null);
@@ -386,11 +416,49 @@ export function SheetShell(props: SheetShellProps) {
   const anyNotesDraft = notesDrafts.length > 0;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
 
+  useEffect(() => {
+    if (captureCopyParentFailure) {
+      if (message === null) {
+        copyParentMessageAtAttemptRef.current = null;
+      } else if (message !== copyParentMessageAtAttemptRef.current) {
+        setCopyParentFailureMessage(message);
+        setCaptureCopyParentFailure(false);
+      }
+      return;
+    }
+    if (copyParentFailureMessage !== null && message !== copyParentFailureMessage) {
+      setCopyParentFailureMessage(null);
+    }
+  }, [captureCopyParentFailure, copyParentFailureMessage, message]);
+
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
+  const importErrorMessage = interop?.importInspection
+    ? (importError && message && message.length > 0 ? message : importError)
+    : importError;
+  const copyErrorIsInline = copyOpen && localError === null && (
+    copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
+  );
+  const importErrorIsInline = Boolean(
+    importError && localError === null && copyError === null &&
+      errorMessage !== null && errorMessage === importErrorMessage,
+  );
+  const downloadErrorIsInline = Boolean(
+    tab === "interop" && interop?.downloadStatus === "failed" &&
+      interop.downloadError !== null && errorMessage === message && message === interop.downloadError,
+  );
+
+  useLayoutEffect(() => {
+    if (!importPending && importError && interop?.importInspection) {
+      // A short Import dialog scrolls as one outer frame. Return focus to its
+      // enabled retry action after rejection so the error and retry controls
+      // are both visible after the pending heading handoff.
+      importRetryButtonRef.current?.focus();
+    }
+  }, [importPending, importError, interop?.importInspection]);
 
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
@@ -465,16 +533,22 @@ export function SheetShell(props: SheetShellProps) {
   );
 
   const runCommit = useCallback(
-    async (target: FieldProjection["target"], edit: Parameters<SheetShellProps["onCommit"]>[2]): Promise<boolean> => {
+    async (
+      target: FieldProjection["target"],
+      edit: Parameters<SheetShellProps["onCommit"]>[2],
+      onRejected?: () => void,
+    ): Promise<boolean> => {
       if (!witness) return false;
       setCommitPending(true);
       try {
         const accepted = await onCommit(witness, target, edit);
         if (!accepted) {
+          onRejected?.();
           setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
         }
         return accepted;
       } catch (error) {
+        onRejected?.();
         setLocalError(explain(error, "The work could not apply this change. The draft was kept."));
         return false;
       } finally {
@@ -492,6 +566,8 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     const original = seedTextOf(field);
+    selectEditorValueOnFocusRef.current = seed === undefined;
+    focusRejectedEditorRef.current = false;
     setLocalError(null);
     setSelectedEntity(entity);
     setEditor({
@@ -549,7 +625,9 @@ export function SheetShell(props: SheetShellProps) {
     } else {
       edit = scalarEditOf(editor.kind, editor.value);
     }
-    const accepted = await runCommit(field.target, edit);
+    const accepted = await runCommit(field.target, edit, () => {
+      focusRejectedEditorRef.current = true;
+    });
     if (accepted) {
       setEditor(null);
       setLocalError(null);
@@ -599,20 +677,19 @@ export function SheetShell(props: SheetShellProps) {
 
   function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (isComposingEvent(event)) return;
+    // Keep editor input and caret keys from being reinterpreted by the cell grid.
+    event.stopPropagation();
     if (event.key === "Enter") {
-      event.stopPropagation();
       event.preventDefault();
       submitEditor();
       return;
     }
     if (event.key === "Escape") {
-      event.stopPropagation();
       event.preventDefault();
       cancelEdit();
       return;
     }
     if (event.key === "Tab" && editor) {
-      event.stopPropagation();
       event.preventDefault();
       const position = { entity: editor.entity, field: editor.field };
       const step = event.shiftKey ? -1 : 1;
@@ -694,6 +771,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function inspectSpreadsheet(file: File | null): Promise<void> {
     if (!file) return;
+    setLocalError(null);
     setImportError(null);
     try { await onInspectImport(file); }
     catch (error) { setImportError(explain(error, "The spreadsheet could not be inspected.")); }
@@ -701,16 +779,28 @@ export function SheetShell(props: SheetShellProps) {
 
   async function importCandidate(): Promise<void> {
     const inspection = interop?.importInspection;
-    if (!inspection) return;
+    if (!inspection || importPending) return;
+    setImportError(null);
+    // Keep focus inside the modal before React disables the activated Import
+    // button for this non-abortable dispatched operation.
+    importPendingFocusRef.current?.focus();
+    setImportPending(true);
     const selection: ImportSelection = {
       column_types: importTypes as ImportSelection["column_types"],
       extra_columns: inspection.source.sheets.map(() => []),
     };
-    const accepted = await onImportCandidate(selection);
-    if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
+    try {
+      const accepted = await onImportCandidate(selection);
+      if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
+    } catch (error) {
+      setImportError(explain(error, "The import was not applied. Your source selection is still available."));
+    } finally {
+      setImportPending(false);
+    }
   }
 
   function cancelImport(): void {
+    if (importPending) return;
     setImportError(null);
     onCancelImport();
     // Wait for React to remove the dialog; focusing before that commit would
@@ -720,6 +810,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function prepareDownload(format: "csv" | "xlsx", trigger: HTMLButtonElement): Promise<void> {
     downloadTriggerRef.current = trigger;
+    setLocalError(null);
     if (await onPrepareDownload(format)) setDownloadFormat(format);
   }
 
@@ -741,13 +832,16 @@ export function SheetShell(props: SheetShellProps) {
     setCopyError(null);
     setLocalError(null);
     setCopyName("");
+    setCaptureCopyParentFailure(false);
     setCopyOpen(true);
   }
 
   function closeCopyDialog(): void {
+    if (copyPending) return;
     setCopyOpen(false);
     setCopyError(null);
     setCopyName("");
+    setCaptureCopyParentFailure(false);
     saveCopyButtonRef.current?.focus();
   }
 
@@ -758,11 +852,17 @@ export function SheetShell(props: SheetShellProps) {
       setCopyError("Correct the invalid report presentation text before creating a copy.");
       return;
     }
+    copyNameInputRef.current?.focus();
+    setCopyError(null);
+    copyParentMessageAtAttemptRef.current = message;
+    setCaptureCopyParentFailure(true);
     setCopyPending(true);
     setLocalError(null);
     try {
       const created = await onCreateCopy(name);
       if (created) {
+        setCaptureCopyParentFailure(false);
+        setCopyParentFailureMessage(null);
         setCopyOpen(false);
         setCopyError(null);
         setCopyName("");
@@ -799,6 +899,13 @@ export function SheetShell(props: SheetShellProps) {
   function keepEditing(): void {
     setCloseOpen(false);
     requestAnimationFrame(() => {
+      if (!view) {
+        const recoveryTrigger = recoveryCloseTriggerRef.current;
+        if (recoveryTrigger?.isConnected) {
+          recoveryTrigger.focus();
+          return;
+        }
+      }
       const prior = lastCellRef.current;
       if (prior?.isConnected && prior.closest('table[aria-label="Table"]')) {
         prior.focus();
@@ -844,7 +951,7 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
             </button>
-            <button type="button" className="ts-button ts-button--ghost" onClick={() => void requestClose()} disabled={busy || commitPending}>
+            <button type="button" className="ts-button ts-button--ghost" ref={recoveryCloseTriggerRef} onClick={() => void requestClose()} disabled={busy || commitPending}>
               Close and abandon recovery
             </button>
           </section>
@@ -1125,6 +1232,7 @@ export function SheetShell(props: SheetShellProps) {
             disabled={controlsLocked}
             value={editor.value}
             ref={focusEditorInput}
+            onDoubleClick={(event) => event.stopPropagation()}
             onChange={(event) => {
               const value = event.currentTarget.value;
               setLocalError(null);
@@ -1248,7 +1356,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Download</h2>
         <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
         <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button></div>
-        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">The download failed; the current work is still open and unsaved changes were preserved.</p> : null}
+        {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
   }
@@ -1549,38 +1657,42 @@ export function SheetShell(props: SheetShellProps) {
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
     >
-      {errorMessage ? (
+      {errorMessage && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
         <div className="ts-error" role="alert">
           {errorMessage}
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
       {copyOpen ? (
-        <Modal label="Save a copy" onCancel={closeCopyDialog}>
-          <h2 className="ts-h2">Save a copy</h2>
-          <p className="ts-subtle">Creates a new copy in this browser profile. It does not update an existing one.</p>
-          <label className="ts-field-label" htmlFor={copyNameId}>
-            Copy name
-          </label>
-          <input
-            id={copyNameId}
-            className="ts-text-input"
-            data-autofocus="true"
-            value={copyName}
-            aria-describedby={copyError ? copyErrorId : undefined}
-            onChange={(event) => {
-              setCopyError(null);
-              setCopyName(event.currentTarget.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !isComposingEvent(event)) {
-                event.preventDefault();
-                void createCopy();
-              }
-            }}
-          />
+        <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
+          <div className="ts-dialog-intro">
+            <h2 className="ts-h2">Save a copy</h2>
+            <p className="ts-subtle">Creates a new copy in this browser profile.<br />It does not update an existing one.</p>
+          </div>
+          <div className="ts-dialog-field">
+            <label className="ts-field-label" htmlFor={copyNameId}>Copy name</label>
+            <input
+              id={copyNameId}
+              className="ts-text-input"
+              ref={copyNameInputRef}
+              data-autofocus="true"
+              value={copyName}
+              readOnly={copyPending}
+              aria-describedby={copyError ? copyErrorId : undefined}
+              onChange={(event) => {
+                setCopyError(null);
+                setCopyName(event.currentTarget.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !isComposingEvent(event)) {
+                  event.preventDefault();
+                  void createCopy();
+                }
+              }}
+            />
+          </div>
           {copyError ? (
-            <p className="ts-dialog-error" id={copyErrorId}>
+            <p className="ts-dialog-error" id={copyErrorId} role="alert">
               {copyError}
             </p>
           ) : null}
@@ -1600,26 +1712,37 @@ export function SheetShell(props: SheetShellProps) {
               disabled={copyPending || copyName.trim() === "" || hasInvalidReportDraft}
               aria-busy={copyPending}
             >
-              Create copy
+              {copyPending ? "Working…" : "Create copy"}
             </button>
           </div>
         </Modal>
       ) : null}
       {interop?.importInspection ? (
-        <Modal label="Review import candidate" onCancel={cancelImport}>
-          <h2 className="ts-h2">Review import candidate</h2>
-          <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
-          {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint">No source-fidelity findings were reported for this candidate.</p>}
-          <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
-          {importError ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
-          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => void importCandidate()} disabled={controlsLocked}>Import candidate</button></div>
+        <Modal variant="import" label="Review import candidate" onCancel={cancelImport} dismissDisabled={importPending}>
+          <div className="ts-dialog-intro">
+            <h2
+              ref={importPendingFocusRef}
+              className="ts-h2"
+              tabIndex={interop.importInspection.source.ledger.length || importPending || Boolean(importError) ? 0 : -1}
+              data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
+            >Review import candidate</h2>
+            <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
+          </div>
+          <div className="ts-dialog-scroll">
+            {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No source-fidelity findings were reported for this candidate.</p>}
+            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
+          </div>
+          {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal label="Confirm download" onCancel={cancelDownload}><h2 className="ts-h2">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p>{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint">The exporter reported no fidelity findings for this output.</p>}<div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" data-autofocus="true" onClick={() => { void onDownload(downloadFormat).then((ok) => { if (ok) cancelDownload(); }); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
-        <Modal label="Unsaved work" onCancel={keepEditing}>
-          <h2 className="ts-h2">Unsaved work</h2>
-          <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+        <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
+          <div className="ts-dialog-intro">
+            <h2 className="ts-h2">Unsaved work</h2>
+            <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+          </div>
           <div className="ts-dialog-actions">
             <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
               Keep editing
@@ -1634,7 +1757,7 @@ export function SheetShell(props: SheetShellProps) {
   );
 }
 
-function Modal({ label, onCancel, children }: { label: string; onCancel: () => void; children: ReactNode }) {
+function Modal({ label, onCancel, children, variant = "review", dismissDisabled = false }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review"; dismissDisabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1649,7 +1772,7 @@ function Modal({ label, onCancel, children }: { label: string; onCancel: () => v
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      onCancel();
+      if (!dismissDisabled) onCancel();
       return;
     }
     if (event.key !== "Tab") return;
@@ -1673,12 +1796,12 @@ function Modal({ label, onCancel, children }: { label: string; onCancel: () => v
     <div
       className="ts-modal-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+        if (!dismissDisabled && event.target === event.currentTarget) onCancel();
       }}
     >
       <div
         ref={ref}
-        className="ts-modal"
+        className={`ts-modal ts-modal--${variant}`}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -1696,14 +1819,6 @@ function focusableElements(root: HTMLElement): HTMLElement[] {
       "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
     ),
   );
-}
-
-function focusEditorInput(node: HTMLInputElement | null): void {
-  if (!node) return;
-  if (node.ownerDocument.activeElement !== node) {
-    node.focus();
-    node.select();
-  }
 }
 
 function isComposingEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {

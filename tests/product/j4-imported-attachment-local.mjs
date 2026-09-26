@@ -57,11 +57,45 @@ async function waitForHomeOpen(page) {
 }
 
 async function importFixture(page) {
+  await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
   const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await dialog.waitFor();
+  const approvedPanel = await dialog.boundingBox();
+  assert.equal(Math.round(approvedPanel.width), 600, "import review uses the approved desktop panel width");
+  assert.equal(Math.round(approvedPanel.height), 584, "import review retains its approved content frame");
+  assert.equal(Math.round(approvedPanel.x), 456);
+  assert.equal(Math.round(approvedPanel.y), 199);
+  const importMaterial = await dialog.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
+  });
+  assert.equal(importMaterial.radius, "12px");
+  assert.equal(importMaterial.border, "rgb(223, 226, 234)");
+  assert.equal(importMaterial.shadow, "rgba(37, 39, 53, 0.24) 0px 16px 48px -12px");
+  const importActions = await dialog.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+    }),
+  );
+  assert.equal(importActions[0].x - Math.round(approvedPanel.x), 25);
+  assert.equal(importActions[0].width, 88);
+  assert.equal(importActions[1].x + importActions[1].width - Math.round(approvedPanel.x), 577);
+  assert.equal(importActions[1].width, 168);
+  assert.equal(importActions[0].height, 32);
   assert.match(await dialog.textContent(), /2 sheet\(s\)/, "the normal import review must expose both source sheets");
   const columns = dialog.locator("select");
+  await page.setViewportSize({ width: 320, height: 640 });
+  const compactPanel = await dialog.boundingBox();
+  assert.equal(Math.round(compactPanel.x), 16, "long import review stays inset on a phone");
+  assert.equal(Math.round(compactPanel.width), 288, "long import review fits a 320px viewport");
+  assert.ok(compactPanel.y >= 0 && compactPanel.y + compactPanel.height <= 640, "import panel stays within phone height");
+  const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
+  await importAction.focus();
+  const compactAction = await importAction.boundingBox();
+  assert.ok(compactAction.y >= 0 && compactAction.y + compactAction.height <= 640, `keyboard focus scrolls the import action into view: ${JSON.stringify({ compactPanel, compactAction, scrollTop: await dialog.evaluate((node) => node.scrollTop) })}`);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await columns.nth(2).selectOption("number");
   await columns.nth(4).selectOption("number");
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
@@ -299,11 +333,98 @@ try {
   assert.match(await page.getByLabel("Cross-table diagnostics", { exact: true }).textContent(), /lookup\.missing_key: PEN/);
 
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  await page.setViewportSize({ width: 1512, height: 982 });
+  const prepareXlsx = page.getByRole("button", { name: "Prepare XLSX", exact: true });
+  await prepareXlsx.click();
+  const downloadReview = page.getByRole("dialog", { name: "Confirm download", exact: true });
+  const downloadPanel = await downloadReview.boundingBox();
+  assert.equal(Math.round(downloadPanel.width), 600, "download review uses the approved desktop panel width");
+  assert.equal(Math.round(downloadPanel.height), 360, "download review retains its approved content frame");
+  assert.equal(Math.round(downloadPanel.x), 456);
+  assert.equal(Math.round(downloadPanel.y), 311);
+  const downloadMaterial = await downloadReview.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
+  });
+  assert.deepEqual(downloadMaterial, {
+    radius: "12px",
+    border: "rgb(223, 226, 234)",
+    shadow: "rgba(37, 39, 53, 0.24) 0px 16px 48px -12px",
+  });
+  const downloadActions = await downloadReview.locator(".ts-dialog-actions > button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+    }),
+  );
+  assert.equal(downloadActions[0].x - Math.round(downloadPanel.x), 25);
+  assert.equal(downloadActions[0].width, 88);
+  assert.equal(downloadActions[1].x + downloadActions[1].width - Math.round(downloadPanel.x), 577);
+  assert.equal(downloadActions[1].width, 120);
+  assert.equal(downloadActions[0].height, 32);
+
+  const cancelledDesktopDownload = page.waitForEvent("download", { timeout: 250 }).then(() => false).catch(() => true);
+  await downloadReview.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(await cancelledDesktopDownload, true, "desktop cancellation does not download the reviewed file");
+  await downloadReview.waitFor({ state: "detached" });
+  assert.equal(await prepareXlsx.evaluate((element) => element === document.activeElement), true, "desktop cancel returns focus to Prepare XLSX");
+
+  await page.setViewportSize({ width: 320, height: 300 });
+  await prepareXlsx.click();
+  await downloadReview.waitFor();
+  const shortDownloadPanel = await downloadReview.boundingBox();
+  assert.ok(shortDownloadPanel.height <= 252 && shortDownloadPanel.y >= 0 && shortDownloadPanel.y + shortDownloadPanel.height <= 300, `short Download dialog stays within the viewport: ${JSON.stringify(shortDownloadPanel)}`);
+  const downloadHeading = downloadReview.getByRole("heading", { name: "Review and download XLSX", exact: true });
+  assert.equal(await downloadHeading.evaluate((heading) => heading === document.activeElement), true, "short Download opens with its review heading focused");
+  const downloadExplanation = downloadReview.locator(".ts-dialog-intro p");
+  const explanationBox = await downloadExplanation.boundingBox();
+  assert.ok(explanationBox && explanationBox.y >= shortDownloadPanel.y && explanationBox.y + explanationBox.height <= shortDownloadPanel.y + shortDownloadPanel.height, `Download consent explanation is visible on first short-viewport open: ${JSON.stringify({ shortDownloadPanel, explanationBox })}`);
+  const firstExportWarning = downloadReview.locator(".ts-dialog-scroll .ts-ledger li").first();
+  assert.notEqual((await firstExportWarning.textContent())?.trim(), "", "the real exporter supplied a warning for the short review");
+  const firstWarningBox = await firstExportWarning.boundingBox();
+  assert.ok(firstWarningBox && firstWarningBox.y >= shortDownloadPanel.y && firstWarningBox.y < shortDownloadPanel.y + shortDownloadPanel.height, `first producer warning begins in the initial short-viewport frame: ${JSON.stringify({ shortDownloadPanel, firstWarningBox })}`);
+  const shortDownloadScroll = await downloadReview.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    scrollTop: element.scrollTop,
+    overflowY: getComputedStyle(element).overflowY,
+    contentOverflowY: getComputedStyle(element.querySelector(".ts-dialog-scroll")).overflowY,
+  }));
+  assert.ok(shortDownloadScroll.scrollHeight > shortDownloadScroll.clientHeight, `short Download uses parent scrolling: ${JSON.stringify(shortDownloadScroll)}`);
+  assert.equal(shortDownloadScroll.overflowY, "auto");
+  assert.equal(shortDownloadScroll.contentOverflowY, "visible", "short Download exposes review content to parent scrolling");
+  assert.equal(shortDownloadScroll.scrollTop, 0, "initial Download focus preserves the top of the review before consent");
+  const downloadButton = downloadReview.getByRole("button", { name: "Download", exact: true });
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await downloadButton.evaluate((element) => element === document.activeElement), true, "Shift+Tab from Download heading remains trapped on the final consent action");
+  await page.keyboard.press("Tab");
+  assert.equal(await downloadHeading.evaluate((element) => element === document.activeElement), true, "Tab from final consent action wraps to Download heading");
+  await page.keyboard.press("Tab");
+  const cancelDownload = downloadReview.getByRole("button", { name: "Cancel", exact: true });
+  assert.equal(await cancelDownload.evaluate((element) => element === document.activeElement), true, "Tab from Download heading reaches Cancel before consent");
+  const noCancelledShortDownload = page.waitForEvent("download", { timeout: 250 }).then(() => false).catch(() => true);
+  await cancelDownload.click();
+  assert.equal(await noCancelledShortDownload, true, "short-viewport pointer cancellation does not download");
+  await downloadReview.waitFor({ state: "detached" });
+  assert.equal(await prepareXlsx.evaluate((element) => element === document.activeElement), true, "short Download cancel returns focus to Prepare XLSX");
+
+  await prepareXlsx.click();
+  await downloadReview.waitFor();
+  assert.equal(await downloadHeading.evaluate((element) => element === document.activeElement), true, "reopened short Download again begins at its heading");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  assert.equal(await downloadButton.evaluate((element) => element === document.activeElement), true, "keyboard reaches Download consent after Cancel");
+  const [shortDownloadAction, scrolledDownloadPanel] = await Promise.all([
+    downloadButton.boundingBox(),
+    downloadReview.boundingBox(),
+  ]);
+  assert.ok(shortDownloadAction && shortDownloadPanel.y <= shortDownloadAction.y && shortDownloadAction.y + shortDownloadAction.height <= shortDownloadPanel.y + shortDownloadPanel.height, `Download consent action scrolls into the short dialog: ${JSON.stringify({ initialPanel: shortDownloadPanel, currentPanel: scrolledDownloadPanel, action: shortDownloadAction, scroll: await downloadReview.evaluate((element) => ({ scrollTop: element.scrollTop, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, overflowY: getComputedStyle(element).overflowY })) })}`);
+  assert.ok(await downloadReview.evaluate((element) => element.scrollTop > 0), "keyboard focus scrolls the short Download dialog to its consent action");
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
-  await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();
+  await page.keyboard.press("Enter");
   const exported = path.join(fixtureDirectory, "reopened-export.xlsx");
   await (await downloaded).saveAs(exported);
+  await page.setViewportSize({ width: 1512, height: 982 });
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   // The exported source is now independent evidence. If the reopened project
   // is still dirty, take the normal explicit close path before importing it.

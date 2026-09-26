@@ -22,6 +22,8 @@ import type {
 } from "../../public/core-kit/runtime/interop-protocol.js";
 import {
   UnknownOperationOutcomeError,
+  bindingCatalogContainsDate,
+  DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CoreKit,
   type FieldTarget,
   type KitLoader,
@@ -599,7 +601,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       const create = capability(client.createKeyedGroupedSum, "keyed grouped-summary creation");
-      const { tables } = await bindingCatalog(kit, client, expected, live.revision);
+      const { catalog, tables } = await bindingCatalog(kit, client, expected, live.revision);
+      if (bindingCatalogContainsDate(catalog)) {
+        throw new Error(DATE_SUMMARY_UNSUPPORTED_MESSAGE);
+      }
       const orders = selectedTable(tables, binding.ordersCollection);
       const products = selectedTable(tables, binding.productsCollection);
       let published;

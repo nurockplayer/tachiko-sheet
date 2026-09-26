@@ -62,7 +62,7 @@
 
 - 必須選擇 workload、memory/latency threshold、viewport/overscan value、LOD user-visible behavior或新的 acceptance outcome；**回 ChatGPT Steward**。
 - 必須新增或改變 bounded projection、invalidation、Worker/WASM transport、semantic calculation或 public API；**回既有 upstream owner**，並重讀 live upstream authority。
-- 必須改 Sheet source、tests、dependency、host persistence、core pin或任何 acceptance oracle；建立另一個具體 child，重新檢查 Ready/owner/independent adequacy，並依 live DELIVERY 處理真正困難或高風險架構選擇的可選唯讀 Astra consultation。
+- 必須改 Sheet source、tests、dependency、host persistence、core pin或任何 acceptance oracle；建立另一個具體 child，重新檢查 Ready/owner/independent adequacy，並遵守 live #1 的 mandatory Astra／conditional Pro triggers：必要 Astra advice 在凍結決策或指派前取得，必要 Pro advice 在實作前取得；若必要 Pro 不可用，記錄 HOLD 與 exact unresolved question。binding triggers 之外，Astra advice 為可選唯讀建議。
 - 有任一 `UNVERIFIED` 被誤呈為 supported、current、saved、accessible、performant或 equivalent；保留為 blocking evidence gap。
 
 完成 #36 只表示本表可追溯、缺口與 owner 已明列、且未新增承諾。它**不**關閉 #19，不使 source lane Ready，不是 benchmark PASS，也不解除 J5 P2-B、#7 或 #16 的 gate。
