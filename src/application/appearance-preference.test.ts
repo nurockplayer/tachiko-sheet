@@ -7,12 +7,38 @@ import {
   type RawAppearancePreferencePort,
 } from "./appearance-preference.js";
 import { APPEARANCE_PROFILE_IDS as modelProfileIds } from "./appearance-model.js";
-import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "../ui/interface-profile/profile.js";
+import {
+  TACHIKO_COMPACT_PORCELAIN_PROFILE,
+  type InterfaceProfileV1,
+} from "../ui/interface-profile/profile.js";
 
 const v1 = (profileId = "familiar-spreadsheet", density = "comfortable") =>
   JSON.stringify({ schemaVersion: 1, profileId, density });
 const v2BuiltIn = (profileId = "minimal-focus", density = "comfortable") =>
   JSON.stringify({ schemaVersion: 2, kind: "built-in", profileId, density });
+
+const formerlyAdmittedPressedUnsafeV2 = () => {
+  const safe = TACHIKO_COMPACT_PORCELAIN_PROFILE;
+  const profile: InterfaceProfileV1 = {
+    ...safe,
+    chrome: "structured",
+    colors: {
+      ...safe.colors,
+      "surface.chrome": "#FFFFFF",
+      "surface.chrome.tint": "#FFFFFF",
+      "surface.content": "#FFFFFF",
+      "surface.inset": "#FAFAFA",
+      "grid.canvas": "#FFFFFF",
+      "grid.header.background": "#FFFFFF",
+      "selection.row.background": "#FFFFFF",
+      "selection.active.background": "#FFFFFF",
+      "selection.header.background": "#FFFFFF",
+      "accent.background": "#FFFFFF",
+      "text.primary": "#707070",
+    },
+  };
+  return JSON.stringify({ schemaVersion: 2, kind: "imported", profile });
+};
 
 function memoryPort(v2: string | null = null, legacy: string | null = null) {
   let currentV2 = v2;
@@ -76,6 +102,19 @@ describe("application appearance preference", () => {
     expect(controller.getSnapshot().selection).toEqual(DEFAULT_APPEARANCE_CHOICE);
     expect(controller.getSnapshot().notice).toBe("invalid-preference");
     expect(storage.writes).toEqual([]);
+  });
+
+  it("falls back without rewriting a formerly admitted v2 profile unsafe for pressed controls", () => {
+    const rawPersistedV2 = formerlyAdmittedPressedUnsafeV2();
+    const storage = memoryPort(rawPersistedV2, v1("familiar-spreadsheet", "comfortable"));
+    const applied: AppearanceChoice[] = [];
+    const controller = createAppearancePreferenceController(storage.port, (choice) => applied.push(choice));
+
+    expect(controller.getSnapshot().selection).toEqual(DEFAULT_APPEARANCE_CHOICE);
+    expect(controller.getSnapshot().notice).toBe("invalid-preference");
+    expect(applied).toEqual([DEFAULT_APPEARANCE_CHOICE]);
+    expect(storage.writes).toEqual([]);
+    expect(storage.readV2()).toBe(rawPersistedV2);
   });
 
   it("reports unavailable storage and still applies the fallback", () => {

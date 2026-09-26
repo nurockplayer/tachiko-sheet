@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SHARED_CONTROL_PRESSED_SURFACE } from "../application/interface-profile-safety.js";
 import {
   PRIVATE_CSS_VARIABLES,
   TACHIKO_COMPACT_PORCELAIN_PROFILE,
@@ -47,6 +48,30 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain("forced-color-adjust: none;");
     expect(css).toContain(".ts-button:disabled {");
     expect(css).not.toContain(".ts-header-actions .ts-button--primary:not(:disabled)");
+  });
+
+  it("uses the shared workbook control state recipe", () => {
+    const pressedSurface = css.match(/--ts-surface-head:\s*(#[0-9a-f]{6});/i)?.[1];
+    expect(pressedSurface?.toUpperCase()).toBe(SHARED_CONTROL_PRESSED_SURFACE);
+    expect(css).toContain("border: 1px solid var(--ts-line);");
+    const genericHover = css.match(/\.ts-button:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const genericPressed = css.match(/\.ts-button:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const dangerHover = css.match(/\.ts-button--danger:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const dangerPressed = css.match(/\.ts-button--danger:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    expect(genericHover).not.toContain("border-color:");
+    expect(genericPressed).toContain("background: var(--ts-surface-head);");
+    expect(genericPressed).not.toContain("border-color:");
+    expect(dangerHover).not.toContain("border-color:");
+    expect(dangerPressed).toContain("background: var(--ts-protected-destructive-pressed);");
+    expect(dangerPressed).not.toContain("border-color:");
+    expect(css).toContain("--ts-protected-destructive-pressed: #eceef4;");
+    expect(css).toContain(".ts-button[data-ts-held]:not(:disabled)::after");
+    expect(css).toContain("inset: 1px;");
+    expect(css).toContain("border: 2px solid currentColor;");
+    expect(css).toContain("border-radius: max(0px, calc(var(--ts-radius) - 2px));");
+    expect(css).toContain(".ts-button--ghost {\n  background: transparent;\n  border-color: transparent;");
+    expect(css).toContain(`.ts-button--ghost:hover:not(:disabled),\n.ts-button--ghost:active:not(:disabled) {\n  border-color: var(--ts-line-strong);\n}`);
+    expect(css).toContain(".ts-app .ts-button--ghost:hover:not(:disabled),\n  .ts-app .ts-button--ghost:active:not(:disabled) { border-color: ButtonText; }");
   });
 
   it("keeps public profile bindings private and wires the approved role mappings", () => {

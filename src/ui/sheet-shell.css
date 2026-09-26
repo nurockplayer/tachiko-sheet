@@ -41,6 +41,7 @@
   --ts-protected-disabled-foreground: #8c949c;
   --ts-protected-destructive-foreground: #8a2f1c;
   --ts-protected-destructive-border: #b4553f;
+  --ts-protected-destructive-pressed: #eceef4;
   --ts-warn: #865015;
   --ts-warn-bg: #fff3dd;
   --ts-error-ink: #a02d42;
@@ -302,6 +303,24 @@ body { margin: 0; }
   background: var(--ts-surface-sunken);
 }
 
+.ts-button:active:not(:disabled) {
+  background: var(--ts-surface-head);
+}
+
+.ts-button[data-ts-held]:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  /* Absolute positioning starts at the button padding edge, inside its 1px border. */
+  inset: 1px;
+  border: 2px solid currentColor;
+  border-radius: max(0px, calc(var(--ts-radius) - 2px));
+  pointer-events: none;
+}
+
+.ts-button[data-ts-held]:not(:disabled) {
+  position: relative;
+}
+
 .ts-button:disabled {
   cursor: not-allowed;
   color: var(--ts-protected-disabled-foreground);
@@ -336,8 +355,18 @@ body { margin: 0; }
   background: var(--ts-protected-surface-inset);
 }
 
+.ts-button--danger:active:not(:disabled) {
+  background: var(--ts-protected-destructive-pressed);
+}
+
 .ts-button--ghost {
   background: transparent;
+  border-color: transparent;
+}
+
+.ts-button--ghost:hover:not(:disabled),
+.ts-button--ghost:active:not(:disabled) {
+  border-color: var(--ts-line-strong);
 }
 
 .ts-app :focus-visible {
@@ -1347,6 +1376,8 @@ body { margin: 0; }
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
+  .ts-app .ts-button--ghost:hover:not(:disabled),
+  .ts-app .ts-button--ghost:active:not(:disabled) { border-color: ButtonText; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
   .ts-app .ts-button--primary:not(:disabled) {
     background: Highlight;

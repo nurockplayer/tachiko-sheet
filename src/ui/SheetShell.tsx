@@ -122,6 +122,50 @@ function availableGridScrollHeight(gridTop: number, panelBottom: number): number
   return Math.max(0, Math.floor(panelBottom - gridTop));
 }
 
+function sharedButtonFromTarget(target: EventTarget | null): HTMLButtonElement | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLButtonElement>(".ts-app .ts-button");
+}
+
+type SharedButtonPointerOwner = { button: HTMLButtonElement; pointerId: number };
+
+function sharedButtonIsEligible(button: HTMLButtonElement): boolean {
+  return !button.disabled && button.getAttribute("aria-disabled") !== "true" && button.getAttribute("aria-busy") !== "true";
+}
+
+function holdSharedButton(target: EventTarget | null): HTMLButtonElement | null {
+  const button = sharedButtonFromTarget(target);
+  if (!button || !sharedButtonIsEligible(button)) return null;
+  button.setAttribute("data-ts-held", "");
+  return button;
+}
+
+function clearOwnedSharedPointer(ownerRef: { current: SharedButtonPointerOwner | null }, pointerId?: number): void {
+  const owner = ownerRef.current;
+  if (!owner || (pointerId !== undefined && owner.pointerId !== pointerId)) return;
+  owner.button.removeAttribute("data-ts-held");
+  ownerRef.current = null;
+}
+
+function releaseSharedButton(target: EventTarget | null, ownerRef: { current: SharedButtonPointerOwner | null }): void {
+  const button = sharedButtonFromTarget(target);
+  button?.removeAttribute("data-ts-held");
+  if (button && ownerRef.current?.button === button) clearOwnedSharedPointer(ownerRef);
+}
+
+function releaseSharedKeyboardButton(target: EventTarget | null, ownerRef: { current: SharedButtonPointerOwner | null }): void {
+  const button = sharedButtonFromTarget(target);
+  if (button && ownerRef.current?.button === button) return;
+  button?.removeAttribute("data-ts-held");
+}
+
+function clearHeldSharedButtons(ownerRef: { current: SharedButtonPointerOwner | null }): void {
+  clearOwnedSharedPointer(ownerRef);
+  document.querySelectorAll<HTMLButtonElement>(".ts-app .ts-button[data-ts-held]").forEach((button) => {
+    button.removeAttribute("data-ts-held");
+  });
+}
+
 export function SheetShell(props: SheetShellProps) {
   const {
     view,
@@ -162,6 +206,7 @@ export function SheetShell(props: SheetShellProps) {
     onExportReportPng = () => false,
     onRemoveReport = () => false,
   } = props;
+  const heldPointerOwnerRef = useRef<SharedButtonPointerOwner | null>(null);
 
   const [appearanceSnapshot, setAppearanceSnapshot] = useState(() =>
     props.appearancePreference.getSnapshot(),
@@ -514,6 +559,20 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     onDraftChangeRef.current(draftActive);
   }, [draftActive]);
+
+  useEffect(() => {
+    const onPointerTermination = (event: PointerEvent) => clearOwnedSharedPointer(heldPointerOwnerRef, event.pointerId);
+    const onWindowBlur = () => clearHeldSharedButtons(heldPointerOwnerRef);
+    window.addEventListener("blur", onWindowBlur);
+    document.addEventListener("pointerup", onPointerTermination, true);
+    document.addEventListener("pointercancel", onPointerTermination, true);
+    return () => {
+      window.removeEventListener("blur", onWindowBlur);
+      document.removeEventListener("pointerup", onPointerTermination, true);
+      document.removeEventListener("pointercancel", onPointerTermination, true);
+      clearHeldSharedButtons(heldPointerOwnerRef);
+    };
+  }, []);
 
   useEffect(() => {
     onReportDraftChangeRef.current(hasInvalidReportDraft);
@@ -1656,6 +1715,36 @@ export function SheetShell(props: SheetShellProps) {
       data-view={view ? "workbook" : "home"}
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
+      onPointerDownCapture={(event) => {
+        if (event.button !== 0 || !event.isPrimary) return;
+        clearOwnedSharedPointer(heldPointerOwnerRef);
+        const button = holdSharedButton(event.target);
+        if (button) heldPointerOwnerRef.current = { button, pointerId: event.pointerId };
+      }}
+      onPointerOverCapture={(event) => {
+        const owner = heldPointerOwnerRef.current;
+        if (!owner || event.pointerId !== owner.pointerId || !event.isPrimary || (event.buttons & 1) !== 1) return;
+        if (sharedButtonFromTarget(event.target) !== owner.button) return;
+        if (sharedButtonIsEligible(owner.button)) owner.button.setAttribute("data-ts-held", "");
+        else clearOwnedSharedPointer(heldPointerOwnerRef, event.pointerId);
+      }}
+      onPointerOutCapture={(event) => {
+        const owner = heldPointerOwnerRef.current;
+        const button = sharedButtonFromTarget(event.target);
+        const next = event.relatedTarget;
+        if (!owner || !button || owner.button !== button || owner.pointerId !== event.pointerId || !event.isPrimary) return;
+        if (next instanceof Node && button.contains(next)) return;
+        button.removeAttribute("data-ts-held");
+        if ((event.buttons & 1) !== 1) clearOwnedSharedPointer(heldPointerOwnerRef, event.pointerId);
+      }}
+      onKeyDownCapture={(event) => {
+        if (!event.defaultPrevented && (event.key === "Enter" || event.key === " ")) holdSharedButton(event.target);
+      }}
+      onKeyUpCapture={(event) => {
+        if (event.key === "Enter" || event.key === " ") releaseSharedKeyboardButton(event.target, heldPointerOwnerRef);
+      }}
+      onClickCapture={(event) => releaseSharedButton(event.target, heldPointerOwnerRef)}
+      onBlurCapture={(event) => releaseSharedButton(event.target, heldPointerOwnerRef)}
     >
       {errorMessage && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
         <div className="ts-error" role="alert">

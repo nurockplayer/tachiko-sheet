@@ -52,6 +52,41 @@ describe("interface profile contrast admission", () => {
     }
   });
 
+  it("admits the actual content/inset text pairs but rejects the fixed shared-control pressed use", () => {
+    const base = builtIn("tachiko", "compact");
+    const profile: InterfaceProfileV1 = {
+      ...mutant(base, {
+        "surface.chrome": "#FFFFFF",
+        "surface.chrome.tint": "#FFFFFF",
+        "surface.content": "#FFFFFF",
+        "surface.inset": "#FAFAFA",
+        "grid.canvas": "#FFFFFF",
+        "grid.header.background": "#FFFFFF",
+        "selection.row.background": "#FFFFFF",
+        "selection.active.background": "#FFFFFF",
+        "selection.header.background": "#FFFFFF",
+        "accent.background": "#FFFFFF",
+        "text.primary": "#707070",
+      }),
+      chrome: "structured",
+    };
+
+    expect(contrastRatio(profile.colors["text.primary"], profile.colors["surface.content"])).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(profile.colors["text.primary"], profile.colors["surface.inset"])).toBeGreaterThanOrEqual(4.5);
+    const result = admitInterfaceProfileContrast(profile);
+    expect(matchingContext(result, /text\.primary text on shared control pressed surface/)).toEqual([
+      expect.objectContaining({
+        foreground: "#707070",
+        background: "#ECEEF4",
+        required: 4.5,
+      }),
+    ]);
+    if (result.ok) throw new Error("Expected the fixed shared-control pressed text pair to reject this profile");
+    expect(result.errors.every((error) =>
+      "context" in error && error.context === "text.primary text on shared control pressed surface",
+    )).toBe(true);
+  });
+
   it("revalidates malformed input and safely reports uninspectable values", () => {
     const malformed = admitInterfaceProfileContrast({ schemaVersion: 1, colors: {} });
     expect(malformed.ok).toBe(false);
