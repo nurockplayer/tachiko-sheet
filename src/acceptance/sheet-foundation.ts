@@ -286,8 +286,12 @@ function instrumentClient(client: PublicClient): PublicClient {
           const loseReplyAfterDispatch = importReplyAfterDispatchFaultArmed;
           importReplyAfterDispatchFaultArmed = false;
           importSpreadsheetDispatchCount += 1;
-          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
-          await importApplicationGate.pause();
+          let result: unknown;
+          try {
+            result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          } finally {
+            await importApplicationGate.pause();
+          }
           if (loseReplyAfterDispatch) {
             throw new UnknownOperationOutcomeError("The dispatched import reply was lost after the real transport replied.");
           }
