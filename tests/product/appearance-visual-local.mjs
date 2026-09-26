@@ -346,6 +346,8 @@ async function auditSelectedProfileRadioPaint(page, tag) {
 }
 
 async function geometry(page, width, combo) {
+  // Profile attributes can update before the observer-derived grid height; let its two-frame measurement settle before sampling.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const result = await page.evaluate(() => {
     const root = document.documentElement;
     const rows = [...document.querySelectorAll(".ts-grid tbody tr")].slice(0, 2).map((row) => row.getBoundingClientRect().top);
