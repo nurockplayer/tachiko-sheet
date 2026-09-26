@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import {
   UnknownOperationOutcomeError,
+  bindingCatalogContainsDate,
+  DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CanonicalProjectFile,
   type Currentness,
   type FieldTarget,
@@ -1157,9 +1159,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setSaveStatus("saving");
     try {
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
+      const catalog = await runtime.listKeyedGroupedSumBindings(witnessOf(live));
+      const hasDateColumn = bindingCatalogContainsDate(catalog);
       let snapshotRevision: string;
       let receipt;
-      if (definitionBearing) {
+      if (definitionBearing || hasDateColumn) {
         const snapshot = await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
         const configuredReport = reportRef.current;
@@ -1241,8 +1245,16 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const priorOccurrence = witness.occurrence;
     const priorRevision = witness.revision;
     let published = false;
+    let creationStarted = false;
     try {
       setMessage(null);
+      const catalog = await runtime.listKeyedGroupedSumBindings(witness);
+      if (bindingCatalogContainsDate(catalog)) {
+        setMessage(DATE_SUMMARY_UNSUPPORTED_MESSAGE);
+        setOutcome("idle");
+        return false;
+      }
+      creationStarted = true;
       setCurrentness("pending");
       clearJ4Results();
       await runtime.createKeyedGroupedSum(witness, binding);
@@ -1259,6 +1271,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setOutcome("idle");
       return true;
     } catch (error) {
+      if (!creationStarted) {
+        setOutcome("idle");
+        setMessage(describe(error, "The current tables could not be checked before creating the cross-table summary."));
+        return false;
+      }
       if (published) {
         failClosedAfterPublicationRecovery();
         return true;

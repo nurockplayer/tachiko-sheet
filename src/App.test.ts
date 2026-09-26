@@ -11,7 +11,12 @@ import {
   settledSaveStatus,
   startInitialExampleOnce,
 } from "./App.js";
-import { reportPresentationLimitViolation, reportPresentationTextLimitViolation } from "./contracts.js";
+import {
+  bindingCatalogContainsDate,
+  DATE_SUMMARY_UNSUPPORTED_MESSAGE,
+  reportPresentationLimitViolation,
+  reportPresentationTextLimitViolation,
+} from "./contracts.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
 
 describe("completed copy save status", () => {
@@ -20,6 +25,28 @@ describe("completed copy save status", () => {
     expect(settledSaveStatus("saving", "revision-1", "revision-1", false)).toBe("saved");
     expect(settledSaveStatus("saving", "revision-1", "revision-2", false)).toBe("not-saved");
     expect(settledSaveStatus("failed", "revision-1", "revision-1", false)).toBe("failed");
+  });
+});
+
+describe("Date schema admission", () => {
+  it("finds Date in selected or unrelated collections, including a schema with no rows", () => {
+    expect(bindingCatalogContainsDate({ collections: [
+      { key: "orders", fields: [{ key: "when", fieldType: "date" }] },
+    ] })).toBe(true);
+    expect(bindingCatalogContainsDate({ collections: [
+      { key: "orders", fields: [{ key: "quantity", fieldType: "number" }] },
+      { key: "unrelated-empty-table", fields: [{ key: "when", fieldType: "date" }] },
+    ] })).toBe(true);
+  });
+
+  it("keeps non-Date types, including reference, admissible", () => {
+    expect(bindingCatalogContainsDate({ collections: [
+      { key: "orders", fields: [
+        { key: "quantity", fieldType: "number" },
+        { key: "product", fieldType: "reference" },
+      ] },
+    ] })).toBe(false);
+    expect(DATE_SUMMARY_UNSUPPORTED_MESSAGE).toMatch(/Date column/);
   });
 });
 
