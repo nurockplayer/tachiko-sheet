@@ -127,7 +127,8 @@ const cases = [
     const position = await input.evaluate((node) => {
       const style = getComputedStyle(node);
       const context = document.createElement("canvas").getContext("2d");
-      context.font = style.font;
+      // Computed font shorthand may be empty with font-variant-numeric.
+      context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
       return { x: parseFloat(style.paddingLeft) + context.measureText("abc d").width, y: node.clientHeight / 2 };
     });
     await input.dblclick({ position });

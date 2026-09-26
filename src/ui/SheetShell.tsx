@@ -1232,6 +1232,7 @@ export function SheetShell(props: SheetShellProps) {
             disabled={controlsLocked}
             value={editor.value}
             ref={focusEditorInput}
+            onDoubleClick={(event) => event.stopPropagation()}
             onChange={(event) => {
               const value = event.currentTarget.value;
               setLocalError(null);
