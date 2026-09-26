@@ -4,7 +4,7 @@ Status: **operational guidance, not authority**.
 
 There is **no single linear authority chain**. Apply the scoped authority model from `docs/DELIVERY.md`: accepted upstream semantic/storage/authorization authority constrains Sheet; live #1 owns the Mission/product boundary; `docs/DELIVERY.md` owns Sheet-local delivery policy; the active Issue/PR owns its bounded implementation/acceptance contract inside those authorities; and #2 is **operational handoff state only** and cannot override policy, semantics, acceptance, or the owning Issue/PR. `AGENTS.md` / `docs/MVP-EXECUTION.md` are entry and execution guidance within those authorities. This playbook records repeatable operating practice learned from completed delivery work. When it conflicts with any governing authority in its scope, that authority wins.
 
-The completed #70 / PR #83 run is the main historical case study because it exercised Figma authoring, serial worker ownership, CI failure diagnosis, multiple Final Candidate invalidations, repeated independent-review blockers, root-cause escalation, Oracle transport trouble, review-thread cleanup and normal protected merge.
+The completed #70 / PR #83 run is the main historical case study because it exercised Figma authoring, serial worker ownership, CI failure diagnosis, multiple Final Candidate invalidations, repeated independent-review blockers, root-cause escalation, Oracle transport trouble, review-thread cleanup and normal protected merge. The later seven-hour mission is summarized in [`SCD-RETROSPECTIVE-2026-09-24.md`](SCD-RETROSPECTIVE-2026-09-24.md) as additional historical evidence about long-run continuity, waiting cost and reviewer routing.
 
 ## 1. Start from live state, not session memory
 
@@ -198,10 +198,12 @@ If source/test behavior changes, establish a new HEAD and rerun the applicable e
 
 ## 9. Oracle is a final reviewer, not a linter or progress meter
 
-Use one fresh, independent Oracle latest Extra High session only after the candidate is stable.
+Use one fresh, independent **Oracle latest Extra High** session only after the candidate is stable. Sheet's default execution route is the qualified **ego-lite → Oracle** transport. Finish deterministic/hosted gates first; ego-lite changes transport only and does not lower the required Extra High review effort.
 
 Required behavior:
 
+- use ego-lite by default rather than launching the browser Oracle path directly;
+- verify requested/effective reviewer model and **Extra High** effort fail-closed before granting review credit;
 - attach the exact HEAD/base and complete relevant diff/context;
 - require every valid blocking finding with its appropriate priority and concrete evidence, including trigger/file/line when applicable;
 - require literal terminal verdict `No blocking findings.` only when there are no blockers;
@@ -221,7 +223,7 @@ If the browser/transport loses the response, distinguish:
 - **review content existed and can be recovered read-only**: inspect the complete recovered response and treat its findings normally;
 - **no complete recoverable verdict exists**: mark review incomplete and keep merge blocked.
 
-Tool failure is not `No blocking findings.`.
+Tool failure is not `No blocking findings.`. Direct browser transport is a fallback/debug path only when the qualified ego-lite path is unavailable or being repaired, and its use must be recorded; it does not lower any gate or the required Extra High effort. GPT-6 Pro remains separate judgment capacity, never an implicit reviewer fallback.
 
 ## 10. Convert reviewer counterexamples into regression evidence
 
@@ -335,6 +337,7 @@ These links are examples only; they do not override live policy:
 - #72 writable Figma bridge qualification: https://github.com/nurockplayer/tachiko-sheet/issues/72
 - #70 Interface Profile interchange design + implementation record: https://github.com/nurockplayer/tachiko-sheet/issues/70
 - PR #83 final product lane: https://github.com/nurockplayer/tachiko-sheet/pull/83
+- #109 seven-hour retrospective / ego-lite routing update: https://github.com/nurockplayer/tachiko-sheet/issues/109
 - #44 continuing Figma-authority workflow: https://github.com/nurockplayer/tachiko-sheet/issues/44
 
 For current state always return to #1, #2 and the active Issue/PR.
