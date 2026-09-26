@@ -127,7 +127,7 @@ Reviewer transport is optimized after deterministic gates, but the review effort
 
 - every Final Candidate uses fresh independent Oracle latest **Extra High** under current Sheet authority;
 - **ego-lite → Oracle** is the default transport;
-- architecture/product judgment uses the separate Astra/Pro/Opus consultation rules, not an implicit Oracle fallback.
+- architecture/product judgment uses the separate Astra/Pro consultation rules, not an implicit Oracle fallback.
 
 ego-lite is transport/configuration, not workflow-domain authority.
 
