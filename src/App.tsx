@@ -1159,8 +1159,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setSaveStatus("saving");
     try {
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const catalog = await runtime.listKeyedGroupedSumBindings(witnessOf(live));
-      const hasDateColumn = bindingCatalogContainsDate(catalog);
+      const hasDateColumn = definitionBearing
+        ? false
+        : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
       let snapshotRevision: string;
       let receipt;
       if (definitionBearing || hasDateColumn) {
