@@ -85,7 +85,7 @@ Preferred behavior:
 - keep the candidate immutable during final review;
 - use waiting time only for non-mutating work that cannot create a competing writer or invalidate reviewer independence;
 - do not start a duplicate Oracle session because one is slow;
-- if no other Ready production lane exists, STOP truthfully.
+- pending CI/review/worker activity is not a terminal closeout; after the current lane reaches terminal closeout or is explicitly blocked and released, STOP truthfully if no genuinely Ready successor exists.
 
 ## Context and handoff lessons
 

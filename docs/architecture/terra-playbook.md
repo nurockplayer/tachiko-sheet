@@ -6,7 +6,7 @@
 
 既有 [DELIVERY](../DELIVERY.md)、live #1、#2、active Issue/PR 與 [UPSTREAM](../UPSTREAM.md) 維持權威。角色、諮詢與 final review 依 live DELIVERY；本文不複製一份可獨立修改的 SCD 政策。
 
-Sol 是唯一 Mission Lead 與 delivery owner；架構文件已描述的方向，不等於作者代替 Sol 或 Steward 做過決定。後續新的資料型別、拆分取捨、gate tool、行為／相容性決策仍須依 DELIVERY 記錄並遵守 Steward authority。真正困難或高風險架構選擇可取得 read-only Astra consultation，由 Sol 作最終工程決定；已獲准的機械執行不需要每行／每 commit 重新問。
+Sol 是唯一 Mission Lead 與 delivery owner；架構文件已描述的方向，不等於作者代替 Sol 或 Steward 做過決定。後續新的資料型別、拆分取捨、gate tool、行為／相容性決策仍須依 DELIVERY 記錄並遵守 Steward authority。凍結決策或指派實作前，依 live #1 的 mandatory Astra 與 conditional Pro triggers；必要 Astra advice 必須在決策凍結／指派前取得，必要 Pro advice 必須在實作前取得。若必要 Pro 暫不可用，記錄 HOLD 與 exact unresolved question。這些 binding triggers 之外，read-only Astra advice 才是可選，由 Sol 作最終工程決定；已獲准的機械執行不需要每行／每 commit 重新問。
 
 原始提案由 ChatGPT 撰寫；先前 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並作為歷史證據保留。穩定 Final Candidate 依 live `docs/DELIVERY.md` 取得未參與 solution direction 的 fresh independent exact-HEAD Oracle latest Extra High final review；ego-lite 為預設 transport，且需取得 `No blocking findings.` verdict。文件作者、顧問、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
 
@@ -159,7 +159,7 @@ Reviewer 必須能回答：UI 不依賴哪個細節了？哪條規則現在可�
 在 nurockplayer/tachiko-sheet 讀 live #1/#2、#33、AGENTS、DELIVERY，
 以及 docs/architecture/ 三份文件。先處理 #33 文件提案的審查與採用；
 不要把 draft 視為已生效規則或立即重構授權。保留 active writer、J5 HOLD、
-上游語意／格式與所有驗收。真正困難或高風險架構取捨可取得 read-only Astra consultation。
+上游語意／格式與所有驗收。凍結決策或指派實作前遵守 live #1 的 mandatory Astra 與 conditional Pro triggers；必要 Astra advice 須在凍結／指派前取得，必要 Pro advice 須在實作前取得，無法取得必要 Pro 時記錄 HOLD 與 exact unresolved question。binding triggers 之外才可選擇取得 read-only Astra advice。
 採用後只挑一條 genuinely Ready、non-overlapping migration slice，
 由 GPT-6 Luna 執行一個有界實作／unit-test package，Sol 保留 integration ownership；
 先確認 characterization／test discovery，再做行為保持的 bounded extraction；
@@ -167,4 +167,4 @@ Reviewer 必須能回答：UI 不依賴哪個細節了？哪條規則現在可�
 只回報實際執行的結果，詳細證據留 owning Issue/PR，不重寫 #2 的任務所有權。
 ```
 
-依 live #2 確認唯一 Sol Mission Lead 與 writer。Astra consultation 為可選唯讀建議；Oracle final review 必須是 fresh independent exact-HEAD session，且 Oracle 全程 read-only。實際 Luna/model mapping 與 effort 依當時安裝設定，不藉此文件替換；merge 仍由 Sol/Conductor 在 exact-head gates 與 `No blocking findings.` receipt 通過後執行。
+依 live #2 確認唯一 Sol Mission Lead 與 writer。依 live #1 的 mandatory Astra 與 conditional Pro triggers 取得必要諮詢；required Pro 不可用時記錄 HOLD 與 exact unresolved question。只有 binding triggers 之外的 Astra advice 才是可選唯讀建議。Oracle final review 必須是 fresh independent exact-HEAD session，且 Oracle 全程 read-only。實際 Luna/model mapping 與 effort 依當時安裝設定，不藉此文件替換；merge 仍由 Sol/Conductor 在 exact-head gates 與 `No blocking findings.` receipt 通過後執行。
