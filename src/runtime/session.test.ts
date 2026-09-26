@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type {
+  BootstrapProjection,
   CanonicalProjectFile,
   CanonicalTreeExport,
   CollectionSummary,
@@ -20,6 +21,7 @@ import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntrie
 import type { KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
+  DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CoreKit,
   type ViewWitness,
   type WorkbookView,
@@ -58,6 +60,7 @@ interface Hooks {
   editText?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
+  bootstrap?: () => Promise<BootstrapProjection>;
 }
 
 function scalarField(
@@ -103,6 +106,8 @@ class FakeClient {
   #scope = 0;
   #counter = 0;
   #revision = "r0";
+
+  get currentRevision(): string { return this.#revision; }
 
   #requireOpen(): void {
     if (!this.#open) throw new FakeDesignerRuntimeError(this.noProjectCode, this.#revision);
@@ -194,6 +199,7 @@ class FakeClient {
   async bootstrap() {
     this.calls.bootstrap += 1;
     this.#requireOpen();
+    if (this.hooks.bootstrap) return this.hooks.bootstrap();
     return this.#bootstrap();
   }
 
@@ -378,6 +384,51 @@ async function opened(client = new FakeClient()) {
   const runtime = createSheetRuntime(async () => kitParts.kit);
   const view = await runtime.openFiles(FILES);
   return { ...kitParts, client, runtime, view };
+}
+
+function installCatalog(
+  client: FakeClient,
+  definitions: Array<{
+    collection: CollectionSummary;
+    columns: Array<{ id: string; key: string; field_type: string }>;
+    rows?: TableProjection["rows"];
+  }>,
+  revision = "r1",
+): void {
+  client.hooks.bootstrap = async () => {
+    client.hooks.bootstrap = undefined;
+    return {
+      title: TITLE,
+      revision,
+      default_collection: definitions[0]!.collection.key,
+      collections: definitions.map(({ collection }) => collection),
+    };
+  };
+  let remainingTables = definitions.length;
+  client.hooks.queryTable = async (key) => {
+    const definition = definitions.find(({ collection }) => collection.key === key);
+    if (!definition) throw new Error(`missing test table ${key}`);
+    remainingTables -= 1;
+    if (remainingTables === 0) client.hooks.queryTable = undefined;
+    return {
+      revision,
+      collection: definition.collection,
+      columns: definition.columns,
+      rows: definition.rows ?? [],
+    };
+  };
+}
+
+function catalogTable(
+  key: string,
+  columns: Array<{ id: string; key: string; field_type: string }>,
+  entityCount = 0,
+): { collection: CollectionSummary; columns: typeof columns; rows: TableProjection["rows"] } {
+  return {
+    collection: { id: `schema-${key}`, key, entity_count: entityCount },
+    columns,
+    rows: [],
+  };
 }
 
 describe("createSheetRuntime", () => {
@@ -781,6 +832,161 @@ describe("createSheetRuntime", () => {
     await expect(runtime.queryKeyedGroupedSum(witnessOf(view), result.definitionId)).rejects.toMatchObject({ code: "stale-witness" });
     const refreshed = await runtime.read();
     await expect(runtime.queryKeyedGroupedSum(witnessOf(refreshed), result.definitionId)).resolves.toMatchObject({ revision: "r2" });
+  });
+
+  it.each([
+    {
+      label: "selected table",
+      definitions: [catalogTable("tasks", [
+        { id: "f1", key: "impact", field_type: "number" },
+        { id: "f2", key: "notes", field_type: "text" },
+        { id: "f3", key: "when", field_type: "date" },
+      ])],
+    },
+    {
+      label: "unrelated third table",
+      definitions: [
+        catalogTable("tasks", [
+          { id: "f1", key: "impact", field_type: "number" },
+          { id: "f2", key: "notes", field_type: "text" },
+        ]),
+        catalogTable("inventory", [{ id: "f3", key: "received", field_type: "date" }]),
+      ],
+    },
+    {
+      label: "unrelated empty table schema",
+      definitions: [
+        catalogTable("tasks", [
+          { id: "f1", key: "impact", field_type: "number" },
+          { id: "f2", key: "notes", field_type: "text" },
+        ]),
+        catalogTable("inventory", [{ id: "f3", key: "received", field_type: "date" }]),
+      ],
+    },
+  ])("refuses Date schemas in the $label before producer Create", async ({ definitions }) => {
+    const { client, runtime, view } = await opened();
+    const bootstrapBefore = client.calls.bootstrap;
+    const queryTableBefore = client.calls.queryTable.length;
+    installCatalog(client, definitions);
+    const error = await failure(runtime.createKeyedGroupedSum(witnessOf(view), {
+      ordersCollection: "tasks",
+      orderLookupKeyField: "notes",
+      orderQuantityField: "impact",
+      productsCollection: "tasks",
+      productKeyField: "notes",
+      productCategoryField: "notes",
+      productPriceField: "impact",
+    }));
+    expect((error as Error).message).toBe(DATE_SUMMARY_UNSUPPORTED_MESSAGE);
+    expect(client.calls.bootstrap).toBe(bootstrapBefore + 1);
+    expect(client.calls.queryTable.slice(queryTableBefore)).toEqual(definitions.map(({ collection }) => collection.key));
+    expect(client.calls.createKeyedGroupedSum).toHaveLength(0);
+    expect((await runtime.read()).revision).toBe(view.revision);
+  });
+
+  it("preserves reference as a non-Date type and still creates the requested summary", async () => {
+    const { client, runtime, view } = await opened();
+    const queryTableBefore = client.calls.queryTable.length;
+    installCatalog(client, [catalogTable("tasks", [
+      { id: "f1", key: "impact", field_type: "number" },
+      { id: "f2", key: "notes", field_type: "reference" },
+    ])]);
+    await runtime.createKeyedGroupedSum(witnessOf(view), {
+      ordersCollection: "tasks",
+      orderLookupKeyField: "notes",
+      orderQuantityField: "impact",
+      productsCollection: "tasks",
+      productKeyField: "notes",
+      productCategoryField: "notes",
+      productPriceField: "impact",
+    });
+    expect(client.calls.queryTable.slice(queryTableBefore, queryTableBefore + 1)).toEqual(["tasks"]);
+    expect(client.calls.createKeyedGroupedSum).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "stale invocation witness",
+      run: async (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) =>
+        runtime.createKeyedGroupedSum({ ...witnessOf(view), revision: "stale" }, {
+          ordersCollection: "tasks", orderLookupKeyField: "notes", orderQuantityField: "impact",
+          productsCollection: "tasks", productKeyField: "notes", productCategoryField: "notes", productPriceField: "impact",
+        }),
+      install: (_client: FakeClient) => {},
+      expectedCatalogCalls: 0,
+      expectedTables: [],
+    },
+    {
+      label: "stale bootstrap reply",
+      run: async (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) =>
+        runtime.createKeyedGroupedSum(witnessOf(view), {
+          ordersCollection: "tasks", orderLookupKeyField: "notes", orderQuantityField: "impact",
+          productsCollection: "tasks", productKeyField: "notes", productCategoryField: "notes", productPriceField: "impact",
+        }),
+      install: (client: FakeClient) => {
+        client.hooks.bootstrap = async () => ({ title: TITLE, revision: "stale", default_collection: "tasks", collections: [COLLECTION] });
+      },
+      expectedCatalogCalls: 1,
+      expectedTables: [],
+    },
+    {
+      label: "stale table reply",
+      run: async (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) =>
+        runtime.createKeyedGroupedSum(witnessOf(view), {
+          ordersCollection: "tasks", orderLookupKeyField: "notes", orderQuantityField: "impact",
+          productsCollection: "tasks", productKeyField: "notes", productCategoryField: "notes", productPriceField: "impact",
+        }),
+      install: (client: FakeClient) => {
+        client.hooks.queryTable = async () => ({
+          revision: "stale", collection: COLLECTION,
+          columns: [
+            { id: "f1", key: "impact", field_type: "number" },
+            { id: "f2", key: "notes", field_type: "text" },
+          ],
+          rows: [],
+        });
+      },
+      expectedCatalogCalls: 1,
+      expectedTables: ["tasks"],
+    },
+    {
+      label: "unavailable unrelated table read",
+      run: async (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) =>
+        runtime.createKeyedGroupedSum(witnessOf(view), {
+          ordersCollection: "tasks", orderLookupKeyField: "notes", orderQuantityField: "impact",
+          productsCollection: "tasks", productKeyField: "notes", productCategoryField: "notes", productPriceField: "impact",
+        }),
+      install: (client: FakeClient) => {
+        client.hooks.bootstrap = async () => ({ title: TITLE, revision: "r1", default_collection: "tasks", collections: [
+          COLLECTION, { id: "col-2", key: "inventory", entity_count: 0 },
+        ] });
+        client.hooks.queryTable = async (key) => {
+          if (key === "inventory") throw new Error("unavailable table");
+          return { revision: "r1", collection: COLLECTION, columns: [
+            { id: "f1", key: "impact", field_type: "number" },
+            { id: "f2", key: "notes", field_type: "text" },
+          ], rows: [] };
+        };
+      },
+      expectedCatalogCalls: 1,
+      expectedTables: ["tasks", "inventory"],
+    },
+  ])("fails closed on $label before producer Create", async ({ run, install, expectedCatalogCalls, expectedTables }) => {
+    const { client, runtime, view } = await opened();
+    const bootstrapBefore = client.calls.bootstrap;
+    const queryTableBefore = client.calls.queryTable.length;
+    install(client);
+    const error = await failure(run(runtime, view));
+    expect(error).toBeInstanceOf(Error);
+    expect(client.calls.bootstrap).toBe(bootstrapBefore + expectedCatalogCalls);
+    expect(client.calls.queryTable.slice(queryTableBefore)).toEqual(expectedTables);
+    expect(client.calls.createKeyedGroupedSum).toHaveLength(0);
+    expect(client.currentRevision).toBe(view.revision);
+    client.hooks.bootstrap = undefined;
+    client.hooks.queryTable = undefined;
+    const reread = await runtime.read();
+    expect(reread.occurrence).toBe(view.occurrence);
+    expect(reread.revision).toBe(view.revision);
   });
 
   it("serializes operations so a stale second edit is refused before dispatch", async () => {

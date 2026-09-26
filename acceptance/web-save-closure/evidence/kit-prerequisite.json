@@ -1,0 +1,1561 @@
+{
+  "status": "PASS",
+  "boundary": "real pinned public Worker/WASM export + imported metadata inspection + fresh reopen; not product UI",
+  "result": [
+    {
+      "name": "date-only.csv",
+      "sourceSheets": [
+        {
+          "name": "Imported table",
+          "columns": 5,
+          "rows": 2
+        }
+      ],
+      "beforeOccurrence": {
+        "scope": "designer-occurrence/7e632f21-cd70-4ba7-a880-d34c60693f4f/import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0001",
+        "revision": "resident/0"
+      },
+      "afterOccurrence": {
+        "scope": "designer-occurrence/a653e1d9-e703-46b6-a700-51859e8bcc0f/import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0001",
+        "revision": "resident/0"
+      },
+      "before": [
+        {
+          "key": "sheet_1",
+          "table": {
+            "columns": [
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                "key": "column_2",
+                "type": "text"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                "key": "column_3",
+                "type": "number"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                "key": "column_4",
+                "type": "number"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                "key": "column_5",
+                "type": "date"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_1_row_1",
+                "fields": [
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Stationery"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                    "stored": {
+                      "kind": "number",
+                      "value": 4
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                    "stored": {
+                      "kind": "date",
+                      "value": "2026-09-26"
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_1_row_2",
+                "fields": [
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Paper"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                    "stored": {
+                      "kind": "number",
+                      "value": 5
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                    "stored": {
+                      "kind": "date",
+                      "value": "2026-09-27"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "after": [
+        {
+          "key": "sheet_1",
+          "table": {
+            "columns": [
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                "key": "column_2",
+                "type": "text"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                "key": "column_3",
+                "type": "number"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                "key": "column_4",
+                "type": "number"
+              },
+              {
+                "id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                "key": "column_5",
+                "type": "date"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_1_row_1",
+                "fields": [
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Stationery"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                    "stored": {
+                      "kind": "number",
+                      "value": 4
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                    "stored": {
+                      "kind": "date",
+                      "value": "2026-09-26"
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_1_row_2",
+                "fields": [
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Paper"
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                    "stored": {
+                      "kind": "number",
+                      "value": 5
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  },
+                  {
+                    "field": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                    "stored": {
+                      "kind": "date",
+                      "value": "2026-09-27"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "metadata": {
+        "version": 1,
+        "sheets": [
+          {
+            "schema_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0002",
+            "name": "Imported table",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0003",
+                "name": "code",
+                "width": null
+              },
+              {
+                "field_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0004",
+                "name": "category",
+                "width": null
+              },
+              {
+                "field_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0005",
+                "name": "quantity",
+                "width": null
+              },
+              {
+                "field_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0006",
+                "name": "price",
+                "width": null
+              },
+              {
+                "field_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0007",
+                "name": "event_date",
+                "width": null
+              }
+            ],
+            "rows": [
+              {
+                "entity_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0008",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              },
+              {
+                "entity_id": "import_7e632f21-cd70-4ba7-a880-d34c60693f4f_0009",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ledger": [
+        {
+          "category": "native_equivalent",
+          "code": "csv_utf8",
+          "location": "source",
+          "message": "UTF-8 CSV retained quoted values, empty positions and explicit delimiter/header choice",
+          "blocking": false
+        },
+        {
+          "category": "preserved_readable",
+          "code": "csv_inference_advisory",
+          "location": "source",
+          "message": "CSV values remain Text or missing until explicit type acceptance; no locale-sensitive inference is authoritative",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "Imported table:1:3",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "Imported table:1:4",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "Imported table:1:5",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "Imported table:2:3",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "Imported table:2:4",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "Imported table:2:5",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "stable_reference_binding",
+          "location": "workbook",
+          "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+          "blocking": false
+        }
+      ],
+      "exportBytes": 3451,
+      "sha256": "764a26a1e629f5fd51eda09cd538fe9a3e378ba8e9e5701563e17d70b3641503"
+    },
+    {
+      "name": "unrelated-date.xlsx",
+      "sourceSheets": [
+        {
+          "name": "sales",
+          "columns": 2,
+          "rows": 2
+        },
+        {
+          "name": "catalog",
+          "columns": 3,
+          "rows": 2
+        },
+        {
+          "name": "dates",
+          "columns": 1,
+          "rows": 1
+        }
+      ],
+      "beforeOccurrence": {
+        "scope": "designer-occurrence/b7480699-4c80-4e1e-bb18-6e7a4653372e/import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0001",
+        "revision": "resident/0"
+      },
+      "afterOccurrence": {
+        "scope": "designer-occurrence/93097789-248d-493d-989c-752080acefc1/import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0001",
+        "revision": "resident/0"
+      },
+      "before": [
+        {
+          "key": "sheet_1",
+          "table": {
+            "columns": [
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                "key": "column_2",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_1_row_1",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_1_row_2",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_2",
+          "table": {
+            "columns": [
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                "key": "column_2",
+                "type": "text"
+              },
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                "key": "column_3",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_2_row_1",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Stationery"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_2_row_2",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Paper"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_3",
+          "table": {
+            "columns": [
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0014",
+                "key": "column_1",
+                "type": "date"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_3_row_1",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0014",
+                    "stored": {
+                      "kind": "date",
+                      "value": "2026-09-26"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "after": [
+        {
+          "key": "sheet_1",
+          "table": {
+            "columns": [
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                "key": "column_2",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_1_row_1",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_1_row_2",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_2",
+          "table": {
+            "columns": [
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                "key": "column_2",
+                "type": "text"
+              },
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                "key": "column_3",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_2_row_1",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Stationery"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_2_row_2",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Paper"
+                    }
+                  },
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_3",
+          "table": {
+            "columns": [
+              {
+                "id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0014",
+                "key": "column_1",
+                "type": "date"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_3_row_1",
+                "fields": [
+                  {
+                    "field": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0014",
+                    "stored": {
+                      "kind": "date",
+                      "value": "2026-09-26"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "metadata": {
+        "version": 1,
+        "sheets": [
+          {
+            "schema_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0002",
+            "name": "sales",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0003",
+                "name": "product_code",
+                "width": null
+              },
+              {
+                "field_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0004",
+                "name": "quantity",
+                "width": null
+              }
+            ],
+            "rows": [
+              {
+                "entity_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0005",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              },
+              {
+                "entity_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0006",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "schema_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0007",
+            "name": "catalog",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0008",
+                "name": "code",
+                "width": null
+              },
+              {
+                "field_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0009",
+                "name": "category",
+                "width": null
+              },
+              {
+                "field_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0010",
+                "name": "price",
+                "width": null
+              }
+            ],
+            "rows": [
+              {
+                "entity_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0011",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              },
+              {
+                "entity_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0012",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "schema_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0013",
+            "name": "dates",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0014",
+                "name": "event_date",
+                "width": null
+              }
+            ],
+            "rows": [
+              {
+                "entity_id": "import_b7480699-4c80-4e1e-bb18-6e7a4653372e_0015",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ledger": [
+        {
+          "category": "native_equivalent",
+          "code": "bounded_workbook",
+          "location": "source",
+          "message": "All bounded worksheets and scalar cells were inspected; formula sources require authoritative Rust binding",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "sales:1:2",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "sales:2:2",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "catalog:1:3",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "catalog:2:3",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "dates:1:1",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "stable_reference_binding",
+          "location": "workbook",
+          "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+          "blocking": false
+        }
+      ],
+      "exportBytes": 4948,
+      "sha256": "37422272cc8452f1d232d92a8275f4d21f2e38830e388c74b46c5b708b7756fa"
+    },
+    {
+      "name": "unrelated-date-empty.xlsx",
+      "sourceSheets": [
+        {
+          "name": "sales",
+          "columns": 2,
+          "rows": 2
+        },
+        {
+          "name": "catalog",
+          "columns": 3,
+          "rows": 2
+        },
+        {
+          "name": "dates",
+          "columns": 1,
+          "rows": 0
+        }
+      ],
+      "beforeOccurrence": {
+        "scope": "designer-occurrence/9b1bc2f1-a842-4271-80db-19a9c9f956b1/import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0001",
+        "revision": "resident/0"
+      },
+      "afterOccurrence": {
+        "scope": "designer-occurrence/e55c4ffd-c5cc-45b2-8e18-974b761b817d/import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0001",
+        "revision": "resident/0"
+      },
+      "before": [
+        {
+          "key": "sheet_1",
+          "table": {
+            "columns": [
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                "key": "column_2",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_1_row_1",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_1_row_2",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_2",
+          "table": {
+            "columns": [
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                "key": "column_2",
+                "type": "text"
+              },
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                "key": "column_3",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_2_row_1",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Stationery"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_2_row_2",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Paper"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_3",
+          "table": {
+            "columns": [
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0014",
+                "key": "column_1",
+                "type": "date"
+              }
+            ],
+            "rows": []
+          }
+        }
+      ],
+      "after": [
+        {
+          "key": "sheet_1",
+          "table": {
+            "columns": [
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                "key": "column_2",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_1_row_1",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_1_row_2",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                    "stored": {
+                      "kind": "number",
+                      "value": 5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_2",
+          "table": {
+            "columns": [
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                "key": "column_1",
+                "type": "text"
+              },
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                "key": "column_2",
+                "type": "text"
+              },
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                "key": "column_3",
+                "type": "number"
+              }
+            ],
+            "rows": [
+              {
+                "key": "sheet_2_row_1",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "PEN"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Stationery"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "sheet_2_row_2",
+                "fields": [
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                    "stored": {
+                      "kind": "text",
+                      "value": "NOTE"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                    "stored": {
+                      "kind": "text",
+                      "value": "Paper"
+                    }
+                  },
+                  {
+                    "field": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                    "stored": {
+                      "kind": "number",
+                      "value": 200
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "key": "sheet_3",
+          "table": {
+            "columns": [
+              {
+                "id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0014",
+                "key": "column_1",
+                "type": "date"
+              }
+            ],
+            "rows": []
+          }
+        }
+      ],
+      "metadata": {
+        "version": 1,
+        "sheets": [
+          {
+            "schema_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0002",
+            "name": "sales",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0003",
+                "name": "product_code",
+                "width": null
+              },
+              {
+                "field_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0004",
+                "name": "quantity",
+                "width": null
+              }
+            ],
+            "rows": [
+              {
+                "entity_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0005",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              },
+              {
+                "entity_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0006",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "schema_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0007",
+            "name": "catalog",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0008",
+                "name": "code",
+                "width": null
+              },
+              {
+                "field_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0009",
+                "name": "category",
+                "width": null
+              },
+              {
+                "field_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0010",
+                "name": "price",
+                "width": null
+              }
+            ],
+            "rows": [
+              {
+                "entity_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0011",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              },
+              {
+                "entity_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0012",
+                "styles": [
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  },
+                  {
+                    "number_format": null,
+                    "bold": false,
+                    "fill": null,
+                    "wrap": false,
+                    "border": false,
+                    "alignment": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "schema_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0013",
+            "name": "dates",
+            "has_header": true,
+            "columns": [
+              {
+                "field_id": "import_9b1bc2f1-a842-4271-80db-19a9c9f956b1_0014",
+                "name": "event_date",
+                "width": null
+              }
+            ],
+            "rows": []
+          }
+        ]
+      },
+      "ledger": [
+        {
+          "category": "native_equivalent",
+          "code": "bounded_workbook",
+          "location": "source",
+          "message": "All bounded worksheets and scalar cells were inspected; formula sources require authoritative Rust binding",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "sales:1:2",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "sales:2:2",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "catalog:1:3",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "explicit_column_type",
+          "location": "catalog:2:3",
+          "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+          "blocking": false
+        },
+        {
+          "category": "converted",
+          "code": "stable_reference_binding",
+          "location": "workbook",
+          "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+          "blocking": false
+        }
+      ],
+      "exportBytes": 4564,
+      "sha256": "8ec1362ad26475fd49904d3b77c0e3c7e1a1d67d6894caf050cf975f4853c450"
+    }
+  ]
+}

@@ -1,0 +1,1526 @@
+{
+  "mode": "baseline",
+  "origin": "http://127.0.0.1:4786",
+  "prefix": "save-closure-1790432977463",
+  "results": [
+    {
+      "id": "A-Date-only-normal-Save-fresh-reopen",
+      "result": "BEHAVIORAL_RED",
+      "message": "ordinary Create copy must durably acknowledge this supported work",
+      "observed": {
+        "cells": [
+          [
+            "PEN",
+            "Stationery",
+            "4",
+            "200",
+            "2026-09-28"
+          ],
+          [
+            "NOTE",
+            "Paper",
+            "5",
+            "200",
+            "2026-09-27"
+          ]
+        ],
+        "witness": {
+          "occurrence": "designer-occurrence/60310017-2f25-4e6a-9338-5bcda24735cb/import_60310017-2f25-4e6a-9338-5bcda24735cb_0001",
+          "revision": "resident/1"
+        },
+        "currentness": "current",
+        "save": "Save failed",
+        "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSave failed\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nEdited — not saved\nValues:\nUp to date\n2 rows · 5 columns\nRow\tcolumn_1\tcolumn_2\tcolumn_3\tcolumn_4\tcolumn_5\n1\tPEN\tStationery\t4\t200\t2026-09-28\n2\tNOTE\tPaper\t5\t200\t2026-09-27\nSave a copy\n\nCreates a new copy in this browser profile.\nIt does not update an existing one.\n\nCopy name\n\nThe copy “save-closure-1790432977463-Date” was not created. The name is still here; adjust it and try again.\n\nCancel\nCreate copy\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+      }
+    },
+    {
+      "id": "B-same-table-Date-summary-refusal",
+      "result": "BEHAVIORAL_RED",
+      "message": "unsupported Date combination must refuse BEFORE producer Create dispatch\n\n1 !== 0\n",
+      "observed": {
+        "cells": [],
+        "currentness": "current",
+        "save": "Not saved yet",
+        "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nNot saved yet\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nEdited — not saved\nValues:\nUp to date\n2 rows · 5 columns\nCross-table summary\n\nChoose visible table and field names. The core binds their stable identities and remains the only calculator.\n\nChoose tables and fields\nAuthoritative result\nPaper: 1000\nStationery: 800\nCreate bar report\nCreate line report\nRefresh core result\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+      }
+    },
+    {
+      "id": "C-unrelated-Date-summary-refusal",
+      "result": "BEHAVIORAL_RED",
+      "message": "unsupported Date combination must refuse BEFORE producer Create dispatch\n\n1 !== 0\n",
+      "observed": {
+        "cells": [],
+        "currentness": "current",
+        "save": "Not saved yet",
+        "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nNot saved yet\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nsheet_2\nsheet_3\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nEdited — not saved\nValues:\nUp to date\n2 rows · 3 columns\nCross-table summary\n\nChoose visible table and field names. The core binds their stable identities and remains the only calculator.\n\nChoose tables and fields\nAuthoritative result\nPaper: 1000\nStationery: 800\nCreate bar report\nCreate line report\nRefresh core result\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+      }
+    },
+    {
+      "id": "C-empty-unrelated-Date-schema-refusal",
+      "result": "BEHAVIORAL_RED",
+      "message": "unsupported Date combination must refuse BEFORE producer Create dispatch\n\n1 !== 0\n",
+      "observed": {
+        "cells": [],
+        "currentness": "current",
+        "save": "Not saved yet",
+        "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nNot saved yet\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nsheet_2\nsheet_3\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nEdited — not saved\nValues:\nUp to date\n2 rows · 3 columns\nCross-table summary\n\nChoose visible table and field names. The core binds their stable identities and remains the only calculator.\n\nChoose tables and fields\nAuthoritative result\nPaper: 1000\nStationery: 800\nCreate bar report\nCreate line report\nRefresh core result\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+      }
+    },
+    {
+      "id": "D-canonical-opaque-complete-copy-controls",
+      "result": "PASS",
+      "evidence": {
+        "canonicalRecord": {
+          "store": "copies",
+          "kind": "canonical",
+          "savedAt": "2026-09-26T14:30:12.818Z",
+          "revision": "resident/0",
+          "coreHash": null,
+          "source": {
+            "name": "date-only.csv",
+            "format": "csv",
+            "metadata": {
+              "version": 1,
+              "sheets": [
+                {
+                  "schema_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0002",
+                  "name": "Imported table",
+                  "has_header": true,
+                  "columns": [
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0003",
+                      "name": "code",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0004",
+                      "name": "category",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0005",
+                      "name": "quantity",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0006",
+                      "name": "price",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0007",
+                      "name": "event_date",
+                      "width": null
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "entity_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0008",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    },
+                    {
+                      "entity_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0009",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "ledger": [
+              {
+                "category": "native_equivalent",
+                "code": "csv_utf8",
+                "location": "source",
+                "message": "UTF-8 CSV retained quoted values, empty positions and explicit delimiter/header choice",
+                "blocking": false
+              },
+              {
+                "category": "preserved_readable",
+                "code": "csv_inference_advisory",
+                "location": "source",
+                "message": "CSV values remain Text or missing until explicit type acceptance; no locale-sensitive inference is authoritative",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "stable_reference_binding",
+                "location": "workbook",
+                "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+                "blocking": false
+              }
+            ],
+            "sha256": "7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5"
+          },
+          "presentation": null
+        },
+        "saved": {
+          "store": "opaque-copies",
+          "kind": "opaque",
+          "savedAt": "2026-09-26T14:30:28.137Z",
+          "revision": "resident/1",
+          "coreHash": "fa62df1fe4411f39212d8155035549d85a371c1151a62fdc14f234ea3177a5d5",
+          "source": {
+            "name": "date-only.csv",
+            "format": "csv",
+            "metadata": {
+              "version": 1,
+              "sheets": [
+                {
+                  "schema_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0002",
+                  "name": "Imported table",
+                  "has_header": true,
+                  "columns": [
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0003",
+                      "name": "code",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0004",
+                      "name": "category",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0005",
+                      "name": "quantity",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0006",
+                      "name": "price",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0007",
+                      "name": "event_date",
+                      "width": null
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "entity_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0008",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    },
+                    {
+                      "entity_id": "import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0009",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "ledger": [
+              {
+                "category": "native_equivalent",
+                "code": "csv_utf8",
+                "location": "source",
+                "message": "UTF-8 CSV retained quoted values, empty positions and explicit delimiter/header choice",
+                "blocking": false
+              },
+              {
+                "category": "preserved_readable",
+                "code": "csv_inference_advisory",
+                "location": "source",
+                "message": "CSV values remain Text or missing until explicit type acceptance; no locale-sensitive inference is authoritative",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "stable_reference_binding",
+                "location": "workbook",
+                "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+                "blocking": false
+              }
+            ],
+            "sha256": "7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5"
+          },
+          "presentation": {
+            "version": 1,
+            "report": {
+              "definitionId": "0c3b527a-3eae-4018-9c33-1a180ad06ff1",
+              "type": "bar",
+              "title": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA😀",
+              "categoryLabel": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界😀",
+              "valueLabel": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV😀",
+              "legendVisible": false
+            },
+            "snapshotRevision": "resident/1",
+            "snapshotDigest": "fa62df1fe4411f39212d8155035549d85a371c1151a62fdc14f234ea3177a5d5"
+          }
+        },
+        "savedView": {
+          "cells": [
+            [
+              "PEN",
+              "Stationery",
+              "4",
+              "200",
+              "2026-09-26"
+            ],
+            [
+              "NOTE",
+              "Paper",
+              "5",
+              "200",
+              "2026-09-27"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/354d293f-ae9f-4ba2-ac9c-c6e487492012/import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0001",
+            "revision": "resident/1"
+          },
+          "currentness": "current",
+          "save": "Saved on this device",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSaved on this device\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nUnchanged\nValues:\nUp to date\n2 rows · 5 columns\nRow\tcolumn_1\tcolumn_2\tcolumn_3\tcolumn_4\tcolumn_5\n1\tPEN\tStationery\t4\t200\t2026-09-26\n2\tNOTE\tPaper\t5\t200\t2026-09-27\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        },
+        "after": {
+          "cells": [
+            [
+              "PEN",
+              "Stationery",
+              "4",
+              "200",
+              "2026-09-26"
+            ],
+            [
+              "NOTE",
+              "Paper",
+              "5",
+              "200",
+              "2026-09-27"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/033c3570-2a78-409a-b0d7-bc8da645b79b/import_4369d32e-6a83-4d91-8f7d-fa000c4d9b5a_0001",
+            "revision": "resident/0"
+          },
+          "currentness": "current",
+          "save": "Saved on this device",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSaved on this device\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nUnchanged\nValues:\nUp to date\n2 rows · 5 columns\nRow\tcolumn_1\tcolumn_2\tcolumn_3\tcolumn_4\tcolumn_5\n1\tPEN\tStationery\t4\t200\t2026-09-26\n2\tNOTE\tPaper\t5\t200\t2026-09-27\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        },
+        "report": {
+          "text": [
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA😀",
+            "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界😀",
+            "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV😀"
+          ],
+          "legend": false,
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSaved on this device\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nUnchanged\nValues:\nUp to date\n2 rows · 5 columns\nCurrent report\nTitle\nCategory label\nValue label\nShow legend\n\nThis bar report renders the complete current core group result. It does not calculate or persist group values.\n\nPaper\n1000\nStationery\n800\nExport current PNG\nRemove report\n\nThis removes only the report configuration. Table data and the cross-table definition stay available.\n\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        }
+      }
+    },
+    {
+      "id": "E-CSV64-row-control",
+      "result": "PASS",
+      "evidence": {
+        "before": {
+          "cells": [
+            [
+              "row0"
+            ],
+            [
+              "row1"
+            ],
+            [
+              "row2"
+            ],
+            [
+              "row3"
+            ],
+            [
+              "row4"
+            ],
+            [
+              "row5"
+            ],
+            [
+              "row6"
+            ],
+            [
+              "row7"
+            ],
+            [
+              "row8"
+            ],
+            [
+              "row9"
+            ],
+            [
+              "row10"
+            ],
+            [
+              "row11"
+            ],
+            [
+              "row12"
+            ],
+            [
+              "row13"
+            ],
+            [
+              "row14"
+            ],
+            [
+              "row15"
+            ],
+            [
+              "row16"
+            ],
+            [
+              "row17"
+            ],
+            [
+              "row18"
+            ],
+            [
+              "row19"
+            ],
+            [
+              "row20"
+            ],
+            [
+              "row21"
+            ],
+            [
+              "row22"
+            ],
+            [
+              "row23"
+            ],
+            [
+              "row24"
+            ],
+            [
+              "row25"
+            ],
+            [
+              "row26"
+            ],
+            [
+              "row27"
+            ],
+            [
+              "row28"
+            ],
+            [
+              "row29"
+            ],
+            [
+              "row30"
+            ],
+            [
+              "row31"
+            ],
+            [
+              "row32"
+            ],
+            [
+              "row33"
+            ],
+            [
+              "row34"
+            ],
+            [
+              "row35"
+            ],
+            [
+              "row36"
+            ],
+            [
+              "row37"
+            ],
+            [
+              "row38"
+            ],
+            [
+              "row39"
+            ],
+            [
+              "row40"
+            ],
+            [
+              "row41"
+            ],
+            [
+              "row42"
+            ],
+            [
+              "row43"
+            ],
+            [
+              "row44"
+            ],
+            [
+              "row45"
+            ],
+            [
+              "row46"
+            ],
+            [
+              "row47"
+            ],
+            [
+              "row48"
+            ],
+            [
+              "row49"
+            ],
+            [
+              "row50"
+            ],
+            [
+              "row51"
+            ],
+            [
+              "row52"
+            ],
+            [
+              "row53"
+            ],
+            [
+              "row54"
+            ],
+            [
+              "row55"
+            ],
+            [
+              "row56"
+            ],
+            [
+              "row57"
+            ],
+            [
+              "row58"
+            ],
+            [
+              "row59"
+            ],
+            [
+              "row60"
+            ],
+            [
+              "row61"
+            ],
+            [
+              "row62"
+            ],
+            [
+              "row63"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/93947b6b-defa-4da1-9004-9f2c39923c96/import_93947b6b-defa-4da1-9004-9f2c39923c96_0001",
+            "revision": "resident/0"
+          },
+          "currentness": "current",
+          "save": "Not saved yet",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nNot saved yet\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nEdited — not saved\nValues:\nUp to date\n64 rows · 1 columns\nRow\tcolumn_1\n1\trow0\n2\trow1\n3\trow2\n4\trow3\n5\trow4\n6\trow5\n7\trow6\n8\trow7\n9\trow8\n10\trow9\n11\trow10\n12\trow11\n13\trow12\n14\trow13\n15\trow14\n16\trow15\n17\trow16\n18\trow17\n19\trow18\n20\trow19\n21\trow20\n22\trow21\n23\trow22\n24\trow23\n25\trow24\n26\trow25\n27\trow26\n28\trow27\n29\trow28\n30\trow29\n31\trow30\n32\trow31\n33\trow32\n34\trow33\n35\trow34\n36\trow35\n37\trow36\n38\trow37\n39\trow38\n40\trow39\n41\trow40\n42\trow41\n43\trow42\n44\trow43\n45\trow44\n46\trow45\n47\trow46\n48\trow47\n49\trow48\n50\trow49\n51\trow50\n52\trow51\n53\trow52\n54\trow53\n55\trow54\n56\trow55\n57\trow56\n58\trow57\n59\trow58\n60\trow59\n61\trow60\n62\trow61\n63\trow62\n64\trow63\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        },
+        "after": {
+          "cells": [
+            [
+              "row0"
+            ],
+            [
+              "row1"
+            ],
+            [
+              "row2"
+            ],
+            [
+              "row3"
+            ],
+            [
+              "row4"
+            ],
+            [
+              "row5"
+            ],
+            [
+              "row6"
+            ],
+            [
+              "row7"
+            ],
+            [
+              "row8"
+            ],
+            [
+              "row9"
+            ],
+            [
+              "row10"
+            ],
+            [
+              "row11"
+            ],
+            [
+              "row12"
+            ],
+            [
+              "row13"
+            ],
+            [
+              "row14"
+            ],
+            [
+              "row15"
+            ],
+            [
+              "row16"
+            ],
+            [
+              "row17"
+            ],
+            [
+              "row18"
+            ],
+            [
+              "row19"
+            ],
+            [
+              "row20"
+            ],
+            [
+              "row21"
+            ],
+            [
+              "row22"
+            ],
+            [
+              "row23"
+            ],
+            [
+              "row24"
+            ],
+            [
+              "row25"
+            ],
+            [
+              "row26"
+            ],
+            [
+              "row27"
+            ],
+            [
+              "row28"
+            ],
+            [
+              "row29"
+            ],
+            [
+              "row30"
+            ],
+            [
+              "row31"
+            ],
+            [
+              "row32"
+            ],
+            [
+              "row33"
+            ],
+            [
+              "row34"
+            ],
+            [
+              "row35"
+            ],
+            [
+              "row36"
+            ],
+            [
+              "row37"
+            ],
+            [
+              "row38"
+            ],
+            [
+              "row39"
+            ],
+            [
+              "row40"
+            ],
+            [
+              "row41"
+            ],
+            [
+              "row42"
+            ],
+            [
+              "row43"
+            ],
+            [
+              "row44"
+            ],
+            [
+              "row45"
+            ],
+            [
+              "row46"
+            ],
+            [
+              "row47"
+            ],
+            [
+              "row48"
+            ],
+            [
+              "row49"
+            ],
+            [
+              "row50"
+            ],
+            [
+              "row51"
+            ],
+            [
+              "row52"
+            ],
+            [
+              "row53"
+            ],
+            [
+              "row54"
+            ],
+            [
+              "row55"
+            ],
+            [
+              "row56"
+            ],
+            [
+              "row57"
+            ],
+            [
+              "row58"
+            ],
+            [
+              "row59"
+            ],
+            [
+              "row60"
+            ],
+            [
+              "row61"
+            ],
+            [
+              "row62"
+            ],
+            [
+              "row63"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/dc59787c-0f6d-417b-9ec0-256122891c4a/import_93947b6b-defa-4da1-9004-9f2c39923c96_0001",
+            "revision": "resident/0"
+          },
+          "currentness": "current",
+          "save": "Saved on this device",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSaved on this device\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nUnchanged\nValues:\nUp to date\n64 rows · 1 columns\nRow\tcolumn_1\n1\trow0\n2\trow1\n3\trow2\n4\trow3\n5\trow4\n6\trow5\n7\trow6\n8\trow7\n9\trow8\n10\trow9\n11\trow10\n12\trow11\n13\trow12\n14\trow13\n15\trow14\n16\trow15\n17\trow16\n18\trow17\n19\trow18\n20\trow19\n21\trow20\n22\trow21\n23\trow22\n24\trow23\n25\trow24\n26\trow25\n27\trow26\n28\trow27\n29\trow28\n30\trow29\n31\trow30\n32\trow31\n33\trow32\n34\trow33\n35\trow34\n36\trow35\n37\trow36\n38\trow37\n39\trow38\n40\trow39\n41\trow40\n42\trow41\n43\trow42\n44\trow43\n45\trow44\n46\trow45\n47\trow46\n48\trow47\n49\trow48\n50\trow49\n51\trow50\n52\trow51\n53\trow52\n54\trow53\n55\trow54\n56\trow55\n57\trow56\n58\trow57\n59\trow58\n60\trow59\n61\trow60\n62\trow61\n63\trow62\n64\trow63\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        }
+      }
+    },
+    {
+      "id": "E-CSV16-column-control",
+      "result": "PASS",
+      "evidence": {
+        "before": {
+          "cells": [
+            [
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/fda46199-05a4-4cb5-b022-b032a2b75cfa/import_fda46199-05a4-4cb5-b022-b032a2b75cfa_0001",
+            "revision": "resident/0"
+          },
+          "currentness": "current",
+          "save": "Not saved yet",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nNot saved yet\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nEdited — not saved\nValues:\nUp to date\n1 rows · 16 columns\nRow\tcolumn_1\tcolumn_2\tcolumn_3\tcolumn_4\tcolumn_5\tcolumn_6\tcolumn_7\tcolumn_8\tcolumn_9\tcolumn_10\tcolumn_11\tcolumn_12\tcolumn_13\tcolumn_14\tcolumn_15\tcolumn_16\n1\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        },
+        "after": {
+          "cells": [
+            [
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x",
+              "x"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/1e2f1c2a-e3cf-4a67-ac0d-28eaec658ce3/import_fda46199-05a4-4cb5-b022-b032a2b75cfa_0001",
+            "revision": "resident/0"
+          },
+          "currentness": "current",
+          "save": "Saved on this device",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSaved on this device\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nUnchanged\nValues:\nUp to date\n1 rows · 16 columns\nRow\tcolumn_1\tcolumn_2\tcolumn_3\tcolumn_4\tcolumn_5\tcolumn_6\tcolumn_7\tcolumn_8\tcolumn_9\tcolumn_10\tcolumn_11\tcolumn_12\tcolumn_13\tcolumn_14\tcolumn_15\tcolumn_16\n1\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\tx\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        }
+      }
+    },
+    {
+      "id": "E-profile-refusal-rows-65.csv",
+      "result": "PASS",
+      "evidence": {
+        "countBefore": {
+          "openProject": 2,
+          "observeOccurrence": 2,
+          "bootstrap": 4,
+          "queryTable": 2,
+          "closeProject": 2
+        },
+        "countAfter": {
+          "openProject": 2,
+          "observeOccurrence": 2,
+          "bootstrap": 4,
+          "queryTable": 2,
+          "closeProject": 2,
+          "inspectSpreadsheet": 1
+        },
+        "publication": false
+      }
+    },
+    {
+      "id": "E-profile-refusal-fields-17.csv",
+      "result": "PASS",
+      "evidence": {
+        "countBefore": {
+          "openProject": 2,
+          "observeOccurrence": 2,
+          "bootstrap": 4,
+          "queryTable": 2,
+          "closeProject": 2
+        },
+        "countAfter": {
+          "openProject": 2,
+          "observeOccurrence": 2,
+          "bootstrap": 4,
+          "queryTable": 2,
+          "closeProject": 2,
+          "inspectSpreadsheet": 1
+        },
+        "publication": false
+      }
+    },
+    {
+      "id": "F-existing-read-fault-no-publication-recovery",
+      "result": "PASS",
+      "evidence": {
+        "before": {
+          "openProject": 1,
+          "observeOccurrence": 5,
+          "bootstrap": 10,
+          "queryTable": 8,
+          "closeProject": 1,
+          "inspectSpreadsheet": 1,
+          "importSpreadsheet": 1,
+          "createKeyedGroupedSum": 1,
+          "queryKeyedGroupedSum": 1,
+          "exportProject": 2
+        },
+        "after": {
+          "openProject": 1,
+          "observeOccurrence": 5,
+          "bootstrap": 11,
+          "queryTable": 9,
+          "closeProject": 1,
+          "inspectSpreadsheet": 1,
+          "importSpreadsheet": 1,
+          "createKeyedGroupedSum": 1,
+          "queryKeyedGroupedSum": 1,
+          "exportProject": 2
+        },
+        "saved": {
+          "store": "opaque-copies",
+          "kind": "opaque",
+          "savedAt": "2026-09-26T14:31:10.085Z",
+          "revision": "resident/1",
+          "coreHash": "bbc61a259ecf87b1e5014934331bd4f815402065b2bfbc8d327d15974f025d5c",
+          "source": {
+            "name": "date-only.csv",
+            "format": "csv",
+            "metadata": {
+              "version": 1,
+              "sheets": [
+                {
+                  "schema_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0002",
+                  "name": "Imported table",
+                  "has_header": true,
+                  "columns": [
+                    {
+                      "field_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0003",
+                      "name": "code",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0004",
+                      "name": "category",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0005",
+                      "name": "quantity",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0006",
+                      "name": "price",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0007",
+                      "name": "event_date",
+                      "width": null
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "entity_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0008",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    },
+                    {
+                      "entity_id": "import_81ca9bc3-f929-4ebc-b8a3-fe21eba1b5a8_0009",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "ledger": [
+              {
+                "category": "native_equivalent",
+                "code": "csv_utf8",
+                "location": "source",
+                "message": "UTF-8 CSV retained quoted values, empty positions and explicit delimiter/header choice",
+                "blocking": false
+              },
+              {
+                "category": "preserved_readable",
+                "code": "csv_inference_advisory",
+                "location": "source",
+                "message": "CSV values remain Text or missing until explicit type acceptance; no locale-sensitive inference is authoritative",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "stable_reference_binding",
+                "location": "workbook",
+                "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+                "blocking": false
+              }
+            ],
+            "sha256": "7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5"
+          },
+          "presentation": {
+            "version": 1,
+            "report": {
+              "definitionId": "85b15ab6-5f0a-44c6-aa64-f04f6e73df90",
+              "type": "bar",
+              "title": "Prior authored report",
+              "categoryLabel": "Category",
+              "valueLabel": "Value",
+              "legendVisible": true
+            },
+            "snapshotRevision": "resident/1",
+            "snapshotDigest": "bbc61a259ecf87b1e5014934331bd4f815402065b2bfbc8d327d15974f025d5c"
+          }
+        }
+      }
+    },
+    {
+      "id": "R-unchanged-private-reader-Date-fixture",
+      "result": "PASS",
+      "evidence": {
+        "reopened": {
+          "cells": [
+            [
+              "PEN",
+              "Stationery",
+              "4",
+              "200",
+              "2026-09-26"
+            ],
+            [
+              "NOTE",
+              "Paper",
+              "5",
+              "200",
+              "2026-09-27"
+            ]
+          ],
+          "witness": {
+            "occurrence": "designer-occurrence/4748001d-3a87-46ba-96b0-a5382a2c16f5/import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0001",
+            "revision": "resident/0"
+          },
+          "currentness": "current",
+          "save": "Saved on this device",
+          "body": "Tachiko Sheet\nImported workbook\nAppearance\nRefresh\nSaved on this device\nCopies: this browser on this device\nSave a copy\nClose project\nTable\nsheet_1\nViews\nTable\nCross-table summary\nReport\nBrief\nImport & export\nWork:\nUnchanged\nValues:\nUp to date\n2 rows · 5 columns\nRow\tcolumn_1\tcolumn_2\tcolumn_3\tcolumn_4\tcolumn_5\n1\tPEN\tStationery\t4\t200\t2026-09-26\n2\tNOTE\tPaper\t5\t200\t2026-09-27\nTachiko Sheet · experimental core kit notices: third-party licenses · MIT · Apache-2.0"
+        },
+        "record": {
+          "store": "opaque-copies",
+          "kind": "opaque",
+          "savedAt": "2026-09-26T00:00:00.000Z",
+          "revision": "resident/0",
+          "coreHash": "2ecbb31f59c39550ff856a61c69af11ed0ea4c3ebd89b26ba19fe3d54608dec9",
+          "source": {
+            "name": "date-only.csv",
+            "format": "csv",
+            "metadata": {
+              "version": 1,
+              "sheets": [
+                {
+                  "schema_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0002",
+                  "name": "Imported table",
+                  "has_header": true,
+                  "columns": [
+                    {
+                      "field_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0003",
+                      "name": "code",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0004",
+                      "name": "category",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0005",
+                      "name": "quantity",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0006",
+                      "name": "price",
+                      "width": null
+                    },
+                    {
+                      "field_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0007",
+                      "name": "event_date",
+                      "width": null
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "entity_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0008",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    },
+                    {
+                      "entity_id": "import_cfc4685c-e590-4bb3-9238-d812b97af2cc_0009",
+                      "styles": [
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        },
+                        {
+                          "number_format": null,
+                          "bold": false,
+                          "fill": null,
+                          "wrap": false,
+                          "border": false,
+                          "alignment": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "ledger": [
+              {
+                "category": "native_equivalent",
+                "code": "csv_utf8",
+                "location": "source",
+                "message": "UTF-8 CSV retained quoted values, empty positions and explicit delimiter/header choice",
+                "blocking": false
+              },
+              {
+                "category": "preserved_readable",
+                "code": "csv_inference_advisory",
+                "location": "source",
+                "message": "CSV values remain Text or missing until explicit type acceptance; no locale-sensitive inference is authoritative",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:1:5",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:3",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:4",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "explicit_column_type",
+                "location": "Imported table:2:5",
+                "message": "Source scalar converted using the explicitly selected column type; original source remains available.",
+                "blocking": false
+              },
+              {
+                "category": "converted",
+                "code": "stable_reference_binding",
+                "location": "workbook",
+                "message": "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+                "blocking": false
+              }
+            ],
+            "sha256": "7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5"
+          },
+          "presentation": null
+        }
+      }
+    }
+  ]
+}

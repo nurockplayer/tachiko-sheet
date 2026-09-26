@@ -1,0 +1,13 @@
+Copied 18 unchanged fixture files to /private/tmp/sheet-web-save-qualification/source/public/examples/release-plan
+Copied 18 unchanged J4 canary files to /private/tmp/sheet-web-save-qualification/source/public/examples/j4-catalog-sales
+vite v8.3.0 building client environment for acceptance...
+transforming...
+✓ 43 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-acceptance/index.html                             0.39 kB │ gzip:   0.26 kB
+dist-acceptance/assets/index-BK9B0lrn.css             32.31 kB │ gzip:   6.49 kB
+dist-acceptance/assets/sheet-foundation-DLraZKuW.js   10.27 kB │ gzip:   3.66 kB │ map:    40.63 kB
+dist-acceptance/assets/index-DpaP43Ux.js             357.01 kB │ gzip: 105.03 kB │ map: 1,428.97 kB
+
+✓ built in 304ms

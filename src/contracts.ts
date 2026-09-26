@@ -122,6 +122,17 @@ export interface KeyedGroupedSumBindingCatalog {
     fields: Array<{ key: string; fieldType: string }>;
   }>;
 }
+
+/** True only when an authoritative schema catalog contains a Date field. */
+export function bindingCatalogContainsDate(catalog: KeyedGroupedSumBindingCatalog): boolean {
+  return catalog.collections.some((collection) =>
+    collection.fields.some((field) => field.fieldType === "date"),
+  );
+}
+
+export const DATE_SUMMARY_UNSUPPORTED_MESSAGE =
+  "Cross-table summaries cannot be created while any table contains a Date column.";
+
 export interface KeyedGroupedSumBindingChoice {
   ordersCollection: string;
   orderLookupKeyField: string;
