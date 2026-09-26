@@ -260,6 +260,9 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const editorInputRef = useRef<HTMLInputElement | null>(null);
+  const selectEditorValueOnFocusRef = useRef(true);
+  const focusRejectedEditorRef = useRef(false);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
@@ -274,6 +277,13 @@ export function SheetShell(props: SheetShellProps) {
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const onReportDraftChangeRef = useRef(props.onReportDraftChange);
+  const focusEditorInput = useCallback((node: HTMLInputElement | null) => {
+    editorInputRef.current = node;
+    if (!node || node.ownerDocument.activeElement === node) return;
+    node.focus();
+    if (selectEditorValueOnFocusRef.current) node.select();
+    else node.setSelectionRange(node.value.length, node.value.length);
+  }, []);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
@@ -340,6 +350,18 @@ export function SheetShell(props: SheetShellProps) {
     }
     lastCollectionIdentityRef.current = collectionIdentity;
   }, [collectionIdentity]);
+
+  useLayoutEffect(() => {
+    if (commitPending || !focusRejectedEditorRef.current) return;
+    const input = editorInputRef.current;
+    if (!editor || !input) {
+      focusRejectedEditorRef.current = false;
+      return;
+    }
+    if (props.busy || currentness === "unknown" || input.disabled) return;
+    focusRejectedEditorRef.current = false;
+    input.focus();
+  }, [commitPending, currentness, editor, props.busy]);
 
   useEffect(() => {
     if (!view) {
@@ -511,16 +533,22 @@ export function SheetShell(props: SheetShellProps) {
   );
 
   const runCommit = useCallback(
-    async (target: FieldProjection["target"], edit: Parameters<SheetShellProps["onCommit"]>[2]): Promise<boolean> => {
+    async (
+      target: FieldProjection["target"],
+      edit: Parameters<SheetShellProps["onCommit"]>[2],
+      onRejected?: () => void,
+    ): Promise<boolean> => {
       if (!witness) return false;
       setCommitPending(true);
       try {
         const accepted = await onCommit(witness, target, edit);
         if (!accepted) {
+          onRejected?.();
           setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
         }
         return accepted;
       } catch (error) {
+        onRejected?.();
         setLocalError(explain(error, "The work could not apply this change. The draft was kept."));
         return false;
       } finally {
@@ -538,6 +566,8 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     const original = seedTextOf(field);
+    selectEditorValueOnFocusRef.current = seed === undefined;
+    focusRejectedEditorRef.current = false;
     setLocalError(null);
     setSelectedEntity(entity);
     setEditor({
@@ -595,7 +625,9 @@ export function SheetShell(props: SheetShellProps) {
     } else {
       edit = scalarEditOf(editor.kind, editor.value);
     }
-    const accepted = await runCommit(field.target, edit);
+    const accepted = await runCommit(field.target, edit, () => {
+      focusRejectedEditorRef.current = true;
+    });
     if (accepted) {
       setEditor(null);
       setLocalError(null);
@@ -645,20 +677,19 @@ export function SheetShell(props: SheetShellProps) {
 
   function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (isComposingEvent(event)) return;
+    // Keep editor input and caret keys from being reinterpreted by the cell grid.
+    event.stopPropagation();
     if (event.key === "Enter") {
-      event.stopPropagation();
       event.preventDefault();
       submitEditor();
       return;
     }
     if (event.key === "Escape") {
-      event.stopPropagation();
       event.preventDefault();
       cancelEdit();
       return;
     }
     if (event.key === "Tab" && editor) {
-      event.stopPropagation();
       event.preventDefault();
       const position = { entity: editor.entity, field: editor.field };
       const step = event.shiftKey ? -1 : 1;
@@ -1787,14 +1818,6 @@ function focusableElements(root: HTMLElement): HTMLElement[] {
       "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
     ),
   );
-}
-
-function focusEditorInput(node: HTMLInputElement | null): void {
-  if (!node) return;
-  if (node.ownerDocument.activeElement !== node) {
-    node.focus();
-    node.select();
-  }
 }
 
 function isComposingEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {
