@@ -197,6 +197,18 @@ const FIXED_STATUS_PAIRS = Object.freeze([
   { foreground: "#206C4E", background: "#E9F6F0", context: "protected success status pair" },
 ] as const);
 
+/** Product-owned active fill used by ordinary and ghost shared controls. */
+export const SHARED_CONTROL_PRESSED_SURFACE = "#ECEEF4" as const;
+
+const FIXED_TEXT_ACTUAL_USE_PAIRS = Object.freeze([
+  Object.freeze({
+    foreground: "text.primary" as const,
+    background: SHARED_CONTROL_PRESSED_SURFACE,
+    context: "text.primary text on shared control pressed surface",
+    required: 4.5 as const,
+  }),
+]);
+
 const FIXED_WARNING_ACTUAL_USE = Object.freeze([
   { background: "grid.canvas", context: "warning status text on grid canvas" },
   { background: "selection.row.background", context: "warning status text on selected row" },
@@ -263,6 +275,9 @@ export function admitInterfaceProfileContrast(input: unknown): ProfileSafetyResu
 
   for (const pair of [...APPROVED_PAIRS, ...EXTRA_ACTUAL_USE_PAIRS]) {
     check(pair.context, colors[pair.foreground], colors[pair.background], pair.required);
+  }
+  for (const pair of FIXED_TEXT_ACTUAL_USE_PAIRS) {
+    check(pair.context, colors[pair.foreground], pair.background, pair.required);
   }
   for (const pair of FIXED_STATUS_PAIRS) check(pair.context, pair.foreground, pair.background, 4.5);
   for (const pair of FIXED_WARNING_ACTUAL_USE) {

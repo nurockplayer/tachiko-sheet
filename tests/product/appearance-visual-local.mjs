@@ -22,6 +22,20 @@ const densities = [
   { id: "comfortable", label: "Comfortable", pitch: 32 },
 ];
 const widths = [320, 600, 1023, 1024];
+const safeImportedGhostPreference = JSON.stringify({
+  schemaVersion: 2,
+  kind: "imported",
+  profile: {
+    schemaVersion: 1,
+    name: "Safe Ghost Probe",
+    colorScheme: "light",
+    typography: "tachiko-local",
+    density: "compact",
+    chrome: "structured",
+    colors: Object.fromEntries(JSON.parse(await readFile(path.join(root, "docs/design/interface-profile-v1-mapping.json"), "utf8"))
+      .roles.map(({ role, value }) => [role, value])),
+  },
+});
 const failures = [];
 const observations = [];
 const evidence = (condition, label, details = null) => {
@@ -384,7 +398,7 @@ async function geometry(page, width, combo) {
 
 async function auditWorkbookViewportBounds(page, width, height, profile) {
   await page.setViewportSize({ width, height });
-  for (const viewName of ["Table", "Brief", "Import & export"]) {
+  for (const viewName of ["Table", "Cross-table summary", "Report", "Brief", "Import & export"]) {
     await page.getByRole("tab", { name: viewName, exact: true }).click();
     const layout = await page.evaluate(() => {
       const panel = document.querySelector('[role="tabpanel"]');
@@ -392,6 +406,18 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       const grid = document.querySelector(".ts-grid-scroll");
       const panelRect = panel?.getBoundingClientRect();
       const footerRect = footer?.getBoundingClientRect();
+      const sections = [...document.querySelectorAll(".ts-panel.ts-brief > .ts-card")].map((section) => {
+        const style = getComputedStyle(section);
+        return {
+          background: style.backgroundColor,
+          boxShadow: style.boxShadow,
+          borderTopWidth: style.borderTopWidth,
+          borderRightWidth: style.borderRightWidth,
+          borderBottomWidth: style.borderBottomWidth,
+          borderLeftWidth: style.borderLeftWidth,
+        };
+      });
+      const panelStyle = panel ? getComputedStyle(panel) : null;
       return {
         viewportWidth: innerWidth,
         viewportHeight: innerHeight,
@@ -404,6 +430,10 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         panelClientHeight: panel?.clientHeight ?? null,
         panelScrollHeight: panel?.scrollHeight ?? null,
         panelOverflowY: panel ? getComputedStyle(panel).overflowY : "missing",
+        panelClientWidth: panel?.clientWidth ?? null,
+        panelScrollWidth: panel?.scrollWidth ?? null,
+        panelBackground: panelStyle?.backgroundColor ?? null,
+        sections,
         gridClientWidth: grid?.clientWidth ?? null,
         gridScrollWidth: grid?.scrollWidth ?? null,
         gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
@@ -416,6 +446,21 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
     evidence(layout.panelBottom <= layout.footerTop + 1, `${label} panel ends before the Views/status footer`, layout);
     evidence(layout.footerBottom <= height + 1, `${label} keeps the complete Views/status footer in the viewport`, layout);
     evidence(layout.pageHeight <= height + 1 && layout.scrollY === 0, `${label} does not push the document beyond the viewport`, layout);
+    if (viewName !== "Table") {
+      evidence(layout.sections.length > 0, `${label} renders its shared workbook sections`, layout);
+      evidence(layout.panelScrollWidth <= layout.panelClientWidth + 1,
+        `${label} sections fit the viewport without horizontal panel overflow`, layout);
+      evidence(layout.sections.every((section) => section.background === "rgba(0, 0, 0, 0)" && section.boxShadow === "none" &&
+        section.borderTopWidth === "0px" && section.borderRightWidth === "0px" && section.borderLeftWidth === "0px"),
+      `${label} uses open sections without raised card borders`, layout);
+      if (viewName === "Report") {
+        evidence(layout.sections.length === 1 && layout.sections[0].borderBottomWidth === "0px",
+          `${label} single no-report section has no trailing divider`, layout);
+      } else {
+        evidence(layout.sections.every((section) => section.borderBottomWidth === "1px"),
+          `${label} keeps the established dividers on multi-section workbook panels`, layout);
+      }
+    }
     if (width === 320 && viewName === "Brief") {
       evidence(layout.panelScrollHeight > layout.panelClientHeight,
         `${label} scrolls the long Brief content inside its panel`, layout);
@@ -795,6 +840,208 @@ async function auditFocusModes(context, page) {
   }
 }
 
+async function sampleButtonStates(page, button, tag) {
+  await page.mouse.move(1, 1);
+  const read = () => button.evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    border: getComputedStyle(element).borderTopColor,
+    foreground: getComputedStyle(element).color,
+    active: element.matches(":active"),
+  }));
+  const rest = await read();
+  await button.hover();
+  const hover = await read();
+  const bounds = await button.boundingBox();
+  assert.ok(bounds, `${tag} button has a rendered box`);
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  const pressed = await read();
+  evidence(pressed.active, `${tag} sample reaches the real pressed state`, pressed);
+  // Release outside the button so this state probe does not invoke its command.
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
+  return { rest, hover, pressed };
+}
+
+async function forcedSystemColor(page, systemColor) {
+  return page.evaluate((colorName) => {
+    const probe = document.createElement("span");
+    probe.style.color = colorName;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, systemColor);
+}
+
+async function computedControlTokens(page, tokens) {
+  return page.evaluate((entries) => {
+    const probe = document.createElement("span");
+    document.body.append(probe);
+    const result = Object.fromEntries(entries.map(([key, property, token]) => {
+      probe.style[property] = `var(${token})`;
+      return [key, getComputedStyle(probe)[property]];
+    }));
+    probe.remove();
+    return result;
+  }, tokens);
+}
+
+async function auditGhostInteractionStates(page, profileLabel) {
+  const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
+  await overflow.click();
+  const ghost = page.locator(".ts-command-overflow > button.ts-button--ghost");
+  await ghost.waitFor({ state: "visible" });
+  const ghostStatesByMode = {};
+  for (const { forcedColors, colorScheme } of [
+    { forcedColors: "none", colorScheme: "light" },
+    { forcedColors: "active", colorScheme: "light" },
+    { forcedColors: "active", colorScheme: "dark" },
+  ]) {
+    await page.emulateMedia({ forcedColors, colorScheme });
+    const modeLabel = forcedColors === "none" ? "normal" : `forced-${colorScheme}`;
+    const states = await sampleButtonStates(page, ghost, `ghost ${profileLabel} ${modeLabel}`);
+    if (forcedColors === "active") {
+      const systemCanvas = await forcedSystemColor(page, "Canvas");
+      const systemText = await forcedSystemColor(page, "ButtonText");
+      const systemForeground = await forcedSystemColor(page, "CanvasText");
+      evidence(Object.values(states).every(({ background, border, foreground }) =>
+        background === systemCanvas && border === systemText && foreground === systemForeground),
+      `ghost ${profileLabel} ${modeLabel} retains Canvas, ButtonText, and CanvasText`, { states, systemCanvas, systemText, systemForeground });
+    } else {
+      const surfaces = await computedControlTokens(page, [
+        ["hover", "backgroundColor", "--ts-surface-sunken"],
+        ["pressed", "backgroundColor", "--ts-surface-head"],
+        ["strongBorder", "borderColor", "--ts-line-strong"],
+      ]);
+      const transparentBackground = (rgb(states.rest.background)?.[3] ?? 1) === 0;
+      const transparentRestBorder = (rgb(states.rest.border)?.[3] ?? 1) === 0;
+      evidence(transparentBackground && transparentRestBorder &&
+        states.hover.background === surfaces.hover && states.pressed.background === surfaces.pressed &&
+        states.hover.background !== states.pressed.background &&
+        states.hover.border === surfaces.strongBorder && states.pressed.border === surfaces.strongBorder,
+      `ghost ${profileLabel} has transparent rest and strong hover/pressed borders`, { states, surfaces });
+      evidence([states.hover, states.pressed].every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5),
+        `ghost ${profileLabel} text remains at least 4.5:1 on hover and pressed surfaces`, states);
+    }
+    ghostStatesByMode[forcedColors === "none" ? "normal" : `forced-${colorScheme}`] = states;
+  }
+  observations.push({ buttonVariantState: "ghost", profile: profileLabel, states: ghostStatesByMode });
+}
+
+async function auditButtonVariantBoundaries(browser) {
+  for (const profile of profiles) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await installDistRoutes(context, dist);
+    const page = await context.newPage();
+    await openApp(context, page);
+    await openCanary(context, page);
+    await choose(page, profile.id, "compact");
+    await page.keyboard.press("Escape");
+
+    const ordinary = page.getByRole("button", { name: "Refresh", exact: true });
+    const ordinaryStatesByMode = {};
+    for (const forcedColors of ["none", "active"]) {
+      await page.emulateMedia({ forcedColors, colorScheme: "light" });
+      const states = await sampleButtonStates(page, ordinary, `ordinary ${profile.id} ${forcedColors}`);
+      if (forcedColors === "active") {
+        const systemCanvas = await forcedSystemColor(page, "Canvas");
+        const systemText = await forcedSystemColor(page, "ButtonText");
+        const systemForeground = await forcedSystemColor(page, "CanvasText");
+        evidence(Object.values(states).every(({ background, border, foreground }) =>
+          background === systemCanvas && border === systemText && foreground === systemForeground),
+          `ordinary ${profile.id} forced-colors states retain Canvas and ButtonText`, { states, systemCanvas, systemText });
+      } else {
+        const surfaces = await computedControlTokens(page, [
+          ["rest", "backgroundColor", "--ts-surface"],
+          ["hover", "backgroundColor", "--ts-surface-sunken"],
+          ["pressed", "backgroundColor", "--ts-surface-head"],
+        ]);
+        evidence(states.rest.background === surfaces.rest && states.hover.background === surfaces.hover && states.pressed.background === surfaces.pressed &&
+          states.rest.background !== states.hover.background && states.hover.background !== states.pressed.background,
+        `ordinary ${profile.id} has distinct approved rest, hover, and pressed surfaces`, { states, surfaces });
+        evidence(Object.values(states).every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5),
+          `ordinary ${profile.id} text remains at least 4.5:1 across interaction states`, states);
+      }
+      ordinaryStatesByMode[forcedColors] = states;
+    }
+    observations.push({ buttonVariantState: "ordinary", profile: profile.id, states: ordinaryStatesByMode });
+
+    // A dirty edit exposes the real destructive and neutral modal actions.
+    await page.locator(".ts-grid tbody tr").first().locator("td").first().dblclick();
+    const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+    await editor.fill(`Danger pressed probe ${profile.id}`);
+    await editor.press("Enter");
+    await page.waitForFunction(() => document.querySelector("[data-work-dirty]")?.getAttribute("data-work-dirty") === "true");
+    await page.getByRole("button", { name: "Close project", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+    await dialog.waitFor();
+    const keepEditing = dialog.getByRole("button", { name: "Keep editing", exact: true });
+    const danger = dialog.getByRole("button", { name: "Close without saving", exact: true });
+    const dangerStatesByMode = {};
+    for (const forcedColors of ["none", "active"]) {
+      await page.emulateMedia({ forcedColors, colorScheme: "light" });
+      const neutral = await sampleButtonStates(page, keepEditing, `ordinary modal ${profile.id} ${forcedColors}`);
+      const states = await sampleButtonStates(page, danger, `danger ${profile.id} ${forcedColors}`);
+      if (forcedColors === "active") {
+        const systemCanvas = await forcedSystemColor(page, "Canvas");
+        const systemText = await forcedSystemColor(page, "ButtonText");
+        const systemForeground = await forcedSystemColor(page, "CanvasText");
+        evidence(Object.values(states).every(({ background, border, foreground }) =>
+          background === systemCanvas && border === systemText && foreground === systemForeground) &&
+          Object.values(neutral).every(({ background, border, foreground }) =>
+            background === systemCanvas && border === systemText && foreground === systemForeground),
+        `danger and neutral ${profile.id} forced-colors states retain system boundaries`, { states, neutral, systemCanvas, systemText });
+      } else {
+        const surfaces = await computedControlTokens(page, [
+          ["rest", "backgroundColor", "--ts-protected-surface"],
+          ["hover", "backgroundColor", "--ts-protected-surface-inset"],
+          ["pressed", "backgroundColor", "--ts-protected-destructive-pressed"],
+          ["border", "borderColor", "--ts-protected-destructive-border"],
+        ]);
+        evidence(states.rest.background === surfaces.rest && states.hover.background === surfaces.hover && states.pressed.background === surfaces.pressed &&
+          states.rest.background !== states.hover.background && states.hover.background !== states.pressed.background &&
+          Object.values(states).every((state) => state.border === surfaces.border),
+        `danger ${profile.id} keeps its destructive border and distinct approved pressed surface`, { states, surfaces });
+        evidence(neutral.hover.background !== neutral.pressed.background,
+          `ordinary modal ${profile.id} has distinct hover and pressed surfaces`, { neutral });
+        evidence(Object.values(states).every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5) &&
+          Object.values(neutral).every((state) => contrast(rgb(state.foreground), rgb(state.background)) >= 4.5),
+        `danger and neutral ${profile.id} text remain at least 4.5:1 across interaction states`, { states, neutral });
+      }
+      dangerStatesByMode[forcedColors] = states;
+    }
+    observations.push({ buttonVariantState: "danger", profile: profile.id, states: dangerStatesByMode });
+    await context.close();
+
+    const ghostContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+    await installDistRoutes(ghostContext, dist);
+    const ghostPage = await ghostContext.newPage();
+    await openApp(ghostContext, ghostPage);
+    await openCanary(ghostContext, ghostPage);
+    await choose(ghostPage, profile.id, "compact");
+    await ghostPage.keyboard.press("Escape");
+    await auditGhostInteractionStates(ghostPage, profile.id);
+    await ghostContext.close();
+  }
+
+  const importedContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
+  await installDistRoutes(importedContext, dist);
+  await importedContext.addInitScript(({ storageKey, rawPreference }) => {
+    localStorage.setItem(storageKey, rawPreference);
+  }, { storageKey: key, rawPreference: safeImportedGhostPreference });
+  const importedPage = await importedContext.newPage();
+  await openApp(importedContext, importedPage);
+  await importedPage.getByRole("button", { name: "Appearance", exact: true }).click();
+  const importedRadio = importedPage.getByRole("radio", { name: "Imported Safe Ghost Probe", exact: true });
+  evidence(await importedRadio.isChecked(), "safe imported appearance loads for the ghost control probe", null);
+  await importedPage.keyboard.press("Escape");
+  await openCanary(importedContext, importedPage);
+  await importedPage.keyboard.press("Escape");
+  await auditGhostInteractionStates(importedPage, "safe imported");
+  await importedContext.close();
+}
+
 async function auditNotice(context, profile) {
   const page = await context.newPage();
   await page.addInitScript(({ storageKey, selected }) => {
@@ -1013,6 +1260,7 @@ async function main() {
 
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
+    await auditButtonVariantBoundaries(browser);
     await auditHomeViewportBounds(page);
     await auditFirstEntryStates(browser, dist);
   } finally {
@@ -1026,6 +1274,7 @@ async function main() {
     geometryCases: observations.filter((item) => typeof item.width === "number").length,
     noticeProfiles: profiles.length,
     forcedColorModes: ["light", "dark"],
+    buttonVariantStates: observations.filter((item) => item.buttonVariantState),
     contrastBackgrounds: "computed browser backgrounds composited over ancestors; screenshot fallback for gradients; text foreground from computed styles",
     effective200PercentProxy: {
       label: "512 CSS px effective-width proxy for 200% zoom; CSS sizes remain unchanged; not actual browser zoom or OS text scaling",

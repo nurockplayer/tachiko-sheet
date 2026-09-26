@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SHARED_CONTROL_PRESSED_SURFACE } from "../application/interface-profile-safety.js";
 import {
   PRIVATE_CSS_VARIABLES,
   TACHIKO_COMPACT_PORCELAIN_PROFILE,
@@ -47,6 +48,36 @@ describe("visual foundation CSS contract", () => {
     expect(css).toContain("forced-color-adjust: none;");
     expect(css).toContain(".ts-button:disabled {");
     expect(css).not.toContain(".ts-header-actions .ts-button--primary:not(:disabled)");
+  });
+
+  it("uses a shared quiet workbook control and open section recipe", () => {
+    const pressedSurface = css.match(/--ts-surface-head:\s*(#[0-9a-f]{6});/i)?.[1];
+    expect(pressedSurface?.toUpperCase()).toBe(SHARED_CONTROL_PRESSED_SURFACE);
+    expect(css).toContain("border: 1px solid var(--ts-line);");
+    const genericHover = css.match(/\.ts-button:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const genericPressed = css.match(/\.ts-button:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const dangerHover = css.match(/\.ts-button--danger:hover:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    const dangerPressed = css.match(/\.ts-button--danger:active:not\(:disabled\) \{([^}]*)\}/)?.[1] ?? "";
+    expect(genericHover).not.toContain("border-color:");
+    expect(genericPressed).toContain("background: var(--ts-surface-head);");
+    expect(genericPressed).not.toContain("border-color:");
+    expect(dangerHover).not.toContain("border-color:");
+    expect(dangerPressed).toContain("background: var(--ts-protected-destructive-pressed);");
+    expect(dangerPressed).not.toContain("border-color:");
+    expect(css).toContain("--ts-protected-destructive-pressed: #eceef4;");
+    expect(css).toContain(".ts-button--ghost {\n  background: transparent;\n  border-color: transparent;");
+    expect(css).toContain(`.ts-button--ghost:hover:not(:disabled),\n.ts-button--ghost:active:not(:disabled) {\n  border-color: var(--ts-line-strong);\n}`);
+    expect(css).toContain(".ts-app .ts-button--ghost:hover:not(:disabled),\n  .ts-app .ts-button--ghost:active:not(:disabled) { border-color: ButtonText; }");
+    expect(css).toContain(".ts-panel.ts-brief > .ts-card");
+    expect(css).toContain(".ts-panel.ts-brief > .ts-report-card:only-child");
+    expect(css).toContain("background: transparent;");
+    expect(css).toContain("box-shadow: none;");
+    expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea)");
+    expect(css).toContain("min-height: var(--ts-profile-command-target-min-height);");
+    expect(css).toContain(".ts-panel.ts-brief :is(select, input:not([type=\"checkbox\"]), textarea):disabled");
+    expect(css).toContain("@media (forced-colors: active)");
+    expect(css).toContain(".ts-panel.ts-brief { background: Canvas; }");
+    expect(css).not.toContain(".ts-panel.ts-brief select { appearance: none");
   });
 
   it("keeps public profile bindings private and wires the approved role mappings", () => {
