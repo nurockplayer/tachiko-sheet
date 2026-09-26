@@ -1738,7 +1738,7 @@ export function SheetShell(props: SheetShellProps) {
         if ((event.buttons & 1) !== 1) clearOwnedSharedPointer(heldPointerOwnerRef, event.pointerId);
       }}
       onKeyDownCapture={(event) => {
-        if (event.key === "Enter" || event.key === " ") holdSharedButton(event.target);
+        if (!event.defaultPrevented && (event.key === "Enter" || event.key === " ")) holdSharedButton(event.target);
       }}
       onKeyUpCapture={(event) => {
         if (event.key === "Enter" || event.key === " ") releaseSharedKeyboardButton(event.target, heldPointerOwnerRef);

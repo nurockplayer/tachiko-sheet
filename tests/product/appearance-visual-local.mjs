@@ -982,13 +982,13 @@ async function auditKeyboardHeldControl(page, tag) {
     element.addEventListener("keydown", (event) => {
       element.dataset.keyboardTrace = JSON.stringify([
         ...JSON.parse(element.dataset.keyboardTrace),
-        { type: "keydown", key: event.key, held: element.hasAttribute("data-ts-held") },
+        { type: "keydown", key: event.key, repeat: event.repeat, defaultPrevented: event.defaultPrevented, held: element.hasAttribute("data-ts-held") },
       ]);
     });
     element.addEventListener("keyup", (event) => {
       element.dataset.keyboardTrace = JSON.stringify([
         ...JSON.parse(element.dataset.keyboardTrace),
-        { type: "keyup", key: event.key, held: element.hasAttribute("data-ts-held") },
+        { type: "keyup", key: event.key, defaultPrevented: event.defaultPrevented, held: element.hasAttribute("data-ts-held") },
       ]);
     });
     element.addEventListener("click", () => {
@@ -1119,6 +1119,242 @@ async function auditKeyboardHeldControl(page, tag) {
     spaceEscapeArmed, spaceEscapeRelease: spaceEscapeReleased, focusLoss, pointerCancellation, supplementalBusyGuard: busyGuard,
     methodsBefore, methodsAfter });
   await page.keyboard.press("Escape");
+}
+
+async function auditDismissedSpaceGesture(page, tag) {
+  const button = page.locator(".ts-workbook-head .ts-appearance-trigger");
+  const methodsBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  await button.evaluate((element) => {
+    element.dataset.dismissalClicks = "0";
+    element.dataset.dismissalTrace = "[]";
+    for (const type of ["keydown", "keyup", "click"]) {
+      element.addEventListener(type, (event) => {
+        const trace = JSON.parse(element.dataset.dismissalTrace);
+        trace.push({
+          type,
+          key: event.key ?? null,
+          repeat: event.repeat ?? false,
+          defaultPrevented: event.defaultPrevented ?? false,
+          held: element.hasAttribute("data-ts-held"),
+          expanded: element.getAttribute("aria-expanded"),
+        });
+        element.dataset.dismissalTrace = JSON.stringify(trace);
+        if (type === "click") element.dataset.dismissalClicks = String(Number(element.dataset.dismissalClicks) + 1);
+      });
+    }
+  });
+  const read = () => button.evaluate((element) => ({
+    held: element.hasAttribute("data-ts-held"),
+    expanded: element.getAttribute("aria-expanded"),
+    clicks: Number(element.dataset.dismissalClicks),
+    focused: document.activeElement === element,
+    trace: JSON.parse(element.dataset.dismissalTrace),
+  }));
+
+  await button.click();
+  await button.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  const dismissedTrigger = await read();
+  evidence(dismissedTrigger.expanded === "false" && !dismissedTrigger.held && dismissedTrigger.focused && dismissedTrigger.clicks === 1,
+    tag + " accepted Escape dismissal of an expanded focused trigger clears cue, returns focus, and adds no click", dismissedTrigger);
+  if (tag === "shared control tachiko") await captureHeldControl(page, "dismissed-space-trigger.png");
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Space");
+  const repeated = await read();
+  evidence(repeated.expanded === "false" && !repeated.held &&
+    repeated.trace.filter((event) => event.type === "keydown" && event.key === " " && event.repeat && event.defaultPrevented).length >= 2,
+    tag + " actual repeated Space keydowns stay canceled at the restored trigger", repeated);
+  if (tag === "shared control tachiko") await captureHeldControl(page, "dismissed-space-repeats.png");
+  await page.keyboard.up("Space");
+  const released = await read();
+  evidence(released.expanded === "false" && !released.held && released.clicks === 1 &&
+    released.trace.some((event) => event.type === "keyup" && event.key === " " && event.defaultPrevented),
+    tag + " canceled trigger keyup clears bookkeeping with no native click", released);
+  await page.keyboard.press("Space");
+  const fresh = await read();
+  evidence(fresh.expanded === "true" && fresh.clicks === 2,
+    tag + " next fresh Space gesture opens once after cancellation cleanup", fresh);
+  await page.keyboard.press("Escape");
+
+  await button.click();
+  await button.focus();
+  await page.keyboard.down("Space");
+  if (tag === "shared control tachiko") await captureHeldControl(page, "space-held-before-pointer-dismissal.png");
+  const clicksBeforePointerDismissal = (await read()).clicks;
+  await button.click();
+  const pointerDismissal = await read();
+  evidence(pointerDismissal.expanded === "false" && !pointerDismissal.held && pointerDismissal.focused &&
+    pointerDismissal.clicks === clicksBeforePointerDismissal + 1,
+  tag + " pointer click on expanded trigger dismisses while Space is held and clears cue", pointerDismissal);
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Space");
+  const pointerDismissalRepeats = await read();
+  await page.keyboard.up("Space");
+  const pointerDismissalRelease = await read();
+  evidence(pointerDismissalRepeats.expanded === "false" && !pointerDismissalRepeats.held &&
+    pointerDismissalRepeats.trace.filter((event) => event.type === "keydown" && event.key === " " && event.repeat && event.defaultPrevented).length >= 1 &&
+    pointerDismissalRelease.expanded === "false" && !pointerDismissalRelease.held &&
+    pointerDismissalRelease.clicks === clicksBeforePointerDismissal + 1,
+  tag + " pointer-dismissed Space repeats and release cannot resurrect or click trigger", { pointerDismissalRepeats, pointerDismissalRelease });
+  await page.keyboard.press("Space");
+  const afterPointerDismissalFresh = await read();
+  evidence(afterPointerDismissalFresh.expanded === "true" && afterPointerDismissalFresh.clicks === clicksBeforePointerDismissal + 2,
+    tag + " fresh Space press opens once after pointer dismissal cleanup", afterPointerDismissalFresh);
+  await page.keyboard.press("Escape");
+
+  await button.click();
+  const clicksBeforeInteriorDismissal = (await read()).clicks;
+  const closeButton = page.getByRole("button", { name: "Close", exact: true });
+  await closeButton.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  const interiorDismissal = await read();
+  evidence(interiorDismissal.expanded === "false" && !interiorDismissal.held && interiorDismissal.focused && interiorDismissal.clicks === clicksBeforeInteriorDismissal,
+    tag + " actual Escape dismissal from the interior control cancels its Space press", interiorDismissal);
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Space");
+  await page.keyboard.up("Space");
+  const interiorRelease = await read();
+  evidence(interiorRelease.expanded === "false" && interiorRelease.clicks === clicksBeforeInteriorDismissal,
+    tag + " interior-dismissed Space release does not reactivate the trigger", interiorRelease);
+  await page.keyboard.press("Space");
+  const afterInteriorFresh = await read();
+  evidence(afterInteriorFresh.expanded === "true" && afterInteriorFresh.clicks === clicksBeforeInteriorDismissal + 1,
+    tag + " fresh Space after interior dismissal activates once", afterInteriorFresh);
+  await page.keyboard.press("Escape");
+
+  await button.click();
+  const clicksBeforeTabTest = (await read()).clicks;
+  await button.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  const tabReturned = await read();
+  await page.keyboard.down("Space");
+  await page.keyboard.up("Space");
+  const tabReleased = await read();
+  evidence(tabReturned.focused && tabReleased.expanded === "false" && tabReleased.clicks === clicksBeforeTabTest,
+    tag + " Tab away/back during a canceled Space press cannot re-arm it", { tabReturned, tabReleased });
+  await page.keyboard.press("Space");
+  const tabFresh = await read();
+  evidence(tabFresh.expanded === "true" && tabFresh.clicks === clicksBeforeTabTest + 1,
+    tag + " fresh activation works after Tab-return cancellation release", tabFresh);
+  await page.keyboard.press("Escape");
+
+  await button.click();
+  const clicksBeforeElsewhereTest = (await read()).clicks;
+  await button.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  const saveButton = page.getByRole("button", { name: "Save a copy", exact: true });
+  await saveButton.focus();
+  await page.keyboard.up("Space");
+  const keyupElsewhere = await read();
+  evidence(keyupElsewhere.expanded === "false" && keyupElsewhere.clicks === clicksBeforeElsewhereTest && !keyupElsewhere.held,
+    tag + " canceled Space keyup anywhere clears ownership without activation", keyupElsewhere);
+  await button.focus();
+  await page.keyboard.press("Space");
+  const afterElsewhereFresh = await read();
+  evidence(afterElsewhereFresh.expanded === "true" && afterElsewhereFresh.clicks === clicksBeforeElsewhereTest + 1,
+    tag + " fresh activation works after keyup elsewhere", afterElsewhereFresh);
+  await page.keyboard.press("Escape");
+
+  await button.click();
+  const clicksBeforeWindowBlur = (await read()).clicks;
+  await button.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  const windowEventsBefore = await page.evaluate(() => {
+    window.__appearanceWindowEvents = [];
+    window.addEventListener("blur", () => window.__appearanceWindowEvents.push("blur"));
+    window.addEventListener("focus", () => window.__appearanceWindowEvents.push("focus"));
+    return window.__appearanceWindowEvents.length;
+  });
+  const backgroundPage = await page.context().newPage();
+  await backgroundPage.bringToFront();
+  await page.bringToFront();
+  const syntheticWindowFocusEvents = await page.evaluate(() => ({
+    blurDispatched: window.dispatchEvent(new Event("blur")),
+    focusDispatched: window.dispatchEvent(new Event("focus")),
+  }));
+  const windowEventsAfter = await page.evaluate(() => [...window.__appearanceWindowEvents]);
+  await page.keyboard.down("Space");
+  const afterWindowBlurRepeat = await read();
+  await page.keyboard.up("Space");
+  const afterWindowBlurRelease = await read();
+  evidence(syntheticWindowFocusEvents.blurDispatched && syntheticWindowFocusEvents.focusDispatched &&
+    windowEventsAfter.includes("blur") && windowEventsAfter.includes("focus") &&
+    afterWindowBlurRepeat.expanded === "false" &&
+    afterWindowBlurRepeat.trace.some((event) => event.type === "keydown" && event.key === " " && event.repeat && event.defaultPrevented),
+  tag + " supplemental window blur/focus events preserve canceled Space and prevent its repeat", {
+    classification: "browser page switching did not emit DOM window blur/focus in this headless run; dispatched events directly to exercise product handlers",
+    syntheticWindowFocusEvents, windowEventsBefore, windowEventsAfter, afterWindowBlurRepeat,
+  });
+  evidence(afterWindowBlurRelease.expanded === "false" && afterWindowBlurRelease.clicks === clicksBeforeWindowBlur,
+    tag + " actual post-blur release does not reactivate Appearance", afterWindowBlurRelease);
+  await backgroundPage.close();
+  await page.keyboard.press("Space");
+  const afterBlurFresh = await read();
+  evidence(afterBlurFresh.expanded === "true" && afterBlurFresh.clicks === clicksBeforeWindowBlur + 1,
+    tag + " fresh Space activates once after window-blur cancellation cleanup", afterBlurFresh);
+  await page.keyboard.press("Escape");
+
+  await button.click();
+  const clicksBeforeMissedRelease = (await read()).clicks;
+  await button.focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  const missedReleaseBackground = await page.context().newPage();
+  await missedReleaseBackground.bringToFront();
+  await page.bringToFront();
+  const supplementalRecovery = await button.evaluate((element) => {
+    const down = new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true, repeat: false });
+    const downDispatched = element.dispatchEvent(down);
+    const downPrevented = down.defaultPrevented;
+    const up = new KeyboardEvent("keyup", { key: " ", code: "Space", bubbles: true, cancelable: true });
+    const upDispatched = element.dispatchEvent(up);
+    return {
+      downDispatched,
+      downPrevented,
+      upDispatched,
+      upPrevented: up.defaultPrevented,
+      held: element.hasAttribute("data-ts-held"),
+      expanded: element.getAttribute("aria-expanded"),
+      clicks: Number(element.dataset.dismissalClicks),
+    };
+  });
+  await page.keyboard.up("Space");
+  await missedReleaseBackground.close();
+  evidence(supplementalRecovery.downDispatched && !supplementalRecovery.downPrevented &&
+    supplementalRecovery.upDispatched && !supplementalRecovery.upPrevented && !supplementalRecovery.held &&
+    supplementalRecovery.expanded === "false" && supplementalRecovery.clicks === clicksBeforeMissedRelease,
+  tag + " supplemental missed-keyup recovery accepts fresh nonrepeat Space and clears stale cancellation", {
+    classification: "synthetic KeyboardEvent supplemental recovery probe; does not claim physical OS key-loss evidence",
+    supplementalRecovery,
+  });
+  await page.keyboard.press("Space");
+  const afterMissedReleaseFresh = await read();
+  evidence(afterMissedReleaseFresh.expanded === "true" && afterMissedReleaseFresh.clicks === clicksBeforeMissedRelease + 1,
+    tag + " actual fresh press activates once after missed-release recovery probe", afterMissedReleaseFresh);
+  await page.keyboard.press("Escape");
+
+  const methodsAfter = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
+  evidence(JSON.stringify(methodsAfter) === JSON.stringify(methodsBefore),
+    tag + " dismissed and fresh Appearance keyboard gestures dispatch no Work method", { methodsBefore, methodsAfter });
+  observations.push({ dismissedPhysicalSpaceGesture: tag, dismissedTrigger, repeated, released, fresh, interiorDismissal, interiorRelease,
+    afterInteriorFresh, tabReturned, tabReleased, tabFresh, keyupElsewhere, afterElsewhereFresh,
+    syntheticWindowFocusEvents, windowEventsAfter, afterWindowBlurRepeat, afterWindowBlurRelease, afterBlurFresh,
+    pointerDismissal, pointerDismissalRepeats, pointerDismissalRelease, afterPointerDismissalFresh,
+    missedReleaseRecovery: supplementalRecovery, afterMissedReleaseFresh, methodsBefore, methodsAfter });
 }
 
 async function auditAppearanceVariantKeyboard(page) {
@@ -1363,6 +1599,7 @@ async function auditButtonVariantBoundaries(browser) {
     }
     observations.push({ buttonVariantState: "ordinary", profile: profile.id, states: ordinaryStatesByMode });
     await auditKeyboardHeldControl(page, `shared control ${profile.id}`);
+    await auditDismissedSpaceGesture(page, `shared control ${profile.id}`);
     await auditPointerHeldLifecycle(page, `shared control ${profile.id}`);
 
     // A dirty edit exposes the real destructive and neutral modal actions.
@@ -1438,6 +1675,7 @@ async function auditButtonVariantBoundaries(browser) {
   await importedPage.keyboard.press("Escape");
   await auditGhostInteractionStates(importedPage, "safe imported equal-color");
   await auditKeyboardHeldControl(importedPage, "safe imported equal-color");
+  await auditDismissedSpaceGesture(importedPage, "safe imported equal-color");
   await auditPointerHeldLifecycle(importedPage, "safe imported equal-color");
   await auditAppearanceVariantKeyboard(importedPage);
   await importedContext.close();
@@ -1699,6 +1937,7 @@ async function main() {
     viewHeldControls: observations.filter((item) => item.viewHeldControl),
     controlDensityGeometry: observations.filter((item) => item.controlDensityGeometry),
     buttonHeldInputs: observations.filter((item) => item.buttonHeldInput),
+    dismissedPhysicalSpaceGestures: observations.filter((item) => item.dismissedPhysicalSpaceGesture),
     pointerHeldLifecycles: observations.filter((item) => item.pointerHeldLifecycle),
     disabledSharedControls: observations.filter((item) => item.disabledSharedControl),
     appearanceVariantKeyboard: observations.find((item) => item.appearanceVariantKeyboard)?.appearanceVariantKeyboard ?? null,
