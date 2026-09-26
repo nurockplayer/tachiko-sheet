@@ -41,7 +41,10 @@ async function keys(input, text, prefix = "") {
   }
 }
 async function replace(input, text) {
+  await input.click();
   await input.press("ControlOrMeta+A");
+  const value = await input.inputValue();
+  assert.deepEqual(await input.evaluate((node) => [node.selectionStart, node.selectionEnd]), [0, value.length], "real Select All selects the complete enabled input");
   await keys(input, text);
 }
 async function published(page, input, key, value, commitKey = "Enter") {
@@ -220,6 +223,10 @@ const cases = [
     await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
     await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Create bar report", exact: true }).click();
+    // selectTab queues focus to the Report tab; finish that transition before
+    // selecting input text so the next key cannot refocus and reset selection.
+    const reportTabId = await page.getByRole("tab", { name: "Report", exact: true }).getAttribute("id");
+    await page.waitForFunction((id) => document.getElementById(id) === document.activeElement, reportTabId);
     for (const label of ["Title", "Category label", "Value label"]) {
       const control = page.getByRole("textbox", { name: label, exact: true });
       await replace(control, `Typed ${label}`);
