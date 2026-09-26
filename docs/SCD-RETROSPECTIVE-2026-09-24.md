@@ -24,15 +24,15 @@ The same run progressed across governance closeout, a second governance lane, re
 
 Sol attention was most valuable for:
 
-- Ready/HOLD/STOP and ownership decisions;
-- acceptance/authority interpretation;
+- Ready/HOLD/STOP and ownership decisions within settled authority;
+- interpretation of existing acceptance/authority and routing unresolved ownership gaps;
 - repair-batch disposition after review findings;
-- cross-boundary architecture decisions and Astra consultation;
+- engineering decisions within accepted boundaries, with any Astra/Pro consultation required by live #1 completed first;
 - exact-diff integration readback at material checkpoints;
 - choosing the next serial successor after merge;
 - deciding when evidence was insufficient to start production.
 
-These are judgment tasks. They should stay with the Mission Lead.
+These are Mission Lead judgment tasks only inside settled product, specification, semantic, storage, authorization and acceptance boundaries. Product scope, specifications or material acceptance outcomes go to the Steward/founder; conflicts in Accepted semantic, storage or authorization authority go to their existing owner. Astra/Pro consultation informs bounded engineering decisions but does not create product or acceptance authority.
 
 ## What should normally move away from Sol
 
@@ -127,7 +127,7 @@ Reviewer transport is optimized after deterministic gates, but the review effort
 
 - every Final Candidate uses fresh independent Oracle latest **Extra High** under current Sheet authority;
 - **ego-lite → Oracle** is the default transport;
-- architecture/product judgment uses the separate Astra/Pro consultation rules, not an implicit Oracle fallback.
+- bounded engineering consultation follows live #1's Astra/Pro triggers and stays inside accepted authority; product, acceptance and semantic/storage/authorization questions return to their existing owners, not Oracle.
 
 ego-lite is transport/configuration, not workflow-domain authority.
 

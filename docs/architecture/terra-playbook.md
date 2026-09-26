@@ -10,7 +10,7 @@ Sol 是唯一 Mission Lead 與 delivery owner；架構文件已描述的方向�
 
 原始提案由 ChatGPT 撰寫；先前 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並作為歷史證據保留。穩定 Final Candidate 依 live `docs/DELIVERY.md` 取得未參與 solution direction 的 fresh independent exact-HEAD Oracle latest Extra High final review；ego-lite 為預設 transport，且需取得 `No blocking findings.` verdict。文件作者、顧問、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
 
-目前 inspection baseline 上，PR #28 正在修改 App、contracts、local-copies、SheetShell 等共享位置。**不要和它同時做這些檔案的架構重構。** 不碰使用者 root checkout 的 untracked files，不接管 active worktree，不重寫 #2 來宣告 takeover。新 docs lane 與將來 source lane 分開。
+在較早的 inspection baseline 上，PR #28 修改 App、contracts、local-copies、SheetShell 等共享位置；PR #28 已於 2026-09-21 合併。這只是一個歷史 overlap 範例，不代表目前 writer 或 ownership。**目前 writer、重疊與 ownership 僅依 live #2 及 active Issues/PRs 確認。** 不碰使用者 root checkout 的 untracked files，不接管 active worktree，不重寫 #2 來宣告 takeover。新 docs lane 與將來 source lane 分開。
 
 J5 P2-B、真實 IME／assistive-tech／macOS／independent visual 證據不因本文件而解除。需要原權責決策的項目仍回原 owner；有真正獨立且合格的工作才繼續。
 

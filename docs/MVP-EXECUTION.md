@@ -12,11 +12,13 @@ Route one bounded implementation/unit-test package at a time through **GPT-6 Lun
 
 Before freezing an architecture decision or assigning implementation, follow live #1's mandatory Astra and conditional Pro escalation triggers. Obtain required Astra consultation before freezing/assignment and required Pro consultation before implementation; if required Pro is unavailable, record HOLD with the exact unresolved question. Outside those binding triggers, Sol may consult **Astra** read-only for difficult or architectural questions and record the advice plus Sol's final disposition. Astra is advisory only. At a stable Final Candidate, follow live `docs/DELIVERY.md` for the fresh independent exact-HEAD **Oracle latest Extra High** review: **ego-lite → Oracle** is the default transport and deterministic/hosted gates run first. Oracle stays read-only. Sol/Conductor performs the guarded merge after all exact-head gates and the required `No blocking findings.` receipt pass.
 
-Production implementation is serial. Read-only qualification/review may overlap if it cannot create a competing writer. After a qualified merge, re-read #1/#2 and select the next genuinely Ready successor. Following the #77 transition, the first intended production successor is #69 Phase B; #70 remains dependent on qualified #69.
+Production implementation is serial. Read-only qualification/review may overlap if it cannot create a competing writer. After a qualified closeout or released block, re-read live #2 and the backlog, reconcile current ownership and Ready state, and select the next genuinely Ready successor. Do not infer the current next task from historical milestones in this card.
 
 At minute 20 of each hour, the external ChatGPT Steward reads #1/#2, current main, active Issue/PR and open backlog to reconcile stale handoff, blockers or missing gates and to give Sol/Codex a concrete next action when useful. That stewardship loop does not take writer ownership or override Sol's engineering decisions inside settled authority.
 
-## Existing queue, not a second roadmap
+## Historical milestone map, not the live queue
+
+This table records the original intended mission milestones and their ordering; it is not a live queue, current status report, or dispatch authorization. Completed stages do not designate re-entry or the current next work. After closeout or a released block, determine next work exclusively from live #2 and the backlog after recalibrating ownership and Ready state.
 
 | Stage / owner | Work and exit evidence | Continue to |
 |---|---|---|
@@ -28,7 +30,7 @@ At minute 20 of each hour, the external ChatGPT Steward reads #1/#2, current mai
 | #6 / Work #361 | Optional scoped Assist after a qualified trusted bridge. | Never block otherwise eligible ordinary spreadsheet work. |
 | Work #364 | Existing named-history preparation/decision owner; not a new duplicate Sheet project. | Follow its separate qualified profile; no hidden autosave promise. |
 
-Work #359/#361/#364 currently retain upstream readiness/review gates. Sheet authorization cannot promote or merge them. If a dependency is blocked, prepare a minimal reproducer, exact missing contract/capability and evidence packet for its owner, then continue genuinely independent work. Do not retry the same missing prerequisite indefinitely.
+The Work #359/#361/#364 rows identify separate upstream ownership areas; they do not assert that any upstream work is currently open, blocked, or at a particular readiness state. Read each live owning issue/PR for its status and gates. Sheet authorization cannot promote or merge upstream work. If a dependency is blocked, prepare a minimal reproducer, exact missing contract/capability and evidence packet for its owner, then continue genuinely independent work. Do not retry the same missing prerequisite indefinitely.
 
 ## Keep one live coverage record under #5
 
@@ -38,7 +40,7 @@ For each of the 15 bundles and six journeys record:
 
 Use `UNVERIFIED`, `BLOCKED`, `FAIL` and `PASS` literally. Initially this preparation supplies no product PASS. A bundle-to-journey mapping is only coverage intent; every required behavior within a bundle still needs a test/trace or an explicit Steward-approved profile decision. Do not equate “core exists,” “button exists,” “fixture imports” and “user can do the task.”
 
-The default next visible milestone after #3 is #4's working loop, not another architecture document. Then favor a complete J1/J2 user workflow over many disconnected controls, subject to actual upstream availability. Read-only qualification and independent acceptance can overlap when safe; production implementation remains serial under DELIVERY.md.
+In the original milestone sequence, #4's working loop followed #3; that historical ordering does not select the current next work or require another architecture document. Favor a complete J1/J2 user workflow over many disconnected controls when live #2/backlog and qualified upstream availability support it. Read-only qualification and independent acceptance can overlap when safe; production implementation remains serial under DELIVERY.md.
 
 ## Whole-product checks at each meaningful slice
 
