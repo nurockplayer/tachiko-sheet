@@ -28,11 +28,11 @@ Keep #2 short enough to recover the mission quickly. Detailed history belongs on
 The normal production pattern is:
 
 ```text
-GPT-6 Sol Mission Lead / integrator
+selected Mission Lead (`LEAD_MODE=OPUS` or `LEAD_MODE=SOL`)
         ↓
 one bounded GPT-6 Luna writer package
         ↓
-Sol integration / affected validation
+lead integration / affected validation
         ↓
 next bounded package, or Final Candidate
 ```
@@ -40,14 +40,25 @@ next bounded package, or Final Candidate
 Rules:
 
 - one active production writer/worktree for the current package;
-- Sol remains the engineering decision-maker and integrator;
-- Sol does not concurrently edit the same source while Luna owns the package;
+- in `LEAD_MODE=SOL`, Sol is the engineering decision-maker/integrator; in `LEAD_MODE=OPUS`, Opus is Mission Lead and Sol is read-only engineering reviewer for the candidate;
+- the selected Mission Lead does not concurrently edit the same source while Luna owns the package;
 - a worker handback releases the current writer slot but does not by itself start another production package;
 - the next package starts only after the current package is merged/closed, explicitly blocked and released, or ownership is durably transferred;
 - read-only research, CI watching, Astra advice and review may overlap only if they cannot mutate the candidate;
 - update #2 when ownership materially changes.
 
-A worker handback is not automatically integration PASS. Sol still reviews the diff, checks test adequacy, resolves findings and records the durable checkpoint.
+A worker handback is not automatically integration PASS. The selected Mission Lead reviews the worker handback and records the durable checkpoint. In `LEAD_MODE=OPUS`, Sol then performs the bounded engineering review required by the owning lane; in `LEAD_MODE=SOL`, Sol performs this integration review as lead.
+
+## 2A. Select the lead mode before mutation
+
+Every new production lane must record one mode in #2 and the owning Issue/PR before production mutation:
+
+- `LEAD_MODE=OPUS` — Claude Opus 5.5 / Claude Code leads; Luna writes; Sol performs engineering review; Oracle performs final independent exact-head review.
+- `LEAD_MODE=SOL` — Sol leads/integrates; Luna writes; Oracle performs final independent exact-head review.
+
+Recommended default: use Opus-led for UI/UX, frontend composition, visual-system and first-use/product-polish work; use Sol-led for architecture, runtime/state/storage, cross-repo contracts, races, trust/security, infrastructure, CI/release mechanics and difficult integration. This is a default, not a silo.
+
+Never switch modes implicitly. A transfer requires exact branch/HEAD, writer state, release/transfer of prior ownership, preservation of unresolved findings/acceptance state, and durable handoff updates before more mutation.
 
 ## 3. Use Figma as authority without forcing Figma-native authoring
 
@@ -88,7 +99,7 @@ Historical example: #72 qualified the official writable bridge; #70 then used re
 
 ## 4. Package implementation around decisions, not around files
 
-Before each Luna package, Sol records a compact decision when one is material:
+Before each Luna package, the selected Mission Lead records a compact decision when one is material:
 
 - problem/context;
 - chosen approach;
@@ -96,9 +107,9 @@ Before each Luna package, Sol records a compact decision when one is material:
 - relevant rejected alternative;
 - rollback/reversal path when material.
 
-Give Luna only the settled implementation/test package. If implementation reveals a new choice, return it to Sol to classify against the governing authority rather than letting the worker improvise. Sol decides choices inside settled engineering boundaries; product scope, specifications or material acceptance choices go to ChatGPT Steward; conflicts with Accepted semantics, storage or authorization go to the relevant upstream authority, with Steward included when product scope or acceptance is involved. Do not freeze a follow-on Luna package or declare a Final Candidate until the required outside authority resolves the question. Complete any applicable #1 Astra/Pro consultation separately; it does not replace this authority routing.
+Give Luna only the settled implementation/test package. If implementation reveals a new choice, return it to the selected Mission Lead to classify against governing authority rather than letting the worker improvise. In `LEAD_MODE=SOL`, Sol decides choices inside settled engineering boundaries; in `LEAD_MODE=OPUS`, Opus decides bounded implementation/product/UI choices while Sol reviews engineering-boundary risk; product scope, specifications or material acceptance choices go to ChatGPT Steward; conflicts with Accepted semantics, storage or authorization go to the relevant upstream authority, with Steward included when product scope or acceptance is involved. Do not freeze a follow-on Luna package or declare a Final Candidate until the required outside authority resolves the question. Complete any applicable #1 Astra/Pro consultation separately; it does not replace this authority routing.
 
-Before freezing an architecture decision or assigning Luna a package, Sol checks live #1 for mandatory Astra consultation and any conditional Pro escalation, and completes the applicable steps when a trigger applies.
+Before freezing an architecture decision or assigning Luna a package, the selected Mission Lead checks live #1 for mandatory Astra consultation and any conditional Pro escalation, and completes the applicable steps when a trigger applies.
 
 Prefer packages that can be independently checked, for example:
 
@@ -289,7 +300,7 @@ If the waiting system itself fails, record the tool/transport failure separately
 
 ## 14. Protected merge checklist
 
-Immediately before Sol executes the normal merge:
+Immediately before the recorded Mission Lead (or separately recorded non-authoring mechanical integrator) executes the normal merge:
 
 - [ ] live #1/#2/Issue/PR re-read;
 - [ ] live `main` and all overlapping open PR/lane ownership rechecked immediately before merge;
@@ -319,7 +330,7 @@ Do not:
 
 - treat a raw session transcript as current authority;
 - make #2 a historical log;
-- let Sol and Luna write the same worktree concurrently;
+- let the selected Mission Lead and Luna write the same worktree concurrently;
 - launch Oracle against WIP;
 - preserve Final Candidate status after a material commit;
 - repeatedly ask Oracle to find the next bug one patch at a time;
