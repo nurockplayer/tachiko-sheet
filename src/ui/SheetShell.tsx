@@ -1259,7 +1259,7 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(selectedRow);
     const tableCols = tableColumns(view.table);
     return (
-      <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief">
+      <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief ts-view--brief">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
         <section className="ts-card" aria-label="Linked Brief facts">
           <h2 className="ts-h2">Brief</h2>
@@ -1338,7 +1338,7 @@ export function SheetShell(props: SheetShellProps) {
     const entities = table.rows.map(rowEntity);
     const keyFields = columns.map((column) => column.id);
     const preview = interop?.cleanupPreview ?? null;
-    return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-brief">
+    return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-brief ts-view--interop">
       <section className="ts-card" aria-label="Source fidelity ledger">
         <h2 className="ts-h2">Source fidelity ledger</h2>
         {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-empty">No imported-source ledger is available for this work.</p>}
@@ -1430,8 +1430,8 @@ export function SheetShell(props: SheetShellProps) {
       hasField(j4Binding.productsCollection, j4Binding.productCategoryField) &&
       hasField(j4Binding.productsCollection, j4Binding.productPriceField));
     const missingDefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
-    return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className="ts-panel ts-brief">
-      <section className="ts-card" aria-label="Cross-table summary binding">
+    return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className="ts-panel ts-brief ts-view--summary">
+      <section className="ts-card ts-summary-binding" aria-label="Cross-table summary binding">
         <h2 className="ts-h2">Cross-table summary</h2>
         <p className="ts-subtle">Choose visible table and field names. The core binds their stable identities and remains the only calculator.</p>
         {!j4Catalog ? <button type="button" className="ts-button" onClick={() => void prepare()} disabled={controlsLocked || j4Pending}>{j4Pending ? "Loading names…" : "Choose tables and fields"}</button> : <>
@@ -1450,7 +1450,7 @@ export function SheetShell(props: SheetShellProps) {
         <h2 className="ts-h2">Authoritative result</h2>
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button></div></>}
+          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul className="ts-group-list" aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button></div></>}
           <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
@@ -1544,7 +1544,7 @@ export function SheetShell(props: SheetShellProps) {
       setReportTextDraft(null);
       window.setTimeout(() => document.getElementById(tabId("report"))?.focus(), 0);
     };
-    return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
+    return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief ts-view--report">
       <section className="ts-card ts-report-card" aria-label="Current report">
         <h2 className="ts-h2">Current report</h2>
         {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>

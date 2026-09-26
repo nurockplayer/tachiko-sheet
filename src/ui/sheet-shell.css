@@ -69,7 +69,10 @@
   box-sizing: border-box;
 }
 
-body { margin: 0; }
+body {
+  margin: 0;
+  background: var(--ts-surface-chrome);
+}
 
 .ts-app[data-view="workbook"] {
   height: 100%;
@@ -129,7 +132,19 @@ body { margin: 0; }
   margin: 0 auto;
   padding: 0 0 10px;
   color: var(--ts-ink-soft);
+  /* The notice sits outside .ts-app, so it must name the product face instead of inheriting UA serif. */
+  font-family: var(--ts-profile-font-family);
   font-size: 11px;
+  line-height: 16px;
+}
+
+/* In a workbook the notice is the last line of the chrome band, aligned with the header gutter. */
+.ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 2px clamp(16px, 3vw, 40px) 6px;
+  background: var(--ts-surface-chrome);
 }
 
 .ts-notices a { color: var(--ts-text-link); }
@@ -704,6 +719,11 @@ body { margin: 0; }
 
 /* ---------- Grid ---------- */
 
+/* The Table panel paints the grid canvas so a short table reads as a sheet, not a strip above chrome. */
+.ts-panel:has(> .ts-grid-scroll) {
+  background: var(--ts-grid-canvas);
+}
+
 .ts-grid-scroll {
   overflow: auto;
   min-height: min(168px, var(--ts-grid-available-height, 100vh));
@@ -762,6 +782,21 @@ body { margin: 0; }
   color: var(--ts-grid-header-foreground);
 }
 
+/*
+ * FES45 row locator: a fixed 48px gutter. With table-layout: fixed the header
+ * cell sets the column width, so data columns share the rest instead of the
+ * row numbers taking an equal data-column share.
+ */
+.ts-grid .ts-gutter-head {
+  width: 48px;
+}
+
+.ts-grid .ts-gutter-head,
+.ts-grid .ts-row-head {
+  padding-inline: 4px;
+  text-align: center;
+}
+
 .ts-gutter-head {
   z-index: 3;
 }
@@ -778,6 +813,11 @@ body { margin: 0; }
 .ts-cell {
   cursor: cell;
   min-width: 72px;
+}
+
+/* Stored leading/trailing spaces stay visible; line breaks still collapse onto one dense row. */
+.ts-cell-value {
+  white-space-collapse: preserve-spaces;
 }
 
 .ts-cell--computed .ts-cell-value {
@@ -811,20 +851,23 @@ body { margin: 0; }
   background: var(--ts-selection-active-background);
 }
 
+/* The editor overlays its cell so entering edit never changes the row pitch (UI quality contract §1.2). */
 .ts-cell--editing {
-  padding: 0;
+  position: relative;
   background: var(--ts-selection-active-background);
 }
 
 .ts-cell-input {
+  position: absolute;
+  inset: 0;
   font: inherit;
   font-variant-numeric: tabular-nums;
   width: 100%;
-  min-width: 90px;
+  height: 100%;
   border: none;
-  min-height: 27px;
-  padding: 4px 10px;
-  background: var(--ts-selection-active-background);
+  padding: 3px 10px 4px;
+  /* The cell paints the active background, focus perimeter and underline beneath the text. */
+  background: transparent;
   color: var(--ts-ink);
 }
 
@@ -837,7 +880,7 @@ body { margin: 0; }
   outline: none;
 }
 
-/* ---------- Brief ---------- */
+/* ---------- Workbook sections: Summary, Report, Brief, Import & export ---------- */
 
 .ts-brief {
   display: grid;
@@ -846,9 +889,120 @@ body { margin: 0; }
   align-items: start;
 }
 
+/* Non-grid Views are quiet page content on the work canvas, not raised cards in a tinted void. */
+.ts-panel.ts-brief {
+  align-content: start;
+  padding: 20px clamp(16px, 3vw, 40px) 32px;
+  gap: 24px clamp(24px, 4vw, 48px);
+  background: var(--ts-surface);
+}
+
+.ts-panel.ts-brief > .ts-notice {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.ts-panel.ts-brief > .ts-card {
+  min-width: 0;
+  padding: 0 0 20px;
+  border: 0;
+  border-bottom: 1px solid var(--ts-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ts-panel.ts-brief > .ts-card > .ts-h2 {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.ts-panel.ts-brief .ts-field-label {
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ts-ink-soft);
+}
+
+.ts-panel.ts-brief :is(select, input:not([type="checkbox"])) {
+  font: inherit;
+  min-height: var(--ts-profile-command-target-min-height);
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+}
+
+.ts-panel.ts-brief select {
+  width: 100%;
+}
+
+.ts-panel.ts-brief :is(select, input:not([type="checkbox"])):disabled {
+  border-color: var(--ts-protected-border-control);
+  background: var(--ts-protected-surface-inset);
+  color: var(--ts-protected-disabled-foreground);
+}
+
+/* Report and Import & export read top to bottom; Summary and Brief keep their paired columns. */
+.ts-view--report,
+.ts-view--interop {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ts-view--interop > .ts-card {
+  max-width: 880px;
+}
+
+.ts-view--report > .ts-card:last-child,
+.ts-view--interop > .ts-card:last-child {
+  border-bottom: 0;
+}
+
+/* Configured cross-table binding: an aligned label/field grid instead of a stacked form. */
+.ts-summary-binding:has(select) {
+  display: grid;
+  grid-template-columns: minmax(128px, max-content) minmax(0, 1fr);
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.ts-summary-binding:has(select) > :is(.ts-h2, .ts-subtle, .ts-hint, .ts-button) {
+  grid-column: 1 / -1;
+}
+
+.ts-summary-binding:has(select) > .ts-subtle {
+  margin-bottom: 4px;
+}
+
+.ts-summary-binding:has(select) > .ts-button {
+  justify-self: start;
+  margin-top: 8px;
+}
+
+.ts-group-list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-group-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--ts-line);
+}
+
 @media (max-width: 880px) {
   .ts-brief {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 599px) {
+  .ts-summary-binding:has(select) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
   }
 }
 
@@ -859,6 +1013,17 @@ body { margin: 0; }
   border: 1px solid var(--ts-line);
   border-radius: var(--ts-radius);
   overflow: hidden;
+}
+
+/* Inside a workbook section the facts read as a quiet definition list, not a boxed table. */
+.ts-panel.ts-brief .ts-fact-list {
+  border: 0;
+  border-top: 1px solid var(--ts-line);
+  border-radius: 0;
+}
+
+.ts-panel.ts-brief .ts-fact {
+  padding-inline: 0;
 }
 
 .ts-fact {
@@ -1095,12 +1260,23 @@ body { margin: 0; }
   background: var(--ts-protected-surface);
 }
 
+/* Each report text field keeps its label above its input; fields share one row when space allows. */
 .ts-report-controls {
   display: grid;
-  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
-  gap: 8px 12px;
-  align-items: center;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px 16px;
+  align-items: start;
   margin-bottom: 14px;
+}
+
+.ts-report-controls > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ts-report-controls > div > input {
+  width: 100%;
 }
 
 .ts-report-controls input:not([type="checkbox"]) {
@@ -1139,6 +1315,13 @@ body { margin: 0; }
   padding: 8px 10px;
   border: 1px solid var(--ts-line);
   border-radius: var(--ts-radius);
+}
+
+.ts-panel.ts-brief .ts-report-data div {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ts-line);
+  border-radius: 0;
 }
 
 .ts-report-data dt { color: var(--ts-ink-soft); overflow-wrap: anywhere; }
@@ -1322,6 +1505,17 @@ body { margin: 0; }
 @media (forced-colors: active) {
   .ts-app { background: Canvas; color: CanvasText; }
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
+  .ts-panel.ts-brief { background: Canvas; }
+  .ts-panel.ts-brief > .ts-card { border-color: ButtonText; }
+  .ts-panel.ts-brief :is(select, input:not([type="checkbox"])) {
+    color: CanvasText;
+    background: Canvas;
+    border-color: ButtonText;
+  }
+  .ts-panel.ts-brief :is(select, input:not([type="checkbox"])):disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
   .ts-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-button--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
