@@ -119,6 +119,28 @@ const cases = [
     assert.equal(await focused(target), false);
     await page.keyboard.press("ArrowUp"); assert.equal(await focused(target), true);
   }],
+  ["double-click inside a dirty editor selects a word without restarting the draft", async (page) => {
+    const before = await state(page); const count = await dispatches(page);
+    const input = await entry(page, "title", "F2");
+    await replace(input, "abc def");
+    const sameInput = await input.elementHandle();
+    const position = await input.evaluate((node) => {
+      const style = getComputedStyle(node);
+      const context = document.createElement("canvas").getContext("2d");
+      context.font = style.font;
+      return { x: parseFloat(style.paddingLeft) + context.measureText("abc d").width, y: node.clientHeight / 2 };
+    });
+    await input.dblclick({ position });
+    assert.equal(await input.inputValue(), "abc def", "word selection keeps the full unpublished draft");
+    assert.equal(await focused(input), true, "word selection keeps editor focus");
+    assert.equal(await sameInput.evaluate((node) => node.isConnected && node === document.querySelector('[data-testid="cell-editor"]')), true, "word selection retains the same input");
+    assert.equal(await input.evaluate((node) => node.value.slice(node.selectionStart, node.selectionEnd)), "def", "native double-click selects the word");
+    assert.deepEqual(await state(page), before, "word selection leaves authoritative state unchanged");
+    assert.equal(await dispatches(page), count, "word selection never executes");
+    await input.press("Escape");
+    assert.deepEqual(await state(page), before);
+    assert.equal(await dispatches(page), count);
+  }],
   ["Tab and Shift+Tab publish complete scalars once before moving grid focus", async (page) => {
     let input = await entry(page, "impact", "F2"); await replace(input, "12345");
     await published(page, input, "impact", "12345", "Tab");
