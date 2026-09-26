@@ -123,11 +123,11 @@ Transport choice does not change review authority:
 - the terminal clean verdict remains `No blocking findings.`;
 - material HEAD movement invalidates the receipt.
 
-Reviewer effort is risk-tiered after deterministic gates:
+Reviewer transport is optimized after deterministic gates, but the review effort remains unchanged:
 
-- ordinary material final review: GPT-5.6 Sol **High** by default;
-- explicitly high/critical review: **Extra High** only when the owning Issue/lead records the risk reason;
-- architecture/product judgment uses the separate Astra/Pro/Opus consultation rules, not an implicit stronger Oracle fallback.
+- every Final Candidate uses fresh independent Oracle latest **Extra High** under current Sheet authority;
+- **ego-lite → Oracle** is the default transport;
+- architecture/product judgment uses the separate Astra/Pro/Opus consultation rules, not an implicit Oracle fallback.
 
 ego-lite is transport/configuration, not workflow-domain authority.
 
