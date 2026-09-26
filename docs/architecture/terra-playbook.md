@@ -8,7 +8,7 @@
 
 Sol 是唯一 Mission Lead 與 delivery owner；架構文件已描述的方向，不等於作者代替 Sol 或 Steward 做過決定。後續新的資料型別、拆分取捨、gate tool、行為／相容性決策仍須依 DELIVERY 記錄並遵守 Steward authority。真正困難或高風險架構選擇可取得 read-only Astra consultation，由 Sol 作最終工程決定；已獲准的機械執行不需要每行／每 commit 重新問。
 
-原始提案由 ChatGPT 撰寫；先前 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並作為歷史證據保留。穩定 Final Candidate 依 live `docs/DELIVERY.md` 取得未參與 solution direction 的 fresh independent exact-HEAD Oracle final review；ego-lite 為預設 transport，effort 依 live risk policy 決定，且需取得 `No blocking findings.` verdict。文件作者、顧問、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
+原始提案由 ChatGPT 撰寫；先前 actual Astra consultation 已在 [#33 comment 5667955026](https://github.com/nurockplayer/tachiko-sheet/issues/33#issuecomment-5667955026) 記錄為 `revise`，並作為歷史證據保留。穩定 Final Candidate 依 live `docs/DELIVERY.md` 取得未參與 solution direction 的 fresh independent exact-HEAD Oracle latest Extra High final review；ego-lite 為預設 transport，且需取得 `No blocking findings.` verdict。文件作者、顧問、設計／實作／acceptance／evidence 的參與者不能取得同一 material head 的 independent-final-review credit。
 
 目前 inspection baseline 上，PR #28 正在修改 App、contracts、local-copies、SheetShell 等共享位置。**不要和它同時做這些檔案的架構重構。** 不碰使用者 root checkout 的 untracked files，不接管 active worktree，不重寫 #2 來宣告 takeover。新 docs lane 與將來 source lane 分開。
 
@@ -163,7 +163,7 @@ Reviewer 必須能回答：UI 不依賴哪個細節了？哪條規則現在可�
 採用後只挑一條 genuinely Ready、non-overlapping migration slice，
 由 GPT-6 Luna 執行一個有界實作／unit-test package，Sol 保留 integration ownership；
 先確認 characterization／test discovery，再做行為保持的 bounded extraction；
-穩定 Final Candidate 才取得適用 exact-head gates 與依 live `docs/DELIVERY.md` risk policy 執行的 fresh independent exact-HEAD Oracle review。
+穩定 Final Candidate 才取得適用 exact-head gates 與依 live `docs/DELIVERY.md` 執行的 fresh independent exact-HEAD Oracle latest Extra High review。
 只回報實際執行的結果，詳細證據留 owning Issue/PR，不重寫 #2 的任務所有權。
 ```
 
