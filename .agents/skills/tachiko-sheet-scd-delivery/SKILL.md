@@ -48,7 +48,7 @@ ego-lite is the default Oracle execution transport for Sheet. It does not change
 - unknown model/effort provenance or transport/session failure gives no review credit;
 - do not start a duplicate review merely because one is slow;
 - a material HEAD change invalidates the candidate-bound receipt;
-- GPT-6 Pro/Opus/Astra remain separate judgment/architecture consultation paths, not hidden Oracle fallbacks.
+- GPT-6 Pro/Astra remain separate judgment/architecture consultation paths, not hidden Oracle fallbacks.
 - ego-lite changes the transport path only; it does not lower the required Extra High review effort.
 
 ## Review failure and root-cause checkpoint
