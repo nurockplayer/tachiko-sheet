@@ -742,6 +742,54 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       const panelRect = panel?.getBoundingClientRect();
       const footerRect = footer?.getBoundingClientRect();
       const panelStyle = panel ? getComputedStyle(panel) : null;
+      const interop = panel?.matches(".ts-interop") ? panel : null;
+      const interopSpacing = interop ? (() => {
+        const ledger = interop.querySelector('[aria-label="Source fidelity ledger"]');
+        const cleanup = interop.querySelector('[aria-label="Cleanup preview"]');
+        const download = interop.querySelector('[aria-label="Download spreadsheet"]');
+        const preview = cleanup?.querySelector(":scope > .ts-preview");
+        const count = preview?.querySelector(":scope > p");
+        const targetTable = preview?.querySelector(":scope > .ts-interop-targets");
+        const previewActions = preview?.querySelector(":scope > .ts-row-actions");
+        const box = (element) => element?.getBoundingClientRect() ?? null;
+        const distance = (upper, lower) => {
+          const upperRect = box(upper);
+          const lowerRect = box(lower);
+          return upperRect && lowerRect ? lowerRect.top - upperRect.bottom : null;
+        };
+        const style = (element) => element ? getComputedStyle(element) : null;
+        const title = interop.querySelector(":scope > .ts-content-heading");
+        const ledgerHeading = ledger?.querySelector(":scope > .ts-content-heading");
+        const cleanupHeading = cleanup?.querySelector(":scope > .ts-content-heading");
+        const cleanupHelper = cleanup?.querySelector(":scope > .ts-subtle");
+        const cleanupActions = cleanup?.querySelector(":scope > .ts-row-actions");
+        const downloadHeading = download?.querySelector(":scope > .ts-content-heading");
+        const downloadHelper = download?.querySelector(":scope > .ts-subtle");
+        const downloadActions = download?.querySelector(":scope > .ts-row-actions");
+        const countStyle = style(count);
+        const previewStyle = style(preview);
+        const actionsStyle = style(cleanupActions);
+        return {
+          previewPresent: Boolean(preview),
+          background: style(interop)?.backgroundColor ?? null,
+          titleToLedgerHeading: distance(title, ledgerHeading),
+          cleanupHeadingToHelper: distance(cleanupHeading, cleanupHelper),
+          cleanupHelperToActions: distance(cleanupHelper, cleanupActions),
+          generationActionsToCount: distance(cleanupActions, preview),
+          countToTable: distance(count, targetTable),
+          tableToActions: distance(targetTable, previewActions),
+          downloadHeadingToHelper: distance(downloadHeading, downloadHelper),
+          downloadHelperToActions: distance(downloadHelper, downloadActions),
+          actionsGap: actionsStyle?.gap ?? null,
+          previewBorderTopWidth: previewStyle?.borderTopWidth ?? null,
+          previewPaddingTop: previewStyle?.paddingTop ?? null,
+          countMarginTop: countStyle?.marginTop ?? null,
+          countMarginBottom: countStyle?.marginBottom ?? null,
+          countFontSize: countStyle?.fontSize ?? null,
+          countLineHeight: countStyle?.lineHeight ?? null,
+          countFontWeight: countStyle?.fontWeight ?? null,
+        };
+      })() : null;
       return {
         viewportWidth: innerWidth,
         viewportHeight: innerHeight,
@@ -770,6 +818,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
           return { text: heading.textContent?.trim() ?? "", fontSize: style.fontSize,
             lineHeight: style.lineHeight, fontWeight: style.fontWeight, height: rect.height };
         }),
+        interopSpacing,
       };
     });
     const label = `${width}x${height} ${profile} ${viewName}`;
@@ -790,6 +839,31 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       evidence(layout.interopHeadings.length === 4 && layout.interopHeadings.every((heading) =>
         heading.fontSize === "20px" && heading.lineHeight === "28px" && heading.fontWeight === "600" && heading.height === 28),
       `${label} uses the approved 20/28 weight-600 view and section heading recipe`, layout.interopHeadings);
+      const phone = width <= 600;
+      const spacing = layout.interopSpacing;
+      const expectedCountFont = phone ? "14px" : "12px";
+      const expectedCountWeight = phone ? "400" : "500";
+      evidence(spacing?.background !== "rgba(0, 0, 0, 0)" && spacing?.background !== "transparent",
+        `${label} paints the Interop content surface`, spacing);
+      evidence(spacing?.titleToLedgerHeading === (phone ? 16 : 32),
+        `${label} keeps the approved title-to-ledger heading rhythm`, spacing);
+      evidence(spacing?.cleanupHeadingToHelper === 16 && spacing?.downloadHeadingToHelper === 16,
+        `${label} keeps 16px heading-to-helper spacing`, spacing);
+      evidence(spacing?.cleanupHelperToActions === 28 && spacing?.downloadHelperToActions === 28,
+        `${label} keeps 28px helper-to-actions spacing`, spacing);
+      evidence(spacing?.actionsGap === (phone ? "16px" : "12px"),
+        `${label} keeps the approved spacing inside every action group`, spacing);
+      if (spacing?.previewPresent) {
+        evidence(spacing.generationActionsToCount === 32,
+          `${label} keeps 32px spacing from preview generation actions to the result count`, spacing);
+        evidence(spacing.countToTable === (phone ? 16 : 20) && spacing.tableToActions === 24,
+          `${label} keeps the approved count, target table, and preview-action spacing`, spacing);
+        evidence(spacing.previewBorderTopWidth === "0px" && spacing.previewPaddingTop === "0px" &&
+          spacing.countMarginTop === "0px" && spacing.countMarginBottom === "0px" &&
+          spacing.countFontSize === expectedCountFont && spacing.countLineHeight === "20px" &&
+          spacing.countFontWeight === expectedCountWeight,
+        `${label} renders the result count with the approved reset and typography`, spacing);
+      }
     }
     if (width === 320 && viewName === "Table") {
       evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth,
