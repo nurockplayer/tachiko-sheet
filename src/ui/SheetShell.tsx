@@ -454,6 +454,7 @@ export function SheetShell(props: SheetShellProps) {
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
   const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
+  const resultsNeedAttention = j4Results.some((result) => result.diagnostics.length > 0);
   // A Refresh recovery can temporarily remove the projection without proving
   // that its resident work was replaced. Keep the local-only draft attached
   // to its report until a non-null different occurrence, removal, or Close.
@@ -1306,9 +1307,10 @@ export function SheetShell(props: SheetShellProps) {
           <span className="ts-status-pair">
             <span className="ts-status-label">Values:</span>
             <span className={`ts-chip ts-chip--${currentness}`} data-testid="currentness" data-currentness={currentness}>
-            {currentnessLabel(currentness)}
+            {currentnessLabel(currentness, resultsNeedAttention)}
             </span>
           </span>
+          {currentness === "pending" && j4Results.length > 0 ? <span className="ts-notice" role="status">Updating… — showing previous results.</span> : null}
           {outcome !== "idle" ? (
             <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
               {outcomeLabel(outcome)}
@@ -1652,11 +1654,14 @@ export function SheetShell(props: SheetShellProps) {
         </>}
       </section>
       <section className={hasConfiguredSummary ? "ts-summary-result" : "ts-card"} aria-label="Cross-table summary result">
-        <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>{hasConfiguredSummary ? "Current grouped result" : "Authoritative result"}</h2>
+        <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>{hasConfiguredSummary
+          ? resultsNeedAttention ? "Grouped results need attention" : currentness === "pending" ? "Previous grouped result" : "Current grouped result"
+          : "Authoritative result"}</h2>
+        {resultsNeedAttention && currentness === "current" ? <p className="ts-notice" role="status">Some results need attention. Correct the source data to update them.</p> : null}
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
           {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
-            <p className="ts-content-meta">Complete result · {result.groups.length} groups · {currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}</p>
+            <p className="ts-content-meta">{resultsNeedAttention ? "Current result" : "Complete result"} · {result.groups.length} groups{resultsNeedAttention ? "" : ` · ${currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}`}</p>
             <table className="ts-summary-groups" aria-label="Cross-table groups">
               <thead><tr><th scope="col">Product</th><th scope="col">Value</th></tr></thead>
               <tbody>{result.groups.map((group) => <tr key={group.category}><td>{group.category}</td><td>{group.value}</td></tr>)}</tbody>
@@ -1688,6 +1693,9 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderReportPanel(): ReactNode {
     if (!view) return null;
+    const reportSourceHasDiagnostics = Boolean(report && j4Results.some((candidate) =>
+      candidate.definitionId === report.definitionId && candidate.revision === view.revision && candidate.diagnostics.length > 0,
+    ));
     const result = report && j4Results.find((candidate) =>
       candidate.definitionId === report.definitionId &&
       candidate.revision === view.revision &&
@@ -1762,7 +1770,12 @@ export function SheetShell(props: SheetShellProps) {
         <h1 className="ts-content-heading">Current report</h1>
         <div className={`ts-report-layout ts-report-layout--${reportLayoutState}`}>
         <div className="ts-report-settings">
-          {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : !result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
+          {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
+            {!result ? <p role="status">{reportSourceHasDiagnostics
+            ? "This summary needs attention. Correct the source data to see the report. Previous chart values are hidden."
+              : currentness === "pending"
+                ? "Updating… — the report is unavailable until previous results are confirmed."
+                : "This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving."}</p> : null}
             <div className="ts-report-controls">
               {(["title", "categoryLabel", "valueLabel"] as const).map((field) => {
                 const labels = { title: "Title", categoryLabel: "Category label", valueLabel: "Value label" };
@@ -2079,8 +2092,8 @@ function isComposingEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {
   return native.isComposing === true || native.keyCode === 229;
 }
 
-function currentnessLabel(currentness: SheetShellProps["currentness"]): string {
-  if (currentness === "current") return "Up to date";
+function currentnessLabel(currentness: SheetShellProps["currentness"], resultsNeedAttention = false): string {
+  if (currentness === "current") return resultsNeedAttention ? "Results need attention" : "Up to date";
   if (currentness === "pending") return "Updating…";
   return "Needs refresh";
 }

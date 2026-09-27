@@ -57,6 +57,12 @@ export interface AcceptanceUnknownObservation {
   currentness: string | null;
 }
 
+export interface ScalarRequeryFaultProbe {
+  publicationAcknowledged: boolean;
+  invokedDefinitionIds: string[];
+  discardedDefinitionId: string | null;
+}
+
 export interface AcceptanceCoreFailureProbe {
   name: string;
   causeName: string;
@@ -86,6 +92,11 @@ export interface AcceptanceApi {
   failNextImportProjection(): void;
   failNextOpenProjection(): void;
   failNextJ4PostPublicationRead(): void;
+  failSecondScalarRequeryReplyAfterFirst(): void;
+  deferSecondScalarRequeryReply(): void;
+  releaseSecondScalarRequeryReply(): void;
+  resetScalarRequeryFaultProbe(): void;
+  scalarRequeryFaultProbe(): ScalarRequeryFaultProbe;
   openProjectRequestCount(): number;
   importSpreadsheetRequestCount(): number;
   executeRequestCount(): number;
@@ -116,7 +127,7 @@ type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate"]);
 const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup"]);
 const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
-const ACCEPTANCE_HARNESS_VERSION = "j4-no-resident-runtime-read-probe-v2";
+const ACCEPTANCE_HARNESS_VERSION = "j4-scalar-edit-requery-fault-v1";
 
 let wiring: AcceptanceWiring | null = null;
 const workMethodInvocations = new Map<string, number>();
@@ -131,6 +142,14 @@ let openProjectionFaultArmed = false;
 let j4PostPublicationReadFaultRequested = false;
 let j4PostPublicationReadFaultArmed = false;
 let j4PostPublicationReadSkipped = false;
+let scalarRequeryFaultRequested = false;
+let scalarRequeryFaultArmed = false;
+let scalarRequeryFaultRevision: string | null = null;
+let scalarRequeryFaultProbeValue: ScalarRequeryFaultProbe = {
+  publicationAcknowledged: false,
+  invokedDefinitionIds: [],
+  discardedDefinitionId: null,
+};
 let openProjectDispatchCount = 0;
 let importSpreadsheetDispatchCount = 0;
 let exportCanonicalDispatchCount = 0;
@@ -175,6 +194,8 @@ function operationGate() {
 const importInspectionGate = operationGate();
 const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
+const scalarRequerySecondReplyGate = operationGate();
+let scalarRequerySecondReplyHoldRequested = false;
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -248,6 +269,48 @@ function instrumentClient(client: PublicClient): PublicClient {
           return result;
         };
       }
+      if (property === "queryKeyedGroupedSum") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          let result: unknown;
+          try {
+            result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          } catch (error) {
+            if (scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+            throw error;
+          }
+          if (!scalarRequeryFaultArmed) return result;
+          if ((result as { revision?: unknown }).revision !== scalarRequeryFaultRevision) {
+            resetScalarRequeryFaultProbe();
+            return result;
+          }
+          const definitionId = String(args[0]);
+          scalarRequeryFaultProbeValue.invokedDefinitionIds.push(definitionId);
+          if (scalarRequeryFaultProbeValue.invokedDefinitionIds.length === 1) return result;
+          if (scalarRequerySecondReplyHoldRequested) {
+            scalarRequerySecondReplyHoldRequested = false;
+            await scalarRequerySecondReplyGate.pause();
+            if (!scalarRequeryFaultArmed) return result;
+          }
+          scalarRequeryFaultArmed = false;
+          scalarRequeryFaultProbeValue.discardedDefinitionId = definitionId;
+          throw new Error("Acceptance-only second grouped-summary query reply discarded after real Work query.");
+        };
+      }
+      if (property === "bootstrap") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (scalarRequeryFaultArmed) {
+            const snapshot = result as { revision?: unknown; keyed_grouped_sum_definition_ids?: unknown };
+            const ids = Array.isArray(snapshot.keyed_grouped_sum_definition_ids)
+              ? snapshot.keyed_grouped_sum_definition_ids
+              : [];
+            if (snapshot.revision !== scalarRequeryFaultRevision || ids.length < 2) {
+              resetScalarRequeryFaultProbe();
+            }
+          }
+          return result;
+        };
+      }
       if (property === "inspectSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -268,6 +331,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "openProject") {
         return async (...args: unknown[]): Promise<unknown> => {
+          if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
           openProjectDispatchCount += 1;
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           if (openReplyFaultArmed) {
@@ -279,6 +343,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "importSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
+          if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
           if (importBeforeDispatchFaultArmed) {
             importBeforeDispatchFaultArmed = false;
             throw new UnknownOperationOutcomeError("Import delivery outcome was unknown before dispatch; no candidate was sent.");
@@ -349,26 +414,42 @@ async function dispatchPublication(
   args: unknown[],
 ): Promise<PublicationProjection> {
   dispatchCount += 1;
+  if (scalarRequeryFaultRequested && !EDIT_METHODS.has(method)) resetScalarRequeryFaultProbe();
   const call = (): Promise<PublicationProjection> =>
     (target[method as keyof PublicClient] as (...rest: unknown[]) => Promise<PublicationProjection>)(
       ...args,
     );
-  if (loseArmed) {
-    loseArmed = false;
-    try {
-      lastReceiptValue = await call();
-      throw new UnknownOperationOutcomeError(
-        "The dispatched change reply was lost after the real transport replied.",
-      );
-    } finally {
-      const resolve = settlePendingFault;
-      settlePendingFault = null;
-      resolve?.();
+  try {
+    if (loseArmed) {
+      loseArmed = false;
+      try {
+        lastReceiptValue = await call();
+        throw new UnknownOperationOutcomeError(
+          "The dispatched change reply was lost after the real transport replied.",
+        );
+      } finally {
+        const resolve = settlePendingFault;
+        settlePendingFault = null;
+        resolve?.();
+      }
     }
+    const receipt = await call();
+    lastReceiptValue = receipt;
+    if (EDIT_METHODS.has(method) && scalarRequeryFaultRequested) {
+      scalarRequeryFaultRequested = false;
+      scalarRequeryFaultArmed = true;
+      scalarRequeryFaultRevision = receipt.resulting_revision;
+      scalarRequeryFaultProbeValue = {
+        publicationAcknowledged: true,
+        invokedDefinitionIds: [],
+        discardedDefinitionId: null,
+      };
+    }
+    return receipt;
+  } catch (error) {
+    if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+    throw error;
   }
-  const receipt = await call();
-  lastReceiptValue = receipt;
-  return receipt;
 }
 
 function columnId(view: WorkbookView, key: string): string | null {
@@ -669,6 +750,45 @@ export function failNextJ4PostPublicationRead(): void {
   j4PostPublicationReadSkipped = false;
 }
 
+/**
+ * After the next acknowledged scalar publication, let the first real grouped
+ * query return and discard the reply from the second real query.
+ */
+export function failSecondScalarRequeryReplyAfterFirst(): void {
+  resetScalarRequeryFaultProbe();
+  scalarRequeryFaultRequested = true;
+}
+
+export function deferSecondScalarRequeryReply(): void {
+  scalarRequerySecondReplyHoldRequested = true;
+  scalarRequerySecondReplyGate.defer();
+}
+
+export function releaseSecondScalarRequeryReply(): void {
+  scalarRequerySecondReplyGate.release();
+}
+
+export function resetScalarRequeryFaultProbe(): void {
+  scalarRequerySecondReplyHoldRequested = false;
+  scalarRequerySecondReplyGate.release();
+  scalarRequeryFaultRequested = false;
+  scalarRequeryFaultArmed = false;
+  scalarRequeryFaultRevision = null;
+  scalarRequeryFaultProbeValue = {
+    publicationAcknowledged: false,
+    invokedDefinitionIds: [],
+    discardedDefinitionId: null,
+  };
+}
+
+export function scalarRequeryFaultProbe(): ScalarRequeryFaultProbe {
+  return {
+    publicationAcknowledged: scalarRequeryFaultProbeValue.publicationAcknowledged,
+    invokedDefinitionIds: [...scalarRequeryFaultProbeValue.invokedDefinitionIds],
+    discardedDefinitionId: scalarRequeryFaultProbeValue.discardedDefinitionId,
+  };
+}
+
 export function failNextOpenProjection(): void {
   openProjectionFaultArmed = true;
 }
@@ -729,6 +849,19 @@ export async function settleFaultWindow(): Promise<void> {
 export function installAcceptance(next: AcceptanceWiring): void {
   wiring = next;
   installRuntimeReadProbe(next.runtime);
+  const discoverKeyedGroupedSums = next.runtime.discoverKeyedGroupedSums;
+  next.runtime.discoverKeyedGroupedSums = async (...args) => {
+    try {
+      return await discoverKeyedGroupedSums.apply(next.runtime, args);
+    } finally {
+      // Discovery is the bounded operation that owns this test-only fault.
+      // If it exits before two actual definition queries, discard the arm so a
+      // later unrelated discovery cannot inherit it.
+      if (scalarRequeryFaultArmed && scalarRequeryFaultProbeValue.invokedDefinitionIds.length < 2) {
+        resetScalarRequeryFaultProbe();
+      }
+    }
+  };
   const create = next.copies.create;
   const createOpaque = next.copies.createOpaque;
   if (typeof create === "function") {
@@ -770,6 +903,11 @@ export function installAcceptance(next: AcceptanceWiring): void {
     failNextImportProjection,
     failNextOpenProjection,
     failNextJ4PostPublicationRead,
+    failSecondScalarRequeryReplyAfterFirst,
+    deferSecondScalarRequeryReply,
+    releaseSecondScalarRequeryReply,
+    resetScalarRequeryFaultProbe,
+    scalarRequeryFaultProbe,
     openProjectRequestCount,
     importSpreadsheetRequestCount,
     executeRequestCount,

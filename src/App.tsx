@@ -1093,8 +1093,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
     const priorJ4 = currentness === "current"
-      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4Results] }
+      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] }
       : null;
+    let published = false;
     try {
       const live = viewRef.current;
       if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
@@ -1104,21 +1105,39 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       setMessage(null);
       setCurrentness("pending");
-      clearJ4Results();
       const next = await runtime.edit(witness, target, edit);
+      published = true;
+      if (next.occurrence !== witness.occurrence) {
+        throw new Error("The edited work occurrence changed before its derived results could be confirmed.");
+      }
       installView(next);
       clearCleanupPreview();
       pendingDirtyRef.current = true;
       syncDirty();
       if (savedRevisionRef.current !== next.revision) markNotSaved();
+
+      // Scalar publication changes the authoritative revision. Keep the prior
+      // groups only as a visibly non-current snapshot until Work rediscovers
+      // every definition and the complete result set is observed atomically.
+      const results = await readJ4Results(next);
+      const ids = results.map((result) => result.definitionId);
+      const uniqueIds = new Set(ids);
+      if (results.some((result) => result.revision !== next.revision) || uniqueIds.size !== ids.length ||
+        (priorJ4 && priorJ4.definitionIds.some((id) => !uniqueIds.has(id)))) {
+        throw new Error("The complete grouped-summary result set did not match the published work revision.");
+      }
+      if (viewRef.current?.occurrence !== next.occurrence || viewRef.current.revision !== next.revision) {
+        throw new Error("The edited work changed before its grouped summaries could be installed.");
+      }
+      installJ4Results(results);
       setCurrentness("current");
       setOutcome("idle");
       return true;
     } catch (error) {
-      if (error instanceof PublishedProjectionRecoveryError) {
+      if (published || error instanceof PublishedProjectionRecoveryError) {
         failClosedAfterPublicationRecovery();
-        // The publication is known successful; avoid SheetShell's rejected
-        // draft path, which would offer an ordinary semantic retry.
+        // Publication is known; avoid SheetShell's rejected-draft path and
+        // ordinary semantic retry while only observation remains unresolved.
         return true;
       } else if (error instanceof UnknownOperationOutcomeError) {
         failClosedAfterUnknownEdit(edit);
@@ -1332,6 +1351,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function createReport(definitionId: string, type: ReportConfiguration["type"]): void {
     const live = viewRef.current;
+    if (currentness !== "current" || inflightRef.current) {
+      setMessage("Wait for the published work and all grouped summaries to be confirmed before creating a report.");
+      return;
+    }
     const source = live && j4ResultsRef.current.find((candidate) =>
       candidate.definitionId === definitionId && candidate.revision === live.revision && candidate.diagnostics.length === 0,
     );
@@ -1376,7 +1399,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const result = live && j4ResultsRef.current.find((entry) =>
       entry.definitionId === candidate.definitionId && entry.revision === live.revision && entry.diagnostics.length === 0,
     );
-    if (!live || !current || current !== candidate || live.occurrence !== witness.occurrence ||
+    if (inflightRef.current || !live || !current || current !== candidate || live.occurrence !== witness.occurrence ||
       live.revision !== witness.revision || !result || currentness !== "current") {
       setMessage("The report source changed or is unavailable. Refresh it before exporting a PNG.");
       return false;

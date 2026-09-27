@@ -11,6 +11,7 @@ import {
   executeRequestCount,
   acceptanceHarnessVersion,
   coreFailureProbe,
+  failSecondScalarRequeryReplyAfterFirst,
   failNextOpenProjection,
   importSpreadsheetRequestCount,
   installAcceptance,
@@ -20,6 +21,8 @@ import {
   loseNextImportReplyAfterDispatch,
   openProjectRequestCount,
   resetCoreFailureProbe,
+  resetScalarRequeryFaultProbe,
+  scalarRequeryFaultProbe,
   settleFaultWindow,
   wrapKitLoader,
 } from "../../src/acceptance/sheet-foundation.js";
@@ -35,8 +38,8 @@ function projection(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: CoreKit; calls: () => number; importCalls: () => number } {
-  const state = { calls: 0, importCalls: 0 };
+function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: CoreKit; calls: () => number; importCalls: () => number; queryCalls: () => number } {
+  const state = { calls: 0, importCalls: 0, queryCalls: 0 };
   const client = {
     openProject: async () => ({}) as never,
     importSpreadsheet: async () => {
@@ -52,11 +55,15 @@ function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: C
       return onEdit();
     },
     queryTable: async (collection: string) => ({ collection, rows: [], columns: [], revision: "r1" }),
+    queryKeyedGroupedSum: async (definitionId: string) => {
+      state.queryCalls += 1;
+      return { definitionId, revision: "r2", groups: [], diagnostics: [] };
+    },
   };
   const kit = {
     createExperimentalDesignerClient: () => client,
   } as unknown as CoreKit;
-  return { kit, calls: () => state.calls, importCalls: () => state.importCalls };
+  return { kit, calls: () => state.calls, importCalls: () => state.importCalls, queryCalls: () => state.queryCalls };
 }
 
 describe("acceptance canonical hash", () => {
@@ -253,6 +260,11 @@ describe("acceptance kit instrumentation", () => {
         "failNextImportProjection",
         "failNextOpenProjection",
         "failNextJ4PostPublicationRead",
+        "failSecondScalarRequeryReplyAfterFirst",
+        "deferSecondScalarRequeryReply",
+        "releaseSecondScalarRequeryReply",
+        "resetScalarRequeryFaultProbe",
+        "scalarRequeryFaultProbe",
         "openProjectRequestCount",
         "importSpreadsheetRequestCount",
         "executeRequestCount",
@@ -274,6 +286,109 @@ describe("acceptance kit instrumentation", () => {
   });
 
   it("identifies the acceptance bundle version", () => {
-    expect(acceptanceHarnessVersion()).toBe("j4-no-resident-runtime-read-probe-v2");
+    expect(acceptanceHarnessVersion()).toBe("j4-scalar-edit-requery-fault-v1");
+  });
+
+  it("discards only the second real grouped query after an acknowledged scalar publication", async () => {
+    resetScalarRequeryFaultProbe();
+    const fake = fakeKit(async () => projection());
+    try {
+      failSecondScalarRequeryReplyAfterFirst();
+      const kit = await wrapKitLoader(async () => fake.kit)();
+      const client = kit.createExperimentalDesignerClient();
+      await client.editNumber("r1", { entity: "entity", field: "field" }, "250");
+      await expect(client.queryKeyedGroupedSum("definition-1")).resolves.toMatchObject({ revision: "r2" });
+      await expect(client.queryKeyedGroupedSum("definition-2")).rejects.toThrow(/second grouped-summary query reply discarded/);
+      expect(fake.queryCalls()).toBe(2);
+      expect(scalarRequeryFaultProbe()).toEqual({
+        publicationAcknowledged: true,
+        invokedDefinitionIds: ["definition-1", "definition-2"],
+        discardedDefinitionId: "definition-2",
+      });
+    } finally {
+      resetScalarRequeryFaultProbe();
+    }
+  });
+
+  it("clears the requested requery fault when its scalar publication is rejected", async () => {
+    resetScalarRequeryFaultProbe();
+    let publicationCalls = 0;
+    const fake = fakeKit(async () => {
+      publicationCalls += 1;
+      if (publicationCalls === 1) throw new Error("known rejected edit");
+      return projection();
+    });
+    try {
+      failSecondScalarRequeryReplyAfterFirst();
+      const kit = await wrapKitLoader(async () => fake.kit)();
+      const client = kit.createExperimentalDesignerClient();
+      await expect(client.editNumber("r1", { entity: "entity", field: "field" }, "bad")).rejects.toThrow("known rejected edit");
+      await expect(client.editNumber("r1", { entity: "entity", field: "field" }, "250")).resolves.toMatchObject({ resulting_revision: "r2" });
+      await expect(client.queryKeyedGroupedSum("definition-1")).resolves.toMatchObject({ revision: "r2" });
+      await expect(client.queryKeyedGroupedSum("definition-2")).resolves.toMatchObject({ revision: "r2" });
+      expect(fake.queryCalls()).toBe(2);
+      expect(scalarRequeryFaultProbe()).toEqual({
+        publicationAcknowledged: false,
+        invokedDefinitionIds: [],
+        discardedDefinitionId: null,
+      });
+    } finally {
+      resetScalarRequeryFaultProbe();
+    }
+  });
+
+  it("clears an armed requery fault when the Work occurrence is replaced before discovery", async () => {
+    resetScalarRequeryFaultProbe();
+    const fake = fakeKit(async () => projection());
+    try {
+      failSecondScalarRequeryReplyAfterFirst();
+      const kit = await wrapKitLoader(async () => fake.kit)();
+      const client = kit.createExperimentalDesignerClient();
+      await client.editNumber("r1", { entity: "entity", field: "field" }, "250");
+      await client.openProject({} as never);
+      await expect(client.queryKeyedGroupedSum("definition-1")).resolves.toMatchObject({ revision: "r2" });
+      await expect(client.queryKeyedGroupedSum("definition-2")).resolves.toMatchObject({ revision: "r2" });
+      expect(fake.queryCalls()).toBe(2);
+      expect(scalarRequeryFaultProbe()).toEqual({
+        publicationAcknowledged: false,
+        invokedDefinitionIds: [],
+        discardedDefinitionId: null,
+      });
+    } finally {
+      resetScalarRequeryFaultProbe();
+    }
+  });
+
+  it("clears the arm when a grouped discovery exits before its second definition query", async () => {
+    resetScalarRequeryFaultProbe();
+    const fake = fakeKit(async () => projection());
+    try {
+      failSecondScalarRequeryReplyAfterFirst();
+      const kit = await wrapKitLoader(async () => fake.kit)();
+      const client = kit.createExperimentalDesignerClient();
+      await client.editNumber("r1", { entity: "entity", field: "field" }, "250");
+      const runtime = {
+        discoverKeyedGroupedSums: async () => [],
+      };
+      const scope = globalThis as unknown as { window: Record<string, unknown> };
+      const previous = scope.window;
+      scope.window = {};
+      try {
+        installAcceptance({ runtime: runtime as never, copies: {} as never });
+        await runtime.discoverKeyedGroupedSums();
+      } finally {
+        scope.window = previous;
+      }
+      await expect(client.queryKeyedGroupedSum("definition-1")).resolves.toMatchObject({ revision: "r2" });
+      await expect(client.queryKeyedGroupedSum("definition-2")).resolves.toMatchObject({ revision: "r2" });
+      expect(fake.queryCalls()).toBe(2);
+      expect(scalarRequeryFaultProbe()).toEqual({
+        publicationAcknowledged: false,
+        invokedDefinitionIds: [],
+        discardedDefinitionId: null,
+      });
+    } finally {
+      resetScalarRequeryFaultProbe();
+    }
   });
 });

@@ -22,74 +22,6 @@ async function closeProject(page) {
   await close.click();
 }
 
-async function installJ5ReportRemovalDiagnostic(page) {
-  await page.evaluate(() => {
-    const startedAt = performance.now();
-    const staleStatus = "This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.";
-    const removedStatus = "The report configuration was removed. Table data and the cross-table definition were kept.";
-    const identify = (element) => {
-      if (!(element instanceof Element)) return null;
-      if (element.matches('[role="tab"]')) return element.id === "ts-tab-report" ? "report-tab" : "other-tab";
-      if (element instanceof HTMLButtonElement && element.textContent?.trim() === "Remove report") return "remove-report";
-      return null;
-    };
-    const snapshot = () => {
-      const statuses = Array.from(document.querySelectorAll('[role="status"], [role="alert"]'))
-        .map((element) => element.textContent?.trim());
-      const remove = Array.from(document.querySelectorAll("button"))
-        .find((button) => button.textContent?.trim() === "Remove report");
-      const busy = document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy");
-      return {
-        focus: identify(document.activeElement),
-        removePresent: Boolean(remove),
-        removeEnabled: remove instanceof HTMLButtonElement ? !remove.disabled : null,
-        projectBusy: busy === "true" ? true : busy === "false" ? false : null,
-        reportStatus: statuses.includes(staleStatus) ? "stale" : statuses.includes(removedStatus) ? "removed" : "other-or-absent",
-      };
-    };
-    const events = [];
-    let previousState = null;
-    const record = (entry) => {
-      if (events.length >= 64) return;
-      events.push({ elapsedMs: Math.round(performance.now() - startedAt), ...entry });
-    };
-    const recordState = () => {
-      const current = snapshot();
-      const signature = JSON.stringify(current);
-      if (signature === previousState) return;
-      previousState = signature;
-      record({ kind: "state", ...current });
-    };
-    window.__j5ReportDiagnostic = { events, snapshot };
-    const capture = (event) => {
-      const target = identify(event.target);
-      const active = identify(document.activeElement);
-      if (!target && !active) return;
-      record({
-        kind: "input-event",
-        type: event.type,
-        key: event.key === "Enter" ? "Enter" : event.key === " " ? "Space" : null,
-        target,
-        active,
-        ...snapshot(),
-      });
-    };
-    for (const type of ["focusin", "focusout", "keydown", "keyup", "click"]) {
-      document.addEventListener(type, capture, true);
-    }
-    const observer = new MutationObserver(recordState);
-    observer.observe(document.documentElement, { attributes: true, characterData: true, childList: true, subtree: true });
-    recordState();
-    window.__j5ReportDiagnostic.cleanup = () => {
-      for (const type of ["focusin", "focusout", "keydown", "keyup", "click"]) {
-        document.removeEventListener(type, capture, true);
-      }
-      observer.disconnect();
-      delete window.__j5ReportDiagnostic;
-    };
-  });
-}
-
 async function exerciseWorkbookTabFocus(page) {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   const titleReceivedFocus = await page.evaluate(() => new Promise((resolve) => {
@@ -582,62 +514,41 @@ try {
   await exerciseWorkbookTabFocus(page);
 
   await editPenPrice(page);
-  await installJ5ReportRemovalDiagnostic(page);
+  // Steward acceptance provenance: #46 comment 5860466401 replaces the
+  // ordinary manual-Refresh expectation with a complete automatic re-query.
   await page.getByRole("tab", { name: "Report", exact: true }).click();
-  await page.getByText("This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
-  const removeReportButton = page.getByRole("button", { name: "Remove report", exact: true });
-  // The stale-source status can render in the same React turn that releases
-  // the preceding edit. Wait for the existing control to become actionable;
-  // pressing a disabled button would not exercise the required removal.
+  reportData = page.getByLabel("Current report data", { exact: true });
+  await reportData.waitFor();
+  assert.match(await reportData.textContent(), /PEN\s*1000/);
+  assert.match(await reportData.textContent(), /NOTE\s*1000/);
   await page.waitForFunction(() => {
     const button = Array.from(document.querySelectorAll("button"))
-      .find((candidate) => candidate.textContent?.trim() === "Remove report");
+      .find((candidate) => candidate.textContent?.trim() === "Export current PNG");
     return button instanceof HTMLButtonElement && !button.disabled;
   });
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).isEnabled(), true, "the retained report is current after automatic re-query");
+  const removeReportButton = page.getByRole("button", { name: "Remove report", exact: true });
   await removeReportButton.focus();
   await page.keyboard.press("Enter");
-  try {
-    await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
-  } catch (failure) {
-    try {
-      const diagnostic = await page.evaluate(() => ({
-        events: window.__j5ReportDiagnostic?.events ?? [],
-        current: window.__j5ReportDiagnostic?.snapshot() ?? null,
-      }));
-      console.error("J5_REPORT_REMOVE_DIAGNOSTIC", JSON.stringify(diagnostic));
-    } catch {
-      // Keep the original product-observation failure if diagnostic capture fails.
-    }
-    throw failure;
-  } finally {
-    try {
-      await page.evaluate(() => window.__j5ReportDiagnostic?.cleanup?.());
-    } catch {
-      // Diagnostic cleanup must not alter the product-observation result.
-    }
-  }
+  await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
   await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Report", { timeout: 1000 });
   assert.equal(await page.getByRole("tab", { name: "Report", exact: true }).evaluate((element) => element === document.activeElement), true, "keyboard Remove must return focus to the Report tab");
-  await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
-  assert.equal(await page.getByTestId("operation-outcome").count(), 0, "a successful report removal must clear the pending outcome");
+  assert.equal(await page.getByTestId("operation-outcome").count(), 0, "successful report removal must clear the pending outcome");
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
-  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-stale-report-removed");
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j5-current-report-removed");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   await context.close();
   context = undefined;
   page = await start();
-  await page.getByRole("button", { name: "Open saved j5-stale-report-removed", exact: true }).click();
+  await page.getByRole("button", { name: "Open saved j5-current-report-removed", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
 
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  const refreshMissingSummary = page.getByRole("button", { name: "Refresh cross-table summary 1", exact: true });
-  if (await refreshMissingSummary.count()) await refreshMissingSummary.click();
   await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Create line report", exact: true }).click();
   await page.getByRole("tab", { name: "Report", exact: true }).click();
