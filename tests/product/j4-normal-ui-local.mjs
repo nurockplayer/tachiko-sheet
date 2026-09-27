@@ -30,16 +30,19 @@ async function openCanary(page) {
   await page.getByTestId("project-ready").waitFor();
 }
 
-async function chooseBinding(page, { orderQuantity = "quantity", productCategory = "category" } = {}) {
+async function chooseBinding(page, {
+  ordersTable = "sales", orderLookupKey = "product_code", orderQuantity = "quantity",
+  productsTable = "catalog", productKey = "code", productCategory = "category", productPrice = "price",
+} = {}) {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
-  await page.getByLabel("Orders table", { exact: true }).selectOption("sales");
-  await page.getByLabel("Order lookup key", { exact: true }).selectOption("product_code");
+  await page.getByLabel("Orders table", { exact: true }).selectOption(ordersTable);
+  await page.getByLabel("Order lookup key", { exact: true }).selectOption(orderLookupKey);
   await page.getByLabel("Order quantity", { exact: true }).selectOption(orderQuantity);
-  await page.getByLabel("Products table", { exact: true }).selectOption("catalog");
-  await page.getByLabel("Product key", { exact: true }).selectOption("code");
+  await page.getByLabel("Products table", { exact: true }).selectOption(productsTable);
+  await page.getByLabel("Product key", { exact: true }).selectOption(productKey);
   await page.getByLabel("Product category", { exact: true }).selectOption(productCategory);
-  await page.getByLabel("Product price", { exact: true }).selectOption("price");
+  await page.getByLabel("Product price", { exact: true }).selectOption(productPrice);
 }
 
 async function bindAndCreate(page, { failPostPublicationRead = false, productCategory = "category" } = {}) {
@@ -398,7 +401,10 @@ try {
     window.__tachikoAcceptance.deferSecondScalarRequeryReply();
   });
   await failureEditor.press("Enter");
-  await page.waitForFunction(() => window.__tachikoAcceptance.scalarRequeryFaultProbe().invokedDefinitionIds.length === 2);
+  await page.waitForFunction(() => {
+    const probe = window.__tachikoAcceptance.scalarRequeryFaultProbe();
+    return probe.invokedDefinitionIds.length === 2 && probe.secondReplyHeld;
+  });
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "pending");
   assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Updating…");
   const pendingSnapshotStatus = page.getByText("Updating… — showing previous results.", { exact: true });
@@ -432,6 +438,7 @@ try {
   const queryFault = await page.evaluate(() => window.__tachikoAcceptance.scalarRequeryFaultProbe());
   assert.equal(queryFault.publicationAcknowledged, true, "fault is armed only after a real scalar publication acknowledgement");
   assert.equal(queryFault.invokedDefinitionIds.length, 2, "the first query returns before the second real query fails");
+  assert.equal(queryFault.secondReplyHeld, false, "the deterministic second-reply hold has been released");
   assert.notEqual(queryFault.invokedDefinitionIds[0], queryFault.invokedDefinitionIds[1]);
   assert.equal(queryFault.discardedDefinitionId, queryFault.invokedDefinitionIds[1], "the second real query reply is the discarded reply");
 
@@ -454,7 +461,156 @@ try {
     publicationAcknowledged: false,
     invokedDefinitionIds: [],
     discardedDefinitionId: null,
+    secondReplyHeld: false,
   }, "the one-shot query fault and evidence reset deterministically");
+
+  // On the unchanged pinned core, the normal UI admits the exact self-binding
+  // Orders catalog/code/price -> Products catalog/code/code/price. Pair it
+  // with Sales/product_code so its diagnostic leaves a real valid sibling.
+  await context.close();
+  context = undefined;
+  page = await start();
+  await openCanary(page);
+  await bindAndCreate(page);
+  await chooseBinding(page, {
+    ordersTable: "catalog", orderLookupKey: "code", orderQuantity: "price",
+    productsTable: "catalog", productKey: "code", productCategory: "code", productPrice: "price",
+  });
+  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+  await page.getByTestId("j4-result-1").getByLabel("Cross-table groups", { exact: true }).waitFor();
+  const twoDefinitions = await page.locator('[data-testid^="j4-result-"]').count();
+  assert.equal(twoDefinitions, 2, "both summaries are created through the visible binding controls");
+  const salesBackedResult = page.locator('[data-testid^="j4-result-"]').filter({ hasText: /PEN\s*800/ });
+  assert.equal(await salesBackedResult.count(), 1, "the Sales-backed definition is identified by its real grouped output");
+  await salesBackedResult.getByRole("button", { name: "Create bar report", exact: true }).click();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Catalog sibling report");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("sales");
+  await page.getByRole("columnheader", { name: "product_code", exact: true }).waitFor();
+  const siblingSales = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  await siblingSales.locator("td").first().dblclick();
+  const siblingEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await siblingEditor.fill(" PEN ");
+  await page.evaluate(() => window.__tachikoAcceptance.resetQueryDefinitionIds());
+  await siblingEditor.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
+  const diagnosticDefinitionIds = await page.evaluate(() => window.__tachikoAcceptance.queryDefinitionIds());
+  assert.equal(diagnosticDefinitionIds.length, 2, "both actual Work definitions are re-queried after publication");
+  assert.notEqual(diagnosticDefinitionIds[0], diagnosticDefinitionIds[1], "the automatic re-query addresses two distinct definition IDs");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  const diagnosticDefinition = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) });
+  const validSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
+  await diagnosticDefinition.waitFor();
+  await validSibling.waitFor();
+  assert.equal(await diagnosticDefinition.count(), 1, "Sales-backed definition A keeps its source diagnostics");
+  assert.equal(await validSibling.count(), 1, "Catalog self-binding definition B retains its genuine grouped result");
+  const selfBindingRows = await groupRows(validSibling.getByLabel("Cross-table groups", { exact: true }));
+  assert.deepEqual(selfBindingRows, ["NOTE: 250000", "PEN: 40000"], "the sibling shows actual Catalog-to-Catalog Work values");
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
+  assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Results need attention");
+
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  assert.equal(await page.getByRole("region", { name: "Report chart", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
+  const blockedSiblingCopies = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j4-diagnostic-sibling");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: /was not created/i }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), blockedSiblingCopies, "a diagnostic report source blocks Save before the storage write");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Remove report", exact: true }).click();
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j4-diagnostic-sibling");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  assert.equal((await page.getByTestId("save-status").textContent())?.includes("Saved on this device"), true, "without an invalid report dependency, Save succeeds with the confirmed results");
+
+  await context.close();
+  context = undefined;
+  page = await start();
+  await page.evaluate(() => window.__tachikoAcceptance.resetQueryDefinitionIds());
+  await page.getByRole("button", { name: "Open saved j4-diagnostic-sibling", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  const reopenedDefinitionIds = await page.evaluate(() => window.__tachikoAcceptance.queryDefinitionIds());
+  assert.equal(reopenedDefinitionIds.length, 2, "reopen re-queries both saved real definition IDs");
+  assert.notEqual(reopenedDefinitionIds[0], reopenedDefinitionIds[1]);
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
+  assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Results need attention", "saved truth retains diagnostic attention");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) }).count(), 1);
+  const reopenedSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
+  assert.equal(await reopenedSibling.count(), 1, "fresh reopen retains the unaffected sibling result");
+  assert.match(await reopenedSibling.textContent(), /NOTE/);
+  assert.match(await reopenedSibling.textContent(), /PEN/);
+  assert.deepEqual(await groupRows(reopenedSibling.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 250000", "PEN: 40000"], "fresh reopen re-queries the stored binding through Work");
+
+  // A later scalar edit starts with a prior diagnostic plus a genuine sibling.
+  // While the second real query is held, neither snapshot may be labeled current.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const pendingHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const pendingPriceIndex = pendingHeaders.filter((header) => header !== "Row").indexOf("price");
+  const pendingPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  await pendingPenRow.locator("td").nth(pendingPriceIndex).dblclick();
+  const pendingEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await pendingEditor.fill("250");
+  const pendingExecuteCount = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
+  const pendingCopyWrites = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  const pendingExports = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
+  await page.evaluate(() => {
+    window.__tachikoAcceptance.failSecondScalarRequeryReplyAfterFirst();
+    window.__tachikoAcceptance.deferSecondScalarRequeryReply();
+  });
+  await pendingEditor.press("Enter");
+  await page.waitForFunction(() => {
+    const probe = window.__tachikoAcceptance.scalarRequeryFaultProbe();
+    return probe.invokedDefinitionIds.length === 2 && probe.secondReplyHeld;
+  });
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "pending");
+  assert.equal(await page.getByText("Updating… — showing previous results.", { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).isDisabled(), true);
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByRole("heading", { name: "Previous grouped result", exact: true }).waitFor();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) }).count(), 1);
+  const previousSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
+  assert.equal(await previousSibling.count(), 1);
+  assert.equal(await previousSibling.locator(".ts-content-meta").textContent().then((text) => text?.startsWith("Previous result") ?? false), true, "a valid sibling snapshot is labeled previous while pending");
+  assert.equal(await page.getByText("This previous result has source issues. Its values are hidden while results update.", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Some results need attention. Correct the source data to update them.", { exact: true }).count(), 0, "old diagnostics do not retain current-source guidance while pending");
+  const pendingCreateButtons = page.getByRole("button", { name: "Create bar report", exact: true });
+  assert.equal(await pendingCreateButtons.count(), 1, "the result with no grouped values offers no report creation");
+  for (const button of await pendingCreateButtons.all()) assert.equal(await button.isDisabled(), true);
+  const pendingRefreshButtons = page.getByRole("button", { name: "Refresh core result", exact: true });
+  assert.equal(await pendingRefreshButtons.count(), 2);
+  for (const button of await pendingRefreshButtons.all()) assert.equal(await button.isDisabled(), true);
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  assert.equal(await page.getByLabel("Current report data", { exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), pendingCopyWrites);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), pendingExports);
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), pendingExecuteCount + 1, "a held re-query never retries the scalar edit");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.evaluate(() => window.__tachikoAcceptance.releaseSecondScalarRequeryReply());
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 0, "failed sibling refresh installs no partial query set");
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).count(), 0);
+  assert.equal(await page.getByLabel("Current report data", { exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), pendingCopyWrites);
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), pendingExports);
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), pendingExecuteCount + 1);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) }).count(), 1);
+  const refreshedSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
+  assert.equal(await refreshedSibling.count(), 1);
+  assert.deepEqual(await groupRows(refreshedSibling.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 250000", "PEN: 62500"], "explicit Refresh observes the scalar edit through Work");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), pendingExecuteCount + 1, "Refresh re-observes without replaying the published edit");
 } finally {
   if (context) {
     const cleanupPage = context.pages()[0];

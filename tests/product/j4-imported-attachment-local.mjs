@@ -242,7 +242,7 @@ try {
   assert.equal(await page.getByTestId("project-ready").count(), 0);
   assert.equal(
     await page.evaluate(() => window.__tachikoAcceptance.acceptanceHarnessVersion()),
-    "j4-scalar-edit-requery-fault-v1",
+    "j4-scalar-edit-requery-fault-v2",
   );
   await page.evaluate(() => window.__tachikoAcceptance.resetCoreFailureProbe());
   await page.getByRole("button", { name: "Refresh", exact: true }).click();

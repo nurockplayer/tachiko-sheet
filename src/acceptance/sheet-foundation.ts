@@ -61,6 +61,7 @@ export interface ScalarRequeryFaultProbe {
   publicationAcknowledged: boolean;
   invokedDefinitionIds: string[];
   discardedDefinitionId: string | null;
+  secondReplyHeld: boolean;
 }
 
 export interface AcceptanceCoreFailureProbe {
@@ -97,6 +98,8 @@ export interface AcceptanceApi {
   releaseSecondScalarRequeryReply(): void;
   resetScalarRequeryFaultProbe(): void;
   scalarRequeryFaultProbe(): ScalarRequeryFaultProbe;
+  queryDefinitionIds(): string[];
+  resetQueryDefinitionIds(): void;
   openProjectRequestCount(): number;
   importSpreadsheetRequestCount(): number;
   executeRequestCount(): number;
@@ -127,7 +130,7 @@ type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate"]);
 const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup"]);
 const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
-const ACCEPTANCE_HARNESS_VERSION = "j4-scalar-edit-requery-fault-v1";
+const ACCEPTANCE_HARNESS_VERSION = "j4-scalar-edit-requery-fault-v2";
 
 let wiring: AcceptanceWiring | null = null;
 const workMethodInvocations = new Map<string, number>();
@@ -149,6 +152,7 @@ let scalarRequeryFaultProbeValue: ScalarRequeryFaultProbe = {
   publicationAcknowledged: false,
   invokedDefinitionIds: [],
   discardedDefinitionId: null,
+  secondReplyHeld: false,
 };
 let openProjectDispatchCount = 0;
 let importSpreadsheetDispatchCount = 0;
@@ -168,6 +172,7 @@ function operationGate() {
   let active = false;
   let pending: Promise<void> | null = null;
   let releasePending: (() => void) | null = null;
+  let generation = 0;
   return {
     defer(): void {
       if (armed || active) return;
@@ -176,17 +181,30 @@ function operationGate() {
     },
     async pause(): Promise<void> {
       if (!armed || !pending) return;
+      const pauseGeneration = generation;
       armed = false;
       active = true;
       const wait = pending;
       pending = null;
       await wait;
-      active = false;
+      if (pauseGeneration === generation) active = false;
     },
     release(): void {
       const resolve = releasePending;
       releasePending = null;
       resolve?.();
+    },
+    reset(): void {
+      generation += 1;
+      const resolve = releasePending;
+      releasePending = null;
+      armed = false;
+      active = false;
+      pending = null;
+      resolve?.();
+    },
+    isActive(): boolean {
+      return active;
     },
   };
 }
@@ -196,6 +214,8 @@ const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
 const scalarRequerySecondReplyGate = operationGate();
 let scalarRequerySecondReplyHoldRequested = false;
+let scalarRequeryFaultGeneration = 0;
+const queryDefinitionIdLog: string[] = [];
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -271,6 +291,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "queryKeyedGroupedSum") {
         return async (...args: unknown[]): Promise<unknown> => {
+          queryDefinitionIdLog.push(String(args[0]));
           let result: unknown;
           try {
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -279,6 +300,7 @@ function instrumentClient(client: PublicClient): PublicClient {
             throw error;
           }
           if (!scalarRequeryFaultArmed) return result;
+          const faultGeneration = scalarRequeryFaultGeneration;
           if ((result as { revision?: unknown }).revision !== scalarRequeryFaultRevision) {
             resetScalarRequeryFaultProbe();
             return result;
@@ -289,7 +311,7 @@ function instrumentClient(client: PublicClient): PublicClient {
           if (scalarRequerySecondReplyHoldRequested) {
             scalarRequerySecondReplyHoldRequested = false;
             await scalarRequerySecondReplyGate.pause();
-            if (!scalarRequeryFaultArmed) return result;
+            if (faultGeneration !== scalarRequeryFaultGeneration || !scalarRequeryFaultArmed) return result;
           }
           scalarRequeryFaultArmed = false;
           scalarRequeryFaultProbeValue.discardedDefinitionId = definitionId;
@@ -443,6 +465,7 @@ async function dispatchPublication(
         publicationAcknowledged: true,
         invokedDefinitionIds: [],
         discardedDefinitionId: null,
+        secondReplyHeld: false,
       };
     }
     return receipt;
@@ -769,8 +792,9 @@ export function releaseSecondScalarRequeryReply(): void {
 }
 
 export function resetScalarRequeryFaultProbe(): void {
+  scalarRequeryFaultGeneration += 1;
   scalarRequerySecondReplyHoldRequested = false;
-  scalarRequerySecondReplyGate.release();
+  scalarRequerySecondReplyGate.reset();
   scalarRequeryFaultRequested = false;
   scalarRequeryFaultArmed = false;
   scalarRequeryFaultRevision = null;
@@ -778,6 +802,7 @@ export function resetScalarRequeryFaultProbe(): void {
     publicationAcknowledged: false,
     invokedDefinitionIds: [],
     discardedDefinitionId: null,
+    secondReplyHeld: false,
   };
 }
 
@@ -786,7 +811,16 @@ export function scalarRequeryFaultProbe(): ScalarRequeryFaultProbe {
     publicationAcknowledged: scalarRequeryFaultProbeValue.publicationAcknowledged,
     invokedDefinitionIds: [...scalarRequeryFaultProbeValue.invokedDefinitionIds],
     discardedDefinitionId: scalarRequeryFaultProbeValue.discardedDefinitionId,
+    secondReplyHeld: scalarRequerySecondReplyGate.isActive(),
   };
+}
+
+export function queryDefinitionIds(): string[] {
+  return [...queryDefinitionIdLog];
+}
+
+export function resetQueryDefinitionIds(): void {
+  queryDefinitionIdLog.length = 0;
 }
 
 export function failNextOpenProjection(): void {
@@ -908,6 +942,8 @@ export function installAcceptance(next: AcceptanceWiring): void {
     releaseSecondScalarRequeryReply,
     resetScalarRequeryFaultProbe,
     scalarRequeryFaultProbe,
+    queryDefinitionIds,
+    resetQueryDefinitionIds,
     openProjectRequestCount,
     importSpreadsheetRequestCount,
     executeRequestCount,

@@ -4,13 +4,14 @@
  * counting, one bounded reply loss with a retained genuine receipt) with an
  * injected public-client fake.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { UnknownOperationOutcomeError, type CoreKit, type KitLoader } from "../../src/contracts.js";
 import { hashCanonicalFiles } from "../../src/acceptance/canonical-hash.js";
 import {
   executeRequestCount,
   acceptanceHarnessVersion,
   coreFailureProbe,
+  deferSecondScalarRequeryReply,
   failSecondScalarRequeryReplyAfterFirst,
   failNextOpenProjection,
   importSpreadsheetRequestCount,
@@ -22,6 +23,7 @@ import {
   openProjectRequestCount,
   resetCoreFailureProbe,
   resetScalarRequeryFaultProbe,
+  releaseSecondScalarRequeryReply,
   scalarRequeryFaultProbe,
   settleFaultWindow,
   wrapKitLoader,
@@ -286,7 +288,7 @@ describe("acceptance kit instrumentation", () => {
   });
 
   it("identifies the acceptance bundle version", () => {
-    expect(acceptanceHarnessVersion()).toBe("j4-scalar-edit-requery-fault-v1");
+    expect(acceptanceHarnessVersion()).toBe("j4-scalar-edit-requery-fault-v2");
   });
 
   it("discards only the second real grouped query after an acknowledged scalar publication", async () => {
@@ -304,6 +306,7 @@ describe("acceptance kit instrumentation", () => {
         publicationAcknowledged: true,
         invokedDefinitionIds: ["definition-1", "definition-2"],
         discardedDefinitionId: "definition-2",
+        secondReplyHeld: false,
       });
     } finally {
       resetScalarRequeryFaultProbe();
@@ -331,6 +334,7 @@ describe("acceptance kit instrumentation", () => {
         publicationAcknowledged: false,
         invokedDefinitionIds: [],
         discardedDefinitionId: null,
+        secondReplyHeld: false,
       });
     } finally {
       resetScalarRequeryFaultProbe();
@@ -353,6 +357,7 @@ describe("acceptance kit instrumentation", () => {
         publicationAcknowledged: false,
         invokedDefinitionIds: [],
         discardedDefinitionId: null,
+        secondReplyHeld: false,
       });
     } finally {
       resetScalarRequeryFaultProbe();
@@ -386,7 +391,67 @@ describe("acceptance kit instrumentation", () => {
         publicationAcknowledged: false,
         invokedDefinitionIds: [],
         discardedDefinitionId: null,
+        secondReplyHeld: false,
       });
+    } finally {
+      resetScalarRequeryFaultProbe();
+    }
+  });
+
+  it("resets an unconsumed deferred reply before arming a fresh hold", async () => {
+    resetScalarRequeryFaultProbe();
+    const fake = fakeKit(async () => projection());
+    try {
+      failSecondScalarRequeryReplyAfterFirst();
+      deferSecondScalarRequeryReply();
+      resetScalarRequeryFaultProbe();
+
+      failSecondScalarRequeryReplyAfterFirst();
+      deferSecondScalarRequeryReply();
+      const client = (await wrapKitLoader(async () => fake.kit)()).createExperimentalDesignerClient();
+      await client.editNumber("r1", { entity: "entity", field: "field" }, "250");
+      await expect(client.queryKeyedGroupedSum("definition-1")).resolves.toMatchObject({ revision: "r2" });
+      const second = client.queryKeyedGroupedSum("definition-2");
+      await vi.waitFor(() => expect(scalarRequeryFaultProbe().secondReplyHeld).toBe(true));
+      let completed = false;
+      void second.then(() => { completed = true; }, () => { completed = true; });
+      expect(completed).toBe(false);
+      releaseSecondScalarRequeryReply();
+      await expect(second).rejects.toThrow(/second grouped-summary query reply discarded/);
+      expect(fake.queryCalls()).toBe(2);
+      expect(scalarRequeryFaultProbe()).toMatchObject({ discardedDefinitionId: "definition-2", secondReplyHeld: false });
+    } finally {
+      resetScalarRequeryFaultProbe();
+    }
+  });
+
+  it("re-arms a deferred reply after resetting an active hold", async () => {
+    resetScalarRequeryFaultProbe();
+    const fake = fakeKit(async () => projection());
+    try {
+      const client = (await wrapKitLoader(async () => fake.kit)()).createExperimentalDesignerClient();
+      failSecondScalarRequeryReplyAfterFirst();
+      deferSecondScalarRequeryReply();
+      await client.editNumber("r1", { entity: "entity", field: "field" }, "250");
+      await expect(client.queryKeyedGroupedSum("old-definition-1")).resolves.toMatchObject({ revision: "r2" });
+      const oldSecond = client.queryKeyedGroupedSum("old-definition-2");
+      await vi.waitFor(() => expect(scalarRequeryFaultProbe().secondReplyHeld).toBe(true));
+      resetScalarRequeryFaultProbe();
+      await expect(oldSecond).resolves.toMatchObject({ revision: "r2" });
+
+      failSecondScalarRequeryReplyAfterFirst();
+      deferSecondScalarRequeryReply();
+      await client.editNumber("r2", { entity: "entity", field: "field" }, "300");
+      await expect(client.queryKeyedGroupedSum("new-definition-1")).resolves.toMatchObject({ revision: "r2" });
+      const newSecond = client.queryKeyedGroupedSum("new-definition-2");
+      await vi.waitFor(() => expect(scalarRequeryFaultProbe().secondReplyHeld).toBe(true));
+      let completed = false;
+      void newSecond.then(() => { completed = true; }, () => { completed = true; });
+      expect(completed).toBe(false, "the previous hold continuation must not release the new hold");
+      releaseSecondScalarRequeryReply();
+      await expect(newSecond).rejects.toThrow(/second grouped-summary query reply discarded/);
+      expect(fake.queryCalls()).toBe(4);
+      expect(scalarRequeryFaultProbe().discardedDefinitionId).toBe("new-definition-2");
     } finally {
       resetScalarRequeryFaultProbe();
     }

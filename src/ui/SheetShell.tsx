@@ -1655,13 +1655,13 @@ export function SheetShell(props: SheetShellProps) {
       </section>
       <section className={hasConfiguredSummary ? "ts-summary-result" : "ts-card"} aria-label="Cross-table summary result">
         <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>{hasConfiguredSummary
-          ? resultsNeedAttention ? "Grouped results need attention" : currentness === "pending" ? "Previous grouped result" : "Current grouped result"
+          ? currentness === "pending" ? "Previous grouped result" : resultsNeedAttention ? "Grouped results need attention" : "Current grouped result"
           : "Authoritative result"}</h2>
         {resultsNeedAttention && currentness === "current" ? <p className="ts-notice" role="status">Some results need attention. Correct the source data to update them.</p> : null}
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
-            <p className="ts-content-meta">{resultsNeedAttention ? "Current result" : "Complete result"} · {result.groups.length} groups{resultsNeedAttention ? "" : ` · ${currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}`}</p>
+          {result.diagnostics.length > 0 ? <><p role="status">{currentness === "pending" ? "This previous result has source issues. Its values are hidden while results update." : "The core reported diagnostics; no group values are shown."}</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
+            <p className="ts-content-meta">{currentness === "pending" ? "Previous result" : resultsNeedAttention ? "Current result" : "Complete result"} · {result.groups.length} groups{resultsNeedAttention || currentness === "pending" ? "" : ` · ${currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}`}</p>
             <table className="ts-summary-groups" aria-label="Cross-table groups">
               <thead><tr><th scope="col">Product</th><th scope="col">Value</th></tr></thead>
               <tbody>{result.groups.map((group) => <tr key={group.category}><td>{group.category}</td><td>{group.value}</td></tr>)}</tbody>
