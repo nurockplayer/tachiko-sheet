@@ -340,6 +340,244 @@ async function menuViewportAndOpen(page, tag) {
   return bounds;
 }
 
+async function auditNarrowedAppearanceContent(page, context) {
+  await page.setViewportSize({ width: 320, height: 800 });
+  const trigger = page.getByRole("button", { name: "Appearance", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const panel = page.locator(".ts-home .ts-appearance-popover");
+  await panel.waitFor({ state: "visible" });
+  await waitForAppearancePanelToSettle(page);
+  const scaleOneGeometry = await page.evaluate(() => {
+    const panel = document.querySelector(".ts-home .ts-appearance-popover");
+    const content = panel.querySelector(".ts-appearance-content");
+    const header = panel.querySelector(".ts-appearance-popover__header");
+    return {
+      panel: panel.getBoundingClientRect().toJSON(),
+      content: content.getBoundingClientRect().toJSON(),
+      header: {
+        rect: header.getBoundingClientRect().toJSON(),
+        title: header.querySelector("h2").getBoundingClientRect().toJSON(),
+        close: header.querySelector(".ts-appearance-close").getBoundingClientRect().toJSON(),
+      },
+      density: [...panel.querySelectorAll(".ts-appearance-density-option")].map((label) => ({
+        control: label.getBoundingClientRect().toJSON(),
+        text: (() => { const range = document.createRange(); range.selectNodeContents(label.querySelector("span")); return range.getBoundingClientRect().toJSON(); })(),
+      })),
+    };
+  });
+  evidence(scaleOneGeometry.header.title.right <= scaleOneGeometry.header.close.left + 1 &&
+    Math.abs((scaleOneGeometry.header.title.top + scaleOneGeometry.header.title.height / 2) -
+      (scaleOneGeometry.header.close.top + scaleOneGeometry.header.close.height / 2)) <= 4,
+  "ordinary 320px Appearance header retains the same-row title and Close arrangement", scaleOneGeometry.header);
+  const session = await context.newCDPSession(page);
+  let narrowed;
+  let focusPaint = [];
+  let actions = {};
+  try {
+    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1.5 });
+    await waitForAppearancePanelToSettle(page);
+    narrowed = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const header = panel.querySelector(".ts-appearance-popover__header");
+      const heading = header.querySelector("h2");
+      const close = header.querySelector(".ts-appearance-close");
+      const rangeBounds = (node) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().toJSON(); };
+      const density = [...panel.querySelectorAll(".ts-appearance-density-option")];
+      const viewport = visualViewport;
+      return {
+        layout: { width: innerWidth, height: innerHeight },
+        viewport: { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight, scale: viewport?.scale ?? 1 },
+        pageWidth: document.documentElement.scrollWidth,
+        panel: panel.getBoundingClientRect().toJSON(),
+        header: { rect: header.getBoundingClientRect().toJSON(), title: heading.getBoundingClientRect().toJSON(), titleText: rangeBounds(heading), close: close.getBoundingClientRect().toJSON() },
+        content: { rect: content.getBoundingClientRect().toJSON(), clientWidth: content.clientWidth, scrollWidth: content.scrollWidth, clientHeight: content.clientHeight, scrollHeight: content.scrollHeight },
+        density: density.map((label) => ({
+          text: label.querySelector("span").textContent,
+          control: label.getBoundingClientRect().toJSON(), textBounds: rangeBounds(label.querySelector("span")),
+          height: label.getBoundingClientRect().height,
+        })),
+        profiles: [...panel.querySelectorAll(".ts-appearance-profile-option")].map((label) => ({
+          text: label.querySelector("span").textContent.trim(),
+          control: label.getBoundingClientRect().toJSON(), textBounds: rangeBounds(label.querySelector("span")),
+          height: label.getBoundingClientRect().height,
+        })),
+      };
+    });
+    const tag = "320x800 Home Appearance with browser-emulated visualViewport scale 1.5";
+    evidence(narrowed.viewport.width < narrowed.layout.width && narrowed.pageWidth <= narrowed.layout.width &&
+      narrowed.panel.left >= narrowed.viewport.left - 0.5 && narrowed.panel.right <= narrowed.viewport.left + narrowed.viewport.width + 0.5,
+    `${tag} narrows the panel without page or visual viewport overflow`, narrowed);
+    const title = narrowed.header.title;
+    const close = narrowed.header.close;
+    evidence(title.right <= close.left + 1 || close.right <= title.left + 1 ||
+      title.bottom <= close.top + 1 || close.bottom <= title.top + 1,
+    `${tag} wraps Appearance and Close without overlap`, narrowed.header);
+    evidence(narrowed.density.length === 2 &&
+      Math.abs(narrowed.density[0].control.width - narrowed.density[1].control.width) <= 1 &&
+      narrowed.density.every((item) => item.textBounds.left >= item.control.left &&
+        item.textBounds.right <= item.control.right + 0.5 && item.textBounds.bottom <= item.control.bottom + 0.5 && item.height >= 36),
+    `${tag} keeps equal Density columns and complete naturally wrapped labels`, narrowed.density);
+    evidence(narrowed.profiles.length === 3 && narrowed.profiles.every((profile) =>
+      profile.textBounds.left >= profile.control.left && profile.textBounds.right <= profile.control.right + 0.5 &&
+      profile.textBounds.bottom <= profile.control.bottom + 0.5 && profile.height >= 40),
+    `${tag} wraps each of the three complete profile labels inside its control`, narrowed.profiles);
+
+    const readFocusPaint = async (name, advance = true) => {
+      if (advance) await page.keyboard.press("Tab");
+      const observed = await page.evaluate(() => {
+        const active = document.activeElement;
+        const target = active.closest(".ts-appearance-profile-option, .ts-appearance-density-option, button") ?? active;
+        const panel = document.querySelector(".ts-home .ts-appearance-popover");
+        const content = target.closest(".ts-appearance-popover__header")
+          ? panel
+          : panel.querySelector(".ts-appearance-content");
+        const control = target.getBoundingClientRect();
+        const clip = content.getBoundingClientRect();
+        const style = getComputedStyle(target);
+        const gutter = (Number.parseFloat(style.outlineWidth) || 0) + (Number.parseFloat(style.outlineOffset) || 0);
+        return {
+          tag: active.tagName, className: active.className, value: active.value ?? null,
+          targetTag: target.tagName, targetClassName: target.className,
+          text: target.textContent?.trim() ?? "",
+          focusVisible: active.matches(":focus-visible") || target.matches(":focus-within, :focus-visible"),
+          outlineWidth: style.outlineWidth, outlineOffset: style.outlineOffset,
+          paint: { left: control.left - gutter, top: control.top - gutter, right: control.right + gutter, bottom: control.bottom + gutter },
+          clip: { left: clip.left, top: clip.top, right: clip.right, bottom: clip.bottom },
+          control: control.toJSON(),
+        };
+      });
+      const reachesExpectedControl = {
+        Close: (control) => control.targetClassName.includes("ts-appearance-close"),
+        "profile choice": (control) => control.tag === "INPUT" && control.value === "tachiko" && control.targetClassName.includes("ts-appearance-profile-option"),
+        "Familiar Spreadsheet profile": (control) => control.tag === "INPUT" && control.value === "familiar-spreadsheet" && control.targetClassName.includes("ts-appearance-profile-option"),
+        "Minimal-Focus profile": (control) => control.tag === "INPUT" && control.value === "minimal-focus" && control.targetClassName.includes("ts-appearance-profile-option"),
+        "Import action": (control) => control.tag === "BUTTON" && control.text.includes("Import profile"),
+        "Export action": (control) => control.tag === "BUTTON" && control.text.includes("Export selected profile"),
+        "Compact density": (control) => control.tag === "INPUT" && control.value === "compact" && control.targetClassName.includes("ts-appearance-density-option"),
+        "Comfortable density": (control) => control.tag === "INPUT" && control.value === "comfortable" && control.targetClassName.includes("ts-appearance-density-option"),
+        "Apply profile": (control) => control.tag === "BUTTON" && control.text.includes("Apply profile"),
+        Cancel: (control) => control.tag === "BUTTON" && control.text === "Cancel",
+      }[name](observed);
+      const inside = observed.paint.left >= observed.clip.left - 1 && observed.paint.right <= observed.clip.right + 1 &&
+        observed.paint.top >= observed.clip.top - 1 && observed.paint.bottom <= observed.clip.bottom + 1;
+      evidence(reachesExpectedControl && observed.focusVisible && observed.outlineWidth === "3px" && observed.outlineOffset === "2px" && inside,
+        `${tag} preserves ${name} keyboard focus paint inside the scrollport`, observed);
+      focusPaint.push({ name, ...observed });
+      return observed;
+    };
+    await readFocusPaint("Close");
+    await readFocusPaint("profile choice");
+    await page.keyboard.press("ArrowDown");
+    await readFocusPaint("Familiar Spreadsheet profile", false);
+    await page.keyboard.press("ArrowDown");
+    await readFocusPaint("Minimal-Focus profile", false);
+    await readFocusPaint("Import action");
+    await readFocusPaint("Export action");
+    await readFocusPaint("Compact density");
+    await page.keyboard.press("ArrowRight");
+    await readFocusPaint("Comfortable density", false);
+
+    const readButtonText = async (button, name) => {
+      await button.evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }));
+      await button.focus();
+      const measured = await button.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const content = document.querySelector(".ts-home .ts-appearance-content").getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return { control: rect.toJSON(), text: range.getBoundingClientRect().toJSON(), content: content.toJSON() };
+      });
+      evidence(measured.control.left >= measured.content.left - 1 && measured.control.right <= measured.content.right + 1 &&
+        measured.text.left >= measured.control.left && measured.text.right <= measured.control.right + 0.5 && measured.text.height > 0,
+      `${tag} keeps ${name} text within its action`, measured);
+      return measured;
+    };
+    const importExport = page.locator(".ts-appearance-custom-actions button");
+    actions.import = await readButtonText(importExport.nth(0), "Import");
+    actions.export = await readButtonText(importExport.nth(1), "Export");
+    const artifactDir = process.env.SHEET_CONTROL_ARTIFACT_DIR;
+    if (artifactDir) await page.screenshot({ path: path.join(artifactDir, "appearance-visual-viewport-scale-1.5.png") });
+
+    await page.locator(".ts-appearance-file-input").setInputFiles({
+      name: "narrow-visual-profile.tachiko-profile.json",
+      mimeType: "application/json",
+      buffer: safeImportedManifestBytes,
+    });
+    const candidateActions = page.locator(".ts-appearance-candidate__actions button");
+    await candidateActions.first().waitFor({ state: "visible" });
+    await waitForAppearancePanelToSettle(page);
+    await readFocusPaint("Apply profile");
+    await readFocusPaint("Cancel");
+    actions.apply = await readButtonText(candidateActions.nth(0), "Apply profile");
+    actions.cancel = await readButtonText(candidateActions.nth(1), "Cancel");
+    await candidateActions.nth(1).click();
+    await page.locator(".ts-appearance-candidate").waitFor({ state: "detached" });
+    await waitForAppearancePanelToSettle(page);
+  } finally {
+    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+    await waitForAppearancePanelToSettle(page);
+    const restored = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const density = [...panel.querySelectorAll(".ts-appearance-density-option")].map((label) => label.getBoundingClientRect().toJSON());
+      return { viewportWidth: visualViewport?.width ?? innerWidth, scale: visualViewport?.scale ?? 1, density };
+    });
+    const expectedWidths = scaleOneGeometry.density.map(({ control }) => control.width);
+    evidence(Math.abs(restored.viewportWidth - 320) <= 0.5 && Math.abs(restored.scale - 1) <= 0.01 &&
+      restored.density.every((item, index) => Math.abs(item.width - expectedWidths[index]) <= 0.5) &&
+      Math.abs(restored.density[0].width - restored.density[1].width) <= 1,
+    "Home Appearance restores scale-1 equal Density geometry after visual viewport widening", { scaleOneGeometry, restored });
+    observations.push({ homeAppearanceNarrowVisualViewport: { scaleOneGeometry, narrowed, focusPaint, actions, restored } });
+    await session.detach();
+  }
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  await waitForAppearancePanelToSettle(page);
+  const widerSession = await context.newCDPSession(page);
+  try {
+    await widerSession.send("Emulation.setPageScaleFactor", { pageScaleFactor: 3 });
+    await waitForAppearancePanelToSettle(page);
+    const widerNarrowed = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const header = panel.querySelector(".ts-appearance-popover__header");
+      const title = header.querySelector("h2").getBoundingClientRect();
+      const close = header.querySelector(".ts-appearance-close").getBoundingClientRect();
+      const labels = [...panel.querySelectorAll(".ts-appearance-density-option")];
+      const rangeBounds = (node) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().toJSON(); };
+      const viewport = visualViewport;
+      return {
+        layout: { width: innerWidth, height: innerHeight },
+        viewport: { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight, scale: viewport?.scale ?? 1 },
+        pageWidth: document.documentElement.scrollWidth,
+        panel: panel.getBoundingClientRect().toJSON(), content: content.getBoundingClientRect().toJSON(),
+        header: { title: title.toJSON(), close: close.toJSON() },
+        density: labels.map((label) => ({ control: label.getBoundingClientRect().toJSON(), text: rangeBounds(label.querySelector("span")), height: label.getBoundingClientRect().height })),
+      };
+    });
+    const label = "600px Home layout narrowed by browser-emulated visualViewport scale 3";
+    evidence(widerNarrowed.layout.width === 600 && widerNarrowed.viewport.width < widerNarrowed.layout.width &&
+      widerNarrowed.panel.left >= widerNarrowed.viewport.left - 0.5 &&
+      widerNarrowed.panel.right <= widerNarrowed.viewport.left + widerNarrowed.viewport.width + 0.5 &&
+      widerNarrowed.pageWidth <= widerNarrowed.layout.width,
+    `${label} remains horizontally contained`, widerNarrowed);
+    evidence(widerNarrowed.header.title.right <= widerNarrowed.header.close.left + 1 ||
+      widerNarrowed.header.title.bottom <= widerNarrowed.header.close.top + 1 ||
+      widerNarrowed.header.close.bottom <= widerNarrowed.header.title.top + 1,
+    `${label} keeps the header title and Close separate`, widerNarrowed.header);
+    evidence(widerNarrowed.density.length === 2 &&
+      Math.abs(widerNarrowed.density[0].control.width - widerNarrowed.density[1].control.width) <= 1 &&
+      widerNarrowed.density.every((item) => item.text.left >= item.control.left && item.text.right <= item.control.right + 0.5 && item.height >= 36),
+    `${label} retains equal columns and wrapped Density text`, widerNarrowed.density);
+    observations.push({ homeAppearanceWiderVisualViewport: widerNarrowed });
+  } finally {
+    await widerSession.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+    await waitForAppearancePanelToSettle(page);
+    await widerSession.detach();
+  }
+}
+
 async function screenshotPixel(page, x, y) {
   const pngData = (await page.screenshot({ animations: "disabled" })).toString("base64");
   return page.evaluate(async ({ pngData: encoded, x: sampleX, y: sampleY }) => {
@@ -861,6 +1099,9 @@ async function auditHomeViewportBounds(page, browser) {
       }
     }
 
+    await choose(emptyPage, "tachiko", "compact");
+    await emptyPage.keyboard.press("Escape");
+    await auditNarrowedAppearanceContent(emptyPage, emptyContext);
     await emptyPage.setViewportSize({ width: 320, height: 200 });
     const shortTrigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
     if (await shortTrigger.getAttribute("aria-expanded") !== "true") await shortTrigger.click();
@@ -2797,6 +3038,8 @@ async function main() {
     homeAppearancePopoverAudit: observations.filter((item) => item.homeAppearancePopover),
     homeAppearanceReactivity: observations.find((item) => item.homeAppearanceReactivity)?.homeAppearanceReactivity ?? null,
     homeAppearanceShortViewport: observations.find((item) => item.homeAppearanceShortViewport)?.homeAppearanceShortViewport ?? null,
+    homeAppearanceNarrowVisualViewport: observations.find((item) => item.homeAppearanceNarrowVisualViewport)?.homeAppearanceNarrowVisualViewport ?? null,
+    homeAppearanceWiderVisualViewport: observations.find((item) => item.homeAppearanceWiderVisualViewport)?.homeAppearanceWiderVisualViewport ?? null,
     unknownOpenRecoveryAppearance: observations.find((item) => item.unknownOpenRecoveryAppearance)?.unknownOpenRecoveryAppearance ?? null,
     homeSavedWhitespaceIdentity: observations.find((item) => item.homeSavedWhitespaceIdentity) ?? null,
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),

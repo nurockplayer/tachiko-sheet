@@ -46,31 +46,40 @@
 
 .ts-appearance-popover__header {
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   min-height: 32px;
 }
 
 .ts-appearance-popover__header h2 {
+  flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   font: inherit;
   font-size: 20px;
   font-weight: 600;
   line-height: 28px;
+  overflow-wrap: anywhere;
 }
 
 .ts-appearance-content {
   min-height: 0;
+  margin: calc(0px - var(--ts-appearance-focus-width) - var(--ts-appearance-focus-offset));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: calc(var(--ts-appearance-focus-width) + var(--ts-appearance-focus-offset));
 }
 
 .ts-appearance-close {
+  flex: 0 0 auto;
   min-width: 56px;
+  margin-inline-start: auto;
   padding-inline: 8px;
+  white-space: nowrap;
 }
 
 .ts-appearance-description,
@@ -207,6 +216,7 @@
   min-width: 0;
   min-height: 36px;
   padding-inline: 8px;
+  overflow-wrap: anywhere;
   white-space: normal;
   line-height: 18px;
 }
@@ -304,6 +314,12 @@
   cursor: pointer;
   text-align: center;
   line-height: 20px;
+}
+
+.ts-appearance-density-option span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ts-appearance-density-option--selected {

@@ -108,10 +108,13 @@ export function AppearanceSelector({
         panelRect.height,
         panelRect.height - content.clientHeight + content.scrollHeight,
       );
-      const firstInteractive = panel.querySelector<HTMLElement>(
-        ".ts-appearance-profile-option, .ts-appearance-custom-actions button",
+      const interactiveControls = Array.from(panel.querySelectorAll<HTMLElement>(
+        ".ts-appearance-profile-option, .ts-appearance-density-option, .ts-appearance-custom-actions button, .ts-appearance-candidate__actions button",
+      )).filter((control) => control.getClientRects().length > 0 && window.getComputedStyle(control).visibility !== "hidden");
+      const interactiveControlHeight = interactiveControls.reduce(
+        (largest, control) => Math.max(largest, control.getBoundingClientRect().height),
+        0,
       );
-      const interactiveControlHeight = firstInteractive?.getBoundingClientRect().height ?? 0;
       const panelStyle = window.getComputedStyle(panel);
       const numberOfPixels = (value: string): number => Number.parseFloat(value) || 0;
       const panelHeader = panel.querySelector<HTMLElement>(".ts-appearance-popover__header");
