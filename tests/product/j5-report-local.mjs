@@ -22,6 +22,74 @@ async function closeProject(page) {
   await close.click();
 }
 
+async function installJ5ReportRemovalDiagnostic(page) {
+  await page.evaluate(() => {
+    const startedAt = performance.now();
+    const staleStatus = "This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.";
+    const removedStatus = "The report configuration was removed. Table data and the cross-table definition were kept.";
+    const identify = (element) => {
+      if (!(element instanceof Element)) return null;
+      if (element.matches('[role="tab"]')) return element.id === "ts-tab-report" ? "report-tab" : "other-tab";
+      if (element instanceof HTMLButtonElement && element.textContent?.trim() === "Remove report") return "remove-report";
+      return null;
+    };
+    const snapshot = () => {
+      const statuses = Array.from(document.querySelectorAll('[role="status"], [role="alert"]'))
+        .map((element) => element.textContent?.trim());
+      const remove = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Remove report");
+      const busy = document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy");
+      return {
+        focus: identify(document.activeElement),
+        removePresent: Boolean(remove),
+        removeEnabled: remove instanceof HTMLButtonElement ? !remove.disabled : null,
+        projectBusy: busy === "true" ? true : busy === "false" ? false : null,
+        reportStatus: statuses.includes(staleStatus) ? "stale" : statuses.includes(removedStatus) ? "removed" : "other-or-absent",
+      };
+    };
+    const events = [];
+    let previousState = null;
+    const record = (entry) => {
+      if (events.length >= 64) return;
+      events.push({ elapsedMs: Math.round(performance.now() - startedAt), ...entry });
+    };
+    const recordState = () => {
+      const current = snapshot();
+      const signature = JSON.stringify(current);
+      if (signature === previousState) return;
+      previousState = signature;
+      record({ kind: "state", ...current });
+    };
+    window.__j5ReportDiagnostic = { events, snapshot };
+    const capture = (event) => {
+      const target = identify(event.target);
+      const active = identify(document.activeElement);
+      if (!target && !active) return;
+      record({
+        kind: "input-event",
+        type: event.type,
+        key: event.key === "Enter" ? "Enter" : event.key === " " ? "Space" : null,
+        target,
+        active,
+        ...snapshot(),
+      });
+    };
+    for (const type of ["focusin", "focusout", "keydown", "keyup", "click"]) {
+      document.addEventListener(type, capture, true);
+    }
+    const observer = new MutationObserver(recordState);
+    observer.observe(document.documentElement, { attributes: true, characterData: true, childList: true, subtree: true });
+    recordState();
+    window.__j5ReportDiagnostic.cleanup = () => {
+      for (const type of ["focusin", "focusout", "keydown", "keyup", "click"]) {
+        document.removeEventListener(type, capture, true);
+      }
+      observer.disconnect();
+      delete window.__j5ReportDiagnostic;
+    };
+  });
+}
+
 async function start(viewport) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
@@ -444,6 +512,7 @@ try {
   await assertReportPng(page, await downloadedPng(page), barArtifact);
 
   await editPenPrice(page);
+  await installJ5ReportRemovalDiagnostic(page);
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   await page.getByText("This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
@@ -458,7 +527,26 @@ try {
   });
   await removeReportButton.focus();
   await page.keyboard.press("Enter");
-  await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
+  try {
+    await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
+  } catch (failure) {
+    try {
+      const diagnostic = await page.evaluate(() => ({
+        events: window.__j5ReportDiagnostic?.events ?? [],
+        current: window.__j5ReportDiagnostic?.snapshot() ?? null,
+      }));
+      console.error("J5_REPORT_REMOVE_DIAGNOSTIC", JSON.stringify(diagnostic));
+    } catch {
+      // Keep the original product-observation failure if diagnostic capture fails.
+    }
+    throw failure;
+  } finally {
+    try {
+      await page.evaluate(() => window.__j5ReportDiagnostic?.cleanup?.());
+    } catch {
+      // Diagnostic cleanup must not alter the product-observation result.
+    }
+  }
   await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Report", { timeout: 1000 });
   assert.equal(await page.getByRole("tab", { name: "Report", exact: true }).evaluate((element) => element === document.activeElement), true, "keyboard Remove must return focus to the Report tab");
   await page.getByText("Create a bar or line report from a current cross-table result.", { exact: true }).waitFor();
