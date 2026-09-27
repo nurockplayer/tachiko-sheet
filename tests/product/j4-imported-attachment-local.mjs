@@ -117,7 +117,12 @@ async function bindAndCreate(page) {
 }
 
 async function groups(page) {
-  return (await page.getByLabel("Cross-table groups", { exact: true }).textContent()).replace(/\s+/g, " ").trim();
+  const table = page.getByLabel("Cross-table groups", { exact: true });
+  const rows = await table.locator("tbody tr").evaluateAll((items) => items.map((row) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    return `${cells[0]?.textContent?.trim() ?? ""}: ${cells[1]?.textContent?.trim() ?? ""}`;
+  }));
+  return rows.join(" ");
 }
 
 async function savedAttachment(page, name) {

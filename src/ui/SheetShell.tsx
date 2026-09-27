@@ -1317,76 +1317,81 @@ export function SheetShell(props: SheetShellProps) {
     if (!view || !selectedRow) return null;
     const entity = rowEntity(selectedRow);
     const tableCols = tableColumns(view.table);
+    const rowNumber = table ? table.rows.indexOf(selectedRow) + 1 : null;
     return (
-      <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief">
+      <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief-panel">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
-        <section className="ts-card" aria-label="Linked Brief facts">
-          <h2 className="ts-h2">Brief</h2>
-          <BriefFacts
-            entity={entity}
-            occurrence={view.occurrence}
-            revision={view.revision}
-            currentness={currentness}
-            row={selectedRow}
-            columns={tableCols}
-          />
-        </section>
-        <section className="ts-card" aria-label="Decision notes">
-          <h2 className="ts-h2">Decision notes</h2>
-          <p className="ts-subtle">
-            Notes on the selected record. They are saved with the work, not with a copy.
-          </p>
-          <label className="ts-field-label" htmlFor={notesId}>
-            Decision notes
-          </label>
-          <textarea
-            id={notesId}
-            className="ts-notes"
-            data-testid="notes-input"
-            rows={5}
-            value={notesValue}
-            disabled={!notesEditable}
-            aria-describedby={notesEditable ? undefined : `${notesId}-hint`}
-            onChange={(event) => {
-              setLocalError(null);
-              if (view && selectedRow) {
-                const draft = {
-                  occurrence: view.occurrence,
-                  revision: view.revision,
-                  entity: rowEntity(selectedRow),
-                  value: event.currentTarget.value,
-                };
-                setNotesDrafts((drafts) => {
-                  const remaining = drafts.filter(
-                    (candidate) =>
-                      candidate.occurrence !== draft.occurrence || candidate.entity !== draft.entity,
-                  );
-                  return draft.value === notesCommitted ? remaining : [...remaining, draft];
-                });
-              }
-            }}
-            onKeyDown={onNotesKeyDown}
-          />
-          {notesEditable ? null : (
-            <p className="ts-hint" id={`${notesId}-hint`}>
-              {notesField
-                ? "This notes field is not editable in the current work."
-                : "This work has no notes column to write to."}
+        <h1 className="ts-content-heading">Brief</h1>
+        <p className="ts-content-meta">Row {rowNumber} · same record as Table</p>
+        <div className="ts-brief-layout">
+          <section className="ts-brief-facts" aria-labelledby="brief-facts-heading">
+            <h2 className="ts-content-heading" id="brief-facts-heading">Linked facts</h2>
+            <BriefFacts
+              entity={entity}
+              occurrence={view.occurrence}
+              revision={view.revision}
+              currentness={currentness}
+              row={selectedRow}
+              columns={tableCols}
+            />
+          </section>
+          <section className="ts-brief-notes" aria-label="Decision notes">
+            <h2 className="ts-content-heading">Decision notes</h2>
+            <p className="ts-subtle">
+              Apply notes to the open work. Saving a copy is a separate action.
             </p>
-          )}
-          <div className="ts-row-actions">
-            <button
-              type="button"
-              className="ts-button ts-button--primary"
-              onClick={() => void applyNotes()}
-              disabled={!notesEditable || controlsLocked || !notesDirty || !notesDraftBound}
-              title={notesDirty ? undefined : "Change the notes before applying."}
-            >
-              Apply notes
-            </button>
-            <span className="ts-hint">{notesDirty ? "Unapplied notes draft" : "No unapplied notes"}</span>
-          </div>
-        </section>
+            <label className="ts-field-label" htmlFor={notesId}>
+              Decision notes
+            </label>
+            <textarea
+              id={notesId}
+              className="ts-notes"
+              data-testid="notes-input"
+              rows={5}
+              value={notesValue}
+              disabled={!notesEditable}
+              aria-describedby={notesEditable ? undefined : `${notesId}-hint`}
+              onChange={(event) => {
+                setLocalError(null);
+                if (view && selectedRow) {
+                  const draft = {
+                    occurrence: view.occurrence,
+                    revision: view.revision,
+                    entity: rowEntity(selectedRow),
+                    value: event.currentTarget.value,
+                  };
+                  setNotesDrafts((drafts) => {
+                    const remaining = drafts.filter(
+                      (candidate) =>
+                        candidate.occurrence !== draft.occurrence || candidate.entity !== draft.entity,
+                    );
+                    return draft.value === notesCommitted ? remaining : [...remaining, draft];
+                  });
+                }
+              }}
+              onKeyDown={onNotesKeyDown}
+            />
+            {notesEditable ? null : (
+              <p className="ts-hint" id={`${notesId}-hint`}>
+                {notesField
+                  ? "This notes field is not editable in the current work."
+                  : "This work has no notes column to write to."}
+              </p>
+            )}
+            <div className="ts-row-actions">
+              <button
+                type="button"
+                className="ts-button ts-button--primary"
+                onClick={() => void applyNotes()}
+                disabled={!notesEditable || controlsLocked || !notesDirty || !notesDraftBound}
+                title={notesDirty ? undefined : "Change the notes before applying."}
+              >
+                Apply notes
+              </button>
+              <span className="ts-hint">{notesDirty ? "Unapplied notes draft" : "No unapplied notes"}</span>
+            </div>
+          </section>
+        </div>
       </div>
     );
   }
@@ -1474,11 +1479,11 @@ export function SheetShell(props: SheetShellProps) {
       }
     };
     const selector = (label: string, key: keyof KeyedGroupedSumBindingChoice, values: Array<{ key: string }>) => (
-      <><label className="ts-field-label" htmlFor={`j4-${key}`}>{label}</label>
+      <div className="ts-summary-field"><label className="ts-field-label" htmlFor={`j4-${key}`}>{label}</label>
       <select id={`j4-${key}`} value={j4Binding?.[key] ?? ""} onChange={(event) => choose(key, event.currentTarget.value)} disabled={controlsLocked || j4Pending}>
         <option value="">Choose a field</option>
         {values.map((value) => <option key={value.key} value={value.key}>{value.key}</option>)}
-      </select></>
+      </select></div>
     );
     const hasField = (collectionKey: string, fieldKey: string) => fields(collectionKey).some((field) => field.key === fieldKey);
     const bindingReady = Boolean(j4Binding && j4Catalog &&
@@ -1489,28 +1494,38 @@ export function SheetShell(props: SheetShellProps) {
       hasField(j4Binding.productsCollection, j4Binding.productCategoryField) &&
       hasField(j4Binding.productsCollection, j4Binding.productPriceField));
     const missingDefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
-    return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className="ts-panel ts-brief">
-      <section className="ts-card" aria-label="Cross-table summary binding">
-        <h2 className="ts-h2">Cross-table summary</h2>
+    const hasConfiguredSummary = Boolean(j4Catalog || j4Results.length > 0 || j4DefinitionIds.length > 0);
+    return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className={`ts-panel ${hasConfiguredSummary ? "ts-summary-panel" : "ts-brief"}`}>
+      <section className={hasConfiguredSummary ? "ts-summary-binding" : "ts-card"} aria-label="Cross-table summary binding">
+        <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>Cross-table summary</h2>
         <p className="ts-subtle">Choose visible table and field names. The core binds their stable identities and remains the only calculator.</p>
         {!j4Catalog ? <button type="button" className="ts-button" onClick={() => void prepare()} disabled={controlsLocked || j4Pending}>{j4Pending ? "Loading names…" : "Choose tables and fields"}</button> : <>
-          {selector("Orders table", "ordersCollection", j4Catalog.collections)}
-          {selector("Order lookup key", "orderLookupKeyField", fields(j4Binding?.ordersCollection ?? ""))}
-          {selector("Order quantity", "orderQuantityField", fields(j4Binding?.ordersCollection ?? ""))}
-          {selector("Products table", "productsCollection", j4Catalog.collections)}
-          {selector("Product key", "productKeyField", fields(j4Binding?.productsCollection ?? ""))}
-          {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
-          {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
+          <div className="ts-summary-fields">
+            {selector("Orders table", "ordersCollection", j4Catalog.collections)}
+            {selector("Order lookup key", "orderLookupKeyField", fields(j4Binding?.ordersCollection ?? ""))}
+            {selector("Order quantity", "orderQuantityField", fields(j4Binding?.ordersCollection ?? ""))}
+            {selector("Products table", "productsCollection", j4Catalog.collections)}
+            {selector("Product key", "productKeyField", fields(j4Binding?.productsCollection ?? ""))}
+            {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
+            {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
+          </div>
           <p className="ts-hint">Creating this summary uses the core’s format-2 project representation. Canonical and portable v1 exits remain unsupported for definition-bearing work.</p>
           <button type="button" className="ts-button ts-button--primary" onClick={() => void create()} disabled={controlsLocked || j4Pending || !bindingReady}>{j4Pending ? "Creating…" : "Create cross-table summary"}</button>
         </>}
       </section>
-      <section className="ts-card" aria-label="Cross-table summary result">
-        <h2 className="ts-h2">Authoritative result</h2>
+      <section className={hasConfiguredSummary ? "ts-summary-result" : "ts-card"} aria-label="Cross-table summary result">
+        <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>{hasConfiguredSummary ? "Current grouped result" : "Authoritative result"}</h2>
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <><ul aria-label="Cross-table groups">{result.groups.map((group) => <li key={group.category}>{group.category}: {group.value}</li>)}</ul><div className="ts-row-actions"><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button></div></>}
-          <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button>
+          {result.diagnostics.length > 0 ? <><p role="status">The core reported diagnostics; no current group values are shown.</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
+            <p className="ts-content-meta">Complete result · {result.groups.length} groups · {currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}</p>
+            <table className="ts-summary-groups" aria-label="Cross-table groups">
+              <thead><tr><th scope="col">Product</th><th scope="col">Value</th></tr></thead>
+              <tbody>{result.groups.map((group) => <tr key={group.category}><td>{group.category}</td><td>{group.value}</td></tr>)}</tbody>
+            </table>
+            <div className="ts-row-actions ts-summary-actions"><button type="button" className="ts-button ts-button--primary" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button><button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button></div>
+          </>}
+          {result.diagnostics.length > 0 ? <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button> : null}
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
           <p className="ts-empty">Source data changed, so the previous result is not current.</p>
@@ -1603,38 +1618,49 @@ export function SheetShell(props: SheetShellProps) {
       setReportTextDraft(null);
       window.setTimeout(() => document.getElementById(tabId("report"))?.focus(), 0);
     };
-    return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-brief">
-      <section className="ts-card ts-report-card" aria-label="Current report">
-        <h2 className="ts-h2">Current report</h2>
-        {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
-          {!result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
-          <div className="ts-report-controls">
-            {(["title", "categoryLabel", "valueLabel"] as const).map((field) => {
-              const labels = { title: "Title", categoryLabel: "Category label", valueLabel: "Value label" };
-              const ids = { title: "report-title", categoryLabel: "report-category-label", valueLabel: "report-value-label" };
-              const violation = textViolation(field);
-              const errorId = `${ids[field]}-error`;
-              return <div key={field}>
-                <label className="ts-field-label" htmlFor={ids[field]}>{labels[field]}</label>
-                <input id={ids[field]} value={textValue(field)} onChange={(event) => updateText(field, event.currentTarget.value)} disabled={controlsLocked} aria-invalid={violation ? true : undefined} aria-describedby={violation ? errorId : undefined} />
-                {violation ? <p id={errorId} className="ts-subtle" role="status">{labels[field]} must be {violation.limit} Unicode code points or fewer ({violation.length} entered). This value has not been applied.</p> : null}
-              </div>;
-            })}
-            <label className="ts-check"><input type="checkbox" checked={report.legendVisible} onChange={(event) => update({ legendVisible: event.currentTarget.checked })} disabled={controlsLocked} /> Show legend</label>
-          </div>
-          <p className="ts-subtle">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
-          {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
-          <dl className="ts-report-data" aria-label="Current report data">{result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}</dl>
-          <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
-          {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
-          {hasInvalidReportDraft ? <p role="status">Correct the invalid report presentation text before saving or exporting. The current report has not been changed.</p> : null}
-          <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady || hasInvalidReportDraft}>Export current PNG</button>
+    const reportLayoutState = !report ? "empty" : !result ? "stale" : "configured";
+    return <div role="tabpanel" id={panelId("report")} aria-labelledby={tabId("report")} className="ts-panel ts-report-panel">
+      <section className="ts-report-composition" aria-label="Current report">
+        <h1 className="ts-content-heading">Current report</h1>
+        <div className={`ts-report-layout ts-report-layout--${reportLayoutState}`}>
+        <div className="ts-report-settings">
+          {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : !result ? <p role="status">This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving.</p> : <>
+            <div className="ts-report-controls">
+              {(["title", "categoryLabel", "valueLabel"] as const).map((field) => {
+                const labels = { title: "Title", categoryLabel: "Category label", valueLabel: "Value label" };
+                const ids = { title: "report-title", categoryLabel: "report-category-label", valueLabel: "report-value-label" };
+                const violation = textViolation(field);
+                const errorId = `${ids[field]}-error`;
+                return <div key={field}>
+                  <label className="ts-field-label" htmlFor={ids[field]}>{labels[field]}</label>
+                  <input id={ids[field]} value={textValue(field)} onChange={(event) => updateText(field, event.currentTarget.value)} disabled={controlsLocked} aria-invalid={violation ? true : undefined} aria-describedby={violation ? errorId : undefined} />
+                  {violation ? <p id={errorId} className="ts-subtle" role="status">{labels[field]} must be {violation.limit} Unicode code points or fewer ({violation.length} entered). This value has not been applied.</p> : null}
+                </div>;
+              })}
+              <label className="ts-check"><input type="checkbox" checked={report.legendVisible} onChange={(event) => update({ legendVisible: event.currentTarget.checked })} disabled={controlsLocked} /> Show legend</label>
+            </div>
           </>}
-          <div className="ts-row-actions">
-            <button type="button" className="ts-button" onClick={removeReport} disabled={controlsLocked}>Remove report</button>
-            <p className="ts-subtle">This removes only the report configuration{hasInvalidReportDraft ? " and discards the uncommitted presentation text" : ""}. Table data and the cross-table definition stay available.</p>
-          </div>
-        </>}
+        </div>
+        <div className="ts-report-document">
+          {report && result ? <>
+            <h2 className="ts-report-document-heading">Complete current group result</h2>
+            <dl className="ts-report-data" aria-label="Current report data">
+              {result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}
+              <div className="ts-report-currentness"><dt>Currentness</dt><dd>{currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}</dd></div>
+            </dl>
+            <p className="ts-subtle ts-report-output-note">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
+            {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
+            <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
+            {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
+            {hasInvalidReportDraft ? <p role="status">Correct the invalid report presentation text before saving or exporting. The current report has not been changed.</p> : null}
+            <button type="button" className="ts-button ts-button--primary" onClick={exportPng} disabled={controlsLocked || !reportCanvasReady || hasInvalidReportDraft}>Export current PNG</button>
+          </> : null}
+        </div>
+        {report ? <div className="ts-report-remove">
+          <button type="button" className="ts-button ts-button--ghost" onClick={removeReport} disabled={controlsLocked}>Remove report</button>
+          <p className="ts-subtle">This removes only the report configuration{hasInvalidReportDraft ? " and discards the uncommitted presentation text" : ""}. Table data and the cross-table definition stay available.</p>
+        </div> : null}
+        </div>
       </section>
     </div>;
   }
