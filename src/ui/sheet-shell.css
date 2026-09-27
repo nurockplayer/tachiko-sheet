@@ -1671,7 +1671,7 @@ body { margin: 0; }
   .ts-home-section { padding-top: 24px; padding-bottom: 36px; }
   .ts-home-section[aria-label="Open project"] { border-top: 0; }
   .ts-home-section[aria-label="Open project"] > .ts-h2 + .ts-home-open-actions { margin-top: 20px; }
-  .ts-home-open-actions { width: 100%; align-items: stretch; flex-direction: column; gap: 16px; margin-top: 20px; }
+  .ts-home .ts-home-open-actions { width: 100%; align-items: stretch; flex-direction: column; gap: 16px; margin-top: 20px; }
   .ts-home-open-actions > .ts-button,
   .ts-home-open-actions > .ts-home-file-action { width: 100%; min-width: 0; }
   .ts-home-open-actions > button:first-of-type,

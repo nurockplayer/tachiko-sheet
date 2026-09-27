@@ -616,6 +616,7 @@ async function auditHomeViewportBounds(page, browser) {
               introText: [...document.querySelectorAll(".ts-home-intro")]
                 .filter(isVisible).map((node) => node.textContent.trim()),
               openBorderTop: getComputedStyle(document.querySelector('[aria-label="Open project"]')).borderTopStyle,
+              openActionGap: Number.parseFloat(getComputedStyle(document.querySelector(".ts-home-open-actions")).rowGap),
               actions,
               openHelper: [openDesktop, openCompact].find(isVisible)?.textContent?.trim() ?? null,
               visibleOpenHelpers: Number(isVisible(openDesktop)) + Number(isVisible(openCompact)),
@@ -654,6 +655,11 @@ async function auditHomeViewportBounds(page, browser) {
             assert.equal(layout.header.contentX, 32, "compact Home header content uses the 16px inner inset");
             assert.equal(layout.intro.contentX, 32, "compact Home intro content uses the 16px inner inset");
             assert.equal(layout.openBorderTop, "none", "only compact Open loses its top separator");
+            assert.equal(layout.openActionGap, 16, "compact Home Open action row has the approved 16px gap");
+            for (let index = 1; index < layout.actions.length; index += 1) {
+              assert.equal(layout.actions[index].y - layout.actions[index - 1].y - layout.actions[index - 1].height, 16,
+                "adjacent compact Open actions are separated by 16px");
+            }
             assert.ok(layout.actions.every((action) => Math.abs(action.width - layout.home.width) <= 1),
               "compact Open actions fill the Home content width", layout);
             assert.equal(layout.importChooserBeforeHelper, true, "compact Import chooser precedes helper in visual and DOM order");
@@ -663,6 +669,7 @@ async function auditHomeViewportBounds(page, browser) {
             if (density.id === "comfortable") assert.ok(layout.actions.every(({ height }) => height >= 36));
           } else {
             assert.equal(layout.openBorderTop, "solid", "desktop retains the approved Open divider");
+            assert.equal(layout.openActionGap, 12, "desktop retains its 12px Open action gap");
             assert.ok(layout.importHelper.y < layout.importAction.y,
               "desktop retains its approved helper-before-chooser presentation order", layout);
           }
