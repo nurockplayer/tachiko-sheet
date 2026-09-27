@@ -44,6 +44,7 @@ const safeImportedGhostPreference = JSON.stringify({
 const safeImportedManifestBytes = Buffer.from(`${JSON.stringify(JSON.parse(safeImportedGhostPreference).profile, null, 2)}\n`, "utf8");
 const failures = [];
 const observations = [];
+const interopPreviewTrimCases = [];
 const evidence = (condition, label, details = null) => {
   if (!condition) failures.push({ label, details });
 };
@@ -731,7 +732,7 @@ async function geometry(page, width, combo) {
   return result;
 }
 
-async function auditWorkbookViewportBounds(page, width, height, profile) {
+async function auditWorkbookViewportBounds(page, width, height, profile, expectInteropPreview = false) {
   await page.setViewportSize({ width, height });
   for (const viewName of ["Table", "Cross-table summary", "Report", "Brief", "Import & export"]) {
     await page.getByRole("tab", { name: viewName, exact: true }).click();
@@ -853,6 +854,8 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         `${label} keeps 28px helper-to-actions spacing`, spacing);
       evidence(spacing?.actionsGap === (phone ? "16px" : "12px"),
         `${label} keeps the approved spacing inside every action group`, spacing);
+      if (expectInteropPreview) evidence(spacing?.previewPresent === true,
+        `${label} requires an actual cleanup preview for the preview-layout assertions`, spacing);
       if (spacing?.previewPresent) {
         evidence(spacing.generationActionsToCount === 32,
           `${label} keeps 32px spacing from preview generation actions to the result count`, spacing);
@@ -870,6 +873,62 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         `${label} preserves the Table's own horizontal grid scroller`, layout);
     }
     observations.push({ workbookViewport: label, ...layout });
+  }
+}
+
+async function auditInteropPreviewTrimCases(browser) {
+  const context = await browser.newContext({ viewport: { width: 1512, height: 982 }, deviceScaleFactor: 1 });
+  try {
+    const page = await context.newPage();
+    await openApp(context, page);
+    await page.getByTestId("project-ready").waitFor();
+    await openCanary(context, page);
+
+    const salesPen = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+    await salesPen.locator("td").first().dblclick();
+    const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+    await editor.fill(" PEN ");
+    await editor.press("Enter");
+    await page.waitForFunction(() => /\sPEN\s/.test(
+      [...document.querySelectorAll('table[aria-label="Table"] tbody tr')]
+        .map((row) => row.textContent ?? "").join(" "),
+    ));
+
+    for (const profile of profiles) {
+      for (const density of densities) {
+        for (const viewport of [{ width: 1512, height: 982 }, { width: 320, height: 640 }]) {
+          const label = `${viewport.width}px ${profile.id}/${density.id} Preview trim`;
+          await page.setViewportSize(viewport);
+          await choose(page, profile.id, density.id);
+          await page.keyboard.press("Escape");
+          await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+          await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+          const preview = page.getByTestId("cleanup-preview");
+          await preview.waitFor();
+          const summary = (await preview.locator(":scope > p").textContent())?.trim() ?? "";
+          assert.match(summary, /^[1-9]\d* cell changes and \d+ rows would change\.$/,
+            `${label} produces a nonempty real trim preview`);
+          const targets = page.getByRole("table", { name: "Cleanup targets", exact: true });
+          await targets.waitFor();
+          assert.deepEqual((await targets.locator("thead th").allTextContents()).map((item) => item.trim()), ["Target"],
+            `${label} keeps the approved cleanup target heading`);
+          const targetCount = await targets.locator("tbody tr").count();
+          assert.ok(targetCount > 0, `${label} exposes at least one real cleanup target`);
+
+          await auditWorkbookViewportBounds(page, viewport.width, viewport.height, profile.id, true);
+          await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
+          await preview.waitFor({ state: "detached" });
+          assert.equal(await page.getByTestId("cleanup-preview").count(), 0,
+            `${label} cancels normally before the next isolated appearance observation`);
+          const entry = { case: label, density: density.id, targetCount, previewSummary: summary, outcome: "previewed and cancelled" };
+          interopPreviewTrimCases.push(entry);
+          observations.push({ interopPreviewTrimCase: label, ...entry });
+        }
+      }
+    }
+    assert.equal(interopPreviewTrimCases.length, 12, "all three profiles, both densities, and both preview widths execute");
+  } finally {
+    await context.close();
   }
 }
 
@@ -3008,6 +3067,8 @@ async function main() {
       await auditWorkbookViewportBounds(page, 1512, 982, profile.id);
     }
 
+    await auditInteropPreviewTrimCases(browser);
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -3110,6 +3171,11 @@ async function main() {
         command,
         scrollState,
       })),
+    },
+    interopPreviewTrim: {
+      completedCases: interopPreviewTrimCases.length,
+      requiredCases: 12,
+      outcomes: interopPreviewTrimCases,
     },
     workbookViewportAudit: observations.filter((item) => item.workbookViewport),
     viewHeldControls: observations.filter((item) => item.viewHeldControl),
