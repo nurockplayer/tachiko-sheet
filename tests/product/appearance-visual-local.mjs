@@ -44,6 +44,7 @@ const safeImportedGhostPreference = JSON.stringify({
 const safeImportedManifestBytes = Buffer.from(`${JSON.stringify(JSON.parse(safeImportedGhostPreference).profile, null, 2)}\n`, "utf8");
 const failures = [];
 const observations = [];
+const interopPreviewTrimCases = [];
 const evidence = (condition, label, details = null) => {
   if (!condition) failures.push({ label, details });
 };
@@ -731,7 +732,7 @@ async function geometry(page, width, combo) {
   return result;
 }
 
-async function auditWorkbookViewportBounds(page, width, height, profile) {
+async function auditWorkbookViewportBounds(page, width, height, profile, expectInteropPreview = false) {
   await page.setViewportSize({ width, height });
   for (const viewName of ["Table", "Cross-table summary", "Report", "Brief", "Import & export"]) {
     await page.getByRole("tab", { name: viewName, exact: true }).click();
@@ -742,6 +743,54 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       const panelRect = panel?.getBoundingClientRect();
       const footerRect = footer?.getBoundingClientRect();
       const panelStyle = panel ? getComputedStyle(panel) : null;
+      const interop = panel?.matches(".ts-interop") ? panel : null;
+      const interopSpacing = interop ? (() => {
+        const ledger = interop.querySelector('[aria-label="Source fidelity ledger"]');
+        const cleanup = interop.querySelector('[aria-label="Cleanup preview"]');
+        const download = interop.querySelector('[aria-label="Download spreadsheet"]');
+        const preview = cleanup?.querySelector(":scope > .ts-preview");
+        const count = preview?.querySelector(":scope > p");
+        const targetTable = preview?.querySelector(":scope > .ts-interop-targets");
+        const previewActions = preview?.querySelector(":scope > .ts-row-actions");
+        const box = (element) => element?.getBoundingClientRect() ?? null;
+        const distance = (upper, lower) => {
+          const upperRect = box(upper);
+          const lowerRect = box(lower);
+          return upperRect && lowerRect ? lowerRect.top - upperRect.bottom : null;
+        };
+        const style = (element) => element ? getComputedStyle(element) : null;
+        const title = interop.querySelector(":scope > .ts-content-heading");
+        const ledgerHeading = ledger?.querySelector(":scope > .ts-content-heading");
+        const cleanupHeading = cleanup?.querySelector(":scope > .ts-content-heading");
+        const cleanupHelper = cleanup?.querySelector(":scope > .ts-subtle");
+        const cleanupActions = cleanup?.querySelector(":scope > .ts-row-actions");
+        const downloadHeading = download?.querySelector(":scope > .ts-content-heading");
+        const downloadHelper = download?.querySelector(":scope > .ts-subtle");
+        const downloadActions = download?.querySelector(":scope > .ts-row-actions");
+        const countStyle = style(count);
+        const previewStyle = style(preview);
+        const actionsStyle = style(cleanupActions);
+        return {
+          previewPresent: Boolean(preview),
+          background: style(interop)?.backgroundColor ?? null,
+          titleToLedgerHeading: distance(title, ledgerHeading),
+          cleanupHeadingToHelper: distance(cleanupHeading, cleanupHelper),
+          cleanupHelperToActions: distance(cleanupHelper, cleanupActions),
+          generationActionsToCount: distance(cleanupActions, preview),
+          countToTable: distance(count, targetTable),
+          tableToActions: distance(targetTable, previewActions),
+          downloadHeadingToHelper: distance(downloadHeading, downloadHelper),
+          downloadHelperToActions: distance(downloadHelper, downloadActions),
+          actionsGap: actionsStyle?.gap ?? null,
+          previewBorderTopWidth: previewStyle?.borderTopWidth ?? null,
+          previewPaddingTop: previewStyle?.paddingTop ?? null,
+          countMarginTop: countStyle?.marginTop ?? null,
+          countMarginBottom: countStyle?.marginBottom ?? null,
+          countFontSize: countStyle?.fontSize ?? null,
+          countLineHeight: countStyle?.lineHeight ?? null,
+          countFontWeight: countStyle?.fontWeight ?? null,
+        };
+      })() : null;
       return {
         viewportWidth: innerWidth,
         viewportHeight: innerHeight,
@@ -762,6 +811,15 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
         footerTop: footerRect?.top ?? null,
         footerBottom: footerRect?.bottom ?? null,
+        interopHeadings: Array.from(document.querySelectorAll(
+          ".ts-interop > .ts-content-heading, .ts-interop-section > .ts-content-heading",
+        )).map((heading) => {
+          const style = getComputedStyle(heading);
+          const rect = heading.getBoundingClientRect();
+          return { text: heading.textContent?.trim() ?? "", fontSize: style.fontSize,
+            lineHeight: style.lineHeight, fontWeight: style.fontWeight, height: rect.height };
+        }),
+        interopSpacing,
       };
     });
     const label = `${width}x${height} ${profile} ${viewName}`;
@@ -778,11 +836,99 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
       evidence(layout.panelScrollHeight > layout.panelClientHeight,
         `${label} scrolls the long Brief content inside its panel`, layout);
     }
+    if (viewName === "Import & export") {
+      evidence(layout.interopHeadings.length === 4 && layout.interopHeadings.every((heading) =>
+        heading.fontSize === "20px" && heading.lineHeight === "28px" && heading.fontWeight === "600" && heading.height === 28),
+      `${label} uses the approved 20/28 weight-600 view and section heading recipe`, layout.interopHeadings);
+      const phone = width <= 600;
+      const spacing = layout.interopSpacing;
+      const expectedCountFont = phone ? "14px" : "12px";
+      const expectedCountWeight = phone ? "400" : "500";
+      evidence(spacing?.background !== "rgba(0, 0, 0, 0)" && spacing?.background !== "transparent",
+        `${label} paints the Interop content surface`, spacing);
+      evidence(spacing?.titleToLedgerHeading === (phone ? 16 : 32),
+        `${label} keeps the approved title-to-ledger heading rhythm`, spacing);
+      evidence(spacing?.cleanupHeadingToHelper === 16 && spacing?.downloadHeadingToHelper === 16,
+        `${label} keeps 16px heading-to-helper spacing`, spacing);
+      evidence(spacing?.cleanupHelperToActions === 28 && spacing?.downloadHelperToActions === 28,
+        `${label} keeps 28px helper-to-actions spacing`, spacing);
+      evidence(spacing?.actionsGap === (phone ? "16px" : "12px"),
+        `${label} keeps the approved spacing inside every action group`, spacing);
+      if (expectInteropPreview) evidence(spacing?.previewPresent === true,
+        `${label} requires an actual cleanup preview for the preview-layout assertions`, spacing);
+      if (spacing?.previewPresent) {
+        evidence(spacing.generationActionsToCount === 32,
+          `${label} keeps 32px spacing from preview generation actions to the result count`, spacing);
+        evidence(spacing.countToTable === (phone ? 16 : 20) && spacing.tableToActions === 24,
+          `${label} keeps the approved count, target table, and preview-action spacing`, spacing);
+        evidence(spacing.previewBorderTopWidth === "0px" && spacing.previewPaddingTop === "0px" &&
+          spacing.countMarginTop === "0px" && spacing.countMarginBottom === "0px" &&
+          spacing.countFontSize === expectedCountFont && spacing.countLineHeight === "20px" &&
+          spacing.countFontWeight === expectedCountWeight,
+        `${label} renders the result count with the approved reset and typography`, spacing);
+      }
+    }
     if (width === 320 && viewName === "Table") {
       evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth,
         `${label} preserves the Table's own horizontal grid scroller`, layout);
     }
     observations.push({ workbookViewport: label, ...layout });
+  }
+}
+
+async function auditInteropPreviewTrimCases(browser) {
+  const context = await browser.newContext({ viewport: { width: 1512, height: 982 }, deviceScaleFactor: 1 });
+  try {
+    const page = await context.newPage();
+    await openApp(context, page);
+    await page.getByTestId("project-ready").waitFor();
+    await openCanary(context, page);
+
+    const salesPen = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+    await salesPen.locator("td").first().dblclick();
+    const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+    await editor.fill(" PEN ");
+    await editor.press("Enter");
+    await page.waitForFunction(() => /\sPEN\s/.test(
+      [...document.querySelectorAll('table[aria-label="Table"] tbody tr')]
+        .map((row) => row.textContent ?? "").join(" "),
+    ));
+
+    for (const profile of profiles) {
+      for (const density of densities) {
+        for (const viewport of [{ width: 1512, height: 982 }, { width: 320, height: 640 }]) {
+          const label = `${viewport.width}px ${profile.id}/${density.id} Preview trim`;
+          await page.setViewportSize(viewport);
+          await choose(page, profile.id, density.id);
+          await page.keyboard.press("Escape");
+          await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+          await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+          const preview = page.getByTestId("cleanup-preview");
+          await preview.waitFor();
+          const summary = (await preview.locator(":scope > p").textContent())?.trim() ?? "";
+          assert.match(summary, /^[1-9]\d* cell changes and \d+ rows would change\.$/,
+            `${label} produces a nonempty real trim preview`);
+          const targets = page.getByRole("table", { name: "Cleanup targets", exact: true });
+          await targets.waitFor();
+          assert.deepEqual((await targets.locator("thead th").allTextContents()).map((item) => item.trim()), ["Target"],
+            `${label} keeps the approved cleanup target heading`);
+          const targetCount = await targets.locator("tbody tr").count();
+          assert.ok(targetCount > 0, `${label} exposes at least one real cleanup target`);
+
+          await auditWorkbookViewportBounds(page, viewport.width, viewport.height, profile.id, true);
+          await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
+          await preview.waitFor({ state: "detached" });
+          assert.equal(await page.getByTestId("cleanup-preview").count(), 0,
+            `${label} cancels normally before the next isolated appearance observation`);
+          const entry = { case: label, density: density.id, targetCount, previewSummary: summary, outcome: "previewed and cancelled" };
+          interopPreviewTrimCases.push(entry);
+          observations.push({ interopPreviewTrimCase: label, ...entry });
+        }
+      }
+    }
+    assert.equal(interopPreviewTrimCases.length, 12, "all three profiles, both densities, and both preview widths execute");
+  } finally {
+    await context.close();
   }
 }
 
@@ -2921,6 +3067,8 @@ async function main() {
       await auditWorkbookViewportBounds(page, 1512, 982, profile.id);
     }
 
+    await auditInteropPreviewTrimCases(browser);
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -3023,6 +3171,11 @@ async function main() {
         command,
         scrollState,
       })),
+    },
+    interopPreviewTrim: {
+      completedCases: interopPreviewTrimCases.length,
+      requiredCases: 12,
+      outcomes: interopPreviewTrimCases,
     },
     workbookViewportAudit: observations.filter((item) => item.workbookViewport),
     viewHeldControls: observations.filter((item) => item.viewHeldControl),

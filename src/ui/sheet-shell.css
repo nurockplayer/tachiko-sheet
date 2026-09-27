@@ -400,6 +400,118 @@ body { margin: 0; }
   padding-top: 9px;
 }
 
+.ts-interop {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+  min-width: 0;
+  padding: 24px;
+  background: var(--ts-surface);
+}
+
+.ts-interop > .ts-content-heading { margin: 0; }
+
+.ts-interop > .ts-content-heading + .ts-interop-section { margin-top: 8px; }
+
+.ts-interop-section {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--ts-line);
+}
+
+.ts-interop-section:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.ts-interop-section > .ts-content-heading { margin: 0; }
+
+.ts-interop-section > .ts-subtle { margin-top: 16px; }
+
+.ts-interop-section > .ts-subtle + .ts-row-actions { margin-top: 28px; }
+
+.ts-interop-section > .ts-ledger,
+.ts-interop-section > .ts-empty { margin-top: 10px; }
+
+.ts-interop .ts-ledger li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ts-interop .ts-row-actions { gap: 12px; }
+
+.ts-interop .ts-row-actions > .ts-button {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.ts-interop-section > .ts-preview { margin-top: 32px; }
+
+.ts-interop .ts-preview {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  border: 0;
+  padding: 0;
+}
+
+.ts-interop .ts-preview > p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.ts-interop .ts-interop-targets { margin-top: 20px; }
+
+.ts-interop .ts-preview > .ts-row-actions { margin-top: 24px; }
+
+.ts-interop-targets {
+  width: 100%;
+  max-width: 720px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.ts-interop-targets thead { background: var(--ts-surface-sunken); }
+
+.ts-interop-targets thead tr,
+.ts-interop-targets tbody tr {
+  height: max(32px, var(--ts-profile-command-target-min-height));
+}
+
+.ts-interop-targets th,
+.ts-interop-targets td {
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--ts-line);
+  line-height: 20px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.ts-interop-targets th {
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .ts-interop { padding: 16px; }
+  .ts-interop > .ts-content-heading + .ts-interop-section { margin-top: -8px; }
+  .ts-interop .ts-row-actions { align-items: stretch; }
+  .ts-interop .ts-row-actions { gap: 16px; }
+  .ts-interop .ts-preview > p { font-size: 14px; font-weight: 400; }
+  .ts-interop .ts-interop-targets { margin-top: 16px; }
+  .ts-interop .ts-row-actions > .ts-button {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+
 .ts-import-columns { display: grid; gap: 10px; }
 .ts-import-column { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
 .ts-import-column select { font: inherit; min-width: 100px; }
