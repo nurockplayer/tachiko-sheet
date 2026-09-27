@@ -17,26 +17,33 @@ export interface BriefFactsProps {
  */
 export function BriefFacts({ entity, occurrence, revision, currentness, row, columns }: BriefFactsProps) {
   return (
-    <dl className="ts-fact-list">
-      {columns.map((column) => {
-        const display = fieldDisplay(fieldForColumn(row, column.id));
-        return (
-          <div className="ts-fact" key={column.id}>
-            <dt className="ts-fact-key">{column.key}</dt>
-            <dd
-              className={`ts-fact-value ts-cell--${display.tone}`}
-              data-testid={`brief:${entity}:${column.id}`}
-              data-work-occurrence={occurrence}
-              data-work-revision={revision}
-              data-work-entity={entity}
-              data-work-currentness={currentness}
-              title={display.title ?? undefined}
-            >
-              {display.text}
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
+    <table className="ts-fact-list" aria-label="Linked facts">
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Value</th></tr>
+      </thead>
+      <tbody>
+        {columns.map((column) => {
+          const field = fieldForColumn(row, column.id);
+          const display = fieldDisplay(field);
+          const numeric = field?.calculated?.status === "value" || field?.stored?.kind === "number";
+          return (
+            <tr className="ts-fact" key={column.id}>
+              <th className="ts-fact-key" scope="row">{column.key}</th>
+              <td
+                className={`ts-fact-value ts-cell--${display.tone}${numeric ? " ts-fact-value--numeric" : ""}`}
+                data-testid={`brief:${entity}:${column.id}`}
+                data-work-occurrence={occurrence}
+                data-work-revision={revision}
+                data-work-entity={entity}
+                data-work-currentness={currentness}
+                title={display.title ?? undefined}
+              >
+                {display.text}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

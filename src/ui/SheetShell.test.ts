@@ -441,17 +441,21 @@ describe("SheetShell static rendering", () => {
         columns: tableColumns(view.table),
       }),
     );
-    const impact = cellMarkup(markup, `brief:${entityA}:c-impact`, "</dd>");
+    const impact = cellMarkup(markup, `brief:${entityA}:c-impact`, "</td>");
     expect(impact).not.toBe(null);
     expect(textOf(impact as string)).toBe("5");
     expect(impact).toContain(`data-work-entity="${entityA}"`);
     expect(impact).toContain('data-work-occurrence="occ-1"');
     expect(impact).toContain('data-work-revision="rev-1"');
     expect(impact).toContain('data-work-currentness="pending"');
+    expect(impact).toContain("ts-fact-value--numeric");
     expect(markup).not.toContain(">entity-a<");
     expect(markup).not.toContain(">entity-b<");
-    expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</dd>") as string)).toBe("first note");
-    expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</dd>")).toBe(null);
+    expect(markup).toContain("<th scope=\"col\">Field</th><th scope=\"col\">Value</th>");
+    expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</td>") as string)).toBe("first note");
+    expect(cellMarkup(markup, `brief:${entityA}:c-title`, "</td>")).not.toContain("ts-fact-value--numeric");
+    expect(cellMarkup(markup, `brief:${entityA}:c-priority`, "</td>")).toContain("ts-fact-value--numeric");
+    expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</td>")).toBe(null);
   });
 
   it("renders home open controls and saved copies by actual name", () => {
