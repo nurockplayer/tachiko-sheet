@@ -14,6 +14,7 @@ const profileDir = await mkdtemp(path.join(tmpdir(), "tachiko-interchange-produc
 const key = "tachiko-sheet:appearance-preference:v2";
 const filename = "appearance.tachiko-profile.json";
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+const settledGeometry = [];
 let context;
 
 function contrastRgb(first, second) {
@@ -39,6 +40,49 @@ async function downloadProfile(page) {
 
 async function uploadProfile(page, bytes) {
   await page.locator(".ts-appearance-file-input").setInputFiles({ name: filename, mimeType: "application/json", buffer: bytes });
+}
+
+async function waitForSettledAppearanceGeometry(page, label) {
+  const result = await page.evaluate(({ label, maxFrames, requiredStableSamples }) => new Promise((resolve, reject) => {
+    let previous;
+    let stableSamples = 0;
+    let frames = 0;
+    let lastGeometry;
+    const rect = (element) => {
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return [bounds.x, bounds.y, bounds.width, bounds.height, bounds.top, bounds.right, bounds.bottom, bounds.left];
+    };
+    const observe = () => {
+      frames += 1;
+      const panel = document.querySelector(".ts-appearance-popover");
+      const content = panel?.querySelector(".ts-appearance-content");
+      const candidate = panel?.querySelector(".ts-appearance-candidate");
+      const actions = candidate?.querySelector(".ts-appearance-candidate__actions");
+      lastGeometry = {
+        panel: rect(panel),
+        content: rect(content),
+        contentClientHeight: content?.clientHeight ?? null,
+        contentScrollHeight: content?.scrollHeight ?? null,
+        candidate: rect(candidate),
+        actions: rect(actions),
+      };
+      const serialized = JSON.stringify(lastGeometry);
+      stableSamples = serialized === previous ? stableSamples + 1 : 1;
+      previous = serialized;
+      if (stableSamples >= requiredStableSamples) {
+        resolve({ label, frames, stableSamples, geometry: lastGeometry });
+      } else if (frames >= maxFrames) {
+        reject(new Error(`${label}: appearance geometry did not converge within ${maxFrames} animation frames; last=${serialized}`));
+      } else {
+        requestAnimationFrame(observe);
+      }
+    };
+    requestAnimationFrame(observe);
+  }), { label, maxFrames: 40, requiredStableSamples: 3 });
+  assert.equal(result.stableSamples, 3, `${label}: geometry converges on three consecutive animation-frame samples`);
+  settledGeometry.push(result);
+  return result;
 }
 
 async function sampleControlStates(page, control) {
@@ -191,6 +235,7 @@ try {
   const candidate = page.locator(".ts-appearance-candidate");
   await candidate.locator(".ts-appearance-candidate__name bdi").getByText("My Local Profile", { exact: true }).waitFor();
   assert.equal(await candidate.evaluate((node) => document.activeElement === node), true, "staged candidate receives review focus");
+  await waitForSettledAppearanceGeometry(page, "initial desktop staged candidate");
   const desktopLayout = await page.locator(".ts-appearance-popover").evaluate((node) => {
     const content = node.querySelector(".ts-appearance-content");
     const density = node.querySelector(".ts-appearance-group--density").getBoundingClientRect();
@@ -359,6 +404,7 @@ try {
   await page.setViewportSize({ width: 320, height: 600 });
   await uploadProfile(page, importBytes);
   await candidate.waitFor();
+  await waitForSettledAppearanceGeometry(page, "320×600 staged candidate");
   const narrow = await page.locator(".ts-appearance-popover").evaluate((node) => {
     const bounds = node.getBoundingClientRect();
     const content = node.querySelector(".ts-appearance-content");
@@ -371,6 +417,7 @@ try {
   assert.ok(narrow.left >= 0 && narrow.right <= 320 && narrow.bottom <= 600 && narrow.width >= 280 && narrow.contentScroll && narrow.candidateActionsSameRow,
     "320px staged view fits, scrolls internally, and keeps Apply/Cancel together");
   await page.setViewportSize({ width: 320, height: 640 });
+  await waitForSettledAppearanceGeometry(page, "320×640 staged candidate");
   const narrowTall = await page.locator(".ts-appearance-popover").evaluate((node) => {
     const bounds = node.getBoundingClientRect();
     return { top: bounds.top, bottom: bounds.bottom };
@@ -378,6 +425,7 @@ try {
   assert.ok(narrowTall.top >= 0 && narrowTall.bottom <= 640,
     `320×640 staged panel stays reachable: ${JSON.stringify(narrowTall)}`);
   await page.setViewportSize({ width: 320, height: 480 });
+  await waitForSettledAppearanceGeometry(page, "320×480 staged candidate");
   const narrowShort = await page.locator(".ts-appearance-popover").evaluate((node) => {
     const bounds = node.getBoundingClientRect();
     const content = node.querySelector(".ts-appearance-content");
@@ -399,6 +447,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 450 });
   await uploadProfile(page, importBytes);
   await candidate.waitFor();
+  await waitForSettledAppearanceGeometry(page, "1280×450 staged candidate");
   const shortView = await page.locator(".ts-appearance-popover").evaluate((node) => {
     const bounds = node.getBoundingClientRect();
     const content = node.querySelector(".ts-appearance-content");
@@ -672,7 +721,7 @@ try {
   console.log(JSON.stringify({ case: "#70 real-entry profile interchange", status: "PASS", rejected: rejected.map(([name]) => name),
     builtInBytes: builtInBytes.byteLength, importedBytes: exported.byteLength, reportPngSha256: createHash("sha256").update(pngAfter).digest("hex"),
     networkDelta: network.length - networkBefore, computedPaint: { ...computedPaint, contrast: computedContrast }, headerFocus,
-    ordinaryStates, ghostStates, narrow, narrowTall, narrowShort, shortView }));
+    ordinaryStates, ghostStates, narrow, narrowTall, narrowShort, shortView, settledGeometry }));
 } finally {
   await context?.close();
   await rm(profileDir, { recursive: true, force: true });
