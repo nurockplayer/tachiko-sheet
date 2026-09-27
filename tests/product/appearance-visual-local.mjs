@@ -762,6 +762,14 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
         gridOverflowX: grid ? getComputedStyle(grid).overflowX : null,
         footerTop: footerRect?.top ?? null,
         footerBottom: footerRect?.bottom ?? null,
+        interopHeadings: Array.from(document.querySelectorAll(
+          ".ts-interop > .ts-content-heading, .ts-interop-section > .ts-content-heading",
+        )).map((heading) => {
+          const style = getComputedStyle(heading);
+          const rect = heading.getBoundingClientRect();
+          return { text: heading.textContent?.trim() ?? "", fontSize: style.fontSize,
+            lineHeight: style.lineHeight, fontWeight: style.fontWeight, height: rect.height };
+        }),
       };
     });
     const label = `${width}x${height} ${profile} ${viewName}`;
@@ -777,6 +785,11 @@ async function auditWorkbookViewportBounds(page, width, height, profile) {
     if (width === 320 && viewName === "Brief") {
       evidence(layout.panelScrollHeight > layout.panelClientHeight,
         `${label} scrolls the long Brief content inside its panel`, layout);
+    }
+    if (viewName === "Import & export") {
+      evidence(layout.interopHeadings.length === 4 && layout.interopHeadings.every((heading) =>
+        heading.fontSize === "20px" && heading.lineHeight === "28px" && heading.fontWeight === "600" && heading.height === 28),
+      `${label} uses the approved 20/28 weight-600 view and section heading recipe`, layout.interopHeadings);
     }
     if (width === 320 && viewName === "Table") {
       evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth,

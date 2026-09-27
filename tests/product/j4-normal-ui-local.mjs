@@ -216,7 +216,7 @@ try {
   await page.getByRole("button", { name: "Preview trim", exact: true }).click();
   await page.getByTestId("cleanup-preview").waitFor();
   const bTargets = page.getByLabel("Cleanup targets", { exact: true });
-  assert.ok(await bTargets.locator("li").count() > 0, "B preview must expose an explicit target");
+  assert.ok(await bTargets.locator("tbody tr").count() > 0, "B preview must expose an explicit target");
   assert.match(await bTargets.textContent(), /product_code/, "B preview target must belong to sales");
   const bCommitDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
   const bCommit = page.getByRole("button", { name: "Commit preview", exact: true });

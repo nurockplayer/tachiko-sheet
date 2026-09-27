@@ -228,7 +228,7 @@ try {
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill(" PEN ");
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Enter");
   await preview(page, "Preview trim");
-  assert.ok(await page.getByLabel("Cleanup targets", { exact: true }).locator("li").count() > 0, "preview must identify concrete row/column targets");
+  assert.ok(await page.getByLabel("Cleanup targets", { exact: true }).locator("tbody tr").count() > 0, "preview must identify concrete row/column targets");
   // This declared acceptance transport fault reaches the actual cleanup
   // commit once, then loses its reply. It must not be mistaken for a failed
   // cleanup or retried by the UI.

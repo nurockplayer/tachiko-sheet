@@ -1516,24 +1516,48 @@ export function SheetShell(props: SheetShellProps) {
     const entities = table.rows.map(rowEntity);
     const keyFields = columns.map((column) => column.id);
     const preview = interop?.cleanupPreview ?? null;
-    return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-brief">
-      <section className="ts-card" aria-label="Source fidelity ledger">
-        <h2 className="ts-h2">Source fidelity ledger</h2>
+    return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-interop">
+      <h2 className="ts-content-heading">Import &amp; export</h2>
+      <section className="ts-interop-section" aria-label="Source fidelity ledger">
+        <h3 className="ts-content-heading">Source fidelity ledger</h3>
         {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-empty">No imported-source ledger is available for this work.</p>}
       </section>
-      <section className="ts-card" aria-label="Cleanup preview">
-        <h2 className="ts-h2">Cleanup</h2>
+      <section className="ts-interop-section" aria-label="Cleanup preview">
+        <h3 className="ts-content-heading">Cleanup</h3>
         <p className="ts-subtle">Previews are produced by the core kit. Nothing changes until you commit this exact preview.</p>
         <div className="ts-row-actions">
           <button type="button" className="ts-button" disabled={controlsLocked || allFields.length === 0} onClick={() => witness && void onPreviewTrim(witness, allFields)}>Preview trim</button>
           <button type="button" className="ts-button" disabled={controlsLocked || entities.length < 2 || keyFields.length === 0} onClick={() => witness && void onPreviewDeduplicate(witness, entities, keyFields)}>Preview whole-row deduplication</button>
         </div>
-        {preview ? <div className="ts-preview" data-testid="cleanup-preview"><p>{preview.changes.length} cell changes and {preview.removed_entities.length} rows would change.</p>{preview.changes.length ? <ul aria-label="Cleanup targets">{preview.changes.map((change, index) => { const row = table.rows.findIndex((candidate) => rowEntity(candidate) === change.target.entity); const column = columns.find((candidate) => candidate.id === change.target.field); return <li key={`${change.target.entity}-${change.target.field}-${index}`}>{`Row ${row + 1}, ${column?.key ?? change.target.field}`}</li>; })}</ul> : null}<div className="ts-row-actions"><button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button><button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button></div></div> : null}
+        {preview ? (
+          <div className="ts-preview" data-testid="cleanup-preview">
+            <p>{preview.changes.length} cell changes and {preview.removed_entities.length} rows would change.</p>
+            {preview.changes.length ? (
+              <table className="ts-interop-targets" aria-label="Cleanup targets">
+                <thead><tr><th scope="col">Target</th></tr></thead>
+                <tbody>{preview.changes.map((change, index) => {
+                  const row = table.rows.findIndex((candidate) => rowEntity(candidate) === change.target.entity);
+                  const column = columns.find((candidate) => candidate.id === change.target.field);
+                  return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
+                    <td>{`Row ${row + 1}, ${column?.key ?? change.target.field}`}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            ) : null}
+            <div className="ts-row-actions">
+              <button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button>
+              <button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button>
+            </div>
+          </div>
+        ) : null}
       </section>
-      <section className="ts-card" aria-label="Download spreadsheet">
-        <h2 className="ts-h2">Download</h2>
+      <section className="ts-interop-section" aria-label="Download spreadsheet">
+        <h3 className="ts-content-heading">Download</h3>
         <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
-        <div className="ts-row-actions"><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button><button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button></div>
+        <div className="ts-row-actions">
+          <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
+        </div>
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
