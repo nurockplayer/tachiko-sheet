@@ -512,6 +512,41 @@ describe("SheetShell static rendering", () => {
       .toBe("Name contains an en space at character 2.");
     expect(describeSavedCopyNameWhitespace("x😀\u00a0y"))
       .toBe("Name contains a no-break space at character 3.");
+    expect(describeSavedCopyNameWhitespace("Plan\u200breview"))
+      .toBe("Name contains a zero-width space (U+200B, format character) at character 5.");
+    expect(describeSavedCopyNameWhitespace("Sol1b59adf Plan\u200breview"))
+      .toBe("Name contains a zero-width space (U+200B, format character) at character 16.");
+    expect(describeSavedCopyNameWhitespace("A\u0000\u007fB"))
+      .toBe("Name contains a control character (U+0000, control character) at character 2, and a delete control (U+007F, control character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u0001\u0001B"))
+      .toBe("Name contains 2 consecutive control characters (U+0001, control character) starting at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u0080B"))
+      .toBe("Name contains a control character (U+0080, control character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u202eB"))
+      .toBe("Name contains a right-to-left override (U+202E, format character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u200c\u200dB"))
+      .toBe("Name contains a zero-width non-joiner (U+200C, format character) at character 2, and a zero-width joiner (U+200D, format character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u00ad\u034fB"))
+      .toBe("Name contains a soft hyphen (U+00AD, format character) at character 2, and a combining grapheme joiner (U+034F, default-ignorable character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\ufe0fB"))
+      .toBe("Name contains an emoji variation selector (U+FE0F, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("😀\u{e0100}x"))
+      .toBe("Name contains a supplementary variation selector (U+E0100, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("x\u{e0067}\u{e007f}y"))
+      .toBe("Name contains a tag character (U+E0067, format character) at character 2, and a tag character (U+E007F, format character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u0600B"))
+      .toBe("Name contains an Arabic number sign (U+0600, format character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u2063B"))
+      .toBe("Name contains a format character (U+2063, format character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("x\u3164y"))
+      .toBe("Name contains a Hangul filler (U+3164, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("😀\u115f"))
+      .toBe("Name contains a default-ignorable character (U+115F, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("x😀\u200b\u200by"))
+      .toBe("Name contains 2 consecutive zero-width spaces (U+200B, format character) starting at character 3.");
+    expect(describeSavedCopyNameWhitespace("A \u200bB"))
+      .toBe("Name contains a space at character 2, and a zero-width space (U+200B, format character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("Cafe\u0301 保存🙂🏽")).toBe(null);
 
     const markup = render({
       busy: true,

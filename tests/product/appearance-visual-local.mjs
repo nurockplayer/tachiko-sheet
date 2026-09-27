@@ -982,6 +982,27 @@ async function auditHomeViewportBounds(page, browser) {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
 
+  const zeroWidthName = "Plan\u200breview";
+  await clickSavedCopyByLiteralName(page, singleSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Whitespace identity zero-width value");
+  const zeroWidthRows = await page.locator(".ts-grid tbody").innerText();
+  assert.notEqual(zeroWidthRows, singleSpaceRows, "the zero-width saved-name target carries a distinct actual workbook value");
+  await saveCopyByName(page, zeroWidthName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const noWhitespaceName = "Planreview";
+  await clickSavedCopyByLiteralName(page, "Viewport home probe");
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "No whitespace identity value");
+  const noWhitespaceRows = await page.locator(".ts-grid tbody").innerText();
+  assert.notEqual(noWhitespaceRows, zeroWidthRows,
+    "the no-whitespace and zero-width saved-name targets carry distinct actual workbook values");
+  await saveCopyByName(page, noWhitespaceName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
   const whitespaceIdentity = await page.evaluate(() => {
     const buttons = [...document.querySelectorAll(".ts-home-saved-action")];
     const read = (name) => {
@@ -1024,6 +1045,8 @@ async function auditHomeViewportBounds(page, browser) {
   "whitespace-distinct saved names stay contained on Home", whitespaceIdentity);
   const singleSpaceAX = await savedCopyAccessibilityNode(page, "Open saved Plan review");
   const doubledSpaceAX = await savedCopyAccessibilityNode(page, "Open saved Plan  review");
+  const noWhitespaceAX = await savedCopyAccessibilityNode(page, `Open saved ${noWhitespaceName}`);
+  const zeroWidthAX = await savedCopyAccessibilityNode(page, `Open saved ${zeroWidthName}`);
   assert.equal(singleSpaceAX.role, "button");
   assert.equal(doubledSpaceAX.role, "button");
   assert.equal(singleSpaceAX.name, "Open saved Plan review");
@@ -1031,8 +1054,15 @@ async function auditHomeViewportBounds(page, browser) {
     "the original accessible action name remains unchanged; the supplementary description distinguishes collapsed whitespace");
   assert.ok(!singleSpaceAX.description, "ordinary single ASCII spaces add no accessible description");
   assert.equal(doubledSpaceAX.description, "Name contains 2 consecutive spaces starting at character 5.");
+  assert.equal(zeroWidthAX.role, "button");
+  assert.equal(noWhitespaceAX.name, "Open saved Planreview");
+  assert.ok(!noWhitespaceAX.description,
+    "the visually indistinguishable name without U+200B has no supplementary description");
+  assert.equal(zeroWidthAX.description,
+    "Name contains a zero-width space (U+200B, format character) at character 5.");
+  assert.ok(!zeroWidthAX.description.includes("\u200b"), "the supplementary description never emits the raw zero-width character");
   observations.push({ homeSavedWhitespaceIdentity: whitespaceIdentity, singleSpaceAX, doubledSpaceAX,
-    singleSpaceRows, doubledSpaceRows });
+    noWhitespaceAX, zeroWidthAX, singleSpaceRows, doubledSpaceRows, noWhitespaceRows, zeroWidthRows });
 
   await clickSavedCopyByLiteralName(page, singleSpaceName);
   await page.getByTestId("project-ready").waitFor();
@@ -1044,6 +1074,33 @@ async function auditHomeViewportBounds(page, browser) {
   await page.getByTestId("project-ready").waitFor();
   assert.equal(await page.locator(".ts-grid tbody").innerText(), doubledSpaceRows,
     "opening the double-space saved name targets its different exact stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, zeroWidthName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), zeroWidthRows,
+    "opening the zero-width saved name targets its exact distinct stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, noWhitespaceName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), noWhitespaceRows,
+    "opening the no-whitespace saved name targets its exact distinct stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const emojiName = "Emoji 👩‍💻 ✈️";
+  await clickSavedCopyByLiteralName(page, "Viewport home probe");
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Joined emoji identity value");
+  const emojiRows = await page.locator(".ts-grid tbody").innerText();
+  await saveCopyByName(page, emojiName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, emojiName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), emojiRows,
+    "the joined emoji and variation-selector name remains the exact reopen target");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
 

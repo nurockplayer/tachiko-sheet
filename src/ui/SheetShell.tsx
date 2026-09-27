@@ -134,17 +134,34 @@ const savedNameWhitespaceLabels = new Map<string, string>([
   ["\ufeff", "zero-width no-break space"],
 ]);
 
-function isAcceptedNameWhitespace(character: string): boolean {
-  return character === "\ufeff" || /\p{White_Space}/u.test(character);
+const savedNameInvisibleLabels = new Map<number, string>([
+  [0x00ad, "soft hyphen"],
+  [0x034f, "combining grapheme joiner"],
+  [0x0600, "Arabic number sign"],
+  [0x007f, "delete control"],
+  [0x0080, "control character"],
+  [0x200b, "zero-width space"],
+  [0x200c, "zero-width non-joiner"],
+  [0x200d, "zero-width joiner"],
+  [0x202e, "right-to-left override"],
+  [0xfe0f, "emoji variation selector"],
+  [0xe0100, "supplementary variation selector"],
+  [0xe0067, "tag character"],
+  [0xe007f, "tag character"],
+  [0x3164, "Hangul filler"],
+]);
+
+function isAcceptedNameInvisible(character: string): boolean {
+  return /[\p{White_Space}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u.test(character);
 }
 
-/** Names are stored and opened exactly as entered; explain whitespace that rendering or accessible-name processing can collapse. */
+/** Names stay exact; describe accepted whitespace, control, format, or default-ignorable codepoints that presentation can hide or collapse. */
 export function describeSavedCopyNameWhitespace(name: string): string | null {
   const characters = Array.from(name);
   const runs: Array<{ character: string; start: number; count: number }> = [];
   for (let index = 0; index < characters.length; index += 1) {
     const character = characters[index];
-    if (!isAcceptedNameWhitespace(character)) continue;
+    if (!isAcceptedNameInvisible(character)) continue;
     const previous = runs.at(-1);
     if (previous?.character === character && previous.start + previous.count === index + 1) {
       previous.count += 1;
@@ -157,18 +174,33 @@ export function describeSavedCopyNameWhitespace(name: string): string | null {
     const before = characters[run.start - 2];
     const after = characters[run.start - 1 + run.count];
     const adjacentMixedWhitespace =
-      (before !== undefined && before !== run.character && isAcceptedNameWhitespace(before)) ||
-      (after !== undefined && after !== run.character && isAcceptedNameWhitespace(after));
+      (before !== undefined && before !== run.character && isAcceptedNameInvisible(before)) ||
+      (after !== undefined && after !== run.character && isAcceptedNameInvisible(after));
     const boundaryWhitespace = run.start === 1 || run.start + run.count - 1 === characters.length;
     if (run.character === " " && run.count === 1 && !adjacentMixedWhitespace && !boundaryWhitespace) return [];
 
     const codePoint = run.character.codePointAt(0) as number;
-    const kind = savedNameWhitespaceLabels.get(run.character) ?? `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")} white-space character`;
-    const plural = `${kind}s`;
-    const article = /^(?:en |em |Ogham |ideographic )/u.test(kind) ? "an" : "a";
+    const whitespaceKind = savedNameWhitespaceLabels.get(run.character);
+    if (whitespaceKind) {
+      const plural = `${whitespaceKind}s`;
+      const article = /^(?:en |em |Ogham |ideographic )/u.test(whitespaceKind) ? "an" : "a";
+      return [run.count === 1
+        ? `${article} ${whitespaceKind} at character ${run.start}`
+        : `${run.count} consecutive ${plural} starting at character ${run.start}`];
+    }
+
+    const code = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+    const category = /\p{Cc}/u.test(run.character)
+      ? "control character"
+      : /\p{Cf}/u.test(run.character)
+        ? "format character"
+        : "default-ignorable character";
+    const kind = savedNameInvisibleLabels.get(codePoint) ?? category;
+    const article = /^(?:emoji |Arabic )/u.test(kind) ? "an" : "a";
+    const repeatedKind = `${kind}s`;
     return [run.count === 1
-      ? `${article} ${kind} at character ${run.start}`
-      : `${run.count} consecutive ${plural} starting at character ${run.start}`];
+      ? `${article} ${kind} (${code}, ${category}) at character ${run.start}`
+      : `${run.count} consecutive ${repeatedKind} (${code}, ${category}) starting at character ${run.start}`];
   });
 
   if (details.length === 0) return null;
