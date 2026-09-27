@@ -45,6 +45,7 @@ const safeImportedManifestBytes = Buffer.from(`${JSON.stringify(JSON.parse(safeI
 const failures = [];
 const observations = [];
 const interopPreviewTrimCases = [];
+const legalNoticeAuditCases = [];
 const evidence = (condition, label, details = null) => {
   if (!condition) failures.push({ label, details });
 };
@@ -837,6 +838,96 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
         `${label} scrolls the long Brief content inside its panel`, layout);
     }
     if (viewName === "Import & export") {
+      const legalNotice = await page.evaluate(() => {
+        const root = document.querySelector(".ts-app-root");
+        const app = root?.querySelector(":scope > .ts-app");
+        const footer = root?.querySelector(":scope > .ts-notices");
+        const status = document.querySelector(".ts-workspace-footer");
+        const intro = footer?.querySelector(":scope > span:first-child");
+        const links = [...(footer?.querySelectorAll(":scope > a") ?? [])];
+        const rect = (element) => {
+          const box = element?.getBoundingClientRect();
+          return box ? { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, height: box.height } : null;
+        };
+        const style = (element) => element ? getComputedStyle(element) : null;
+        const footerStyle = style(footer);
+        const statusStyle = style(status);
+        const introStyle = style(intro);
+        const firstLinkStyle = style(links[0]);
+        return {
+          view: app?.getAttribute("data-view") ?? null,
+          density: document.documentElement.getAttribute("data-ts-profile-density"),
+          profileChrome: document.documentElement.getAttribute("data-ts-profile-chrome"),
+          directSibling: Boolean(footer && footer.parentElement === root && app?.parentElement === root),
+          text: intro?.textContent ?? null,
+          introDisplay: introStyle?.display ?? null,
+          introHeight: rect(intro)?.height ?? null,
+          links: links.map((link) => ({ text: link.textContent?.trim() ?? "", href: link.getAttribute("href"), rect: rect(link) })),
+          footer: rect(footer),
+          status: rect(status),
+          pageWidth: document.documentElement.scrollWidth,
+          viewportWidth: innerWidth,
+          footerScrollHeight: footer?.scrollHeight ?? null,
+          footerClientHeight: footer?.clientHeight ?? null,
+          footerScrollWidth: footer?.scrollWidth ?? null,
+          footerClientWidth: footer?.clientWidth ?? null,
+          fontFamily: footerStyle?.fontFamily ?? null,
+          appFontFamily: style(app)?.fontFamily ?? null,
+          fontSize: footerStyle?.fontSize ?? null,
+          lineHeight: footerStyle?.lineHeight ?? null,
+          fontWeight: footerStyle?.fontWeight ?? null,
+          boxSizing: footerStyle?.boxSizing ?? null,
+          width: footerStyle?.width ?? null,
+          maxWidth: footerStyle?.maxWidth ?? null,
+          marginLeft: footerStyle?.marginLeft ?? null,
+          marginRight: footerStyle?.marginRight ?? null,
+          paddingTop: footerStyle?.paddingTop ?? null,
+          paddingRight: footerStyle?.paddingRight ?? null,
+          paddingBottom: footerStyle?.paddingBottom ?? null,
+          background: footerStyle?.backgroundColor ?? null,
+          color: footerStyle?.color ?? null,
+          statusBackground: statusStyle?.backgroundColor ?? null,
+          statusColor: statusStyle?.color ?? null,
+          linkColor: firstLinkStyle?.color ?? null,
+          overflowX: footerStyle?.overflowX ?? null,
+          overflowY: footerStyle?.overflowY ?? null,
+          flexShrink: footerStyle?.flexShrink ?? null,
+        };
+      });
+      const compact = width <= 599;
+      const legalLabel = `${width}x${height} ${profile}/${legalNotice.density} legal footer`;
+      const expectedLinks = [
+        { text: "third-party licenses", href: "/core-kit/notices/THIRD_PARTY_LICENSES.md" },
+        { text: "MIT", href: "/core-kit/notices/LICENSE-MIT" },
+        { text: "Apache-2.0", href: "/core-kit/notices/LICENSE-APACHE" },
+      ];
+      evidence(legalNotice.view === "workbook" && legalNotice.directSibling,
+        `${legalLabel} remains a sibling after the workbook shell`, legalNotice);
+      evidence(legalNotice.text === "Tachiko Sheet · experimental core kit notices: ",
+        `${legalLabel} preserves the exact notice copy`, legalNotice);
+      evidence(JSON.stringify(legalNotice.links.map(({ text, href }) => ({ text, href }))) === JSON.stringify(expectedLinks),
+        `${legalLabel} preserves all three notice destinations and labels in order`, legalNotice);
+      evidence(legalNotice.fontSize === "11px" && legalNotice.lineHeight === "16px" && legalNotice.fontWeight === "400" && legalNotice.boxSizing === "border-box",
+        `${legalLabel} uses the approved global legal-notice type recipe`, legalNotice);
+      evidence(legalNotice.fontFamily === legalNotice.appFontFamily,
+        `${legalLabel} follows the active profile font family`, legalNotice);
+      evidence(legalNotice.width === `${width}px` && legalNotice.maxWidth === "none" && legalNotice.marginLeft === "0px" && legalNotice.marginRight === "0px" && legalNotice.flexShrink === "0",
+        `${legalLabel} keeps the workbook footer full-width and in natural flow`, legalNotice);
+      evidence(legalNotice.paddingTop === "2px" && legalNotice.paddingBottom === "6px" && legalNotice.background === legalNotice.statusBackground,
+        `${legalLabel} shares the workbook chrome surface and approved vertical padding`, legalNotice);
+      const expectedHorizontalPadding = `${Math.min(40, Math.max(16, width * 0.03))}px`;
+      evidence(legalNotice.paddingRight === expectedHorizontalPadding,
+        `${legalLabel} uses the approved responsive workbook footer inset`, { ...legalNotice, expectedHorizontalPadding });
+      evidence(legalNotice.introDisplay === (compact ? "block" : "inline") && (!compact || legalNotice.introHeight >= 16),
+        `${legalLabel} uses natural notice flow at the established compact breakpoint`, legalNotice);
+      evidence(legalNotice.footerScrollHeight <= legalNotice.footerClientHeight && legalNotice.footerScrollWidth <= legalNotice.footerClientWidth && legalNotice.pageWidth <= width,
+        `${legalLabel} contains the complete notice copy without clipping or page overflow`, legalNotice);
+      evidence(legalNotice.links.every((link) => link.rect && link.rect.x >= 0 && link.rect.right <= width + 1 && link.rect.y >= 0 && link.rect.bottom <= height + 1),
+        `${legalLabel} keeps every notice link within the viewport`, legalNotice);
+      const entry = { case: legalLabel, ...legalNotice, outcome: "rendered and contained" };
+      legalNoticeAuditCases.push(entry);
+      observations.push({ legalNoticeAuditCase: legalLabel, ...entry });
+
       evidence(layout.interopHeadings.length === 4 && layout.interopHeadings.every((heading) =>
         heading.fontSize === "20px" && heading.lineHeight === "28px" && heading.fontWeight === "600" && heading.height === 28),
       `${label} uses the approved 20/28 weight-600 view and section heading recipe`, layout.interopHeadings);
@@ -916,6 +1007,9 @@ async function auditInteropPreviewTrimCases(browser) {
           assert.ok(targetCount > 0, `${label} exposes at least one real cleanup target`);
 
           await auditWorkbookViewportBounds(page, viewport.width, viewport.height, profile.id, true);
+          if (profile.id === "tachiko" && density.id === "compact" && viewport.width === 1512) {
+            await auditLegalNoticeKeyboard(page);
+          }
           await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
           await preview.waitFor({ state: "detached" });
           assert.equal(await page.getByTestId("cleanup-preview").count(), 0,
@@ -930,6 +1024,180 @@ async function auditInteropPreviewTrimCases(browser) {
   } finally {
     await context.close();
   }
+}
+
+async function auditLegalNoticeKeyboard(page) {
+  const links = page.locator(".ts-notices > a");
+  await page.locator(".ts-appearance-trigger").focus();
+  let reachedFirstLink = false;
+  for (let step = 0; step < 80; step += 1) {
+    if (await links.nth(0).evaluate((element) => document.activeElement === element)) {
+      reachedFirstLink = true;
+      break;
+    }
+    await page.keyboard.press("Tab");
+  }
+  assert.equal(reachedFirstLink, true, "keyboard tab order reaches the first legal notice link");
+
+  const linkFocus = [];
+  for (let index = 0; index < 3; index += 1) {
+    const link = links.nth(index);
+    const state = await link.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const focusClearance = 5;
+      const outlineBox = {
+        x: rect.x - focusClearance,
+        y: rect.y - focusClearance,
+        right: rect.right + focusClearance,
+        bottom: rect.bottom + focusClearance,
+      };
+      const clippingAncestors = [];
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const parentStyle = getComputedStyle(parent);
+        const parentRect = parent.getBoundingClientRect();
+        if (["hidden", "clip", "auto", "scroll"].includes(parentStyle.overflowX) || ["hidden", "clip", "auto", "scroll"].includes(parentStyle.overflowY)) {
+          clippingAncestors.push({
+            className: typeof parent.className === "string" ? parent.className : parent.tagName,
+            x: parentRect.x,
+            y: parentRect.y,
+            right: parentRect.right,
+            bottom: parentRect.bottom,
+            overflowX: parentStyle.overflowX,
+            overflowY: parentStyle.overflowY,
+            containsOutline: outlineBox.x >= parentRect.x - 1 && outlineBox.right <= parentRect.right + 1 && outlineBox.y >= parentRect.y - 1 && outlineBox.bottom <= parentRect.bottom + 1,
+          });
+        }
+      }
+      return {
+        active: document.activeElement === element,
+        focusVisible: element.matches(":focus-visible"),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        outlineOffset: style.outlineOffset,
+        rect: { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom },
+        outlineBox,
+        clippingAncestors,
+        viewport: { width: innerWidth, height: innerHeight },
+      };
+    });
+    evidence(state.active && state.focusVisible, `legal notice link ${index + 1} receives visible keyboard focus`, state);
+    evidence(state.outlineStyle !== "none" && state.outlineWidth === "3px" && state.outlineOffset === "2px",
+      `legal notice link ${index + 1} keeps the shared 3px focus outline and 2px offset`, state);
+    evidence(state.rect.x >= 0 && state.rect.y >= 0 && state.rect.right <= state.viewport.width + 1 && state.rect.bottom <= state.viewport.height + 1,
+      `legal notice link ${index + 1} remains visible in the viewport`, state);
+    evidence(state.outlineBox.x >= 0 && state.outlineBox.y >= 0 && state.outlineBox.right <= state.viewport.width + 1 && state.outlineBox.bottom <= state.viewport.height + 1 && state.clippingAncestors.every((ancestor) => ancestor.containsOutline),
+      `legal notice link ${index + 1} focus paint clears the viewport and clipping ancestors`, state);
+    linkFocus.push(state);
+    if (index < 2) await page.keyboard.press("Tab");
+  }
+
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
+  await page.emulateMedia({ forcedColors: "active" });
+  const forced = await links.nth(0).evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.color = "Highlight";
+    document.body.append(probe);
+    const expected = getComputedStyle(probe).color;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    const outlineBox = { x: rect.x - 5, y: rect.y - 5, right: rect.right + 5, bottom: rect.bottom + 5 };
+    const clippingAncestors = [];
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const parentStyle = getComputedStyle(parent);
+      const parentRect = parent.getBoundingClientRect();
+      if (["hidden", "clip", "auto", "scroll"].includes(parentStyle.overflowX) || ["hidden", "clip", "auto", "scroll"].includes(parentStyle.overflowY)) {
+        clippingAncestors.push({
+          containsOutline: outlineBox.x >= parentRect.x - 1 && outlineBox.right <= parentRect.right + 1 && outlineBox.y >= parentRect.y - 1 && outlineBox.bottom <= parentRect.bottom + 1,
+        });
+      }
+    }
+    const result = {
+      active: document.activeElement === element,
+      focusVisible: element.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      expectedHighlight: expected,
+      rect: { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom },
+      outlineBox,
+      clippingAncestors,
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+    probe.remove();
+    return result;
+  });
+  evidence(forced.active && forced.focusVisible && forced.outlineColor === forced.expectedHighlight,
+    "legal notice keyboard focus uses the forced-colors system highlight", forced);
+  evidence(forced.rect.x >= 0 && forced.rect.y >= 0 && forced.rect.right <= forced.viewport.width + 1 && forced.rect.bottom <= forced.viewport.height + 1,
+    "forced-colors legal notice focus remains in the viewport", forced);
+  evidence(forced.outlineBox.x >= 0 && forced.outlineBox.y >= 0 && forced.outlineBox.right <= forced.viewport.width + 1 && forced.outlineBox.bottom <= forced.viewport.height + 1 && forced.clippingAncestors.every((ancestor) => ancestor.containsOutline),
+    "forced-colors legal notice focus paint clears the viewport and clipping ancestors", forced);
+  await page.emulateMedia({ forcedColors: "none" });
+  observations.push({ legalNoticeKeyboard: { linkFocus, forcedColorsEmulation: forced, physicalAtOrImeClaim: false } });
+}
+
+async function waitForLegalLayout(page) {
+  return page.evaluate(async () => {
+    const close = (left, right) => Math.abs(left - right) < 0.1;
+    let previous = null;
+    let stable = 0;
+    let last = null;
+    for (let frame = 0; frame < 40; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const footer = document.querySelector(".ts-notices");
+      const panel = document.querySelector(".ts-panel");
+      const grid = document.querySelector(".ts-grid-scroll");
+      const footerRect = footer?.getBoundingClientRect();
+      const panelRect = panel?.getBoundingClientRect();
+      const gridRect = grid?.getBoundingClientRect();
+      if (!footerRect || !panelRect || !gridRect) throw new Error("Workbook legal-notice resize targets disappeared");
+      last = {
+        width: innerWidth,
+        height: innerHeight,
+        footerTop: footerRect.top,
+        footerBottom: footerRect.bottom,
+        footerHeight: footerRect.height,
+        footerScrollHeight: footer.scrollHeight,
+        panelTop: panelRect.top,
+        panelBottom: panelRect.bottom,
+        gridTop: gridRect.top,
+        gridHeight: grid.clientHeight,
+        gridAvailableHeight: Number.parseFloat(grid.style.getPropertyValue("--ts-grid-available-height")) || 0,
+        pageWidth: document.documentElement.scrollWidth,
+        pageHeight: document.documentElement.scrollHeight,
+      };
+      const keys = Object.keys(last);
+      stable = previous && keys.every((key) => close(previous[key], last[key])) ? stable + 1 : 0;
+      if (stable >= 2) return last;
+      previous = last;
+    }
+    throw new Error(`Workbook legal-notice layout did not settle within 40 frames: ${JSON.stringify(last)}`);
+  });
+}
+
+async function auditLegalNoticeResize(page) {
+  await choose(page, "tachiko", "compact");
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1512, height: 982 });
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const desktop = await waitForLegalLayout(page);
+  await page.setViewportSize({ width: 320, height: 480 });
+  const compact = await waitForLegalLayout(page);
+  await page.setViewportSize({ width: 1512, height: 982 });
+  const restored = await waitForLegalLayout(page);
+  evidence(desktop.footerHeight < compact.footerHeight,
+    "compact notice wrapping grows the footer naturally after a viewport resize", { desktop, compact });
+  evidence(restored.footerHeight === desktop.footerHeight,
+    "restoring the wide viewport restores the natural notice footer height", { desktop, restored });
+  for (const [label, layout] of [["desktop", desktop], ["compact", compact], ["restored", restored]]) {
+    evidence(layout.footerScrollHeight <= layout.footerHeight + 1 && layout.pageWidth <= layout.width && layout.pageHeight <= layout.height + 1,
+      `${label} notice resize state contains the footer and page`, layout);
+    const actualAvailable = Math.max(0, Math.floor(layout.panelBottom - layout.gridTop));
+    evidence(Math.abs(layout.gridAvailableHeight - actualAvailable) <= 1 && layout.gridHeight + 1 >= Math.min(168, actualAvailable),
+      `${label} notice resize recomputes the grid space from the resized panel`, { ...layout, actualAvailable });
+  }
+  observations.push({ legalNoticeWrapResize: { desktop, compact, restored, caseCount: 3, outcome: "wrapped, grew, and restored" } });
 }
 
 async function auditTallGridLayoutOnly(page) {
@@ -3069,6 +3337,19 @@ async function main() {
 
     await auditInteropPreviewTrimCases(browser);
 
+    const legalShortViewportCases = [];
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(page, profile.id, density.id);
+        await page.keyboard.press("Escape");
+        await auditWorkbookViewportBounds(page, 320, 480, profile.id);
+        legalShortViewportCases.push(`${profile.id}/${density.id}`);
+      }
+    }
+    assert.equal(legalShortViewportCases.length, 6, "all six profile/density combinations exercise legal notices in a short phone viewport");
+    observations.push({ legalNoticeShortViewport: { completedCases: legalShortViewportCases.length, requiredCases: 6, viewport: "320x480", cases: legalShortViewportCases } });
+    await auditLegalNoticeResize(page);
+
     await page.setViewportSize({ width: 320, height: 900 });
     const titleState = await page.evaluate(() => {
       const title = document.querySelector(".ts-title");
@@ -3145,6 +3426,14 @@ async function main() {
     await browser.close();
   }
 
+  evidence(legalNoticeAuditCases.length === 24,
+    "legal notice audit completes all six comfortable idle, twelve nonempty preview, and six short-viewport cases",
+    { completedCases: legalNoticeAuditCases.length, requiredCases: 24 });
+  evidence(observations.some((item) => item.legalNoticeWrapResize?.caseCount === 3),
+    "legal notice audit completes the desktop-wrap-restore resize sequence");
+  evidence(observations.some((item) => item.legalNoticeKeyboard?.linkFocus?.length === 3),
+    "legal notice audit completes the keyboard sequence through all three links");
+
   console.log(JSON.stringify({
     case: "rendered appearance visual/accessibility matrix",
     status: failures.length === 0 ? "PASS" : "FAIL",
@@ -3176,6 +3465,20 @@ async function main() {
       completedCases: interopPreviewTrimCases.length,
       requiredCases: 12,
       outcomes: interopPreviewTrimCases,
+    },
+    legalNoticeAudit: {
+      completedCases: legalNoticeAuditCases.length,
+      requiredCases: 24,
+      coverage: {
+        comfortableIdleProfileWidthCases: 6,
+        nonemptyPreviewProfileDensityWidthCases: interopPreviewTrimCases.length,
+        shortViewportProfileDensityCases: observations.find((item) => item.legalNoticeShortViewport)?.legalNoticeShortViewport?.completedCases ?? 0,
+        wrapResizeStates: observations.find((item) => item.legalNoticeWrapResize)?.legalNoticeWrapResize?.caseCount ?? 0,
+        keyboardLinkSequence: observations.some((item) => item.legalNoticeKeyboard) ? 1 : 0,
+      },
+      outcomes: legalNoticeAuditCases,
+      wrapResize: observations.find((item) => item.legalNoticeWrapResize)?.legalNoticeWrapResize ?? null,
+      keyboard: observations.find((item) => item.legalNoticeKeyboard)?.legalNoticeKeyboard ?? null,
     },
     workbookViewportAudit: observations.filter((item) => item.workbookViewport),
     viewHeldControls: observations.filter((item) => item.viewHeldControl),
