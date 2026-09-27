@@ -90,6 +90,61 @@ async function installJ5ReportRemovalDiagnostic(page) {
   });
 }
 
+async function exerciseWorkbookTabFocus(page) {
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const titleReceivedFocus = await page.evaluate(() => new Promise((resolve) => {
+    const tab = document.getElementById("ts-tab-report");
+    const workbook = document.querySelector(".ts-workbook");
+    if (!tab || !workbook) {
+      resolve(false);
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (tab.getAttribute("aria-selected") !== "true") return;
+      observer.disconnect();
+      const title = document.getElementById("report-title");
+      if (!title) {
+        resolve(false);
+        return;
+      }
+      title.focus();
+      resolve(document.activeElement === title);
+    });
+    observer.observe(workbook, { childList: true, subtree: true });
+    tab.click();
+  }));
+  assert.equal(titleReceivedFocus, true, "DOM-driven Report selection must render and focus its Title control");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(
+    await page.locator("#report-title").evaluate((element) => element === document.activeElement),
+    true,
+    "the deliberate panel-control focus must survive the prior tab-selection turn",
+  );
+
+  const assertFocusedTab = async (id) => {
+    assert.equal(await page.locator(`#ts-tab-${id}`).evaluate((element) => (
+      element === document.activeElement && element.getAttribute("aria-selected") === "true"
+    )), true, `keyboard navigation must select and focus the ${id} tab`);
+  };
+  await page.getByRole("tab", { name: "Report", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await assertFocusedTab("brief");
+  await page.keyboard.press("ArrowRight");
+  await assertFocusedTab("interop");
+  await page.keyboard.press("ArrowRight");
+  await assertFocusedTab("table");
+  await page.keyboard.press("ArrowLeft");
+  await assertFocusedTab("interop");
+
+  // Programmatic DOM click events check selection ordering, not physical pointer behavior.
+  await page.evaluate(() => {
+    document.getElementById("ts-tab-summary")?.click();
+    document.getElementById("ts-tab-report")?.click();
+    document.getElementById("ts-tab-brief")?.click();
+  });
+  await assertFocusedTab("brief");
+}
+
 async function start(viewport) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
@@ -510,6 +565,7 @@ try {
   await page.getByRole("button", { name: "Export current PNG", exact: true }).waitFor({ state: "visible" });
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).isEnabled(), true);
   await assertReportPng(page, await downloadedPng(page), barArtifact);
+  await exerciseWorkbookTabFocus(page);
 
   await editPenPrice(page);
   await installJ5ReportRemovalDiagnostic(page);

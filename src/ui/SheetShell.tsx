@@ -1870,7 +1870,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function selectTab(next: ActiveTab): void {
     setTab(next);
-    window.setTimeout(() => document.getElementById(tabId(next))?.focus(), 0);
+    document.getElementById(tabId(next))?.focus();
   }
 
   return (
