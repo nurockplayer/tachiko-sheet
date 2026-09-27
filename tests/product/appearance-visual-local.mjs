@@ -575,7 +575,120 @@ async function auditTallGridLayoutOnly(page) {
   });
 }
 
-async function auditHomeViewportBounds(page) {
+async function auditHomeViewportBounds(page, browser) {
+  const emptyContext = await browser.newContext({ viewport: { width: 1512, height: 982 }, deviceScaleFactor: 1 });
+  try {
+    const emptyPage = await emptyContext.newPage();
+    await openApp(emptyContext, emptyPage);
+    await emptyPage.getByTestId("project-ready").waitFor();
+    await emptyPage.getByRole("button", { name: "Close project", exact: true }).click();
+    await emptyPage.locator('.ts-app[data-view="home"]').waitFor();
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(emptyPage, profile.id, density.id);
+        await emptyPage.keyboard.press("Escape");
+        for (const [width, height] of [[1512, 982], [768, 640], [600, 640], [320, 640]]) {
+          await emptyPage.setViewportSize({ width, height });
+          const layout = await emptyPage.evaluate(() => {
+            const home = document.querySelector(".ts-home");
+            const homeRect = home.getBoundingClientRect();
+            const headerRect = document.querySelector(".ts-home-head").getBoundingClientRect();
+            const visibleIntro = [...document.querySelectorAll(".ts-home-intro")].find((node) => getComputedStyle(node).display !== "none");
+            const introRect = visibleIntro.getBoundingClientRect();
+            const actions = [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")]
+              .map((node) => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, right: rect.right, width: rect.width, height: rect.height }; });
+            const importAction = document.querySelector(".ts-home-import-action").getBoundingClientRect();
+            const importDesktop = document.querySelector(".ts-home-import-desktop-help");
+            const importCompact = document.querySelector(".ts-home-import-compact-help");
+            const openDesktop = document.querySelector(".ts-home-open-desktop-help");
+            const openCompact = document.querySelector(".ts-home-open-compact-help");
+            const isVisible = (node) => getComputedStyle(node).display !== "none";
+            const help = isVisible(importCompact) ? importCompact : importDesktop;
+            const helpRect = help.getBoundingClientRect();
+            const actionRect = document.querySelector(".ts-home-import-action").getBoundingClientRect();
+            return {
+              pageWidth: document.documentElement.scrollWidth,
+              empty: document.querySelectorAll(".ts-copy-item").length === 0,
+              savedMessage: document.querySelector(".ts-empty")?.textContent?.trim() ?? null,
+              home: { x: homeRect.x, y: homeRect.y, width: homeRect.width, height: homeRect.height },
+              header: { x: headerRect.x, contentX: document.querySelector(".ts-brand").getBoundingClientRect().x, y: headerRect.y },
+              intro: { x: introRect.x, contentX: introRect.x + Number.parseFloat(getComputedStyle(visibleIntro).paddingLeft), y: introRect.y, width: introRect.width, right: introRect.right },
+              introText: [...document.querySelectorAll(".ts-home-intro")]
+                .filter(isVisible).map((node) => node.textContent.trim()),
+              openBorderTop: getComputedStyle(document.querySelector('[aria-label="Open project"]')).borderTopStyle,
+              actions,
+              openHelper: [openDesktop, openCompact].find(isVisible)?.textContent?.trim() ?? null,
+              visibleOpenHelpers: Number(isVisible(openDesktop)) + Number(isVisible(openCompact)),
+              importAction: { x: importAction.x, y: importAction.y, right: importAction.right, width: importAction.width, height: importAction.height },
+              importHelper: { text: help.textContent.trim(), y: helpRect.y, visibleCopies: Number(isVisible(importDesktop)) + Number(isVisible(importCompact)) },
+              importHeadingGap: actionRect.top - document.querySelector('[aria-label="Import spreadsheet"] .ts-h2').getBoundingClientRect().bottom,
+              importChooserBeforeHelper: actionRect.bottom <= helpRect.y + 1,
+              imports: document.querySelectorAll(".ts-home-import-action input[type=file]").length,
+              folders: document.querySelectorAll(".ts-home-open-actions input[type=file]").length,
+              appearance: document.querySelectorAll(".ts-home-head .ts-appearance-trigger").length,
+            };
+          });
+          assert.equal(layout.empty, true, `${width}px ${profile.id}/${density.id} observes empty Home`);
+          assert.equal(layout.savedMessage, "No saved copies yet.");
+          assert.ok(layout.pageWidth <= width, `${width}px ${profile.id}/${density.id} empty Home has no horizontal overflow: ${JSON.stringify(layout)}`);
+          assert.equal(layout.visibleOpenHelpers, 1, "one responsive Open helper is visible and exposed at a time");
+          assert.equal(layout.introText.length, 1, "one responsive Home intro is visible and exposed at a time");
+          if (width < 600) {
+            assert.deepEqual(layout.introText, ["Open a local project or a saved copy."]);
+            assert.equal(layout.openHelper, "The source folder stays unchanged.");
+          } else {
+            assert.deepEqual(layout.introText, ["Open a project folder, or reopen a copy saved in this browser profile."]);
+            assert.equal(layout.openHelper, "Choose a local project folder. Its source stays unchanged.");
+          }
+          assert.equal(layout.importHelper.text, "Review the source and column types before importing.");
+          assert.equal(layout.importHelper.visibleCopies, 1, "one responsive Import helper is visible and exposed at a time");
+          assert.equal(layout.imports, 1, "empty Home retains one real single-file import input");
+          assert.equal(layout.folders, 1, "empty Home retains one real directory input");
+          assert.equal(layout.appearance, 1, "empty Home keeps Appearance available");
+          assert.ok(layout.actions.every((action) => action.x >= 0 && action.right <= width + 1),
+            `${width}px ${profile.id}/${density.id} Open actions remain inside the viewport`, layout);
+          assert.ok(layout.importAction.x >= 0 && layout.importAction.right <= width + 1,
+            `${width}px ${profile.id}/${density.id} Import action remains inside the viewport`, layout);
+          if (width < 600) {
+            assert.ok(Math.abs(layout.home.y - 28) <= 1, "compact Home keeps its 28px top origin", layout);
+            assert.equal(layout.header.contentX, 32, "compact Home header content uses the 16px inner inset");
+            assert.equal(layout.intro.contentX, 32, "compact Home intro content uses the 16px inner inset");
+            assert.equal(layout.openBorderTop, "none", "only compact Open loses its top separator");
+            assert.ok(layout.actions.every((action) => Math.abs(action.width - layout.home.width) <= 1),
+              "compact Open actions fill the Home content width", layout);
+            assert.equal(layout.importChooserBeforeHelper, true, "compact Import chooser precedes helper in visual and DOM order");
+            assert.equal(layout.importHeadingGap, 20, "compact Import chooser follows its heading with the approved gap");
+            assert.ok(layout.importHelper.y >= layout.importAction.y + layout.importAction.height + 15,
+              "compact Import helper follows the chooser with the approved gap", layout);
+            if (density.id === "comfortable") assert.ok(layout.actions.every(({ height }) => height >= 36));
+          } else {
+            assert.equal(layout.openBorderTop, "solid", "desktop retains the approved Open divider");
+            assert.ok(layout.importHelper.y < layout.importAction.y,
+              "desktop retains its approved helper-before-chooser presentation order", layout);
+          }
+          let appearancePopover = null;
+          if (width === 320) {
+            await emptyPage.getByRole("button", { name: "Appearance", exact: true }).click();
+            appearancePopover = await emptyPage.evaluate(() => {
+              const panel = document.querySelector(".ts-home .ts-appearance-popover");
+              const rect = panel.getBoundingClientRect();
+              return { x: rect.x, right: rect.right, width: rect.width, pageWidth: document.documentElement.scrollWidth,
+                clientWidth: panel.clientWidth, scrollWidth: panel.scrollWidth };
+            });
+            assert.ok(appearancePopover.x >= 0 && appearancePopover.right <= width + 1 && appearancePopover.pageWidth <= width,
+              `320px ${profile.id}/${density.id} Home Appearance popover remains inside the viewport`, appearancePopover);
+            assert.ok(appearancePopover.scrollWidth <= appearancePopover.clientWidth + 1,
+              `320px ${profile.id}/${density.id} Home Appearance content remains usable within its panel`, appearancePopover);
+            await emptyPage.keyboard.press("Escape");
+          }
+          observations.push({ homeEmptyViewport: `${width}x${height} ${profile.id}/${density.id}`, ...layout, ...(appearancePopover ? { appearancePopover } : {}) });
+        }
+      }
+    }
+  } finally {
+    await emptyContext.close();
+  }
+
   await choose(page, "tachiko", "compact");
   await page.setViewportSize({ width: 1512, height: 982 });
   const canaryRowsBeforeSave = await page.locator(".ts-grid tbody").innerText();
@@ -710,6 +823,7 @@ async function auditHomeViewportBounds(page) {
   for (const profile of profiles) {
     for (const density of densities) {
       await choose(page, profile.id, density.id);
+      await page.keyboard.press("Escape");
       for (const [width, height] of [[1512, 982], [768, 640], [600, 640], [320, 640]]) {
         await page.setViewportSize({ width, height });
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -836,6 +950,19 @@ async function auditHomeViewportBounds(page) {
     await savedCopy.scrollIntoViewIfNeeded();
     const homeHeld = await sampleButtonStates(page, savedCopy,
       `${width}x${height} ${profile.id}/${density.id} Home saved-copy command`);
+    if (width < 600) {
+      const sharedSunken = await page.evaluate(() => {
+        const probe = document.createElement("button");
+        probe.className = "ts-button";
+        probe.style.background = "var(--ts-surface-sunken)";
+        document.querySelector(".ts-home").append(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      });
+      assert.equal(homeHeld.hover.background, sharedSunken,
+        `${width}px ${profile.id}/${density.id} saved-copy hover uses the shared sunken surface`);
+    }
     const copyRect = await savedCopy.evaluate((button) => {
       const rect = button.getBoundingClientRect();
       return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
@@ -2150,7 +2277,7 @@ async function main() {
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
     await auditButtonVariantBoundaries(browser);
-    await auditHomeViewportBounds(page);
+    await auditHomeViewportBounds(page, browser);
     await auditFirstEntryStates(browser, dist);
   } finally {
     await browser.close();
@@ -2193,6 +2320,7 @@ async function main() {
     appearanceVariantKeyboard: observations.find((item) => item.appearanceVariantKeyboard)?.appearanceVariantKeyboard ?? null,
     tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
     homeViewportAudit: observations.filter((item) => item.homeViewport),
+    homeEmptyViewportAudit: observations.filter((item) => item.homeEmptyViewport),
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,

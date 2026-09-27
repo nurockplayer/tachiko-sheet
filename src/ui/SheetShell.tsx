@@ -1036,7 +1036,8 @@ export function SheetShell(props: SheetShellProps) {
           <h1 className="ts-brand">Tachiko Sheet</h1>
           {renderAppearanceSelector()}
         </header>
-        <p className="ts-home-intro">Open a project folder, or reopen a copy saved in this browser profile.</p>
+        <p className="ts-home-intro ts-home-desktop-intro">Open a project folder, or reopen a copy saved in this browser profile.</p>
+        <p className="ts-home-intro ts-home-compact-intro">Open a local project or a saved copy.</p>
         <section className="ts-home-section" aria-label="Open project">
           <h2 className="ts-h2">Open</h2>
           <div className="ts-row-actions ts-home-open-actions">
@@ -1067,16 +1068,18 @@ export function SheetShell(props: SheetShellProps) {
             </button>
             {busy ? <span className="ts-status" role="status">Opening…</span> : null}
           </div>
-          <p className="ts-subtle">Choose a local project folder. Its source stays unchanged.</p>
+          <p className="ts-subtle ts-home-open-desktop-help">Choose a local project folder. Its source stays unchanged.</p>
+          <p className="ts-subtle ts-home-open-compact-help">The source folder stays unchanged.</p>
           {busy ? <p className="ts-hint" id={lockNoteId} role="note">An operation is in progress; controls are disabled until it finishes.</p> : null}
         </section>
         <section className="ts-home-section" aria-label="Import spreadsheet">
           <h2 className="ts-h2">Import CSV or XLSX</h2>
-          <p className="ts-subtle">Review the source and column types before importing.</p>
+          <p className="ts-subtle ts-home-import-desktop-help">Review the source and column types before importing.</p>
           <label className={`ts-button ts-home-file-action ts-home-import-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
             <span>Choose CSV or XLSX</span>
             <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
           </label>
+          <p className="ts-subtle ts-home-import-compact-help">Review the source and column types before importing.</p>
           {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
         </section>
         <section className={`ts-home-section ts-home-saved${copies.length ? " ts-home-saved--populated" : ""}`} aria-label="Saved copies">

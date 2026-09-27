@@ -467,8 +467,13 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("webkitdirectory");
     expect(markup).toContain("Try example");
     expect(markup).toContain("Try sales example");
+    expect(markup).toContain("The source folder stays unchanged.");
     expect(markup).toContain("Choose a local project folder. Its source stays unchanged.");
     expect(markup).toContain("Review the source and column types before importing.");
+    expect(markup).toContain("Open a local project or a saved copy.");
+    expect(markup).toContain("Open a project folder, or reopen a copy saved in this browser profile.");
+    expect(markup).toContain("ts-home-import-desktop-help");
+    expect(markup).toContain("ts-home-import-compact-help");
     expect(markup).toContain("Open saved review-copy");
     const localTime = new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",

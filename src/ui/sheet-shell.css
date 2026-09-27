@@ -209,6 +209,8 @@ body { margin: 0; }
   margin: 16px 0 44px;
   line-height: 20px;
 }
+.ts-home-compact-intro { display: none; }
+.ts-home-open-compact-help { display: none; }
 
 .ts-home-section {
   border-top: 1px solid var(--ts-line);
@@ -273,6 +275,7 @@ body { margin: 0; }
 .ts-home-open-actions > button:last-of-type { width: 224px; min-width: 224px; }
 
 .ts-home-import-action { min-width: 196px; }
+.ts-home-import-compact-help { display: none; }
 
 .ts-home-section.ts-home-saved {
   padding: 27px 0 16px;
@@ -1656,18 +1659,28 @@ body { margin: 0; }
   }
   .ts-modal--review,
   .ts-modal--import { gap: 0; }
-  .ts-home { width: calc(100% - 32px); margin: 14px auto 32px; }
+  .ts-home { width: calc(100% - 32px); margin: 28px auto 32px; }
   .ts-home-head { align-items: flex-start; flex-wrap: wrap; }
+  .ts-home-head,
+  .ts-home-intro { padding-inline: 16px; }
+  .ts-home-desktop-intro { display: none; }
+  .ts-home-compact-intro { display: block; }
+  .ts-home-open-desktop-help { display: none; }
+  .ts-home-open-compact-help { display: block; }
   .ts-home-intro { margin-top: 12px; margin-bottom: 28px; }
   .ts-home-section { padding-top: 24px; padding-bottom: 36px; }
-  .ts-home-open-actions { width: 100%; align-items: stretch; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .ts-home-section[aria-label="Open project"] { border-top: 0; }
+  .ts-home-section[aria-label="Open project"] > .ts-h2 + .ts-home-open-actions { margin-top: 20px; }
+  .ts-home-open-actions { width: 100%; align-items: stretch; flex-direction: column; gap: 16px; margin-top: 20px; }
   .ts-home-open-actions > .ts-button,
   .ts-home-open-actions > .ts-home-file-action { width: 100%; min-width: 0; }
   .ts-home-open-actions > button:first-of-type,
   .ts-home-open-actions > button:last-of-type { width: 100%; min-width: 0; }
   .ts-home-section > .ts-subtle:not(:first-child) { margin-top: 16px; }
   .ts-home-section > .ts-subtle + .ts-home-file-action { margin-top: 20px; }
-  [aria-label="Import spreadsheet"].ts-home-section > .ts-subtle + .ts-home-file-action { margin-top: 20px; }
+  .ts-home-import-desktop-help { display: none; }
+  [aria-label="Import spreadsheet"].ts-home-section > .ts-home-import-desktop-help + .ts-home-import-action { margin-top: 20px; }
+  .ts-home-import-compact-help { display: block; margin-top: 16px; }
   .ts-home-section.ts-home-saved { padding: 24px 0 36px; }
   .ts-home-section.ts-home-saved > .ts-subtle { margin-top: 16px; }
   .ts-home-import-action { width: 100%; }
@@ -1679,9 +1692,10 @@ body { margin: 0; }
     background: var(--ts-surface);
     border-color: var(--ts-line-strong);
   }
-  .ts-home-saved-action:hover:not(:disabled) { background: var(--ts-surface-chrome); }
+  .ts-home-saved-action:hover:not(:disabled) { background: var(--ts-surface-sunken); }
   .ts-home-saved-action:active:not(:disabled) { background: var(--ts-surface-head); }
   .ts-appearance-selector .ts-appearance-popover { left: 0; right: auto; }
+  .ts-home .ts-appearance-selector .ts-appearance-popover { width: min(348px, calc(100vw - 64px)); }
   .ts-workbook-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
