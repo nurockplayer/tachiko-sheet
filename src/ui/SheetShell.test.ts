@@ -9,6 +9,7 @@ import { BriefFacts } from "./BriefFacts.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
   missingKeyedGroupedSumDefinitionIds,
+  describeSavedCopyNameWhitespace,
   reportRenderResetKey,
   shouldPublishAppearanceCompositionEnd,
   SheetShell,
@@ -492,6 +493,64 @@ describe("SheetShell static rendering", () => {
     for (const name of names) {
       expect(markup).toContain(`Open saved ${name}`);
       expect(markup).toContain('class="ts-button ts-button--ghost ts-home-saved-action"');
+    }
+  });
+
+  it("describes only name whitespace whose rendered or accessible identity can collapse", () => {
+    expect(describeSavedCopyNameWhitespace("Plan review")).toBe(null);
+    expect(describeSavedCopyNameWhitespace(" Plan"))
+      .toBe("Name contains a space at character 1.");
+    expect(describeSavedCopyNameWhitespace("Plan "))
+      .toBe("Name contains a space at character 5.");
+    expect(describeSavedCopyNameWhitespace("Plan  review"))
+      .toBe("Name contains 2 consecutive spaces starting at character 5.");
+    expect(describeSavedCopyNameWhitespace("A \tB"))
+      .toBe("Name contains a space at character 2, and a tab at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u00a0B"))
+      .toBe("Name contains a no-break space at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u2002B"))
+      .toBe("Name contains an en space at character 2.");
+    expect(describeSavedCopyNameWhitespace("x😀\u00a0y"))
+      .toBe("Name contains a no-break space at character 3.");
+
+    const markup = render({
+      busy: true,
+      copies: [
+        { name: "Plan review", savedAt: "2026-09-12T10:00:00.000Z" },
+        { name: "Plan  review", savedAt: "2026-09-12T10:00:00.000Z" },
+        { name: "A\u00a0B", savedAt: "2026-09-12T10:00:00.000Z" },
+      ],
+    });
+    expect(markup).toContain("Open saved Plan  review");
+    const whitespaceButton = markup.match(/<button[^>]*>Open saved Plan  review<\/button>/)?.[0];
+    expect(whitespaceButton).toBeDefined();
+    const describedBy = whitespaceButton?.match(/aria-describedby="([^"]+)"/)?.[1]?.split(" ") ?? [];
+    expect(describedBy).toHaveLength(2);
+    expect(markup).toContain(`id="${describedBy[0]}" role="note">An operation is in progress`);
+    expect(markup).toContain(`id="${describedBy[1]}"`);
+    expect(markup).toContain("Name contains 2 consecutive spaces starting at character 5.");
+    const descriptionIds = [...markup.matchAll(/<span class="ts-visually-hidden" id="([^"]+)">/g)].map((match) => match[1]);
+    expect(descriptionIds).toHaveLength(2);
+    expect(new Set(descriptionIds).size).toBe(descriptionIds.length);
+    expect(descriptionIds.some((id) => id.includes("Plan") || id.includes("A\u00a0B"))).toBe(false);
+  });
+
+  it("formats saved metadata through actual non-whole-hour local timezones", () => {
+    const priorTimezone = process.env.TZ;
+    const savedAt = "2026-09-12T20:00:00.000Z";
+    try {
+      process.env.TZ = "Asia/Kolkata";
+      expect(new Date(savedAt).getTimezoneOffset()).toBe(-330);
+      expect(render({ copies: [{ name: "Kolkata", savedAt }] }))
+        .toContain("Saved 13 September 2026, 01:30");
+
+      process.env.TZ = "Asia/Kathmandu";
+      expect(new Date(savedAt).getTimezoneOffset()).toBe(-345);
+      expect(render({ copies: [{ name: "Kathmandu", savedAt }] }))
+        .toContain("Saved 13 September 2026, 01:45");
+    } finally {
+      if (priorTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = priorTimezone;
     }
   });
 

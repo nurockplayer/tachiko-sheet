@@ -139,6 +139,62 @@ async function openCanary(context, page) {
   await page.waitForSelector(".ts-cell--focused");
 }
 
+async function savedCopyAccessibilityNode(page, exactButtonText) {
+  const rowIndex = await page.locator(".ts-copy-item").evaluateAll((rows, name) =>
+    rows.findIndex((row) => row.querySelector(".ts-home-saved-action")?.textContent === name), exactButtonText);
+  assert.ok(rowIndex >= 0, `Home contains the exact saved action ${JSON.stringify(exactButtonText)}`);
+  const client = await page.context().newCDPSession(page);
+  try {
+    const { root } = await client.send("DOM.getDocument", { depth: -1 });
+    const { nodeId } = await client.send("DOM.querySelector", {
+      nodeId: root.nodeId,
+      selector: `.ts-copy-item:nth-child(${rowIndex + 1}) .ts-home-saved-action`,
+    });
+    assert.ok(nodeId, `Chromium can resolve the exact saved action ${JSON.stringify(exactButtonText)}`);
+    const { node } = await client.send("DOM.describeNode", { nodeId });
+    const { nodes } = await client.send("Accessibility.getPartialAXTree", {
+      backendNodeId: node.backendNodeId,
+      fetchRelatives: false,
+    });
+    const accessibleNode = nodes.find((candidate) => candidate.role?.value === "button") ?? nodes[0];
+    return {
+      role: accessibleNode?.role?.value ?? null,
+      name: accessibleNode?.name?.value ?? null,
+      description: accessibleNode?.description?.value ?? null,
+    };
+  } finally {
+    await client.detach();
+  }
+}
+
+async function clickSavedCopyByLiteralName(page, name) {
+  const buttonText = `Open saved ${name}`;
+  const index = await page.locator(".ts-home-saved-action").evaluateAll((buttons, exactText) =>
+    buttons.findIndex((button) => button.textContent === exactText), buttonText);
+  assert.ok(index >= 0, `Home contains the literal saved-copy action ${JSON.stringify(buttonText)}`);
+  const button = page.locator(".ts-home-saved-action").nth(index);
+  assert.equal(await button.textContent(), buttonText, "saved-copy action retains its literal stored name");
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+}
+
+async function editFirstCellForSavedCopy(page, value) {
+  await page.locator(".ts-grid tbody tr").first().locator("td").first().dblclick();
+  const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await editor.fill(value);
+  await editor.press("Enter");
+  await page.waitForFunction((expected) =>
+    [...document.querySelectorAll(".ts-grid tbody tr:first-child .ts-cell-value")]
+      .some((cell) => cell.textContent === expected), value);
+}
+
+async function saveCopyByName(page, name) {
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save a copy" }).waitFor({ state: "detached" });
+}
+
 const colorTargets = [
   ["workbook title", ".ts-title"],
   ["workbook wordmark", ".ts-wordmark"],
@@ -906,6 +962,91 @@ async function auditHomeViewportBounds(page, browser) {
     await page.getByRole("button", { name: "Close project", exact: true }).click();
     await page.locator('.ts-app[data-view="home"]').waitFor();
   }
+
+  const singleSpaceName = "Plan review";
+  const doubledSpaceName = "Plan  review";
+  await clickSavedCopyByLiteralName(page, "Viewport home probe");
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Whitespace identity first value");
+  const singleSpaceRows = await page.locator(".ts-grid tbody").innerText();
+  await saveCopyByName(page, singleSpaceName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  await clickSavedCopyByLiteralName(page, singleSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Whitespace identity second value");
+  const doubledSpaceRows = await page.locator(".ts-grid tbody").innerText();
+  assert.notEqual(doubledSpaceRows, singleSpaceRows, "distinct saved-name targets carry different actual workbook values");
+  await saveCopyByName(page, doubledSpaceName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const whitespaceIdentity = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll(".ts-home-saved-action")];
+    const read = (name) => {
+      const button = buttons.find((candidate) => candidate.textContent === `Open saved ${name}`);
+      if (!button) return null;
+      const rect = button.getBoundingClientRect();
+      const text = button.firstChild;
+      const value = text?.textContent ?? "";
+      const offset = value.indexOf(name) + "Plan".length;
+      const rangeWidth = (count) => {
+        const range = document.createRange();
+        range.setStart(text, offset);
+        range.setEnd(text, offset + count);
+        return range.getBoundingClientRect().width;
+      };
+      const computed = getComputedStyle(button);
+      return {
+        text: value,
+        whiteSpace: computed.whiteSpace,
+        rect: { x: rect.x, right: rect.right, width: rect.width, height: rect.height },
+        oneSpaceAdvance: rangeWidth(1),
+        twoSpaceAdvance: rangeWidth(2),
+      };
+    };
+    return {
+      single: read("Plan review"),
+      doubled: read("Plan  review"),
+      pageWidth: document.documentElement.scrollWidth,
+      viewportWidth: innerWidth,
+    };
+  });
+  assert.ok(whitespaceIdentity.single && whitespaceIdentity.doubled, "Home renders both whitespace-distinct saved copies");
+  assert.equal(whitespaceIdentity.single.text, "Open saved Plan review");
+  assert.equal(whitespaceIdentity.doubled.text, "Open saved Plan  review");
+  assert.equal(whitespaceIdentity.doubled.whiteSpace, "break-spaces");
+  assert.ok(whitespaceIdentity.doubled.twoSpaceAdvance >= whitespaceIdentity.doubled.oneSpaceAdvance * 1.75,
+    "two contained name spaces retain two rendered character advances", whitespaceIdentity);
+  assert.ok(whitespaceIdentity.single.rect.x >= 0 && whitespaceIdentity.doubled.rect.right <= whitespaceIdentity.viewportWidth &&
+    whitespaceIdentity.pageWidth <= whitespaceIdentity.viewportWidth,
+  "whitespace-distinct saved names stay contained on Home", whitespaceIdentity);
+  const singleSpaceAX = await savedCopyAccessibilityNode(page, "Open saved Plan review");
+  const doubledSpaceAX = await savedCopyAccessibilityNode(page, "Open saved Plan  review");
+  assert.equal(singleSpaceAX.role, "button");
+  assert.equal(doubledSpaceAX.role, "button");
+  assert.equal(singleSpaceAX.name, "Open saved Plan review");
+  assert.equal(doubledSpaceAX.name, "Open saved Plan review",
+    "the original accessible action name remains unchanged; the supplementary description distinguishes collapsed whitespace");
+  assert.ok(!singleSpaceAX.description, "ordinary single ASCII spaces add no accessible description");
+  assert.equal(doubledSpaceAX.description, "Name contains 2 consecutive spaces starting at character 5.");
+  observations.push({ homeSavedWhitespaceIdentity: whitespaceIdentity, singleSpaceAX, doubledSpaceAX,
+    singleSpaceRows, doubledSpaceRows });
+
+  await clickSavedCopyByLiteralName(page, singleSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), singleSpaceRows,
+    "opening the single-space saved name targets its exact stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, doubledSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), doubledSpaceRows,
+    "opening the double-space saved name targets its different exact stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
   for (const profile of profiles) {
     for (const density of densities) {
       await choose(page, profile.id, density.id);
@@ -2408,6 +2549,7 @@ async function main() {
     homeViewportAudit: observations.filter((item) => item.homeViewport),
     homeEmptyViewportAudit: observations.filter((item) => item.homeEmptyViewport),
     homeAppearancePopoverAudit: observations.filter((item) => item.homeAppearancePopover),
+    homeSavedWhitespaceIdentity: observations.find((item) => item.homeSavedWhitespaceIdentity) ?? null,
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,

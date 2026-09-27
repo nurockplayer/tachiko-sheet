@@ -358,9 +358,22 @@ body { margin: 0; }
   max-width: 100%;
   height: auto;
   min-height: var(--ts-profile-command-target-min-height);
-  white-space: normal;
+  white-space: break-spaces;
   overflow-wrap: anywhere;
   text-align: center;
+}
+
+.ts-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (min-width: 600px) {

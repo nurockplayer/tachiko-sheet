@@ -105,6 +105,77 @@ function formatHomeSavedAt(value: string): string {
   return `${dateLabel}, ${timeLabel}`;
 }
 
+const savedNameWhitespaceLabels = new Map<string, string>([
+  ["\u0009", "tab"],
+  ["\u000a", "line feed"],
+  ["\u000b", "vertical tab"],
+  ["\u000c", "form feed"],
+  ["\u000d", "carriage return"],
+  [" ", "space"],
+  ["\u0085", "next line"],
+  ["\u00a0", "no-break space"],
+  ["\u1680", "Ogham space mark"],
+  ["\u2000", "en quad"],
+  ["\u2001", "em quad"],
+  ["\u2002", "en space"],
+  ["\u2003", "em space"],
+  ["\u2004", "three-per-em space"],
+  ["\u2005", "four-per-em space"],
+  ["\u2006", "six-per-em space"],
+  ["\u2007", "figure space"],
+  ["\u2008", "punctuation space"],
+  ["\u2009", "thin space"],
+  ["\u200a", "hair space"],
+  ["\u2028", "line separator"],
+  ["\u2029", "paragraph separator"],
+  ["\u202f", "narrow no-break space"],
+  ["\u205f", "medium mathematical space"],
+  ["\u3000", "ideographic space"],
+  ["\ufeff", "zero-width no-break space"],
+]);
+
+function isAcceptedNameWhitespace(character: string): boolean {
+  return character === "\ufeff" || /\p{White_Space}/u.test(character);
+}
+
+/** Names are stored and opened exactly as entered; explain whitespace that rendering or accessible-name processing can collapse. */
+export function describeSavedCopyNameWhitespace(name: string): string | null {
+  const characters = Array.from(name);
+  const runs: Array<{ character: string; start: number; count: number }> = [];
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    if (!isAcceptedNameWhitespace(character)) continue;
+    const previous = runs.at(-1);
+    if (previous?.character === character && previous.start + previous.count === index + 1) {
+      previous.count += 1;
+    } else {
+      runs.push({ character, start: index + 1, count: 1 });
+    }
+  }
+
+  const details = runs.flatMap((run) => {
+    const before = characters[run.start - 2];
+    const after = characters[run.start - 1 + run.count];
+    const adjacentMixedWhitespace =
+      (before !== undefined && before !== run.character && isAcceptedNameWhitespace(before)) ||
+      (after !== undefined && after !== run.character && isAcceptedNameWhitespace(after));
+    const boundaryWhitespace = run.start === 1 || run.start + run.count - 1 === characters.length;
+    if (run.character === " " && run.count === 1 && !adjacentMixedWhitespace && !boundaryWhitespace) return [];
+
+    const codePoint = run.character.codePointAt(0) as number;
+    const kind = savedNameWhitespaceLabels.get(run.character) ?? `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")} white-space character`;
+    const plural = `${kind}s`;
+    const article = /^(?:en |em |Ogham |ideographic )/u.test(kind) ? "an" : "a";
+    return [run.count === 1
+      ? `${article} ${kind} at character ${run.start}`
+      : `${run.count} consecutive ${plural} starting at character ${run.start}`];
+  });
+
+  if (details.length === 0) return null;
+  if (details.length === 1) return `Name contains ${details[0]}.`;
+  return `Name contains ${details.slice(0, -1).join(", ")}, and ${details.at(-1)}.`;
+}
+
 /** Report pixels follow their source result, not the selected table. */
 export function reportRenderResetKey(
   view: Pick<WorkbookView, "occurrence" | "revision"> | null,
@@ -315,6 +386,7 @@ export function SheetShell(props: SheetShellProps) {
   const spreadsheetInputId = useId();
   const copyNameId = useId();
   const copyErrorId = useId();
+  const copyNameDescriptionBaseId = useId();
   const lockNoteId = useId();
   const notesId = useId();
   const tabId = (name: ActiveTab) => `ts-tab-${name}`;
@@ -1089,20 +1161,29 @@ export function SheetShell(props: SheetShellProps) {
             <p className="ts-empty">No saved copies yet.</p>
           ) : (
             <ul className="ts-copy-list">
-              {copies.map((copy) => (
-                <li key={copy.name} className="ts-copy-item">
-                  <button
-                    type="button"
-                    className="ts-button ts-button--ghost ts-home-saved-action"
-                    onClick={() => void openSaved(copy.name)}
-                    disabled={controlsLocked || recoveryLocked}
-                    aria-describedby={busy ? lockNoteId : undefined}
-                  >
-                    {`Open saved ${copy.name}`}
-                  </button>
-                  <span className="ts-copy-meta">Saved {formatHomeSavedAt(copy.savedAt)}</span>
-                </li>
-              ))}
+              {copies.map((copy, index) => {
+                const whitespaceDescription = describeSavedCopyNameWhitespace(copy.name);
+                const whitespaceDescriptionId = `${copyNameDescriptionBaseId}-${index}`;
+                const describedBy = [
+                  ...(busy ? [lockNoteId] : []),
+                  ...(whitespaceDescription ? [whitespaceDescriptionId] : []),
+                ].join(" ") || undefined;
+                return (
+                  <li key={copy.name} className="ts-copy-item">
+                    <button
+                      type="button"
+                      className="ts-button ts-button--ghost ts-home-saved-action"
+                      onClick={() => void openSaved(copy.name)}
+                      disabled={controlsLocked || recoveryLocked}
+                      aria-describedby={describedBy}
+                    >
+                      {`Open saved ${copy.name}`}
+                    </button>
+                    {whitespaceDescription ? <span className="ts-visually-hidden" id={whitespaceDescriptionId}>{whitespaceDescription}</span> : null}
+                    <span className="ts-copy-meta">Saved {formatHomeSavedAt(copy.savedAt)}</span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
