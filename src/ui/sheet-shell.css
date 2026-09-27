@@ -126,14 +126,37 @@ body { margin: 0; }
 }
 
 .ts-notices {
+  box-sizing: border-box;
   width: min(1180px, calc(100% - 2 * clamp(10px, 2vw, 24px)));
   margin: 0 auto;
   padding: 0 0 10px;
   color: var(--ts-ink-soft);
+  font-family: var(--ts-profile-font-family);
   font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
 }
 
 .ts-notices a { color: var(--ts-text-link); }
+.ts-notices a:focus-visible {
+  outline: 3px solid var(--ts-focus);
+  outline-offset: 2px;
+}
+
+.ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 2px clamp(16px, 3vw, 40px) 6px;
+  background: var(--ts-surface-chrome);
+}
+
+@media (max-width: 599px) {
+  .ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices > span:first-child {
+    display: block;
+  }
+}
 
 .ts-subtle {
   color: var(--ts-ink-soft);
@@ -1968,6 +1991,12 @@ body { margin: 0; }
 
 @media (forced-colors: active) {
   .ts-app { background: Canvas; color: CanvasText; }
+  .ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices {
+    background: Canvas;
+    color: CanvasText;
+  }
+  .ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices a { color: LinkText; }
+  .ts-notices a:focus-visible { outline-color: Highlight; }
   .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
