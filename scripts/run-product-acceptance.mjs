@@ -146,9 +146,19 @@ try {
     [path.join(root, 'tests', 'product', 'j4-imported-attachment-local.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const resultComposition = await runStep(
+    'result-composition-local',
+    [path.join(root, 'tests', 'product', 'result-composition-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
   const j5 = await runStep(
     'j5-report-local-transport',
     [path.join(root, 'tests', 'product', 'j5-report-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
+  const saveReadFault = await runStep(
+    'save-read-fault-regression-local-transport',
+    [path.join(root, 'tests', 'product', 'save-read-fault-regression.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
   const interfaceProfile = await runStep(
@@ -181,6 +191,12 @@ try {
     [path.join(root, 'tests', 'product', 'initial-launch-regression.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const cellEditing = await runStep(
+    'cell-editing-regression',
+    [path.join(root, 'tests', 'product', 'cell-editing-regression.mjs')],
+    { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : { WORK_DIST: acceptanceDir }), ...singleProcessEnv,
+      ...(chromiumSupport.executablePath ? { WORK_CHROMIUM: chromiumSupport.executablePath } : {}) },
+  );
   const normalUi = await runStep(
     'j3-normal-ui-local-transport',
     [path.join(root, 'tests', 'product', 'j3-normal-ui-local.mjs')],
@@ -200,7 +216,12 @@ try {
       [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0;
+    const localDialogRecovery = await runStep(
+      'dialog-operation-recovery-local-transport',
+      [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
+      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    );
+    const localOk = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -232,7 +253,14 @@ try {
         ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
         : {}),
     });
-    exitCode = j4 === 0 && j4Imported === 0 && j5 === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && focus === 0 ? 0 : 1;
+    // This focused suite installs its own disk routes; keep it supplemental
+    // local-transport evidence even when the canonical server is available.
+    const dialogRecovery = await runStep(
+      'dialog-operation-recovery-local-transport',
+      [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
+      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    );
+    exitCode = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && profileInterchange === 0 && primaryActions === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {

@@ -52,10 +52,19 @@ async function bindAndCreate(page, { failPostPublicationRead = false } = {}) {
 }
 
 async function groupText(page) {
-  return (await page.getByTestId("j4-result-0").getByLabel("Cross-table groups", { exact: true }).textContent())
-    .replace(/\s+/g, " ")
-    .replace(/\s*:\s*/g, ": ")
-    .trim();
+  return (await groupRows(page.getByTestId("j4-result-0").getByLabel("Cross-table groups", { exact: true }))).join(" ");
+}
+
+async function groupRows(table) {
+  return table.locator("tbody tr").evaluateAll((rows) => rows.map((row) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    return `${cells[0]?.textContent?.trim() ?? ""}: ${cells[1]?.textContent?.trim() ?? ""}`;
+  }));
+}
+
+async function allGroupRows(page) {
+  const tables = await page.getByLabel("Cross-table groups", { exact: true }).all();
+  return Promise.all(tables.map((table) => groupRows(table)));
 }
 
 try {
@@ -262,7 +271,7 @@ try {
   // A scalar rejection before publication must restore every current J4
   // result and definition, rather than leaving just one sibling visible.
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  const priorGroups = await page.getByLabel("Cross-table groups", { exact: true }).allTextContents();
+  const priorGroups = await allGroupRows(page);
   assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 3);
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("catalog");
@@ -280,7 +289,7 @@ try {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 3, "a known edit rejection must retain every result");
   assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 3, "a known edit rejection must retain sibling refresh controls");
-  assert.deepEqual(await page.getByLabel("Cross-table groups", { exact: true }).allTextContents(), priorGroups, "a known edit rejection must restore complete prior J4 results");
+  assert.deepEqual(await allGroupRows(page), priorGroups, "a known edit rejection must restore complete prior J4 results");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();

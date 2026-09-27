@@ -443,17 +443,21 @@ describe("SheetShell static rendering", () => {
         columns: tableColumns(view.table),
       }),
     );
-    const impact = cellMarkup(markup, `brief:${entityA}:c-impact`, "</dd>");
+    const impact = cellMarkup(markup, `brief:${entityA}:c-impact`, "</td>");
     expect(impact).not.toBe(null);
     expect(textOf(impact as string)).toBe("5");
     expect(impact).toContain(`data-work-entity="${entityA}"`);
     expect(impact).toContain('data-work-occurrence="occ-1"');
     expect(impact).toContain('data-work-revision="rev-1"');
     expect(impact).toContain('data-work-currentness="pending"');
+    expect(impact).toContain("ts-fact-value--numeric");
     expect(markup).not.toContain(">entity-a<");
     expect(markup).not.toContain(">entity-b<");
-    expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</dd>") as string)).toBe("first note");
-    expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</dd>")).toBe(null);
+    expect(markup).toContain("<th scope=\"col\">Field</th><th scope=\"col\">Value</th>");
+    expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</td>") as string)).toBe("first note");
+    expect(cellMarkup(markup, `brief:${entityA}:c-title`, "</td>")).not.toContain("ts-fact-value--numeric");
+    expect(cellMarkup(markup, `brief:${entityA}:c-priority`, "</td>")).toContain("ts-fact-value--numeric");
+    expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</td>")).toBe(null);
   });
 
   it("renders home open controls and saved copies by actual name", () => {
@@ -475,6 +479,15 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain('class="ts-home-section" aria-label="Open project"');
     expect(markup).not.toContain('class="ts-card" aria-label="Open project"');
     expect(markup).not.toContain('data-testid="project-ready"');
+  });
+
+  it("preserves accepted unbroken and CJK saved names on their dedicated Home action", () => {
+    const names = ["x".repeat(160), "保存された作業".repeat(32)];
+    const markup = render({ copies: names.map((name) => ({ name, savedAt: "2026-09-12T10:00:00.000Z" })) });
+    for (const name of names) {
+      expect(markup).toContain(`Open saved ${name}`);
+      expect(markup).toContain('class="ts-button ts-button--ghost ts-home-saved-action"');
+    }
   });
 
   it("renders table cells keyed by entity and field with occurrence/revision/entity/currentness", () => {

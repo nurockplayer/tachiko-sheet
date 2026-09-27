@@ -123,10 +123,21 @@ try {
     await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()),
     copiesBeforeUnknownOpen,
   );
-  await page.getByRole("button", { name: "Close and abandon recovery", exact: true }).click();
-  await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Keep editing", exact: true }).click();
+  const recoveryClose = page.getByRole("button", { name: "Close and abandon recovery", exact: true });
+  await recoveryClose.click();
+  const recoveryCloseDialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  await recoveryCloseDialog.waitFor();
+  await page.keyboard.press("Escape");
+  await recoveryCloseDialog.waitFor({ state: "detached" });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("button")).some((button) =>
+    button.textContent?.trim() === "Close and abandon recovery" && button === document.activeElement));
+  await recoveryClose.click();
+  await recoveryCloseDialog.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await recoveryCloseDialog.waitFor({ state: "detached" });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("button")).some((button) =>
+    button.textContent?.trim() === "Close and abandon recovery" && button === document.activeElement));
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Close and abandon recovery", exact: true }).click();
+  await recoveryClose.click();
   await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Close without saving", exact: true }).click();
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await waitForHomeOpen(page);

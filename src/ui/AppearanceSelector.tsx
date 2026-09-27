@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 
 import { APPEARANCE_PROFILE_IDS, appearanceDensity } from "../application/appearance-preference.js";
 import { encodeInterfaceProfileExport } from "../application/interface-profile-export.js";
@@ -46,6 +46,8 @@ export function AppearanceSelector({
   const [readingFile, setReadingFile] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const physicalSpaceDownRef = useRef(false);
+  const canceledSpaceRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importButtonRef = useRef<HTMLButtonElement>(null);
   const importedRadioRef = useRef<HTMLInputElement>(null);
@@ -174,10 +176,43 @@ export function AppearanceSelector({
       : request.message);
   };
 
-  const closeAndReturnFocus = () => {
+  const closeAndReturnFocus = useCallback(() => {
+    if (physicalSpaceDownRef.current) canceledSpaceRef.current = true;
     setOpen(false);
-    triggerRef.current?.focus();
-  };
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    if (document.activeElement === trigger) trigger.blur();
+    trigger.focus();
+  }, []);
+
+  useEffect(() => {
+    const isSpace = (event: globalThis.KeyboardEvent) => event.key === " " || event.code === "Space";
+    const onDocumentKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!isSpace(event)) return;
+      if (!event.repeat) canceledSpaceRef.current = false;
+      physicalSpaceDownRef.current = true;
+      if (canceledSpaceRef.current && event.target === triggerRef.current) event.preventDefault();
+    };
+    const onDocumentKeyUp = (event: globalThis.KeyboardEvent) => {
+      if (!isSpace(event)) return;
+      if (canceledSpaceRef.current && event.target === triggerRef.current) event.preventDefault();
+      physicalSpaceDownRef.current = false;
+      canceledSpaceRef.current = false;
+    };
+    const onWindowBlur = () => {
+      physicalSpaceDownRef.current = false;
+    };
+    document.addEventListener("keydown", onDocumentKeyDown, true);
+    document.addEventListener("keyup", onDocumentKeyUp, true);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      document.removeEventListener("keyup", onDocumentKeyUp, true);
+      window.removeEventListener("blur", onWindowBlur);
+      physicalSpaceDownRef.current = false;
+      canceledSpaceRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -190,12 +225,11 @@ export function AppearanceSelector({
       ) return;
       event.preventDefault();
       event.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
+      closeAndReturnFocus();
     };
     document.addEventListener("keydown", onDocumentKeyDown);
     return () => document.removeEventListener("keydown", onDocumentKeyDown);
-  }, [open]);
+  }, [closeAndReturnFocus, open]);
 
   return (
     <div className="ts-appearance-selector">
@@ -206,7 +240,10 @@ export function AppearanceSelector({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={dialogId}
-        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        onClick={() => {
+          if (open) closeAndReturnFocus();
+          else setOpen(true);
+        }}
       >
         Appearance
       </button>

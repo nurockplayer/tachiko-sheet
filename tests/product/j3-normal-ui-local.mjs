@@ -3,7 +3,7 @@
 // data or invokes an import/cleanup/export capability on the app's behalf.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,16 +97,104 @@ try {
   await dialog.waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
   assert.equal(await page.getByLabel("Choose CSV or XLSX", { exact: true }).evaluate((input) => document.activeElement === input), true, "cancel must restore focus to the spreadsheet trigger");
+  // A long candidate keeps its real rejected-import alert visible outside the
+  // internally scrolling column/ledger region.
+  const longInvalidCsv = path.join(output, "long-invalid.csv");
+  const longHeaders = Array.from({ length: 12 }, (_, index) => `field_${String(index + 1).padStart(2, "0")}`);
+  const longRows = [longHeaders.join(",")];
+  for (let row = 0; row < 4; row += 1) {
+    longRows.push(longHeaders.map((_, column) => column === 0 ? `invalid-${row}` : `value-${row}-${column}`).join(","));
+  }
+  await writeFile(longInvalidCsv, `${longRows.join("\n")}\n`, "utf8");
   // Invalid typing stays a rejected import candidate; it never opens or replaces work.
-  dialog = await choose(page, messyCsv);
+  dialog = await choose(page, longInvalidCsv);
+  await dialog.waitFor();
+  const importScroll = dialog.locator(".ts-dialog-scroll");
+  const longCandidateMetrics = await importScroll.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    columns: element.querySelectorAll(".ts-import-column").length,
+  }));
+  assert.equal(longCandidateMetrics.columns, 12, "long real candidate exposes all 12 column choices");
+  assert.ok(longCandidateMetrics.scrollHeight > longCandidateMetrics.clientHeight, `long candidate overflows its review scroller: ${JSON.stringify(longCandidateMetrics)}`);
   await dialog.locator("select").first().selectOption("number");
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   const importAlert = dialog.getByRole("alert");
   await importAlert.waitFor();
   assert.match(await importAlert.textContent(), /import was not applied/i);
   assert.equal(await importAlert.evaluate((alert) => alert.closest('[role="dialog"]')?.getAttribute("aria-modal")), "true", "rejection alert must remain inside the active modal");
+  assert.equal(await importAlert.evaluate((alert) => alert.closest(".ts-dialog-scroll")), null, "rejection alert stays outside the candidate scroller");
+  assert.equal(await importAlert.isVisible(), true, "rejection alert remains visible with long candidate content");
+  assert.equal(await dialog.locator("select").count(), 12, "failed import retains all candidate choices");
+  assert.equal(await dialog.locator("select").first().inputValue(), "number", "failed import retains the rejected type choice for correction");
+  const [alertBox, actionBox] = await Promise.all([
+    importAlert.boundingBox(),
+    dialog.locator(".ts-dialog-actions").boundingBox(),
+  ]);
+  assert.ok(alertBox && actionBox && alertBox.y + alertBox.height <= actionBox.y, "visible import feedback precedes the reachable fixed actions");
+  await page.setViewportSize({ width: 320, height: 350 });
+  const shortImport = await dialog.boundingBox();
+  assert.ok(shortImport.height <= 302 && shortImport.y >= 0 && shortImport.y + shortImport.height <= 350, `short Import dialog stays within the viewport: ${JSON.stringify(shortImport)}`);
+  const shortImportScroll = await dialog.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+    contentOverflowY: getComputedStyle(element.querySelector(".ts-dialog-scroll")).overflowY,
+  }));
+  assert.ok(shortImportScroll.scrollHeight > shortImportScroll.clientHeight, `short Import uses parent scrolling: ${JSON.stringify(shortImportScroll)}`);
+  assert.equal(shortImportScroll.overflowY, "auto");
+  assert.equal(shortImportScroll.contentOverflowY, "visible", "short Import exposes content to parent scrolling");
+  const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
+  await dialog.locator("select").first().focus();
+  for (let index = 0; index < 13; index += 1) await page.keyboard.press("Tab");
+  assert.equal(await importAction.evaluate((element) => element === document.activeElement), true, "keyboard navigation reaches the Import action after the long candidate");
+  const [shortErrorBox, shortActionBox] = await Promise.all([importAlert.boundingBox(), importAction.boundingBox()]);
+  const scrolledImport = await dialog.boundingBox();
+  assert.ok(shortErrorBox && shortActionBox && shortErrorBox.y >= scrolledImport.y && shortErrorBox.y + shortErrorBox.height <= scrolledImport.y + scrolledImport.height, "long Import error scrolls into the visible modal with the action");
+  assert.ok(shortActionBox.y >= scrolledImport.y && shortActionBox.y + shortActionBox.height <= scrolledImport.y + scrolledImport.height, "keyboard-focused Import action scrolls into the visible modal");
+  const compactActionBoxes = await dialog.locator(".ts-dialog-actions > .ts-button").evaluateAll((buttons) => buttons.map((button) => {
+    const rect = button.getBoundingClientRect();
+    return { name: button.textContent.trim(), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+  }));
+  assert.equal(compactActionBoxes.length, 2, `short Import exposes both actions: ${JSON.stringify(compactActionBoxes)}`);
+  for (const action of compactActionBoxes) {
+    assert.ok(action.width > 0 && action.height > 0, `short Import action has a full rendered box: ${JSON.stringify(action)}`);
+    assert.ok(action.left >= 0 && action.right <= 320, `short Import action fits the viewport width: ${JSON.stringify(action)}`);
+    assert.ok(action.left >= scrolledImport.x && action.right <= scrolledImport.x + scrolledImport.width, `short Import action fits the modal width: ${JSON.stringify({ action, scrolledImport })}`);
+    assert.ok(action.top >= scrolledImport.y && action.bottom <= scrolledImport.y + scrolledImport.height, `short Import action fits the modal frame: ${JSON.stringify(action)}`);
+  }
+  assert.ok(compactActionBoxes[0].right <= compactActionBoxes[1].left, `short Import actions do not overlap: ${JSON.stringify(compactActionBoxes)}`);
+  await importAction.click();
+  await importAlert.waitFor();
+  assert.match(await importAlert.textContent(), /import was not applied/i, "pointer-reached Import preserves the rejected candidate and its failure truth");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
+
+  // A rejected real Number import belongs to the active candidate dialog.
+  // Correcting its type and succeeding must clear the stale parent failure.
+  const correctedNumberCsv = path.join(output, "corrected-number.csv");
+  await writeFile(correctedNumberCsv, "value\nnot-a-number\n", "utf8");
+  dialog = await choose(page, correctedNumberCsv);
+  await dialog.locator("select").first().selectOption("number");
+  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  const correctedImportAlert = dialog.getByRole("alert");
+  await correctedImportAlert.waitFor();
+  assert.equal(await page.getByRole("alert").count(), 1, "failed Import exposes one accessible alert");
+  assert.equal(await correctedImportAlert.evaluate((alert) => alert.closest('[role="dialog"]')?.getAttribute("aria-modal")), "true", "failed Import alert is owned by the active candidate dialog");
+  const specificImportFailure = (await correctedImportAlert.textContent())?.trim() ?? "";
+  assert.ok(specificImportFailure.length > 0, "failed Import retains a recovery explanation");
+  assert.notEqual(specificImportFailure, "The import was not applied. Your source selection is still available.", "candidate shows the specific parent recovery detail in place of the generic Shell fallback");
+  await dialog.locator("select").first().selectOption("text");
+  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.getByRole("alert").count(), 0, "successful corrected Import clears the stale failure alert");
+  assert.match(await page.locator("[role=grid]").textContent(), /not-a-number/, "corrected Text Import preserves the source value");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  const correctedImportClose = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  await correctedImportClose.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await page.getByLabel("Choose CSV or XLSX", { exact: true }).waitFor();
 
   // I01/I07: normal CSV selection, visible candidate and explicit choices.
   await importWithTypes(page, messyCsv);
@@ -230,9 +318,28 @@ try {
   // review and cannot be mistaken for generic XLSX support.
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
+  await page.setViewportSize({ width: 320, height: 350 });
   dialog = await choose(page, mergedXlsx);
-  assert.match(await dialog.getByLabel("Candidate source fidelity ledger", { exact: true }).textContent(), /merged/i);
-  await dialog.press("Escape");
+  const producerLedger = dialog.getByLabel("Candidate source fidelity ledger", { exact: true });
+  const importColumns = dialog.locator(".ts-import-columns");
+  assert.match(await producerLedger.textContent(), /merged/i);
+  assert.equal(await producerLedger.isVisible(), true, "real merged-cell fidelity warning is visible during candidate review");
+  const importHeading = dialog.getByRole("heading", { name: "Review import candidate", exact: true });
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "warning-bearing short Import enters on its heading");
+  const [producerLedgerBox, importColumnsBox] = await Promise.all([producerLedger.boundingBox(), importColumns.boundingBox()]);
+  assert.ok(producerLedgerBox && importColumnsBox && producerLedgerBox.y + producerLedgerBox.height <= importColumnsBox.y, `real producer warning appears before long column choices: ${JSON.stringify({ producerLedgerBox, importColumnsBox })}`);
+  const [shortWarning, shortImportDialog] = await Promise.all([producerLedger.locator("li").first().boundingBox(), dialog.boundingBox()]);
+  assert.ok(shortWarning && shortImportDialog && shortWarning.y >= shortImportDialog.y && shortWarning.y + shortWarning.height <= shortImportDialog.y + shortImportDialog.height, `first real producer warning begins in the initial short viewport: ${JSON.stringify({ shortWarning, shortImportDialog })}`);
+  assert.equal(await producerLedger.evaluate((ledger, columns) => Boolean(ledger.compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING), await importColumns.elementHandle()), true, "warning precedes column consent in source order");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await dialog.evaluate((root) => root.contains(document.activeElement)), true, "Shift+Tab from warning heading stays trapped in Import");
+  await page.keyboard.press("Tab");
+  assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Tab wraps from the last action to the warning heading");
+  await page.keyboard.press("Tab");
+  assert.equal(await dialog.locator("select").first().evaluate((select) => select === document.activeElement), true, "Tab from warning heading enters candidate choices");
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
   console.log(JSON.stringify({ case: "J3 normal UI CSV/XLSX, cleanup, consent, restart", status: "PASS", manualBoundary: "Real CJK IME and assistive-technology walkthrough remain manual." }));
 } finally {
   if (context) await context.close().catch(() => {});

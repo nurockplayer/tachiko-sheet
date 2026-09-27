@@ -52,16 +52,22 @@ try {
   }
 
   const grid = page.locator(".ts-grid-scroll");
+  await page.setViewportSize({ width: 1000, height: 768 });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const beforeScroll = await grid.evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
     scrollLeft: element.scrollLeft,
   }));
+  assert.ok(beforeScroll.clientWidth < 1024, "overflow viewport must leave less than 1024px for the grid");
+  assert.ok(beforeScroll.scrollWidth >= 1024, "grid content must retain its 1024px minimum width");
   assert.ok(beforeScroll.scrollWidth > beforeScroll.clientWidth, "1024px grid must overflow horizontally");
   await grid.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
   const afterScroll = await grid.evaluate((element) => element.scrollLeft);
   assert.ok(afterScroll > beforeScroll.scrollLeft, "grid must permit deliberate horizontal scrolling");
 
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.emulateMedia({ forcedColors: "active" });
   const focusCell = page.locator(".ts-cell").first();
   const style = async () => focusCell.evaluate((element) => {
@@ -91,7 +97,8 @@ try {
 
   console.log(JSON.stringify({
     status: "PASS",
-    viewport: "1024x768",
+    clipping_and_focus_viewport: "1024x768",
+    overflow_viewport: "1000x768",
     full_value_chars: { latin: latin.title.length, cjk: cjk.title.length },
     grid_scroll_width: beforeScroll.scrollWidth,
     grid_client_width: beforeScroll.clientWidth,

@@ -1,0 +1,2 @@
+import {readFile} from 'node:fs/promises';import {createHash} from 'node:crypto';import path from 'node:path';import {fileURLToPath} from 'node:url';import assert from 'node:assert/strict';
+const prep=path.dirname(fileURLToPath(import.meta.url));const manifest=JSON.parse(await readFile(path.join(prep,'manifest.json'),'utf8'));for(const [file,sha] of Object.entries(manifest.fixtures))assert.equal(createHash('sha256').update(await readFile(path.join(prep,file))).digest('hex'),sha,file+' fixture drift');console.log('Frozen fixture hashes PASS');
