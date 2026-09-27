@@ -692,6 +692,85 @@ async function auditHomeViewportBounds(page, browser) {
         }
       }
     }
+
+    const popoverWidths = [320, 360, 375, 380, 381, 383, 384, 390, 414, 480, 599];
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(emptyPage, profile.id, density.id);
+        for (const width of popoverWidths) {
+          for (const height of [640, 450]) {
+            await emptyPage.setViewportSize({ width, height });
+            const trigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
+            if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+            const panel = emptyPage.locator(".ts-home .ts-appearance-popover");
+            await panel.waitFor({ state: "visible" });
+            const geometry = await emptyPage.evaluate(() => {
+              const homeHead = document.querySelector(".ts-home-head");
+              const panel = document.querySelector(".ts-home .ts-appearance-popover");
+              const content = panel.querySelector(".ts-appearance-content");
+              const headRect = homeHead.getBoundingClientRect();
+              const rect = panel.getBoundingClientRect();
+              const style = getComputedStyle(panel);
+              return {
+                viewportWidth: innerWidth,
+                viewportHeight: innerHeight,
+                pageWidth: document.documentElement.scrollWidth,
+                panel: { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+                header: { x: headRect.x, y: headRect.y, right: headRect.right, bottom: headRect.bottom },
+                maxHeight: style.maxHeight,
+                clientWidth: panel.clientWidth,
+                scrollWidth: panel.scrollWidth,
+                contentClientHeight: content.clientHeight,
+                contentScrollHeight: content.scrollHeight,
+                contentOverflowY: getComputedStyle(content).overflowY,
+              };
+            });
+            const label = `${width}x${height} Home Appearance ${profile.id}/${density.id}`;
+            evidence(geometry.pageWidth <= width && geometry.panel.x >= 0 && geometry.panel.right <= width + 1,
+              `${label} has no horizontal page or panel overflow`, geometry);
+            evidence(geometry.panel.y >= geometry.header.bottom && geometry.panel.bottom <= height + 1,
+              `${label} opens below the full Home header and stays within the viewport`, geometry);
+            evidence(geometry.scrollWidth <= geometry.clientWidth + 1,
+              `${label} keeps all panel content within its available width`, geometry);
+            evidence((geometry.contentOverflowY === "auto" || geometry.contentOverflowY === "scroll") &&
+              geometry.contentScrollHeight > geometry.contentClientHeight,
+            `${label} keeps Appearance content internally scrollable`, geometry);
+
+            const reachableControls = await emptyPage.evaluate(() => {
+              const panel = document.querySelector(".ts-home .ts-appearance-popover");
+              const content = panel.querySelector(".ts-appearance-content");
+              const targets = [
+                ["density", ".ts-appearance-density-option"],
+                ["import", ".ts-appearance-custom-actions button:first-child"],
+                ["export", ".ts-appearance-custom-actions button:last-child"],
+              ];
+              const reachable = targets.map(([name, selector]) => {
+                const target = content.querySelector(selector);
+                target.scrollIntoView({ block: "nearest", inline: "nearest" });
+                const targetRect = target.getBoundingClientRect();
+                const contentRect = content.getBoundingClientRect();
+                return { name, top: targetRect.top, bottom: targetRect.bottom, contentTop: contentRect.top, contentBottom: contentRect.bottom,
+                  inside: targetRect.bottom > contentRect.top && targetRect.top < contentRect.bottom };
+              });
+              const close = panel.querySelector(".ts-appearance-close").getBoundingClientRect();
+              const panelRect = panel.getBoundingClientRect();
+              return {
+                reachable,
+                closeInside: close.top >= panelRect.top && close.bottom <= panelRect.bottom,
+                scrollTop: content.scrollTop,
+              };
+            });
+            evidence(reachableControls.reachable.every(({ inside }) => inside) && reachableControls.closeInside,
+              `${label} can reach Density, Import, Export and Close controls`, reachableControls);
+            await emptyPage.keyboard.press("Escape");
+            await emptyPage.waitForFunction(() => document.querySelector(".ts-home .ts-appearance-trigger")?.getAttribute("aria-expanded") === "false");
+            const focusReturned = await trigger.evaluate((button) => document.activeElement === button && button.getAttribute("aria-expanded") === "false");
+            evidence(focusReturned, `${label} Escape closes and returns focus to Appearance`);
+            observations.push({ homeAppearancePopover: label, ...geometry, reachableControls });
+          }
+        }
+      }
+    }
   } finally {
     await emptyContext.close();
   }
@@ -2328,6 +2407,7 @@ async function main() {
     tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
     homeViewportAudit: observations.filter((item) => item.homeViewport),
     homeEmptyViewportAudit: observations.filter((item) => item.homeEmptyViewport),
+    homeAppearancePopoverAudit: observations.filter((item) => item.homeAppearancePopover),
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,

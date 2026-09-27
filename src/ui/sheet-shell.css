@@ -1660,7 +1660,8 @@ body { margin: 0; }
   .ts-modal--review,
   .ts-modal--import { gap: 0; }
   .ts-home { width: calc(100% - 32px); margin: 28px auto 32px; }
-  .ts-home-head { align-items: flex-start; flex-wrap: wrap; }
+  .ts-home-head { position: relative; align-items: flex-start; flex-wrap: wrap; }
+  .ts-home-head > .ts-appearance-selector { position: static; }
   .ts-home-head,
   .ts-home-intro { padding-inline: 16px; }
   .ts-home-desktop-intro { display: none; }
@@ -1696,6 +1697,13 @@ body { margin: 0; }
   .ts-home-saved-action:active:not(:disabled) { background: var(--ts-surface-head); }
   .ts-appearance-selector .ts-appearance-popover { left: 0; right: auto; }
   .ts-home .ts-appearance-selector .ts-appearance-popover { width: min(348px, calc(100vw - 64px)); }
+  .ts-home-head > .ts-appearance-selector > .ts-appearance-popover {
+    top: calc(100% + 8px);
+    left: 16px;
+    right: auto;
+    max-height: calc(100vh - 160px);
+    max-height: calc(100dvh - 160px);
+  }
   .ts-workbook-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
