@@ -26,7 +26,7 @@ async function start() {
 }
 
 async function openCanary(page) {
-  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 }
 

@@ -9,6 +9,7 @@ import { BriefFacts } from "./BriefFacts.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
   missingKeyedGroupedSumDefinitionIds,
+  describeSavedCopyNameWhitespace,
   reportRenderResetKey,
   shouldPublishAppearanceCompositionEnd,
   SheetShell,
@@ -323,6 +324,8 @@ describe("recovery presentation", () => {
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
     expect(markup).toContain("Close and abandon recovery");
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
+    expect(markup).toContain('class="ts-button ts-button--primary ts-home-file-action ts-home-file-action--disabled" aria-disabled="true"');
+    expect(markup).toContain('class="ts-button ts-home-file-action ts-home-import-action ts-home-file-action--disabled" aria-disabled="true"');
     expect(markup).toContain('data-testid="open-project" type="file" multiple="" disabled=""');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Try example<\/button>/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Open saved copy<\/button>/);
@@ -459,13 +462,131 @@ describe("SheetShell static rendering", () => {
   });
 
   it("renders home open controls and saved copies by actual name", () => {
-    const markup = render({ copies: [{ name: "review-copy", savedAt: "2026-09-12T10:00:00.000Z" }] });
+    const savedAt = "2026-09-12T10:00:00.000Z";
+    const markup = render({ copies: [{ name: "review-copy", savedAt }] });
     expect(markup).toContain('data-testid="open-project"');
     expect(markup).toContain("webkitdirectory");
     expect(markup).toContain("Try example");
+    expect(markup).toContain("Try sales example");
+    expect(markup).toContain("The source folder stays unchanged.");
+    expect(markup).toContain("Choose a local project folder. Its source stays unchanged.");
+    expect(markup).toContain("Review the source and column types before importing.");
+    expect(markup).toContain("Open a local project or a saved copy.");
+    expect(markup).toContain("Open a project folder, or reopen a copy saved in this browser profile.");
+    expect(markup).toContain("ts-home-import-desktop-help");
+    expect(markup).toContain("ts-home-import-compact-help");
     expect(markup).toContain("Open saved review-copy");
-    expect(markup).toContain("2026-09-12T10:00:00.000Z");
+    const localTime = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(savedAt));
+    expect(markup).toContain(`, ${localTime}`);
+    expect(markup).toContain('class="ts-home-section" aria-label="Open project"');
+    expect(markup).not.toContain('class="ts-card" aria-label="Open project"');
     expect(markup).not.toContain('data-testid="project-ready"');
+  });
+
+  it("preserves accepted unbroken and CJK saved names on their dedicated Home action", () => {
+    const names = ["x".repeat(160), "保存された作業".repeat(32)];
+    const markup = render({ copies: names.map((name) => ({ name, savedAt: "2026-09-12T10:00:00.000Z" })) });
+    for (const name of names) {
+      expect(markup).toContain(`Open saved ${name}`);
+      expect(markup).toContain('class="ts-button ts-button--ghost ts-home-saved-action"');
+    }
+  });
+
+  it("describes only name whitespace whose rendered or accessible identity can collapse", () => {
+    expect(describeSavedCopyNameWhitespace("Plan review")).toBe(null);
+    expect(describeSavedCopyNameWhitespace(" Plan"))
+      .toBe("Name contains a space at character 1.");
+    expect(describeSavedCopyNameWhitespace("Plan "))
+      .toBe("Name contains a space at character 5.");
+    expect(describeSavedCopyNameWhitespace("Plan  review"))
+      .toBe("Name contains 2 consecutive spaces starting at character 5.");
+    expect(describeSavedCopyNameWhitespace("A \tB"))
+      .toBe("Name contains a space at character 2, and a tab at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u00a0B"))
+      .toBe("Name contains a no-break space at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u2002B"))
+      .toBe("Name contains an en space at character 2.");
+    expect(describeSavedCopyNameWhitespace("x😀\u00a0y"))
+      .toBe("Name contains a no-break space at character 3.");
+    expect(describeSavedCopyNameWhitespace("Plan\u200breview"))
+      .toBe("Name contains a zero-width space (U+200B, format character) at character 5.");
+    expect(describeSavedCopyNameWhitespace("Sol1b59adf Plan\u200breview"))
+      .toBe("Name contains a zero-width space (U+200B, format character) at character 16.");
+    expect(describeSavedCopyNameWhitespace("A\u0000\u007fB"))
+      .toBe("Name contains a control character (U+0000, control character) at character 2, and a delete control (U+007F, control character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u0001\u0001B"))
+      .toBe("Name contains 2 consecutive control characters (U+0001, control character) starting at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u0080B"))
+      .toBe("Name contains a control character (U+0080, control character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u202eB"))
+      .toBe("Name contains a right-to-left override (U+202E, format character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u200c\u200dB"))
+      .toBe("Name contains a zero-width non-joiner (U+200C, format character) at character 2, and a zero-width joiner (U+200D, format character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u00ad\u034fB"))
+      .toBe("Name contains a soft hyphen (U+00AD, format character) at character 2, and a combining grapheme joiner (U+034F, default-ignorable character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\ufe0fB"))
+      .toBe("Name contains an emoji variation selector (U+FE0F, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("😀\u{e0100}x"))
+      .toBe("Name contains a supplementary variation selector (U+E0100, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("x\u{e0067}\u{e007f}y"))
+      .toBe("Name contains a tag character (U+E0067, format character) at character 2, and a tag character (U+E007F, format character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("A\u0600B"))
+      .toBe("Name contains an Arabic number sign (U+0600, format character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("A\u2063B"))
+      .toBe("Name contains a format character (U+2063, format character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("x\u3164y"))
+      .toBe("Name contains a Hangul filler (U+3164, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("😀\u115f"))
+      .toBe("Name contains a default-ignorable character (U+115F, default-ignorable character) at character 2.");
+    expect(describeSavedCopyNameWhitespace("x😀\u200b\u200by"))
+      .toBe("Name contains 2 consecutive zero-width spaces (U+200B, format character) starting at character 3.");
+    expect(describeSavedCopyNameWhitespace("A \u200bB"))
+      .toBe("Name contains a space at character 2, and a zero-width space (U+200B, format character) at character 3.");
+    expect(describeSavedCopyNameWhitespace("Cafe\u0301 保存🙂🏽")).toBe(null);
+
+    const markup = render({
+      busy: true,
+      copies: [
+        { name: "Plan review", savedAt: "2026-09-12T10:00:00.000Z" },
+        { name: "Plan  review", savedAt: "2026-09-12T10:00:00.000Z" },
+        { name: "A\u00a0B", savedAt: "2026-09-12T10:00:00.000Z" },
+      ],
+    });
+    expect(markup).toContain("Open saved Plan  review");
+    const whitespaceButton = markup.match(/<button[^>]*>Open saved Plan  review<\/button>/)?.[0];
+    expect(whitespaceButton).toBeDefined();
+    const describedBy = whitespaceButton?.match(/aria-describedby="([^"]+)"/)?.[1]?.split(" ") ?? [];
+    expect(describedBy).toHaveLength(2);
+    expect(markup).toContain(`id="${describedBy[0]}" role="note">An operation is in progress`);
+    expect(markup).toContain(`id="${describedBy[1]}"`);
+    expect(markup).toContain("Name contains 2 consecutive spaces starting at character 5.");
+    const descriptionIds = [...markup.matchAll(/<span class="ts-visually-hidden" id="([^"]+)">/g)].map((match) => match[1]);
+    expect(descriptionIds).toHaveLength(2);
+    expect(new Set(descriptionIds).size).toBe(descriptionIds.length);
+    expect(descriptionIds.some((id) => id.includes("Plan") || id.includes("A\u00a0B"))).toBe(false);
+  });
+
+  it("formats saved metadata through actual non-whole-hour local timezones", () => {
+    const priorTimezone = process.env.TZ;
+    const savedAt = "2026-09-12T20:00:00.000Z";
+    try {
+      process.env.TZ = "Asia/Kolkata";
+      expect(new Date(savedAt).getTimezoneOffset()).toBe(-330);
+      expect(render({ copies: [{ name: "Kolkata", savedAt }] }))
+        .toContain("Saved 13 September 2026, 01:30");
+
+      process.env.TZ = "Asia/Kathmandu";
+      expect(new Date(savedAt).getTimezoneOffset()).toBe(-345);
+      expect(render({ copies: [{ name: "Kathmandu", savedAt }] }))
+        .toContain("Saved 13 September 2026, 01:45");
+    } finally {
+      if (priorTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = priorTimezone;
+    }
   });
 
   it("renders table cells keyed by entity and field with occurrence/revision/entity/currentness", () => {

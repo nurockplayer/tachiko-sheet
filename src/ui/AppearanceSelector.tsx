@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { APPEARANCE_PROFILE_IDS, appearanceDensity } from "../application/appearance-preference.js";
 import { encodeInterfaceProfileExport } from "../application/interface-profile-export.js";
@@ -12,9 +12,11 @@ import type {
   AppearanceProfileId,
 } from "../application/appearance-preference.js";
 import { resolveBuiltInInterfaceProfile } from "./interface-profile/profile.js";
+import { placeAppearancePopover, type AppearancePopoverContext } from "./appearance-placement.js";
 import "./appearance-selector.css";
 
 export type AppearanceSelectorProps = Readonly<{
+  context: AppearancePopoverContext;
   preference: AppearancePreferenceSnapshot;
   onSelectProfile: (profileId: AppearanceProfileId) => AppearancePreferenceSnapshot;
   onSelectDensity: (density: AppearanceDensity) => AppearancePreferenceSnapshot;
@@ -34,6 +36,7 @@ const DENSITIES: readonly Readonly<{ id: AppearanceDensity; label: string }>[] =
 
 /** Application-scoped, controlled appearance preference popover. */
 export function AppearanceSelector({
+  context,
   preference,
   onSelectProfile,
   onSelectDensity,
@@ -46,6 +49,8 @@ export function AppearanceSelector({
   const [readingFile, setReadingFile] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLElement>(null);
+  const [placement, setPlacement] = useState<{ left: number; top: number; maxHeight: number; maxWidth: number } | null>(null);
   const physicalSpaceDownRef = useRef(false);
   const canceledSpaceRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +72,136 @@ export function AppearanceSelector({
     : activeChoice.kind === "imported" ? activeChoice : null;
   const selectedProfileId = selection.kind === "built-in" ? selection.profileId : null;
   const selectedDensity = appearanceDensity(selection);
+
+  useLayoutEffect(() => {
+    const panel = popoverRef.current;
+    if (!open || !panel) {
+      setPlacement(null);
+      return;
+    }
+    const content = panel.querySelector<HTMLElement>(".ts-appearance-content");
+    const selector = panel.parentElement;
+    if (!content || !selector) return;
+
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const trigger = triggerRef.current;
+      const offsetParent = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : selector;
+      if (!trigger || !offsetParent) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const headerRect = context === "home" && window.innerWidth < 600
+        ? selector.parentElement?.getBoundingClientRect()
+        : null;
+      const visualViewport = window.visualViewport;
+      const viewportLeft = visualViewport?.offsetLeft ?? 0;
+      const viewportTop = visualViewport?.offsetTop ?? 0;
+      const viewportWidth = visualViewport?.width ?? window.innerWidth;
+      const viewportHeight = visualViewport?.height ?? window.innerHeight;
+      const maxWidth = Math.max(0, viewportWidth - 24);
+      // Reflow to the usable visual width before measuring natural height; the
+      // resulting wrapping can change which vertical side has more room.
+      panel.style.maxWidth = `${maxWidth}px`;
+      const panelRect = panel.getBoundingClientRect();
+      const naturalHeight = Math.max(
+        panelRect.height,
+        panelRect.height - content.clientHeight + content.scrollHeight,
+      );
+      const interactiveControls = Array.from(panel.querySelectorAll<HTMLElement>(
+        ".ts-appearance-profile-option, .ts-appearance-density-option, .ts-appearance-custom-actions button, .ts-appearance-candidate__actions button",
+      )).filter((control) => control.getClientRects().length > 0 && window.getComputedStyle(control).visibility !== "hidden");
+      const interactiveControlHeight = interactiveControls.reduce(
+        (largest, control) => Math.max(largest, control.getBoundingClientRect().height),
+        0,
+      );
+      const panelStyle = window.getComputedStyle(panel);
+      const numberOfPixels = (value: string): number => Number.parseFloat(value) || 0;
+      const panelHeader = panel.querySelector<HTMLElement>(".ts-appearance-popover__header");
+      const panelHeaderHeight = panelHeader?.getBoundingClientRect().height ?? 0;
+      const panelChromeHeight = panelHeaderHeight +
+        numberOfPixels(panelStyle.paddingTop) + numberOfPixels(panelStyle.paddingBottom) +
+        numberOfPixels(panelStyle.borderTopWidth) + numberOfPixels(panelStyle.borderBottomWidth) +
+        numberOfPixels(panelStyle.rowGap);
+      const focusStyle = window.getComputedStyle(selector);
+      const focusClearanceHeight = 2 * (
+        numberOfPixels(focusStyle.getPropertyValue("--ts-appearance-focus-width")) +
+        numberOfPixels(focusStyle.getPropertyValue("--ts-appearance-focus-offset"))
+      );
+      const offsetRect = offsetParent.getBoundingClientRect();
+      const next = placeAppearancePopover({
+        context,
+        viewportWidth: window.innerWidth,
+        viewport: {
+          left: viewportLeft,
+          top: viewportTop,
+          right: viewportLeft + viewportWidth,
+          bottom: viewportTop + viewportHeight,
+        },
+        anchor: { left: triggerRect.left, top: triggerRect.top, right: triggerRect.right, bottom: triggerRect.bottom },
+        homeHeaderLeft: headerRect?.left,
+        homeHeaderBottom: headerRect?.bottom,
+        panelWidth: panelRect.width,
+        naturalHeight,
+        panelChromeHeight,
+        interactiveControlHeight,
+        focusClearanceHeight,
+        offsetParent: {
+          left: offsetRect.left,
+          top: offsetRect.top,
+          clientLeft: offsetParent.clientLeft,
+          clientTop: offsetParent.clientTop,
+          scrollLeft: offsetParent.scrollLeft,
+          scrollTop: offsetParent.scrollTop,
+        },
+      });
+      setPlacement((current) => current &&
+        Math.abs(current.left - next.left) < 0.25 &&
+        Math.abs(current.top - next.top) < 0.25 &&
+        Math.abs(current.maxHeight - next.maxHeight) < 0.25 &&
+        Math.abs(current.maxWidth - next.maxWidth) < 0.25
+        ? current
+        : { left: next.left, top: next.top, maxHeight: next.maxHeight, maxWidth: next.maxWidth });
+    };
+    const scheduleMeasure = () => {
+      if (frame === 0) frame = window.requestAnimationFrame(measure);
+    };
+
+    measure();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
+    resizeObserver?.observe(panel);
+    resizeObserver?.observe(content);
+    resizeObserver?.observe(selector);
+    const header = selector.parentElement;
+    if (header) resizeObserver?.observe(header);
+
+    const mutationObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(scheduleMeasure);
+    mutationObserver?.observe(content, { childList: true, characterData: true, subtree: true, attributes: true });
+    const appRoot = selector.closest(".ts-app");
+    if (appRoot) {
+      mutationObserver?.observe(appRoot, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "hidden", "aria-expanded", "data-view"],
+      });
+    }
+    const options: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener("resize", scheduleMeasure, { passive: true });
+    window.addEventListener("scroll", scheduleMeasure, options);
+    window.visualViewport?.addEventListener("resize", scheduleMeasure, { passive: true });
+    window.visualViewport?.addEventListener("scroll", scheduleMeasure, { passive: true });
+    return () => {
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("scroll", scheduleMeasure, true);
+      window.visualViewport?.removeEventListener("resize", scheduleMeasure);
+      window.visualViewport?.removeEventListener("scroll", scheduleMeasure);
+    };
+  }, [context, open]);
 
   useEffect(() => {
     if (
@@ -232,7 +367,7 @@ export function AppearanceSelector({
   }, [closeAndReturnFocus, open]);
 
   return (
-    <div className="ts-appearance-selector">
+    <div className="ts-appearance-selector" data-appearance-context={context}>
       <button
         ref={triggerRef}
         type="button"
@@ -249,8 +384,17 @@ export function AppearanceSelector({
       </button>
 
       <section
+        ref={popoverRef}
         id={dialogId}
         className="ts-appearance-popover"
+        style={placement ? {
+          left: `${placement.left}px`,
+          top: `${placement.top}px`,
+          right: "auto",
+          bottom: "auto",
+          maxHeight: `${placement.maxHeight}px`,
+          maxWidth: `${placement.maxWidth}px`,
+        } : undefined}
         role="dialog"
         aria-modal="false"
         aria-labelledby={`${dialogId}-title`}

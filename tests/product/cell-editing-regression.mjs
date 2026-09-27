@@ -236,7 +236,7 @@ const cases = [
     // Fresh normal entry for the existing Catalog/Sales report fixture.
     await page.getByRole("button", { name: "Close project", exact: true }).click();
     await page.getByRole("button", { name: "Close without saving", exact: true }).click();
-    await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+    await page.getByRole("button", { name: "Try sales example", exact: true }).click();
     await page.getByTestId("project-ready").waitFor();
     await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
     await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();

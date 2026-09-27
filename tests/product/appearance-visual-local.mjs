@@ -115,7 +115,7 @@ async function openCanary(context, page) {
       await page.locator(".ts-command-overflow > button").click();
     }
   }
-  const canary = page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true });
+  const canary = page.getByRole("button", { name: "Try sales example", exact: true });
   try {
     await canary.waitFor({ state: "visible", timeout: 2500 });
   } catch (error) {
@@ -137,6 +137,90 @@ async function openCanary(context, page) {
   const firstCell = page.locator(".ts-grid tbody .ts-cell").first();
   await firstCell.focus();
   await page.waitForSelector(".ts-cell--focused");
+}
+
+async function waitForAppearancePanelToSettle(page, selector = ".ts-home .ts-appearance-popover") {
+  return page.evaluate(async (panelSelector) => {
+    const closeEnough = (a, b) => Math.abs(a - b) <= 0.1;
+    let previous = null;
+    let identicalFrames = 0;
+    let last = null;
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const panel = document.querySelector(panelSelector);
+      if (!panel || panel.hidden) throw new Error(`Appearance panel is not open: ${panelSelector}`);
+      const rect = panel.getBoundingClientRect();
+      const style = getComputedStyle(panel);
+      last = {
+        x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height,
+        maxWidth: style.maxWidth, maxHeight: style.maxHeight,
+      };
+      const keys = ["x", "y", "right", "bottom", "width", "height"];
+      identicalFrames = previous && keys.every((key) => closeEnough(previous[key], last[key])) &&
+        previous.maxWidth === last.maxWidth && previous.maxHeight === last.maxHeight
+        ? identicalFrames + 1
+        : 1;
+      if (identicalFrames >= 3) return last;
+      previous = last;
+    }
+    throw new Error(`Appearance panel did not settle within 30 frames: ${JSON.stringify(last)}`);
+  }, selector);
+}
+
+async function savedCopyAccessibilityNode(page, exactButtonText) {
+  const rowIndex = await page.locator(".ts-copy-item").evaluateAll((rows, name) =>
+    rows.findIndex((row) => row.querySelector(".ts-home-saved-action")?.textContent === name), exactButtonText);
+  assert.ok(rowIndex >= 0, `Home contains the exact saved action ${JSON.stringify(exactButtonText)}`);
+  const client = await page.context().newCDPSession(page);
+  try {
+    const { root } = await client.send("DOM.getDocument", { depth: -1 });
+    const { nodeId } = await client.send("DOM.querySelector", {
+      nodeId: root.nodeId,
+      selector: `.ts-copy-item:nth-child(${rowIndex + 1}) .ts-home-saved-action`,
+    });
+    assert.ok(nodeId, `Chromium can resolve the exact saved action ${JSON.stringify(exactButtonText)}`);
+    const { node } = await client.send("DOM.describeNode", { nodeId });
+    const { nodes } = await client.send("Accessibility.getPartialAXTree", {
+      backendNodeId: node.backendNodeId,
+      fetchRelatives: false,
+    });
+    const accessibleNode = nodes.find((candidate) => candidate.role?.value === "button") ?? nodes[0];
+    return {
+      role: accessibleNode?.role?.value ?? null,
+      name: accessibleNode?.name?.value ?? null,
+      description: accessibleNode?.description?.value ?? null,
+    };
+  } finally {
+    await client.detach();
+  }
+}
+
+async function clickSavedCopyByLiteralName(page, name) {
+  const buttonText = `Open saved ${name}`;
+  const index = await page.locator(".ts-home-saved-action").evaluateAll((buttons, exactText) =>
+    buttons.findIndex((button) => button.textContent === exactText), buttonText);
+  assert.ok(index >= 0, `Home contains the literal saved-copy action ${JSON.stringify(buttonText)}`);
+  const button = page.locator(".ts-home-saved-action").nth(index);
+  assert.equal(await button.textContent(), buttonText, "saved-copy action retains its literal stored name");
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+}
+
+async function editFirstCellForSavedCopy(page, value) {
+  await page.locator(".ts-grid tbody tr").first().locator("td").first().dblclick();
+  const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await editor.fill(value);
+  await editor.press("Enter");
+  await page.waitForFunction((expected) =>
+    [...document.querySelectorAll(".ts-grid tbody tr:first-child .ts-cell-value")]
+      .some((cell) => cell.textContent === expected), value);
+}
+
+async function saveCopyByName(page, name) {
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save a copy" }).waitFor({ state: "detached" });
 }
 
 const colorTargets = [
@@ -254,6 +338,244 @@ async function menuViewportAndOpen(page, tag) {
   evidence(Boolean(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1),
     `${tag} Appearance popover is within viewport`, { bounds, viewport });
   return bounds;
+}
+
+async function auditNarrowedAppearanceContent(page, context) {
+  await page.setViewportSize({ width: 320, height: 800 });
+  const trigger = page.getByRole("button", { name: "Appearance", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const panel = page.locator(".ts-home .ts-appearance-popover");
+  await panel.waitFor({ state: "visible" });
+  await waitForAppearancePanelToSettle(page);
+  const scaleOneGeometry = await page.evaluate(() => {
+    const panel = document.querySelector(".ts-home .ts-appearance-popover");
+    const content = panel.querySelector(".ts-appearance-content");
+    const header = panel.querySelector(".ts-appearance-popover__header");
+    return {
+      panel: panel.getBoundingClientRect().toJSON(),
+      content: content.getBoundingClientRect().toJSON(),
+      header: {
+        rect: header.getBoundingClientRect().toJSON(),
+        title: header.querySelector("h2").getBoundingClientRect().toJSON(),
+        close: header.querySelector(".ts-appearance-close").getBoundingClientRect().toJSON(),
+      },
+      density: [...panel.querySelectorAll(".ts-appearance-density-option")].map((label) => ({
+        control: label.getBoundingClientRect().toJSON(),
+        text: (() => { const range = document.createRange(); range.selectNodeContents(label.querySelector("span")); return range.getBoundingClientRect().toJSON(); })(),
+      })),
+    };
+  });
+  evidence(scaleOneGeometry.header.title.right <= scaleOneGeometry.header.close.left + 1 &&
+    Math.abs((scaleOneGeometry.header.title.top + scaleOneGeometry.header.title.height / 2) -
+      (scaleOneGeometry.header.close.top + scaleOneGeometry.header.close.height / 2)) <= 4,
+  "ordinary 320px Appearance header retains the same-row title and Close arrangement", scaleOneGeometry.header);
+  const session = await context.newCDPSession(page);
+  let narrowed;
+  let focusPaint = [];
+  let actions = {};
+  try {
+    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1.5 });
+    await waitForAppearancePanelToSettle(page);
+    narrowed = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const header = panel.querySelector(".ts-appearance-popover__header");
+      const heading = header.querySelector("h2");
+      const close = header.querySelector(".ts-appearance-close");
+      const rangeBounds = (node) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().toJSON(); };
+      const density = [...panel.querySelectorAll(".ts-appearance-density-option")];
+      const viewport = visualViewport;
+      return {
+        layout: { width: innerWidth, height: innerHeight },
+        viewport: { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight, scale: viewport?.scale ?? 1 },
+        pageWidth: document.documentElement.scrollWidth,
+        panel: panel.getBoundingClientRect().toJSON(),
+        header: { rect: header.getBoundingClientRect().toJSON(), title: heading.getBoundingClientRect().toJSON(), titleText: rangeBounds(heading), close: close.getBoundingClientRect().toJSON() },
+        content: { rect: content.getBoundingClientRect().toJSON(), clientWidth: content.clientWidth, scrollWidth: content.scrollWidth, clientHeight: content.clientHeight, scrollHeight: content.scrollHeight },
+        density: density.map((label) => ({
+          text: label.querySelector("span").textContent,
+          control: label.getBoundingClientRect().toJSON(), textBounds: rangeBounds(label.querySelector("span")),
+          height: label.getBoundingClientRect().height,
+        })),
+        profiles: [...panel.querySelectorAll(".ts-appearance-profile-option")].map((label) => ({
+          text: label.querySelector("span").textContent.trim(),
+          control: label.getBoundingClientRect().toJSON(), textBounds: rangeBounds(label.querySelector("span")),
+          height: label.getBoundingClientRect().height,
+        })),
+      };
+    });
+    const tag = "320x800 Home Appearance with browser-emulated visualViewport scale 1.5";
+    evidence(narrowed.viewport.width < narrowed.layout.width && narrowed.pageWidth <= narrowed.layout.width &&
+      narrowed.panel.left >= narrowed.viewport.left - 0.5 && narrowed.panel.right <= narrowed.viewport.left + narrowed.viewport.width + 0.5,
+    `${tag} narrows the panel without page or visual viewport overflow`, narrowed);
+    const title = narrowed.header.title;
+    const close = narrowed.header.close;
+    evidence(title.right <= close.left + 1 || close.right <= title.left + 1 ||
+      title.bottom <= close.top + 1 || close.bottom <= title.top + 1,
+    `${tag} wraps Appearance and Close without overlap`, narrowed.header);
+    evidence(narrowed.density.length === 2 &&
+      Math.abs(narrowed.density[0].control.width - narrowed.density[1].control.width) <= 1 &&
+      narrowed.density.every((item) => item.textBounds.left >= item.control.left &&
+        item.textBounds.right <= item.control.right + 0.5 && item.textBounds.bottom <= item.control.bottom + 0.5 && item.height >= 36),
+    `${tag} keeps equal Density columns and complete naturally wrapped labels`, narrowed.density);
+    evidence(narrowed.profiles.length === 3 && narrowed.profiles.every((profile) =>
+      profile.textBounds.left >= profile.control.left && profile.textBounds.right <= profile.control.right + 0.5 &&
+      profile.textBounds.bottom <= profile.control.bottom + 0.5 && profile.height >= 40),
+    `${tag} wraps each of the three complete profile labels inside its control`, narrowed.profiles);
+
+    const readFocusPaint = async (name, advance = true) => {
+      if (advance) await page.keyboard.press("Tab");
+      const observed = await page.evaluate(() => {
+        const active = document.activeElement;
+        const target = active.closest(".ts-appearance-profile-option, .ts-appearance-density-option, button") ?? active;
+        const panel = document.querySelector(".ts-home .ts-appearance-popover");
+        const content = target.closest(".ts-appearance-popover__header")
+          ? panel
+          : panel.querySelector(".ts-appearance-content");
+        const control = target.getBoundingClientRect();
+        const clip = content.getBoundingClientRect();
+        const style = getComputedStyle(target);
+        const gutter = (Number.parseFloat(style.outlineWidth) || 0) + (Number.parseFloat(style.outlineOffset) || 0);
+        return {
+          tag: active.tagName, className: active.className, value: active.value ?? null,
+          targetTag: target.tagName, targetClassName: target.className,
+          text: target.textContent?.trim() ?? "",
+          focusVisible: active.matches(":focus-visible") || target.matches(":focus-within, :focus-visible"),
+          outlineWidth: style.outlineWidth, outlineOffset: style.outlineOffset,
+          paint: { left: control.left - gutter, top: control.top - gutter, right: control.right + gutter, bottom: control.bottom + gutter },
+          clip: { left: clip.left, top: clip.top, right: clip.right, bottom: clip.bottom },
+          control: control.toJSON(),
+        };
+      });
+      const reachesExpectedControl = {
+        Close: (control) => control.targetClassName.includes("ts-appearance-close"),
+        "profile choice": (control) => control.tag === "INPUT" && control.value === "tachiko" && control.targetClassName.includes("ts-appearance-profile-option"),
+        "Familiar Spreadsheet profile": (control) => control.tag === "INPUT" && control.value === "familiar-spreadsheet" && control.targetClassName.includes("ts-appearance-profile-option"),
+        "Minimal-Focus profile": (control) => control.tag === "INPUT" && control.value === "minimal-focus" && control.targetClassName.includes("ts-appearance-profile-option"),
+        "Import action": (control) => control.tag === "BUTTON" && control.text.includes("Import profile"),
+        "Export action": (control) => control.tag === "BUTTON" && control.text.includes("Export selected profile"),
+        "Compact density": (control) => control.tag === "INPUT" && control.value === "compact" && control.targetClassName.includes("ts-appearance-density-option"),
+        "Comfortable density": (control) => control.tag === "INPUT" && control.value === "comfortable" && control.targetClassName.includes("ts-appearance-density-option"),
+        "Apply profile": (control) => control.tag === "BUTTON" && control.text.includes("Apply profile"),
+        Cancel: (control) => control.tag === "BUTTON" && control.text === "Cancel",
+      }[name](observed);
+      const inside = observed.paint.left >= observed.clip.left - 1 && observed.paint.right <= observed.clip.right + 1 &&
+        observed.paint.top >= observed.clip.top - 1 && observed.paint.bottom <= observed.clip.bottom + 1;
+      evidence(reachesExpectedControl && observed.focusVisible && observed.outlineWidth === "3px" && observed.outlineOffset === "2px" && inside,
+        `${tag} preserves ${name} keyboard focus paint inside the scrollport`, observed);
+      focusPaint.push({ name, ...observed });
+      return observed;
+    };
+    await readFocusPaint("Close");
+    await readFocusPaint("profile choice");
+    await page.keyboard.press("ArrowDown");
+    await readFocusPaint("Familiar Spreadsheet profile", false);
+    await page.keyboard.press("ArrowDown");
+    await readFocusPaint("Minimal-Focus profile", false);
+    await readFocusPaint("Import action");
+    await readFocusPaint("Export action");
+    await readFocusPaint("Compact density");
+    await page.keyboard.press("ArrowRight");
+    await readFocusPaint("Comfortable density", false);
+
+    const readButtonText = async (button, name) => {
+      await button.evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }));
+      await button.focus();
+      const measured = await button.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const content = document.querySelector(".ts-home .ts-appearance-content").getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return { control: rect.toJSON(), text: range.getBoundingClientRect().toJSON(), content: content.toJSON() };
+      });
+      evidence(measured.control.left >= measured.content.left - 1 && measured.control.right <= measured.content.right + 1 &&
+        measured.text.left >= measured.control.left && measured.text.right <= measured.control.right + 0.5 && measured.text.height > 0,
+      `${tag} keeps ${name} text within its action`, measured);
+      return measured;
+    };
+    const importExport = page.locator(".ts-appearance-custom-actions button");
+    actions.import = await readButtonText(importExport.nth(0), "Import");
+    actions.export = await readButtonText(importExport.nth(1), "Export");
+    const artifactDir = process.env.SHEET_CONTROL_ARTIFACT_DIR;
+    if (artifactDir) await page.screenshot({ path: path.join(artifactDir, "appearance-visual-viewport-scale-1.5.png") });
+
+    await page.locator(".ts-appearance-file-input").setInputFiles({
+      name: "narrow-visual-profile.tachiko-profile.json",
+      mimeType: "application/json",
+      buffer: safeImportedManifestBytes,
+    });
+    const candidateActions = page.locator(".ts-appearance-candidate__actions button");
+    await candidateActions.first().waitFor({ state: "visible" });
+    await waitForAppearancePanelToSettle(page);
+    await readFocusPaint("Apply profile");
+    await readFocusPaint("Cancel");
+    actions.apply = await readButtonText(candidateActions.nth(0), "Apply profile");
+    actions.cancel = await readButtonText(candidateActions.nth(1), "Cancel");
+    await candidateActions.nth(1).click();
+    await page.locator(".ts-appearance-candidate").waitFor({ state: "detached" });
+    await waitForAppearancePanelToSettle(page);
+  } finally {
+    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+    await waitForAppearancePanelToSettle(page);
+    const restored = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const density = [...panel.querySelectorAll(".ts-appearance-density-option")].map((label) => label.getBoundingClientRect().toJSON());
+      return { viewportWidth: visualViewport?.width ?? innerWidth, scale: visualViewport?.scale ?? 1, density };
+    });
+    const expectedWidths = scaleOneGeometry.density.map(({ control }) => control.width);
+    evidence(Math.abs(restored.viewportWidth - 320) <= 0.5 && Math.abs(restored.scale - 1) <= 0.01 &&
+      restored.density.every((item, index) => Math.abs(item.width - expectedWidths[index]) <= 0.5) &&
+      Math.abs(restored.density[0].width - restored.density[1].width) <= 1,
+    "Home Appearance restores scale-1 equal Density geometry after visual viewport widening", { scaleOneGeometry, restored });
+    observations.push({ homeAppearanceNarrowVisualViewport: { scaleOneGeometry, narrowed, focusPaint, actions, restored } });
+    await session.detach();
+  }
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  await waitForAppearancePanelToSettle(page);
+  const widerSession = await context.newCDPSession(page);
+  try {
+    await widerSession.send("Emulation.setPageScaleFactor", { pageScaleFactor: 3 });
+    await waitForAppearancePanelToSettle(page);
+    const widerNarrowed = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const header = panel.querySelector(".ts-appearance-popover__header");
+      const title = header.querySelector("h2").getBoundingClientRect();
+      const close = header.querySelector(".ts-appearance-close").getBoundingClientRect();
+      const labels = [...panel.querySelectorAll(".ts-appearance-density-option")];
+      const rangeBounds = (node) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().toJSON(); };
+      const viewport = visualViewport;
+      return {
+        layout: { width: innerWidth, height: innerHeight },
+        viewport: { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight, scale: viewport?.scale ?? 1 },
+        pageWidth: document.documentElement.scrollWidth,
+        panel: panel.getBoundingClientRect().toJSON(), content: content.getBoundingClientRect().toJSON(),
+        header: { title: title.toJSON(), close: close.toJSON() },
+        density: labels.map((label) => ({ control: label.getBoundingClientRect().toJSON(), text: rangeBounds(label.querySelector("span")), height: label.getBoundingClientRect().height })),
+      };
+    });
+    const label = "600px Home layout narrowed by browser-emulated visualViewport scale 3";
+    evidence(widerNarrowed.layout.width === 600 && widerNarrowed.viewport.width < widerNarrowed.layout.width &&
+      widerNarrowed.panel.left >= widerNarrowed.viewport.left - 0.5 &&
+      widerNarrowed.panel.right <= widerNarrowed.viewport.left + widerNarrowed.viewport.width + 0.5 &&
+      widerNarrowed.pageWidth <= widerNarrowed.layout.width,
+    `${label} remains horizontally contained`, widerNarrowed);
+    evidence(widerNarrowed.header.title.right <= widerNarrowed.header.close.left + 1 ||
+      widerNarrowed.header.title.bottom <= widerNarrowed.header.close.top + 1 ||
+      widerNarrowed.header.close.bottom <= widerNarrowed.header.title.top + 1,
+    `${label} keeps the header title and Close separate`, widerNarrowed.header);
+    evidence(widerNarrowed.density.length === 2 &&
+      Math.abs(widerNarrowed.density[0].control.width - widerNarrowed.density[1].control.width) <= 1 &&
+      widerNarrowed.density.every((item) => item.text.left >= item.control.left && item.text.right <= item.control.right + 0.5 && item.height >= 36),
+    `${label} retains equal columns and wrapped Density text`, widerNarrowed.density);
+    observations.push({ homeAppearanceWiderVisualViewport: widerNarrowed });
+  } finally {
+    await widerSession.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+    await waitForAppearancePanelToSettle(page);
+    await widerSession.detach();
+  }
 }
 
 async function screenshotPixel(page, x, y) {
@@ -575,8 +897,357 @@ async function auditTallGridLayoutOnly(page) {
   });
 }
 
-async function auditHomeViewportBounds(page) {
+async function auditHomeViewportBounds(page, browser) {
+  const emptyContext = await browser.newContext({ viewport: { width: 1512, height: 982 }, deviceScaleFactor: 1 });
+  try {
+    const emptyPage = await emptyContext.newPage();
+    await openApp(emptyContext, emptyPage);
+    await emptyPage.getByTestId("project-ready").waitFor();
+    await emptyPage.getByRole("button", { name: "Close project", exact: true }).click();
+    await emptyPage.locator('.ts-app[data-view="home"]').waitFor();
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(emptyPage, profile.id, density.id);
+        await emptyPage.keyboard.press("Escape");
+        for (const [width, height] of [[1512, 982], [768, 640], [600, 640], [320, 640]]) {
+          await emptyPage.setViewportSize({ width, height });
+          const layout = await emptyPage.evaluate(() => {
+            const home = document.querySelector(".ts-home");
+            const homeRect = home.getBoundingClientRect();
+            const headerRect = document.querySelector(".ts-home-head").getBoundingClientRect();
+            const visibleIntro = [...document.querySelectorAll(".ts-home-intro")].find((node) => getComputedStyle(node).display !== "none");
+            const introRect = visibleIntro.getBoundingClientRect();
+            const actions = [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")]
+              .map((node) => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, right: rect.right, width: rect.width, height: rect.height }; });
+            const importAction = document.querySelector(".ts-home-import-action").getBoundingClientRect();
+            const importDesktop = document.querySelector(".ts-home-import-desktop-help");
+            const importCompact = document.querySelector(".ts-home-import-compact-help");
+            const openDesktop = document.querySelector(".ts-home-open-desktop-help");
+            const openCompact = document.querySelector(".ts-home-open-compact-help");
+            const isVisible = (node) => getComputedStyle(node).display !== "none";
+            const help = isVisible(importCompact) ? importCompact : importDesktop;
+            const helpRect = help.getBoundingClientRect();
+            const actionRect = document.querySelector(".ts-home-import-action").getBoundingClientRect();
+            return {
+              pageWidth: document.documentElement.scrollWidth,
+              empty: document.querySelectorAll(".ts-copy-item").length === 0,
+              savedMessage: document.querySelector(".ts-empty")?.textContent?.trim() ?? null,
+              home: { x: homeRect.x, y: homeRect.y, width: homeRect.width, height: homeRect.height },
+              header: { x: headerRect.x, contentX: document.querySelector(".ts-brand").getBoundingClientRect().x, y: headerRect.y },
+              intro: { x: introRect.x, contentX: introRect.x + Number.parseFloat(getComputedStyle(visibleIntro).paddingLeft), y: introRect.y, width: introRect.width, right: introRect.right },
+              introText: [...document.querySelectorAll(".ts-home-intro")]
+                .filter(isVisible).map((node) => node.textContent.trim()),
+              openBorderTop: getComputedStyle(document.querySelector('[aria-label="Open project"]')).borderTopStyle,
+              openActionGap: Number.parseFloat(getComputedStyle(document.querySelector(".ts-home-open-actions")).rowGap),
+              actions,
+              openHelper: [openDesktop, openCompact].find(isVisible)?.textContent?.trim() ?? null,
+              visibleOpenHelpers: Number(isVisible(openDesktop)) + Number(isVisible(openCompact)),
+              importAction: { x: importAction.x, y: importAction.y, right: importAction.right, width: importAction.width, height: importAction.height },
+              importHelper: { text: help.textContent.trim(), y: helpRect.y, visibleCopies: Number(isVisible(importDesktop)) + Number(isVisible(importCompact)) },
+              importHeadingGap: actionRect.top - document.querySelector('[aria-label="Import spreadsheet"] .ts-h2').getBoundingClientRect().bottom,
+              importChooserBeforeHelper: actionRect.bottom <= helpRect.y + 1,
+              imports: document.querySelectorAll(".ts-home-import-action input[type=file]").length,
+              folders: document.querySelectorAll(".ts-home-open-actions input[type=file]").length,
+              appearance: document.querySelectorAll(".ts-home-head .ts-appearance-trigger").length,
+            };
+          });
+          assert.equal(layout.empty, true, `${width}px ${profile.id}/${density.id} observes empty Home`);
+          assert.equal(layout.savedMessage, "No saved copies yet.");
+          assert.ok(layout.pageWidth <= width, `${width}px ${profile.id}/${density.id} empty Home has no horizontal overflow: ${JSON.stringify(layout)}`);
+          assert.equal(layout.visibleOpenHelpers, 1, "one responsive Open helper is visible and exposed at a time");
+          assert.equal(layout.introText.length, 1, "one responsive Home intro is visible and exposed at a time");
+          if (width < 600) {
+            assert.deepEqual(layout.introText, ["Open a local project or a saved copy."]);
+            assert.equal(layout.openHelper, "The source folder stays unchanged.");
+          } else {
+            assert.deepEqual(layout.introText, ["Open a project folder, or reopen a copy saved in this browser profile."]);
+            assert.equal(layout.openHelper, "Choose a local project folder. Its source stays unchanged.");
+          }
+          assert.equal(layout.importHelper.text, "Review the source and column types before importing.");
+          assert.equal(layout.importHelper.visibleCopies, 1, "one responsive Import helper is visible and exposed at a time");
+          assert.equal(layout.imports, 1, "empty Home retains one real single-file import input");
+          assert.equal(layout.folders, 1, "empty Home retains one real directory input");
+          assert.equal(layout.appearance, 1, "empty Home keeps Appearance available");
+          assert.ok(layout.actions.every((action) => action.x >= 0 && action.right <= width + 1),
+            `${width}px ${profile.id}/${density.id} Open actions remain inside the viewport`, layout);
+          assert.ok(layout.importAction.x >= 0 && layout.importAction.right <= width + 1,
+            `${width}px ${profile.id}/${density.id} Import action remains inside the viewport`, layout);
+          if (width < 600) {
+            assert.ok(Math.abs(layout.home.y - 28) <= 1, "compact Home keeps its 28px top origin", layout);
+            assert.equal(layout.header.contentX, 32, "compact Home header content uses the 16px inner inset");
+            assert.equal(layout.intro.contentX, 32, "compact Home intro content uses the 16px inner inset");
+            assert.equal(layout.openBorderTop, "none", "only compact Open loses its top separator");
+            assert.equal(layout.openActionGap, 16, "compact Home Open action row has the approved 16px gap");
+            for (let index = 1; index < layout.actions.length; index += 1) {
+              assert.equal(layout.actions[index].y - layout.actions[index - 1].y - layout.actions[index - 1].height, 16,
+                "adjacent compact Open actions are separated by 16px");
+            }
+            assert.ok(layout.actions.every((action) => Math.abs(action.width - layout.home.width) <= 1),
+              "compact Open actions fill the Home content width", layout);
+            assert.equal(layout.importChooserBeforeHelper, true, "compact Import chooser precedes helper in visual and DOM order");
+            assert.equal(layout.importHeadingGap, 20, "compact Import chooser follows its heading with the approved gap");
+            assert.ok(layout.importHelper.y >= layout.importAction.y + layout.importAction.height + 15,
+              "compact Import helper follows the chooser with the approved gap", layout);
+            if (density.id === "comfortable") assert.ok(layout.actions.every(({ height }) => height >= 36));
+          } else {
+            assert.equal(layout.openBorderTop, "solid", "desktop retains the approved Open divider");
+            assert.equal(layout.openActionGap, 12, "desktop retains its 12px Open action gap");
+            assert.ok(layout.importHelper.y < layout.importAction.y,
+              "desktop retains its approved helper-before-chooser presentation order", layout);
+          }
+          let appearancePopover = null;
+          if (width === 320) {
+            await emptyPage.getByRole("button", { name: "Appearance", exact: true }).click();
+            appearancePopover = await emptyPage.evaluate(() => {
+              const panel = document.querySelector(".ts-home .ts-appearance-popover");
+              const rect = panel.getBoundingClientRect();
+              return { x: rect.x, right: rect.right, width: rect.width, pageWidth: document.documentElement.scrollWidth,
+                clientWidth: panel.clientWidth, scrollWidth: panel.scrollWidth };
+            });
+            assert.ok(appearancePopover.x >= 0 && appearancePopover.right <= width + 1 && appearancePopover.pageWidth <= width,
+              `320px ${profile.id}/${density.id} Home Appearance popover remains inside the viewport`, appearancePopover);
+            assert.ok(appearancePopover.scrollWidth <= appearancePopover.clientWidth + 1,
+              `320px ${profile.id}/${density.id} Home Appearance content remains usable within its panel`, appearancePopover);
+            await emptyPage.keyboard.press("Escape");
+          }
+          observations.push({ homeEmptyViewport: `${width}x${height} ${profile.id}/${density.id}`, ...layout, ...(appearancePopover ? { appearancePopover } : {}) });
+        }
+      }
+    }
+
+    const popoverWidths = [320, 360, 375, 380, 381, 383, 384, 390, 414, 480, 599];
+    for (const profile of profiles) {
+      for (const density of densities) {
+        await choose(emptyPage, profile.id, density.id);
+        for (const width of popoverWidths) {
+          for (const height of [640, 450]) {
+            await emptyPage.setViewportSize({ width, height });
+            const trigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
+            if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+            const panel = emptyPage.locator(".ts-home .ts-appearance-popover");
+            await panel.waitFor({ state: "visible" });
+            await waitForAppearancePanelToSettle(emptyPage);
+            const geometry = await emptyPage.evaluate(() => {
+              const homeHead = document.querySelector(".ts-home-head");
+              const panel = document.querySelector(".ts-home .ts-appearance-popover");
+              const content = panel.querySelector(".ts-appearance-content");
+              const headRect = homeHead.getBoundingClientRect();
+              const rect = panel.getBoundingClientRect();
+              const style = getComputedStyle(panel);
+              return {
+                viewportWidth: innerWidth,
+                viewportHeight: innerHeight,
+                pageWidth: document.documentElement.scrollWidth,
+                panel: { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+                header: { x: headRect.x, y: headRect.y, right: headRect.right, bottom: headRect.bottom },
+                maxHeight: style.maxHeight,
+                clientWidth: panel.clientWidth,
+                scrollWidth: panel.scrollWidth,
+                contentClientHeight: content.clientHeight,
+                contentScrollHeight: content.scrollHeight,
+                contentOverflowY: getComputedStyle(content).overflowY,
+              };
+            });
+            const label = `${width}x${height} Home Appearance ${profile.id}/${density.id}`;
+            evidence(geometry.pageWidth <= width && geometry.panel.x >= 0 && geometry.panel.right <= width + 1,
+              `${label} has no horizontal page or panel overflow`, geometry);
+            evidence(geometry.panel.y >= geometry.header.bottom && geometry.panel.bottom <= height + 1,
+              `${label} opens below the full Home header and stays within the viewport`, geometry);
+            if (width === 390) {
+              evidence(Math.abs(geometry.panel.x - geometry.header.x - 16) <= 1,
+                `${label} uses the compact Home header left edge plus the approved 16px inset`, geometry);
+            }
+            evidence(geometry.scrollWidth <= geometry.clientWidth + 1,
+              `${label} keeps all panel content within its available width`, geometry);
+            evidence((geometry.contentOverflowY === "auto" || geometry.contentOverflowY === "scroll") &&
+              geometry.contentScrollHeight > geometry.contentClientHeight,
+            `${label} keeps Appearance content internally scrollable`, geometry);
+
+            const reachableControls = await emptyPage.evaluate(() => {
+              const panel = document.querySelector(".ts-home .ts-appearance-popover");
+              const content = panel.querySelector(".ts-appearance-content");
+              const targets = [
+                ["density", ".ts-appearance-density-option"],
+                ["import", ".ts-appearance-custom-actions button:first-child"],
+                ["export", ".ts-appearance-custom-actions button:last-child"],
+              ];
+              const reachable = targets.map(([name, selector]) => {
+                const target = content.querySelector(selector);
+                target.scrollIntoView({ block: "nearest", inline: "nearest" });
+                const targetRect = target.getBoundingClientRect();
+                const contentRect = content.getBoundingClientRect();
+                return { name, top: targetRect.top, bottom: targetRect.bottom, contentTop: contentRect.top, contentBottom: contentRect.bottom,
+                  inside: targetRect.bottom > contentRect.top && targetRect.top < contentRect.bottom };
+              });
+              const close = panel.querySelector(".ts-appearance-close").getBoundingClientRect();
+              const panelRect = panel.getBoundingClientRect();
+              return {
+                reachable,
+                closeInside: close.top >= panelRect.top && close.bottom <= panelRect.bottom,
+                scrollTop: content.scrollTop,
+              };
+            });
+            evidence(reachableControls.reachable.every(({ inside }) => inside) && reachableControls.closeInside,
+              `${label} can reach Density, Import, Export and Close controls`, reachableControls);
+            await emptyPage.keyboard.press("Escape");
+            await emptyPage.waitForFunction(() => document.querySelector(".ts-home .ts-appearance-trigger")?.getAttribute("aria-expanded") === "false");
+            const focusReturned = await trigger.evaluate((button) => document.activeElement === button && button.getAttribute("aria-expanded") === "false");
+            evidence(focusReturned, `${label} Escape closes and returns focus to Appearance`);
+            observations.push({ homeAppearancePopover: label, ...geometry, reachableControls });
+          }
+        }
+      }
+    }
+
+    await choose(emptyPage, "tachiko", "compact");
+    await emptyPage.keyboard.press("Escape");
+    await auditNarrowedAppearanceContent(emptyPage, emptyContext);
+    await emptyPage.setViewportSize({ width: 320, height: 200 });
+    const shortTrigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
+    if (await shortTrigger.getAttribute("aria-expanded") !== "true") await shortTrigger.click();
+    const shortPanel = emptyPage.locator(".ts-home .ts-appearance-popover");
+    await shortPanel.waitFor({ state: "visible" });
+    await waitForAppearancePanelToSettle(emptyPage);
+    const shortAppearanceGeometry = await emptyPage.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const header = document.querySelector(".ts-home-head");
+      const panelRect = panel.getBoundingClientRect();
+      const headerRect = header.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const firstOption = panel.querySelector(".ts-appearance-profile-option");
+      const firstOptionRect = firstOption.getBoundingClientRect();
+      const appearanceTriggerRect = panel.parentElement.querySelector(".ts-appearance-trigger").getBoundingClientRect();
+      const panelStyle = getComputedStyle(panel);
+      const selectorStyle = getComputedStyle(panel.parentElement);
+      const px = (value) => Number.parseFloat(value) || 0;
+      const measuredChrome = panel.querySelector(".ts-appearance-popover__header").getBoundingClientRect().height +
+        px(panelStyle.paddingTop) + px(panelStyle.paddingBottom) + px(panelStyle.borderTopWidth) +
+        px(panelStyle.borderBottomWidth) + px(panelStyle.rowGap);
+      const interactiveHeight = firstOptionRect.height;
+      const focusClearance = 2 * (px(selectorStyle.getPropertyValue("--ts-appearance-focus-width")) +
+        px(selectorStyle.getPropertyValue("--ts-appearance-focus-offset")));
+      const viewport = window.visualViewport;
+      const preferredBelow = headerRect.bottom + 8;
+      const usableTop = (viewport?.offsetTop ?? 0) + 12;
+      const usableBottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight) - 12;
+      const belowHeight = Math.max(0, usableBottom - preferredBelow);
+      const aboveHeight = Math.max(0, appearanceTriggerRect.top - 8 - usableTop);
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        visualViewport: { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight },
+        page: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+        panel: { x: panelRect.x, y: panelRect.y, right: panelRect.right, bottom: panelRect.bottom, width: panelRect.width, height: panelRect.height, clientHeight: panel.clientHeight },
+        header: { bottom: headerRect.bottom },
+        usableMinimum: { chrome: measuredChrome, interactiveControl: interactiveHeight, focusClearance,
+          total: measuredChrome + interactiveHeight + focusClearance, belowSide: belowHeight, aboveSide: aboveHeight },
+        content: { top: contentRect.top, bottom: contentRect.bottom, clientHeight: content.clientHeight, scrollHeight: content.scrollHeight, overflowY: getComputedStyle(content).overflowY },
+      };
+    });
+    evidence(shortAppearanceGeometry.page.width <= 320 && shortAppearanceGeometry.panel.x >= 0 &&
+      shortAppearanceGeometry.panel.right <= 321 && shortAppearanceGeometry.panel.y >= 0 &&
+      shortAppearanceGeometry.panel.bottom <= 201,
+    "320x200 Home Appearance uses the contained short-viewport fallback", shortAppearanceGeometry);
+    evidence(shortAppearanceGeometry.content.scrollHeight > shortAppearanceGeometry.content.clientHeight &&
+      ["auto", "scroll"].includes(shortAppearanceGeometry.content.overflowY),
+    "320x200 Home Appearance preserves internal scrolling for short-viewport content", shortAppearanceGeometry);
+    evidence(shortAppearanceGeometry.usableMinimum.belowSide < shortAppearanceGeometry.usableMinimum.total &&
+      shortAppearanceGeometry.usableMinimum.aboveSide < shortAppearanceGeometry.usableMinimum.total &&
+      shortAppearanceGeometry.panel.y === shortAppearanceGeometry.visualViewport.top + 12 &&
+      shortAppearanceGeometry.panel.height <= shortAppearanceGeometry.visualViewport.height - 24,
+    "320x200 Home Appearance clamps to the inset visual viewport when neither side fits measured usable height",
+    shortAppearanceGeometry);
+    const shortReachability = await emptyPage.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const names = [".ts-appearance-density-option", ".ts-appearance-custom-actions button:first-child", ".ts-appearance-custom-actions button:last-child"];
+      const controls = names.map((selector) => {
+        const target = content.querySelector(selector);
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const rect = target.getBoundingClientRect();
+        const visible = content.getBoundingClientRect();
+        return { selector, top: rect.top, bottom: rect.bottom, contentTop: visible.top, contentBottom: visible.bottom,
+          reachable: rect.bottom > visible.top && rect.top < visible.bottom };
+      });
+      const close = panel.querySelector(".ts-appearance-close").getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      return { controls, closeReachable: close.top >= panelRect.top && close.bottom <= panelRect.bottom };
+    });
+    evidence(shortReachability.controls.every(({ reachable }) => reachable) && shortReachability.closeReachable,
+      "320x200 Home Appearance keeps Density, Import, Export and Close reachable", shortReachability);
+    await emptyPage.keyboard.press("Escape");
+    await emptyPage.waitForFunction(() => document.querySelector(".ts-home .ts-appearance-trigger")?.getAttribute("aria-expanded") === "false");
+    observations.push({ homeAppearanceShortViewport: { geometry: shortAppearanceGeometry, reachability: shortReachability } });
+
+    await emptyPage.setViewportSize({ width: 320, height: 450 });
+    const reactivityTrigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
+    await reactivityTrigger.click();
+    const measurePopover = () => emptyPage.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const rect = panel.getBoundingClientRect();
+      return {
+        x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+        width: rect.width, height: rect.height,
+        naturalContentHeight: content.scrollHeight,
+        contentHeight: content.clientHeight,
+        contentScrollTop: content.scrollTop,
+        viewportWidth: innerWidth, viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+      };
+    });
+    const naturalBeforeImport = await measurePopover();
+    await emptyPage.locator(".ts-appearance-file-input").setInputFiles({
+      name: "placement-growth.tachiko-profile.json",
+      mimeType: "application/json",
+      buffer: safeImportedManifestBytes,
+    });
+    await emptyPage.locator(".ts-appearance-candidate").getByRole("button", { name: "Cancel", exact: true }).waitFor();
+    await waitForAppearancePanelToSettle(emptyPage);
+    const naturalAfterImport = await measurePopover();
+    evidence(naturalAfterImport.naturalContentHeight > naturalBeforeImport.naturalContentHeight &&
+      naturalAfterImport.x >= 0 && naturalAfterImport.right <= 320 && naturalAfterImport.y >= 0 && naturalAfterImport.bottom <= 450,
+    "Home Appearance placement remeasures actual imported-profile content growth while remaining reachable", {
+      before: naturalBeforeImport, after: naturalAfterImport,
+    });
+    await emptyPage.locator(".ts-appearance-candidate").getByRole("button", { name: "Cancel", exact: true }).click();
+    await emptyPage.locator(".ts-appearance-candidate").waitFor({ state: "detached" });
+    await waitForAppearancePanelToSettle(emptyPage);
+    const naturalAfterCancel = await measurePopover();
+    evidence(naturalAfterCancel.naturalContentHeight <= naturalAfterImport.naturalContentHeight &&
+      naturalAfterCancel.x >= 0 && naturalAfterCancel.right <= 320 && naturalAfterCancel.bottom <= 450,
+    "Home Appearance placement releases the added content height after candidate cancellation", naturalAfterCancel);
+
+    await emptyPage.locator(".ts-appearance-file-input").setInputFiles({
+      name: "rejected-profile.json",
+      mimeType: "application/json",
+      buffer: Buffer.from("{ invalid JSON", "utf8"),
+    });
+    await emptyPage.locator('.ts-appearance-notice--rejected[role="alert"]').waitFor();
+    await waitForAppearancePanelToSettle(emptyPage);
+    const rejectedPlacement = await measurePopover();
+    evidence(rejectedPlacement.x >= 0 && rejectedPlacement.right <= 320 && rejectedPlacement.y >= 0 && rejectedPlacement.bottom <= 450,
+      "Home Appearance stays within the viewport after real profile-file rejection status grows", rejectedPlacement);
+    await emptyPage.getByRole("button", { name: "Export selected profile…", exact: true }).click();
+    await emptyPage.getByText(/^Download requested:/).waitFor();
+    await waitForAppearancePanelToSettle(emptyPage);
+    const exportFeedbackPlacement = await measurePopover();
+    evidence(exportFeedbackPlacement.x >= 0 && exportFeedbackPlacement.right <= 320 &&
+      exportFeedbackPlacement.y >= 0 && exportFeedbackPlacement.bottom <= 450,
+    "Home Appearance remains contained after actual export feedback is added", exportFeedbackPlacement);
+    await emptyPage.keyboard.press("Escape");
+    observations.push({ homeAppearanceReactivity: {
+      naturalBeforeImport, naturalAfterImport, naturalAfterCancel, rejectedPlacement, exportFeedbackPlacement,
+    } });
+  } finally {
+    await emptyContext.close();
+  }
+
+  await choose(page, "tachiko", "compact");
   await page.setViewportSize({ width: 1512, height: 982 });
+  const canaryRowsBeforeSave = await page.locator(".ts-grid tbody").innerText();
+  const unbrokenName = "home-unbroken-" + "x".repeat(112);
+  const cjkName = "Home 中文名稱保存測試" + "界".repeat(72);
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Viewport home probe");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
@@ -584,10 +1255,274 @@ async function auditHomeViewportBounds(page) {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
 
-  const savedCopy = page.getByRole("button", { name: "Open saved Viewport home probe", exact: true });
-  for (const [width, height] of [[320, 640], [1512, 982]]) {
-    await page.setViewportSize({ width, height });
-    await page.evaluate(() => window.scrollTo(0, 0));
+  const ordinaryHomeGeometry = await page.evaluate(() => ({
+    surface: getComputedStyle(document.querySelector('.ts-app[data-view="home"]')).backgroundColor,
+    actions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
+      const rect = action.getBoundingClientRect();
+      return [rect.x, rect.y, rect.width];
+    }),
+    lines: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => ({
+      top: section.getBoundingClientRect().top,
+      bottom: section.getBoundingClientRect().bottom,
+    })),
+    import: (() => {
+      const rect = document.querySelector(".ts-home-import-action").getBoundingClientRect();
+      return [rect.x, rect.y, rect.width];
+    })(),
+    saved: (() => {
+      const rect = document.querySelector(".ts-copy-item .ts-button").getBoundingClientRect();
+      return [rect.x, rect.y, rect.width];
+    })(),
+    metadataX: document.querySelector(".ts-copy-meta").getBoundingClientRect().x,
+  }));
+  assert.equal(ordinaryHomeGeometry.surface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
+  assert.deepEqual(ordinaryHomeGeometry.actions, [[32, 220, 184], [228, 220, 128], [368, 220, 224]]);
+  assert.deepEqual(ordinaryHomeGeometry.lines.map(({ top }) => top), [144, 344, 552]);
+  assert.deepEqual(ordinaryHomeGeometry.import, [32, 468, 196]);
+  assert.deepEqual(ordinaryHomeGeometry.saved, [32, 684, 288]);
+  assert.equal(ordinaryHomeGeometry.metadataX, 352);
+  assert.equal(ordinaryHomeGeometry.lines.at(-1).bottom - 1, 732,
+    "the single ordinary saved-copy specimen ends at the approved y=732 divider");
+  const homePresentation = await page.evaluate(() => ({
+    sections: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => section.getAttribute("aria-label")),
+    homeCards: document.querySelectorAll(".ts-home > .ts-card").length,
+    appearance: document.querySelectorAll(".ts-home-head .ts-appearance-selector").length,
+    openLabel: document.querySelector(".ts-home-open-actions .ts-home-file-action")?.textContent?.trim(),
+    importLabel: document.querySelector(".ts-home-import-action")?.textContent?.trim(),
+    savedTimestamp: document.querySelector(".ts-copy-meta")?.textContent?.trim(),
+  }));
+  assert.deepEqual(homePresentation.sections, ["Open project", "Import spreadsheet", "Saved copies"]);
+  assert.equal(homePresentation.homeCards, 0, "Home tasks use the approved divider hierarchy without elevated cards");
+  assert.equal(homePresentation.appearance, 1, "Home keeps Appearance available");
+  assert.equal(homePresentation.openLabel, "Open project folder");
+  assert.equal(homePresentation.importLabel, "Choose CSV or XLSX");
+  assert.match(homePresentation.savedTimestamp, /^Saved \d+ /);
+  const folderInput = page.getByTestId("open-project");
+  await page.getByRole("button", { name: "Appearance", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  const folderFocus = await folderInput.evaluate((input) => ({
+    active: document.activeElement === input,
+    focusVisible: input.matches(":focus-visible"),
+    outlineStyle: getComputedStyle(input.parentElement).outlineStyle,
+    outlineWidth: getComputedStyle(input.parentElement).outlineWidth,
+  }));
+  assert.equal(folderFocus.active, true, "Tab reaches the real folder input after Appearance");
+  assert.equal(folderFocus.focusVisible, true, "the real folder input remains keyboard focusable");
+  assert.equal(folderFocus.outlineStyle, "solid", "the visible folder action shows keyboard focus");
+  assert.equal(folderFocus.outlineWidth, "3px");
+  const folderChooserReady = page.waitForEvent("filechooser");
+  await page.locator(".ts-home-open-actions .ts-home-file-action").click();
+  const folderChooser = await folderChooserReady;
+  assert.equal(folderChooser.isMultiple(), true, "the visible folder action opens the existing directory picker");
+  const importChooserReady = page.waitForEvent("filechooser");
+  await page.locator(".ts-home-import-action").click();
+  const importChooser = await importChooserReady;
+  assert.equal(importChooser.isMultiple(), false, "the visible import action opens the existing single-file picker");
+  const disabledReference = await page.evaluate(() => {
+    const home = document.querySelector(".ts-home");
+    const reference = document.createElement("button");
+    reference.className = "ts-button";
+    reference.disabled = true;
+    home.append(reference);
+    const style = getComputedStyle(reference);
+    const paint = { color: style.color, background: style.backgroundColor, border: style.borderTopColor, cursor: style.cursor };
+    reference.remove();
+    for (const label of document.querySelectorAll(".ts-home-file-action")) {
+      label.classList.add("ts-home-file-action--disabled");
+      label.setAttribute("aria-disabled", "true");
+      label.querySelector('input[type="file"]').disabled = true;
+    }
+    return paint;
+  });
+  for (const selector of [".ts-home-open-actions .ts-home-file-action", ".ts-home-import-action"]) {
+    const label = page.locator(selector);
+    const rect = await label.boundingBox();
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    const paint = await label.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { color: style.color, background: style.backgroundColor, border: style.borderTopColor, cursor: style.cursor };
+    });
+    assert.deepEqual(paint, disabledReference, `${selector} keeps disabled paint while hovered`);
+  }
+  await page.evaluate(() => {
+    for (const label of document.querySelectorAll(".ts-home-file-action")) {
+      label.classList.remove("ts-home-file-action--disabled");
+      label.setAttribute("aria-disabled", "false");
+      label.querySelector('input[type="file"]').disabled = false;
+    }
+  });
+  await page.getByRole("button", { name: "Open saved Viewport home probe", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), canaryRowsBeforeSave,
+    "opening the ordinary saved copy retains the original visible rows and values");
+  for (const name of [unbrokenName, cjkName]) {
+    await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+    await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
+    await page.getByRole("button", { name: "Create copy", exact: true }).click();
+    await page.getByRole("dialog", { name: "Save a copy" }).waitFor({ state: "detached" });
+  }
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  const savedNames = ["Viewport home probe", unbrokenName, cjkName];
+  for (const name of savedNames) {
+    const savedCopy = page.getByRole("button", { name: `Open saved ${name}`, exact: true });
+    await savedCopy.waitFor();
+    await savedCopy.click();
+    await page.getByTestId("project-ready").waitFor();
+    assert.equal(await page.locator(".ts-grid tbody").innerText(), canaryRowsBeforeSave,
+      `reopening saved copy ${name} retains the original visible rows and values`);
+    await page.getByRole("button", { name: "Close project", exact: true }).click();
+    await page.locator('.ts-app[data-view="home"]').waitFor();
+  }
+
+  const singleSpaceName = "Plan review";
+  const doubledSpaceName = "Plan  review";
+  await clickSavedCopyByLiteralName(page, "Viewport home probe");
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Whitespace identity first value");
+  const singleSpaceRows = await page.locator(".ts-grid tbody").innerText();
+  await saveCopyByName(page, singleSpaceName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  await clickSavedCopyByLiteralName(page, singleSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Whitespace identity second value");
+  const doubledSpaceRows = await page.locator(".ts-grid tbody").innerText();
+  assert.notEqual(doubledSpaceRows, singleSpaceRows, "distinct saved-name targets carry different actual workbook values");
+  await saveCopyByName(page, doubledSpaceName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const zeroWidthName = "Plan\u200breview";
+  await clickSavedCopyByLiteralName(page, singleSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Whitespace identity zero-width value");
+  const zeroWidthRows = await page.locator(".ts-grid tbody").innerText();
+  assert.notEqual(zeroWidthRows, singleSpaceRows, "the zero-width saved-name target carries a distinct actual workbook value");
+  await saveCopyByName(page, zeroWidthName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const noWhitespaceName = "Planreview";
+  await clickSavedCopyByLiteralName(page, "Viewport home probe");
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "No whitespace identity value");
+  const noWhitespaceRows = await page.locator(".ts-grid tbody").innerText();
+  assert.notEqual(noWhitespaceRows, zeroWidthRows,
+    "the no-whitespace and zero-width saved-name targets carry distinct actual workbook values");
+  await saveCopyByName(page, noWhitespaceName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const whitespaceIdentity = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll(".ts-home-saved-action")];
+    const read = (name) => {
+      const button = buttons.find((candidate) => candidate.textContent === `Open saved ${name}`);
+      if (!button) return null;
+      const rect = button.getBoundingClientRect();
+      const text = button.firstChild;
+      const value = text?.textContent ?? "";
+      const offset = value.indexOf(name) + "Plan".length;
+      const rangeWidth = (count) => {
+        const range = document.createRange();
+        range.setStart(text, offset);
+        range.setEnd(text, offset + count);
+        return range.getBoundingClientRect().width;
+      };
+      const computed = getComputedStyle(button);
+      return {
+        text: value,
+        whiteSpace: computed.whiteSpace,
+        rect: { x: rect.x, right: rect.right, width: rect.width, height: rect.height },
+        oneSpaceAdvance: rangeWidth(1),
+        twoSpaceAdvance: rangeWidth(2),
+      };
+    };
+    return {
+      single: read("Plan review"),
+      doubled: read("Plan  review"),
+      pageWidth: document.documentElement.scrollWidth,
+      viewportWidth: innerWidth,
+    };
+  });
+  assert.ok(whitespaceIdentity.single && whitespaceIdentity.doubled, "Home renders both whitespace-distinct saved copies");
+  assert.equal(whitespaceIdentity.single.text, "Open saved Plan review");
+  assert.equal(whitespaceIdentity.doubled.text, "Open saved Plan  review");
+  assert.equal(whitespaceIdentity.doubled.whiteSpace, "break-spaces");
+  assert.ok(whitespaceIdentity.doubled.twoSpaceAdvance >= whitespaceIdentity.doubled.oneSpaceAdvance * 1.75,
+    "two contained name spaces retain two rendered character advances", whitespaceIdentity);
+  assert.ok(whitespaceIdentity.single.rect.x >= 0 && whitespaceIdentity.doubled.rect.right <= whitespaceIdentity.viewportWidth &&
+    whitespaceIdentity.pageWidth <= whitespaceIdentity.viewportWidth,
+  "whitespace-distinct saved names stay contained on Home", whitespaceIdentity);
+  const singleSpaceAX = await savedCopyAccessibilityNode(page, "Open saved Plan review");
+  const doubledSpaceAX = await savedCopyAccessibilityNode(page, "Open saved Plan  review");
+  const noWhitespaceAX = await savedCopyAccessibilityNode(page, `Open saved ${noWhitespaceName}`);
+  const zeroWidthAX = await savedCopyAccessibilityNode(page, `Open saved ${zeroWidthName}`);
+  assert.equal(singleSpaceAX.role, "button");
+  assert.equal(doubledSpaceAX.role, "button");
+  assert.equal(singleSpaceAX.name, "Open saved Plan review");
+  assert.equal(doubledSpaceAX.name, "Open saved Plan review",
+    "the original accessible action name remains unchanged; the supplementary description distinguishes collapsed whitespace");
+  assert.ok(!singleSpaceAX.description, "ordinary single ASCII spaces add no accessible description");
+  assert.equal(doubledSpaceAX.description, "Name contains 2 consecutive spaces starting at character 5.");
+  assert.equal(zeroWidthAX.role, "button");
+  assert.equal(noWhitespaceAX.name, "Open saved Planreview");
+  assert.ok(!noWhitespaceAX.description,
+    "the visually indistinguishable name without U+200B has no supplementary description");
+  assert.equal(zeroWidthAX.description,
+    "Name contains a zero-width space (U+200B, format character) at character 5.");
+  assert.ok(!zeroWidthAX.description.includes("\u200b"), "the supplementary description never emits the raw zero-width character");
+  observations.push({ homeSavedWhitespaceIdentity: whitespaceIdentity, singleSpaceAX, doubledSpaceAX,
+    noWhitespaceAX, zeroWidthAX, singleSpaceRows, doubledSpaceRows, noWhitespaceRows, zeroWidthRows });
+
+  await clickSavedCopyByLiteralName(page, singleSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), singleSpaceRows,
+    "opening the single-space saved name targets its exact stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, doubledSpaceName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), doubledSpaceRows,
+    "opening the double-space saved name targets its different exact stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, zeroWidthName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), zeroWidthRows,
+    "opening the zero-width saved name targets its exact distinct stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, noWhitespaceName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), noWhitespaceRows,
+    "opening the no-whitespace saved name targets its exact distinct stored workbook");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  const emojiName = "Emoji 👩‍💻 ✈️";
+  await clickSavedCopyByLiteralName(page, "Viewport home probe");
+  await page.getByTestId("project-ready").waitFor();
+  await editFirstCellForSavedCopy(page, "Joined emoji identity value");
+  const emojiRows = await page.locator(".ts-grid tbody").innerText();
+  await saveCopyByName(page, emojiName);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+  await clickSavedCopyByLiteralName(page, emojiName);
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), emojiRows,
+    "the joined emoji and variation-selector name remains the exact reopen target");
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
+
+  for (const profile of profiles) {
+    for (const density of densities) {
+      await choose(page, profile.id, density.id);
+      await page.keyboard.press("Escape");
+      for (const [width, height] of [[1512, 982], [768, 640], [600, 640], [320, 640]]) {
+        await page.setViewportSize({ width, height });
+        await page.evaluate(() => window.scrollTo(0, 0));
     const layout = await page.evaluate(() => {
       const root = document.querySelector(".ts-app-root");
       const app = document.querySelector('.ts-app[data-view="home"]');
@@ -609,26 +1544,181 @@ async function auditHomeViewportBounds(page) {
         appBottom: appRect?.bottom ?? null,
         noticesTop: noticesRect?.top ?? null,
         noticesBottom: noticesRect?.bottom ?? null,
+        pageSurface: getComputedStyle(app).backgroundColor,
+        openActionsWidth: document.querySelector(".ts-home-open-actions")?.getBoundingClientRect().width ?? null,
+        openActions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
+          const rect = action.getBoundingClientRect();
+          return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        }),
+        importAction: (() => {
+          const rect = document.querySelector(".ts-home-import-action")?.getBoundingClientRect();
+          return rect ? { x: rect.x, y: rect.y, width: rect.width } : null;
+        })(),
+        sectionLines: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => ({
+          label: section.getAttribute("aria-label"),
+          top: section.getBoundingClientRect().top,
+          bottom: section.getBoundingClientRect().bottom,
+        })),
+        savedAction: (() => {
+          const action = document.querySelector(".ts-copy-item .ts-button");
+          const rect = action?.getBoundingClientRect();
+          return rect ? {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            borderColor: getComputedStyle(action).borderTopColor,
+          } : null;
+        })(),
+        savedMetadataX: document.querySelector(".ts-copy-meta")?.getBoundingClientRect().x ?? null,
+        savedRows: [...document.querySelectorAll(".ts-copy-item")].map((row) => {
+          const rowRect = row.getBoundingClientRect();
+          const action = row.querySelector(".ts-button");
+          const actionRect = action?.getBoundingClientRect();
+          const metadataRect = row.querySelector(".ts-copy-meta")?.getBoundingClientRect();
+          return {
+            name: action?.textContent?.trim() ?? null,
+            row: { x: rowRect.x, y: rowRect.y, width: rowRect.width, height: rowRect.height, right: rowRect.right, bottom: rowRect.bottom },
+            action: actionRect ? { x: actionRect.x, y: actionRect.y, width: actionRect.width, height: actionRect.height, right: actionRect.right, bottom: actionRect.bottom } : null,
+            metadata: metadataRect ? { x: metadataRect.x, y: metadataRect.y, width: metadataRect.width, height: metadataRect.height, right: metadataRect.right, bottom: metadataRect.bottom } : null,
+          };
+        }),
+        strongBorderColor: (() => {
+          const probe = document.createElement("span");
+          probe.style.borderTop = "1px solid var(--ts-line-strong)";
+          document.body.append(probe);
+          const color = getComputedStyle(probe).borderTopColor;
+          probe.remove();
+          return color;
+        })(),
       };
     });
     evidence(layout.pageWidth <= width, `${width}x${height} Home with a saved copy has no horizontal overflow`, layout);
     evidence(layout.pageHeight >= height, `${width}x${height} Home retains natural document height`, layout);
     evidence(layout.rootHeight >= layout.appHeight && layout.rootMinHeightStyle !== "0px",
       `${width}x${height} Home root expands with its content`, layout);
+    if (width === 1512 && profile.id === "tachiko" && density.id === "compact") {
+      assert.equal(layout.pageSurface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
+      assert.deepEqual(layout.openActions.map(({ x, y, width: actionWidth }) => [x, y, actionWidth]), [
+        [32, 220, 184], [228, 220, 128], [368, 220, 224],
+      ], "desktop Open actions match the approved positions and widths");
+      assert.deepEqual(layout.sectionLines.map(({ top }) => top), [144, 344, 552]);
+      assert.deepEqual(layout.importAction && [layout.importAction.x, layout.importAction.y, layout.importAction.width], [32, 468, 196]);
+      assert.deepEqual(layout.savedAction && [layout.savedAction.x, layout.savedAction.y, layout.savedAction.width], [32, 684, 288]);
+      assert.equal(layout.savedAction?.borderColor, "rgba(0, 0, 0, 0)",
+        "the saved-copy ghost action keeps its approved transparent border");
+      assert.equal(layout.savedMetadataX, 352);
+    }
+    if (width === 320) {
+      assert.ok(layout.openActions.every(({ width }) => width === layout.openActionsWidth),
+        "all three Open actions use the full available width at 320px");
+      assert.equal(layout.savedAction?.x, 16);
+      assert.equal(layout.savedAction?.width, layout.openActionsWidth,
+        "the 320px saved-copy action uses the full available width");
+      if (density.id === "comfortable") {
+        assert.ok(layout.openActions.every(({ height }) => height >= 36),
+          "Comfortable density keeps all three 320px Open actions at least 36px tall");
+        assert.ok(layout.savedAction.height >= 36,
+          "the 320px saved-copy action retains the Comfortable target height");
+      }
+      assert.equal(layout.savedAction?.borderColor, layout.strongBorderColor,
+        "the 320px saved-copy action uses the profile's shared secondary border");
+    }
+    for (const [index, saved] of layout.savedRows.entries()) {
+      assert.ok(saved.action && saved.metadata, "every accepted saved name and timestamp has a visible Home box");
+      assert.ok(saved.action.x >= 0 && saved.action.right <= width + 1 && saved.metadata.x >= 0 && saved.metadata.right <= width + 1,
+        `${width}px ${profile.id}/${density.id} saved name and timestamp stay inside the viewport`, saved);
+      if (width >= 600) {
+        assert.ok(saved.metadata.x >= saved.action.right + 31,
+          `${width}px ${profile.id}/${density.id} desktop metadata keeps the 32px gap`, saved);
+      } else {
+        assert.ok(saved.metadata.y >= saved.action.bottom + 3,
+          `${width}px ${profile.id}/${density.id} compact metadata sits below the saved action`, saved);
+      }
+      if (index > 0) assert.ok(layout.savedRows[index - 1].row.bottom <= saved.row.y + 1,
+        `${width}px ${profile.id}/${density.id} saved rows do not overlap`);
+    }
     if (layout.appBottom !== null && layout.noticesTop !== null) {
       evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,
         `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);
     }
+    const savedCopy = page.getByRole("button", { name: `Open saved ${unbrokenName}`, exact: true });
     await savedCopy.scrollIntoViewIfNeeded();
-    const homeHeld = await sampleButtonStates(page, savedCopy, `${width}x${height} Home saved-copy command`);
+    const homeHeld = await sampleButtonStates(page, savedCopy,
+      `${width}x${height} ${profile.id}/${density.id} Home saved-copy command`);
+    if (width < 600) {
+      const sharedSunken = await page.evaluate(() => {
+        const probe = document.createElement("button");
+        probe.className = "ts-button";
+        probe.style.background = "var(--ts-surface-sunken)";
+        document.querySelector(".ts-home").append(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      });
+      assert.equal(homeHeld.hover.background, sharedSunken,
+        `${width}px ${profile.id}/${density.id} saved-copy hover uses the shared sunken surface`);
+    }
     const copyRect = await savedCopy.evaluate((button) => {
       const rect = button.getBoundingClientRect();
       return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
     });
     evidence(copyRect.top >= 0 && copyRect.bottom <= height,
       `${width}x${height} saved copy action can be reached by scrolling Home`, { ...layout, copyRect });
-    observations.push({ homeViewport: `${width}x${height}`, ...layout, copyRect, heldControl: homeHeld });
+        observations.push({ homeViewport: `${width}x${height} ${profile.id}/${density.id}`, ...layout, copyRect, heldControl: homeHeld });
+      }
+    }
   }
+  await choose(page, "tachiko", "compact");
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.emulateMedia({ forcedColors: "active" });
+  const systemPaint = await page.evaluate(() => {
+    const reference = document.createElement("button");
+    reference.className = "ts-button";
+    document.querySelector(".ts-home").append(reference);
+    const expected = getComputedStyle(reference);
+    const action = document.querySelector(".ts-home-saved-action");
+    const actual = getComputedStyle(action);
+    const result = {
+      expected: { color: expected.color, background: expected.backgroundColor, border: expected.borderTopColor },
+      actual: { color: actual.color, background: actual.backgroundColor, border: actual.borderTopColor },
+    };
+    reference.remove();
+    return result;
+  });
+  assert.deepEqual(systemPaint.actual, systemPaint.expected,
+    "the saved action uses shared system foreground, surface and border roles in forced colors");
+  await page.emulateMedia({ forcedColors: "none" });
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 320, height: 450 });
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextOpenReply());
+  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("open-project").isDisabled(), true,
+    "a real unknown-open recovery state disables the folder input");
+  assert.equal(await page.locator(".ts-home-file-action").first().getAttribute("aria-disabled"), "true",
+    "a real unknown-open recovery state exposes the folder label as unavailable");
+  assert.equal(await page.getByRole("button", { name: `Open saved ${unbrokenName}`, exact: true }).isDisabled(), true,
+    "a real unknown-open recovery state disables the saved-copy action");
+  const recoveryAppearance = page.getByRole("button", { name: "Appearance", exact: true });
+  if (await recoveryAppearance.isVisible()) {
+    await recoveryAppearance.click();
+    await waitForAppearancePanelToSettle(page);
+    const recoveryPanel = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const rect = panel.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+        width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth };
+    });
+    evidence(recoveryPanel.x >= 0 && recoveryPanel.right <= 320 && recoveryPanel.y >= 0 && recoveryPanel.bottom <= 450 && recoveryPanel.pageWidth <= 320,
+      "actual unknown-open Recovery keeps the Appearance panel within the compact viewport", recoveryPanel);
+    observations.push({ unknownOpenRecoveryAppearance: recoveryPanel });
+    await page.keyboard.press("Escape");
+  }
+  await page.getByRole("button", { name: "Close and abandon recovery", exact: true }).click();
+  await page.locator('.ts-app[data-view="home"]').waitFor();
 }
 
 async function auditFirstEntryStates(browser, dist) {
@@ -1826,6 +2916,7 @@ async function main() {
 
     for (const profile of profiles) {
       await choose(page, profile.id, "comfortable");
+      await page.keyboard.press("Escape");
       await auditWorkbookViewportBounds(page, 320, 640, profile.id);
       await auditWorkbookViewportBounds(page, 1512, 982, profile.id);
     }
@@ -1900,7 +2991,7 @@ async function main() {
     for (const profile of profiles) await auditNotice(context, profile);
     await auditFocusModes(context, page);
     await auditButtonVariantBoundaries(browser);
-    await auditHomeViewportBounds(page);
+    await auditHomeViewportBounds(page, browser);
     await auditFirstEntryStates(browser, dist);
   } finally {
     await browser.close();
@@ -1943,6 +3034,14 @@ async function main() {
     appearanceVariantKeyboard: observations.find((item) => item.appearanceVariantKeyboard)?.appearanceVariantKeyboard ?? null,
     tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
     homeViewportAudit: observations.filter((item) => item.homeViewport),
+    homeEmptyViewportAudit: observations.filter((item) => item.homeEmptyViewport),
+    homeAppearancePopoverAudit: observations.filter((item) => item.homeAppearancePopover),
+    homeAppearanceReactivity: observations.find((item) => item.homeAppearanceReactivity)?.homeAppearanceReactivity ?? null,
+    homeAppearanceShortViewport: observations.find((item) => item.homeAppearanceShortViewport)?.homeAppearanceShortViewport ?? null,
+    homeAppearanceNarrowVisualViewport: observations.find((item) => item.homeAppearanceNarrowVisualViewport)?.homeAppearanceNarrowVisualViewport ?? null,
+    homeAppearanceWiderVisualViewport: observations.find((item) => item.homeAppearanceWiderVisualViewport)?.homeAppearanceWiderVisualViewport ?? null,
+    unknownOpenRecoveryAppearance: observations.find((item) => item.unknownOpenRecoveryAppearance)?.unknownOpenRecoveryAppearance ?? null,
+    homeSavedWhitespaceIdentity: observations.find((item) => item.homeSavedWhitespaceIdentity) ?? null,
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,
     physicalAtOrImeClaim: false,

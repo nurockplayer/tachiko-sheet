@@ -17,6 +17,7 @@ const preference = (overrides: Partial<AppearancePreferenceSnapshot> = {}): Appe
 const renderSelector = (snapshot: AppearancePreferenceSnapshot) =>
   renderToStaticMarkup(
     <AppearanceSelector
+      context="workbook"
       preference={snapshot}
       onSelectProfile={vi.fn(() => snapshot)}
       onSelectDensity={vi.fn(() => snapshot)}

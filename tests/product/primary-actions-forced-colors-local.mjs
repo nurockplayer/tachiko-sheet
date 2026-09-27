@@ -164,7 +164,7 @@ try {
   await page.goto(LOCAL_ORIGIN);
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByRole("button", { name: "Try Catalog/Sales canary", exact: true }).click();
+  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 
   // Configure the real J4 canary summary without invoking publication yet.

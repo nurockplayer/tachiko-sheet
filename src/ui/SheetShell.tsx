@@ -89,6 +89,125 @@ export function missingKeyedGroupedSumDefinitionIds(
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
 const directoryInputAttributes: Record<string, string> = { webkitdirectory: "", directory: "" };
 
+function formatHomeSavedAt(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  const dateLabel = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+  const timeLabel = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+  return `${dateLabel}, ${timeLabel}`;
+}
+
+const savedNameWhitespaceLabels = new Map<string, string>([
+  ["\u0009", "tab"],
+  ["\u000a", "line feed"],
+  ["\u000b", "vertical tab"],
+  ["\u000c", "form feed"],
+  ["\u000d", "carriage return"],
+  [" ", "space"],
+  ["\u0085", "next line"],
+  ["\u00a0", "no-break space"],
+  ["\u1680", "Ogham space mark"],
+  ["\u2000", "en quad"],
+  ["\u2001", "em quad"],
+  ["\u2002", "en space"],
+  ["\u2003", "em space"],
+  ["\u2004", "three-per-em space"],
+  ["\u2005", "four-per-em space"],
+  ["\u2006", "six-per-em space"],
+  ["\u2007", "figure space"],
+  ["\u2008", "punctuation space"],
+  ["\u2009", "thin space"],
+  ["\u200a", "hair space"],
+  ["\u2028", "line separator"],
+  ["\u2029", "paragraph separator"],
+  ["\u202f", "narrow no-break space"],
+  ["\u205f", "medium mathematical space"],
+  ["\u3000", "ideographic space"],
+  ["\ufeff", "zero-width no-break space"],
+]);
+
+const savedNameInvisibleLabels = new Map<number, string>([
+  [0x00ad, "soft hyphen"],
+  [0x034f, "combining grapheme joiner"],
+  [0x0600, "Arabic number sign"],
+  [0x007f, "delete control"],
+  [0x0080, "control character"],
+  [0x200b, "zero-width space"],
+  [0x200c, "zero-width non-joiner"],
+  [0x200d, "zero-width joiner"],
+  [0x202e, "right-to-left override"],
+  [0xfe0f, "emoji variation selector"],
+  [0xe0100, "supplementary variation selector"],
+  [0xe0067, "tag character"],
+  [0xe007f, "tag character"],
+  [0x3164, "Hangul filler"],
+]);
+
+function isAcceptedNameInvisible(character: string): boolean {
+  return /[\p{White_Space}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u.test(character);
+}
+
+/** Names stay exact; describe accepted whitespace, control, format, or default-ignorable codepoints that presentation can hide or collapse. */
+export function describeSavedCopyNameWhitespace(name: string): string | null {
+  const characters = Array.from(name);
+  const runs: Array<{ character: string; start: number; count: number }> = [];
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    if (!isAcceptedNameInvisible(character)) continue;
+    const previous = runs.at(-1);
+    if (previous?.character === character && previous.start + previous.count === index + 1) {
+      previous.count += 1;
+    } else {
+      runs.push({ character, start: index + 1, count: 1 });
+    }
+  }
+
+  const details = runs.flatMap((run) => {
+    const before = characters[run.start - 2];
+    const after = characters[run.start - 1 + run.count];
+    const adjacentMixedWhitespace =
+      (before !== undefined && before !== run.character && isAcceptedNameInvisible(before)) ||
+      (after !== undefined && after !== run.character && isAcceptedNameInvisible(after));
+    const boundaryWhitespace = run.start === 1 || run.start + run.count - 1 === characters.length;
+    if (run.character === " " && run.count === 1 && !adjacentMixedWhitespace && !boundaryWhitespace) return [];
+
+    const codePoint = run.character.codePointAt(0) as number;
+    const whitespaceKind = savedNameWhitespaceLabels.get(run.character);
+    if (whitespaceKind) {
+      const plural = `${whitespaceKind}s`;
+      const article = /^(?:en |em |Ogham |ideographic )/u.test(whitespaceKind) ? "an" : "a";
+      return [run.count === 1
+        ? `${article} ${whitespaceKind} at character ${run.start}`
+        : `${run.count} consecutive ${plural} starting at character ${run.start}`];
+    }
+
+    const code = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+    const category = /\p{Cc}/u.test(run.character)
+      ? "control character"
+      : /\p{Cf}/u.test(run.character)
+        ? "format character"
+        : "default-ignorable character";
+    const kind = savedNameInvisibleLabels.get(codePoint) ?? category;
+    const article = /^(?:emoji |Arabic )/u.test(kind) ? "an" : "a";
+    const repeatedKind = `${kind}s`;
+    return [run.count === 1
+      ? `${article} ${kind} (${code}, ${category}) at character ${run.start}`
+      : `${run.count} consecutive ${repeatedKind} (${code}, ${category}) starting at character ${run.start}`];
+  });
+
+  if (details.length === 0) return null;
+  if (details.length === 1) return `Name contains ${details[0]}.`;
+  return `Name contains ${details.slice(0, -1).join(", ")}, and ${details.at(-1)}.`;
+}
+
 /** Report pixels follow their source result, not the selected table. */
 export function reportRenderResetKey(
   view: Pick<WorkbookView, "occurrence" | "revision"> | null,
@@ -199,7 +318,7 @@ export function SheetShell(props: SheetShellProps) {
     onPrepareJ4Bindings = async () => ({ collections: [] }),
     onCreateJ4 = async () => false,
     onRefreshJ4 = async () => false,
-    onOpenJ4Canary = async () => { throw new Error("The Catalog/Sales canary is unavailable."); },
+    onOpenJ4Canary = async () => { throw new Error("The sales example is unavailable."); },
     report = null,
     onCreateReport = () => undefined,
     onUpdateReport = () => undefined,
@@ -259,9 +378,10 @@ export function SheetShell(props: SheetShellProps) {
     }, 0);
   }
 
-  function renderAppearanceSelector(): ReactNode {
+  function renderAppearanceSelector(context: "home" | "workbook"): ReactNode {
     return (
       <AppearanceSelector
+        context={context}
         preference={appearanceSnapshot}
         onSelectProfile={selectAppearanceProfile}
         onSelectDensity={selectAppearanceDensity}
@@ -299,6 +419,7 @@ export function SheetShell(props: SheetShellProps) {
   const spreadsheetInputId = useId();
   const copyNameId = useId();
   const copyErrorId = useId();
+  const copyNameDescriptionBaseId = useId();
   const lockNoteId = useId();
   const notesId = useId();
   const tabId = (name: ActiveTab) => `ts-tab-${name}`;
@@ -814,7 +935,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       await onOpenJ4Canary();
     } catch (error) {
-      setLocalError(explain(error, "Could not open the Catalog/Sales canary."));
+      setLocalError(explain(error, "Could not open the sales example."));
     }
   }
 
@@ -991,6 +1112,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderHome(): ReactNode {
     const recoveryLocked = currentness === "unknown";
+    const fileActionsLocked = controlsLocked || recoveryLocked;
     return (
       <main className="ts-home">
         {currentness === "unknown" ? (
@@ -1016,93 +1138,85 @@ export function SheetShell(props: SheetShellProps) {
           </section>
         ) : null}
         <header className="ts-home-head">
-          <div className="ts-home-heading">
-            <h1 className="ts-brand">Tachiko Sheet</h1>
-            <p className="ts-subtle">Open a project folder, or reopen a copy saved in this browser profile.</p>
-          </div>
-          {renderAppearanceSelector()}
+          <h1 className="ts-brand">Tachiko Sheet</h1>
+          {renderAppearanceSelector("home")}
         </header>
-        <section className="ts-card" aria-label="Open project">
+        <p className="ts-home-intro ts-home-desktop-intro">Open a project folder, or reopen a copy saved in this browser profile.</p>
+        <p className="ts-home-intro ts-home-compact-intro">Open a local project or a saved copy.</p>
+        <section className="ts-home-section" aria-label="Open project">
           <h2 className="ts-h2">Open</h2>
-          <label className="ts-field-label" htmlFor={fileInputId}>
-            Open project folder
-          </label>
-          <input
-            id={fileInputId}
-            className="ts-file-input"
-            data-testid="open-project"
-            type="file"
-            multiple
-            disabled={controlsLocked || recoveryLocked}
-            aria-describedby={busy ? lockNoteId : undefined}
-            onChange={(event) => {
-              const input = event.currentTarget;
-              const files = input.files;
-              void openFiles(files).finally(() => {
-                input.value = "";
-              });
-            }}
-            {...directoryInputAttributes}
-          />
-          <div className="ts-row-actions">
-              <button
-              type="button"
-              className="ts-button"
-              onClick={() => void openExample()}
-                disabled={controlsLocked || recoveryLocked}
-              aria-describedby={busy ? lockNoteId : undefined}
-            >
+          <div className="ts-row-actions ts-home-open-actions">
+            <label className={`ts-button ts-button--primary ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
+              <span>Open project folder</span>
+              <input
+                id={fileInputId}
+                data-testid="open-project"
+                type="file"
+                multiple
+                disabled={fileActionsLocked}
+                aria-describedby={busy ? lockNoteId : undefined}
+                onChange={(event) => {
+                  const input = event.currentTarget;
+                  const files = input.files;
+                  void openFiles(files).finally(() => {
+                    input.value = "";
+                  });
+                }}
+                {...directoryInputAttributes}
+              />
+            </label>
+            <button type="button" className="ts-button" onClick={() => void openExample()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
               Try example
             </button>
-            <button
-              type="button"
-              className="ts-button"
-              onClick={() => void openJ4Canary()}
-              disabled={controlsLocked || recoveryLocked}
-              aria-describedby={busy ? lockNoteId : undefined}
-            >
-              Try Catalog/Sales canary
+            <button type="button" className="ts-button" onClick={() => void openJ4Canary()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
+              Try sales example
             </button>
-            {busy ? (
-              <span className="ts-status" role="status">
-                Opening…
-              </span>
-            ) : null}
+            {busy ? <span className="ts-status" role="status">Opening…</span> : null}
           </div>
-          {busy ? (
-            <p className="ts-hint" id={lockNoteId} role="note">
-              An operation is in progress; controls are disabled until it finishes.
-            </p>
-          ) : null}
+          <p className="ts-subtle ts-home-open-desktop-help">Choose a local project folder. Its source stays unchanged.</p>
+          <p className="ts-subtle ts-home-open-compact-help">The source folder stays unchanged.</p>
+          {busy ? <p className="ts-hint" id={lockNoteId} role="note">An operation is in progress; controls are disabled until it finishes.</p> : null}
         </section>
-        <section className="ts-card" aria-label="Import spreadsheet">
+        <section className="ts-home-section" aria-label="Import spreadsheet">
           <h2 className="ts-h2">Import CSV or XLSX</h2>
-          <p className="ts-subtle">Sheet asks the core kit to inspect the source before creating an import candidate.</p>
-          <label className="ts-field-label" htmlFor={spreadsheetInputId}>Choose CSV or XLSX</label>
-          <input ref={spreadsheetInputRef} id={spreadsheetInputId} className="ts-file-input" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={controlsLocked || recoveryLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+          <p className="ts-subtle ts-home-import-desktop-help">Review the source and column types before importing.</p>
+          <label className={`ts-button ts-home-file-action ts-home-import-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
+            <span>Choose CSV or XLSX</span>
+            <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+          </label>
+          <p className="ts-subtle ts-home-import-compact-help">Review the source and column types before importing.</p>
           {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
         </section>
-        <section className="ts-card" aria-label="Saved copies">
+        <section className={`ts-home-section ts-home-saved${copies.length ? " ts-home-saved--populated" : ""}`} aria-label="Saved copies">
           <h2 className="ts-h2">Saved copies</h2>
           <p className="ts-subtle">Stored in this browser profile on this device.</p>
           {copies.length === 0 ? (
             <p className="ts-empty">No saved copies yet.</p>
           ) : (
             <ul className="ts-copy-list">
-              {copies.map((copy) => (
-                <li key={copy.name} className="ts-copy-item">
-                  <button
-                    type="button"
-                    className="ts-button ts-button--ghost"
-                    onClick={() => void openSaved(copy.name)}
-                    disabled={controlsLocked || recoveryLocked}
-                    aria-describedby={busy ? lockNoteId : undefined}
-                  >
-                    {`Open saved ${copy.name}`}
-                  </button>
-                  <span className="ts-copy-meta">{copy.savedAt}</span>
-                </li>
-              ))}
+              {copies.map((copy, index) => {
+                const whitespaceDescription = describeSavedCopyNameWhitespace(copy.name);
+                const whitespaceDescriptionId = `${copyNameDescriptionBaseId}-${index}`;
+                const describedBy = [
+                  ...(busy ? [lockNoteId] : []),
+                  ...(whitespaceDescription ? [whitespaceDescriptionId] : []),
+                ].join(" ") || undefined;
+                return (
+                  <li key={copy.name} className="ts-copy-item">
+                    <button
+                      type="button"
+                      className="ts-button ts-button--ghost ts-home-saved-action"
+                      onClick={() => void openSaved(copy.name)}
+                      disabled={controlsLocked || recoveryLocked}
+                      aria-describedby={describedBy}
+                    >
+                      {`Open saved ${copy.name}`}
+                    </button>
+                    {whitespaceDescription ? <span className="ts-visually-hidden" id={whitespaceDescriptionId}>{whitespaceDescription}</span> : null}
+                    <span className="ts-copy-meta">Saved {formatHomeSavedAt(copy.savedAt)}</span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -1120,7 +1234,7 @@ export function SheetShell(props: SheetShellProps) {
             <h1 className="ts-title">{view ? view.title : ""}</h1>
           </div>
         </div>
-        {renderAppearanceSelector()}
+        {renderAppearanceSelector("workbook")}
         <div className="ts-header-commands">
           {renderWorkbookActions()}
         </div>
