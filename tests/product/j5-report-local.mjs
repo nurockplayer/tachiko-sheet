@@ -99,19 +99,33 @@ async function exerciseWorkbookTabFocus(page) {
       resolve(false);
       return;
     }
+    let settled = false;
+    let deadline;
     const observer = new MutationObserver(() => {
       if (tab.getAttribute("aria-selected") !== "true") return;
-      observer.disconnect();
       const title = document.getElementById("report-title");
-      if (!title) {
-        resolve(false);
-        return;
+      if (!title) return;
+      try {
+        title.focus();
+        finish(document.activeElement === title);
+      } catch {
+        finish(false);
       }
-      title.focus();
-      resolve(document.activeElement === title);
     });
-    observer.observe(workbook, { childList: true, subtree: true });
-    tab.click();
+    const finish = (receivedFocus) => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      window.clearTimeout(deadline);
+      resolve(receivedFocus);
+    };
+    deadline = window.setTimeout(() => finish(false), 5000);
+    try {
+      observer.observe(workbook, { childList: true, subtree: true });
+      tab.click();
+    } catch {
+      finish(false);
+    }
   }));
   assert.equal(titleReceivedFocus, true, "DOM-driven Report selection must render and focus its Title control");
   await page.keyboard.press("ArrowRight");
