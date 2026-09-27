@@ -139,6 +139,34 @@ async function openCanary(context, page) {
   await page.waitForSelector(".ts-cell--focused");
 }
 
+async function waitForAppearancePanelToSettle(page, selector = ".ts-home .ts-appearance-popover") {
+  return page.evaluate(async (panelSelector) => {
+    const closeEnough = (a, b) => Math.abs(a - b) <= 0.1;
+    let previous = null;
+    let identicalFrames = 0;
+    let last = null;
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const panel = document.querySelector(panelSelector);
+      if (!panel || panel.hidden) throw new Error(`Appearance panel is not open: ${panelSelector}`);
+      const rect = panel.getBoundingClientRect();
+      const style = getComputedStyle(panel);
+      last = {
+        x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height,
+        maxWidth: style.maxWidth, maxHeight: style.maxHeight,
+      };
+      const keys = ["x", "y", "right", "bottom", "width", "height"];
+      identicalFrames = previous && keys.every((key) => closeEnough(previous[key], last[key])) &&
+        previous.maxWidth === last.maxWidth && previous.maxHeight === last.maxHeight
+        ? identicalFrames + 1
+        : 1;
+      if (identicalFrames >= 3) return last;
+      previous = last;
+    }
+    throw new Error(`Appearance panel did not settle within 30 frames: ${JSON.stringify(last)}`);
+  }, selector);
+}
+
 async function savedCopyAccessibilityNode(page, exactButtonText) {
   const rowIndex = await page.locator(".ts-copy-item").evaluateAll((rows, name) =>
     rows.findIndex((row) => row.querySelector(".ts-home-saved-action")?.textContent === name), exactButtonText);
@@ -760,6 +788,7 @@ async function auditHomeViewportBounds(page, browser) {
             if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
             const panel = emptyPage.locator(".ts-home .ts-appearance-popover");
             await panel.waitFor({ state: "visible" });
+            await waitForAppearancePanelToSettle(emptyPage);
             const geometry = await emptyPage.evaluate(() => {
               const homeHead = document.querySelector(".ts-home-head");
               const panel = document.querySelector(".ts-home .ts-appearance-popover");
@@ -786,6 +815,10 @@ async function auditHomeViewportBounds(page, browser) {
               `${label} has no horizontal page or panel overflow`, geometry);
             evidence(geometry.panel.y >= geometry.header.bottom && geometry.panel.bottom <= height + 1,
               `${label} opens below the full Home header and stays within the viewport`, geometry);
+            if (width === 390) {
+              evidence(Math.abs(geometry.panel.x - geometry.header.x - 16) <= 1,
+                `${label} uses the compact Home header left edge plus the approved 16px inset`, geometry);
+            }
             evidence(geometry.scrollWidth <= geometry.clientWidth + 1,
               `${label} keeps all panel content within its available width`, geometry);
             evidence((geometry.contentOverflowY === "auto" || geometry.contentOverflowY === "scroll") &&
@@ -827,6 +860,144 @@ async function auditHomeViewportBounds(page, browser) {
         }
       }
     }
+
+    await emptyPage.setViewportSize({ width: 320, height: 200 });
+    const shortTrigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
+    if (await shortTrigger.getAttribute("aria-expanded") !== "true") await shortTrigger.click();
+    const shortPanel = emptyPage.locator(".ts-home .ts-appearance-popover");
+    await shortPanel.waitFor({ state: "visible" });
+    await waitForAppearancePanelToSettle(emptyPage);
+    const shortAppearanceGeometry = await emptyPage.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const header = document.querySelector(".ts-home-head");
+      const panelRect = panel.getBoundingClientRect();
+      const headerRect = header.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const firstOption = panel.querySelector(".ts-appearance-profile-option");
+      const firstOptionRect = firstOption.getBoundingClientRect();
+      const appearanceTriggerRect = panel.parentElement.querySelector(".ts-appearance-trigger").getBoundingClientRect();
+      const panelStyle = getComputedStyle(panel);
+      const selectorStyle = getComputedStyle(panel.parentElement);
+      const px = (value) => Number.parseFloat(value) || 0;
+      const measuredChrome = panel.querySelector(".ts-appearance-popover__header").getBoundingClientRect().height +
+        px(panelStyle.paddingTop) + px(panelStyle.paddingBottom) + px(panelStyle.borderTopWidth) +
+        px(panelStyle.borderBottomWidth) + px(panelStyle.rowGap);
+      const interactiveHeight = firstOptionRect.height;
+      const focusClearance = 2 * (px(selectorStyle.getPropertyValue("--ts-appearance-focus-width")) +
+        px(selectorStyle.getPropertyValue("--ts-appearance-focus-offset")));
+      const viewport = window.visualViewport;
+      const preferredBelow = headerRect.bottom + 8;
+      const usableTop = (viewport?.offsetTop ?? 0) + 12;
+      const usableBottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight) - 12;
+      const belowHeight = Math.max(0, usableBottom - preferredBelow);
+      const aboveHeight = Math.max(0, appearanceTriggerRect.top - 8 - usableTop);
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        visualViewport: { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight },
+        page: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+        panel: { x: panelRect.x, y: panelRect.y, right: panelRect.right, bottom: panelRect.bottom, width: panelRect.width, height: panelRect.height, clientHeight: panel.clientHeight },
+        header: { bottom: headerRect.bottom },
+        usableMinimum: { chrome: measuredChrome, interactiveControl: interactiveHeight, focusClearance,
+          total: measuredChrome + interactiveHeight + focusClearance, belowSide: belowHeight, aboveSide: aboveHeight },
+        content: { top: contentRect.top, bottom: contentRect.bottom, clientHeight: content.clientHeight, scrollHeight: content.scrollHeight, overflowY: getComputedStyle(content).overflowY },
+      };
+    });
+    evidence(shortAppearanceGeometry.page.width <= 320 && shortAppearanceGeometry.panel.x >= 0 &&
+      shortAppearanceGeometry.panel.right <= 321 && shortAppearanceGeometry.panel.y >= 0 &&
+      shortAppearanceGeometry.panel.bottom <= 201,
+    "320x200 Home Appearance uses the contained short-viewport fallback", shortAppearanceGeometry);
+    evidence(shortAppearanceGeometry.content.scrollHeight > shortAppearanceGeometry.content.clientHeight &&
+      ["auto", "scroll"].includes(shortAppearanceGeometry.content.overflowY),
+    "320x200 Home Appearance preserves internal scrolling for short-viewport content", shortAppearanceGeometry);
+    evidence(shortAppearanceGeometry.usableMinimum.belowSide < shortAppearanceGeometry.usableMinimum.total &&
+      shortAppearanceGeometry.usableMinimum.aboveSide < shortAppearanceGeometry.usableMinimum.total &&
+      shortAppearanceGeometry.panel.y === shortAppearanceGeometry.visualViewport.top + 12 &&
+      shortAppearanceGeometry.panel.height <= shortAppearanceGeometry.visualViewport.height - 24,
+    "320x200 Home Appearance clamps to the inset visual viewport when neither side fits measured usable height",
+    shortAppearanceGeometry);
+    const shortReachability = await emptyPage.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const names = [".ts-appearance-density-option", ".ts-appearance-custom-actions button:first-child", ".ts-appearance-custom-actions button:last-child"];
+      const controls = names.map((selector) => {
+        const target = content.querySelector(selector);
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const rect = target.getBoundingClientRect();
+        const visible = content.getBoundingClientRect();
+        return { selector, top: rect.top, bottom: rect.bottom, contentTop: visible.top, contentBottom: visible.bottom,
+          reachable: rect.bottom > visible.top && rect.top < visible.bottom };
+      });
+      const close = panel.querySelector(".ts-appearance-close").getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      return { controls, closeReachable: close.top >= panelRect.top && close.bottom <= panelRect.bottom };
+    });
+    evidence(shortReachability.controls.every(({ reachable }) => reachable) && shortReachability.closeReachable,
+      "320x200 Home Appearance keeps Density, Import, Export and Close reachable", shortReachability);
+    await emptyPage.keyboard.press("Escape");
+    await emptyPage.waitForFunction(() => document.querySelector(".ts-home .ts-appearance-trigger")?.getAttribute("aria-expanded") === "false");
+    observations.push({ homeAppearanceShortViewport: { geometry: shortAppearanceGeometry, reachability: shortReachability } });
+
+    await emptyPage.setViewportSize({ width: 320, height: 450 });
+    const reactivityTrigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
+    await reactivityTrigger.click();
+    const measurePopover = () => emptyPage.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      const rect = panel.getBoundingClientRect();
+      return {
+        x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+        width: rect.width, height: rect.height,
+        naturalContentHeight: content.scrollHeight,
+        contentHeight: content.clientHeight,
+        contentScrollTop: content.scrollTop,
+        viewportWidth: innerWidth, viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth,
+      };
+    });
+    const naturalBeforeImport = await measurePopover();
+    await emptyPage.locator(".ts-appearance-file-input").setInputFiles({
+      name: "placement-growth.tachiko-profile.json",
+      mimeType: "application/json",
+      buffer: safeImportedManifestBytes,
+    });
+    await emptyPage.locator(".ts-appearance-candidate").getByRole("button", { name: "Cancel", exact: true }).waitFor();
+    await waitForAppearancePanelToSettle(emptyPage);
+    const naturalAfterImport = await measurePopover();
+    evidence(naturalAfterImport.naturalContentHeight > naturalBeforeImport.naturalContentHeight &&
+      naturalAfterImport.x >= 0 && naturalAfterImport.right <= 320 && naturalAfterImport.y >= 0 && naturalAfterImport.bottom <= 450,
+    "Home Appearance placement remeasures actual imported-profile content growth while remaining reachable", {
+      before: naturalBeforeImport, after: naturalAfterImport,
+    });
+    await emptyPage.locator(".ts-appearance-candidate").getByRole("button", { name: "Cancel", exact: true }).click();
+    await emptyPage.locator(".ts-appearance-candidate").waitFor({ state: "detached" });
+    await waitForAppearancePanelToSettle(emptyPage);
+    const naturalAfterCancel = await measurePopover();
+    evidence(naturalAfterCancel.naturalContentHeight <= naturalAfterImport.naturalContentHeight &&
+      naturalAfterCancel.x >= 0 && naturalAfterCancel.right <= 320 && naturalAfterCancel.bottom <= 450,
+    "Home Appearance placement releases the added content height after candidate cancellation", naturalAfterCancel);
+
+    await emptyPage.locator(".ts-appearance-file-input").setInputFiles({
+      name: "rejected-profile.json",
+      mimeType: "application/json",
+      buffer: Buffer.from("{ invalid JSON", "utf8"),
+    });
+    await emptyPage.locator('.ts-appearance-notice--rejected[role="alert"]').waitFor();
+    await waitForAppearancePanelToSettle(emptyPage);
+    const rejectedPlacement = await measurePopover();
+    evidence(rejectedPlacement.x >= 0 && rejectedPlacement.right <= 320 && rejectedPlacement.y >= 0 && rejectedPlacement.bottom <= 450,
+      "Home Appearance stays within the viewport after real profile-file rejection status grows", rejectedPlacement);
+    await emptyPage.getByRole("button", { name: "Export selected profile…", exact: true }).click();
+    await emptyPage.getByText(/^Download requested:/).waitFor();
+    await waitForAppearancePanelToSettle(emptyPage);
+    const exportFeedbackPlacement = await measurePopover();
+    evidence(exportFeedbackPlacement.x >= 0 && exportFeedbackPlacement.right <= 320 &&
+      exportFeedbackPlacement.y >= 0 && exportFeedbackPlacement.bottom <= 450,
+    "Home Appearance remains contained after actual export feedback is added", exportFeedbackPlacement);
+    await emptyPage.keyboard.press("Escape");
+    observations.push({ homeAppearanceReactivity: {
+      naturalBeforeImport, naturalAfterImport, naturalAfterCancel, rejectedPlacement, exportFeedbackPlacement,
+    } });
   } finally {
     await emptyContext.close();
   }
@@ -1279,6 +1450,7 @@ async function auditHomeViewportBounds(page, browser) {
   await page.emulateMedia({ forcedColors: "none" });
   await page.keyboard.press("Escape");
 
+  await page.setViewportSize({ width: 320, height: 450 });
   await page.evaluate(() => window.__tachikoAcceptance.loseNextOpenReply());
   await page.getByRole("button", { name: "Try sales example", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
@@ -1288,6 +1460,22 @@ async function auditHomeViewportBounds(page, browser) {
     "a real unknown-open recovery state exposes the folder label as unavailable");
   assert.equal(await page.getByRole("button", { name: `Open saved ${unbrokenName}`, exact: true }).isDisabled(), true,
     "a real unknown-open recovery state disables the saved-copy action");
+  const recoveryAppearance = page.getByRole("button", { name: "Appearance", exact: true });
+  if (await recoveryAppearance.isVisible()) {
+    await recoveryAppearance.click();
+    await waitForAppearancePanelToSettle(page);
+    const recoveryPanel = await page.evaluate(() => {
+      const panel = document.querySelector(".ts-home .ts-appearance-popover");
+      const rect = panel.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+        width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight,
+        pageWidth: document.documentElement.scrollWidth };
+    });
+    evidence(recoveryPanel.x >= 0 && recoveryPanel.right <= 320 && recoveryPanel.y >= 0 && recoveryPanel.bottom <= 450 && recoveryPanel.pageWidth <= 320,
+      "actual unknown-open Recovery keeps the Appearance panel within the compact viewport", recoveryPanel);
+    observations.push({ unknownOpenRecoveryAppearance: recoveryPanel });
+    await page.keyboard.press("Escape");
+  }
   await page.getByRole("button", { name: "Close and abandon recovery", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
 }
@@ -2487,6 +2675,7 @@ async function main() {
 
     for (const profile of profiles) {
       await choose(page, profile.id, "comfortable");
+      await page.keyboard.press("Escape");
       await auditWorkbookViewportBounds(page, 320, 640, profile.id);
       await auditWorkbookViewportBounds(page, 1512, 982, profile.id);
     }
@@ -2606,6 +2795,9 @@ async function main() {
     homeViewportAudit: observations.filter((item) => item.homeViewport),
     homeEmptyViewportAudit: observations.filter((item) => item.homeEmptyViewport),
     homeAppearancePopoverAudit: observations.filter((item) => item.homeAppearancePopover),
+    homeAppearanceReactivity: observations.find((item) => item.homeAppearanceReactivity)?.homeAppearanceReactivity ?? null,
+    homeAppearanceShortViewport: observations.find((item) => item.homeAppearanceShortViewport)?.homeAppearanceShortViewport ?? null,
+    unknownOpenRecoveryAppearance: observations.find((item) => item.unknownOpenRecoveryAppearance)?.unknownOpenRecoveryAppearance ?? null,
     homeSavedWhitespaceIdentity: observations.find((item) => item.homeSavedWhitespaceIdentity) ?? null,
     firstEntryViewportAudit: observations.filter((item) => item.firstEntry),
     textEnlargementProxy: observations.find((item) => item.textEnlargementProxy)?.textEnlargementProxy ?? null,

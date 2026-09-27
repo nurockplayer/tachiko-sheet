@@ -5,6 +5,8 @@
   z-index: 20;
   font: inherit;
   color: var(--ts-ink, #252735);
+  --ts-appearance-focus-width: 3px;
+  --ts-appearance-focus-offset: 2px;
 }
 
 .ts-appearance-trigger {
@@ -13,8 +15,8 @@
 }
 
 .ts-appearance-selector :focus-visible {
-  outline: 3px solid var(--ts-focus, #6551ce);
-  outline-offset: 2px;
+  outline: var(--ts-appearance-focus-width) solid var(--ts-focus, #6551ce);
+  outline-offset: var(--ts-appearance-focus-offset);
 }
 
 .ts-appearance-popover {

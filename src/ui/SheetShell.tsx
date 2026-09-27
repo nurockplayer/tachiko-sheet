@@ -378,9 +378,10 @@ export function SheetShell(props: SheetShellProps) {
     }, 0);
   }
 
-  function renderAppearanceSelector(): ReactNode {
+  function renderAppearanceSelector(context: "home" | "workbook"): ReactNode {
     return (
       <AppearanceSelector
+        context={context}
         preference={appearanceSnapshot}
         onSelectProfile={selectAppearanceProfile}
         onSelectDensity={selectAppearanceDensity}
@@ -1138,7 +1139,7 @@ export function SheetShell(props: SheetShellProps) {
         ) : null}
         <header className="ts-home-head">
           <h1 className="ts-brand">Tachiko Sheet</h1>
-          {renderAppearanceSelector()}
+          {renderAppearanceSelector("home")}
         </header>
         <p className="ts-home-intro ts-home-desktop-intro">Open a project folder, or reopen a copy saved in this browser profile.</p>
         <p className="ts-home-intro ts-home-compact-intro">Open a local project or a saved copy.</p>
@@ -1233,7 +1234,7 @@ export function SheetShell(props: SheetShellProps) {
             <h1 className="ts-title">{view ? view.title : ""}</h1>
           </div>
         </div>
-        {renderAppearanceSelector()}
+        {renderAppearanceSelector("workbook")}
         <div className="ts-header-commands">
           {renderWorkbookActions()}
         </div>
