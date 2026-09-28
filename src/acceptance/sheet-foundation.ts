@@ -297,6 +297,20 @@ interface RuntimeOriginResolution {
   readonly invocation: RuntimeInvocation | null;
   readonly state: RuntimeInvocationState | null;
 }
+type EvidenceCompletionKind = "publication" | "grouped-query" | "occurrence";
+interface EvidenceCompletionCapture {
+  readonly evidence: AcceptanceClientEvidence;
+  readonly association: AcceptanceClientEvidence["association"];
+  readonly originStatus: RuntimeOriginResolution["status"];
+  readonly state: RuntimeInvocationState | null;
+  readonly invocation: RuntimeInvocation | null;
+  readonly entryGeneration: number | null;
+  readonly dispatchGeneration: number | null;
+  readonly scalarAttempt: ScalarAttempt | null;
+  readonly kind: EvidenceCompletionKind;
+  readonly operationId: number;
+  readonly owner: object;
+}
 const RUNTIME_METHOD_SEAMS: Record<string, readonly RuntimeSeam[]> = {
   openFiles: ["publication", "observation", "bootstrap"],
   openCanonical: ["publication", "observation", "bootstrap"],
@@ -320,7 +334,6 @@ const wrappedKitLoaders = new WeakSet<KitLoader>();
 const loaderRuntimeBindings = new WeakMap<KitLoader, RuntimeInvocationState>();
 let scalarAttemptSequence = 0;
 let scalarOperationSequence = 0;
-let latestPublicationOperationId = 0;
 let currentScalarAttempt: ScalarAttempt | null = null;
 const queryDefinitionIdLog: string[] = [];
 interface AcceptanceClientEvidence {
@@ -348,6 +361,7 @@ const clientEvidence = new WeakMap<object, AcceptanceClientEvidence>();
 const clientEvidenceByIdentity = new Map<number, AcceptanceClientEvidence>();
 let acceptanceObservationSequence = 0;
 const latestObservationByClient = new WeakMap<object, number>();
+const latestEvidenceOperationByOwner = new WeakMap<object, Partial<Record<EvidenceCompletionKind, number>>>();
 const observedDefinitionQueries: ObservedDefinitionQuery[] = [];
 let targetedQueryFaultGeneration = 0;
 let targetedQueryFaultArmed = false;
@@ -419,6 +433,65 @@ function runtimeInvocationOrigin(clientIdentity: number, seam: RuntimeSeam): Run
     return { status: "ambiguous-stale-unbound", invocation: null, state };
   }
   return { status: "valid", invocation: valid[0], state };
+}
+
+function noteEvidenceOperation(
+  evidence: AcceptanceClientEvidence,
+  kind: EvidenceCompletionKind,
+  operationId: number,
+): void {
+  const owner = evidence.runtimeState ?? evidence;
+  const operations = latestEvidenceOperationByOwner.get(owner) ?? {};
+  operations[kind] = operationId;
+  latestEvidenceOperationByOwner.set(owner, operations);
+}
+
+function captureEvidenceCompletion(
+  evidence: AcceptanceClientEvidence,
+  origin: RuntimeOriginResolution,
+  kind: EvidenceCompletionKind,
+  operationId: number,
+): EvidenceCompletionCapture {
+  const state = origin.state;
+  const scalarAttempt = state && currentScalarAttempt?.runtimeState === state ? currentScalarAttempt : null;
+  return Object.freeze({
+    evidence,
+    association: evidence.association,
+    originStatus: origin.status,
+    state,
+    invocation: origin.invocation,
+    entryGeneration: origin.invocation?.cancellationGenerationAtEntry ?? null,
+    dispatchGeneration: state?.cancellationGeneration ?? null,
+    scalarAttempt,
+    kind,
+    operationId,
+    owner: state ?? evidence,
+  });
+}
+
+/** Revalidates only the captured origin; completion never resolves a newer one. */
+function isFreshEvidenceCompletion(
+  capture: EvidenceCompletionCapture,
+  latestOwnerOperationId: number | undefined,
+): boolean {
+  const { evidence, association, originStatus, state, invocation, entryGeneration, dispatchGeneration, scalarAttempt } = capture;
+  if (latestOwnerOperationId !== capture.operationId ||
+    clientEvidenceByIdentity.get(evidence.identity) !== evidence ||
+    evidence.association !== association) return false;
+  if (association === "independent") {
+    return originStatus === "independent" && state === null && invocation === null && evidence.runtimeState === null;
+  }
+  if (association !== "mapped" || originStatus !== "valid" || !state || evidence.runtimeState !== state ||
+    state.clientIdentity !== evidence.identity || state.associationConflict || !invocation ||
+    invocation.state !== state || !state.active.has(invocation) || invocation.ambiguous ||
+    invocation.cancellationGenerationAtEntry !== entryGeneration || entryGeneration !== dispatchGeneration ||
+    state.cancellationGeneration !== dispatchGeneration) return false;
+  const currentAttemptForOwner = currentScalarAttempt?.runtimeState === state ? currentScalarAttempt : null;
+  return currentAttemptForOwner === scalarAttempt && (!scalarAttempt || scalarAttemptIsCurrent(scalarAttempt));
+}
+
+function latestOwnerOperationId(capture: EvidenceCompletionCapture): number | undefined {
+  return latestEvidenceOperationByOwner.get(capture.owner)?.[capture.kind];
 }
 
 function beginRuntimeInvocation(state: RuntimeInvocationState, method: string, args: unknown[]): RuntimeInvocation {
@@ -683,6 +756,8 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           const scalarAttemptPointerAtDispatch = currentScalarAttempt;
           const generationAtDispatch = evidence.runtimeState?.cancellationGeneration ?? null;
           const scalarQueryCallId = ++scalarOperationSequence;
+          noteEvidenceOperation(evidence, "grouped-query", scalarQueryCallId);
+          const completionCapture = captureEvidenceCompletion(evidence, originAtDispatch, "grouped-query", scalarQueryCallId);
           let scalarQueryExpected = false;
           if (scalarContextAtDispatch && scalarAttemptAtDispatch && scalarContextAtDispatch.valid &&
             scalarAttemptIsCurrent(scalarAttemptAtDispatch)) {
@@ -704,6 +779,7 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           } catch (error) {
             if (scalarContextAtDispatch && scalarAttemptAtDispatch &&
+              isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture)) &&
               scalarContextAtDispatch.valid && scalarAttemptIsCurrent(scalarAttemptAtDispatch) &&
               scalarAttemptAtDispatch.discoveryInvocationId === scalarContextAtDispatch.invocationId &&
               scalarQueryCallId > 0) {
@@ -711,14 +787,16 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
             }
             if (targetedWasArmedAtDispatch && targetedQueryFaultArmed &&
               targetedQueryFaultGeneration === targetedGenerationAtDispatch &&
-              targetedQueryRequest === targetedRequestAtDispatch) {
+              targetedQueryRequest === targetedRequestAtDispatch &&
+              isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture))) {
               clearTargetedQueryReplyFault("real-query-failed");
             }
             throw error;
           }
           const actualRevision = (result as { revision?: unknown }).revision;
+          const freshQueryCompletion = isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture));
           const scalarQueryStillOwned = Boolean(scalarContextAtDispatch && scalarQueryExpected && scalarAttemptAtDispatch &&
-            scalarContextAtDispatch.valid && currentScalarAttempt === scalarAttemptAtDispatch &&
+            freshQueryCompletion && scalarContextAtDispatch.valid && currentScalarAttempt === scalarAttemptAtDispatch &&
             scalarAttemptAtDispatch.phase === "discovering" &&
             scalarAttemptAtDispatch.discoveryInvocationId === scalarContextAtDispatch.invocationId &&
             scalarAttemptAtDispatch.clientIdentity === evidence.identity &&
@@ -730,12 +808,12 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
             actualRevision === scalarAttemptAtDispatch.revision);
           const queryCacheable = scalarContextAtDispatch
             ? scalarQueryStillOwned
-            : originAtDispatch.status === "valid" && originInvocationAtDispatch?.scalarDiscovery === null &&
+            : freshQueryCompletion && originAtDispatch.status === "valid" && originInvocationAtDispatch?.scalarDiscovery === null &&
               originInvocationAtDispatch.cancellationGenerationAtEntry === generationAtDispatch &&
               generationAtDispatch === evidence.runtimeState?.cancellationGeneration &&
               scalarAttemptPointerAtDispatch?.runtimeState !== evidence.runtimeState &&
               currentScalarAttempt?.runtimeState !== evidence.runtimeState ||
-              originAtDispatch.status === "independent";
+              freshQueryCompletion && originAtDispatch.status === "independent";
           if (queryCacheable) {
             observedDefinitionQueries.push({
               definitionId,
@@ -758,7 +836,10 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
               actualRevision === request.revision &&
               definitionId === targetedQueryFaultProbeValue.definitionId &&
               evidence.identity === targetedQueryFaultProbeValue.owningClientIdentity);
-            if (!matches) {
+            if (!freshQueryCompletion) {
+              // A reply whose captured invocation became ambiguous has no
+              // evidence effect and cannot consume or clear a newer arm.
+            } else if (!matches) {
               clearTargetedQueryReplyFault("query-identity-or-revision-mismatch");
             } else {
               targetedQueryFaultArmed = false;
@@ -773,7 +854,7 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
             }
           }
           if (!scalarContextAtDispatch || !scalarAttemptAtDispatch ||
-            !scalarQueryExpected || !scalarContextAtDispatch.valid ||
+            !scalarQueryExpected || !scalarContextAtDispatch.valid || !freshQueryCompletion ||
             !scalarAttemptIsCurrent(scalarAttemptAtDispatch)) return result;
           const attempt = scalarAttemptAtDispatch;
           if (attempt.phase !== "discovering" ||
@@ -817,6 +898,8 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           const generationAtObserve = evidence.runtimeState?.cancellationGeneration ?? null;
           const observationCallId = ++acceptanceObservationSequence;
           latestObservationByClient.set(target, observationCallId);
+          noteEvidenceOperation(evidence, "occurrence", observationCallId);
+          const completionCapture = captureEvidenceCompletion(evidence, originAtObserve, "occurrence", observationCallId);
           const targetedGenerationAtObserve = targetedQueryFaultGeneration;
           const targetedWasArmedAtObserve = targetedQueryFaultArmed;
           let result: unknown;
@@ -824,30 +907,35 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           } catch (error) {
             if (targetedWasArmedAtObserve && targetedQueryFaultArmed &&
-              targetedQueryFaultGeneration === targetedGenerationAtObserve) {
+              targetedQueryFaultGeneration === targetedGenerationAtObserve &&
+              evidence.identity === targetedQueryFaultProbeValue.owningClientIdentity &&
+              isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture))) {
               clearTargetedQueryReplyFault("observation-failed");
             }
             throw error;
           }
           const occurrence = (result as { scope?: unknown }).scope;
           const revision = (result as { revision?: unknown }).revision;
+          const freshObservationCompletion = isFreshEvidenceCompletion(
+            completionCapture,
+            latestOwnerOperationId(completionCapture),
+          );
           const attemptCompatible = scalarAttemptAtObserve === null ||
             scalarAttemptAtObserve.runtimeState !== evidence.runtimeState ||
             originAtObserve.status === "valid" && originInvocationAtObserve?.attemptAtEntry === scalarAttemptAtObserve &&
-            scalarAttemptAtObserve.cancellationGenerationAtRequest === generationAtObserve;
-          const observationOwned = originAtObserve.status === "valid" && originInvocationAtObserve !== null &&
-            originInvocationAtObserve.cancellationGenerationAtEntry === generationAtObserve && attemptCompatible ||
-            originAtObserve.status === "independent";
-          const scalarAttemptStillOwned = scalarAttemptAtObserve?.runtimeState !== evidence.runtimeState ||
-            currentScalarAttempt === scalarAttemptAtObserve;
-          if (observationOwned && (originAtObserve.status === "independent" ||
-            generationAtObserve === evidence.runtimeState?.cancellationGeneration) &&
-            latestObservationByClient.get(target) === observationCallId && scalarAttemptStillOwned) {
+            scalarAttemptAtObserve.cancellationGenerationAtRequest === generationAtObserve &&
+            currentScalarAttempt === scalarAttemptAtObserve && scalarAttemptIsCurrent(scalarAttemptAtObserve);
+          let occurrenceEvidenceUpdated = false;
+          if (freshObservationCompletion && attemptCompatible &&
+            latestObservationByClient.get(target) === observationCallId) {
             evidence.occurrence = typeof occurrence === "string" ? occurrence : null;
             evidence.revision = typeof revision === "string" ? revision : null;
+            occurrenceEvidenceUpdated = true;
           }
           if (targetedWasArmedAtObserve && targetedQueryFaultArmed &&
             targetedQueryFaultGeneration === targetedGenerationAtObserve &&
+            evidence.identity === targetedQueryFaultProbeValue.owningClientIdentity &&
+            occurrenceEvidenceUpdated &&
             (evidence.occurrence !== targetedQueryFaultProbeValue.occurrence || evidence.revision !== targetedQueryFaultProbeValue.revision)) {
             clearTargetedQueryReplyFault("occurrence-or-revision-replaced");
           }
@@ -904,6 +992,7 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
       }
       if (property === "createKeyedGroupedSum") {
         return async (...args: unknown[]): Promise<unknown> => {
+          clearTargetedQueryReplyFaultForClient(evidence, "publication-replaced-revision");
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           if (j4PostPublicationReadFaultRequested) {
             j4PostPublicationReadFaultRequested = false;
@@ -915,7 +1004,7 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
       }
       if (property === "openProject") {
         return async (...args: unknown[]): Promise<unknown> => {
-          if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
+          clearTargetedQueryReplyFaultForClient(evidence, "workbook-replaced");
           const origin = runtimeInvocationOrigin(evidence.identity, "publication");
           if (origin.status === "valid" && currentScalarAttempt?.runtimeState === origin.state &&
             origin.invocation?.attemptAtEntry !== currentScalarAttempt) {
@@ -932,7 +1021,6 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
       }
       if (property === "importSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
-          if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
           const origin = runtimeInvocationOrigin(evidence.identity, "publication");
           if (origin.status === "valid" && currentScalarAttempt?.runtimeState === origin.state &&
             origin.invocation?.attemptAtEntry !== currentScalarAttempt) {
@@ -945,6 +1033,7 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           const loseReplyAfterDispatch = importReplyAfterDispatchFaultArmed;
           importReplyAfterDispatchFaultArmed = false;
           importSpreadsheetDispatchCount += 1;
+          clearTargetedQueryReplyFaultForClient(evidence, "workbook-replaced");
           let result: unknown;
           try {
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -1021,26 +1110,26 @@ async function dispatchPublication(
   args: unknown[],
 ): Promise<PublicationProjection> {
   dispatchCount += 1;
-  if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("publication-replaced-revision");
   const publicationOperationId = ++scalarOperationSequence;
-  latestPublicationOperationId = publicationOperationId;
   const clientEvidenceAtDispatch = clientEvidence.get(target);
   const originAtDispatch = clientEvidenceAtDispatch
     ? runtimeInvocationOrigin(clientEvidenceAtDispatch.identity, "publication")
     : { status: "ambiguous-stale-unbound" as const, invocation: null, state: null };
+  if (clientEvidenceAtDispatch) {
+    noteEvidenceOperation(clientEvidenceAtDispatch, "publication", publicationOperationId);
+  }
+  const completionCapture = clientEvidenceAtDispatch
+    ? captureEvidenceCompletion(clientEvidenceAtDispatch, originAtDispatch, "publication", publicationOperationId)
+    : null;
+  // A real publication on the target's own client can change its revision.
+  // Retire only the exact arm visible at this dispatch; another client's
+  // publication and a later rearm belong to different owners/lifetimes.
+  if (clientEvidenceAtDispatch) clearTargetedQueryReplyFaultForClient(clientEvidenceAtDispatch, "publication-replaced-revision");
   const originInvocationAtDispatch = originAtDispatch.invocation;
   const generationAtDispatch = originAtDispatch.state?.cancellationGeneration ?? null;
-  const scalarAttemptPointerAtDispatch = currentScalarAttempt;
   const attemptAtDispatch = originAtDispatch.status === "valid" && originInvocationAtDispatch?.method === "edit"
     ? originInvocationAtDispatch.attemptAtEntry
     : null;
-  const publicationEvidenceEligible = originAtDispatch.status === "valid" && originInvocationAtDispatch !== null &&
-    originInvocationAtDispatch.cancellationGenerationAtEntry === generationAtDispatch ||
-    originAtDispatch.status === "independent";
-  const scalarAttemptScopeStillCurrent = scalarAttemptPointerAtDispatch?.runtimeState !== originAtDispatch.state ||
-    currentScalarAttempt === scalarAttemptPointerAtDispatch;
-  const dispatchStateStillCurrent = originAtDispatch.status === "independent" ||
-    originAtDispatch.state?.cancellationGeneration === generationAtDispatch;
   let ownsScalarPublication = false;
   const currentAtDispatch = currentScalarAttempt;
   if (currentAtDispatch && currentAtDispatch.runtimeState === originAtDispatch.state &&
@@ -1074,8 +1163,10 @@ async function dispatchPublication(
       loseArmed = false;
       try {
         const receipt = await call();
-        if (latestPublicationOperationId === publicationOperationId && publicationEvidenceEligible &&
-          dispatchStateStillCurrent && scalarAttemptScopeStillCurrent) {
+        if (completionCapture && isFreshEvidenceCompletion(
+          completionCapture,
+          latestOwnerOperationId(completionCapture),
+        )) {
           lastReceiptValue = receipt;
         }
         throw new UnknownOperationOutcomeError(
@@ -1088,11 +1179,14 @@ async function dispatchPublication(
       }
     }
     const receipt = await call();
-    if (latestPublicationOperationId === publicationOperationId && publicationEvidenceEligible &&
-      dispatchStateStillCurrent && scalarAttemptScopeStillCurrent) {
+    const freshPublicationCompletion = completionCapture !== null && isFreshEvidenceCompletion(
+      completionCapture,
+      latestOwnerOperationId(completionCapture),
+    );
+    if (freshPublicationCompletion) {
       lastReceiptValue = receipt;
     }
-    if (ownsScalarPublication && attemptAtDispatch && scalarAttemptIsCurrent(attemptAtDispatch)) {
+    if (freshPublicationCompletion && ownsScalarPublication && attemptAtDispatch && scalarAttemptIsCurrent(attemptAtDispatch)) {
       const revision = receipt.resulting_revision;
       if (typeof revision !== "string" || !revision || !attemptAtDispatch.requestWitness ||
         !attemptAtDispatch.clientIdentity || !attemptAtDispatch.publicationCallId) {
@@ -1517,6 +1611,12 @@ function clearTargetedQueryReplyFault(reason: string): void {
   };
 }
 
+function clearTargetedQueryReplyFaultForClient(evidence: AcceptanceClientEvidence, reason: string): void {
+  if (targetedQueryFaultArmed && targetedQueryFaultProbeValue.owningClientIdentity === evidence.identity) {
+    clearTargetedQueryReplyFault(reason);
+  }
+}
+
 export function targetedQueryFaultProbe(): TargetedQueryFaultProbe {
   return { ...targetedQueryFaultProbeValue };
 }
@@ -1663,15 +1763,16 @@ export function installAcceptance(next: AcceptanceWiring): void {
     }).finally(() => {
       if (targetedQueryRequest === request) {
         targetedQueryRequest = null;
-        if (targetedQueryFaultArmed && targetedQueryFaultGeneration === generation) {
-          clearTargetedQueryReplyFault("target-call-not-consumed");
-        }
       }
     });
   };
   const discoverKeyedGroupedSums = next.runtime.discoverKeyedGroupedSums;
   next.runtime.discoverKeyedGroupedSums = async (...args) => {
-    if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("discovery-replaced-target-call");
+    const runtimeClientIdentity = runtimeStateFor(next.runtime).clientIdentity;
+    if (targetedQueryFaultArmed && runtimeClientIdentity !== null &&
+      runtimeClientIdentity === targetedQueryFaultProbeValue.owningClientIdentity) {
+      clearTargetedQueryReplyFault("discovery-replaced-target-call");
+    }
     const witness = args[0] as { occurrence?: unknown; revision?: unknown } | undefined;
     const invocation = currentRuntimeInvocation(next.runtime);
     let context: ScalarDiscoveryContext | null = null;

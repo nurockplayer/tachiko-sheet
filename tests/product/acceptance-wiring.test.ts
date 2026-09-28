@@ -604,7 +604,7 @@ describe("acceptance kit instrumentation", () => {
     }
   });
 
-  it.each(["resolve", "reject"] as const)("isolates a delayed old publication that %s", async (outcome) => {
+  it.each(["resolve", "reject", "lose reply"] as const)("isolates an armed delayed old publication that %s", async (outcome) => {
     resetScalarRequeryFaultProbe();
     let settleOld!: (value: ReturnType<typeof projection>) => void;
     let rejectOld!: (error: Error) => void;
@@ -616,13 +616,18 @@ describe("acceptance kit instrumentation", () => {
     });
     const { runtime, client, restoreWindow } = await scalarRuntime(fake.kit);
     try {
+      const receiptBefore = lastReceipt();
       failSecondScalarRequeryReplyAfterFirst();
+      if (outcome === "lose reply") loseNextExecuteReply();
       const oldEdit = runtime.edit({ occurrence: "occurrence-1", revision: "r1" });
       await vi.waitFor(() => expect(settleOld).toBeTypeOf("function"));
 
       resetScalarRequeryFaultProbe();
       failSecondScalarRequeryReplyAfterFirst();
-      if (outcome === "resolve") {
+      if (outcome === "lose reply") {
+        settleOld(projection({ resulting_revision: "r3" }));
+        await expect(oldEdit).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+      } else if (outcome === "resolve") {
         settleOld(projection({ resulting_revision: "r3" }));
         await expect(oldEdit).resolves.toMatchObject({ revision: "r3" });
       } else {
@@ -630,6 +635,7 @@ describe("acceptance kit instrumentation", () => {
         rejectOld(failure);
         await expect(oldEdit).rejects.toBe(failure);
       }
+      expect(lastReceipt()).toEqual(receiptBefore);
       expect(scalarRequeryFaultProbe()).toMatchObject({ publicationAcknowledged: false, attemptId: expect.any(Number), invalidReason: null });
       const freshEdit = await runtime.edit({ occurrence: "occurrence-1", revision: "r1" });
       await expect(runtime.discoverKeyedGroupedSums(freshEdit as never)).rejects.toThrow(/second grouped-summary query reply discarded/);
@@ -642,7 +648,7 @@ describe("acceptance kit instrumentation", () => {
     }
   });
 
-  it("does not adopt a publication dispatched before the scalar fault request", async () => {
+  it.each(["normal", "lost-reply"] as const)("does not adopt an unarmed publication held after dispatch across reset/rearm (%s)", async (outcome) => {
     resetScalarRequeryFaultProbe();
     let settleOld!: (value: ReturnType<typeof projection>) => void;
     let calls = 0;
@@ -653,11 +659,15 @@ describe("acceptance kit instrumentation", () => {
     });
     const { runtime, client, restoreWindow } = await scalarRuntime(fake.kit);
     try {
+      const receiptBefore = lastReceipt();
+      if (outcome === "lost-reply") loseNextExecuteReply();
       const oldEdit = runtime.edit({ occurrence: "occurrence-1", revision: "r1" });
       await vi.waitFor(() => expect(settleOld).toBeTypeOf("function"));
       failSecondScalarRequeryReplyAfterFirst();
       settleOld(projection({ resulting_revision: "r3" }));
-      await expect(oldEdit).resolves.toMatchObject({ revision: "r3" });
+      if (outcome === "lost-reply") await expect(oldEdit).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+      else await expect(oldEdit).resolves.toMatchObject({ revision: "r3" });
+      expect(lastReceipt()).toEqual(receiptBefore);
       expect(scalarRequeryFaultProbe()).toMatchObject({ publicationAcknowledged: false, attemptId: expect.any(Number), invalidReason: null });
       const freshEdit = await runtime.edit({ occurrence: "occurrence-1", revision: "r1" });
       await expect(runtime.discoverKeyedGroupedSums(freshEdit as never)).rejects.toThrow(/second grouped-summary query reply discarded/);
@@ -1243,6 +1253,184 @@ describe("acceptance kit instrumentation", () => {
     }
   });
 
+  it.each(["acknowledged", "lost"] as const)("does not let stale runtime A %s overwrite B's receipt", async (outcome) => {
+    resetScalarRequeryFaultProbe();
+    resetTargetedQueryReplyFault();
+    let releaseA!: () => void;
+    let aEntered!: () => void;
+    const aAtGate = new Promise<void>((resolve) => { aEntered = resolve; });
+    const aFake = fakeKit(async () => projection({ resulting_revision: "a-stale" }));
+    const aHarness = await scalarRuntime(
+      aFake.kit,
+      ["definition-a"],
+      "occurrence-a",
+      undefined,
+      async () => {
+        aEntered();
+        await new Promise<void>((resolve) => { releaseA = resolve; });
+      },
+    );
+    let releaseB!: (value: ReturnType<typeof projection>) => void;
+    let bEntered!: () => void;
+    const bAtGate = new Promise<void>((resolve) => { bEntered = resolve; });
+    const bFake = fakeKit(async () => {
+      bEntered();
+      return new Promise((resolve) => { releaseB = resolve; });
+    });
+    let restoreB = () => {};
+    try {
+      const staleA = aHarness.runtime.edit({ occurrence: "occurrence-a", revision: "r1" });
+      await aAtGate;
+      resetScalarRequeryFaultProbe();
+
+      const bHarness = await scalarRuntime(bFake.kit, ["definition-b"], "occurrence-b");
+      restoreB = bHarness.restoreWindow;
+      const currentB = bHarness.runtime.edit({ occurrence: "occurrence-b", revision: "r1" });
+      await bAtGate;
+      if (outcome === "lost") loseNextExecuteReply();
+      releaseA();
+      if (outcome === "lost") await expect(staleA).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+      else await expect(staleA).resolves.toMatchObject({ revision: "a-stale" });
+      releaseB(projection({ resulting_revision: "b-current" }));
+      await expect(currentB).resolves.toMatchObject({ revision: "b-current" });
+      expect(lastReceipt()).toMatchObject({ resulting_revision: "b-current" });
+      expect(aFake.calls()).toBe(1);
+      expect(bFake.calls()).toBe(1);
+    } finally {
+      releaseA?.();
+      releaseB?.(projection({ resulting_revision: "b-current" }));
+      resetTargetedQueryReplyFault();
+      resetScalarRequeryFaultProbe();
+      restoreB();
+      aHarness.restoreWindow();
+    }
+  });
+
+  it("preserves B's target arm across a stale A publication dispatch", async () => {
+    resetScalarRequeryFaultProbe();
+    resetTargetedQueryReplyFault();
+    let releaseA!: () => void;
+    let aEntered!: () => void;
+    const aAtGate = new Promise<void>((resolve) => { aEntered = resolve; });
+    const aFake = fakeKit(async () => projection({ resulting_revision: "a-stale" }));
+    const aHarness = await scalarRuntime(
+      aFake.kit,
+      ["definition-a"],
+      "occurrence-a",
+      undefined,
+      async () => {
+        aEntered();
+        await new Promise<void>((resolve) => { releaseA = resolve; });
+      },
+    );
+    let restoreB = () => {};
+    try {
+      const staleA = aHarness.runtime.edit({ occurrence: "occurrence-a", revision: "r1" });
+      await aAtGate;
+      resetScalarRequeryFaultProbe();
+
+      const bFake = fakeKit(async () => projection(), undefined, "occurrence-b");
+      const bHarness = await scalarRuntime(bFake.kit, ["definition-b"], "occurrence-b");
+      restoreB = bHarness.restoreWindow;
+      await bHarness.runtime.read();
+      await bHarness.runtime.queryKeyedGroupedSum({ occurrence: "occurrence-b", revision: "r2" } as never, "definition-b");
+      armTargetedQueryReplyFault("definition-b", "occurrence-b", "r2");
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: true, owningClientIdentity: expect.any(Number) });
+
+      releaseA();
+      await expect(staleA).resolves.toMatchObject({ revision: "a-stale" });
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: true, consumed: false });
+      await expect(bHarness.runtime.queryKeyedGroupedSum({ occurrence: "occurrence-b", revision: "r2" } as never, "definition-b"))
+        .rejects.toThrow(/targeted grouped-summary query reply discarded/);
+      expect(targetedQueryFaultProbe()).toMatchObject({ consumed: true, actualReplyRevision: "r2" });
+      expect(aFake.calls()).toBe(1);
+      expect(bFake.queryCalls()).toBe(2);
+    } finally {
+      releaseA?.();
+      resetTargetedQueryReplyFault();
+      resetScalarRequeryFaultProbe();
+      restoreB();
+      aHarness.restoreWindow();
+    }
+  });
+
+  it("does not cache an after-dispatch query or observation once its runtime origin becomes ambiguous", async () => {
+    resetScalarRequeryFaultProbe();
+    resetTargetedQueryReplyFault();
+    let releaseQuery!: (value: { revision: string; definitionId: string }) => void;
+    let queryEntered!: () => void;
+    const queryAtGate = new Promise<void>((resolve) => { queryEntered = resolve; });
+    let queryCalls = 0;
+    let observationCalls = 0;
+    let releaseObservation!: (value: { scope: string; revision: string }) => void;
+    let observationEntered!: () => void;
+    const observationAtGate = new Promise<void>((resolve) => { observationEntered = resolve; });
+    const fake = fakeKit(async () => projection(), async (definitionId) => {
+      queryCalls += 1;
+      if (queryCalls === 2) {
+        queryEntered();
+        return new Promise((resolve) => { releaseQuery = resolve; });
+      }
+      return { revision: "r2", definitionId };
+    });
+    const { runtime, client, restoreWindow } = await scalarRuntime(
+      fake.kit,
+      ["definition-1", "definition-2"],
+      "occurrence-1",
+      undefined,
+      undefined,
+      undefined,
+      (linkedClient) => {
+        const observe = linkedClient.observeOccurrence;
+        linkedClient.observeOccurrence = async (...args: unknown[]) => {
+          observationCalls += 1;
+          if (observationCalls === 2) {
+            observationEntered();
+            return new Promise((resolve) => { releaseObservation = resolve; });
+          }
+          if (observationCalls === 3) return { scope: "occurrence-stale", revision: "r3" } as never;
+          return observe.apply(linkedClient, args as never);
+        };
+      },
+    );
+    try {
+      await runtime.read();
+      await runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" } as never, "definition-1");
+      const oldQuery = runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" } as never, "definition-1");
+      await queryAtGate;
+      const overlappingQuery = runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" } as never, "definition-1");
+      await expect(overlappingQuery).resolves.toMatchObject({ definitionId: "definition-1" });
+      releaseQuery({ revision: "r2", definitionId: "definition-1" });
+      await expect(oldQuery).resolves.toMatchObject({ definitionId: "definition-1" });
+      armTargetedQueryReplyFault("definition-1", "occurrence-1", "r2");
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: true });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" } as never, "definition-1"))
+        .rejects.toThrow(/targeted grouped-summary query reply discarded/);
+      expect(targetedQueryFaultProbe()).toMatchObject({ consumed: true, actualReplyRevision: "r2" });
+
+      resetTargetedQueryReplyFault();
+      const oldObservation = runtime.read();
+      await observationAtGate;
+      const overlappingObservation = runtime.read();
+      await expect(overlappingObservation).resolves.toMatchObject({ scope: "occurrence-stale", revision: "r3" });
+      releaseObservation({ scope: "occurrence-old", revision: "r3" });
+      await expect(oldObservation).resolves.toMatchObject({ scope: "occurrence-old", revision: "r3" });
+      armTargetedQueryReplyFault("definition-1", "occurrence-1", "r2");
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: true, owningClientIdentity: expect.any(Number) });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" } as never, "definition-1"))
+        .rejects.toThrow(/targeted grouped-summary query reply discarded/);
+      expect(targetedQueryFaultProbe()).toMatchObject({ consumed: true, actualReplyRevision: "r2" });
+      expect(fake.queryCalls()).toBe(5);
+      expect(client).toBeDefined();
+    } finally {
+      releaseQuery?.({ revision: "r2", definitionId: "definition-1" });
+      releaseObservation?.({ scope: "occurrence-old", revision: "r3" });
+      resetTargetedQueryReplyFault();
+      resetScalarRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
   it("does not refill occurrence evidence from a read that settles after its runtime closes", async () => {
     resetScalarRequeryFaultProbe();
     resetTargetedQueryReplyFault();
@@ -1329,6 +1517,39 @@ describe("acceptance kit instrumentation", () => {
       await expect(runtime.edit({ occurrence: "occurrence-1", revision: "r1" })).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
       expect(fake.calls()).toBe(1);
       expect(scalarRequeryFaultProbe()).toMatchObject({ attemptId: null, publicationAcknowledged: false });
+    } finally {
+      resetScalarRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it.each(["normal", "lost-reply"] as const)("does not record an edit receipt after its runtime closes (%s)", async (outcome) => {
+    resetScalarRequeryFaultProbe();
+    let settleOld!: (value: ReturnType<typeof projection>) => void;
+    let calls = 0;
+    const fake = fakeKit(async () => {
+      calls += 1;
+      if (calls === 1) return new Promise((resolve) => { settleOld = resolve; });
+      return projection();
+    });
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit);
+    try {
+      const receiptBefore = lastReceipt();
+      if (outcome === "lost-reply") loseNextExecuteReply();
+      const oldEdit = runtime.edit({ occurrence: "occurrence-1", revision: "r1" });
+      await vi.waitFor(() => expect(settleOld).toBeTypeOf("function"));
+      await runtime.close();
+      failSecondScalarRequeryReplyAfterFirst();
+      settleOld(projection({ resulting_revision: "r3" }));
+      if (outcome === "lost-reply") await expect(oldEdit).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+      else await expect(oldEdit).resolves.toMatchObject({ revision: "r3" });
+      expect(lastReceipt()).toEqual(receiptBefore);
+      expect(scalarRequeryFaultProbe()).toMatchObject({ publicationAcknowledged: false, attemptId: expect.any(Number), invokedDefinitionIds: [] });
+
+      const freshEdit = await runtime.edit({ occurrence: "occurrence-1", revision: "r1" });
+      await expect(runtime.discoverKeyedGroupedSums(freshEdit as never)).rejects.toThrow(/second grouped-summary query reply discarded/);
+      expect(calls).toBe(2);
+      expect(fake.closeCalls()).toBe(1);
     } finally {
       resetScalarRequeryFaultProbe();
       restoreWindow();
