@@ -580,7 +580,7 @@ try {
   assert.equal(await previousSibling.count(), 1);
   assert.equal(await previousSibling.locator(".ts-content-meta").textContent().then((text) => text?.startsWith("Previous result") ?? false), true, "a valid sibling snapshot is labeled previous while pending");
   assert.equal(await page.getByText("This previous result has source issues. Its values are hidden while results update.", { exact: true }).count(), 1);
-  assert.equal(await page.getByText("Some results need attention. Correct the source data to update them.", { exact: true }).count(), 0, "old diagnostics do not retain current-source guidance while pending");
+  assert.equal(await page.getByText("Some results need attention. Check the affected summaries.", { exact: true }).count(), 0, "the neutral attention notice is withheld while results are pending");
   const pendingCreateButtons = page.getByRole("button", { name: "Create bar report", exact: true });
   assert.equal(await pendingCreateButtons.count(), 1, "the result with no grouped values offers no report creation");
   for (const button of await pendingCreateButtons.all()) assert.equal(await button.isDisabled(), true);
