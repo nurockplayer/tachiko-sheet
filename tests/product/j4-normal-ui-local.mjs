@@ -229,7 +229,7 @@ try {
   assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Results need attention");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByLabel("Cross-table diagnostics", { exact: true }).waitFor();
-  assert.match(await page.getByText("Some results need attention. Correct the source data to update them.", { exact: true }).textContent(), /Some results need attention/);
+  assert.match(await page.getByText("Some results need attention. Check the affected summaries.", { exact: true }).textContent(), /Some results need attention/);
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 1, "confirmed observation retains its complete definition inventory");
   assert.equal(await page.getByLabel("Cross-table diagnostics", { exact: true }).count(), 1, "the affected result exposes its Work diagnostics");
   assert.equal(await page.getByLabel("Cross-table groups", { exact: true }).count(), 0, "diagnostic results withhold grouped values");
@@ -690,6 +690,8 @@ try {
   assert.equal(targetedFaultEvidence.consumed, true, "the one-shot target was consumed exactly once");
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current", "the workbook remains current after this known targeted failure");
   assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Results need attention");
+  assert.equal(await page.getByText("Some results need attention. Check the affected summaries.", { exact: true }).isVisible(), true, "a read failure uses neutral attention guidance");
+  assert.equal(await page.getByText("Some results need attention. Correct the source data to update them.", { exact: true }).count(), 0, "a read failure does not claim the source data changed");
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 1, "only targeted A is withdrawn");
   const preservedSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
   assert.equal(await preservedSibling.count(), 1);
@@ -702,6 +704,7 @@ try {
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), "Targeted recovery report", "A report draft is retained while its source result is missing");
   assert.equal(await page.getByText("This summary has no confirmed current result. Refresh it to try again. Previous chart values are hidden.", { exact: true }).isVisible(), true);
+  assert.equal(await page.getByText(/Correct the source data to see the report/i).count(), 0, "the read failure does not show diagnostic source-correction guidance");
   assert.equal(await page.getByLabel("Current report data", { exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0);
   const beforeDependentSave = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
