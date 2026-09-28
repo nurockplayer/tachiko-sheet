@@ -58,7 +58,15 @@ export interface AcceptanceUnknownObservation {
 }
 
 export interface ScalarRequeryFaultProbe {
+  attemptId: number | null;
   publicationAcknowledged: boolean;
+  clientIdentity: number | null;
+  occurrence: string | null;
+  publicationCallId: number | null;
+  revision: string | null;
+  discoveryInvocationId: number | null;
+  suppliedWitness: { occurrence: string; revision: string } | null;
+  queryCallIds: number[];
   invokedDefinitionIds: string[];
   discardedDefinitionId: string | null;
   secondReplyHeld: boolean;
@@ -162,11 +170,16 @@ let openProjectionFaultArmed = false;
 let j4PostPublicationReadFaultRequested = false;
 let j4PostPublicationReadFaultArmed = false;
 let j4PostPublicationReadSkipped = false;
-let scalarRequeryFaultRequested = false;
-let scalarRequeryFaultArmed = false;
-let scalarRequeryFaultRevision: string | null = null;
 let scalarRequeryFaultProbeValue: ScalarRequeryFaultProbe = {
+  attemptId: null,
   publicationAcknowledged: false,
+  clientIdentity: null,
+  occurrence: null,
+  publicationCallId: null,
+  revision: null,
+  discoveryInvocationId: null,
+  suppliedWitness: null,
+  queryCallIds: [],
   invokedDefinitionIds: [],
   discardedDefinitionId: null,
   secondReplyHeld: false,
@@ -230,8 +243,36 @@ const importInspectionGate = operationGate();
 const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
 const scalarRequerySecondReplyGate = operationGate();
-let scalarRequerySecondReplyHoldRequested = false;
-let scalarRequeryFaultGeneration = 0;
+interface ScalarAttempt {
+  readonly id: number;
+  phase: "requested" | "publication-dispatched" | "published" | "acknowledged" | "discovering" | "consumed" | "retired";
+  editInvocationId: number | null;
+  requestWitness: { occurrence: string; revision: string } | null;
+  clientIdentity: number | null;
+  publicationCallId: number | null;
+  revision: string | null;
+  resultWitness: { occurrence: string; revision: string } | null;
+  discoveryInvocationId: number | null;
+  suppliedWitness: { occurrence: string; revision: string } | null;
+  invokedDefinitionIds: string[];
+  queryCallIds: number[];
+  discardedDefinitionId: string | null;
+  holdRequested: boolean;
+}
+interface ScalarDiscoveryContext {
+  readonly attempt: ScalarAttempt;
+  readonly invocationId: number;
+  readonly witness: { occurrence: string; revision: string };
+  valid: boolean;
+  bootstrapConfirmed: boolean;
+  definitionIds: string[];
+  nextDefinitionIndex: number;
+}
+let scalarAttemptSequence = 0;
+let scalarOperationSequence = 0;
+let latestPublicationOperationId = 0;
+let currentScalarAttempt: ScalarAttempt | null = null;
+let activeScalarDiscovery: ScalarDiscoveryContext | null = null;
 const queryDefinitionIdLog: string[] = [];
 interface AcceptanceClientEvidence {
   identity: number;
@@ -254,6 +295,8 @@ interface TargetedQueryRequest {
 let acceptanceClientIdentity = 0;
 const clientEvidence = new WeakMap<object, AcceptanceClientEvidence>();
 const clientEvidenceByIdentity = new Map<number, AcceptanceClientEvidence>();
+let acceptanceObservationSequence = 0;
+const latestObservationByClient = new WeakMap<object, number>();
 const observedDefinitionQueries: ObservedDefinitionQuery[] = [];
 let targetedQueryFaultGeneration = 0;
 let targetedQueryFaultArmed = false;
@@ -271,6 +314,76 @@ let targetedQueryFaultProbeValue: TargetedQueryFaultProbe = {
   consumed: false,
   resetReason: null,
 };
+
+function scalarAttemptIsCurrent(attempt: ScalarAttempt): boolean {
+  return currentScalarAttempt === attempt && attempt.phase !== "retired";
+}
+
+function updateScalarProbe(attempt: ScalarAttempt): void {
+  if (!scalarAttemptIsCurrent(attempt)) return;
+  scalarRequeryFaultProbeValue = {
+    attemptId: attempt.id,
+    publicationAcknowledged: attempt.phase === "acknowledged" || attempt.phase === "discovering" || attempt.phase === "consumed",
+    clientIdentity: attempt.clientIdentity,
+    occurrence: attempt.resultWitness?.occurrence ?? attempt.requestWitness?.occurrence ?? null,
+    publicationCallId: attempt.publicationCallId,
+    revision: attempt.revision,
+    discoveryInvocationId: attempt.discoveryInvocationId,
+    suppliedWitness: attempt.suppliedWitness ? { ...attempt.suppliedWitness } : null,
+    queryCallIds: [...attempt.queryCallIds],
+    invokedDefinitionIds: [...attempt.invokedDefinitionIds],
+    discardedDefinitionId: attempt.discardedDefinitionId,
+    secondReplyHeld: scalarRequerySecondReplyGate.isActive(),
+  };
+}
+
+function retireScalarAttempt(attempt: ScalarAttempt | null = currentScalarAttempt): void {
+  if (!attempt || currentScalarAttempt !== attempt) return;
+  attempt.phase = "retired";
+  currentScalarAttempt = null;
+  if (activeScalarDiscovery?.attempt === attempt) {
+    activeScalarDiscovery.valid = false;
+    activeScalarDiscovery = null;
+  }
+  scalarRequerySecondReplyGate.reset();
+  scalarRequeryFaultProbeValue = {
+    attemptId: null,
+    publicationAcknowledged: false,
+    clientIdentity: null,
+    occurrence: null,
+    publicationCallId: null,
+    revision: null,
+    discoveryInvocationId: null,
+    suppliedWitness: null,
+    queryCallIds: [],
+    invokedDefinitionIds: [],
+    discardedDefinitionId: null,
+    secondReplyHeld: false,
+  };
+}
+
+function requestScalarAttempt(): ScalarAttempt {
+  retireScalarAttempt();
+  const attempt: ScalarAttempt = {
+    id: ++scalarAttemptSequence,
+    phase: "requested",
+    editInvocationId: null,
+    requestWitness: null,
+    clientIdentity: null,
+    publicationCallId: null,
+    revision: null,
+    resultWitness: null,
+    discoveryInvocationId: null,
+    suppliedWitness: null,
+    queryCallIds: [],
+    invokedDefinitionIds: [],
+    discardedDefinitionId: null,
+    holdRequested: false,
+  };
+  currentScalarAttempt = attempt;
+  updateScalarProbe(attempt);
+  return attempt;
+}
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -354,6 +467,22 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (property === "queryKeyedGroupedSum") {
         return async (...args: unknown[]): Promise<unknown> => {
           const definitionId = String(args[0]);
+          const scalarContextAtDispatch = activeScalarDiscovery;
+          const scalarAttemptAtDispatch = scalarContextAtDispatch?.attempt ?? null;
+          const scalarAttemptPointerAtDispatch = currentScalarAttempt;
+          const scalarQueryCallId = ++scalarOperationSequence;
+          let scalarQueryExpected = false;
+          if (scalarContextAtDispatch && scalarAttemptAtDispatch && scalarContextAtDispatch.valid &&
+            scalarAttemptIsCurrent(scalarAttemptAtDispatch)) {
+            if (scalarContextAtDispatch.bootstrapConfirmed &&
+              scalarContextAtDispatch.definitionIds[scalarContextAtDispatch.nextDefinitionIndex] === definitionId) {
+              scalarQueryExpected = true;
+              scalarContextAtDispatch.nextDefinitionIndex += 1;
+            } else {
+              scalarContextAtDispatch.valid = false;
+              retireScalarAttempt(scalarAttemptAtDispatch);
+            }
+          }
           const targetedGenerationAtDispatch = targetedQueryFaultGeneration;
           const targetedRequestAtDispatch = targetedQueryRequest;
           const targetedWasArmedAtDispatch = targetedQueryFaultArmed;
@@ -362,7 +491,12 @@ function instrumentClient(client: PublicClient): PublicClient {
           try {
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           } catch (error) {
-            if (scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+            if (scalarContextAtDispatch && scalarAttemptAtDispatch &&
+              scalarContextAtDispatch.valid && scalarAttemptIsCurrent(scalarAttemptAtDispatch) &&
+              scalarAttemptAtDispatch.discoveryInvocationId === scalarContextAtDispatch.invocationId &&
+              scalarQueryCallId > 0) {
+              retireScalarAttempt(scalarAttemptAtDispatch);
+            }
             if (targetedWasArmedAtDispatch && targetedQueryFaultArmed &&
               targetedQueryFaultGeneration === targetedGenerationAtDispatch &&
               targetedQueryRequest === targetedRequestAtDispatch) {
@@ -371,13 +505,26 @@ function instrumentClient(client: PublicClient): PublicClient {
             throw error;
           }
           const actualRevision = (result as { revision?: unknown }).revision;
-          observedDefinitionQueries.push({
-            definitionId,
-            occurrence: evidence.occurrence,
-            revision: typeof actualRevision === "string" ? actualRevision : null,
-            clientIdentity: evidence.identity,
-          });
-          if (observedDefinitionQueries.length > 128) observedDefinitionQueries.shift();
+          const scalarQueryStillOwned = Boolean(scalarContextAtDispatch && scalarQueryExpected && scalarAttemptAtDispatch &&
+            scalarContextAtDispatch.valid && currentScalarAttempt === scalarAttemptAtDispatch &&
+            scalarAttemptAtDispatch.phase === "discovering" &&
+            scalarAttemptAtDispatch.discoveryInvocationId === scalarContextAtDispatch.invocationId &&
+            scalarAttemptAtDispatch.clientIdentity === evidence.identity &&
+            scalarContextAtDispatch.witness.occurrence === scalarAttemptAtDispatch.resultWitness?.occurrence &&
+            scalarContextAtDispatch.witness.revision === scalarAttemptAtDispatch.revision &&
+            actualRevision === scalarAttemptAtDispatch.revision);
+          const queryCacheable = scalarContextAtDispatch
+            ? scalarQueryStillOwned
+            : scalarAttemptPointerAtDispatch === null && currentScalarAttempt === null;
+          if (queryCacheable) {
+            observedDefinitionQueries.push({
+              definitionId,
+              occurrence: evidence.occurrence,
+              revision: typeof actualRevision === "string" ? actualRevision : null,
+              clientIdentity: evidence.identity,
+            });
+            if (observedDefinitionQueries.length > 128) observedDefinitionQueries.shift();
+          }
           if (targetedWasArmedAtDispatch && targetedQueryFaultArmed &&
             targetedQueryFaultGeneration === targetedGenerationAtDispatch &&
             targetedQueryRequest === targetedRequestAtDispatch) {
@@ -405,26 +552,48 @@ function instrumentClient(client: PublicClient): PublicClient {
               throw new Error("Acceptance-only targeted grouped-summary query reply discarded after real Work query.");
             }
           }
-          if (!scalarRequeryFaultArmed) return result;
-          const faultGeneration = scalarRequeryFaultGeneration;
-          if ((result as { revision?: unknown }).revision !== scalarRequeryFaultRevision) {
-            resetScalarRequeryFaultProbe();
+          if (!scalarContextAtDispatch || !scalarAttemptAtDispatch ||
+            !scalarQueryExpected || !scalarContextAtDispatch.valid ||
+            !scalarAttemptIsCurrent(scalarAttemptAtDispatch)) return result;
+          const attempt = scalarAttemptAtDispatch;
+          if (attempt.phase !== "discovering" ||
+            attempt.discoveryInvocationId !== scalarContextAtDispatch.invocationId ||
+            attempt.clientIdentity !== evidence.identity ||
+            scalarContextAtDispatch.witness.occurrence !== attempt.resultWitness?.occurrence ||
+            scalarContextAtDispatch.witness.revision !== attempt.revision ||
+            !scalarContextAtDispatch.bootstrapConfirmed ||
+            (result as { revision?: unknown }).revision !== attempt.revision) {
+            retireScalarAttempt(attempt);
             return result;
           }
-          scalarRequeryFaultProbeValue.invokedDefinitionIds.push(definitionId);
-          if (scalarRequeryFaultProbeValue.invokedDefinitionIds.length === 1) return result;
-          if (scalarRequerySecondReplyHoldRequested) {
-            scalarRequerySecondReplyHoldRequested = false;
-            await scalarRequerySecondReplyGate.pause();
-            if (faultGeneration !== scalarRequeryFaultGeneration || !scalarRequeryFaultArmed) return result;
+          attempt.invokedDefinitionIds.push(definitionId);
+          attempt.queryCallIds.push(scalarQueryCallId);
+          if (attempt.invokedDefinitionIds.length === 1) {
+            updateScalarProbe(attempt);
+            return result;
           }
-          scalarRequeryFaultArmed = false;
-          scalarRequeryFaultProbeValue.discardedDefinitionId = definitionId;
+          if (attempt.invokedDefinitionIds.length !== 2) {
+            retireScalarAttempt(attempt);
+            return result;
+          }
+          if (attempt.holdRequested) {
+            attempt.holdRequested = false;
+            updateScalarProbe(attempt);
+            await scalarRequerySecondReplyGate.pause();
+            if (!scalarContextAtDispatch.valid || !scalarAttemptIsCurrent(attempt) ||
+              attempt.discoveryInvocationId !== scalarContextAtDispatch.invocationId) return result;
+          }
+          attempt.phase = "consumed";
+          attempt.discardedDefinitionId = definitionId;
+          updateScalarProbe(attempt);
           throw new Error("Acceptance-only second grouped-summary query reply discarded after real Work query.");
         };
       }
       if (property === "observeOccurrence") {
         return async (...args: unknown[]): Promise<unknown> => {
+          const scalarAttemptAtObserve = currentScalarAttempt;
+          const observationCallId = ++acceptanceObservationSequence;
+          latestObservationByClient.set(target, observationCallId);
           const targetedGenerationAtObserve = targetedQueryFaultGeneration;
           const targetedWasArmedAtObserve = targetedQueryFaultArmed;
           let result: unknown;
@@ -439,8 +608,10 @@ function instrumentClient(client: PublicClient): PublicClient {
           }
           const occurrence = (result as { scope?: unknown }).scope;
           const revision = (result as { revision?: unknown }).revision;
-          evidence.occurrence = typeof occurrence === "string" ? occurrence : null;
-          evidence.revision = typeof revision === "string" ? revision : null;
+          if (latestObservationByClient.get(target) === observationCallId && currentScalarAttempt === scalarAttemptAtObserve) {
+            evidence.occurrence = typeof occurrence === "string" ? occurrence : null;
+            evidence.revision = typeof revision === "string" ? revision : null;
+          }
           if (targetedWasArmedAtObserve && targetedQueryFaultArmed &&
             targetedQueryFaultGeneration === targetedGenerationAtObserve &&
             (evidence.occurrence !== targetedQueryFaultProbeValue.occurrence || evidence.revision !== targetedQueryFaultProbeValue.revision)) {
@@ -451,14 +622,36 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "bootstrap") {
         return async (...args: unknown[]): Promise<unknown> => {
-          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
-          if (scalarRequeryFaultArmed) {
+          const scalarContextAtDispatch = activeScalarDiscovery;
+          let result: unknown;
+          try {
+            result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          } catch (error) {
+            const attempt = scalarContextAtDispatch?.attempt;
+            if (scalarContextAtDispatch?.valid && attempt && scalarAttemptIsCurrent(attempt) &&
+              attempt.discoveryInvocationId === scalarContextAtDispatch.invocationId) {
+              scalarContextAtDispatch.valid = false;
+              retireScalarAttempt(attempt);
+            }
+            throw error;
+          }
+          const attempt = scalarContextAtDispatch?.attempt;
+          if (scalarContextAtDispatch?.valid && attempt && scalarAttemptIsCurrent(attempt) &&
+            attempt.discoveryInvocationId === scalarContextAtDispatch.invocationId) {
             const snapshot = result as { revision?: unknown; keyed_grouped_sum_definition_ids?: unknown };
             const ids = Array.isArray(snapshot.keyed_grouped_sum_definition_ids)
               ? snapshot.keyed_grouped_sum_definition_ids
               : [];
-            if (snapshot.revision !== scalarRequeryFaultRevision || ids.length < 2) {
-              resetScalarRequeryFaultProbe();
+            if (evidence.identity !== attempt.clientIdentity ||
+              snapshot.revision !== attempt.revision || ids.length < 2 ||
+              scalarContextAtDispatch.witness.occurrence !== attempt.resultWitness?.occurrence ||
+              scalarContextAtDispatch.witness.revision !== attempt.revision) {
+              scalarContextAtDispatch.valid = false;
+              retireScalarAttempt(attempt);
+            } else {
+              scalarContextAtDispatch.bootstrapConfirmed = true;
+              scalarContextAtDispatch.definitionIds = ids.map(String);
+              scalarContextAtDispatch.nextDefinitionIndex = 0;
             }
           }
           return result;
@@ -485,7 +678,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (property === "openProject") {
         return async (...args: unknown[]): Promise<unknown> => {
           if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
-          if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+          retireScalarAttempt();
           openProjectDispatchCount += 1;
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           if (openReplyFaultArmed) {
@@ -498,7 +691,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (property === "importSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
           if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
-          if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+          retireScalarAttempt();
           if (importBeforeDispatchFaultArmed) {
             importBeforeDispatchFaultArmed = false;
             throw new UnknownOperationOutcomeError("Import delivery outcome was unknown before dispatch; no candidate was sent.");
@@ -570,7 +763,28 @@ async function dispatchPublication(
 ): Promise<PublicationProjection> {
   dispatchCount += 1;
   if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("publication-replaced-revision");
-  if (scalarRequeryFaultRequested && !EDIT_METHODS.has(method)) resetScalarRequeryFaultProbe();
+  const publicationOperationId = ++scalarOperationSequence;
+  latestPublicationOperationId = publicationOperationId;
+  const attemptAtDispatch = currentScalarAttempt;
+  let ownsScalarPublication = false;
+  if (attemptAtDispatch && !EDIT_METHODS.has(method)) {
+    retireScalarAttempt(attemptAtDispatch);
+  } else if (attemptAtDispatch && EDIT_METHODS.has(method)) {
+    const client = clientEvidence.get(target);
+    const requestedRevision = typeof args[0] === "string" ? args[0] : null;
+    if (attemptAtDispatch.phase === "requested" && attemptAtDispatch.editInvocationId !== null &&
+      attemptAtDispatch.requestWitness && client &&
+      requestedRevision === attemptAtDispatch.requestWitness.revision &&
+      client.identity === (attemptAtDispatch.clientIdentity ?? client.identity)) {
+      ownsScalarPublication = true;
+      attemptAtDispatch.phase = "publication-dispatched";
+      attemptAtDispatch.clientIdentity = client.identity;
+      attemptAtDispatch.publicationCallId = publicationOperationId;
+      updateScalarProbe(attemptAtDispatch);
+    } else {
+      retireScalarAttempt(attemptAtDispatch);
+    }
+  }
   const call = (): Promise<PublicationProjection> =>
     (target[method as keyof PublicClient] as (...rest: unknown[]) => Promise<PublicationProjection>)(
       ...args,
@@ -579,7 +793,10 @@ async function dispatchPublication(
     if (loseArmed) {
       loseArmed = false;
       try {
-        lastReceiptValue = await call();
+        const receipt = await call();
+        if (latestPublicationOperationId === publicationOperationId && currentScalarAttempt === attemptAtDispatch) {
+          lastReceiptValue = receipt;
+        }
         throw new UnknownOperationOutcomeError(
           "The dispatched change reply was lost after the real transport replied.",
         );
@@ -590,21 +807,25 @@ async function dispatchPublication(
       }
     }
     const receipt = await call();
-    lastReceiptValue = receipt;
-    if (EDIT_METHODS.has(method) && scalarRequeryFaultRequested) {
-      scalarRequeryFaultRequested = false;
-      scalarRequeryFaultArmed = true;
-      scalarRequeryFaultRevision = receipt.resulting_revision;
-      scalarRequeryFaultProbeValue = {
-        publicationAcknowledged: true,
-        invokedDefinitionIds: [],
-        discardedDefinitionId: null,
-        secondReplyHeld: false,
-      };
+    if (latestPublicationOperationId === publicationOperationId && currentScalarAttempt === attemptAtDispatch) {
+      lastReceiptValue = receipt;
+    }
+    if (ownsScalarPublication && attemptAtDispatch && scalarAttemptIsCurrent(attemptAtDispatch)) {
+      const revision = receipt.resulting_revision;
+      if (typeof revision !== "string" || !revision || !attemptAtDispatch.requestWitness ||
+        !attemptAtDispatch.clientIdentity || !attemptAtDispatch.publicationCallId) {
+        retireScalarAttempt(attemptAtDispatch);
+      } else {
+        attemptAtDispatch.revision = revision;
+        attemptAtDispatch.phase = "published";
+        updateScalarProbe(attemptAtDispatch);
+      }
     }
     return receipt;
   } catch (error) {
-    if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+    if (ownsScalarPublication && attemptAtDispatch && scalarAttemptIsCurrent(attemptAtDispatch)) {
+      retireScalarAttempt(attemptAtDispatch);
+    }
     throw error;
   }
 }
@@ -913,11 +1134,12 @@ export function failNextJ4PostPublicationRead(): void {
  */
 export function failSecondScalarRequeryReplyAfterFirst(): void {
   resetScalarRequeryFaultProbe();
-  scalarRequeryFaultRequested = true;
+  requestScalarAttempt();
 }
 
 export function deferSecondScalarRequeryReply(): void {
-  scalarRequerySecondReplyHoldRequested = true;
+  if (!currentScalarAttempt || currentScalarAttempt.phase !== "requested") return;
+  currentScalarAttempt.holdRequested = true;
   scalarRequerySecondReplyGate.defer();
 }
 
@@ -926,26 +1148,18 @@ export function releaseSecondScalarRequeryReply(): void {
 }
 
 export function resetScalarRequeryFaultProbe(): void {
-  scalarRequeryFaultGeneration += 1;
-  scalarRequerySecondReplyHoldRequested = false;
-  scalarRequerySecondReplyGate.reset();
-  scalarRequeryFaultRequested = false;
-  scalarRequeryFaultArmed = false;
-  scalarRequeryFaultRevision = null;
-  scalarRequeryFaultProbeValue = {
-    publicationAcknowledged: false,
-    invokedDefinitionIds: [],
-    discardedDefinitionId: null,
-    secondReplyHeld: false,
-  };
+  retireScalarAttempt();
 }
 
 export function scalarRequeryFaultProbe(): ScalarRequeryFaultProbe {
+  const attempt = currentScalarAttempt;
+  if (attempt) updateScalarProbe(attempt);
   return {
-    publicationAcknowledged: scalarRequeryFaultProbeValue.publicationAcknowledged,
+    ...scalarRequeryFaultProbeValue,
+    suppliedWitness: scalarRequeryFaultProbeValue.suppliedWitness
+      ? { ...scalarRequeryFaultProbeValue.suppliedWitness }
+      : null,
     invokedDefinitionIds: [...scalarRequeryFaultProbeValue.invokedDefinitionIds],
-    discardedDefinitionId: scalarRequeryFaultProbeValue.discardedDefinitionId,
-    secondReplyHeld: scalarRequerySecondReplyGate.isActive(),
   };
 }
 
@@ -1090,6 +1304,42 @@ export async function settleFaultWindow(): Promise<void> {
 export function installAcceptance(next: AcceptanceWiring): void {
   wiring = next;
   installRuntimeReadProbe(next.runtime);
+  const edit = next.runtime.edit;
+  next.runtime.edit = async (witness, target, change) => {
+    let attempt = currentScalarAttempt;
+    let editInvocationId: number | null = null;
+    if (attempt) {
+      if (attempt.phase === "requested" && attempt.editInvocationId === null &&
+        typeof witness.occurrence === "string" && typeof witness.revision === "string") {
+        editInvocationId = ++scalarOperationSequence;
+        attempt.editInvocationId = editInvocationId;
+        attempt.requestWitness = { occurrence: witness.occurrence, revision: witness.revision };
+      } else {
+        retireScalarAttempt(attempt);
+        attempt = null;
+      }
+    }
+    try {
+      const view = await edit.call(next.runtime, witness, target, change);
+      if (attempt && scalarAttemptIsCurrent(attempt)) {
+        if (attempt.editInvocationId !== editInvocationId || attempt.phase !== "published" ||
+          typeof view.occurrence !== "string" || typeof view.revision !== "string" ||
+          view.revision !== attempt.revision || !attempt.requestWitness ||
+          view.occurrence !== attempt.requestWitness.occurrence ||
+          !attempt.clientIdentity || !attempt.publicationCallId) {
+          retireScalarAttempt(attempt);
+        } else {
+          attempt.resultWitness = { occurrence: view.occurrence, revision: view.revision };
+          attempt.phase = "acknowledged";
+          updateScalarProbe(attempt);
+        }
+      }
+      return view;
+    } catch (error) {
+      if (attempt && scalarAttemptIsCurrent(attempt)) retireScalarAttempt(attempt);
+      throw error;
+    }
+  };
   const queryKeyedGroupedSum = next.runtime.queryKeyedGroupedSum;
   next.runtime.queryKeyedGroupedSum = (witness, definitionId) => {
     if (!targetedQueryFaultArmed) return queryKeyedGroupedSum.call(next.runtime, witness, definitionId);
@@ -1135,14 +1385,45 @@ export function installAcceptance(next: AcceptanceWiring): void {
   const discoverKeyedGroupedSums = next.runtime.discoverKeyedGroupedSums;
   next.runtime.discoverKeyedGroupedSums = async (...args) => {
     if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("discovery-replaced-target-call");
+    const witness = args[0] as { occurrence?: unknown; revision?: unknown } | undefined;
+    let context: ScalarDiscoveryContext | null = null;
+    const attempt = currentScalarAttempt;
+    if (activeScalarDiscovery) {
+      activeScalarDiscovery.valid = false;
+      if (currentScalarAttempt) retireScalarAttempt(currentScalarAttempt);
+      activeScalarDiscovery = null;
+    }
+    if (attempt && scalarAttemptIsCurrent(attempt)) {
+      if (attempt.phase !== "acknowledged" || typeof witness?.occurrence !== "string" ||
+        typeof witness.revision !== "string" || !attempt.resultWitness ||
+        witness.occurrence !== attempt.resultWitness.occurrence || witness.revision !== attempt.resultWitness.revision) {
+        retireScalarAttempt(attempt);
+      } else {
+        const invocationId = ++scalarOperationSequence;
+        attempt.phase = "discovering";
+        attempt.discoveryInvocationId = invocationId;
+        attempt.suppliedWitness = { occurrence: witness.occurrence, revision: witness.revision };
+        context = {
+          attempt,
+          invocationId,
+          witness: { occurrence: witness.occurrence, revision: witness.revision },
+          valid: true,
+          bootstrapConfirmed: false,
+          definitionIds: [],
+          nextDefinitionIndex: 0,
+        };
+        activeScalarDiscovery = context;
+        updateScalarProbe(attempt);
+      }
+    }
     try {
       return await discoverKeyedGroupedSums.apply(next.runtime, args);
     } finally {
-      // Discovery is the bounded operation that owns this test-only fault.
-      // If it exits before two actual definition queries, discard the arm so a
-      // later unrelated discovery cannot inherit it.
-      if (scalarRequeryFaultArmed && scalarRequeryFaultProbeValue.invokedDefinitionIds.length < 2) {
-        resetScalarRequeryFaultProbe();
+      if (context && activeScalarDiscovery === context) activeScalarDiscovery = null;
+      if (context && context.valid && scalarAttemptIsCurrent(context.attempt) &&
+        context.attempt.discoveryInvocationId === context.invocationId &&
+        context.attempt.invokedDefinitionIds.length < 2) {
+        retireScalarAttempt(context.attempt);
       }
     }
   };

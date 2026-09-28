@@ -395,6 +395,7 @@ try {
   await failureEditor.fill("250");
   const executeBeforeFault = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
   const copiesBeforeFault = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  const scalarWitnessBeforeEdit = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
   const exportsBeforeFault = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
   await page.evaluate(() => {
     window.__tachikoAcceptance.failSecondScalarRequeryReplyAfterFirst();
@@ -437,10 +438,32 @@ try {
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), executeBeforeFault + 1, "published edit is never retried after query failure");
   const queryFault = await page.evaluate(() => window.__tachikoAcceptance.scalarRequeryFaultProbe());
   assert.equal(queryFault.publicationAcknowledged, true, "fault is armed only after a real scalar publication acknowledgement");
+  assert.equal(typeof queryFault.attemptId, "number", "the scalar witness belongs to one immutable attempt");
+  assert.equal(typeof queryFault.clientIdentity, "number", "the scalar witness identifies its owning public client");
+  assert.equal(queryFault.occurrence, scalarWitnessBeforeEdit.occurrence, "the publication remains on the observed Work occurrence");
+  assert.equal(typeof queryFault.publicationCallId, "number", "the attempt records its real publication dispatch");
+  assert.equal(queryFault.suppliedWitness.occurrence, queryFault.occurrence);
+  assert.equal(queryFault.suppliedWitness.revision, queryFault.revision, "discovery uses the acknowledged result revision");
+  assert.equal(typeof queryFault.discoveryInvocationId, "number", "the attempt records the exact discovery invocation");
+  assert.equal(queryFault.queryCallIds.length, 2, "both real query dispatches are captured by this attempt");
+  assert.notEqual(queryFault.queryCallIds[0], queryFault.queryCallIds[1]);
   assert.equal(queryFault.invokedDefinitionIds.length, 2, "the first query returns before the second real query fails");
   assert.equal(queryFault.secondReplyHeld, false, "the deterministic second-reply hold has been released");
   assert.notEqual(queryFault.invokedDefinitionIds[0], queryFault.invokedDefinitionIds[1]);
   assert.equal(queryFault.discardedDefinitionId, queryFault.invokedDefinitionIds[1], "the second real query reply is the discarded reply");
+  console.log(JSON.stringify({
+    case: "steward-46-scalar-requery-fault-attribution",
+    attemptId: queryFault.attemptId,
+    clientIdentity: queryFault.clientIdentity,
+    occurrence: queryFault.occurrence,
+    publicationCallId: queryFault.publicationCallId,
+    resultRevision: queryFault.revision,
+    discoveryInvocationId: queryFault.discoveryInvocationId,
+    suppliedWitness: queryFault.suppliedWitness,
+    actualQueryCallIds: queryFault.queryCallIds,
+    actualDefinitionIds: queryFault.invokedDefinitionIds,
+    discardedDefinitionId: queryFault.discardedDefinitionId,
+  }));
 
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
@@ -458,7 +481,15 @@ try {
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), executeBeforeFault + 1, "Refresh observes; it does not replay the semantic edit");
   await page.evaluate(() => window.__tachikoAcceptance.resetScalarRequeryFaultProbe());
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.scalarRequeryFaultProbe()), {
+    attemptId: null,
     publicationAcknowledged: false,
+    clientIdentity: null,
+    occurrence: null,
+    publicationCallId: null,
+    revision: null,
+    discoveryInvocationId: null,
+    suppliedWitness: null,
+    queryCallIds: [],
     invokedDefinitionIds: [],
     discardedDefinitionId: null,
     secondReplyHeld: false,
