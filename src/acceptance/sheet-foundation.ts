@@ -70,6 +70,7 @@ export interface ScalarRequeryFaultProbe {
   invokedDefinitionIds: string[];
   discardedDefinitionId: string | null;
   secondReplyHeld: boolean;
+  invalidReason: "ambiguous-runtime-invocation" | null;
 }
 
 export interface TargetedQueryFaultProbe {
@@ -142,6 +143,7 @@ export interface AcceptanceApi {
 export interface AcceptanceWiring {
   runtime: SheetRuntime;
   copies: LocalCopies;
+  kitLoader: KitLoader;
 }
 
 declare global {
@@ -183,6 +185,7 @@ let scalarRequeryFaultProbeValue: ScalarRequeryFaultProbe = {
   invokedDefinitionIds: [],
   discardedDefinitionId: null,
   secondReplyHeld: false,
+  invalidReason: null,
 };
 let openProjectDispatchCount = 0;
 let importSpreadsheetDispatchCount = 0;
@@ -258,26 +261,74 @@ interface ScalarAttempt {
   queryCallIds: number[];
   discardedDefinitionId: string | null;
   holdRequested: boolean;
+  runtimeState: RuntimeInvocationState | null;
+  cancellationGenerationAtRequest: number | null;
 }
 interface ScalarDiscoveryContext {
   readonly attempt: ScalarAttempt;
   readonly invocationId: number;
   readonly witness: { occurrence: string; revision: string };
+  readonly runtimeInvocationId: number;
   valid: boolean;
   bootstrapConfirmed: boolean;
   definitionIds: string[];
   nextDefinitionIndex: number;
 }
+type RuntimeSeam = "publication" | "bootstrap" | "grouped-query" | "observation" | "close-project";
+interface RuntimeInvocationState {
+  readonly runtime: object;
+  readonly active: Set<RuntimeInvocation>;
+  clientIdentity: number | null;
+  cancellationGeneration: number;
+  associationConflict: boolean;
+}
+interface RuntimeInvocation {
+  readonly id: number;
+  readonly state: RuntimeInvocationState;
+  readonly method: string;
+  readonly seams: ReadonlySet<RuntimeSeam>;
+  readonly attemptAtEntry: ScalarAttempt | null;
+  readonly cancellationGenerationAtEntry: number;
+  ambiguous: boolean;
+  scalarDiscovery: ScalarDiscoveryContext | null;
+}
+interface RuntimeOriginResolution {
+  readonly status: "valid" | "independent" | "ambiguous-stale-unbound";
+  readonly invocation: RuntimeInvocation | null;
+  readonly state: RuntimeInvocationState | null;
+}
+const RUNTIME_METHOD_SEAMS: Record<string, readonly RuntimeSeam[]> = {
+  openFiles: ["publication", "observation", "bootstrap"],
+  openCanonical: ["publication", "observation", "bootstrap"],
+  openOpaque: ["publication", "observation", "bootstrap"],
+  read: ["observation", "bootstrap"],
+  selectCollection: ["observation", "bootstrap"],
+  edit: ["publication", "observation", "bootstrap"],
+  listKeyedGroupedSumBindings: ["bootstrap"],
+  queryKeyedGroupedSum: ["grouped-query"],
+  discoverKeyedGroupedSums: ["bootstrap", "grouped-query"],
+  createKeyedGroupedSum: ["publication", "observation", "bootstrap"],
+  importSpreadsheet: ["publication", "observation", "bootstrap"],
+  commitCleanup: ["publication", "observation", "bootstrap"],
+  close: ["close-project"],
+};
+let runtimeInvocationSequence = 0;
+const runtimeInvocationStates = new WeakMap<object, RuntimeInvocationState>();
+const activeRuntimeInvocationStates = new Set<RuntimeInvocationState>();
+const runtimeInvocationStack: RuntimeInvocation[] = [];
+const wrappedKitLoaders = new WeakSet<KitLoader>();
+const loaderRuntimeBindings = new WeakMap<KitLoader, RuntimeInvocationState>();
 let scalarAttemptSequence = 0;
 let scalarOperationSequence = 0;
 let latestPublicationOperationId = 0;
 let currentScalarAttempt: ScalarAttempt | null = null;
-let activeScalarDiscovery: ScalarDiscoveryContext | null = null;
 const queryDefinitionIdLog: string[] = [];
 interface AcceptanceClientEvidence {
   identity: number;
   occurrence: string | null;
   revision: string | null;
+  runtimeState: RuntimeInvocationState | null;
+  association: "mapped" | "independent" | "ambiguous";
 }
 interface ObservedDefinitionQuery {
   definitionId: string;
@@ -316,7 +367,135 @@ let targetedQueryFaultProbeValue: TargetedQueryFaultProbe = {
 };
 
 function scalarAttemptIsCurrent(attempt: ScalarAttempt): boolean {
-  return currentScalarAttempt === attempt && attempt.phase !== "retired";
+  return currentScalarAttempt === attempt && attempt.phase !== "retired" && attempt.runtimeState !== null &&
+    attempt.cancellationGenerationAtRequest === attempt.runtimeState.cancellationGeneration;
+}
+
+function runtimeStateFor(runtime: object): RuntimeInvocationState {
+  const existing = runtimeInvocationStates.get(runtime);
+  if (existing) return existing;
+  const state: RuntimeInvocationState = {
+    runtime,
+    active: new Set(),
+    clientIdentity: null,
+    cancellationGeneration: 0,
+    associationConflict: false,
+  };
+  runtimeInvocationStates.set(runtime, state);
+  return state;
+}
+
+function currentRuntimeInvocation(runtime: object): RuntimeInvocation | null {
+  const top = runtimeInvocationStack[runtimeInvocationStack.length - 1];
+  return top?.state.runtime === runtime ? top : null;
+}
+
+function seamsIntersect(left: ReadonlySet<RuntimeSeam>, right: ReadonlySet<RuntimeSeam>): boolean {
+  for (const seam of left) if (right.has(seam)) return true;
+  return false;
+}
+
+function runtimeInvocationOrigin(clientIdentity: number, seam: RuntimeSeam): RuntimeOriginResolution {
+  const evidence = clientEvidenceByIdentity.get(clientIdentity);
+  const state = evidence?.runtimeState ?? null;
+  if (!evidence) return { status: "ambiguous-stale-unbound", invocation: null, state };
+  if (evidence.association === "independent") {
+    return { status: "independent", invocation: null, state: null };
+  }
+  if (!evidence || evidence.association === "ambiguous" || !state || state.associationConflict) {
+    return { status: "ambiguous-stale-unbound", invocation: null, state };
+  }
+
+  const candidates = [...state.active].filter((invocation) => invocation.seams.has(seam));
+  const valid = candidates.filter((invocation) =>
+    !invocation.ambiguous && invocation.cancellationGenerationAtEntry === state.cancellationGeneration,
+  );
+  if (candidates.length !== 1 || valid.length !== 1) {
+    for (const candidate of candidates) candidate.ambiguous = true;
+    const attempt = currentScalarAttempt;
+    if (attempt?.runtimeState === state && candidates.some((candidate) => candidate.attemptAtEntry === attempt)) {
+      retireScalarAttempt(attempt, "ambiguous-runtime-invocation");
+    }
+    return { status: "ambiguous-stale-unbound", invocation: null, state };
+  }
+  return { status: "valid", invocation: valid[0], state };
+}
+
+function beginRuntimeInvocation(state: RuntimeInvocationState, method: string, args: unknown[]): RuntimeInvocation {
+  if (method === "close") {
+    state.cancellationGeneration += 1;
+    if (currentScalarAttempt?.runtimeState === state) retireScalarAttempt(currentScalarAttempt);
+  }
+  const seams = new Set<RuntimeSeam>(RUNTIME_METHOD_SEAMS[method] ?? []);
+  const conflicts = [...state.active].filter((active) => seamsIntersect(active.seams, seams));
+  const relatedAttempt = currentScalarAttempt?.runtimeState === state &&
+    currentScalarAttempt.cancellationGenerationAtRequest === state.cancellationGeneration
+    ? currentScalarAttempt
+    : null;
+  const overlapping = conflicts.length > 0;
+  const attemptAtEntry = !overlapping ? relatedAttempt : null;
+  const invocation: RuntimeInvocation = {
+    id: ++runtimeInvocationSequence,
+    state,
+    method,
+    seams,
+    attemptAtEntry,
+    cancellationGenerationAtEntry: state.cancellationGeneration,
+    ambiguous: overlapping,
+    scalarDiscovery: null,
+  };
+  state.active.add(invocation);
+  activeRuntimeInvocationStates.add(state);
+  if (method === "close") {
+    for (const active of state.active) {
+      if (active !== invocation) active.ambiguous = true;
+    }
+  }
+  if (overlapping) {
+    for (const conflict of conflicts) conflict.ambiguous = true;
+    if (relatedAttempt) retireScalarAttempt(relatedAttempt, "ambiguous-runtime-invocation");
+  } else if (attemptAtEntry && method !== "edit" && seams.has("publication")) {
+    retireScalarAttempt(attemptAtEntry);
+  } else if (attemptAtEntry && method === "edit") {
+    const witness = args[0] as { occurrence?: unknown; revision?: unknown } | undefined;
+    if (attemptAtEntry.phase === "requested" && attemptAtEntry.editInvocationId === null &&
+      typeof witness?.occurrence === "string" && typeof witness.revision === "string") {
+      attemptAtEntry.runtimeState = state;
+      attemptAtEntry.editInvocationId = invocation.id;
+      attemptAtEntry.requestWitness = { occurrence: witness.occurrence, revision: witness.revision };
+    } else {
+      retireScalarAttempt(attemptAtEntry);
+    }
+  }
+  return invocation;
+}
+
+function finishRuntimeInvocation(invocation: RuntimeInvocation): void {
+  invocation.state.active.delete(invocation);
+  if (invocation.state.active.size === 0) activeRuntimeInvocationStates.delete(invocation.state);
+}
+
+function installRuntimeInvocationTracking(runtime: object): void {
+  const state = runtimeStateFor(runtime);
+  const target = runtime as Record<string, unknown>;
+  for (const method of Object.keys(target)) {
+    const original = target[method];
+    if (typeof original !== "function") continue;
+    target[method] = function trackedRuntimeOperation(this: unknown, ...args: unknown[]): unknown {
+      const invocation = beginRuntimeInvocation(state, method, args);
+      runtimeInvocationStack.push(invocation);
+      let result: unknown;
+      try {
+        result = original.apply(this, args);
+      } catch (error) {
+        finishRuntimeInvocation(invocation);
+        throw error;
+      } finally {
+        runtimeInvocationStack.pop();
+      }
+      return Promise.resolve(result).finally(() => finishRuntimeInvocation(invocation));
+    };
+  }
 }
 
 function updateScalarProbe(attempt: ScalarAttempt): void {
@@ -334,16 +513,21 @@ function updateScalarProbe(attempt: ScalarAttempt): void {
     invokedDefinitionIds: [...attempt.invokedDefinitionIds],
     discardedDefinitionId: attempt.discardedDefinitionId,
     secondReplyHeld: scalarRequerySecondReplyGate.isActive(),
+    invalidReason: null,
   };
 }
 
-function retireScalarAttempt(attempt: ScalarAttempt | null = currentScalarAttempt): void {
+function retireScalarAttempt(
+  attempt: ScalarAttempt | null = currentScalarAttempt,
+  invalidReason: ScalarRequeryFaultProbe["invalidReason"] = null,
+): void {
   if (!attempt || currentScalarAttempt !== attempt) return;
   attempt.phase = "retired";
   currentScalarAttempt = null;
-  if (activeScalarDiscovery?.attempt === attempt) {
-    activeScalarDiscovery.valid = false;
-    activeScalarDiscovery = null;
+  for (const state of activeRuntimeInvocationStates) {
+    for (const invocation of state.active) {
+      if (invocation.scalarDiscovery?.attempt === attempt) invocation.scalarDiscovery.valid = false;
+    }
   }
   scalarRequerySecondReplyGate.reset();
   scalarRequeryFaultProbeValue = {
@@ -359,11 +543,14 @@ function retireScalarAttempt(attempt: ScalarAttempt | null = currentScalarAttemp
     invokedDefinitionIds: [],
     discardedDefinitionId: null,
     secondReplyHeld: false,
+    invalidReason,
   };
 }
 
 function requestScalarAttempt(): ScalarAttempt {
   retireScalarAttempt();
+  const state = wiring ? runtimeStateFor(wiring.runtime) : null;
+  if (state) state.cancellationGeneration += 1;
   const attempt: ScalarAttempt = {
     id: ++scalarAttemptSequence,
     phase: "requested",
@@ -379,6 +566,8 @@ function requestScalarAttempt(): ScalarAttempt {
     invokedDefinitionIds: [],
     discardedDefinitionId: null,
     holdRequested: false,
+    runtimeState: state,
+    cancellationGenerationAtRequest: state?.cancellationGeneration ?? null,
   };
   currentScalarAttempt = attempt;
   updateScalarProbe(attempt);
@@ -395,14 +584,19 @@ function requireWiring(): AcceptanceWiring {
  * client instance dispatched by the product, via a Proxy with bound methods.
  */
 export function wrapKitLoader(load: KitLoader): KitLoader {
-  return async (): Promise<CoreKit> => instrumentKit(await load());
+  const wrapped: KitLoader = async (): Promise<CoreKit> => {
+    const owner = loaderRuntimeBindings.get(wrapped) ?? null;
+    return instrumentKit(await load(), owner);
+  };
+  wrappedKitLoaders.add(wrapped);
+  return wrapped;
 }
 
-function instrumentKit(kit: CoreKit): CoreKit {
+function instrumentKit(kit: CoreKit, owner: RuntimeInvocationState | null): CoreKit {
   const create = kit.createExperimentalDesignerClient;
   return {
     ...kit,
-    createExperimentalDesignerClient: () => observeClientMethods(instrumentClient(create())),
+    createExperimentalDesignerClient: () => observeClientMethods(instrumentClient(create(), owner)),
   };
 }
 
@@ -422,12 +616,25 @@ function observeClientMethods(client: PublicClient): PublicClient {
   });
 }
 
-function instrumentClient(client: PublicClient): PublicClient {
+/**
+ * Attribution relies on the runtime's cached public client remaining private
+ * to its loader/runtime composition. Acceptance code never dispatches through
+ * that mapped client directly; external direct calls to it cannot be
+ * distinguished from a sole live runtime origin and receive no evidence
+ * credit unless the retained runtime invocation proves the dispatch.
+ */
+function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationState | null): PublicClient {
   const evidence: AcceptanceClientEvidence = {
     identity: ++acceptanceClientIdentity,
     occurrence: null,
     revision: null,
+    runtimeState,
+    association: runtimeState ? "mapped" : "independent",
   };
+  if (runtimeState) {
+    if (runtimeState.clientIdentity === null) runtimeState.clientIdentity = evidence.identity;
+    else if (runtimeState.clientIdentity !== evidence.identity) runtimeState.associationConflict = true;
+  }
   clientEvidence.set(client, evidence);
   clientEvidenceByIdentity.set(evidence.identity, evidence);
   return new Proxy(client, {
@@ -467,9 +674,14 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (property === "queryKeyedGroupedSum") {
         return async (...args: unknown[]): Promise<unknown> => {
           const definitionId = String(args[0]);
-          const scalarContextAtDispatch = activeScalarDiscovery;
+          const originAtDispatch = runtimeInvocationOrigin(evidence.identity, "grouped-query");
+          const originInvocationAtDispatch = originAtDispatch.invocation;
+          const scalarContextAtDispatch = originInvocationAtDispatch?.method === "discoverKeyedGroupedSums"
+            ? originInvocationAtDispatch.scalarDiscovery
+            : null;
           const scalarAttemptAtDispatch = scalarContextAtDispatch?.attempt ?? null;
           const scalarAttemptPointerAtDispatch = currentScalarAttempt;
+          const generationAtDispatch = evidence.runtimeState?.cancellationGeneration ?? null;
           const scalarQueryCallId = ++scalarOperationSequence;
           let scalarQueryExpected = false;
           if (scalarContextAtDispatch && scalarAttemptAtDispatch && scalarContextAtDispatch.valid &&
@@ -510,12 +722,20 @@ function instrumentClient(client: PublicClient): PublicClient {
             scalarAttemptAtDispatch.phase === "discovering" &&
             scalarAttemptAtDispatch.discoveryInvocationId === scalarContextAtDispatch.invocationId &&
             scalarAttemptAtDispatch.clientIdentity === evidence.identity &&
+            originAtDispatch.status === "valid" && originInvocationAtDispatch?.id === scalarContextAtDispatch.runtimeInvocationId &&
+            scalarAttemptAtDispatch.runtimeState === evidence.runtimeState &&
+            scalarAttemptAtDispatch.cancellationGenerationAtRequest === generationAtDispatch &&
             scalarContextAtDispatch.witness.occurrence === scalarAttemptAtDispatch.resultWitness?.occurrence &&
             scalarContextAtDispatch.witness.revision === scalarAttemptAtDispatch.revision &&
             actualRevision === scalarAttemptAtDispatch.revision);
           const queryCacheable = scalarContextAtDispatch
             ? scalarQueryStillOwned
-            : scalarAttemptPointerAtDispatch === null && currentScalarAttempt === null;
+            : originAtDispatch.status === "valid" && originInvocationAtDispatch?.scalarDiscovery === null &&
+              originInvocationAtDispatch.cancellationGenerationAtEntry === generationAtDispatch &&
+              generationAtDispatch === evidence.runtimeState?.cancellationGeneration &&
+              scalarAttemptPointerAtDispatch?.runtimeState !== evidence.runtimeState &&
+              currentScalarAttempt?.runtimeState !== evidence.runtimeState ||
+              originAtDispatch.status === "independent";
           if (queryCacheable) {
             observedDefinitionQueries.push({
               definitionId,
@@ -591,7 +811,10 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "observeOccurrence") {
         return async (...args: unknown[]): Promise<unknown> => {
+          const originAtObserve = runtimeInvocationOrigin(evidence.identity, "observation");
+          const originInvocationAtObserve = originAtObserve.invocation;
           const scalarAttemptAtObserve = currentScalarAttempt;
+          const generationAtObserve = evidence.runtimeState?.cancellationGeneration ?? null;
           const observationCallId = ++acceptanceObservationSequence;
           latestObservationByClient.set(target, observationCallId);
           const targetedGenerationAtObserve = targetedQueryFaultGeneration;
@@ -608,7 +831,18 @@ function instrumentClient(client: PublicClient): PublicClient {
           }
           const occurrence = (result as { scope?: unknown }).scope;
           const revision = (result as { revision?: unknown }).revision;
-          if (latestObservationByClient.get(target) === observationCallId && currentScalarAttempt === scalarAttemptAtObserve) {
+          const attemptCompatible = scalarAttemptAtObserve === null ||
+            scalarAttemptAtObserve.runtimeState !== evidence.runtimeState ||
+            originAtObserve.status === "valid" && originInvocationAtObserve?.attemptAtEntry === scalarAttemptAtObserve &&
+            scalarAttemptAtObserve.cancellationGenerationAtRequest === generationAtObserve;
+          const observationOwned = originAtObserve.status === "valid" && originInvocationAtObserve !== null &&
+            originInvocationAtObserve.cancellationGenerationAtEntry === generationAtObserve && attemptCompatible ||
+            originAtObserve.status === "independent";
+          const scalarAttemptStillOwned = scalarAttemptAtObserve?.runtimeState !== evidence.runtimeState ||
+            currentScalarAttempt === scalarAttemptAtObserve;
+          if (observationOwned && (originAtObserve.status === "independent" ||
+            generationAtObserve === evidence.runtimeState?.cancellationGeneration) &&
+            latestObservationByClient.get(target) === observationCallId && scalarAttemptStillOwned) {
             evidence.occurrence = typeof occurrence === "string" ? occurrence : null;
             evidence.revision = typeof revision === "string" ? revision : null;
           }
@@ -622,7 +856,11 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "bootstrap") {
         return async (...args: unknown[]): Promise<unknown> => {
-          const scalarContextAtDispatch = activeScalarDiscovery;
+          const originAtDispatch = runtimeInvocationOrigin(evidence.identity, "bootstrap");
+          const originInvocationAtDispatch = originAtDispatch.invocation;
+          const scalarContextAtDispatch = originInvocationAtDispatch?.method === "discoverKeyedGroupedSums"
+            ? originInvocationAtDispatch.scalarDiscovery
+            : null;
           let result: unknown;
           try {
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -678,7 +916,11 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (property === "openProject") {
         return async (...args: unknown[]): Promise<unknown> => {
           if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
-          retireScalarAttempt();
+          const origin = runtimeInvocationOrigin(evidence.identity, "publication");
+          if (origin.status === "valid" && currentScalarAttempt?.runtimeState === origin.state &&
+            origin.invocation?.attemptAtEntry !== currentScalarAttempt) {
+            retireScalarAttempt(currentScalarAttempt);
+          }
           openProjectDispatchCount += 1;
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           if (openReplyFaultArmed) {
@@ -691,7 +933,11 @@ function instrumentClient(client: PublicClient): PublicClient {
       if (property === "importSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
           if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
-          retireScalarAttempt();
+          const origin = runtimeInvocationOrigin(evidence.identity, "publication");
+          if (origin.status === "valid" && currentScalarAttempt?.runtimeState === origin.state &&
+            origin.invocation?.attemptAtEntry !== currentScalarAttempt) {
+            retireScalarAttempt(currentScalarAttempt);
+          }
           if (importBeforeDispatchFaultArmed) {
             importBeforeDispatchFaultArmed = false;
             throw new UnknownOperationOutcomeError("Import delivery outcome was unknown before dispatch; no candidate was sent.");
@@ -713,6 +959,19 @@ function instrumentClient(client: PublicClient): PublicClient {
             importProjectionFaultArmed = true;
           }
           return result;
+        };
+      }
+      if (property === "closeProject") {
+        return (...args: unknown[]): unknown => {
+          const owner = evidence.runtimeState;
+          if (owner) {
+            const trackedCloseStillActive = [...owner.active].some((invocation) => invocation.seams.has("close-project"));
+            if (!trackedCloseStillActive) {
+              owner.cancellationGeneration += 1;
+              if (currentScalarAttempt?.runtimeState === owner) retireScalarAttempt(currentScalarAttempt);
+            }
+          }
+          return (value as (...args: unknown[]) => unknown).apply(target, args);
         };
       }
       if (property === "exportSpreadsheet") {
@@ -765,20 +1024,41 @@ async function dispatchPublication(
   if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("publication-replaced-revision");
   const publicationOperationId = ++scalarOperationSequence;
   latestPublicationOperationId = publicationOperationId;
-  const attemptAtDispatch = currentScalarAttempt;
+  const clientEvidenceAtDispatch = clientEvidence.get(target);
+  const originAtDispatch = clientEvidenceAtDispatch
+    ? runtimeInvocationOrigin(clientEvidenceAtDispatch.identity, "publication")
+    : { status: "ambiguous-stale-unbound" as const, invocation: null, state: null };
+  const originInvocationAtDispatch = originAtDispatch.invocation;
+  const generationAtDispatch = originAtDispatch.state?.cancellationGeneration ?? null;
+  const scalarAttemptPointerAtDispatch = currentScalarAttempt;
+  const attemptAtDispatch = originAtDispatch.status === "valid" && originInvocationAtDispatch?.method === "edit"
+    ? originInvocationAtDispatch.attemptAtEntry
+    : null;
+  const publicationEvidenceEligible = originAtDispatch.status === "valid" && originInvocationAtDispatch !== null &&
+    originInvocationAtDispatch.cancellationGenerationAtEntry === generationAtDispatch ||
+    originAtDispatch.status === "independent";
+  const scalarAttemptScopeStillCurrent = scalarAttemptPointerAtDispatch?.runtimeState !== originAtDispatch.state ||
+    currentScalarAttempt === scalarAttemptPointerAtDispatch;
+  const dispatchStateStillCurrent = originAtDispatch.status === "independent" ||
+    originAtDispatch.state?.cancellationGeneration === generationAtDispatch;
   let ownsScalarPublication = false;
-  if (attemptAtDispatch && !EDIT_METHODS.has(method)) {
-    retireScalarAttempt(attemptAtDispatch);
-  } else if (attemptAtDispatch && EDIT_METHODS.has(method)) {
-    const client = clientEvidence.get(target);
+  const currentAtDispatch = currentScalarAttempt;
+  if (currentAtDispatch && currentAtDispatch.runtimeState === originAtDispatch.state &&
+    originAtDispatch.status === "valid" && attemptAtDispatch !== currentAtDispatch) {
+    retireScalarAttempt(currentAtDispatch, "ambiguous-runtime-invocation");
+  }
+  if (attemptAtDispatch && attemptAtDispatch === currentScalarAttempt && EDIT_METHODS.has(method) &&
+    originAtDispatch.status === "valid" && originInvocationAtDispatch?.method === "edit" &&
+    attemptAtDispatch.runtimeState === originAtDispatch.state &&
+    attemptAtDispatch.cancellationGenerationAtRequest === generationAtDispatch) {
     const requestedRevision = typeof args[0] === "string" ? args[0] : null;
     if (attemptAtDispatch.phase === "requested" && attemptAtDispatch.editInvocationId !== null &&
-      attemptAtDispatch.requestWitness && client &&
+      attemptAtDispatch.editInvocationId === originInvocationAtDispatch.id && attemptAtDispatch.requestWitness && clientEvidenceAtDispatch &&
       requestedRevision === attemptAtDispatch.requestWitness.revision &&
-      client.identity === (attemptAtDispatch.clientIdentity ?? client.identity)) {
+      clientEvidenceAtDispatch.identity === (attemptAtDispatch.clientIdentity ?? clientEvidenceAtDispatch.identity)) {
       ownsScalarPublication = true;
       attemptAtDispatch.phase = "publication-dispatched";
-      attemptAtDispatch.clientIdentity = client.identity;
+      attemptAtDispatch.clientIdentity = clientEvidenceAtDispatch.identity;
       attemptAtDispatch.publicationCallId = publicationOperationId;
       updateScalarProbe(attemptAtDispatch);
     } else {
@@ -794,7 +1074,8 @@ async function dispatchPublication(
       loseArmed = false;
       try {
         const receipt = await call();
-        if (latestPublicationOperationId === publicationOperationId && currentScalarAttempt === attemptAtDispatch) {
+        if (latestPublicationOperationId === publicationOperationId && publicationEvidenceEligible &&
+          dispatchStateStillCurrent && scalarAttemptScopeStillCurrent) {
           lastReceiptValue = receipt;
         }
         throw new UnknownOperationOutcomeError(
@@ -807,7 +1088,8 @@ async function dispatchPublication(
       }
     }
     const receipt = await call();
-    if (latestPublicationOperationId === publicationOperationId && currentScalarAttempt === attemptAtDispatch) {
+    if (latestPublicationOperationId === publicationOperationId && publicationEvidenceEligible &&
+      dispatchStateStillCurrent && scalarAttemptScopeStillCurrent) {
       lastReceiptValue = receipt;
     }
     if (ownsScalarPublication && attemptAtDispatch && scalarAttemptIsCurrent(attemptAtDispatch)) {
@@ -1148,7 +1430,10 @@ export function releaseSecondScalarRequeryReply(): void {
 }
 
 export function resetScalarRequeryFaultProbe(): void {
-  retireScalarAttempt();
+  const state = wiring ? runtimeStateFor(wiring.runtime) : currentScalarAttempt?.runtimeState ?? null;
+  if (state) state.cancellationGeneration += 1;
+  const attempt = currentScalarAttempt;
+  if (attempt?.runtimeState === state) retireScalarAttempt(attempt);
 }
 
 export function scalarRequeryFaultProbe(): ScalarRequeryFaultProbe {
@@ -1302,23 +1587,25 @@ export async function settleFaultWindow(): Promise<void> {
 }
 
 export function installAcceptance(next: AcceptanceWiring): void {
+  if (!wrappedKitLoaders.has(next.kitLoader)) {
+    throw new Error("Acceptance requires the registered wrapped kit loader for this runtime.");
+  }
+  const runtimeState = runtimeStateFor(next.runtime);
+  const priorRuntime = loaderRuntimeBindings.get(next.kitLoader);
+  if (priorRuntime && priorRuntime !== runtimeState) {
+    throw new Error("A wrapped acceptance kit loader cannot be rebound to another runtime.");
+  }
+  loaderRuntimeBindings.set(next.kitLoader, runtimeState);
   wiring = next;
   installRuntimeReadProbe(next.runtime);
   const edit = next.runtime.edit;
   next.runtime.edit = async (witness, target, change) => {
-    let attempt = currentScalarAttempt;
-    let editInvocationId: number | null = null;
-    if (attempt) {
-      if (attempt.phase === "requested" && attempt.editInvocationId === null &&
-        typeof witness.occurrence === "string" && typeof witness.revision === "string") {
-        editInvocationId = ++scalarOperationSequence;
-        attempt.editInvocationId = editInvocationId;
-        attempt.requestWitness = { occurrence: witness.occurrence, revision: witness.revision };
-      } else {
-        retireScalarAttempt(attempt);
-        attempt = null;
-      }
-    }
+    const invocation = currentRuntimeInvocation(next.runtime);
+    const attempt = invocation?.attemptAtEntry ?? null;
+    const editInvocationId = invocation?.id ?? null;
+    if (attempt && (attempt.phase !== "requested" || attempt.editInvocationId !== editInvocationId ||
+      !attempt.requestWitness || witness.occurrence !== attempt.requestWitness.occurrence ||
+      witness.revision !== attempt.requestWitness.revision)) retireScalarAttempt(attempt);
     try {
       const view = await edit.call(next.runtime, witness, target, change);
       if (attempt && scalarAttemptIsCurrent(attempt)) {
@@ -1386,14 +1673,10 @@ export function installAcceptance(next: AcceptanceWiring): void {
   next.runtime.discoverKeyedGroupedSums = async (...args) => {
     if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("discovery-replaced-target-call");
     const witness = args[0] as { occurrence?: unknown; revision?: unknown } | undefined;
+    const invocation = currentRuntimeInvocation(next.runtime);
     let context: ScalarDiscoveryContext | null = null;
-    const attempt = currentScalarAttempt;
-    if (activeScalarDiscovery) {
-      activeScalarDiscovery.valid = false;
-      if (currentScalarAttempt) retireScalarAttempt(currentScalarAttempt);
-      activeScalarDiscovery = null;
-    }
-    if (attempt && scalarAttemptIsCurrent(attempt)) {
+    const attempt = invocation?.attemptAtEntry ?? null;
+    if (invocation && !invocation.ambiguous && attempt && scalarAttemptIsCurrent(attempt)) {
       if (attempt.phase !== "acknowledged" || typeof witness?.occurrence !== "string" ||
         typeof witness.revision !== "string" || !attempt.resultWitness ||
         witness.occurrence !== attempt.resultWitness.occurrence || witness.revision !== attempt.resultWitness.revision) {
@@ -1407,19 +1690,19 @@ export function installAcceptance(next: AcceptanceWiring): void {
           attempt,
           invocationId,
           witness: { occurrence: witness.occurrence, revision: witness.revision },
+          runtimeInvocationId: invocation.id,
           valid: true,
           bootstrapConfirmed: false,
           definitionIds: [],
           nextDefinitionIndex: 0,
         };
-        activeScalarDiscovery = context;
+        invocation.scalarDiscovery = context;
         updateScalarProbe(attempt);
       }
     }
     try {
       return await discoverKeyedGroupedSums.apply(next.runtime, args);
     } finally {
-      if (context && activeScalarDiscovery === context) activeScalarDiscovery = null;
       if (context && context.valid && scalarAttemptIsCurrent(context.attempt) &&
         context.attempt.discoveryInvocationId === context.invocationId &&
         context.attempt.invokedDefinitionIds.length < 2) {
@@ -1445,6 +1728,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
       return result;
     };
   }
+  installRuntimeInvocationTracking(next.runtime);
   window.__tachikoAcceptance = {
     runtimeSnapshot,
     savedSnapshot,

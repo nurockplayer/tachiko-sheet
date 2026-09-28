@@ -493,6 +493,7 @@ try {
     invokedDefinitionIds: [],
     discardedDefinitionId: null,
     secondReplyHeld: false,
+    invalidReason: null,
   }, "the one-shot query fault and evidence reset deterministically");
 
   // On the unchanged pinned core, the normal UI admits the exact self-binding
