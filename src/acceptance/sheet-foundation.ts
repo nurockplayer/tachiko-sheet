@@ -64,6 +64,20 @@ export interface ScalarRequeryFaultProbe {
   secondReplyHeld: boolean;
 }
 
+export interface TargetedQueryFaultProbe {
+  armed: boolean;
+  definitionId: string | null;
+  occurrence: string | null;
+  revision: string | null;
+  owningClientIdentity: number | null;
+  actualReplyRevision: string | null;
+  receivedDefinitionId: string | null;
+  receivedOccurrence: string | null;
+  receivedRevision: string | null;
+  consumed: boolean;
+  resetReason: string | null;
+}
+
 export interface AcceptanceCoreFailureProbe {
   name: string;
   causeName: string;
@@ -98,6 +112,9 @@ export interface AcceptanceApi {
   releaseSecondScalarRequeryReply(): void;
   resetScalarRequeryFaultProbe(): void;
   scalarRequeryFaultProbe(): ScalarRequeryFaultProbe;
+  armTargetedQueryReplyFault(definitionId: string, occurrence: string, revision: string): void;
+  resetTargetedQueryReplyFault(): void;
+  targetedQueryFaultProbe(): TargetedQueryFaultProbe;
   queryDefinitionIds(): string[];
   resetQueryDefinitionIds(): void;
   openProjectRequestCount(): number;
@@ -216,6 +233,44 @@ const scalarRequerySecondReplyGate = operationGate();
 let scalarRequerySecondReplyHoldRequested = false;
 let scalarRequeryFaultGeneration = 0;
 const queryDefinitionIdLog: string[] = [];
+interface AcceptanceClientEvidence {
+  identity: number;
+  occurrence: string | null;
+  revision: string | null;
+}
+interface ObservedDefinitionQuery {
+  definitionId: string;
+  occurrence: string | null;
+  revision: string | null;
+  clientIdentity: number;
+}
+interface TargetedQueryRequest {
+  generation: number;
+  definitionId: string;
+  occurrence: string;
+  revision: string;
+  clientIdentity: number;
+}
+let acceptanceClientIdentity = 0;
+const clientEvidence = new WeakMap<object, AcceptanceClientEvidence>();
+const clientEvidenceByIdentity = new Map<number, AcceptanceClientEvidence>();
+const observedDefinitionQueries: ObservedDefinitionQuery[] = [];
+let targetedQueryFaultGeneration = 0;
+let targetedQueryFaultArmed = false;
+let targetedQueryRequest: TargetedQueryRequest | null = null;
+let targetedQueryFaultProbeValue: TargetedQueryFaultProbe = {
+  armed: false,
+  definitionId: null,
+  occurrence: null,
+  revision: null,
+  owningClientIdentity: null,
+  actualReplyRevision: null,
+  receivedDefinitionId: null,
+  receivedOccurrence: null,
+  receivedRevision: null,
+  consumed: false,
+  resetReason: null,
+};
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -255,6 +310,13 @@ function observeClientMethods(client: PublicClient): PublicClient {
 }
 
 function instrumentClient(client: PublicClient): PublicClient {
+  const evidence: AcceptanceClientEvidence = {
+    identity: ++acceptanceClientIdentity,
+    occurrence: null,
+    revision: null,
+  };
+  clientEvidence.set(client, evidence);
+  clientEvidenceByIdentity.set(evidence.identity, evidence);
   return new Proxy(client, {
     get(target, property): unknown {
       const value = Reflect.get(target, property, target) as unknown;
@@ -291,13 +353,57 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "queryKeyedGroupedSum") {
         return async (...args: unknown[]): Promise<unknown> => {
-          queryDefinitionIdLog.push(String(args[0]));
+          const definitionId = String(args[0]);
+          const targetedGenerationAtDispatch = targetedQueryFaultGeneration;
+          const targetedRequestAtDispatch = targetedQueryRequest;
+          const targetedWasArmedAtDispatch = targetedQueryFaultArmed;
+          queryDefinitionIdLog.push(definitionId);
           let result: unknown;
           try {
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
           } catch (error) {
             if (scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
+            if (targetedWasArmedAtDispatch && targetedQueryFaultArmed &&
+              targetedQueryFaultGeneration === targetedGenerationAtDispatch &&
+              targetedQueryRequest === targetedRequestAtDispatch) {
+              clearTargetedQueryReplyFault("real-query-failed");
+            }
             throw error;
+          }
+          const actualRevision = (result as { revision?: unknown }).revision;
+          observedDefinitionQueries.push({
+            definitionId,
+            occurrence: evidence.occurrence,
+            revision: typeof actualRevision === "string" ? actualRevision : null,
+            clientIdentity: evidence.identity,
+          });
+          if (observedDefinitionQueries.length > 128) observedDefinitionQueries.shift();
+          if (targetedWasArmedAtDispatch && targetedQueryFaultArmed &&
+            targetedQueryFaultGeneration === targetedGenerationAtDispatch &&
+            targetedQueryRequest === targetedRequestAtDispatch) {
+            const request = targetedRequestAtDispatch;
+            const matches = Boolean(request && request.generation === targetedQueryFaultGeneration &&
+              request.definitionId === definitionId &&
+              request.occurrence === targetedQueryFaultProbeValue.occurrence &&
+              request.revision === targetedQueryFaultProbeValue.revision &&
+              request.clientIdentity === evidence.identity &&
+              evidence.occurrence === request.occurrence && evidence.revision === request.revision &&
+              actualRevision === request.revision &&
+              definitionId === targetedQueryFaultProbeValue.definitionId &&
+              evidence.identity === targetedQueryFaultProbeValue.owningClientIdentity);
+            if (!matches) {
+              clearTargetedQueryReplyFault("query-identity-or-revision-mismatch");
+            } else {
+              targetedQueryFaultArmed = false;
+              targetedQueryFaultProbeValue = {
+                ...targetedQueryFaultProbeValue,
+                armed: false,
+                actualReplyRevision: String(actualRevision),
+                consumed: true,
+                resetReason: null,
+              };
+              throw new Error("Acceptance-only targeted grouped-summary query reply discarded after real Work query.");
+            }
           }
           if (!scalarRequeryFaultArmed) return result;
           const faultGeneration = scalarRequeryFaultGeneration;
@@ -305,7 +411,6 @@ function instrumentClient(client: PublicClient): PublicClient {
             resetScalarRequeryFaultProbe();
             return result;
           }
-          const definitionId = String(args[0]);
           scalarRequeryFaultProbeValue.invokedDefinitionIds.push(definitionId);
           if (scalarRequeryFaultProbeValue.invokedDefinitionIds.length === 1) return result;
           if (scalarRequerySecondReplyHoldRequested) {
@@ -316,6 +421,32 @@ function instrumentClient(client: PublicClient): PublicClient {
           scalarRequeryFaultArmed = false;
           scalarRequeryFaultProbeValue.discardedDefinitionId = definitionId;
           throw new Error("Acceptance-only second grouped-summary query reply discarded after real Work query.");
+        };
+      }
+      if (property === "observeOccurrence") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const targetedGenerationAtObserve = targetedQueryFaultGeneration;
+          const targetedWasArmedAtObserve = targetedQueryFaultArmed;
+          let result: unknown;
+          try {
+            result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          } catch (error) {
+            if (targetedWasArmedAtObserve && targetedQueryFaultArmed &&
+              targetedQueryFaultGeneration === targetedGenerationAtObserve) {
+              clearTargetedQueryReplyFault("observation-failed");
+            }
+            throw error;
+          }
+          const occurrence = (result as { scope?: unknown }).scope;
+          const revision = (result as { revision?: unknown }).revision;
+          evidence.occurrence = typeof occurrence === "string" ? occurrence : null;
+          evidence.revision = typeof revision === "string" ? revision : null;
+          if (targetedWasArmedAtObserve && targetedQueryFaultArmed &&
+            targetedQueryFaultGeneration === targetedGenerationAtObserve &&
+            (evidence.occurrence !== targetedQueryFaultProbeValue.occurrence || evidence.revision !== targetedQueryFaultProbeValue.revision)) {
+            clearTargetedQueryReplyFault("occurrence-or-revision-replaced");
+          }
+          return result;
         };
       }
       if (property === "bootstrap") {
@@ -353,6 +484,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "openProject") {
         return async (...args: unknown[]): Promise<unknown> => {
+          if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
           if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
           openProjectDispatchCount += 1;
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -365,6 +497,7 @@ function instrumentClient(client: PublicClient): PublicClient {
       }
       if (property === "importSpreadsheet") {
         return async (...args: unknown[]): Promise<unknown> => {
+          if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("workbook-replaced");
           if (scalarRequeryFaultRequested || scalarRequeryFaultArmed) resetScalarRequeryFaultProbe();
           if (importBeforeDispatchFaultArmed) {
             importBeforeDispatchFaultArmed = false;
@@ -436,6 +569,7 @@ async function dispatchPublication(
   args: unknown[],
 ): Promise<PublicationProjection> {
   dispatchCount += 1;
+  if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("publication-replaced-revision");
   if (scalarRequeryFaultRequested && !EDIT_METHODS.has(method)) resetScalarRequeryFaultProbe();
   const call = (): Promise<PublicationProjection> =>
     (target[method as keyof PublicClient] as (...rest: unknown[]) => Promise<PublicationProjection>)(
@@ -815,6 +949,79 @@ export function scalarRequeryFaultProbe(): ScalarRequeryFaultProbe {
   };
 }
 
+export function armTargetedQueryReplyFault(definitionId: string, occurrence: string, revision: string): void {
+  resetTargetedQueryReplyFault();
+  const priorQuery = [...observedDefinitionQueries].reverse().find((query) =>
+    query.definitionId === definitionId && query.occurrence === occurrence && query.revision === revision,
+  );
+  const owner = priorQuery ? clientEvidenceByIdentity.get(priorQuery.clientIdentity) : undefined;
+  if (!priorQuery || !owner || owner.occurrence !== occurrence || owner.revision !== revision) {
+    targetedQueryFaultProbeValue = {
+      armed: false,
+      definitionId,
+      occurrence,
+      revision,
+      owningClientIdentity: priorQuery?.clientIdentity ?? null,
+      actualReplyRevision: null,
+      receivedDefinitionId: null,
+      receivedOccurrence: null,
+      receivedRevision: null,
+      consumed: false,
+      resetReason: "prerequisite-unavailable",
+    };
+    return;
+  }
+  targetedQueryFaultArmed = true;
+  targetedQueryFaultProbeValue = {
+    armed: true,
+    definitionId,
+    occurrence,
+    revision,
+    owningClientIdentity: priorQuery.clientIdentity,
+    actualReplyRevision: null,
+    receivedDefinitionId: null,
+    receivedOccurrence: null,
+    receivedRevision: null,
+    consumed: false,
+    resetReason: null,
+  };
+}
+
+export function resetTargetedQueryReplyFault(): void {
+  targetedQueryFaultGeneration += 1;
+  targetedQueryFaultArmed = false;
+  targetedQueryRequest = null;
+  targetedQueryFaultProbeValue = {
+    armed: false,
+    definitionId: null,
+    occurrence: null,
+    revision: null,
+    owningClientIdentity: null,
+    actualReplyRevision: null,
+    receivedDefinitionId: null,
+    receivedOccurrence: null,
+    receivedRevision: null,
+    consumed: false,
+    resetReason: null,
+  };
+}
+
+function clearTargetedQueryReplyFault(reason: string): void {
+  targetedQueryFaultGeneration += 1;
+  targetedQueryFaultArmed = false;
+  targetedQueryRequest = null;
+  targetedQueryFaultProbeValue = {
+    ...targetedQueryFaultProbeValue,
+    armed: false,
+    consumed: false,
+    resetReason: reason,
+  };
+}
+
+export function targetedQueryFaultProbe(): TargetedQueryFaultProbe {
+  return { ...targetedQueryFaultProbeValue };
+}
+
 export function queryDefinitionIds(): string[] {
   return [...queryDefinitionIdLog];
 }
@@ -883,8 +1090,51 @@ export async function settleFaultWindow(): Promise<void> {
 export function installAcceptance(next: AcceptanceWiring): void {
   wiring = next;
   installRuntimeReadProbe(next.runtime);
+  const queryKeyedGroupedSum = next.runtime.queryKeyedGroupedSum;
+  next.runtime.queryKeyedGroupedSum = (witness, definitionId) => {
+    if (!targetedQueryFaultArmed) return queryKeyedGroupedSum.call(next.runtime, witness, definitionId);
+    const generation = targetedQueryFaultGeneration;
+    const probe = targetedQueryFaultProbeValue;
+    targetedQueryFaultProbeValue = {
+      ...targetedQueryFaultProbeValue,
+      receivedDefinitionId: definitionId,
+      receivedOccurrence: witness.occurrence,
+      receivedRevision: witness.revision,
+    };
+    if (definitionId !== probe.definitionId || witness.occurrence !== probe.occurrence || witness.revision !== probe.revision) {
+      clearTargetedQueryReplyFault("request-identity-or-revision-mismatch");
+      return queryKeyedGroupedSum.call(next.runtime, witness, definitionId);
+    }
+    const owner = probe.owningClientIdentity;
+    if (owner === null || targetedQueryRequest) {
+      clearTargetedQueryReplyFault("request-prerequisite-unavailable");
+      return queryKeyedGroupedSum.call(next.runtime, witness, definitionId);
+    }
+    const request: TargetedQueryRequest = {
+      generation,
+      definitionId,
+      occurrence: witness.occurrence,
+      revision: witness.revision,
+      clientIdentity: owner,
+    };
+    targetedQueryRequest = request;
+    return queryKeyedGroupedSum.call(next.runtime, witness, definitionId).catch((error: unknown) => {
+      if (targetedQueryFaultArmed && targetedQueryFaultGeneration === generation) {
+        clearTargetedQueryReplyFault("target-call-failed-before-consumption");
+      }
+      throw error;
+    }).finally(() => {
+      if (targetedQueryRequest === request) {
+        targetedQueryRequest = null;
+        if (targetedQueryFaultArmed && targetedQueryFaultGeneration === generation) {
+          clearTargetedQueryReplyFault("target-call-not-consumed");
+        }
+      }
+    });
+  };
   const discoverKeyedGroupedSums = next.runtime.discoverKeyedGroupedSums;
   next.runtime.discoverKeyedGroupedSums = async (...args) => {
+    if (targetedQueryFaultArmed) clearTargetedQueryReplyFault("discovery-replaced-target-call");
     try {
       return await discoverKeyedGroupedSums.apply(next.runtime, args);
     } finally {
@@ -942,6 +1192,9 @@ export function installAcceptance(next: AcceptanceWiring): void {
     releaseSecondScalarRequeryReply,
     resetScalarRequeryFaultProbe,
     scalarRequeryFaultProbe,
+    armTargetedQueryReplyFault,
+    resetTargetedQueryReplyFault,
+    targetedQueryFaultProbe,
     queryDefinitionIds,
     resetQueryDefinitionIds,
     openProjectRequestCount,

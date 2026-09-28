@@ -454,7 +454,9 @@ export function SheetShell(props: SheetShellProps) {
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
   const lastCollectionIdentityRef = useRef(collectionIdentity);
   const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
-  const resultsNeedAttention = j4Results.some((result) => result.diagnostics.length > 0);
+  const missingJ4DefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
+  const resultsNeedAttention = j4Results.some((result) => result.diagnostics.length > 0) ||
+    (currentness === "current" && missingJ4DefinitionIds.length > 0);
   // A Refresh recovery can temporarily remove the projection without proving
   // that its resident work was replaced. Keep the local-only draft attached
   // to its report until a non-null different occurrence, removal, or Close.
@@ -1633,7 +1635,7 @@ export function SheetShell(props: SheetShellProps) {
       hasField(j4Binding.productsCollection, j4Binding.productKeyField) &&
       hasField(j4Binding.productsCollection, j4Binding.productCategoryField) &&
       hasField(j4Binding.productsCollection, j4Binding.productPriceField));
-    const missingDefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
+    const missingDefinitionIds = missingJ4DefinitionIds;
     const hasConfiguredSummary = Boolean(j4Catalog || j4Results.length > 0 || j4DefinitionIds.length > 0);
     return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className={`ts-panel ${hasConfiguredSummary ? "ts-summary-panel" : "ts-brief"}`}>
       <section className={hasConfiguredSummary ? "ts-summary-binding" : "ts-card"} aria-label="Cross-table summary binding">
@@ -1671,7 +1673,7 @@ export function SheetShell(props: SheetShellProps) {
           {result.diagnostics.length > 0 ? <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button> : null}
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
-          <p className="ts-empty">Source data changed, so the previous result is not current.</p>
+          <p className="ts-empty">This summary has no confirmed current result. Refresh it to try again.</p>
           {missingDefinitionIds.map((definitionId) => {
             const index = j4DefinitionIds.indexOf(definitionId);
             return <button key={definitionId} type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, definitionId)} disabled={controlsLocked || j4Pending}>Refresh cross-table summary {index + 1}</button>;
@@ -1701,6 +1703,9 @@ export function SheetShell(props: SheetShellProps) {
       candidate.revision === view.revision &&
       candidate.diagnostics.length === 0,
     );
+    const reportSourceHasNoCurrentResult = Boolean(report &&
+      j4DefinitionIds.includes(report.definitionId) &&
+      missingJ4DefinitionIds.includes(report.definitionId));
     const update = (patch: Partial<NonNullable<typeof report>>) => {
       if (report) {
         setReportRenderReady(false);
@@ -1771,11 +1776,13 @@ export function SheetShell(props: SheetShellProps) {
         <div className={`ts-report-layout ts-report-layout--${reportLayoutState}`}>
         <div className="ts-report-settings">
           {!report ? <p className="ts-empty">Create a bar or line report from a current cross-table result.</p> : <>
-            {!result ? <p role="status">{reportSourceHasDiagnostics
-            ? "This summary needs attention. Correct the source data to see the report. Previous chart values are hidden."
-              : currentness === "pending"
-                ? "Updating… — the report is unavailable until previous results are confirmed."
-                : "This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving."}</p> : null}
+            {!result ? <p role="status">{currentness === "pending"
+              ? "Updating… — the report is unavailable until previous results are confirmed."
+              : reportSourceHasDiagnostics
+                ? "This summary needs attention. Correct the source data to see the report. Previous chart values are hidden."
+                : currentness === "current" && reportSourceHasNoCurrentResult
+                  ? "This summary has no confirmed current result. Refresh it to try again. Previous chart values are hidden."
+                  : "This report source is not current. Refresh the cross-table summary before viewing or sharing it, or remove this report configuration before saving."}</p> : null}
             <div className="ts-report-controls">
               {(["title", "categoryLabel", "valueLabel"] as const).map((field) => {
                 const labels = { title: "Title", categoryLabel: "Category label", valueLabel: "Value label" };

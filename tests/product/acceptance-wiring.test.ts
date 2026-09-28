@@ -10,6 +10,7 @@ import { hashCanonicalFiles } from "../../src/acceptance/canonical-hash.js";
 import {
   executeRequestCount,
   acceptanceHarnessVersion,
+  armTargetedQueryReplyFault,
   coreFailureProbe,
   deferSecondScalarRequeryReply,
   failSecondScalarRequeryReplyAfterFirst,
@@ -22,10 +23,12 @@ import {
   loseNextImportReplyAfterDispatch,
   openProjectRequestCount,
   resetCoreFailureProbe,
+  resetTargetedQueryReplyFault,
   resetScalarRequeryFaultProbe,
   releaseSecondScalarRequeryReply,
   scalarRequeryFaultProbe,
   settleFaultWindow,
+  targetedQueryFaultProbe,
   wrapKitLoader,
 } from "../../src/acceptance/sheet-foundation.js";
 
@@ -57,6 +60,7 @@ function fakeKit(onEdit: () => Promise<ReturnType<typeof projection>>): { kit: C
       return onEdit();
     },
     queryTable: async (collection: string) => ({ collection, rows: [], columns: [], revision: "r1" }),
+    observeOccurrence: async () => ({ scope: "occurrence-1", revision: "r2" }),
     queryKeyedGroupedSum: async (definitionId: string) => {
       state.queryCalls += 1;
       return { definitionId, revision: "r2", groups: [], diagnostics: [] };
@@ -122,6 +126,109 @@ describe("acceptance kit instrumentation", () => {
       causeName: "DesignerRuntimeError",
       causeFailureCode: "no_project_open",
     });
+  });
+
+  it("discards only the targeted real reply for its observed definition, occurrence, revision, and client", async () => {
+    const scope = globalThis as unknown as { window: Record<string, unknown> };
+    const previous = scope.window;
+    scope.window = {};
+    const fake = fakeKit(async () => projection());
+    try {
+      const kit = await wrapKitLoader(async () => fake.kit)();
+      const client = kit.createExperimentalDesignerClient();
+      await client.observeOccurrence();
+      await client.queryKeyedGroupedSum("definition-a");
+      const runtime = {
+        queryKeyedGroupedSum: (_witness: { occurrence: string; revision: string }, definitionId: string) =>
+          client.queryKeyedGroupedSum(definitionId),
+        discoverKeyedGroupedSums: async () => [],
+      };
+      installAcceptance({ runtime: runtime as never, copies: {} as never });
+      armTargetedQueryReplyFault("definition-a", "occurrence-1", "r2");
+      expect(targetedQueryFaultProbe()).toMatchObject({
+        armed: true,
+        definitionId: "definition-a",
+        occurrence: "occurrence-1",
+        revision: "r2",
+        owningClientIdentity: expect.any(Number),
+        consumed: false,
+      });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "definition-a"))
+        .rejects.toThrow(/targeted grouped-summary query reply discarded/);
+      expect(fake.queryCalls()).toBe(2);
+      expect(targetedQueryFaultProbe()).toMatchObject({
+        armed: false,
+        definitionId: "definition-a",
+        occurrence: "occurrence-1",
+        revision: "r2",
+        actualReplyRevision: "r2",
+        consumed: true,
+        resetReason: null,
+      });
+    } finally {
+      resetTargetedQueryReplyFault();
+      scope.window = previous;
+    }
+  });
+
+  it("leaves no delayed targeted fault after a missing prerequisite, mismatched witness, or other client", async () => {
+    const scope = globalThis as unknown as { window: Record<string, unknown> };
+    const previous = scope.window;
+    scope.window = {};
+    const fake = fakeKit(async () => projection());
+    try {
+      const kit = await wrapKitLoader(async () => fake.kit)();
+      const client = kit.createExperimentalDesignerClient();
+      await client.observeOccurrence();
+      await client.queryKeyedGroupedSum("definition-a");
+      let rejectNextTargetRequest = false;
+      const runtime = {
+        queryKeyedGroupedSum: (_witness: { occurrence: string; revision: string }, definitionId: string) =>
+          rejectNextTargetRequest
+            ? (rejectNextTargetRequest = false, Promise.reject(new Error("target request canceled before dispatch")))
+            : client.queryKeyedGroupedSum(definitionId),
+        discoverKeyedGroupedSums: async () => [],
+      };
+      installAcceptance({ runtime: runtime as never, copies: {} as never });
+
+      armTargetedQueryReplyFault("missing-definition", "occurrence-1", "r2");
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: false, resetReason: "prerequisite-unavailable" });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "missing-definition"))
+        .resolves.toMatchObject({ revision: "r2" });
+
+      armTargetedQueryReplyFault("definition-a", "occurrence-1", "r2");
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "stale" }, "definition-a"))
+        .resolves.toMatchObject({ revision: "r2" });
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: false, consumed: false, resetReason: "request-identity-or-revision-mismatch" });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "definition-a"))
+        .resolves.toMatchObject({ revision: "r2" });
+
+      armTargetedQueryReplyFault("definition-a", "occurrence-1", "r2");
+      const otherClient = kit.createExperimentalDesignerClient();
+      await otherClient.observeOccurrence();
+      await expect(otherClient.queryKeyedGroupedSum("definition-a")).resolves.toMatchObject({ revision: "r2" });
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: false, consumed: false, resetReason: "query-identity-or-revision-mismatch" });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "definition-a"))
+        .resolves.toMatchObject({ revision: "r2" });
+
+      armTargetedQueryReplyFault("definition-a", "occurrence-1", "r2");
+      rejectNextTargetRequest = true;
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "definition-a"))
+        .rejects.toThrow(/canceled before dispatch/);
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: false, consumed: false, resetReason: "target-call-failed-before-consumption" });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "definition-a"))
+        .resolves.toMatchObject({ revision: "r2" });
+
+      armTargetedQueryReplyFault("definition-a", "occurrence-1", "r2");
+      await client.openProject();
+      expect(targetedQueryFaultProbe()).toMatchObject({ armed: false, consumed: false, resetReason: "workbook-replaced" });
+      await expect(runtime.queryKeyedGroupedSum({ occurrence: "occurrence-1", revision: "r2" }, "definition-a"))
+        .resolves.toMatchObject({ revision: "r2" });
+      expect(fake.queryCalls()).toBe(8);
+    } finally {
+      resetTargetedQueryReplyFault();
+      scope.window = previous;
+    }
   });
 
   it("counts genuine scalar-edit dispatches and returns the real projection", async () => {
@@ -267,6 +374,9 @@ describe("acceptance kit instrumentation", () => {
         "releaseSecondScalarRequeryReply",
         "resetScalarRequeryFaultProbe",
         "scalarRequeryFaultProbe",
+        "armTargetedQueryReplyFault",
+        "resetTargetedQueryReplyFault",
+        "targetedQueryFaultProbe",
         "openProjectRequestCount",
         "importSpreadsheetRequestCount",
         "executeRequestCount",
@@ -437,10 +547,17 @@ describe("acceptance kit instrumentation", () => {
       const oldSecond = client.queryKeyedGroupedSum("old-definition-2");
       await vi.waitFor(() => expect(scalarRequeryFaultProbe().secondReplyHeld).toBe(true));
       resetScalarRequeryFaultProbe();
-      await expect(oldSecond).resolves.toMatchObject({ revision: "r2" });
-
+      // Reset and re-arm synchronously while the old pause continuation is
+      // still queued. Its completion must not consume or release this hold.
       failSecondScalarRequeryReplyAfterFirst();
       deferSecondScalarRequeryReply();
+      await expect(oldSecond).resolves.toMatchObject({ revision: "r2" });
+      expect(scalarRequeryFaultProbe()).toMatchObject({
+        publicationAcknowledged: false,
+        invokedDefinitionIds: [],
+        discardedDefinitionId: null,
+        secondReplyHeld: false,
+      });
       await client.editNumber("r2", { entity: "entity", field: "field" }, "300");
       await expect(client.queryKeyedGroupedSum("new-definition-1")).resolves.toMatchObject({ revision: "r2" });
       const newSecond = client.queryKeyedGroupedSum("new-definition-2");
