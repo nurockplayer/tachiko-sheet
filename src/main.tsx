@@ -40,7 +40,7 @@ async function boot(): Promise<void> {
     kitLoader = acceptance.wrapKitLoader(loadCoreKit);
     const runtime = createSheetRuntime(kitLoader);
     const copies = createLocalCopies();
-    acceptance.installAcceptance({ runtime, copies });
+    acceptance.installAcceptance({ runtime, copies, kitLoader });
     createRoot(root).render(<App runtime={runtime} copies={copies} appearancePreference={appearancePreference} />);
     return;
   }

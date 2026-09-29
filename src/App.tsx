@@ -408,6 +408,38 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setJ4Results(next);
   }
 
+  /** Complete the shared observation half of any known semantic publication. */
+  async function completePublishedObservation(
+    next: WorkbookView,
+    priorJ4: { definitionIds: string[]; results: KeyedGroupedSumResult[] } | null,
+    expectedOccurrence: string,
+  ): Promise<void> {
+    if (next.occurrence !== expectedOccurrence) {
+      throw new Error("The published work occurrence changed before its derived results could be confirmed.");
+    }
+    installView(next);
+    clearCleanupPreview();
+    pendingDirtyRef.current = true;
+    syncDirty();
+    if (savedRevisionRef.current !== next.revision) markNotSaved();
+
+    // Keep the old same-occurrence result snapshot visibly pending until the
+    // complete new definition/result set is confirmed in one atomic install.
+    const results = await readJ4Results(next);
+    const ids = results.map((result) => result.definitionId);
+    const uniqueIds = new Set(ids);
+    if (results.some((result) => result.revision !== next.revision) || uniqueIds.size !== ids.length ||
+      (priorJ4 && priorJ4.definitionIds.some((id) => !uniqueIds.has(id)))) {
+      throw new Error("The complete grouped-summary result set did not match the published work revision.");
+    }
+    if (viewRef.current?.occurrence !== next.occurrence || viewRef.current.revision !== next.revision) {
+      throw new Error("The published work changed before its grouped summaries could be installed.");
+    }
+    installJ4Results(results);
+    setCurrentness("current");
+    setOutcome("idle");
+  }
+
   function witnessOf(target: WorkbookView): ViewWitness {
     return { occurrence: target.occurrence, revision: target.revision };
   }
@@ -1116,8 +1148,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
     const priorJ4 = currentness === "current"
-      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4Results] }
+      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] }
       : null;
+    let published = false;
     try {
       const live = viewRef.current;
       if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
@@ -1127,24 +1160,18 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       setMessage(null);
       setCurrentness("pending");
-      clearJ4Results();
       const confirmed = await runtime.editConfirmed(witness, target, edit);
+      published = true;
       installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
       const next = confirmed.view;
-      installView(next);
-      clearCleanupPreview();
-      pendingDirtyRef.current = true;
-      syncDirty();
-      if (savedRevisionRef.current !== next.revision) markNotSaved();
-      setCurrentness("current");
-      setOutcome("idle");
+      await completePublishedObservation(next, priorJ4, witness.occurrence);
       return true;
     } catch (error) {
-      if (error instanceof PublishedProjectionRecoveryError) {
+      if (published || error instanceof PublishedProjectionRecoveryError) {
         installLocalHistory(emptyLocalHistory());
         failClosedAfterPublicationRecovery();
-        // The publication is known successful; avoid SheetShell's rejected
-        // draft path, which would offer an ordinary semantic retry.
+        // Publication is known; avoid SheetShell's rejected-draft path and
+        // ordinary semantic retry while only observation remains unresolved.
         return true;
       } else if (error instanceof UnknownOperationOutcomeError) {
         installLocalHistory(emptyLocalHistory());
@@ -1178,23 +1205,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (!live || currentness !== "current" || known.occurrence !== live.occurrence ||
       known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return null;
     const witness = witnessOf(live);
+    const priorJ4 = { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] };
+    let published = false;
     try {
       setMessage(null);
       setCurrentness("pending");
-      clearJ4Results();
       const confirmed = await runtime.trackerHistory(witness, direction);
+      published = true;
       installLocalHistory(confirmHistoryCommand(localHistoryRef.current, confirmed.view, confirmed.publication, direction));
-      installView(confirmed.view);
-      clearCleanupPreview();
-      pendingDirtyRef.current = true;
-      syncDirty();
-      if (savedRevisionRef.current !== confirmed.view.revision) markNotSaved();
-      setCurrentness("current");
-      setOutcome("idle");
+      await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
       return confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null;
     } catch (error) {
       installLocalHistory(emptyLocalHistory());
-      if (error instanceof PublishedProjectionRecoveryError) {
+      if (published || error instanceof PublishedProjectionRecoveryError) {
         failClosedAfterPublicationRecovery();
       } else {
         failClosedAfterUnknownHistory(direction);
@@ -1392,6 +1415,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function createReport(definitionId: string, type: ReportConfiguration["type"]): void {
     const live = viewRef.current;
+    if (currentness !== "current" || inflightRef.current) {
+      setMessage("Wait for the published work and all grouped summaries to be confirmed before creating a report.");
+      return;
+    }
     const source = live && j4ResultsRef.current.find((candidate) =>
       candidate.definitionId === definitionId && candidate.revision === live.revision && candidate.diagnostics.length === 0,
     );
@@ -1436,7 +1463,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const result = live && j4ResultsRef.current.find((entry) =>
       entry.definitionId === candidate.definitionId && entry.revision === live.revision && entry.diagnostics.length === 0,
     );
-    if (!live || !current || current !== candidate || live.occurrence !== witness.occurrence ||
+    if (inflightRef.current || !live || !current || current !== candidate || live.occurrence !== witness.occurrence ||
       live.revision !== witness.revision || !result || currentness !== "current") {
       setMessage("The report source changed or is unavailable. Refresh it before exporting a PNG.");
       return false;

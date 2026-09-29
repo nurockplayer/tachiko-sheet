@@ -29,10 +29,50 @@ async function editForPage(targetPage, testId, value) {
   await input.waitFor({ state: "detached" });
 }
 async function waitCell(testId, value) {
+  const tableTab = page.getByRole("tab", { name: "Table", exact: true });
+  if (await tableTab.getAttribute("aria-selected") !== "true") await tableTab.click();
   await page.waitForFunction(({ testId, value: expectedValue }) => {
     const content = document.querySelector(`[data-testid="${testId}"] .ts-cell-value`);
     return content?.textContent?.trim() === expectedValue;
   }, { testId, value: String(value) });
+}
+async function waitForJ4Current() {
+  await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
+}
+async function j4Rows(index) {
+  const summaryTab = page.getByRole("tab", { name: "Cross-table summary", exact: true });
+  if (await summaryTab.getAttribute("aria-selected") !== "true") await summaryTab.click();
+  await page.getByTestId(`j4-result-${index}`).waitFor({ state: "visible" });
+  return page.getByTestId(`j4-result-${index}`).getByLabel("Cross-table groups", { exact: true })
+    .locator("tbody tr").evaluateAll((rows) => rows.map((row) => {
+      const cells = Array.from(row.querySelectorAll("td"));
+      return `${cells[0]?.textContent?.trim() ?? ""}: ${cells[1]?.textContent?.trim() ?? ""}`;
+    }));
+}
+async function createSalesSummary(productCategory) {
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
+  await page.getByLabel("Orders table", { exact: true }).selectOption("sales");
+  await page.getByLabel("Order lookup key", { exact: true }).selectOption("product_code");
+  await page.getByLabel("Order quantity", { exact: true }).selectOption("quantity");
+  await page.getByLabel("Products table", { exact: true }).selectOption("catalog");
+  await page.getByLabel("Product key", { exact: true }).selectOption("code");
+  await page.getByLabel("Product category", { exact: true }).selectOption(productCategory);
+  await page.getByLabel("Product price", { exact: true }).selectOption("price");
+  const previousCount = await page.locator('[data-testid^="j4-result-"]').count();
+  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+  await page.waitForFunction(({ previousCount }) =>
+    document.querySelectorAll('[data-testid^="j4-result-"]').length > previousCount &&
+    document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current",
+  { previousCount });
+  const lastResult = page.locator('[data-testid^="j4-result-"]').last();
+  await lastResult.waitFor({ state: "attached" });
+  await page.waitForFunction(() => {
+    const last = document.querySelector('[data-testid^="j4-result-"]:last-of-type');
+    return Boolean(last?.querySelector('table[aria-label="Cross-table groups"]') || last?.querySelector('[aria-label="Cross-table diagnostics"]'));
+  });
+  const groupsTable = lastResult.getByLabel("Cross-table groups", { exact: true });
+  assert.equal(await groupsTable.count(), 1, `new Sales result should include visible groups: ${await lastResult.innerText()}`);
 }
 try {
   await page.goto(LOCAL_ORIGIN);
@@ -153,27 +193,118 @@ try {
   assert.equal(await undo.isDisabled(), false, "Save alone does not create a history barrier");
 
   // A successful grouped-definition publication is outside scalar history and forms a barrier.
-  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
-  await page.getByLabel("Orders table", { exact: true }).selectOption("sales");
-  await page.getByLabel("Order lookup key", { exact: true }).selectOption("product_code");
-  await page.getByLabel("Order quantity", { exact: true }).selectOption("quantity");
-  await page.getByLabel("Products table", { exact: true }).selectOption("catalog");
-  await page.getByLabel("Product key", { exact: true }).selectOption("code");
-  await page.getByLabel("Product category", { exact: true }).selectOption("category");
-  await page.getByLabel("Product price", { exact: true }).selectOption("price");
-  await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
-  await page.getByTestId("j4-result-0").waitFor();
+  // Keep two distinct summaries resident so scalar history must refresh the full set.
+  await edit(productCode, initialValue);
+  await waitCell(productCode, initialValue);
+  await createSalesSummary("category");
+  await createSalesSummary("code");
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "two distinct Sales grouped definitions are resident");
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"]);
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"]);
   assert.equal(await undo.isDisabled(), true, "successful non-admitted semantic definition clears exposed history");
   assert.equal(await redo.isDisabled(), true);
 
+  // Both resident grouped results follow a real Catalog price scalar edit and
+  // authoritative tracker history without an intervening Refresh.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const catalogPicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
+  await catalogPicker.selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const catalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const priceIndex = catalogHeaders.filter((header) => header !== "Row").indexOf("price");
+  assert.ok(priceIndex >= 0, "Sales Catalog exposes its price field");
+  const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  const priceCell = penRow.locator("td").nth(priceIndex);
+  const priceTestId = await priceCell.getAttribute("data-testid");
+  assert.ok(priceTestId?.startsWith("cell:"));
+  await edit(priceTestId, "250");
+  await waitCell(priceTestId, "250");
+  await waitForJ4Current();
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 1000"]);
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 1000"]);
+  await undo.click();
+  await waitCell(priceTestId, "200");
+  await waitForJ4Current();
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"], "Undo restores the authoritative old Work totals");
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"]);
+  await redo.click();
+  await waitCell(priceTestId, "250");
+  await waitForJ4Current();
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 1000"], "Redo restores the edited Work totals without Refresh");
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 1000"]);
+
+  await page.getByTestId("j4-result-0").getByRole("button", { name: "Create bar report", exact: true }).click();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  const retainedReportTitle = page.getByLabel("Title", { exact: true });
+  await retainedReportTitle.waitFor();
+  const reportTitleBeforeRecovery = await retainedReportTitle.inputValue();
+
+  // Bind the acceptance fault to this real current witness. The harness learns
+  // the result revision from the genuine tracker acknowledgement.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const currentHistoryWitness = {
+    occurrence: await cell(priceTestId).getAttribute("data-work-occurrence"),
+    revision: await cell(priceTestId).getAttribute("data-work-revision"),
+  };
+  assert.ok(currentHistoryWitness.occurrence && currentHistoryWitness.revision, "the real edited cell exposes its current history witness");
+  const historyCommandsBeforeFault = await methodCount();
+  const publicationsBeforeFault = await publicationCount();
+  await page.evaluate((witness) => window.__tachikoAcceptance.failSecondHistoryRequeryReplyAfterFirst("undo", witness), currentHistoryWitness);
+  await page.evaluate(() => window.__tachikoAcceptance.deferSecondHistoryRequeryReply());
+  try {
+    await undo.click();
+    await page.waitForFunction(() => window.__tachikoAcceptance.historyRequeryFaultProbe().secondReplyHeld === true);
+    assert.equal(await page.locator('[data-testid="currentness"]').getAttribute("data-currentness"), "pending", "the held second history query keeps the previous snapshot explicitly pending");
+    assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 1000"], "pending history observation retains the truthful previous summary snapshot");
+    assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 1000"]);
+    assert.equal(await page.getByTestId("j4-result-0").getByRole("button", { name: "Create bar report", exact: true }).isDisabled(), true, "result actions stay locked while history projections are pending");
+    assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).isDisabled(), true, "Save stays locked while history projections are pending");
+  } finally {
+    await page.evaluate(() => window.__tachikoAcceptance.releaseSecondHistoryRequeryReply());
+  }
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "unknown");
+  assert.equal(await page.locator('[data-testid^="cell:"]').count(), 0, "known-publication recovery withholds the stale grid");
+  assert.equal(await undo.count(), 0, "recovery exposes no Undo control or history");
+  assert.equal(await redo.count(), 0, "recovery exposes no Redo control or history");
+  assert.equal(await methodCount(), historyCommandsBeforeFault + 1, "the failed observation never replays trackerHistory");
+  assert.equal(await publicationCount(), publicationsBeforeFault + 1, "one genuine history publication was dispatched");
+  const failedHistoryProbe = await page.evaluate(() => window.__tachikoAcceptance.historyRequeryFaultProbe());
+  const failedHistoryReceipt = await page.evaluate(() => window.__tachikoAcceptance.lastReceipt());
+  assert.equal(failedHistoryProbe.consumed, true, "the fault was consumed only after the second real result query");
+  assert.equal(failedHistoryProbe.baseRevision, currentHistoryWitness.revision);
+  assert.equal(failedHistoryProbe.dispatchedResultRevision, failedHistoryReceipt?.resulting_revision);
+  assert.equal(failedHistoryProbe.resultRevision, failedHistoryReceipt?.resulting_revision);
+  assert.equal(failedHistoryProbe.queryCallIds.length, 2);
+  assert.equal(new Set(failedHistoryProbe.queriedDefinitionIds).size, 2, "two distinct result definitions were queried");
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).count(), 0, "Save is withheld until resident projections are confirmed");
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0, "PNG export is withheld without current results");
+
+  const trackerCommandsBeforeRecoveryRefresh = await methodCount();
+  const historyRecoveryRefresh = page.getByRole("button", { name: "Refresh", exact: true });
+  await historyRecoveryRefresh.click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  await waitCell(priceTestId, "200");
+  await waitForJ4Current();
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"], "one ordinary Refresh observes resident post-Undo totals");
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"]);
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), reportTitleBeforeRecovery, "the report configuration remains resident through recovery");
+  assert.equal(await methodCount(), trackerCommandsBeforeRecoveryRefresh, "ordinary recovery Refresh does not issue history commands");
+  assert.equal(await undo.isDisabled(), true, "Refresh restores result values but does not reconstruct Undo history");
+  assert.equal(await redo.isDisabled(), true, "Refresh restores result values but does not reconstruct Redo history");
+
   // Unknown history reply must not retry; refresh observes the resident core and never rebuilds counts.
   await page.getByRole("tab", { name: "Table", exact: true }).click();
-  const rowCell = page.locator('table[aria-label="Table"] tbody tr').first().locator("td").first();
+  await catalogPicker.selectOption("sales");
+  await page.getByRole("columnheader", { name: "quantity", exact: true }).waitFor();
+  const rowCell = page.locator('table[aria-label="Table"] tbody tr').first().locator("td").nth(1);
   const rowTestId = await rowCell.getAttribute("data-testid");
   assert.ok(rowTestId);
-  await edit(rowTestId, "UNDO-D");
-  await waitCell(rowTestId, "UNDO-D");
+  const rowInitialValue = (await rowCell.locator(".ts-cell-value").textContent())?.trim() ?? "";
+  assert.ok(rowInitialValue, "fresh Sales row exposes its baseline before the ordinary history cases");
+  await edit(rowTestId, "7");
+  await waitCell(rowTestId, "7");
   const deliberateFocusCell = page.locator('table[aria-label="Table"] tbody tr').nth(1).locator("td").first();
   const deliberateFocusTestId = await deliberateFocusCell.getAttribute("data-testid");
   assert.ok(deliberateFocusTestId && deliberateFocusTestId !== rowTestId, "a separate visible cell can receive deliberate pending focus");
@@ -191,7 +322,7 @@ try {
   } finally {
     await page.evaluate(() => window.__tachikoAcceptance.releaseTrackerReply());
   }
-  await waitCell(rowTestId, "UNDO-A");
+  await waitCell(rowTestId, rowInitialValue);
   await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-testid")), deliberateFocusTestId, "history completion does not steal a different usable focus destination chosen while pending");
   assert.equal(await methodCount(), heldTrackerCount + 1, "held real history reply dispatches exactly once");
@@ -199,10 +330,10 @@ try {
   const heldReceipt = await page.evaluate(() => window.__tachikoAcceptance.lastReceipt());
   assert.equal(heldReceipt?.resulting_revision, await cell(rowTestId).getAttribute("data-work-revision"), "the held operation returns the genuine core receipt after release");
   await redo.click();
-  await waitCell(rowTestId, "UNDO-D");
+  await waitCell(rowTestId, "7");
 
-  await edit(rowTestId, "UNDO-E");
-  await waitCell(rowTestId, "UNDO-E");
+  await edit(rowTestId, "8");
+  await waitCell(rowTestId, "8");
   const dispatchesBeforeLostReply = await publicationCount();
   const commandsBeforeLostReply = await methodCount();
   await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
@@ -226,8 +357,8 @@ try {
   assert.equal(await redo.isDisabled(), true);
 
   // Save/close/open creates a new UI history lifetime.
-  await edit(rowTestId, "UNDO-SAVED");
-  await waitCell(rowTestId, "UNDO-SAVED");
+  await edit(rowTestId, "9");
+  await waitCell(rowTestId, "9");
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("undo-redo-reopen");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
