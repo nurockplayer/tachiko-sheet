@@ -683,19 +683,29 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     function onHistoryKeyDown(event: KeyboardEvent): void {
       const shell = shellRef.current;
-      if (!shell || !shell.contains(event.target as Node)) return;
+      if (!shell || !shell.isConnected || !view || currentness !== "current" || event.defaultPrevented) return;
+      const ownerDocument = shell.ownerDocument;
+      const focusedElement = ownerDocument.activeElement;
+      const target = event.target;
+      const neutralFocus = focusedElement === ownerDocument.body || focusedElement === ownerDocument.documentElement;
+      const neutralTarget = target === ownerDocument || target === ownerDocument.body || target === ownerDocument.documentElement;
+      const targetInShell = target instanceof Node && shell.contains(target);
+      const focusInShell = focusedElement instanceof Node && shell.contains(focusedElement);
+      if (!((targetInShell && (focusInShell || neutralFocus)) || (neutralTarget && neutralFocus))) return;
+      if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
       const direction = historyCommandForKey(
         event,
-        event.target,
+        target,
         historyInteractionLocked || props.appearancePreference.getSnapshot().composing || controlsLocked,
+        focusedElement,
       );
       if (!direction || (direction === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1)) return;
       event.preventDefault();
-      void requestHistory(direction, document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      void requestHistory(direction, focusedElement instanceof HTMLElement ? focusedElement : null);
     }
     window.addEventListener("keydown", onHistoryKeyDown);
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
-  }, [controlsLocked, historyInteractionLocked, localHistory, onHistory, props.appearancePreference]);
+  }, [controlsLocked, currentness, historyInteractionLocked, localHistory, onHistory, props.appearancePreference, view]);
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");

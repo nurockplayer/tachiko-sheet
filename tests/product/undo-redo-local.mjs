@@ -85,6 +85,12 @@ try {
   const redo = page.getByRole("button", { name: "Redo", exact: true });
   assert.equal(await undo.isDisabled(), true, "fresh occurrence begins without exposed history");
   assert.equal(await redo.isDisabled(), true, "fresh occurrence begins without exposed history");
+  const emptyHistoryTrackerCount = await methodCount();
+  const emptyHistoryPublicationCount = await publicationCount();
+  await page.keyboard.press("Meta+Z");
+  await page.keyboard.press("Control+Y");
+  assert.equal(await methodCount(), emptyHistoryTrackerCount, "platform shortcuts dispatch nothing while history is empty");
+  assert.equal(await publicationCount(), emptyHistoryPublicationCount);
 
   // Use the known Sales table field whose direct stable target is in the first row.
   const productCode = await page.locator('table[aria-label="Table"] tbody tr').first().locator("td").first().getAttribute("data-testid");
@@ -233,6 +239,111 @@ try {
   assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 1000"], "Redo restores the edited Work totals without Refresh");
   assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 1000"]);
 
+  const foreignFocusCounts = { tracker: await methodCount(), publications: await publicationCount() };
+  const foreignFocusProbe = await page.evaluate(() => {
+    const input = document.createElement("input");
+    const textarea = document.createElement("textarea");
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "External control";
+    document.body.append(input, textarea, editable, button);
+    const dispatch = (target) => {
+      target.focus();
+      const event = new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const results = [dispatch(input), dispatch(textarea), dispatch(editable), dispatch(button)];
+    input.focus();
+    const documentTarget = new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(documentTarget);
+    results.push(documentTarget.defaultPrevented);
+    input.blur();
+    input.remove();
+    document.body.focus();
+    const neutralBody = document.activeElement === document.body;
+    document.body.addEventListener("keydown", (event) => event.preventDefault(), { once: true });
+    const handled = new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(handled);
+    results.push(handled.defaultPrevented);
+    textarea.remove(); editable.remove(); button.remove();
+    return { results, neutralBody };
+  });
+  assert.equal(await undo.isDisabled(), false, "the prevented shortcut is probed while history is available");
+  assert.equal(foreignFocusProbe.neutralBody, true, "the prevented shortcut probe has neutral BODY focus");
+  assert.deepEqual(foreignFocusProbe.results, [false, false, false, false, false, true], "foreign and previously handled shortcuts are left to their owner");
+  assert.equal(await methodCount(), foreignFocusCounts.tracker, "foreign focus does not dispatch Sheet history");
+  assert.equal(await publicationCount(), foreignFocusCounts.publications);
+
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const sameWitnessBeforeKeyboardRefresh = await cell(priceTestId).getAttribute("data-work-revision");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "ordinary same-witness Refresh naturally leaves document focus on BODY");
+  assert.equal(await cell(priceTestId).getAttribute("data-work-revision"), sameWitnessBeforeKeyboardRefresh);
+  assert.equal(await undo.isDisabled(), false, "same-witness Refresh retains known Undo history");
+  const metaUndoTrackerCount = await methodCount();
+  const metaUndoPublicationCount = await publicationCount();
+  await page.keyboard.press("Meta+Z");
+  await waitCell(priceTestId, "200");
+  await waitForJ4Current();
+  assert.equal(await methodCount(), metaUndoTrackerCount + 1, "Meta+Z from natural BODY focus dispatches one Undo");
+  assert.equal(await publicationCount(), metaUndoPublicationCount + 1);
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"], "BODY-origin Undo refreshes authoritative grouped results");
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"]);
+
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "Refresh naturally restores neutral BODY focus before Redo");
+  const metaRedoTrackerCount = await methodCount();
+  const metaRedoPublicationCount = await publicationCount();
+  await page.keyboard.press("Meta+Shift+Z");
+  await waitCell(priceTestId, "250");
+  await waitForJ4Current();
+  assert.equal(await methodCount(), metaRedoTrackerCount + 1, "Meta+Shift+Z from BODY dispatches one Redo");
+  assert.equal(await publicationCount(), metaRedoPublicationCount + 1);
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 1000"]);
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 1000"]);
+
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("undo-redo-post-keyboard-save");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  const savedRevisionForKeyboard = await cell(priceTestId).getAttribute("data-work-revision");
+  assert.equal(await page.locator(".ts-app-root").getAttribute("data-work-dirty"), "false", "successful Save retains the clean saved-revision state");
+  assert.equal(await undo.isDisabled(), false, "successful Save retains directional history counts");
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "successful Save naturally leaves document focus on BODY");
+  const controlUndoTrackerCount = await methodCount();
+  const controlUndoPublicationCount = await publicationCount();
+  await page.keyboard.press("Control+Z");
+  await waitCell(priceTestId, "200");
+  await waitForJ4Current();
+  assert.equal(await methodCount(), controlUndoTrackerCount + 1, "Control+Z after Save dispatches one Undo");
+  assert.equal(await publicationCount(), controlUndoPublicationCount + 1);
+  assert.equal(await page.locator(".ts-app-root").getAttribute("data-work-dirty"), "true", "Undo after Save marks the changed saved revision dirty");
+  assert.equal(await page.getByTestId("save-status").textContent(), "Not saved yet");
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"]);
+
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "post-Undo Refresh returns to neutral BODY focus");
+  const controlRedoTrackerCount = await methodCount();
+  const controlRedoPublicationCount = await publicationCount();
+  await page.keyboard.press("Control+Shift+Z");
+  await waitCell(priceTestId, "250");
+  await waitForJ4Current();
+  assert.equal(await methodCount(), controlRedoTrackerCount + 1, "Control+Shift+Z after Save dispatches one Redo");
+  assert.equal(await publicationCount(), controlRedoPublicationCount + 1);
+  assert.notEqual(await cell(priceTestId).getAttribute("data-work-revision"), savedRevisionForKeyboard, "Redo publishes a new opaque semantic revision even when the value returns to its saved content");
+  assert.equal(await page.locator(".ts-app-root").getAttribute("data-work-dirty"), "true", "history after Save remains dirty until a later Save acknowledges the new publication revision");
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 1000"]);
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 1000"]);
+
   await page.getByTestId("j4-result-0").getByRole("button", { name: "Create bar report", exact: true }).click();
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   const retainedReportTitle = page.getByLabel("Title", { exact: true });
@@ -319,6 +430,11 @@ try {
     heldTrackerCount);
     await deliberateFocusCell.focus();
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-testid")), deliberateFocusTestId);
+    const busyTrackerCount = await methodCount();
+    const busyPublicationCount = await publicationCount();
+    await page.keyboard.press("Meta+Z");
+    assert.equal(await methodCount(), busyTrackerCount, "busy history ignores another keyboard shortcut");
+    assert.equal(await publicationCount(), busyPublicationCount);
   } finally {
     await page.evaluate(() => window.__tachikoAcceptance.releaseTrackerReply());
   }
@@ -340,6 +456,11 @@ try {
   await undo.click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
+  const recoveryTrackerCount = await methodCount();
+  const recoveryPublicationCount = await publicationCount();
+  await page.keyboard.press("Meta+Z");
+  assert.equal(await methodCount(), recoveryTrackerCount, "recovery state rejects history keyboard input");
+  assert.equal(await publicationCount(), recoveryPublicationCount);
   const recoveryRefresh = page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true });
   await recoveryRefresh.waitFor({ state: "visible" });
   await page.waitForFunction(() => {
@@ -394,6 +515,9 @@ try {
   assert.equal(await notesUndo.isDisabled(), true, "the re-established notes draft locks history independently of native undo");
   await notesPage.getByRole("tab", { name: "Table", exact: true }).click();
   assert.equal(await notesUndo.isDisabled(), true, "a notes draft stays locked when another tab is selected");
+  const retainedDraftCommands = await notesPage.evaluate(() => window.__tachikoAcceptance.workMethodCounts().trackerCommand ?? 0);
+  await notesPage.keyboard.press("Meta+Z");
+  assert.equal(await notesPage.evaluate(() => window.__tachikoAcceptance.workMethodCounts().trackerCommand ?? 0), retainedDraftCommands, "a retained Brief draft blocks Sheet keyboard history from another tab");
   await notesPage.getByRole("tab", { name: "Brief", exact: true }).click();
   await notes.fill(originalNotes);
   assert.equal(await notesUndo.isDisabled(), false, "restoring the committed notes value releases the draft lock");

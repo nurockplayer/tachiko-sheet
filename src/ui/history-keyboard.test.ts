@@ -12,6 +12,7 @@ describe("Sheet history keyboard capture", () => {
     expect(historyCommandForKey({ ...base, altKey: true }, null, false)).toBeNull();
     expect(historyCommandForKey({ ...base, metaKey: false, ctrlKey: false }, null, false)).toBeNull();
     expect(historyCommandForKey({ ...base, key: "z", metaKey: true, ctrlKey: true }, null, false)).toBeNull();
+    expect(historyCommandForKey({ ...base, defaultPrevented: true }, null, false)).toBeNull();
   });
 
   it("leaves repeated, composing, editor, and modal interactions to their owner", () => {
