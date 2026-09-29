@@ -493,6 +493,7 @@ describe("createSheetRuntime", () => {
 
     const error = await failure(runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "9" }));
     expect(error).toBeInstanceOf(UnknownOperationOutcomeError);
+    expect((error as Error).cause).toMatchObject({ name: "SheetSessionError", code: "incoherent-reply" });
     expect(client.calls.editNumber).toBe(1);
     expect(client.calls.queryTable).toHaveLength(1);
     const refused = await failure(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "10" }));
@@ -514,6 +515,7 @@ describe("createSheetRuntime", () => {
 
     const error = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
     expect(error).toBeInstanceOf(UnknownOperationOutcomeError);
+    expect((error as Error).cause).toMatchObject({ name: "SheetSessionError", code: "incoherent-reply" });
     expect(client.calls.trackerCommand).toHaveLength(1);
     expect(client.calls.queryTable).toHaveLength(2);
   });

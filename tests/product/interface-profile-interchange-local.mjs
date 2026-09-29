@@ -679,7 +679,7 @@ try {
   assert.equal(await ghostPage.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)).profile.name, key),
     "Safe Header comfortable", "ghost control samples the admitted persisted imported profile");
   await ghostPage.locator('.ts-command-overflow > summary[aria-label="More document commands"]').click();
-  const ghost = ghostPage.locator(".ts-command-overflow > button.ts-button--ghost");
+  const ghost = ghostPage.locator(".ts-command-overflow").getByRole("button", { name: "Close project", exact: true });
   await ghost.waitFor({ state: "visible" });
   const ghostStates = await sampleControlStates(ghostPage, ghost);
   assert.equal(ghostStates.rest.background, "rgba(0, 0, 0, 0)", "admitted imported ghost control keeps transparent rest");

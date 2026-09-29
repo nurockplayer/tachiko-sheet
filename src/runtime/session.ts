@@ -508,6 +508,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         residentCollection = live.collection;
         throw new UnknownOperationOutcomeError(
           "The edit returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
         );
       }
       let result: CoherentRead;
@@ -565,6 +566,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         residentCollection = live.collection;
         throw new UnknownOperationOutcomeError(
           "The history command returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
         );
       }
       let result: CoherentRead;
