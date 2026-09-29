@@ -121,6 +121,16 @@ try {
   await undo.click();
   await waitCell(productCode, "UNDO-A");
   await page.waitForFunction((testId) => document.activeElement?.getAttribute("data-testid") === testId, productCode);
+  const exactCellIdentity = await cell(productCode).evaluate((node) => ({
+    entity: node.getAttribute("data-work-entity"),
+    testId: node.getAttribute("data-testid"),
+  }));
+  assert.ok(exactCellIdentity.entity && exactCellIdentity.testId === productCode, "the direct focus target exposes its stable rendered identity");
+  assert.equal(
+    await page.locator(`[data-work-entity="${exactCellIdentity.entity}"][data-testid="${exactCellIdentity.testId}"]`).count(),
+    1,
+    "focus restoration only has one direct rendered match for the publication target",
+  );
   const beforeRefresh = {
     occurrence: await cell(productCode).getAttribute("data-work-occurrence"),
     revision: await cell(productCode).getAttribute("data-work-revision"),
@@ -164,16 +174,54 @@ try {
   assert.ok(rowTestId);
   await edit(rowTestId, "UNDO-D");
   await waitCell(rowTestId, "UNDO-D");
+  const deliberateFocusCell = page.locator('table[aria-label="Table"] tbody tr').nth(1).locator("td").first();
+  const deliberateFocusTestId = await deliberateFocusCell.getAttribute("data-testid");
+  assert.ok(deliberateFocusTestId && deliberateFocusTestId !== rowTestId, "a separate visible cell can receive deliberate pending focus");
+  const heldTrackerCount = await methodCount();
+  const heldPublicationCount = await publicationCount();
+  await page.evaluate(() => window.__tachikoAcceptance.deferNextTrackerReply());
+  try {
+    await undo.click();
+    await page.waitForFunction((previousCount) =>
+      document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "true" &&
+      (window.__tachikoAcceptance.workMethodCounts().trackerCommand ?? 0) === previousCount + 1,
+    heldTrackerCount);
+    await deliberateFocusCell.focus();
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-testid")), deliberateFocusTestId);
+  } finally {
+    await page.evaluate(() => window.__tachikoAcceptance.releaseTrackerReply());
+  }
+  await waitCell(rowTestId, "UNDO-A");
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-testid")), deliberateFocusTestId, "history completion does not steal a different usable focus destination chosen while pending");
+  assert.equal(await methodCount(), heldTrackerCount + 1, "held real history reply dispatches exactly once");
+  assert.equal(await publicationCount(), heldPublicationCount + 1, "held real reply contains one actual publication");
+  const heldReceipt = await page.evaluate(() => window.__tachikoAcceptance.lastReceipt());
+  assert.equal(heldReceipt?.resulting_revision, await cell(rowTestId).getAttribute("data-work-revision"), "the held operation returns the genuine core receipt after release");
+  await redo.click();
+  await waitCell(rowTestId, "UNDO-D");
+
+  await edit(rowTestId, "UNDO-E");
+  await waitCell(rowTestId, "UNDO-E");
   const dispatchesBeforeLostReply = await publicationCount();
   const commandsBeforeLostReply = await methodCount();
   await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
   await undo.click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
+  const recoveryRefresh = page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true });
+  await recoveryRefresh.waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const button = document.querySelector(".ts-home button");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Refresh");
+  assert.equal(await recoveryRefresh.evaluate((node) => node === document.activeElement), true, "unknown history recovery restores focus to the recovery Refresh action");
   assert.equal(await methodCount(), commandsBeforeLostReply + 1, "lost history reply dispatches exactly once");
   assert.equal(await publicationCount(), dispatchesBeforeLostReply + 1, "history is never blindly replayed");
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await recoveryRefresh.click();
   await page.getByTestId("project-ready").waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
   assert.equal(await undo.isDisabled(), true, "Refresh does not reconstruct local history knowledge");
   assert.equal(await redo.isDisabled(), true);
 
@@ -218,6 +266,44 @@ try {
   await notesPage.getByRole("button", { name: "Apply notes", exact: true }).click();
   await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
   assert.equal(await notesUndo.isDisabled(), false, "applying notes releases the history lock and counts as an admitted edit");
+
+  // Brief hides the table publication target; restore the usable command origin,
+  // then keep keyboard commands on that same visible surface.
+  await notesUndo.click();
+  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await notesPage.evaluate(() => document.activeElement?.textContent?.trim()), "Undo", "Brief Undo returns focus to its still-usable initiating command");
+  await notesPage.keyboard.press("Control+Shift+Z");
+  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await notesPage.evaluate(() => document.activeElement?.textContent?.trim()), "Undo", "the next keyboard Redo preserves its usable focused origin");
+
+  const briefTab = notesPage.getByRole("tab", { name: "Brief", exact: true });
+  await briefTab.focus();
+  await notesPage.keyboard.press("Control+Z");
+  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await briefTab.evaluate((node) => node === document.activeElement), true, "keyboard history with an invisible cell target returns to its usable Brief-tab origin");
+
+  // Exhaust the command origin on the Brief tab: focus falls back to desktop Refresh.
+  await notesUndo.click();
+  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  const desktopRefresh = notesPage.locator(".ts-refresh-command");
+  await notesPage.waitForFunction(() => document.activeElement?.textContent?.trim() === "Refresh");
+  assert.equal(await desktopRefresh.evaluate((node) => node === document.activeElement), true, "an exhausted desktop Undo origin falls back to the visible Refresh command");
+
+  // On compact layout, use the overflow menu origin while enabled; when the
+  // final Undo disables it, use the visible More summary and never hidden Refresh.
+  await notesPage.setViewportSize({ width: 320, height: 640 });
+  const moreSummary = notesPage.getByLabel("More document commands");
+  await moreSummary.click();
+  const compactRedo = notesPage.locator(".ts-command-overflow .ts-command-menu").getByRole("button", { name: "Redo", exact: true });
+  await compactRedo.click();
+  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await compactRedo.evaluate((node) => node === document.activeElement), true, "compact history keeps focus on a still-usable menu command");
+  await compactRedo.click();
+  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  assert.equal(await compactRedo.isDisabled(), true);
+  assert.equal(await moreSummary.evaluate((node) => node === document.activeElement), true, "compact exhausted history falls back to More, not the hidden desktop Refresh");
+  assert.notEqual(await desktopRefresh.evaluate((node) => node === document.activeElement), true, "compact fallback never steals focus to the desktop Refresh command");
+  await notesPage.setViewportSize({ width: 1280, height: 800 });
   await notesPage.close();
   console.log("PASS: real acceptance-build Undo/Redo scalar, barrier, recovery, reopen and notes-lock journey");
 } finally {

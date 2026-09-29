@@ -79,6 +79,8 @@ export interface AcceptanceApi {
   releaseImportApplication(): void;
   deferNextCopyWrite(): void;
   releaseCopyWrite(): void;
+  deferNextTrackerReply(): void;
+  releaseTrackerReply(): void;
   loseNextExecuteReply(): void;
   loseNextOpenReply(): void;
   loseNextImportBeforeDispatch(): void;
@@ -175,6 +177,7 @@ function operationGate() {
 const importInspectionGate = operationGate();
 const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
+const trackerReplyGate = operationGate();
 
 function requireWiring(): AcceptanceWiring {
   if (!wiring) throw new Error("The acceptance wiring has not been installed.");
@@ -368,6 +371,7 @@ async function dispatchPublication(
   }
   const receipt = await call();
   lastReceiptValue = receipt;
+  if (method === "trackerCommand") await trackerReplyGate.pause();
   return receipt;
 }
 
@@ -572,6 +576,14 @@ export function releaseCopyWrite(): void {
   copyWriteGate.release();
 }
 
+export function deferNextTrackerReply(): void {
+  trackerReplyGate.defer();
+}
+
+export function releaseTrackerReply(): void {
+  trackerReplyGate.release();
+}
+
 function restore(): void {
   restoreTransaction?.();
 }
@@ -763,6 +775,8 @@ export function installAcceptance(next: AcceptanceWiring): void {
     releaseImportApplication,
     deferNextCopyWrite,
     releaseCopyWrite,
+    deferNextTrackerReply,
+    releaseTrackerReply,
     loseNextExecuteReply,
     loseNextOpenReply,
     loseNextImportBeforeDispatch,
