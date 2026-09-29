@@ -254,8 +254,13 @@ try {
   await notes.fill("UNDO-NOTE-DRAFT");
   assert.equal(await notesUndo.isDisabled(), true, "a notes draft locks visible history controls");
   const noteCommands = await notesPage.evaluate(() => window.__tachikoAcceptance.workMethodCounts().trackerCommand ?? 0);
-  await notes.press("Control+Z");
+  const nativeUndoModifier = process.platform === "darwin" ? "Meta" : "Control";
+  await notes.press(`${nativeUndoModifier}+Z`);
+  assert.equal(await notes.inputValue(), originalNotes, "native notes undo restores the committed text value");
   assert.equal(await notesPage.evaluate(() => window.__tachikoAcceptance.workMethodCounts().trackerCommand ?? 0), noteCommands, "native notes text undo never dispatches Sheet history");
+  await notes.fill("UNDO-NOTE-DRAFT-RETAINED");
+  assert.notEqual(await notes.inputValue(), originalNotes, "a fresh dirty notes draft is established after native text undo");
+  assert.equal(await notesUndo.isDisabled(), true, "the re-established notes draft locks history independently of native undo");
   await notesPage.getByRole("tab", { name: "Table", exact: true }).click();
   assert.equal(await notesUndo.isDisabled(), true, "a notes draft stays locked when another tab is selected");
   await notesPage.getByRole("tab", { name: "Brief", exact: true }).click();
