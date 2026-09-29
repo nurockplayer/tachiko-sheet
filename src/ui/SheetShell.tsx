@@ -12,6 +12,7 @@ import {
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import { appearanceDensity } from "../application/appearance-preference.js";
+import { emptyLocalHistory } from "../application/local-history.js";
 import { sameAppearanceChoice } from "../application/appearance-model.js";
 import type {
   AppearanceDensity,
@@ -20,6 +21,7 @@ import type {
 } from "../application/appearance-preference.js";
 import type {
   Currentness,
+  FieldTarget,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
   KeyedGroupedSumBindingChoice,
@@ -32,6 +34,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { reportPresentationTextLimitViolation } from "../contracts.js";
+import { historyCommandForKey } from "./history-keyboard.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -300,6 +303,8 @@ export function SheetShell(props: SheetShellProps) {
     onOpenSaved,
     onSelectCollection = async () => {},
     onCommit,
+    localHistory = emptyLocalHistory(),
+    onHistory = async () => null,
     onCreateCopy,
     onClose,
     onRefresh,
@@ -326,6 +331,7 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveReport = () => false,
   } = props;
   const heldPointerOwnerRef = useRef<SharedButtonPointerOwner | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
 
   const [appearanceSnapshot, setAppearanceSnapshot] = useState(() =>
     props.appearancePreference.getSnapshot(),
@@ -404,6 +410,7 @@ export function SheetShell(props: SheetShellProps) {
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [historyFocusTarget, setHistoryFocusTarget] = useState<FieldTarget | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
@@ -556,6 +563,14 @@ export function SheetShell(props: SheetShellProps) {
       }));
     });
   }, [table]);
+  useLayoutEffect(() => {
+    const target = historyFocusTarget;
+    if (!target) return;
+    const matches = gridOrder.filter((entry) => entry.entity === target.entity && entry.field === target.field);
+    const cell = matches.length === 1 ? cellRefs.current.get(cellKey(target.entity, target.field)) : null;
+    if (cell?.isConnected && cell.getClientRects().length > 0) cell.focus();
+    setHistoryFocusTarget(null);
+  }, [gridOrder, historyFocusTarget, tab]);
   const selectedRow = useMemo(() => {
     if (!table) return null;
     const rows = table.rows;
@@ -598,6 +613,25 @@ export function SheetShell(props: SheetShellProps) {
   }, [captureCopyParentFailure, copyParentFailureMessage, message]);
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
+  const modalInteractionOpen = copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const historyDraftLocked = editor !== null || anyNotesDraft;
+  const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
+  useEffect(() => {
+    function onHistoryKeyDown(event: KeyboardEvent): void {
+      const shell = shellRef.current;
+      if (!shell || !shell.contains(event.target as Node)) return;
+      const direction = historyCommandForKey(
+        event,
+        event.target,
+        historyInteractionLocked || props.appearancePreference.getSnapshot().composing || controlsLocked,
+      );
+      if (!direction || (direction === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1)) return;
+      event.preventDefault();
+      void requestHistory(direction);
+    }
+    window.addEventListener("keydown", onHistoryKeyDown);
+    return () => window.removeEventListener("keydown", onHistoryKeyDown);
+  }, [controlsLocked, historyInteractionLocked, localHistory, onHistory, props.appearancePreference]);
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
@@ -769,6 +803,12 @@ export function SheetShell(props: SheetShellProps) {
   function focusCell(entity: string, field: string): void {
     const node = cellRefs.current.get(cellKey(entity, field));
     node?.focus();
+  }
+
+  async function requestHistory(direction: "undo" | "redo"): Promise<void> {
+    if (historyInteractionLocked || controlsLocked) return;
+    const focusTarget = await onHistory(direction);
+    setHistoryFocusTarget(focusTarget);
   }
 
   function moveFocus(event: ReactKeyboardEvent<HTMLElement>, position: GridPosition, step: number): void {
@@ -1258,7 +1298,25 @@ export function SheetShell(props: SheetShellProps) {
       <div className="ts-actions ts-header-actions" role="group" aria-label="Document commands">
         <button
           type="button"
-          className="ts-button"
+          className="ts-button ts-history-command"
+          onClick={() => void requestHistory("undo")}
+          disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          aria-describedby={controlsLocked ? lockNoteId : undefined}
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          className="ts-button ts-history-command"
+          onClick={() => void requestHistory("redo")}
+          disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          aria-describedby={controlsLocked ? lockNoteId : undefined}
+        >
+          Redo
+        </button>
+        <button
+          type="button"
+          className="ts-button ts-refresh-command"
           onClick={() => void refresh()}
           disabled={busy || commitPending}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
@@ -1284,7 +1342,11 @@ export function SheetShell(props: SheetShellProps) {
         {closeButton("ts-button ts-close-project-desktop")}
         <details className="ts-command-overflow">
           <summary aria-label="More document commands">…</summary>
-          {closeButton("ts-button ts-button--ghost")}
+          <div className="ts-command-menu">
+            <button type="button" className="ts-button ts-button--ghost" onClick={() => void requestHistory("undo")} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={() => void requestHistory("redo")} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
+            {closeButton("ts-button ts-button--ghost")}
+          </div>
         </details>
       </div>
     );
@@ -1875,6 +1937,7 @@ export function SheetShell(props: SheetShellProps) {
 
   return (
     <div
+      ref={shellRef}
       className="ts-app"
       data-view={view ? "workbook" : "home"}
       onCompositionStartCapture={beginAppearanceComposition}

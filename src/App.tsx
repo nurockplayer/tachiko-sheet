@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
+import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
 import {
   UnknownOperationOutcomeError,
   bindingCatalogContainsDate,
@@ -222,12 +223,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [j4DefinitionIds, setJ4DefinitionIds] = useState<string[]>([]);
   const [report, setReport] = useState<ReportConfiguration | null>(null);
   const [interop, setInterop] = useState<InteropState | null>(null);
+  const [localHistory, setLocalHistory] = useState<LocalHistorySnapshot>(() => emptyLocalHistory());
   const importBytesRef = useRef<ArrayBuffer | null>(null);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
   // An ephemeral, user-consented delivery candidate; never canonical state.
   const preparedDownloadRef = useRef<{ format: "csv" | "xlsx"; revision: string; bytes: ArrayBuffer } | null>(null);
 
   const viewRef = useRef<WorkbookView | null>(null);
+  const localHistoryRef = useRef<LocalHistorySnapshot>(emptyLocalHistory());
   const inflightRef = useRef(false);
   const pendingDirtyRef = useRef(false);
   const draftDirtyRef = useRef(false);
@@ -316,7 +319,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  function installView(next: WorkbookView): void {
+  function installLocalHistory(next: LocalHistorySnapshot): void {
+    localHistoryRef.current = next;
+    setLocalHistory(next);
+  }
+
+  function installView(next: WorkbookView | null): void {
+    installLocalHistory(next ? observeLocalHistory(localHistoryRef.current, next) : emptyLocalHistory());
     viewRef.current = next;
     setView(next);
   }
@@ -496,7 +505,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     witness: Pick<WorkbookView, "occurrence" | "revision"> | null = null,
   ): void {
     viewRef.current = null;
-    setView(null);
+    installView(null);
     installJ4DefinitionIds([]);
     clearJ4Results();
     recoveryDraftRef.current = null;
@@ -641,7 +650,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function failClosedAfterPublicationRecovery(): void {
     viewRef.current = null;
-    setView(null);
+    installView(null);
     clearJ4Results();
     // Keep dirty as publication truth; the editor/projection itself is no
     // longer safe to present or retry until Refresh re-observes the resident work.
@@ -660,7 +669,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function failClosedAfterUnknownCleanup(): void {
     viewRef.current = null;
-    setView(null);
+    installView(null);
     clearJ4Results();
     pendingDirtyRef.current = true;
     draftDirtyRef.current = false;
@@ -675,7 +684,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function failClosedAfterUnknownEdit(edit: ScalarEdit): void {
     viewRef.current = null;
-    setView(null);
+    installView(null);
     clearJ4Results();
     pendingDirtyRef.current = true;
     draftDirtyRef.current = false;
@@ -690,7 +699,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function failClosedAfterUnknownJ4(): void {
     viewRef.current = null;
-    setView(null);
+    installView(null);
     clearJ4Results();
     pendingDirtyRef.current = true;
     draftDirtyRef.current = false;
@@ -700,6 +709,20 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setCurrentness("unknown");
     setOutcome("unknown");
     setMessage("The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
+  }
+
+  function failClosedAfterUnknownHistory(direction: "undo" | "redo"): void {
+    viewRef.current = null;
+    installView(null);
+    clearJ4Results();
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    cleanupPreviewContextRef.current = null;
+    setCurrentness("unknown");
+    setOutcome("unknown");
+    setMessage(`The ${direction} request was dispatched but could not be confirmed. Refresh to re-read the work; it was not retried.`);
   }
 
   async function openFiles(files: FileList): Promise<void> {
@@ -1105,7 +1128,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(null);
       setCurrentness("pending");
       clearJ4Results();
-      const next = await runtime.edit(witness, target, edit);
+      const confirmed = await runtime.editConfirmed(witness, target, edit);
+      installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
+      const next = confirmed.view;
       installView(next);
       clearCleanupPreview();
       pendingDirtyRef.current = true;
@@ -1116,11 +1141,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       return true;
     } catch (error) {
       if (error instanceof PublishedProjectionRecoveryError) {
+        installLocalHistory(emptyLocalHistory());
         failClosedAfterPublicationRecovery();
         // The publication is known successful; avoid SheetShell's rejected
         // draft path, which would offer an ordinary semantic retry.
         return true;
       } else if (error instanceof UnknownOperationOutcomeError) {
+        installLocalHistory(emptyLocalHistory());
         failClosedAfterUnknownEdit(edit);
         return true;
       } else {
@@ -1140,6 +1167,39 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setMessage(describe(error, "The change was not applied."));
       }
       return false;
+    } finally {
+      end();
+    }
+  }
+
+  async function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
+    const live = viewRef.current;
+    const known = localHistoryRef.current;
+    if (!live || currentness !== "current" || known.occurrence !== live.occurrence ||
+      known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return null;
+    const witness = witnessOf(live);
+    try {
+      setMessage(null);
+      setCurrentness("pending");
+      clearJ4Results();
+      const confirmed = await runtime.trackerHistory(witness, direction);
+      installLocalHistory(confirmHistoryCommand(localHistoryRef.current, confirmed.view, confirmed.publication, direction));
+      installView(confirmed.view);
+      clearCleanupPreview();
+      pendingDirtyRef.current = true;
+      syncDirty();
+      if (savedRevisionRef.current !== confirmed.view.revision) markNotSaved();
+      setCurrentness("current");
+      setOutcome("idle");
+      return confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null;
+    } catch (error) {
+      installLocalHistory(emptyLocalHistory());
+      if (error instanceof PublishedProjectionRecoveryError) {
+        failClosedAfterPublicationRecovery();
+      } else {
+        failClosedAfterUnknownHistory(direction);
+      }
+      return null;
     } finally {
       end();
     }
@@ -1395,7 +1455,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       throw new Error(describe(error, "The work could not be closed."));
     } finally {
       viewRef.current = null;
-      setView(null);
+      installView(null);
       installJ4DefinitionIds([]);
       clearJ4Results();
       installReport(null);
@@ -1441,7 +1501,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // not. Keep the actionable projection absent so Refresh and explicit
         // Close remain available from the recovery home.
         viewRef.current = null;
-        setView(null);
+        installView(null);
         installJ4DefinitionIds([]);
         clearJ4Results();
         installReport(null);
@@ -1573,7 +1633,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
     } catch (error) {
       viewRef.current = null;
-      setView(null);
+      installView(null);
       if (error instanceof NoResidentWorkError) {
         // The authoritative reobserve proved that the uncertain occurrence is
         // gone. Discard its dirty/recovery context so normal Open routes can
@@ -1678,6 +1738,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}
           onCommit={commit}
+          localHistory={localHistory}
+          onHistory={runHistory}
           onCreateCopy={createCopy}
           onClose={close}
           onRefresh={refresh}

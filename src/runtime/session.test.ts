@@ -58,6 +58,7 @@ interface Hooks {
   observeOccurrence?: () => Promise<OccurrenceProjection>;
   editNumber?: () => Promise<PublicationProjection>;
   editText?: () => Promise<PublicationProjection>;
+  trackerCommand?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
   bootstrap?: () => Promise<BootstrapProjection>;
@@ -91,6 +92,7 @@ class FakeClient {
     editText: 0,
     editBoolean: 0,
     editDate: 0,
+    trackerCommand: [] as Array<{ type: "undo" | "redo"; expected_revision: string }>,
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
     createKeyedGroupedSum: [] as KeyedGroupedSumDefinitionInput[],
@@ -106,6 +108,8 @@ class FakeClient {
   #scope = 0;
   #counter = 0;
   #revision = "r0";
+  #undoCount = 0;
+  #redoCount = 0;
 
   get currentRevision(): string { return this.#revision; }
 
@@ -165,6 +169,8 @@ class FakeClient {
   #publish(target: FieldTarget): PublicationProjection {
     const base = this.#revision;
     this.#bump();
+    this.#undoCount = Math.min(64, this.#undoCount + 1);
+    this.#redoCount = 0;
     return {
       base_revision: base,
       resulting_revision: this.#revision,
@@ -172,6 +178,24 @@ class FakeClient {
       fields: [target],
       affected_calculations: [],
     };
+  }
+
+  async trackerCommand(request: { type: "undo" | "redo"; expected_revision: string }): Promise<PublicationProjection> {
+    this.calls.trackerCommand.push(request);
+    this.#requireOpen();
+    const hook = this.hooks.trackerCommand;
+    if (hook !== undefined) {
+      this.hooks.trackerCommand = undefined;
+      return hook();
+    }
+    this.#requireRevision(request.expected_revision);
+    const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
+    if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);
+    const base = this.#revision;
+    this.#bump();
+    if (request.type === "undo") { this.#undoCount -= 1; this.#redoCount += 1; }
+    else { this.#redoCount -= 1; this.#undoCount = Math.min(64, this.#undoCount + 1); }
+    return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [] };
   }
 
   async openProject(bytes: ArrayBuffer): Promise<OpenedProjection> {
@@ -432,6 +456,133 @@ function catalogTable(
 }
 
 describe("createSheetRuntime", () => {
+  it("confirms scalar and tracker history publications against the coherent resident occurrence", async () => {
+    const { client, runtime, view } = await opened();
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+    expect(edit.publication.base_revision).toBe(view.revision);
+    expect(edit.publication.resulting_revision).toBe(edit.view.revision);
+    expect(edit.view.occurrence).toBe(view.occurrence);
+
+    const undone = await runtime.trackerHistory(witnessOf(edit.view), "undo");
+    expect(client.calls.trackerCommand).toEqual([{ type: "undo", expected_revision: edit.view.revision }]);
+    expect(undone.publication.base_revision).toBe(edit.view.revision);
+    expect(undone.view.occurrence).toBe(view.occurrence);
+    const redone = await runtime.trackerHistory(witnessOf(undone.view), "redo");
+    expect(redone.publication.base_revision).toBe(undone.view.revision);
+    expect(client.calls.trackerCommand).toHaveLength(2);
+  });
+
+  it("rejects empty history and does not retry the dispatched command", async () => {
+    const { client, runtime, view } = await opened();
+    const refused = await failure(runtime.trackerHistory(witnessOf(view), "undo"));
+    expect(refused).toBeInstanceOf(FakeDesignerRuntimeError);
+    expect((refused as FakeDesignerRuntimeError).failure.code).toBe("no_history");
+    expect(client.calls.trackerCommand).toHaveLength(1);
+  });
+
+  it("classifies a mismatched edit base as unknown before attempting a replacement read", async () => {
+    const { client, runtime, view } = await opened();
+    client.hooks.editNumber = async () => ({
+      base_revision: "other-revision",
+      resulting_revision: "r2",
+      entities: [IMPACT.entity],
+      fields: [IMPACT],
+      affected_calculations: [],
+    });
+    client.hooks.queryTable = async () => { throw new Error("replacement read must not run"); };
+
+    const error = await failure(runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "9" }));
+    expect(error).toBeInstanceOf(UnknownOperationOutcomeError);
+    expect(client.calls.editNumber).toBe(1);
+    expect(client.calls.queryTable).toHaveLength(1);
+    const refused = await failure(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "10" }));
+    expect((refused as SheetSessionError).code).toBe("not-open");
+    expect(client.calls.editNumber).toBe(1);
+  });
+
+  it("classifies a mismatched history base as unknown before attempting a replacement read", async () => {
+    const { client, runtime, view } = await opened();
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+    client.hooks.trackerCommand = async () => ({
+      base_revision: "other-revision",
+      resulting_revision: "r3",
+      entities: [IMPACT.entity],
+      fields: [IMPACT],
+      affected_calculations: [],
+    });
+    client.hooks.queryTable = async () => { throw new Error("replacement read must not run"); };
+
+    const error = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
+    expect(error).toBeInstanceOf(UnknownOperationOutcomeError);
+    expect(client.calls.trackerCommand).toHaveLength(1);
+    expect(client.calls.queryTable).toHaveLength(2);
+  });
+
+  it("classifies a valid-base history acknowledgement with an unreadable replacement as published recovery", async () => {
+    const { client, runtime, view } = await opened();
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+    client.hooks.queryTable = async () => { throw new Error("replacement read failed"); };
+
+    const error = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
+    expect(error).toHaveProperty("name", "PublishedProjectionRecoveryError");
+    expect((error as { publication: PublicationProjection }).publication.base_revision).toBe(edit.view.revision);
+    expect(client.calls.trackerCommand).toHaveLength(1);
+    const refused = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
+    expect((refused as SheetSessionError).code).toBe("not-open");
+    expect(client.calls.trackerCommand).toHaveLength(1);
+  });
+
+  it("classifies a valid-base history receipt whose resulting revision disagrees with the read as published recovery", async () => {
+    const { client, runtime, view } = await opened();
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+    client.hooks.trackerCommand = async () => ({
+      base_revision: edit.view.revision,
+      resulting_revision: "unobserved-revision",
+      entities: [IMPACT.entity],
+      fields: [IMPACT],
+      affected_calculations: [],
+    });
+
+    const error = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
+    expect(error).toHaveProperty("name", "PublishedProjectionRecoveryError");
+    expect(client.calls.trackerCommand).toHaveLength(1);
+  });
+
+  it("classifies a valid-base history receipt whose coherent read has another occurrence as published recovery", async () => {
+    const { client, runtime, view } = await opened();
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+    client.hooks.observeOccurrence = async () => ({ scope: "replacement-occurrence", revision: client.currentRevision });
+
+    const error = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
+    expect(error).toHaveProperty("name", "PublishedProjectionRecoveryError");
+    expect(client.calls.trackerCommand).toHaveLength(1);
+  });
+
+  it("refuses stale history witnesses before dispatch and discards a reply after close without replay", async () => {
+    const { client, runtime, view } = await opened();
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+    const stale = await failure(runtime.trackerHistory({ occurrence: edit.view.occurrence, revision: "stale" }, "undo"));
+    expect((stale as SheetSessionError).code).toBe("stale-witness");
+    expect(client.calls.trackerCommand).toHaveLength(0);
+
+    let resolveReply: ((publication: PublicationProjection) => void) | undefined;
+    client.hooks.trackerCommand = () => new Promise((resolve) => { resolveReply = resolve; });
+    const pending = runtime.trackerHistory(witnessOf(edit.view), "undo");
+    while (!resolveReply) await Promise.resolve();
+    const closing = runtime.close();
+    resolveReply({
+      base_revision: edit.view.revision,
+      resulting_revision: "late-reply",
+      entities: [IMPACT.entity],
+      fields: [IMPACT],
+      affected_calculations: [],
+    });
+    const late = await failure(pending);
+    expect(late).toBeInstanceOf(SheetSessionError);
+    expect(client.calls.trackerCommand).toHaveLength(1);
+    await closing;
+  });
+
   it("opens a FileList through the public transfer and keeps one resident client", async () => {
     const { client, runtime, view, projectTransferFromFiles, createExperimentalDesignerClient } =
       await opened();
