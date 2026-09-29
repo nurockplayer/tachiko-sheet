@@ -484,7 +484,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function edit(witness: ViewWitness, target: FieldTarget, change: ScalarEdit): Promise<WorkbookView> {
+  function editConfirmed(witness: ViewWitness, target: FieldTarget, change: ScalarEdit) {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
@@ -503,6 +503,14 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         }
         throw error;
       }
+      if (publication.base_revision !== live.revision) {
+        active = null;
+        residentCollection = live.collection;
+        throw new UnknownOperationOutcomeError(
+          "The edit returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
+        );
+      }
       let result: CoherentRead;
       try {
         result = await loadCoherentView(kit, client, expected, live.collection);
@@ -512,13 +520,76 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw new PublishedProjectionRecoveryError(publication, error);
       }
       assertUsable(expected);
+      if (publication.resulting_revision !== result.view.revision ||
+        result.view.occurrence !== live.scope) {
+        active = null;
+        residentCollection = live.collection;
+        throw new PublishedProjectionRecoveryError(
+          publication,
+          new SheetSessionError("incoherent-reply", "The publication and replacement view do not share one coherent occurrence/revision."),
+        );
+      }
       active = {
         scope: result.view.occurrence,
         revision: result.view.revision,
         collection: result.collection,
       };
       residentCollection = result.collection;
-      return result.view;
+      return { view: result.view, publication };
+    });
+  }
+
+  function edit(witness: ViewWitness, target: FieldTarget, change: ScalarEdit): Promise<WorkbookView> {
+    return editConfirmed(witness, target, change).then((confirmed) => confirmed.view);
+  }
+
+  function trackerHistory(witness: ViewWitness, direction: "undo" | "redo") {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const trackerCommand = capability(client.trackerCommand, "tracker history");
+      let publication: PublicationProjection;
+      try {
+        publication = await afterUsable(
+          expected,
+          dispatch(kit, () => trackerCommand.call(client, { type: direction, expected_revision: live.revision })),
+        );
+      } catch (error) {
+        active = null;
+        residentCollection = live.collection;
+        throw error;
+      }
+      if (publication.base_revision !== live.revision) {
+        active = null;
+        residentCollection = live.collection;
+        throw new UnknownOperationOutcomeError(
+          "The history command returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
+        );
+      }
+      let result: CoherentRead;
+      try {
+        result = await loadCoherentView(kit, client, expected, live.collection);
+      } catch (error) {
+        active = null;
+        residentCollection = live.collection;
+        throw new PublishedProjectionRecoveryError(publication, error);
+      }
+      assertUsable(expected);
+      if (publication.resulting_revision !== result.view.revision ||
+        result.view.occurrence !== live.scope) {
+        active = null;
+        residentCollection = live.collection;
+        throw new PublishedProjectionRecoveryError(
+          publication,
+          new SheetSessionError("incoherent-reply", "The history publication and replacement view do not share one coherent occurrence/revision."),
+        );
+      }
+      active = { scope: result.view.occurrence, revision: result.view.revision, collection: result.collection };
+      residentCollection = result.collection;
+      return { view: result.view, publication };
     });
   }
 
@@ -788,7 +859,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   }
 
   return {
-    openFiles, openCanonical, openOpaque, read, selectCollection, readFields, edit, exportCanonical, exportOpaque,
+    openFiles, openCanonical, openOpaque, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };

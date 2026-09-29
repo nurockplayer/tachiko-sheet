@@ -19,6 +19,7 @@ import type {
   SpreadsheetFormat,
 } from "../public/core-kit/runtime/interop-protocol.js";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
+import type { LocalHistorySnapshot } from "./application/local-history.js";
 export type {
   CleanupOperation,
   CleanupPreview,
@@ -63,6 +64,8 @@ export interface SheetRuntime {
   selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView>;
   readFields(witness: ViewWitness, targets: FieldTarget[]): Promise<FieldBatchProjection>;
   edit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<WorkbookView>;
+  editConfirmed(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<ConfirmedPublication>;
+  trackerHistory(witness: ViewWitness, direction: "undo" | "redo"): Promise<ConfirmedPublication>;
   exportCanonical(witness: ViewWitness): Promise<CanonicalTreeExport>;
   exportOpaque(witness: ViewWitness): Promise<OpaqueProjectExport>;
   listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog>;
@@ -77,6 +80,12 @@ export interface SheetRuntime {
   exportSpreadsheet(witness: ViewWitness, metadata: InteropMetadata, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
   validateImportedProject(files: readonly CanonicalProjectFile[], metadata: InteropMetadata): Promise<void>;
   close(): Promise<void>;
+}
+
+/** Private runtime evidence for a publication whose replacement view was read coherently. */
+export interface ConfirmedPublication {
+  view: WorkbookView;
+  publication: import("../public/core-kit/experimental-client.js").PublicationProjection;
 }
 
 export interface ImportedWorkbook {
@@ -230,6 +239,8 @@ export interface SheetShellProps {
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
   onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean>;
+  localHistory: LocalHistorySnapshot;
+  onHistory(direction: "undo" | "redo"): Promise<FieldTarget | null>;
   onCreateCopy(name: string): Promise<boolean>;
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;

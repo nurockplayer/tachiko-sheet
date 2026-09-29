@@ -664,6 +664,7 @@ body { margin: 0; }
 }
 
 .ts-command-overflow { display: none; }
+.ts-command-menu { display: none; }
 .ts-save-status {
   display: flex;
   flex-direction: column;
@@ -1875,7 +1876,8 @@ body { margin: 0; }
     width: 100%;
   }
   .ts-save-status { grid-column: 1 / -1; grid-row: 1; min-width: 0; }
-  .ts-header-actions > .ts-button:nth-child(1) { grid-column: 1; grid-row: 2; }
+  .ts-header-actions > .ts-refresh-command { grid-column: 1; grid-row: 2; }
+  .ts-header-actions > .ts-history-command { display: none; }
   .ts-header-actions > .ts-button--primary { grid-column: 2; grid-row: 2; }
   .ts-close-project-desktop { display: none; }
   .ts-command-overflow { display: block; }
@@ -1896,11 +1898,15 @@ body { margin: 0; }
   }
   .ts-command-overflow > summary::-webkit-details-marker { display: none; }
   .ts-command-overflow > summary:focus-visible { outline: 3px solid var(--ts-focus); outline-offset: 2px; }
-  .ts-command-overflow[open] > .ts-button {
+  .ts-command-overflow[open] .ts-command-menu {
     position: absolute;
     z-index: 5;
     top: calc(100% + 4px);
     right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     white-space: nowrap;
     box-shadow: var(--ts-shadow);
   }

@@ -12,6 +12,7 @@ import {
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import { appearanceDensity } from "../application/appearance-preference.js";
+import { emptyLocalHistory } from "../application/local-history.js";
 import { sameAppearanceChoice } from "../application/appearance-model.js";
 import type {
   AppearanceDensity,
@@ -20,6 +21,7 @@ import type {
 } from "../application/appearance-preference.js";
 import type {
   Currentness,
+  FieldTarget,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
   KeyedGroupedSumBindingChoice,
@@ -32,6 +34,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { reportPresentationTextLimitViolation } from "../contracts.js";
+import { historyCommandForKey } from "./history-keyboard.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -68,6 +71,15 @@ interface NotesDraft {
 interface GridPosition {
   entity: string;
   field: string;
+}
+
+interface HistoryFocusRequest {
+  operationId: number;
+  occurrence: string | null;
+  initiator: HTMLElement | null;
+  publicationTarget: FieldTarget | null;
+  userDestination: HTMLElement | null;
+  settled: boolean;
 }
 
 interface ReportTextDraft {
@@ -266,6 +278,14 @@ function clearOwnedSharedPointer(ownerRef: { current: SharedButtonPointerOwner |
   ownerRef.current = null;
 }
 
+function historyFocusDestinationIsUsable(element: HTMLElement | null, shell: HTMLElement | null): element is HTMLElement {
+  if (!element || !shell?.contains(element) || !element.isConnected || element.getClientRects().length === 0) return false;
+  if (element.closest("[hidden], [inert]") || element.getAttribute("aria-disabled") === "true") return false;
+  if (element.matches(":disabled")) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
+
 function releaseSharedButton(target: EventTarget | null, ownerRef: { current: SharedButtonPointerOwner | null }): void {
   const button = sharedButtonFromTarget(target);
   button?.removeAttribute("data-ts-held");
@@ -300,6 +320,8 @@ export function SheetShell(props: SheetShellProps) {
     onOpenSaved,
     onSelectCollection = async () => {},
     onCommit,
+    localHistory = emptyLocalHistory(),
+    onHistory = async () => null,
     onCreateCopy,
     onClose,
     onRefresh,
@@ -326,6 +348,7 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveReport = () => false,
   } = props;
   const heldPointerOwnerRef = useRef<SharedButtonPointerOwner | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
 
   const [appearanceSnapshot, setAppearanceSnapshot] = useState(() =>
     props.appearancePreference.getSnapshot(),
@@ -334,6 +357,14 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => () => {
     if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      historyFocusRequestRef.current = null;
+    };
   }, []);
 
   function selectAppearanceProfile(profileId: AppearanceProfileId): AppearancePreferenceSnapshot {
@@ -404,6 +435,7 @@ export function SheetShell(props: SheetShellProps) {
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
@@ -426,6 +458,9 @@ export function SheetShell(props: SheetShellProps) {
   const panelId = (name: ActiveTab) => `ts-panel-${name}`;
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
+  const historyFocusRequestRef = useRef<HistoryFocusRequest | null>(null);
+  const historyOperationIdRef = useRef(0);
+  const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | null>(null);
   const selectEditorValueOnFocusRef = useRef(true);
   const focusRejectedEditorRef = useRef(false);
@@ -435,6 +470,9 @@ export function SheetShell(props: SheetShellProps) {
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const recoveryRefreshRef = useRef<HTMLButtonElement | null>(null);
+  const desktopRefreshRef = useRef<HTMLButtonElement | null>(null);
+  const commandOverflowSummaryRef = useRef<HTMLElement | null>(null);
   const importPendingFocusRef = useRef<HTMLHeadingElement | null>(null);
   const importRetryButtonRef = useRef<HTMLButtonElement | null>(null);
   const copyNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -601,6 +639,73 @@ export function SheetShell(props: SheetShellProps) {
   }, [captureCopyParentFailure, copyParentFailureMessage, message]);
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
+  const modalInteractionOpen = copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const historyDraftLocked = editor !== null || anyNotesDraft;
+  const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
+  useLayoutEffect(() => {
+    const request = historyFocusRequest;
+    if (!request || historyFocusRequestRef.current !== request) return;
+    if ((view && view.occurrence !== request.occurrence) || (!view && currentness !== "unknown")) {
+      historyFocusRequestRef.current = null;
+      setHistoryFocusRequest(null);
+      return;
+    }
+    if (!request.settled || busy || commitPending) return;
+
+    const shell = shellRef.current;
+    let destination: HTMLElement | null = null;
+    if (historyFocusDestinationIsUsable(request.userDestination, shell)) {
+      destination = request.userDestination;
+    } else if (request.publicationTarget && view) {
+      const target = request.publicationTarget;
+      const matches = gridOrder.filter((entry) => entry.entity === target.entity && entry.field === target.field);
+      const cell = matches.length === 1 ? cellRefs.current.get(cellKey(target.entity, target.field)) ?? null : null;
+      if (historyFocusDestinationIsUsable(cell, shell)) destination = cell;
+    }
+    if (!destination && historyFocusDestinationIsUsable(request.initiator, shell)) {
+      destination = request.initiator;
+    }
+    if (!destination && currentness === "unknown") {
+      const recoveryRefresh = recoveryRefreshRef.current;
+      if (historyFocusDestinationIsUsable(recoveryRefresh, shell)) destination = recoveryRefresh;
+    }
+    if (!destination) {
+      const more = commandOverflowSummaryRef.current;
+      const refresh = desktopRefreshRef.current;
+      if (historyFocusDestinationIsUsable(more, shell)) destination = more;
+      else if (historyFocusDestinationIsUsable(refresh, shell)) destination = refresh;
+    }
+    if (destination && document.activeElement !== destination) destination.focus();
+    historyFocusRequestRef.current = null;
+    setHistoryFocusRequest(null);
+  }, [busy, commitPending, currentness, gridOrder, historyFocusRequest, view]);
+
+  useEffect(() => {
+    function onHistoryKeyDown(event: KeyboardEvent): void {
+      const shell = shellRef.current;
+      if (!shell || !shell.isConnected || !view || currentness !== "current" || event.defaultPrevented) return;
+      const ownerDocument = shell.ownerDocument;
+      const focusedElement = ownerDocument.activeElement;
+      const target = event.target;
+      const neutralFocus = focusedElement === ownerDocument.body || focusedElement === ownerDocument.documentElement;
+      const neutralTarget = target === ownerDocument || target === ownerDocument.body || target === ownerDocument.documentElement;
+      const targetInShell = target instanceof Node && shell.contains(target);
+      const focusInShell = focusedElement instanceof Node && shell.contains(focusedElement);
+      if (!((targetInShell && (focusInShell || neutralFocus)) || (neutralTarget && neutralFocus))) return;
+      if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
+      const direction = historyCommandForKey(
+        event,
+        target,
+        historyInteractionLocked || props.appearancePreference.getSnapshot().composing || controlsLocked,
+        focusedElement,
+      );
+      if (!direction || (direction === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1)) return;
+      event.preventDefault();
+      void requestHistory(direction, focusedElement instanceof HTMLElement ? focusedElement : null);
+    }
+    window.addEventListener("keydown", onHistoryKeyDown);
+    return () => window.removeEventListener("keydown", onHistoryKeyDown);
+  }, [controlsLocked, currentness, historyInteractionLocked, localHistory, onHistory, props.appearancePreference, view]);
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
@@ -772,6 +877,32 @@ export function SheetShell(props: SheetShellProps) {
   function focusCell(entity: string, field: string): void {
     const node = cellRefs.current.get(cellKey(entity, field));
     node?.focus();
+  }
+
+  async function requestHistory(direction: "undo" | "redo", initiator: HTMLElement | null): Promise<void> {
+    if (historyInteractionLocked || controlsLocked || historyFocusRequestRef.current) return;
+    const request: HistoryFocusRequest = {
+      operationId: ++historyOperationIdRef.current,
+      occurrence: view?.occurrence ?? null,
+      initiator,
+      publicationTarget: null,
+      userDestination: null,
+      settled: false,
+    };
+    historyFocusRequestRef.current = request;
+    setHistoryFocusRequest(request);
+    let publicationTarget: FieldTarget | null = null;
+    try {
+      publicationTarget = await onHistory(direction);
+    } catch {
+      // App owns outcome classification and recovery. Focus only restores after
+      // that operation reaches its final, rendered state.
+    }
+    const currentRequest = historyFocusRequestRef.current;
+    if (!mountedRef.current || !currentRequest || currentRequest.operationId !== request.operationId) return;
+    const settledRequest = { ...currentRequest, publicationTarget, settled: true };
+    historyFocusRequestRef.current = settledRequest;
+    setHistoryFocusRequest(settledRequest);
   }
 
   function moveFocus(event: ReactKeyboardEvent<HTMLElement>, position: GridPosition, step: number): void {
@@ -1132,7 +1263,7 @@ export function SheetShell(props: SheetShellProps) {
                 </span>
               ) : null}
             </div>
-            <button type="button" className="ts-button" onClick={() => void refresh()} disabled={busy || commitPending}>
+            <button type="button" className="ts-button" ref={recoveryRefreshRef} onClick={() => void refresh()} disabled={busy || commitPending}>
               Refresh
             </button>
             <button type="button" className="ts-button ts-button--ghost" ref={recoveryCloseTriggerRef} onClick={() => void requestClose()} disabled={busy || commitPending}>
@@ -1261,7 +1392,26 @@ export function SheetShell(props: SheetShellProps) {
       <div className="ts-actions ts-header-actions" role="group" aria-label="Document commands">
         <button
           type="button"
-          className="ts-button"
+          className="ts-button ts-history-command"
+          onClick={(event) => void requestHistory("undo", event.currentTarget)}
+          disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          aria-describedby={controlsLocked ? lockNoteId : undefined}
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          className="ts-button ts-history-command"
+          onClick={(event) => void requestHistory("redo", event.currentTarget)}
+          disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          aria-describedby={controlsLocked ? lockNoteId : undefined}
+        >
+          Redo
+        </button>
+        <button
+          type="button"
+          className="ts-button ts-refresh-command"
+          ref={desktopRefreshRef}
           onClick={() => void refresh()}
           disabled={busy || commitPending}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
@@ -1286,8 +1436,12 @@ export function SheetShell(props: SheetShellProps) {
         </button>
         {closeButton("ts-button ts-close-project-desktop")}
         <details className="ts-command-overflow">
-          <summary aria-label="More document commands">…</summary>
-          {closeButton("ts-button ts-button--ghost")}
+          <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
+          <div className="ts-command-menu">
+            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
+            {closeButton("ts-button ts-button--ghost")}
+          </div>
         </details>
       </div>
     );
@@ -1895,10 +2049,20 @@ export function SheetShell(props: SheetShellProps) {
 
   return (
     <div
+      ref={shellRef}
       className="ts-app"
       data-view={view ? "workbook" : "home"}
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
+      onFocusCapture={(event) => {
+        const request = historyFocusRequestRef.current;
+        const destination = event.target;
+        if (!request || request.settled || !(destination instanceof HTMLElement) || destination === request.initiator) return;
+        if (!historyFocusDestinationIsUsable(destination, shellRef.current)) return;
+        const updated = { ...request, userDestination: destination };
+        historyFocusRequestRef.current = updated;
+        setHistoryFocusRequest(updated);
+      }}
       onPointerDownCapture={(event) => {
         if (event.button !== 0 || !event.isPrimary) return;
         clearOwnedSharedPointer(heldPointerOwnerRef);

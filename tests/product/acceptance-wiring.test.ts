@@ -12,8 +12,12 @@ import {
   acceptanceHarnessVersion,
   armTargetedQueryReplyFault,
   coreFailureProbe,
+  deferNextTrackerReply,
   deferSecondScalarRequeryReply,
   failSecondScalarRequeryReplyAfterFirst,
+  failSecondHistoryRequeryReplyAfterFirst,
+  deferSecondHistoryRequeryReply,
+  releaseSecondHistoryRequeryReply,
   failNextOpenProjection,
   importSpreadsheetRequestCount,
   installAcceptance,
@@ -25,8 +29,11 @@ import {
   resetCoreFailureProbe,
   resetTargetedQueryReplyFault,
   resetScalarRequeryFaultProbe,
+  resetHistoryRequeryFaultProbe,
   releaseSecondScalarRequeryReply,
+  releaseTrackerReply,
   scalarRequeryFaultProbe,
+  historyRequeryFaultProbe,
   settleFaultWindow,
   targetedQueryFaultProbe,
   wrapKitLoader,
@@ -47,6 +54,8 @@ function fakeKit(
   onEdit: () => Promise<ReturnType<typeof projection>>,
   onQuery: (definitionId: string) => Promise<{ revision: string; definitionId: string }> = async (definitionId) => ({ revision: "r2", definitionId }),
   observedOccurrence = "occurrence-1",
+  observedRevision = "r2",
+  trackerResultRevision = "r2",
 ): { kit: CoreKit; calls: () => number; importCalls: () => number; queryCalls: () => number; closeCalls: () => number } {
   const state = { calls: 0, importCalls: 0, queryCalls: 0, closeCalls: 0 };
   let client: ReturnType<CoreKit["createExperimentalDesignerClient"]> | null = null;
@@ -65,9 +74,13 @@ function fakeKit(
       state.calls += 1;
       return onEdit();
     },
+    trackerCommand: async (command: { expected_revision: string }) => {
+      state.calls += 1;
+      return projection({ base_revision: command.expected_revision, resulting_revision: trackerResultRevision });
+    },
     queryTable: async (collection: string) => ({ collection, rows: [], columns: [], revision: "r1" }),
-    observeOccurrence: async () => ({ scope: observedOccurrence, revision: "r2" }),
-    bootstrap: async () => ({ revision: "r2", keyed_grouped_sum_definition_ids: ["definition-1", "definition-2"] }),
+    observeOccurrence: async () => ({ scope: observedOccurrence, revision: observedRevision }),
+    bootstrap: async () => ({ revision: trackerResultRevision, keyed_grouped_sum_definition_ids: ["definition-1", "definition-2"] }),
     queryKeyedGroupedSum: async (definitionId: string) => {
       state.queryCalls += 1;
       return { ...await onQuery(definitionId), groups: [], diagnostics: [] };
@@ -95,6 +108,7 @@ async function scalarRuntime(
   prepareClient?: (client: ReturnType<CoreKit["createExperimentalDesignerClient"]>) => void,
   beforeDiscoveryBootstrap?: () => Promise<void>,
   beforeReadDispatch?: () => Promise<void>,
+  historyViewRevision?: string,
 ) {
   let client: ReturnType<CoreKit["createExperimentalDesignerClient"]> | null = null;
   const runtime = {
@@ -108,6 +122,20 @@ async function scalarRuntime(
       const receipt = await client!.editNumber(witness.revision, target, change);
       if (postPublicationError) throw postPublicationError;
       return { occurrence, revision: receipt.resulting_revision } as never;
+    },
+    editConfirmed: async (witness: { occurrence: string; revision: string }, target = { entity: "entity", field: "field" }, change = "250") => {
+      await beforeEditDispatch?.();
+      const receipt = await client!.editNumber(witness.revision, target, change);
+      if (postPublicationError) throw postPublicationError;
+      return { view: { occurrence, revision: receipt.resulting_revision }, publication: receipt } as never;
+    },
+    trackerHistory: async (witness: { occurrence: string; revision: string }, direction: "undo" | "redo") => {
+      const publication = await client!.trackerCommand({ type: direction, expected_revision: witness.revision } as never);
+      return { view: { occurrence, revision: historyViewRevision ?? publication.resulting_revision }, publication } as never;
+    },
+    foreignHistory: async (witness: { occurrence: string; revision: string }, direction: "undo" | "redo") => {
+      const publication = await client!.trackerCommand({ type: direction, expected_revision: witness.revision } as never);
+      return { view: { occurrence, revision: publication.resulting_revision }, publication } as never;
     },
     discoverKeyedGroupedSums: async (witness: { occurrence: string; revision: string }) => {
       await beforeDiscoveryBootstrap?.();
@@ -507,6 +535,320 @@ describe("acceptance kit instrumentation", () => {
         invokedDefinitionIds: ["definition-1", "definition-2"],
         discardedDefinitionId: "definition-2",
         secondReplyHeld: false,
+      });
+    } finally {
+      resetScalarRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("attributes the second-query fault to one confirmed trackerHistory direction and exact resulting revision", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(
+      async () => projection(),
+      async (definitionId) => ({ revision: "history-result-opaque", definitionId }),
+      "history-occurrence",
+      "history-base-opaque",
+      "history-result-opaque",
+    );
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    try {
+      await runtime.read();
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "history-base-opaque" });
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: true,
+        baseRevision: "history-base-opaque",
+        dispatchedResultRevision: null,
+        resultRevision: null,
+      });
+      const confirmed = await runtime.trackerHistory({ occurrence: "history-occurrence", revision: "history-base-opaque" } as never, "undo");
+      expect(confirmed).toMatchObject({ view: { occurrence: "history-occurrence", revision: "history-result-opaque" } });
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: true,
+        direction: "undo",
+        baseRevision: "history-base-opaque",
+        dispatchedResultRevision: "history-result-opaque",
+        resultRevision: "history-result-opaque",
+        occurrence: "history-occurrence",
+        invocationId: expect.any(Number),
+        consumed: false,
+      });
+      await expect(runtime.discoverKeyedGroupedSums({ occurrence: "history-occurrence", revision: "history-result-opaque" } as never))
+        .rejects.toThrow(/second history grouped-summary reply discarded/);
+      expect(fake.queryCalls()).toBe(2);
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: false,
+        direction: "undo",
+        baseRevision: "history-base-opaque",
+        dispatchedResultRevision: "history-result-opaque",
+        resultRevision: "history-result-opaque",
+        queryCallIds: [expect.any(Number), expect.any(Number)],
+        queriedDefinitionIds: ["definition-1", "definition-2"],
+        actualReplyRevision: "history-result-opaque",
+        consumed: true,
+        resetReason: null,
+      });
+    } finally {
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("does not grant history fault attribution when Close cancels the owning tracker reply", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(async () => projection(), undefined, "history-occurrence");
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    deferNextTrackerReply();
+    try {
+      await runtime.read();
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "r1" });
+      const pendingHistory = runtime.trackerHistory({ occurrence: "history-occurrence", revision: "r1" } as never, "undo");
+      await vi.waitFor(() => expect(fake.calls()).toBe(1));
+      await runtime.close();
+      releaseTrackerReply();
+      await pendingHistory;
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: false,
+        consumed: false,
+        resetReason: "history-direction-revision-or-dispatch-mismatch",
+        queryCallIds: [],
+      });
+    } finally {
+      releaseTrackerReply();
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("binds history fault eligibility to the armed occurrence, direction, base, and coherent result", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(async () => projection(), undefined, "history-occurrence", "r1");
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    try {
+      await runtime.read();
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "other-occurrence", revision: "r1" });
+      expect(historyRequeryFaultProbe()).toMatchObject({ armed: false, resetReason: "owner-witness-unavailable" });
+
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "r1" });
+      await runtime.trackerHistory({ occurrence: "history-occurrence", revision: "r1" } as never, "redo");
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: false, consumed: false, resetReason: "history-direction-revision-or-dispatch-mismatch", queryCallIds: [],
+      });
+
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "r1" });
+      await runtime.trackerHistory({ occurrence: "history-occurrence", revision: "wrong-base" } as never, "undo");
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: false, consumed: false, resetReason: "history-direction-revision-or-dispatch-mismatch", queryCallIds: [],
+      });
+      expect(fake.queryCalls()).toBe(0);
+    } finally {
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("rejects incoherent history result and result-query revisions without consuming the fault", async () => {
+    resetHistoryRequeryFaultProbe();
+    const wrongViewFake = fakeKit(async () => projection(), undefined, "history-occurrence", "r1", "r2");
+    const wrongView = await scalarRuntime(wrongViewFake.kit, ["definition-1", "definition-2"], "history-occurrence", undefined, undefined, undefined, undefined, undefined, undefined, "wrong-view-revision");
+    try {
+      await wrongView.runtime.read();
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "r1" });
+      await wrongView.runtime.trackerHistory({ occurrence: "history-occurrence", revision: "r1" } as never, "undo");
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: false, consumed: false, resetReason: "history-direction-revision-or-dispatch-mismatch", queryCallIds: [],
+      });
+    } finally {
+      resetHistoryRequeryFaultProbe();
+      wrongView.restoreWindow();
+    }
+
+    const wrongQueryFake = fakeKit(
+      async () => projection(),
+      async (definitionId) => ({ revision: "unrelated-query-revision", definitionId }),
+      "history-occurrence",
+      "r1",
+      "r2",
+    );
+    const wrongQuery = await scalarRuntime(wrongQueryFake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    try {
+      await wrongQuery.runtime.read();
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "r1" });
+      await wrongQuery.runtime.trackerHistory({ occurrence: "history-occurrence", revision: "r1" } as never, "undo");
+      await wrongQuery.runtime.discoverKeyedGroupedSums({ occurrence: "history-occurrence", revision: "r2" } as never);
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: false, consumed: false, resetReason: "history-query-revision-mismatch", queryCallIds: [],
+      });
+      expect(wrongQueryFake.queryCalls()).toBe(2);
+    } finally {
+      resetHistoryRequeryFaultProbe();
+      wrongQuery.restoreWindow();
+    }
+  });
+
+  it("does not let a late tracker reply consume or clear a reset and rearmed history fault", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(async () => projection(), undefined, "history-occurrence", "r1");
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    deferNextTrackerReply();
+    try {
+      await runtime.read();
+      const witness = { occurrence: "history-occurrence", revision: "r1" };
+      failSecondHistoryRequeryReplyAfterFirst("undo", witness);
+      const pendingHistory = runtime.trackerHistory(witness as never, "undo");
+      await vi.waitFor(() => expect(fake.calls()).toBe(1));
+      resetHistoryRequeryFaultProbe();
+      failSecondHistoryRequeryReplyAfterFirst("redo", { occurrence: "history-occurrence", revision: "r2" });
+      releaseTrackerReply();
+      await pendingHistory;
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: true, direction: "redo", baseRevision: "r2", dispatchedResultRevision: null, resultRevision: null,
+        consumed: false, queryCallIds: [], resetReason: null,
+      });
+    } finally {
+      releaseTrackerReply();
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("does not let an unowned foreign runtime claim the wired runtime's history fault arm", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(async () => projection(), undefined, "history-occurrence", "r1");
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    try {
+      await runtime.read();
+      failSecondHistoryRequeryReplyAfterFirst("undo", { occurrence: "history-occurrence", revision: "r1" });
+      await runtime.foreignHistory({ occurrence: "history-occurrence", revision: "r1" }, "undo");
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: true,
+        direction: "undo",
+        baseRevision: "r1",
+        invocationId: null,
+        dispatchedResultRevision: null,
+        resultRevision: null,
+        consumed: false,
+      });
+      expect(fake.queryCalls()).toBe(0);
+    } finally {
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("does not let another wrapped runtime trackerHistory or discovery retire the current owner's arm", async () => {
+    resetHistoryRequeryFaultProbe();
+    const aFake = fakeKit(async () => projection(), async (definitionId) => ({ revision: "r2", definitionId }), "history-a", "r1", "r2");
+    const bFake = fakeKit(async () => projection(), async (definitionId) => ({ revision: "r2", definitionId }), "history-b", "r1", "r2");
+    const aHarness = await scalarRuntime(aFake.kit, ["a-1", "a-2"], "history-a");
+    const bHarness = await scalarRuntime(bFake.kit, ["b-1", "b-2"], "history-b");
+    try {
+      await aHarness.runtime.read();
+      await bHarness.runtime.read();
+      const bWitness = { occurrence: "history-b", revision: "r1" };
+      failSecondHistoryRequeryReplyAfterFirst("undo", bWitness);
+
+      await aHarness.runtime.trackerHistory({ occurrence: "history-a", revision: "r1" } as never, "undo");
+      await aHarness.runtime.discoverKeyedGroupedSums({ occurrence: "history-a", revision: "r2" } as never);
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: true, direction: "undo", baseRevision: "r1", occurrence: "history-b",
+        invocationId: null, dispatchedResultRevision: null, resultRevision: null, consumed: false,
+      });
+
+      await bHarness.runtime.trackerHistory(bWitness as never, "undo");
+      await expect(bHarness.runtime.discoverKeyedGroupedSums({ occurrence: "history-b", revision: "r2" } as never))
+        .rejects.toThrow(/second history grouped-summary reply discarded/);
+      expect(bFake.queryCalls()).toBe(2);
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        consumed: true, occurrence: "history-b", queriedDefinitionIds: ["definition-1", "definition-2"],
+      });
+    } finally {
+      resetHistoryRequeryFaultProbe();
+      aHarness.restoreWindow();
+      bHarness.restoreWindow();
+    }
+  });
+
+  it("retires a held second history query on Close without consuming it", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(
+      async () => projection(),
+      async (definitionId) => ({ revision: "history-result-opaque", definitionId }),
+      "history-occurrence", "history-base-opaque", "history-result-opaque",
+    );
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    try {
+      await runtime.read();
+      const witness = { occurrence: "history-occurrence", revision: "history-base-opaque" };
+      failSecondHistoryRequeryReplyAfterFirst("undo", witness);
+      await runtime.trackerHistory(witness as never, "undo");
+      deferSecondHistoryRequeryReply();
+      const discovery = runtime.discoverKeyedGroupedSums({ occurrence: "history-occurrence", revision: "history-result-opaque" } as never);
+      await vi.waitFor(() => expect(historyRequeryFaultProbe().secondReplyHeld).toBe(true));
+      await runtime.close();
+      releaseSecondHistoryRequeryReply();
+      await expect(discovery).resolves.toHaveLength(2);
+      expect(historyRequeryFaultProbe()).toMatchObject({ armed: false, consumed: false, resetReason: "history-query-completion-stale" });
+    } finally {
+      releaseSecondHistoryRequeryReply();
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("does not let a held old history query clear a reset and rearmed newer owner epoch", async () => {
+    resetHistoryRequeryFaultProbe();
+    const fake = fakeKit(
+      async () => projection(),
+      async (definitionId) => ({ revision: "history-result-opaque", definitionId }),
+      "history-occurrence", "history-base-opaque", "history-result-opaque",
+    );
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "history-occurrence");
+    try {
+      await runtime.read();
+      const witness = { occurrence: "history-occurrence", revision: "history-base-opaque" };
+      failSecondHistoryRequeryReplyAfterFirst("undo", witness);
+      await runtime.trackerHistory(witness as never, "undo");
+      deferSecondHistoryRequeryReply();
+      const oldDiscovery = runtime.discoverKeyedGroupedSums({ occurrence: "history-occurrence", revision: "history-result-opaque" } as never);
+      await vi.waitFor(() => expect(historyRequeryFaultProbe().secondReplyHeld).toBe(true));
+      resetHistoryRequeryFaultProbe();
+      failSecondHistoryRequeryReplyAfterFirst("redo", { occurrence: "history-occurrence", revision: "history-result-opaque" });
+      releaseSecondHistoryRequeryReply();
+      await expect(oldDiscovery).resolves.toHaveLength(2);
+      expect(historyRequeryFaultProbe()).toMatchObject({
+        armed: true, direction: "redo", baseRevision: "history-result-opaque", dispatchedResultRevision: null,
+        resultRevision: null, consumed: false, resetReason: null,
+      });
+    } finally {
+      releaseSecondHistoryRequeryReply();
+      resetHistoryRequeryFaultProbe();
+      restoreWindow();
+    }
+  });
+
+  it("retains exact scalar publication attribution through editConfirmed", async () => {
+    resetScalarRequeryFaultProbe();
+    const fake = fakeKit(async () => projection());
+    const { runtime, restoreWindow } = await scalarRuntime(fake.kit, ["definition-1", "definition-2"], "confirmed-occurrence");
+    try {
+      failSecondScalarRequeryReplyAfterFirst();
+      const confirmed = await runtime.editConfirmed(
+        { occurrence: "confirmed-occurrence", revision: "r1" } as never,
+        { entity: "entity", field: "field" } as never,
+        { kind: "number", input: "250" } as never,
+      );
+      await expect(runtime.discoverKeyedGroupedSums(confirmed.view as never))
+        .rejects.toThrow(/second grouped-summary query reply discarded/);
+      expect(fake.queryCalls()).toBe(2);
+      expect(scalarRequeryFaultProbe()).toMatchObject({
+        publicationAcknowledged: true,
+        occurrence: "confirmed-occurrence",
+        publicationCallId: expect.any(Number),
+        revision: "r2",
+        suppliedWitness: { occurrence: "confirmed-occurrence", revision: "r2" },
+        invokedDefinitionIds: ["definition-1", "definition-2"],
+        discardedDefinitionId: "definition-2",
       });
     } finally {
       resetScalarRequeryFaultProbe();

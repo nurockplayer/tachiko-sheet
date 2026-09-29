@@ -131,6 +131,8 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
     onOpenExample: async () => {},
     onOpenSaved: async () => {},
     onCommit: async () => true,
+    localHistory: { occurrence: null, revision: null, undoCount: 0, redoCount: 0 },
+    onHistory: async () => null,
     onCreateCopy: async () => true,
     onClose: async () => {},
     onRefresh: async () => {},
@@ -281,6 +283,9 @@ describe("recovery presentation", () => {
     const markup = render({ view: makeView() });
     const context = markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0];
     expect(markup).toContain('aria-label="Document commands"');
+    expect(markup).toContain(">Undo</button>");
+    expect(markup).toContain(">Redo</button>");
+    expect(markup).toContain("ts-refresh-command");
     expect(markup).toContain(">Refresh</button>");
     expect(markup).toContain(">Save a copy</button>");
     expect(markup).toContain(">Close project</button>");

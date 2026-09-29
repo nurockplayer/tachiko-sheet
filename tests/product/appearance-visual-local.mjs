@@ -114,7 +114,7 @@ async function openCanary(context, page) {
     const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
     if (await overflow.isVisible()) {
       await overflow.click();
-      await page.locator(".ts-command-overflow > button").click();
+      await page.locator(".ts-command-overflow").getByRole("button", { name: "Close project", exact: true }).click();
     }
   }
   const canary = page.getByRole("button", { name: "Try sales example", exact: true });
@@ -2986,7 +2986,7 @@ async function computedControlTokens(page, tokens) {
 async function auditGhostInteractionStates(page, profileLabel) {
   const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
   await overflow.click();
-  const ghost = page.locator(".ts-command-overflow > button.ts-button--ghost");
+  const ghost = page.locator(".ts-command-overflow").getByRole("button", { name: "Close project", exact: true });
   await ghost.waitFor({ state: "visible" });
   const ghostStatesByMode = {};
   for (const { forcedColors, colorScheme } of [

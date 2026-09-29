@@ -268,7 +268,7 @@ try {
   assert.equal(await page.locator(".ts-command-overflow").getAttribute("open"), "", "keyboard opens mobile document command disclosure");
   await page.keyboard.press("Tab");
   assert.equal(
-    await page.locator(".ts-command-overflow > button").evaluate((button) => document.activeElement === button),
+    await page.locator(".ts-command-overflow").getByRole("button", { name: "Close project", exact: true }).evaluate((button) => document.activeElement === button),
     true,
     "Tab reaches Close project inside the open mobile disclosure",
   );
@@ -312,7 +312,7 @@ try {
   assert.equal(await workbookTrigger.getAttribute("aria-expanded"), "true", "composing Escape keeps the nonmodal popover open");
   await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: input.value })));
   await page.waitForTimeout(0);
-  await page.locator(".ts-header-actions button").first().focus();
+  await page.getByRole("group", { name: "Document commands" }).getByRole("button", { name: "Refresh", exact: true }).focus();
   await page.keyboard.press("Escape");
   assert.equal(
     await workbookTrigger.evaluate((button) => document.activeElement === button && button.getAttribute("aria-expanded") === "false"),

@@ -13,6 +13,7 @@ import {
   type LocalCopies,
   type PresentationAttachment,
   type SheetRuntime,
+  type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
 import { LOCAL_COPIES_DB_NAME, LOCAL_COPIES_STORE } from "../host/local-copies.js";
@@ -73,6 +74,24 @@ export interface ScalarRequeryFaultProbe {
   invalidReason: "ambiguous-runtime-invocation" | null;
 }
 
+export interface HistoryRequeryFaultProbe {
+  armed: boolean;
+  direction: "undo" | "redo" | null;
+  baseRevision: string | null;
+  dispatchedResultRevision: string | null;
+  resultRevision: string | null;
+  occurrence: string | null;
+  clientIdentity: number | null;
+  invocationId: number | null;
+  discoveryInvocationId: number | null;
+  queryCallIds: number[];
+  queriedDefinitionIds: string[];
+  actualReplyRevision: string | null;
+  secondReplyHeld: boolean;
+  consumed: boolean;
+  resetReason: string | null;
+}
+
 export interface TargetedQueryFaultProbe {
   armed: boolean;
   definitionId: string | null;
@@ -109,6 +128,8 @@ export interface AcceptanceApi {
   releaseImportApplication(): void;
   deferNextCopyWrite(): void;
   releaseCopyWrite(): void;
+  deferNextTrackerReply(): void;
+  releaseTrackerReply(): void;
   loseNextExecuteReply(): void;
   loseNextOpenReply(): void;
   loseNextImportBeforeDispatch(): void;
@@ -121,6 +142,11 @@ export interface AcceptanceApi {
   releaseSecondScalarRequeryReply(): void;
   resetScalarRequeryFaultProbe(): void;
   scalarRequeryFaultProbe(): ScalarRequeryFaultProbe;
+  failSecondHistoryRequeryReplyAfterFirst(direction: "undo" | "redo", witness: ViewWitness): void;
+  deferSecondHistoryRequeryReply(): void;
+  releaseSecondHistoryRequeryReply(): void;
+  resetHistoryRequeryFaultProbe(): void;
+  historyRequeryFaultProbe(): HistoryRequeryFaultProbe;
   armTargetedQueryReplyFault(definitionId: string, occurrence: string, revision: string): void;
   resetTargetedQueryReplyFault(): void;
   targetedQueryFaultProbe(): TargetedQueryFaultProbe;
@@ -155,7 +181,7 @@ declare global {
 type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 
 const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate"]);
-const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup"]);
+const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup", "trackerCommand"]);
 const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
 const ACCEPTANCE_HARNESS_VERSION = "j4-scalar-edit-requery-fault-v2";
 
@@ -245,7 +271,9 @@ function operationGate() {
 const importInspectionGate = operationGate();
 const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
+const trackerReplyGate = operationGate();
 const scalarRequerySecondReplyGate = operationGate();
+const historyRequerySecondReplyGate = operationGate();
 interface ScalarAttempt {
   readonly id: number;
   phase: "requested" | "publication-dispatched" | "published" | "acknowledged" | "discovering" | "consumed" | "retired";
@@ -286,11 +314,40 @@ interface RuntimeInvocation {
   readonly id: number;
   readonly state: RuntimeInvocationState;
   readonly method: string;
+  readonly args: readonly unknown[];
   readonly seams: ReadonlySet<RuntimeSeam>;
   readonly attemptAtEntry: ScalarAttempt | null;
   readonly cancellationGenerationAtEntry: number;
   ambiguous: boolean;
   scalarDiscovery: ScalarDiscoveryContext | null;
+  historyDiscovery: HistoryDiscoveryContext | null;
+}
+interface HistoryQueryArm {
+  readonly generation: number;
+  readonly direction: "undo" | "redo";
+  readonly baseRevision: string;
+  readonly occurrence: string;
+  readonly state: RuntimeInvocationState;
+  clientIdentity: number | null;
+  readonly cancellationGeneration: number;
+  invocationId: number | null;
+  dispatchCallId: number | null;
+  dispatchedResultRevision: string | null;
+  resultRevision: string | null;
+  definitionIds: string[];
+  queryCallIds: number[];
+  phase: "armed" | "dispatched" | "confirmed" | "discovering" | "consumed";
+  holdRequested: boolean;
+}
+interface HistoryDiscoveryContext {
+  readonly arm: HistoryQueryArm;
+  readonly invocationId: number;
+  readonly witness: { occurrence: string; revision: string };
+  readonly runtimeInvocationId: number;
+  definitionIds: string[];
+  nextDefinitionIndex: number;
+  invokedDefinitionIds: string[];
+  valid: boolean;
 }
 interface RuntimeOriginResolution {
   readonly status: "valid" | "independent" | "ambiguous-stale-unbound";
@@ -318,6 +375,8 @@ const RUNTIME_METHOD_SEAMS: Record<string, readonly RuntimeSeam[]> = {
   read: ["observation", "bootstrap"],
   selectCollection: ["observation", "bootstrap"],
   edit: ["publication", "observation", "bootstrap"],
+  editConfirmed: ["publication", "observation", "bootstrap"],
+    trackerHistory: ["publication", "observation", "bootstrap"],
   listKeyedGroupedSumBindings: ["bootstrap"],
   queryKeyedGroupedSum: ["grouped-query"],
   discoverKeyedGroupedSums: ["bootstrap", "grouped-query"],
@@ -335,6 +394,12 @@ const loaderRuntimeBindings = new WeakMap<KitLoader, RuntimeInvocationState>();
 let scalarAttemptSequence = 0;
 let scalarOperationSequence = 0;
 let currentScalarAttempt: ScalarAttempt | null = null;
+let historyQueryArmGeneration = 0;
+let currentHistoryQueryArm: HistoryQueryArm | null = null;
+let historyRequeryFaultProbeValue: HistoryRequeryFaultProbe = {
+  armed: false, direction: null, baseRevision: null, dispatchedResultRevision: null, resultRevision: null, occurrence: null, clientIdentity: null,
+  invocationId: null, discoveryInvocationId: null, queryCallIds: [], queriedDefinitionIds: [], actualReplyRevision: null, secondReplyHeld: false, consumed: false, resetReason: null,
+};
 const queryDefinitionIdLog: string[] = [];
 interface AcceptanceClientEvidence {
   identity: number;
@@ -511,11 +576,13 @@ function beginRuntimeInvocation(state: RuntimeInvocationState, method: string, a
     id: ++runtimeInvocationSequence,
     state,
     method,
+    args,
     seams,
     attemptAtEntry,
     cancellationGenerationAtEntry: state.cancellationGeneration,
     ambiguous: overlapping,
     scalarDiscovery: null,
+    historyDiscovery: null,
   };
   state.active.add(invocation);
   activeRuntimeInvocationStates.add(state);
@@ -527,9 +594,9 @@ function beginRuntimeInvocation(state: RuntimeInvocationState, method: string, a
   if (overlapping) {
     for (const conflict of conflicts) conflict.ambiguous = true;
     if (relatedAttempt) retireScalarAttempt(relatedAttempt, "ambiguous-runtime-invocation");
-  } else if (attemptAtEntry && method !== "edit" && seams.has("publication")) {
+  } else if (attemptAtEntry && method !== "edit" && method !== "editConfirmed" && seams.has("publication")) {
     retireScalarAttempt(attemptAtEntry);
-  } else if (attemptAtEntry && method === "edit") {
+  } else if (attemptAtEntry && (method === "edit" || method === "editConfirmed")) {
     const witness = args[0] as { occurrence?: unknown; revision?: unknown } | undefined;
     if (attemptAtEntry.phase === "requested" && attemptAtEntry.editInvocationId === null &&
       typeof witness?.occurrence === "string" && typeof witness.revision === "string") {
@@ -752,6 +819,9 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           const scalarContextAtDispatch = originInvocationAtDispatch?.method === "discoverKeyedGroupedSums"
             ? originInvocationAtDispatch.scalarDiscovery
             : null;
+          const historyContextAtDispatch = originInvocationAtDispatch?.method === "discoverKeyedGroupedSums"
+            ? originInvocationAtDispatch.historyDiscovery
+            : null;
           const scalarAttemptAtDispatch = scalarContextAtDispatch?.attempt ?? null;
           const scalarAttemptPointerAtDispatch = currentScalarAttempt;
           const generationAtDispatch = evidence.runtimeState?.cancellationGeneration ?? null;
@@ -790,6 +860,10 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
               targetedQueryRequest === targetedRequestAtDispatch &&
               isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture))) {
               clearTargetedQueryReplyFault("real-query-failed");
+            }
+            if (historyContextAtDispatch && currentHistoryQueryArm === historyContextAtDispatch.arm &&
+              isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture))) {
+              clearHistoryQueryArm("history-real-query-failed");
             }
             throw error;
           }
@@ -852,6 +926,77 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
               };
               throw new Error("Acceptance-only targeted grouped-summary query reply discarded after real Work query.");
             }
+          }
+          if (historyContextAtDispatch && currentHistoryQueryArm === historyContextAtDispatch.arm &&
+            historyContextAtDispatch.valid && historyContextAtDispatch.arm.phase === "discovering" &&
+            freshQueryCompletion && originAtDispatch.status === "valid" &&
+            originInvocationAtDispatch?.id === historyContextAtDispatch.runtimeInvocationId &&
+            originInvocationAtDispatch.historyDiscovery === historyContextAtDispatch &&
+            historyContextAtDispatch.arm.state === evidence.runtimeState &&
+            historyContextAtDispatch.arm.state.cancellationGeneration === historyContextAtDispatch.arm.cancellationGeneration &&
+            historyContextAtDispatch.arm.clientIdentity === evidence.identity &&
+            historyContextAtDispatch.witness.occurrence === evidence.occurrence &&
+            historyContextAtDispatch.witness.revision === historyContextAtDispatch.arm.resultRevision &&
+            historyContextAtDispatch.arm.dispatchedResultRevision === historyContextAtDispatch.arm.resultRevision &&
+            actualRevision === historyContextAtDispatch.arm.resultRevision &&
+            historyContextAtDispatch.definitionIds[historyContextAtDispatch.nextDefinitionIndex] === definitionId &&
+            !historyContextAtDispatch.invokedDefinitionIds.includes(definitionId)) {
+            const arm = historyContextAtDispatch.arm;
+            arm.queryCallIds.push(scalarQueryCallId);
+            arm.definitionIds.push(definitionId);
+            historyContextAtDispatch.invokedDefinitionIds.push(definitionId);
+            historyContextAtDispatch.nextDefinitionIndex += 1;
+            historyRequeryFaultProbeValue = {
+              ...historyRequeryFaultProbeValue,
+              queryCallIds: [...arm.queryCallIds],
+              queriedDefinitionIds: [...arm.definitionIds],
+              actualReplyRevision: String(actualRevision),
+            };
+            if (arm.definitionIds.length === 2) {
+              if (arm.holdRequested) {
+                arm.holdRequested = false;
+                const heldArmGeneration = arm.generation;
+                const heldQueryCallId = scalarQueryCallId;
+                if (currentHistoryQueryArm === arm && arm.generation === historyQueryArmGeneration &&
+                  arm.queryCallIds.at(-1) === heldQueryCallId && arm.phase === "discovering") {
+                  historyRequeryFaultProbeValue = { ...historyRequeryFaultProbeValue, secondReplyHeld: true };
+                }
+                await historyRequerySecondReplyGate.pause();
+                const stillFresh = currentHistoryQueryArm === arm && arm.generation === heldArmGeneration &&
+                  arm.generation === historyQueryArmGeneration && arm.queryCallIds.at(-1) === heldQueryCallId &&
+                  arm.phase === "discovering" &&
+                  historyContextAtDispatch.valid && originAtDispatch.status === "valid" &&
+                  originInvocationAtDispatch?.id === historyContextAtDispatch.runtimeInvocationId &&
+                  originInvocationAtDispatch.historyDiscovery === historyContextAtDispatch &&
+                  originInvocationAtDispatch.state === arm.state && arm.state.active.has(originInvocationAtDispatch) &&
+                  !originInvocationAtDispatch.ambiguous &&
+                  isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture)) &&
+                  evidence.runtimeState === arm.state && evidence.association === "mapped" &&
+                  evidence.identity === arm.clientIdentity && generationAtDispatch === arm.cancellationGeneration &&
+                  arm.state.cancellationGeneration === arm.cancellationGeneration &&
+                  arm.state.clientIdentity === arm.clientIdentity && arm.resultRevision === String(actualRevision) &&
+                  historyContextAtDispatch.witness.occurrence === arm.occurrence &&
+                  historyContextAtDispatch.witness.revision === arm.resultRevision;
+                if (!stillFresh) {
+                  if (currentHistoryQueryArm === arm && arm.generation === heldArmGeneration) {
+                    clearHistoryQueryArm("history-query-completion-stale");
+                  }
+                  return result;
+                }
+                historyRequeryFaultProbeValue = { ...historyRequeryFaultProbeValue, secondReplyHeld: false };
+              }
+              arm.phase = "consumed";
+              historyRequeryFaultProbeValue = {
+                ...historyRequeryFaultProbeValue,
+                armed: false,
+                consumed: true,
+                resetReason: null,
+              };
+              throw new Error("Acceptance-only second history grouped-summary reply discarded after real Work query.");
+            }
+          } else if (historyContextAtDispatch && currentHistoryQueryArm === historyContextAtDispatch.arm &&
+            freshQueryCompletion) {
+            clearHistoryQueryArm("history-query-revision-mismatch");
           }
           if (!scalarContextAtDispatch || !scalarAttemptAtDispatch ||
             !scalarQueryExpected || !scalarContextAtDispatch.valid || !freshQueryCompletion ||
@@ -949,6 +1094,9 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           const scalarContextAtDispatch = originInvocationAtDispatch?.method === "discoverKeyedGroupedSums"
             ? originInvocationAtDispatch.scalarDiscovery
             : null;
+          const historyContextAtDispatch = originInvocationAtDispatch?.method === "discoverKeyedGroupedSums"
+            ? originInvocationAtDispatch.historyDiscovery
+            : null;
           let result: unknown;
           try {
             result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
@@ -978,6 +1126,30 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
               scalarContextAtDispatch.bootstrapConfirmed = true;
               scalarContextAtDispatch.definitionIds = ids.map(String);
               scalarContextAtDispatch.nextDefinitionIndex = 0;
+            }
+          }
+          if (historyContextAtDispatch && currentHistoryQueryArm === historyContextAtDispatch.arm &&
+            historyContextAtDispatch.arm.phase === "discovering") {
+            const arm = historyContextAtDispatch.arm;
+            const snapshot = result as { revision?: unknown; keyed_grouped_sum_definition_ids?: unknown };
+            const ids = Array.isArray(snapshot?.keyed_grouped_sum_definition_ids)
+              ? snapshot.keyed_grouped_sum_definition_ids.map(String)
+              : [];
+            const uniqueIds = new Set(ids);
+            const invocationStillOwned = originAtDispatch.status === "valid" &&
+              originInvocationAtDispatch?.id === historyContextAtDispatch.runtimeInvocationId &&
+              originInvocationAtDispatch.historyDiscovery === historyContextAtDispatch &&
+              arm.state === evidence.runtimeState && arm.clientIdentity === evidence.identity &&
+              arm.state.cancellationGeneration === arm.cancellationGeneration &&
+              arm.state.active.has(originInvocationAtDispatch) && !originInvocationAtDispatch.ambiguous;
+            if (invocationStillOwned && arm.resultRevision === historyContextAtDispatch.witness.revision &&
+              arm.occurrence === historyContextAtDispatch.witness.occurrence && snapshot.revision === arm.resultRevision &&
+              ids.length >= 2 && uniqueIds.size === ids.length) {
+              historyContextAtDispatch.definitionIds = ids;
+              historyContextAtDispatch.nextDefinitionIndex = 0;
+            } else if (invocationStillOwned) {
+              historyContextAtDispatch.valid = false;
+              clearHistoryQueryArm("history-bootstrap-witness-or-definitions-mismatch");
             }
           }
           return result;
@@ -1127,7 +1299,36 @@ async function dispatchPublication(
   if (clientEvidenceAtDispatch) clearTargetedQueryReplyFaultForClient(clientEvidenceAtDispatch, "publication-replaced-revision");
   const originInvocationAtDispatch = originAtDispatch.invocation;
   const generationAtDispatch = originAtDispatch.state?.cancellationGeneration ?? null;
-  const attemptAtDispatch = originAtDispatch.status === "valid" && originInvocationAtDispatch?.method === "edit"
+  const historyArmAtDispatch = currentHistoryQueryArm;
+  if (method === "trackerCommand" && historyArmAtDispatch?.phase === "armed" &&
+    historyArmAtDispatch.dispatchCallId === null && historyArmAtDispatch.invocationId === null &&
+    originAtDispatch.status === "valid" && originInvocationAtDispatch?.method === "trackerHistory" &&
+    clientEvidenceAtDispatch && originAtDispatch.state === historyArmAtDispatch.state &&
+    originAtDispatch.state?.clientIdentity === clientEvidenceAtDispatch.identity &&
+    (historyArmAtDispatch.clientIdentity === null || historyArmAtDispatch.clientIdentity === clientEvidenceAtDispatch.identity) &&
+    historyArmAtDispatch.state.cancellationGeneration === historyArmAtDispatch.cancellationGeneration) {
+    const request = args[0] as { type?: unknown; expected_revision?: unknown } | undefined;
+    const historyWitness = originInvocationAtDispatch.args[0] as { occurrence?: unknown; revision?: unknown } | undefined;
+    if (request?.type === historyArmAtDispatch.direction && typeof request.expected_revision === "string" &&
+      request.expected_revision === historyArmAtDispatch.baseRevision && request.expected_revision === historyWitness?.revision &&
+      historyWitness?.occurrence === historyArmAtDispatch.occurrence &&
+      originInvocationAtDispatch.cancellationGenerationAtEntry === generationAtDispatch) {
+      historyArmAtDispatch.clientIdentity = clientEvidenceAtDispatch.identity;
+      historyArmAtDispatch.invocationId = originInvocationAtDispatch.id;
+      historyArmAtDispatch.dispatchCallId = publicationOperationId;
+      historyArmAtDispatch.phase = "dispatched";
+      historyRequeryFaultProbeValue = {
+        ...historyRequeryFaultProbeValue,
+        baseRevision: historyArmAtDispatch.baseRevision,
+        occurrence: historyArmAtDispatch.occurrence,
+        clientIdentity: historyArmAtDispatch.clientIdentity,
+        invocationId: historyArmAtDispatch.invocationId,
+        resetReason: null,
+      };
+    }
+  }
+  const editInvocation = originInvocationAtDispatch?.method === "edit" || originInvocationAtDispatch?.method === "editConfirmed";
+  const attemptAtDispatch = originAtDispatch.status === "valid" && editInvocation
     ? originInvocationAtDispatch.attemptAtEntry
     : null;
   let ownsScalarPublication = false;
@@ -1137,7 +1338,7 @@ async function dispatchPublication(
     retireScalarAttempt(currentAtDispatch, "ambiguous-runtime-invocation");
   }
   if (attemptAtDispatch && attemptAtDispatch === currentScalarAttempt && EDIT_METHODS.has(method) &&
-    originAtDispatch.status === "valid" && originInvocationAtDispatch?.method === "edit" &&
+    originAtDispatch.status === "valid" && editInvocation &&
     attemptAtDispatch.runtimeState === originAtDispatch.state &&
     attemptAtDispatch.cancellationGenerationAtRequest === generationAtDispatch) {
     const requestedRevision = typeof args[0] === "string" ? args[0] : null;
@@ -1158,12 +1359,28 @@ async function dispatchPublication(
     (target[method as keyof PublicClient] as (...rest: unknown[]) => Promise<PublicationProjection>)(
       ...args,
     );
+  const historyDispatchIsFresh = (): boolean => Boolean(method === "trackerCommand" && historyArmAtDispatch &&
+    currentHistoryQueryArm === historyArmAtDispatch && historyArmAtDispatch.phase === "dispatched" &&
+    historyArmAtDispatch.dispatchCallId === publicationOperationId && completionCapture &&
+    isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture)) &&
+    originInvocationAtDispatch && historyArmAtDispatch.invocationId === originInvocationAtDispatch.id &&
+    historyArmAtDispatch.state === originAtDispatch.state &&
+    historyArmAtDispatch.state.cancellationGeneration === historyArmAtDispatch.cancellationGeneration &&
+    historyArmAtDispatch.state.active.has(originInvocationAtDispatch) && !originInvocationAtDispatch.ambiguous &&
+    historyArmAtDispatch.clientIdentity === clientEvidenceAtDispatch?.identity);
   try {
     if (loseArmed) {
       loseArmed = false;
       try {
         const receipt = await call();
-        if (completionCapture && isFreshEvidenceCompletion(
+        const freshAfterRealReply = completionCapture !== null && isFreshEvidenceCompletion(
+          completionCapture, latestOwnerOperationId(completionCapture),
+        );
+        if (method === "trackerCommand") await trackerReplyGate.pause();
+        const freshAfterGate = completionCapture !== null && isFreshEvidenceCompletion(
+          completionCapture, latestOwnerOperationId(completionCapture),
+        );
+        if (freshAfterRealReply && freshAfterGate && completionCapture && isFreshEvidenceCompletion(
           completionCapture,
           latestOwnerOperationId(completionCapture),
         )) {
@@ -1179,12 +1396,32 @@ async function dispatchPublication(
       }
     }
     const receipt = await call();
-    const freshPublicationCompletion = completionCapture !== null && isFreshEvidenceCompletion(
+    const freshAfterRealReply = method === "trackerCommand" && completionCapture !== null
+      ? isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture))
+      : false;
+    if (method === "trackerCommand") await trackerReplyGate.pause();
+    const freshAfterGate = method === "trackerCommand" && completionCapture !== null
+      ? isFreshEvidenceCompletion(completionCapture, latestOwnerOperationId(completionCapture))
+      : false;
+    const freshPublicationCompletion = (method !== "trackerCommand" || (freshAfterRealReply && freshAfterGate)) && completionCapture !== null && isFreshEvidenceCompletion(
       completionCapture,
       latestOwnerOperationId(completionCapture),
     );
     if (freshPublicationCompletion) {
       lastReceiptValue = receipt;
+    }
+    if (method === "trackerCommand" && freshPublicationCompletion && historyDispatchIsFresh() && historyArmAtDispatch?.phase === "dispatched" &&
+      currentHistoryQueryArm === historyArmAtDispatch &&
+      historyArmAtDispatch.dispatchCallId === publicationOperationId &&
+      historyArmAtDispatch.invocationId === originInvocationAtDispatch?.id &&
+      historyArmAtDispatch.clientIdentity === clientEvidenceAtDispatch?.identity &&
+      historyArmAtDispatch.state === originAtDispatch.state &&
+      historyArmAtDispatch.state.cancellationGeneration === historyArmAtDispatch.cancellationGeneration &&
+      originInvocationAtDispatch && historyArmAtDispatch.state.active.has(originInvocationAtDispatch) &&
+      !originInvocationAtDispatch.ambiguous && typeof receipt.resulting_revision === "string" && receipt.resulting_revision.length > 0 &&
+      receipt.base_revision === historyArmAtDispatch.baseRevision) {
+      historyArmAtDispatch.dispatchedResultRevision = receipt.resulting_revision;
+      historyRequeryFaultProbeValue = { ...historyRequeryFaultProbeValue, dispatchedResultRevision: receipt.resulting_revision };
     }
     if (freshPublicationCompletion && ownsScalarPublication && attemptAtDispatch && scalarAttemptIsCurrent(attemptAtDispatch)) {
       const revision = receipt.resulting_revision;
@@ -1407,6 +1644,14 @@ export function releaseCopyWrite(): void {
   copyWriteGate.release();
 }
 
+export function deferNextTrackerReply(): void {
+  trackerReplyGate.defer();
+}
+
+export function releaseTrackerReply(): void {
+  trackerReplyGate.release();
+}
+
 function restore(): void {
   restoreTransaction?.();
 }
@@ -1539,6 +1784,104 @@ export function scalarRequeryFaultProbe(): ScalarRequeryFaultProbe {
       ? { ...scalarRequeryFaultProbeValue.suppliedWitness }
       : null,
     invokedDefinitionIds: [...scalarRequeryFaultProbeValue.invokedDefinitionIds],
+  };
+}
+
+export function failSecondHistoryRequeryReplyAfterFirst(direction: "undo" | "redo", witness: ViewWitness): void {
+  resetHistoryRequeryFaultProbe();
+  const owner = wiring ? runtimeStateFor(wiring.runtime) : null;
+  const evidence = owner?.clientIdentity === null || owner?.clientIdentity === undefined
+    ? null
+    : clientEvidenceByIdentity.get(owner.clientIdentity) ?? null;
+  if (!owner || !witness?.occurrence || !witness.revision ||
+    (evidence && (evidence.runtimeState !== owner || evidence.occurrence !== witness.occurrence))) {
+    historyRequeryFaultProbeValue = {
+      armed: false, direction, baseRevision: witness?.revision ?? null, dispatchedResultRevision: null, resultRevision: null,
+      occurrence: witness?.occurrence ?? null, clientIdentity: owner?.clientIdentity ?? null,
+      invocationId: null, discoveryInvocationId: null, queryCallIds: [], queriedDefinitionIds: [], actualReplyRevision: null, secondReplyHeld: false, consumed: false,
+      resetReason: "owner-witness-unavailable",
+    };
+    return;
+  }
+  const arm: HistoryQueryArm = {
+    generation: ++historyQueryArmGeneration,
+    direction,
+    baseRevision: witness.revision,
+    occurrence: witness.occurrence,
+    state: owner,
+    clientIdentity: owner.clientIdentity,
+    cancellationGeneration: owner.cancellationGeneration,
+    invocationId: null,
+    dispatchCallId: null,
+    dispatchedResultRevision: null,
+    resultRevision: null,
+    definitionIds: [],
+    queryCallIds: [],
+    phase: "armed",
+    holdRequested: false,
+  };
+  currentHistoryQueryArm = arm;
+  historyRequeryFaultProbeValue = {
+    armed: true, direction, baseRevision: arm.baseRevision, dispatchedResultRevision: null, resultRevision: null,
+    occurrence: arm.occurrence, clientIdentity: arm.clientIdentity,
+    invocationId: null, discoveryInvocationId: null, queryCallIds: [], queriedDefinitionIds: [], actualReplyRevision: null, secondReplyHeld: false, consumed: false, resetReason: null,
+  };
+}
+
+export function deferSecondHistoryRequeryReply(): void {
+  const arm = currentHistoryQueryArm;
+  const owner = wiring ? runtimeStateFor(wiring.runtime) : null;
+  if (!arm || (arm.phase !== "armed" && arm.phase !== "confirmed") || arm.state !== owner) return;
+  arm.holdRequested = true;
+  historyRequerySecondReplyGate.defer();
+}
+
+export function releaseSecondHistoryRequeryReply(): void {
+  historyRequerySecondReplyGate.release();
+}
+
+export function resetHistoryRequeryFaultProbe(): void {
+  clearHistoryQueryArm("reset");
+}
+
+function clearHistoryQueryArm(reason: string): void {
+  const old = currentHistoryQueryArm;
+  currentHistoryQueryArm = null;
+  if (old) old.phase = "consumed";
+  historyQueryArmGeneration += 1;
+  historyRequerySecondReplyGate.reset();
+  historyRequeryFaultProbeValue = {
+    armed: false, direction: null, baseRevision: old?.baseRevision ?? null,
+    dispatchedResultRevision: old?.dispatchedResultRevision ?? null, resultRevision: old?.resultRevision ?? null,
+    occurrence: null, clientIdentity: null,
+    invocationId: old?.invocationId ?? null, queryCallIds: old ? [...old.queryCallIds] : [],
+    queriedDefinitionIds: old ? [...old.definitionIds] : [],
+    discoveryInvocationId: historyRequeryFaultProbeValue.discoveryInvocationId,
+    actualReplyRevision: historyRequeryFaultProbeValue.actualReplyRevision,
+    secondReplyHeld: false,
+    consumed: false, resetReason: reason,
+  };
+}
+
+export function historyRequeryFaultProbe(): HistoryRequeryFaultProbe {
+  const arm = currentHistoryQueryArm;
+  if (!arm) return { ...historyRequeryFaultProbeValue, queryCallIds: [...historyRequeryFaultProbeValue.queryCallIds] };
+  return {
+    armed: arm.phase !== "consumed",
+    direction: arm.direction,
+    baseRevision: arm.baseRevision,
+    dispatchedResultRevision: arm.dispatchedResultRevision,
+    resultRevision: arm.resultRevision,
+    occurrence: arm.occurrence,
+    clientIdentity: arm.clientIdentity,
+    invocationId: arm.invocationId,
+    discoveryInvocationId: historyRequeryFaultProbeValue.discoveryInvocationId,
+    queryCallIds: [...arm.queryCallIds],
+    queriedDefinitionIds: [...arm.definitionIds],
+    actualReplyRevision: historyRequeryFaultProbeValue.actualReplyRevision,
+    secondReplyHeld: historyRequeryFaultProbeValue.secondReplyHeld,
+    consumed: arm.phase === "consumed",
+    resetReason: historyRequeryFaultProbeValue.resetReason,
   };
 }
 
@@ -1698,8 +2041,11 @@ export function installAcceptance(next: AcceptanceWiring): void {
   loaderRuntimeBindings.set(next.kitLoader, runtimeState);
   wiring = next;
   installRuntimeReadProbe(next.runtime);
-  const edit = next.runtime.edit;
-  next.runtime.edit = async (witness, target, change) => {
+  const acknowledgeScalarEdit = async <T extends WorkbookView | { view: WorkbookView }>(
+    invoke: () => Promise<T>,
+    witness: { occurrence: string; revision: string },
+    project: (value: T) => WorkbookView,
+  ): Promise<T> => {
     const invocation = currentRuntimeInvocation(next.runtime);
     const attempt = invocation?.attemptAtEntry ?? null;
     const editInvocationId = invocation?.id ?? null;
@@ -1707,7 +2053,8 @@ export function installAcceptance(next: AcceptanceWiring): void {
       !attempt.requestWitness || witness.occurrence !== attempt.requestWitness.occurrence ||
       witness.revision !== attempt.requestWitness.revision)) retireScalarAttempt(attempt);
     try {
-      const view = await edit.call(next.runtime, witness, target, change);
+      const result = await invoke();
+      const view = project(result);
       if (attempt && scalarAttemptIsCurrent(attempt)) {
         if (attempt.editInvocationId !== editInvocationId || attempt.phase !== "published" ||
           typeof view.occurrence !== "string" || typeof view.revision !== "string" ||
@@ -1721,9 +2068,53 @@ export function installAcceptance(next: AcceptanceWiring): void {
           updateScalarProbe(attempt);
         }
       }
-      return view;
+      return result;
     } catch (error) {
       if (attempt && scalarAttemptIsCurrent(attempt)) retireScalarAttempt(attempt);
+      throw error;
+    }
+  };
+  const edit = next.runtime.edit;
+  next.runtime.edit = (witness, target, change) =>
+    acknowledgeScalarEdit(() => edit.call(next.runtime, witness, target, change), witness, (view) => view);
+  const editConfirmed = next.runtime.editConfirmed;
+  next.runtime.editConfirmed = (witness, target, change) =>
+    acknowledgeScalarEdit(() => editConfirmed.call(next.runtime, witness, target, change), witness, (confirmed) => confirmed.view);
+  const trackerHistory = next.runtime.trackerHistory;
+  next.runtime.trackerHistory = async (witness, direction) => {
+    const invocation = currentRuntimeInvocation(next.runtime);
+    const ownerState = runtimeStateFor(next.runtime);
+    const candidateArm = currentHistoryQueryArm;
+    const arm = candidateArm?.state === ownerState ? candidateArm : null;
+    try {
+      const confirmed = await trackerHistory.call(next.runtime, witness, direction);
+      if (arm && currentHistoryQueryArm === arm && (arm.phase === "armed" || arm.phase === "dispatched")) {
+        const state = arm.state;
+        const dispatchStillOwned = Boolean(invocation && state && arm.invocationId === invocation.id &&
+          arm.dispatchCallId !== null && arm.baseRevision === witness.revision &&
+          arm.cancellationGeneration === invocation.cancellationGenerationAtEntry &&
+          state.cancellationGeneration === arm.cancellationGeneration && state.active.has(invocation) &&
+          !invocation.ambiguous && invocation.state === state && state.clientIdentity === arm.clientIdentity &&
+          clientEvidenceByIdentity.get(arm.clientIdentity ?? -1)?.runtimeState === state &&
+          clientEvidenceByIdentity.get(arm.clientIdentity ?? -1)?.association === "mapped");
+        if (dispatchStillOwned && direction === arm.direction && confirmed.publication.base_revision === arm.baseRevision &&
+          typeof arm.dispatchedResultRevision === "string" && arm.dispatchedResultRevision.length > 0 &&
+          confirmed.publication.resulting_revision === arm.dispatchedResultRevision &&
+          confirmed.view.occurrence === witness.occurrence && confirmed.view.revision === arm.dispatchedResultRevision &&
+          arm.occurrence === witness.occurrence && arm.clientIdentity === state?.clientIdentity) {
+          arm.resultRevision = confirmed.view.revision;
+          historyRequeryFaultProbeValue = {
+            ...historyRequeryFaultProbeValue,
+            resultRevision: arm.resultRevision,
+          };
+          arm.phase = "confirmed";
+        } else {
+          clearHistoryQueryArm("history-direction-revision-or-dispatch-mismatch");
+        }
+      }
+      return confirmed;
+    } catch (error) {
+      if (arm && currentHistoryQueryArm === arm) clearHistoryQueryArm("history-command-failed");
       throw error;
     }
   };
@@ -1801,9 +2192,37 @@ export function installAcceptance(next: AcceptanceWiring): void {
         updateScalarProbe(attempt);
       }
     }
+    const historyArm = currentHistoryQueryArm;
+    if (invocation && !invocation.ambiguous && historyArm && historyArm.state === runtimeStateFor(next.runtime) && historyArm.phase === "confirmed") {
+      if (historyArm.state === runtimeStateFor(next.runtime) && historyArm.state.cancellationGeneration === historyArm.cancellationGeneration &&
+        historyArm.clientIdentity === runtimeStateFor(next.runtime).clientIdentity &&
+        historyArm.occurrence === witness?.occurrence && historyArm.resultRevision === witness?.revision &&
+        historyArm.resultRevision === historyArm.dispatchedResultRevision) {
+        const invocationId = ++scalarOperationSequence;
+        historyArm.phase = "discovering";
+        const historyContext: HistoryDiscoveryContext = {
+          arm: historyArm,
+          invocationId,
+          witness: { occurrence: String(witness.occurrence), revision: String(witness.revision) },
+          runtimeInvocationId: invocation.id,
+          definitionIds: [],
+          nextDefinitionIndex: 0,
+          invokedDefinitionIds: [],
+          valid: true,
+        };
+        invocation.historyDiscovery = historyContext;
+        historyRequeryFaultProbeValue = { ...historyRequeryFaultProbeValue, discoveryInvocationId: invocationId };
+      } else {
+        clearHistoryQueryArm("history-discovery-witness-mismatch");
+      }
+    }
     try {
       return await discoverKeyedGroupedSums.apply(next.runtime, args);
     } finally {
+      if (invocation?.historyDiscovery && currentHistoryQueryArm === invocation.historyDiscovery.arm &&
+        invocation.historyDiscovery.arm.phase === "discovering" && invocation.historyDiscovery.arm.queryCallIds.length < 2) {
+        clearHistoryQueryArm("history-discovery-ended-before-second-query");
+      }
       if (context && context.valid && scalarAttemptIsCurrent(context.attempt) &&
         context.attempt.discoveryInvocationId === context.invocationId &&
         context.attempt.invokedDefinitionIds.length < 2) {
@@ -1846,6 +2265,8 @@ export function installAcceptance(next: AcceptanceWiring): void {
     releaseImportApplication,
     deferNextCopyWrite,
     releaseCopyWrite,
+    deferNextTrackerReply,
+    releaseTrackerReply,
     loseNextExecuteReply,
     loseNextOpenReply,
     loseNextImportBeforeDispatch,
@@ -1858,6 +2279,11 @@ export function installAcceptance(next: AcceptanceWiring): void {
     releaseSecondScalarRequeryReply,
     resetScalarRequeryFaultProbe,
     scalarRequeryFaultProbe,
+    failSecondHistoryRequeryReplyAfterFirst,
+    deferSecondHistoryRequeryReply,
+    releaseSecondHistoryRequeryReply,
+    resetHistoryRequeryFaultProbe,
+    historyRequeryFaultProbe,
     armTargetedQueryReplyFault,
     resetTargetedQueryReplyFault,
     targetedQueryFaultProbe,
