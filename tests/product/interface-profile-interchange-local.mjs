@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -185,10 +186,7 @@ try {
   const network = [];
   page.on("request", (request) => network.push(request.url()));
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
   await bindReport(page);
   const pngBefore = await reportPng(page);
   await page.getByRole("tab", { name: "Table", exact: true }).click();
@@ -612,7 +610,7 @@ try {
 
   const computedPage = await context.newPage();
   await computedPage.goto(LOCAL_ORIGIN);
-  await computedPage.getByTestId("project-ready").waitFor();
+  await openReleasePlanExample(computedPage);
   await computedPage.getByRole("tab", { name: "Table", exact: true }).click();
   const formulaCell = computedPage.locator(".ts-cell--computed").first();
   await formulaCell.waitFor();
@@ -650,7 +648,7 @@ try {
   const headerFocus = [];
   const focusPage = await context.newPage();
   await focusPage.goto(LOCAL_ORIGIN);
-  await focusPage.getByTestId("project-ready").waitFor();
+  await openReleasePlanExample(focusPage);
   for (const density of ["compact", "comfortable"]) {
     const safeHeader = { ...imported, name: `Safe Header ${density}`, density, colors: {
       ...imported.colors, "focus.ring": "#818798",
@@ -675,7 +673,7 @@ try {
   const ghostPage = await context.newPage();
   await ghostPage.setViewportSize({ width: 320, height: 640 });
   await ghostPage.goto(LOCAL_ORIGIN);
-  await ghostPage.getByTestId("project-ready").waitFor();
+  await openReleasePlanExample(ghostPage);
   assert.equal(await ghostPage.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)).profile.name, key),
     "Safe Header comfortable", "ghost control samples the admitted persisted imported profile");
   await ghostPage.locator('.ts-command-overflow > summary[aria-label="More document commands"]').click();
@@ -698,7 +696,7 @@ try {
   await newlyUnsafeStored.addInitScript(({ storageKey, raw }) => localStorage.setItem(storageKey, raw),
     { storageKey: key, raw: newlyUnsafeRaw });
   await newlyUnsafeStored.goto(LOCAL_ORIGIN);
-  await newlyUnsafeStored.getByTestId("project-ready").waitFor();
+  await waitForColdHome(newlyUnsafeStored);
   assert.equal(await newlyUnsafeStored.evaluate((storageKey) => localStorage.getItem(storageKey), key), newlyUnsafeRaw,
     "fallback preserves the old custom preference record without rewriting it");
   assert.equal(await newlyUnsafeStored.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
@@ -712,7 +710,7 @@ try {
     localStorage.setItem(storageKey, JSON.stringify({ schemaVersion: 2, kind: "imported", profile: manifest }));
   }, { storageKey: key, manifest: { ...imported, colors: { ...imported.colors, "text.primary": imported.colors["surface.app"] } } });
   await corrupt.goto(LOCAL_ORIGIN);
-  await corrupt.getByTestId("project-ready").waitFor();
+  await waitForColdHome(corrupt);
   assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
   assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-density")), "compact");
   await corrupt.getByRole("button", { name: "Appearance", exact: true }).click();

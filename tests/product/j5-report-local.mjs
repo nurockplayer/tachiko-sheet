@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { openFolder, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -98,14 +99,12 @@ async function start(viewport) {
   if (viewport) await page.setViewportSize(viewport);
   page.setDefaultTimeout(5000);
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await closeProject(page);
+  await waitForColdHome(page);
   return page;
 }
 
 async function bindSummary(page) {
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
   await page.getByTestId("save-status").filter({ hasText: "Not saved yet" }).waitFor();
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();

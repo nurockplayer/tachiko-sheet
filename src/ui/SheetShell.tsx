@@ -28,12 +28,15 @@ import type {
   KeyedGroupedSumResult,
   ReportConfiguration,
   ReportPresentationTextField,
+  SalesEntryOutcome,
+  SalesCatalogLayoutMarker,
+  SalesEntryTipMarker,
   SheetShellProps,
   ViewWitness,
   WorkbookView,
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
-import { reportPresentationTextLimitViolation } from "../contracts.js";
+import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { historyCommandForKey } from "./history-keyboard.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
@@ -48,6 +51,8 @@ import {
   type TableRow,
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
+import { ResultsPane, SalesTip } from "./ResultsPane.js";
+import { type ResultChartMode } from "./results-model.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
@@ -96,6 +101,73 @@ export function missingKeyedGroupedSumDefinitionIds(
 ): string[] {
   const resultIds = new Set(results.map((result) => result.definitionId));
   return definitionIds.filter((definitionId) => !resultIds.has(definitionId));
+}
+
+export function salesEntryFocusTarget(view: WorkbookView, marker: SalesEntryTipMarker | null): { entity: string; field: string } | null {
+  if (!marker || marker.occurrence !== view.occurrence || marker.collection !== view.table.collection.key || marker.field !== "price") return null;
+  return catalogPriceFocusTarget(view);
+}
+
+export function salesCatalogFocusTarget(view: WorkbookView, marker: SalesCatalogLayoutMarker | null): { entity: string; field: string } | null {
+  if (!salesCatalogLayoutEligible(view, marker)) return null;
+  return catalogPriceFocusTarget(view);
+}
+
+function catalogPriceFocusTarget(view: WorkbookView): { entity: string; field: string } | null {
+  const columns = tableColumns(view.table);
+  const priceColumns = columns.filter((column) => column.key === "price");
+  const codeColumns = columns.filter((column) => column.key === "code");
+  if (priceColumns.length !== 1 || codeColumns.length !== 1) return null;
+  const priceColumn = priceColumns[0]!;
+  const codeColumn = codeColumns[0]!;
+  const penRows = view.table.rows.filter((row) => fieldDisplay(fieldForColumn(row, codeColumn.id)).text === "PEN");
+  if (penRows.length !== 1) return null;
+  const row = penRows[0]!;
+  const priceField = fieldForColumn(row, priceColumn.id);
+  return priceField ? { entity: rowEntity(row), field: priceField.target.field } : null;
+}
+
+export function salesCatalogLayoutEligible(view: WorkbookView, marker: SalesCatalogLayoutMarker | null): boolean {
+  if (!marker || marker.occurrence !== view.occurrence || marker.collectionId !== view.table.collection.id) return false;
+  const keys = tableColumns(view.table).map((column) => column.key);
+  return keys.length === 3 && new Set(keys).size === 3 && ["code", "category", "price"].every((key) => keys.includes(key));
+}
+
+export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLElement): boolean {
+  const before = cell.getBoundingClientRect();
+  const port = scrollport.getBoundingClientRect();
+  const visible = (rect: DOMRect) => rect.left >= port.left && rect.right <= port.right && rect.top >= port.top && rect.bottom <= port.bottom;
+  if (before.left < port.left) scrollport.scrollLeft -= port.left - before.left;
+  else if (before.right > port.right) scrollport.scrollLeft += before.right - port.right;
+  if (before.top < port.top) scrollport.scrollTop -= port.top - before.top;
+  else if (before.bottom > port.bottom) scrollport.scrollTop += before.bottom - port.bottom;
+  return visible(cell.getBoundingClientRect());
+}
+
+export interface FocusRevealBounds {
+  top: number;
+  bottom: number;
+}
+
+export function focusRevealScrollDelta(target: FocusRevealBounds, visible: FocusRevealBounds, clearance = 4): number {
+  const targetTop = target.top - clearance;
+  const targetBottom = target.bottom + clearance;
+  if (targetTop < visible.top) return targetTop - visible.top;
+  if (targetBottom > visible.bottom) return targetBottom - visible.bottom;
+  return 0;
+}
+
+export function focusRevealNextScrollTop(current: number, delta: number, maximum: number): number {
+  return Math.max(0, Math.min(maximum, current + delta));
+}
+
+export function focusRevealStillCurrent(input: {
+  targetConnected: boolean;
+  targetIsActive: boolean;
+  compositionConnected: boolean;
+  compositionIsCurrent: boolean;
+}): boolean {
+  return input.targetConnected && input.targetIsActive && input.compositionConnected && input.compositionIsCurrent;
 }
 
 /** Directory selection is a host-level capability; the attribute is not in the React types. */
@@ -255,7 +327,7 @@ function availableGridScrollHeight(gridTop: number, panelBottom: number): number
 
 function sharedButtonFromTarget(target: EventTarget | null): HTMLButtonElement | null {
   if (!(target instanceof Element)) return null;
-  return target.closest<HTMLButtonElement>(".ts-app .ts-button");
+  return target.closest<HTMLButtonElement>(".ts-app .ts-button, .ts-app .ts-home-copy-action");
 }
 
 type SharedButtonPointerOwner = { button: HTMLButtonElement; pointerId: number };
@@ -300,7 +372,7 @@ function releaseSharedKeyboardButton(target: EventTarget | null, ownerRef: { cur
 
 function clearHeldSharedButtons(ownerRef: { current: SharedButtonPointerOwner | null }): void {
   clearOwnedSharedPointer(ownerRef);
-  document.querySelectorAll<HTMLButtonElement>(".ts-app .ts-button[data-ts-held]").forEach((button) => {
+  document.querySelectorAll<HTMLButtonElement>(".ts-app .ts-button[data-ts-held], .ts-app .ts-home-copy-action[data-ts-held]").forEach((button) => {
     button.removeAttribute("data-ts-held");
   });
 }
@@ -315,6 +387,8 @@ export function SheetShell(props: SheetShellProps) {
     saveStatus,
     message,
     copies,
+    copiesStatus = "ready",
+    onRetryCopies = async () => {},
     onOpenFiles,
     onOpenExample,
     onOpenSaved,
@@ -341,6 +415,11 @@ export function SheetShell(props: SheetShellProps) {
     onCreateJ4 = async () => false,
     onRefreshJ4 = async () => false,
     onOpenJ4Canary = async () => { throw new Error("The sales example is unavailable."); },
+    salesEntryTip = null,
+    salesCatalogLayout = null,
+    salesInitialNotSaved = false,
+    salesExampleChanged = false,
+    onDismissSalesEntryTip = () => undefined,
     report = null,
     onCreateReport = () => undefined,
     onUpdateReport = () => undefined,
@@ -357,6 +436,15 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => () => {
     if (compositionEndTimer.current !== null) window.clearTimeout(compositionEndTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const compact = window.matchMedia("(max-width: 1023px)");
+    const sync = () => setCompactHomeLayout(compact.matches);
+    sync();
+    compact.addEventListener("change", sync);
+    return () => compact.removeEventListener("change", sync);
   }, []);
 
   useEffect(() => {
@@ -423,10 +511,13 @@ export function SheetShell(props: SheetShellProps) {
 
   const [tab, setTab] = useState<ActiveTab>("table");
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
+  const [resultsHidden, setResultsHidden] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [notesDrafts, setNotesDrafts] = useState<NotesDraft[]>([]);
   const [commitPending, setCommitPending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [salesEntryOutcome, setSalesEntryOutcome] = useState<SalesEntryOutcome | null>(null);
+  const [compactHomeLayout, setCompactHomeLayout] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyName, setCopyName] = useState("");
   const [copyPending, setCopyPending] = useState(false);
@@ -465,9 +556,16 @@ export function SheetShell(props: SheetShellProps) {
   const selectEditorValueOnFocusRef = useRef(true);
   const focusRejectedEditorRef = useRef(false);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  const resultsHideButtonRef = useRef<HTMLButtonElement | null>(null);
+  const resultsShowButtonRef = useRef<HTMLButtonElement | null>(null);
+  const resultsFocusRevealFrameRef = useRef<number | null>(null);
+  const resultsWasHiddenRef = useRef(false);
+  const priorChartModesRef = useRef(new Map<string, ResultChartMode>());
+  const focusedSalesOccurrenceRef = useRef<string | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
+  const resultsOccurrenceRef = useRef<string | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const recoveryRefreshRef = useRef<HTMLButtonElement | null>(null);
@@ -519,6 +617,13 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     onReportDraftChangeRef.current = props.onReportDraftChange;
   }, [props.onReportDraftChange]);
+
+  useEffect(() => () => {
+    if (resultsFocusRevealFrameRef.current !== null) {
+      window.cancelAnimationFrame(resultsFocusRevealFrameRef.current);
+      resultsFocusRevealFrameRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     setEditor(null);
@@ -680,6 +785,49 @@ export function SheetShell(props: SheetShellProps) {
     setHistoryFocusRequest(null);
   }, [busy, commitPending, currentness, gridOrder, historyFocusRequest, view]);
 
+  useLayoutEffect(() => {
+    const occurrence = view?.occurrence ?? null;
+    if (resultsOccurrenceRef.current !== occurrence) {
+      if (resultsOccurrenceRef.current !== null) setResultsHidden(false);
+      resultsOccurrenceRef.current = occurrence;
+    }
+  }, [view?.occurrence]);
+
+  useLayoutEffect(() => {
+    if (resultsWasHiddenRef.current && !resultsHidden) resultsHideButtonRef.current?.focus();
+    resultsWasHiddenRef.current = resultsHidden;
+  }, [resultsHidden]);
+
+  function dismissSalesTip(): void {
+    const occurrence = view?.occurrence;
+    const revision = view?.revision;
+    onDismissSalesEntryTip();
+    window.requestAnimationFrame(() => {
+      const prior = lastCellRef.current;
+      if (prior?.isConnected && prior.dataset.workOccurrence === occurrence && prior.dataset.workRevision === revision) {
+        prior.focus();
+        return;
+      }
+      const first = gridOrder[0];
+      if (!first) return;
+      const cell = cellRefs.current.get(cellKey(first.entity, first.field));
+      if (cell?.isConnected && cell.dataset.workOccurrence === occurrence && cell.dataset.workRevision === revision) cell.focus();
+    });
+  }
+
+  useLayoutEffect(() => {
+    if (!view || !salesCatalogLayoutEligible(view, salesCatalogLayout) || focusedSalesOccurrenceRef.current === view.occurrence) return;
+    const target = salesCatalogFocusTarget(view, salesCatalogLayout);
+    if (!target) return;
+    const cell = cellRefs.current.get(cellKey(target.entity, target.field));
+    if (!cell || cell.dataset.workOccurrence !== view.occurrence || cell.dataset.workRevision !== view.revision) return;
+    focusedSalesOccurrenceRef.current = view.occurrence;
+    setSelectedEntity(target.entity);
+    cell.focus({ preventScroll: true });
+    const gridScroll = gridScrollRef.current;
+    if (gridScroll) scrollCellIntoGridNearest(cell, gridScroll);
+  }, [salesCatalogLayout, view, gridOrder]);
+
   useEffect(() => {
     function onHistoryKeyDown(event: KeyboardEvent): void {
       const shell = shellRef.current;
@@ -709,7 +857,8 @@ export function SheetShell(props: SheetShellProps) {
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
-  const errorMessage = localError ?? copyError ?? (message && message.length > 0 ? message : null);
+  const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
+    (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
     ? (importError && message && message.length > 0 ? message : importError)
     : importError;
@@ -744,10 +893,14 @@ export function SheetShell(props: SheetShellProps) {
     const measure = () => {
       frame = null;
       const gridTop = grid.getBoundingClientRect().top;
+      const available = availableGridScrollHeight(gridTop, panel.getBoundingClientRect().bottom);
       grid.style.setProperty(
         "--ts-grid-available-height",
-        `${availableGridScrollHeight(gridTop, panel.getBoundingClientRect().bottom)}px`,
+        `${available}px`,
       );
+      if (salesCatalogLayoutEligible(view, salesCatalogLayout)) {
+        grid.style.setProperty("--ts-sales-grid-max-height", `${Math.max(168, Math.min(window.innerHeight * 0.55, available * 0.55))}px`);
+      } else grid.style.removeProperty("--ts-sales-grid-max-height");
     };
     const scheduleMeasure = () => {
       if (frame === null) frame = window.requestAnimationFrame(measure);
@@ -782,8 +935,9 @@ export function SheetShell(props: SheetShellProps) {
       profileObserver.disconnect();
       if (frame !== null) window.cancelAnimationFrame(frame);
       grid.style.removeProperty("--ts-grid-available-height");
+      grid.style.removeProperty("--ts-sales-grid-max-height");
     };
-  }, [view, tab, currentness, errorMessage, busy, commitPending]);
+  }, [view, tab, currentness, errorMessage, busy, commitPending, salesCatalogLayout]);
 
   useEffect(() => {
     onDraftChangeRef.current(draftActive);
@@ -1031,6 +1185,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function openSaved(name: string): Promise<void> {
+    setSalesEntryOutcome(null);
     setLocalError(null);
     try {
       await onOpenSaved(name);
@@ -1056,6 +1211,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function openExample(): Promise<void> {
+    setSalesEntryOutcome(null);
     setLocalError(null);
     try {
       await onOpenExample();
@@ -1065,16 +1221,19 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function openJ4Canary(): Promise<void> {
+    setSalesEntryOutcome(null);
     setLocalError(null);
     try {
-      await onOpenJ4Canary();
+      setSalesEntryOutcome(await onOpenJ4Canary());
     } catch (error) {
+      setSalesEntryOutcome(null);
       setLocalError(explain(error, "Could not open the sales example."));
     }
   }
 
   async function openFiles(files: FileList | null): Promise<void> {
     if (!files || files.length === 0) return;
+    setSalesEntryOutcome(null);
     setLocalError(null);
     try {
       await onOpenFiles(files);
@@ -1134,6 +1293,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function refresh(): Promise<void> {
+    setSalesEntryOutcome(null);
     setLocalError(null);
     try {
       await onRefresh();
@@ -1193,6 +1353,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function requestClose(): Promise<void> {
     if (busy || commitPending) return;
+    setSalesEntryOutcome(null);
     if (dirty || draftActive || hasInvalidReportDraft || currentness === "unknown") {
       setCloseOpen(true);
       return;
@@ -1201,6 +1362,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function closeWork(): Promise<void> {
+    setSalesEntryOutcome(null);
     setCloseOpen(false);
     setLocalError(null);
     try {
@@ -1246,114 +1408,184 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderHome(): ReactNode {
     const recoveryLocked = currentness === "unknown";
-    const fileActionsLocked = controlsLocked || recoveryLocked;
-    return (
-      <main className="ts-home">
-        {currentness === "unknown" ? (
-          <section className="ts-card" aria-label="Recovery">
-            <h2 className="ts-h2">Refresh required</h2>
-            <p className="ts-subtle">The open work could not be confirmed. Refresh to read it again.</p>
-            <div className="ts-status-strip" aria-label="Recovery status">
-              <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
-                {currentnessLabel(currentness)}
-              </span>
-              {outcome !== "idle" ? (
-                <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
-                  {outcomeLabel(outcome)}
-                </span>
-              ) : null}
+    const startupLocked = props.startupUnavailable === true;
+    const fileActionsLocked = controlsLocked || recoveryLocked || startupLocked;
+    const hasSavedCopies = copiesStatus === "ready" && copies.length > 0;
+    const orderedCopies = [...copies].sort((left, right) => {
+      const bySavedAt = Date.parse(right.savedAt) - Date.parse(left.savedAt);
+      return Number.isNaN(bySavedAt) || bySavedAt === 0
+        ? left.name.localeCompare(right.name)
+        : bySavedAt;
+    });
+    const savedCopies = (
+      <section className="ts-home-panel ts-home-saved" aria-label="Saved copies">
+        <div className="ts-home-panel-heading">
+          <h2 className="ts-home-panel-title">Saved copies</h2>
+          <p className="ts-home-panel-subtitle">Saved in this browser on this device.</p>
+        </div>
+        {copiesStatus === "checking" ? <p className="ts-home-copy-state" role="status">Checking saved copies…</p> : null}
+        {copiesStatus === "unavailable" ? (
+          <div className="ts-home-copy-unavailable">
+            <div className="ts-home-copy-state ts-home-copy-state--unavailable" role="status">
+              <span className="ts-home-copy-unavailable-icon" aria-hidden="true">!</span>
+              <div>
+                <strong>Saved copies couldn’t be read.</strong>
+                <span>They may still be in this browser. Try again, or reload the page.</span>
+              </div>
             </div>
-            <button type="button" className="ts-button" ref={recoveryRefreshRef} onClick={() => void refresh()} disabled={busy || commitPending}>
-              Refresh
-            </button>
-            <button type="button" className="ts-button ts-button--ghost" ref={recoveryCloseTriggerRef} onClick={() => void requestClose()} disabled={busy || commitPending}>
-              Close and abandon recovery
-            </button>
-          </section>
+            <button type="button" className="ts-button" onClick={() => void onRetryCopies()} disabled={busy || startupLocked || recoveryLocked}>Try again</button>
+          </div>
         ) : null}
+        {copiesStatus === "ready" && copies.length === 0 ? (
+          <div className="ts-home-copy-empty">
+            <strong>No saved copies yet</strong>
+            <span>When you save a copy of your work, it appears here.</span>
+          </div>
+        ) : null}
+        {savedCopiesAreVisible(copiesStatus, copies.length) ? (
+          <ul className="ts-home-copy-list">
+            {orderedCopies.map((copy, index) => {
+              const whitespaceDescription = describeSavedCopyNameWhitespace(copy.name);
+              const whitespaceDescriptionId = `${copyNameDescriptionBaseId}-${index}`;
+              const describedBy = [
+                ...(busy ? [lockNoteId] : []),
+                ...(whitespaceDescription ? [whitespaceDescriptionId] : []),
+              ].join(" ") || undefined;
+              return (
+                <li key={copy.name} className="ts-home-copy-row">
+                  <button
+                    type="button"
+                    className="ts-home-copy-action"
+                    onClick={() => void openSaved(copy.name)}
+                    disabled={controlsLocked || recoveryLocked || startupLocked}
+                    aria-label={`Open saved ${copy.name}`}
+                    aria-describedby={describedBy}
+                  >
+                    <span className="ts-home-copy-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="3" y="3.5" width="14" height="13" rx="1.5" /><path d="M3.5 8h13M8 8v8" /></svg></span>
+                    <span className="ts-home-copy-text">
+                      <span className="ts-home-copy-name">{copy.name}</span>
+                      <span className="ts-home-copy-time">Saved {formatHomeSavedAt(copy.savedAt)}</span>
+                    </span>
+                    <svg className="ts-home-copy-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
+                  </button>
+                  {whitespaceDescription ? <span className="ts-visually-hidden" id={whitespaceDescriptionId}>{whitespaceDescription}</span> : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </section>
+    );
+    const example = (
+      <section className={`ts-home-panel ts-home-example${salesEntryOutcome?.kind === "refused" ? " ts-home-example--refused" : ""}`} aria-label="Sales and catalog example">
+        <span className="ts-home-eyebrow">Example</span>
+        <h2 className="ts-home-example-title">Sales and catalog</h2>
+        <p className="ts-home-example-copy">A price list and a few orders add up to sales by product. Change a price and watch the sales chart update.</p>
+        <p className="ts-home-example-flow" aria-label="Catalog prices times Sales quantities gives Sales by product">
+          <svg className="ts-home-flow-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M2.5 6.5h11M6.5 6.5v6"/></svg>
+          <span className="ts-home-flow-table">catalog</span><span className="ts-home-flow-field">prices</span>
+          <span className="ts-home-flow-times" aria-hidden="true">×</span>
+          <svg className="ts-home-flow-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M2.5 6.5h11M6.5 6.5v6"/></svg>
+          <span className="ts-home-flow-table">sales</span><span className="ts-home-flow-field">quantities</span>
+          <span className="ts-home-flow-arrow" aria-hidden="true">→</span>
+          <svg className="ts-home-flow-icon ts-home-flow-icon--chart" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 13.5h12M4 11V7M8 11V3M12 11V5"/></svg>
+          <span className="ts-home-flow-result">Sales by product</span>
+        </p>
+        {salesEntryOutcome?.kind === "refused" ? (
+          <div className="ts-home-example-error" role="alert">
+            <strong>Couldn’t open the sales example.</strong>
+            <span>Nothing was changed. You can try again.</span>
+          </div>
+        ) : null}
+        <div className="ts-home-example-action">
+          <button type="button" className="ts-button ts-button--primary" onClick={() => void openJ4Canary()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
+            {busy ? "Opening…" : salesEntryOutcome?.kind === "refused" ? "Try again" : "Open sales example"}
+          </button>
+          {!fileActionsLocked ? <span className="ts-home-example-persistence">Opens as new work. Nothing is saved until you choose Save a copy.</span> : null}
+        </div>
+        {busy ? <span className="ts-visually-hidden" id={lockNoteId} role="note">An operation is in progress; controls are disabled until it finishes.</span> : null}
+      </section>
+    );
+    const otherWays = (
+      <section className="ts-home-other" aria-label="Other ways to start">
+        <h2 className="ts-home-other-title">Other ways to start</h2>
+        <div className="ts-home-other-list">
+          <div className="ts-home-other-row">
+            <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
+            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added.</span></span>
+            <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
+              <span>Choose file…</span>
+              <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+            </label>
+          </div>
+          {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
+          <div className="ts-home-other-row">
+            <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M2.5 5.5h6l1.5 2h7.5v9h-15z" /><path d="M2.5 7.5h15" /></svg></span>
+            <span className="ts-home-other-copy"><strong>Open a project folder</strong><span>Open a Tachiko project folder from this computer. Its files stay unchanged.</span></span>
+            <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
+              <span>Choose folder…</span>
+              <input id={fileInputId} data-testid="open-project" type="file" multiple disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined} onChange={(event) => { const input = event.currentTarget; void openFiles(input.files).finally(() => { input.value = ""; }); }} {...directoryInputAttributes} />
+            </label>
+          </div>
+          <div className="ts-home-other-row">
+            <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M6.5 4.5h10M6.5 10h10M6.5 15.5h10" /><circle cx="3" cy="4.5" r=".75" /><circle cx="3" cy="10" r=".75" /><circle cx="3" cy="15.5" r=".75" /></svg></span>
+            <span className="ts-home-other-copy"><strong>Release plan example</strong><span>A small team plan with a calculated priority column.</span></span>
+            <button type="button" className="ts-button" onClick={() => void openExample()} disabled={fileActionsLocked} aria-label="Open release plan example">Open</button>
+          </div>
+        </div>
+      </section>
+    );
+    const mobileReturning = hasSavedCopies && compactHomeLayout;
+    return (
+      <main className={`ts-home${hasSavedCopies ? " ts-home--has-copies" : ""}${recoveryLocked ? " ts-home--recovery" : ""}${startupLocked ? " ts-home--startup-unavailable" : ""}`}>
         <header className="ts-home-head">
-          <h1 className="ts-brand">Tachiko Sheet</h1>
+          <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand">Tachiko Sheet</h1></div>
           {renderAppearanceSelector("home")}
         </header>
-        <p className="ts-home-intro ts-home-desktop-intro">Open a project folder, or reopen a copy saved in this browser profile.</p>
-        <p className="ts-home-intro ts-home-compact-intro">Open a local project or a saved copy.</p>
-        <section className="ts-home-section" aria-label="Open project">
-          <h2 className="ts-h2">Open</h2>
-          <div className="ts-row-actions ts-home-open-actions">
-            <label className={`ts-button ts-button--primary ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
-              <span>Open project folder</span>
-              <input
-                id={fileInputId}
-                data-testid="open-project"
-                type="file"
-                multiple
-                disabled={fileActionsLocked}
-                aria-describedby={busy ? lockNoteId : undefined}
-                onChange={(event) => {
-                  const input = event.currentTarget;
-                  const files = input.files;
-                  void openFiles(files).finally(() => {
-                    input.value = "";
-                  });
-                }}
-                {...directoryInputAttributes}
-              />
-            </label>
-            <button type="button" className="ts-button" onClick={() => void openExample()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
-              Try example
-            </button>
-            <button type="button" className="ts-button" onClick={() => void openJ4Canary()} disabled={fileActionsLocked} aria-describedby={busy ? lockNoteId : undefined}>
-              Try sales example
-            </button>
-            {busy ? <span className="ts-status" role="status">Opening…</span> : null}
+        <div className="ts-home-content">
+          {startupLocked ? (
+            <section className="ts-home-startup-alert" aria-label="Startup unavailable" role="alert">
+              <span className="ts-home-alert-icon" aria-hidden="true">!</span>
+              <div className="ts-home-alert-copy"><strong>Tachiko couldn’t start in this browser</strong><span>Examples, files and saved copies can’t be opened until it starts. Reload the page to try again.</span></div>
+              <button type="button" className="ts-button" onClick={() => window.location.reload()}>Reload page</button>
+            </section>
+          ) : null}
+          {currentness === "unknown" ? (
+            <section className="ts-card ts-home-recovery-card" aria-label="Recovery">
+              <h2 className="ts-h2">Refresh required</h2>
+              <p className="ts-subtle">The open work could not be confirmed. Refresh to read it again.</p>
+              <div className="ts-status-strip" aria-label="Recovery status">
+                <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
+                  {currentnessLabel(currentness)}
+                </span>
+                {outcome !== "idle" ? (
+                  <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
+                    {outcomeLabel(outcome)}
+                  </span>
+                ) : null}
+              </div>
+              <div className="ts-home-recovery-actions">
+                <button type="button" className="ts-button" ref={recoveryRefreshRef} onClick={() => void refresh()} disabled={busy || commitPending}>
+                  Refresh
+                </button>
+                <button type="button" className="ts-button ts-button--ghost" ref={recoveryCloseTriggerRef} onClick={() => void requestClose()} disabled={busy || commitPending}>
+                  Close and abandon recovery
+                </button>
+              </div>
+              <p className="ts-home-recovery-note">Other ways to start are paused until the work is refreshed or closed.</p>
+            </section>
+          ) : null}
+          <section className="ts-home-intro" aria-labelledby="home-purpose-title">
+            <h2 className="ts-home-purpose" id="home-purpose-title">Change a value, and the summaries and charts that use it update.</h2>
+            <p>Tachiko Sheet connects your tables to the summaries and charts built on them. Start with the sales example, bring in a CSV or Excel file, or open a copy you saved.</p>
+          </section>
+          <div className="ts-home-grid">
+            {mobileReturning ? savedCopies : example}
+            {mobileReturning ? example : null}
+            {mobileReturning ? null : savedCopies}
+            {otherWays}
           </div>
-          <p className="ts-subtle ts-home-open-desktop-help">Choose a local project folder. Its source stays unchanged.</p>
-          <p className="ts-subtle ts-home-open-compact-help">The source folder stays unchanged.</p>
-          {busy ? <p className="ts-hint" id={lockNoteId} role="note">An operation is in progress; controls are disabled until it finishes.</p> : null}
-        </section>
-        <section className="ts-home-section" aria-label="Import spreadsheet">
-          <h2 className="ts-h2">Import CSV or XLSX</h2>
-          <p className="ts-subtle ts-home-import-desktop-help">Review the source and column types before importing.</p>
-          <label className={`ts-button ts-home-file-action ts-home-import-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
-            <span>Choose CSV or XLSX</span>
-            <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
-          </label>
-          <p className="ts-subtle ts-home-import-compact-help">Review the source and column types before importing.</p>
-          {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
-        </section>
-        <section className={`ts-home-section ts-home-saved${copies.length ? " ts-home-saved--populated" : ""}`} aria-label="Saved copies">
-          <h2 className="ts-h2">Saved copies</h2>
-          <p className="ts-subtle">Stored in this browser profile on this device.</p>
-          {copies.length === 0 ? (
-            <p className="ts-empty">No saved copies yet.</p>
-          ) : (
-            <ul className="ts-copy-list">
-              {copies.map((copy, index) => {
-                const whitespaceDescription = describeSavedCopyNameWhitespace(copy.name);
-                const whitespaceDescriptionId = `${copyNameDescriptionBaseId}-${index}`;
-                const describedBy = [
-                  ...(busy ? [lockNoteId] : []),
-                  ...(whitespaceDescription ? [whitespaceDescriptionId] : []),
-                ].join(" ") || undefined;
-                return (
-                  <li key={copy.name} className="ts-copy-item">
-                    <button
-                      type="button"
-                      className="ts-button ts-button--ghost ts-home-saved-action"
-                      onClick={() => void openSaved(copy.name)}
-                      disabled={controlsLocked || recoveryLocked}
-                      aria-describedby={describedBy}
-                    >
-                      {`Open saved ${copy.name}`}
-                    </button>
-                    {whitespaceDescription ? <span className="ts-visually-hidden" id={whitespaceDescriptionId}>{whitespaceDescription}</span> : null}
-                    <span className="ts-copy-meta">Saved {formatHomeSavedAt(copy.savedAt)}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+        </div>
       </main>
     );
   }
@@ -1453,11 +1685,11 @@ export function SheetShell(props: SheetShellProps) {
           <span className="ts-status-pair">
             <span className="ts-status-label">Work:</span>
             <span
-              className={`ts-chip ${dirty ? "ts-chip--edited" : "ts-chip--unchanged"}`}
+              className={`ts-chip ${salesInitialNotSaved ? "ts-chip--unchanged" : dirty ? "ts-chip--edited" : "ts-chip--unchanged"}`}
               data-testid="work-state"
               data-work-state={dirty ? "edited" : "unchanged"}
             >
-              {workStateLabel(dirty)}
+              {salesInitialNotSaved ? "Not saved yet" : workStateLabel(dirty)}
             </span>
           </span>
           <span className="ts-status-pair">
@@ -1466,7 +1698,7 @@ export function SheetShell(props: SheetShellProps) {
             {currentnessLabel(currentness, resultsNeedAttention)}
             </span>
           </span>
-          {currentness === "pending" && j4Results.length > 0 ? <span className="ts-notice" role="status">Updating… — showing previous results.</span> : null}
+          {currentness === "pending" && j4Results.length > 0 && !salesTipVisibleForCurrentOccurrence() ? <span className="ts-notice" role="status">Updating… — showing previous results.</span> : null}
           {outcome !== "idle" ? (
             <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
               {outcomeLabel(outcome)}
@@ -1481,41 +1713,78 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
+    const hasResults = j4DefinitionIds.length > 0;
+    const visibleSalesTip = hasResults && !resultsHidden && salesEntryTip?.occurrence === view?.occurrence
+      ? salesEntryTip
+      : null;
+    const resultsNeedAttention = j4DefinitionIds.some((id) => {
+      const result = j4Results.find((candidate) => candidate.definitionId === id);
+      return !result || result.diagnostics.length > 0;
+    });
     return (
-      <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className="ts-panel">
-        {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
-        <div className="ts-grid-scroll" ref={gridScrollRef}>
-          <table className="ts-grid" role="grid" aria-label="Table" aria-busy={busy}>
-            <thead>
-              <tr>
-                <th scope="col" className="ts-gutter-head">
-                  Row
-                </th>
-                {columns.map((column) => (
-                  <th key={column.id} scope="col" className="ts-col-head">
-                    {column.key}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {table.rows.map((row) => {
-                const entity = rowEntity(row);
-                const isSelectedRow = entity === selectedEntity;
-                return (
-                  <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"}>
-                    <th scope="row" className="ts-row-head">
-                      {table.rows.indexOf(row) + 1}
-                    </th>
-                    {columns.map((column) => renderCell(row, entity, column))}
+      <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className={`ts-panel ts-table-panel${hasResults ? " ts-table-panel--results" : ""}`}>
+        {currentness === "current" || visibleSalesTip ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
+        <div className={`ts-table-composition${hasResults && !resultsHidden ? " ts-table-composition--results" : ""}${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-table-composition--sales-catalog" : ""}`} data-focus-reveal-view-key={`${view!.occurrence}\u0000${view!.revision}`}>
+          <div className="ts-work-region">
+            {visibleSalesTip ? <SalesTip
+              marker={visibleSalesTip}
+              reportTitle={report?.title ?? "Results"}
+              changed={salesExampleChanged}
+              currentness={currentness}
+              hasAttention={resultsNeedAttention}
+              dismiss={dismissSalesTip}
+            /> : null}
+            <div className="ts-grid-scroll" ref={gridScrollRef}>
+              <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy}>
+                <thead>
+                  <tr>
+                    <th scope="col" className="ts-gutter-head">Row</th>
+                    {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{column.key}</th>)}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {table.rows.map((row, index) => {
+                    const entity = rowEntity(row);
+                    const isSelectedRow = entity === selectedEntity;
+                    return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"}>
+                      <th scope="row" className="ts-row-head">{index + 1}</th>
+                      {columns.map((column) => renderCell(row, entity, column))}
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {hasResults ? resultsHidden ? <button ref={resultsShowButtonRef} type="button" className="ts-button ts-results-show" onClick={() => setResultsHidden(false)}>Show results</button> : <>
+            <ResultsPane
+              view={view!}
+              currentness={currentness}
+              results={j4Results}
+              definitionIds={j4DefinitionIds}
+              report={report}
+              busy={controlsLocked}
+              priorChartModes={priorChartModesRef.current}
+              onChartMode={(occurrence, definitionId, mode) => {
+                const key = `${occurrence}\u0000${definitionId}`;
+                if (priorChartModesRef.current.get(key) !== mode) priorChartModesRef.current.set(key, mode);
+              }}
+              onRefresh={onRefreshJ4}
+              onOpenSummary={() => selectTab("summary")}
+              onOpenReport={() => selectTab("report")}
+              onHide={() => { setResultsHidden(true); window.requestAnimationFrame(() => resultsShowButtonRef.current?.focus()); }}
+              hideButtonRef={resultsHideButtonRef}
+              chartFontKey={appearanceSnapshot.selection.kind === "built-in"
+                ? `${appearanceSnapshot.selection.profileId}:${appearanceSnapshot.selection.density}`
+                : `${appearanceSnapshot.selection.profile.name}:${appearanceSnapshot.selection.profile.density}:${JSON.stringify(appearanceSnapshot.selection.profile.typography)}`}
+            />
+          </> : null}
         </div>
       </div>
     );
+  }
+
+  function salesTipVisibleForCurrentOccurrence(): boolean {
+    return Boolean(view && j4DefinitionIds.length > 0 && !resultsHidden && salesEntryTip?.occurrence === view.occurrence);
   }
 
   function renderCell(row: TableRow, entity: string, column: TableColumn): ReactNode {
@@ -1992,43 +2261,26 @@ export function SheetShell(props: SheetShellProps) {
         </nav>
         {controlsLocked ? (
           <p className="ts-hint" id={lockNoteId} role="note">
-            An operation is in progress; editing is disabled until it finishes.
+            {currentness === "unknown" ? "The current work is not confirmed. Use Refresh to recheck it before editing." : "An operation is in progress; editing is disabled until it finishes."}
           </p>
         ) : null}
+        <div className="ts-workbook-panel-slot ts-workbook-table-slot">
+          {tab === "table" ? renderTablePanel() : null}
+        </div>
         <footer className="ts-workspace-footer">
           <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
             <span className="ts-views-label" aria-hidden="true">Views</span>
-            <button
-            type="button"
-            role="tab"
-            id={tabId("table")}
-            aria-selected={tab === "table"}
-            aria-controls={panelId("table")}
-            tabIndex={tab === "table" ? 0 : -1}
-            className={tab === "table" ? "ts-tab ts-tab--active" : "ts-tab"}
-            onClick={() => selectTab("table")}
-          >
-            Table
-            </button>
+            <button type="button" role="tab" id={tabId("table")} aria-selected={tab === "table"} aria-controls={panelId("table")} tabIndex={tab === "table" ? 0 : -1} className={tab === "table" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("table")}>Table</button>
             <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
             <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
-            <button
-            type="button"
-            role="tab"
-            id={tabId("brief")}
-            aria-selected={tab === "brief"}
-            aria-controls={panelId("brief")}
-            tabIndex={tab === "brief" ? 0 : -1}
-            className={tab === "brief" ? "ts-tab ts-tab--active" : "ts-tab"}
-            onClick={() => selectTab("brief")}
-          >
-            Brief
-            </button>
+            <button type="button" role="tab" id={tabId("brief")} aria-selected={tab === "brief"} aria-controls={panelId("brief")} tabIndex={tab === "brief" ? 0 : -1} className={tab === "brief" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("brief")}>Brief</button>
             <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}</div>
         </footer>
-        {tab === "table" ? renderTablePanel() : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
+        <div className="ts-workbook-panel-slot ts-workbook-secondary-slot">
+          {tab === "table" ? null : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
+        </div>
       </div>
     );
   }
@@ -2047,21 +2299,90 @@ export function SheetShell(props: SheetShellProps) {
     document.getElementById(tabId(next))?.focus();
   }
 
+  function revealFocusedResult(target: HTMLElement, scrollport: HTMLElement, tablePanel: HTMLElement): void {
+    const portRect = scrollport.getBoundingClientRect();
+    const clipRect = tablePanel.getBoundingClientRect();
+    const portTop = portRect.top + scrollport.clientTop;
+    const portBottom = portTop + scrollport.clientHeight;
+    const clipTop = clipRect.top + tablePanel.clientTop;
+    const clipBottom = clipTop + tablePanel.clientHeight;
+    const visible = { top: Math.max(portTop, clipTop), bottom: Math.min(portBottom, clipBottom) };
+    if (visible.bottom <= visible.top) return;
+    const targetRect = target.getBoundingClientRect();
+    const delta = focusRevealScrollDelta({ top: targetRect.top, bottom: targetRect.bottom }, visible);
+    if (delta === 0) return;
+    const maximum = Math.max(0, scrollport.scrollHeight - scrollport.clientHeight);
+    const next = focusRevealNextScrollTop(scrollport.scrollTop, delta, maximum);
+    if (next !== scrollport.scrollTop) scrollport.scrollTop = next;
+  }
+
+  function scheduleFocusedResultReveal(target: HTMLElement): void {
+    if (target.closest(".ts-workspace-footer, .ts-sales-tip, .ts-grid-scroll, [role='grid'], .ts-notes, .ts-cell-editor, [contenteditable='true']")) return;
+    const shell = shellRef.current;
+    const composition = target.closest<HTMLElement>(".ts-table-composition");
+    const tablePanel = target.closest<HTMLElement>(".ts-table-panel");
+    const resultsPane = target.closest<HTMLElement>(".ts-results-pane");
+    const isShowResults = target.closest(".ts-results-show") !== null;
+    if (!shell || !composition || !tablePanel || (!resultsPane && !isShowResults)) return;
+    const expectedViewKey = composition.dataset.focusRevealViewKey;
+    if (!expectedViewKey) return;
+    if (resultsFocusRevealFrameRef.current !== null) window.cancelAnimationFrame(resultsFocusRevealFrameRef.current);
+    resultsFocusRevealFrameRef.current = window.requestAnimationFrame(() => {
+      resultsFocusRevealFrameRef.current = null;
+      const currentShell = shellRef.current;
+      const stillCurrent = focusRevealStillCurrent({
+        targetConnected: target.isConnected && Boolean(currentShell?.contains(target)),
+        targetIsActive: target.ownerDocument.activeElement === target,
+        compositionConnected: composition.isConnected,
+        compositionIsCurrent: Boolean(currentShell && currentShell.querySelector(".ts-table-composition") === composition &&
+          composition.dataset.focusRevealViewKey === expectedViewKey && composition.closest(".ts-table-panel") === tablePanel && tablePanel.isConnected),
+      });
+      if (!stillCurrent) return;
+      if (window.innerWidth < 1024) {
+        revealFocusedResult(target, composition, tablePanel);
+        return;
+      }
+      if (resultsPane?.isConnected) revealFocusedResult(target, resultsPane, tablePanel);
+      revealFocusedResult(target, composition, tablePanel);
+    });
+  }
+
+  if (props.reloadRequired) {
+    return (
+      <div className="ts-app" data-view="reload-required" role="alert">
+        <main className="ts-home">
+          <section className="ts-card" aria-label="Reload required">
+            <h1 className="ts-h2">Reload required</h1>
+            <p className="ts-dialog-error">{message ?? LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE}</p>
+            <button type="button" className="ts-button ts-button--primary" onClick={() => window.location.reload()}>
+              Reload page
+            </button>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={shellRef}
       className="ts-app"
       data-view={view ? "workbook" : "home"}
+      data-sales-entry-tip={salesEntryTip ? `${salesEntryTip.collection}.${salesEntryTip.field}` : undefined}
+      data-sales-catalog-layout={view && salesCatalogLayoutEligible(view, salesCatalogLayout) ? "true" : undefined}
       onCompositionStartCapture={beginAppearanceComposition}
       onCompositionEndCapture={scheduleAppearanceCompositionEnd}
       onFocusCapture={(event) => {
         const request = historyFocusRequestRef.current;
         const destination = event.target;
-        if (!request || request.settled || !(destination instanceof HTMLElement) || destination === request.initiator) return;
-        if (!historyFocusDestinationIsUsable(destination, shellRef.current)) return;
-        const updated = { ...request, userDestination: destination };
-        historyFocusRequestRef.current = updated;
-        setHistoryFocusRequest(updated);
+        if (destination instanceof HTMLElement) {
+          scheduleFocusedResultReveal(destination);
+          if (request && !request.settled && destination !== request.initiator && historyFocusDestinationIsUsable(destination, shellRef.current)) {
+            const updated = { ...request, userDestination: destination };
+            historyFocusRequestRef.current = updated;
+            setHistoryFocusRequest(updated);
+          }
+        }
       }}
       onPointerDownCapture={(event) => {
         if (event.button !== 0 || !event.isPrimary) return;

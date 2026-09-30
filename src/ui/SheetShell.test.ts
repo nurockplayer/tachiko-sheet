@@ -8,7 +8,12 @@ import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../co
 import { BriefFacts } from "./BriefFacts.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
+  focusRevealNextScrollTop,
+  focusRevealScrollDelta,
+  focusRevealStillCurrent,
   missingKeyedGroupedSumDefinitionIds,
+  salesEntryFocusTarget,
+  salesCatalogLayoutEligible,
   describeSavedCopyNameWhitespace,
   reportRenderResetKey,
   shouldPublishAppearanceCompositionEnd,
@@ -329,13 +334,33 @@ describe("recovery presentation", () => {
     expect(markup).toMatch(/<button[^>]*class="ts-button"[^>]*>Refresh<\/button>/);
     expect(markup).toContain("Close and abandon recovery");
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Refresh<\/button>/);
-    expect(markup).toContain('class="ts-button ts-button--primary ts-home-file-action ts-home-file-action--disabled" aria-disabled="true"');
-    expect(markup).toContain('class="ts-button ts-home-file-action ts-home-import-action ts-home-file-action--disabled" aria-disabled="true"');
+    expect(markup).toContain('class="ts-button ts-home-file-action ts-home-file-action--disabled" aria-disabled="true"');
     expect(markup).toContain('data-testid="open-project" type="file" multiple="" disabled=""');
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Try example<\/button>/);
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Open saved copy<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Open release plan example"[^>]*>Open<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Open saved copy"/);
     expect(markup).not.toContain('data-testid="project-ready"');
     expect(markup).not.toContain("Save a copy");
+  });
+});
+
+describe("focused Results reveal geometry", () => {
+  it("moves the nearest edge with focus-ring clearance and leaves visible targets alone", () => {
+    const scrollport = { top: 171, bottom: 729 };
+    expect(focusRevealScrollDelta({ top: 790, bottom: 834 }, scrollport)).toBe(109);
+    expect(focusRevealScrollDelta({ top: 300, bottom: 340 }, scrollport)).toBe(0);
+    expect(focusRevealScrollDelta({ top: 100, bottom: 140 }, scrollport)).toBe(-75);
+  });
+
+  it("clamps movement and rejects a stale focus, detached target, or replaced composition", () => {
+    expect(focusRevealNextScrollTop(0, 109, 145)).toBe(109);
+    expect(focusRevealNextScrollTop(140, 109, 145)).toBe(145);
+    expect(focusRevealNextScrollTop(10, -75, 145)).toBe(0);
+    const current = { targetConnected: true, targetIsActive: true, compositionConnected: true, compositionIsCurrent: true };
+    expect(focusRevealStillCurrent(current)).toBe(true);
+    expect(focusRevealStillCurrent({ ...current, targetIsActive: false })).toBe(false);
+    expect(focusRevealStillCurrent({ ...current, targetConnected: false })).toBe(false);
+    expect(focusRevealStillCurrent({ ...current, compositionConnected: false })).toBe(false);
+    expect(focusRevealStillCurrent({ ...current, compositionIsCurrent: false })).toBe(false);
   });
 });
 
@@ -420,21 +445,65 @@ describe("SheetShell static rendering", () => {
     expect(commandsStart).toBeLessThan(viewsStart);
   });
 
-  it("puts native Views before each panel while keeping truthful status in the footer", () => {
+  it("keeps Table before the stable footer and reserves the secondary slot after it", () => {
     const markup = render({ view: makeView(), currentness: "pending", dirty: true, outcome: "pending" });
     const headerStart = markup.indexOf("ts-workbook-head");
     const contextStart = markup.indexOf("ts-work-context", headerStart);
     const panelStart = markup.indexOf('class="ts-panel');
-    const footerStart = markup.indexOf("ts-workspace-footer");
     expect(markup.slice(headerStart, contextStart)).toContain('data-testid="save-status"');
     expect(markup.slice(headerStart, contextStart)).toContain("Copies: this browser on this device");
-    expect(footerStart).toBeGreaterThan(contextStart);
-    expect(panelStart).toBeGreaterThan(footerStart);
+    const footerStart = markup.indexOf("ts-workspace-footer");
+    expect(panelStart).toBeGreaterThan(contextStart);
+    expect(footerStart).toBeGreaterThan(panelStart);
+    expect(markup.indexOf("ts-workbook-table-slot")).toBeLessThan(footerStart);
+    expect(markup.indexOf("ts-workbook-secondary-slot")).toBeGreaterThan(footerStart);
     expect(markup.slice(footerStart)).toContain('aria-label="Workbook views"');
     expect(markup.slice(footerStart)).toContain("Work:");
     expect(markup.slice(footerStart)).toContain("Values:");
     expect(markup.slice(footerStart)).toContain('data-testid="operation-outcome"');
     expect(markup.slice(footerStart)).toContain("2 rows · 4 columns");
+  });
+
+  it("resolves the one-shot Sales focus from the actual Catalog PEN and price projections", () => {
+    const view = makeView();
+    expect(salesEntryFocusTarget(view, { occurrence: "occ-1", collection: "release_items", field: "price" })).toBe(null);
+    expect(salesEntryFocusTarget(view, { occurrence: "other", collection: "release_items", field: "price" })).toBe(null);
+    const salesView: WorkbookView = {
+      ...view,
+      table: {
+        ...view.table,
+        collection: { ...view.table.collection, key: "catalog" },
+        columns: [
+          { id: "sku", key: "code", field_type: "text" },
+          { id: "cost", key: "price", field_type: "number" },
+        ],
+        rows: [{
+          id: "catalog-pen", key: "pen",
+          fields: [
+            projected("catalog-pen", "sku", { kind: "text", value: "PEN" }),
+            projected("catalog-pen", "cost", { kind: "number", value: 800 }),
+          ],
+        }],
+      },
+    };
+    expect(salesEntryFocusTarget(salesView, { occurrence: "occ-1", collection: "catalog", field: "price" })).toEqual({ entity: "catalog-pen", field: "cost" });
+  });
+
+  it("limits the compact landing layout to its exact Sales occurrence, Catalog identity, and three fields", () => {
+    const view = makeView();
+    const catalogView: WorkbookView = {
+      ...view,
+      table: { ...view.table, collection: { id: "catalog-identity", key: "catalog", entity_count: 1 }, columns: [
+        { id: "code-id", key: "code", field_type: "text" },
+        { id: "category-id", key: "category", field_type: "text" },
+        { id: "price-id", key: "price", field_type: "number" },
+      ] },
+    };
+    const marker = { occurrence: "occ-1", collectionId: "catalog-identity" };
+    expect(salesCatalogLayoutEligible(catalogView, marker)).toBe(true);
+    expect(salesCatalogLayoutEligible({ ...catalogView, occurrence: "replacement" }, marker)).toBe(false);
+    expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, collection: { ...catalogView.table.collection, id: "other" } } }, marker)).toBe(false);
+    expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, columns: [...catalogView.table.columns, { id: "fourth", key: "note", field_type: "text" }] } }, marker)).toBe(false);
   });
 
   it("renders linked Brief facts with the actual projection identity", () => {
@@ -466,30 +535,79 @@ describe("SheetShell static rendering", () => {
     expect(cellMarkup(markup, `brief:${entityB}:c-impact`, "</td>")).toBe(null);
   });
 
-  it("renders home open controls and saved copies by actual name", () => {
-    const savedAt = "2026-09-12T10:00:00.000Z";
-    const markup = render({ copies: [{ name: "review-copy", savedAt }] });
+  it("renders the canonical Home proposition and orders saved copies newest first", () => {
+    const older = "2026-09-12T10:00:00.000Z";
+    const newer = "2026-09-13T10:00:00.000Z";
+    const markup = render({ copies: [
+      { name: "review-copy", savedAt: older },
+      { name: "latest-copy", savedAt: newer },
+    ] });
     expect(markup).toContain('data-testid="open-project"');
     expect(markup).toContain("webkitdirectory");
-    expect(markup).toContain("Try example");
-    expect(markup).toContain("Try sales example");
-    expect(markup).toContain("The source folder stays unchanged.");
-    expect(markup).toContain("Choose a local project folder. Its source stays unchanged.");
-    expect(markup).toContain("Review the source and column types before importing.");
-    expect(markup).toContain("Open a local project or a saved copy.");
-    expect(markup).toContain("Open a project folder, or reopen a copy saved in this browser profile.");
-    expect(markup).toContain("ts-home-import-desktop-help");
-    expect(markup).toContain("ts-home-import-compact-help");
+    expect(markup).toContain("Change a value, and the summaries and charts that use it update.");
+    expect(markup).toContain("Sales and catalog");
+    expect(markup).toContain("Open sales example");
+    expect(markup).toContain('aria-label="Catalog prices times Sales quantities gives Sales by product"');
+    expect(markup).toContain('class="ts-home-flow-icon" viewBox="0 0 16 16"');
+    expect(markup).toContain('class="ts-home-flow-icon ts-home-flow-icon--chart"');
+    expect(markup).toContain("Import a CSV or Excel file");
+    expect(markup).toContain("Open a project folder");
+    expect(markup).toContain("Release plan example");
+    expect(markup).toContain("Choose file…");
+    expect(markup).toContain("Choose folder…");
+    expect(markup).toContain("Saved in this browser on this device.");
     expect(markup).toContain("Open saved review-copy");
-    const localTime = new Intl.DateTimeFormat("en-GB", {
+    expect(markup).toContain("Open saved latest-copy");
+    const latestTime = new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23",
-    }).format(new Date(savedAt));
-    expect(markup).toContain(`, ${localTime}`);
-    expect(markup).toContain('class="ts-home-section" aria-label="Open project"');
-    expect(markup).not.toContain('class="ts-card" aria-label="Open project"');
+    }).format(new Date(newer));
+    expect(markup).toContain(`Saved 13 September 2026, ${latestTime}`);
+    expect(markup.indexOf("latest-copy")).toBeLessThan(markup.indexOf("review-copy"));
     expect(markup).not.toContain('data-testid="project-ready"');
+  });
+
+  it("keeps the Home visible but locks work actions during startup unavailability", () => {
+    const markup = render({ startupUnavailable: true, message: "private runtime failure detail" });
+    expect(markup).toContain("Tachiko couldn’t start in this browser");
+    expect(markup).toContain("Examples, files and saved copies can’t be opened until it starts.");
+    expect(markup).not.toContain("private runtime failure detail");
+    expect(markup).toContain(">Reload page</button>");
+    expect(markup).toContain("Open sales example");
+    expect(markup).toContain("Other ways to start");
+    expect(markup).toContain("Saved copies");
+    expect(markup).toContain('type="file" accept=".csv,.xlsx');
+    expect(markup).toContain('data-testid="open-project"');
+    expect(markup.match(/<button[^>]*>Open<\/button>/)?.[0]).toContain("disabled=");
+    expect(markup.match(/<button[^>]*>Open sales example<\/button>/)?.[0]).toContain("disabled=");
+    expect(markup.match(/<button[^>]*>Reload page<\/button>/)?.[0]).not.toContain("disabled=");
+    expect(markup).not.toContain(">Refresh</button>");
+  });
+
+  it("does not expose stale saved rows while inventory is checking or unavailable", () => {
+    const copies = [{ name: "old-copy", savedAt: "2026-09-12T10:00:00.000Z" }];
+    const checking = render({ copies, copiesStatus: "checking" });
+    expect(checking).toContain("Checking saved copies…");
+    expect(checking).not.toContain("Open saved old-copy");
+    const unavailable = render({ copies, copiesStatus: "unavailable" });
+    expect(unavailable).toContain("Saved copies couldn’t be read.");
+    expect(unavailable).toContain("Try again");
+    expect(unavailable).toContain("ts-home-copy-unavailable-icon");
+    expect(unavailable).not.toContain("Open saved old-copy");
+    const empty = render({ copies: [], copiesStatus: "ready" });
+    expect(empty).toContain("No saved copies yet");
+  });
+
+  it("keeps an unknown publication on the visible Home with only Recovery actions enabled", () => {
+    const markup = render({ currentness: "unknown", message: "private runtime failure detail" });
+    expect(markup).toContain("Tachiko Sheet");
+    expect(markup).toContain("Change a value, and the summaries and charts that use it update.");
+    expect(markup).toContain("Refresh required");
+    expect(markup).toContain(">Refresh</button>");
+    expect(markup).toContain("Close and abandon recovery");
+    expect(markup.match(/<button[^>]*>Open sales example<\/button>/)?.[0]).toContain("disabled=");
+    expect(markup.match(/<button[^>]*>Open<\/button>/)?.[0]).toContain("disabled=");
   });
 
   it("preserves accepted unbroken and CJK saved names on their dedicated Home action", () => {
@@ -497,7 +615,7 @@ describe("SheetShell static rendering", () => {
     const markup = render({ copies: names.map((name) => ({ name, savedAt: "2026-09-12T10:00:00.000Z" })) });
     for (const name of names) {
       expect(markup).toContain(`Open saved ${name}`);
-      expect(markup).toContain('class="ts-button ts-button--ghost ts-home-saved-action"');
+      expect(markup).toContain('class="ts-home-copy-action"');
     }
   });
 
@@ -562,7 +680,7 @@ describe("SheetShell static rendering", () => {
       ],
     });
     expect(markup).toContain("Open saved Plan  review");
-    const whitespaceButton = markup.match(/<button[^>]*>Open saved Plan  review<\/button>/)?.[0];
+    const whitespaceButton = markup.match(/<button[^>]*aria-label="Open saved Plan  review"[^>]*>/)?.[0];
     expect(whitespaceButton).toBeDefined();
     const describedBy = whitespaceButton?.match(/aria-describedby="([^"]+)"/)?.[1]?.split(" ") ?? [];
     expect(describedBy).toHaveLength(2);
@@ -650,6 +768,75 @@ describe("SheetShell static rendering", () => {
     const edited = render({ view: makeView(), dirty: true });
     expect(chipText(edited, "work-state")).toBe("Edited — not saved");
     expect(edited).toContain('data-work-state="edited"');
+    const initialSales = render({ view: makeView(), dirty: true, salesInitialNotSaved: true });
+    expect(chipText(initialSales, "work-state")).toBe("Not saved yet");
+    expect(initialSales).toContain('data-work-state="edited"');
+    const initialWorkChip = initialSales.slice(initialSales.indexOf('data-testid="work-state"') - 120, initialSales.indexOf('data-testid="work-state"'));
+    expect(initialWorkChip).toContain("ts-chip--unchanged");
+    expect(initialWorkChip).not.toContain("ts-chip--edited");
+  });
+
+  it("renders occurrence-bound Results cards and hides their values during global recovery", () => {
+    const view = makeView();
+    const report = { definitionId: "summary-1", type: "bar" as const, title: "Sales by product", categoryLabel: "Product", valueLabel: "Revenue", legendVisible: false };
+    const current = render({
+      view,
+      dirty: true,
+      j4DefinitionIds: ["summary-1"],
+      j4Results: [{ definitionId: "summary-1", revision: "rev-1", groups: [{ category: "PEN", value: 800 }], diagnostics: [] }],
+      report,
+      salesEntryTip: { occurrence: "occ-1", collection: "release_items", field: "price" },
+      salesInitialNotSaved: true,
+    });
+    expect(current).toContain('role="region" aria-label="Results"');
+    expect(current).toContain('data-result-state="H"');
+    expect(current).toContain("Sales by product");
+    expect(current).toContain(">PEN<");
+    expect(current).toContain(">800<");
+    expect(current).toContain("Not saved yet");
+    expect(current).toContain('data-testid="work-state"');
+    expect(current).toContain('data-testid="save-status">Not saved yet</span>');
+    expect(current).toContain("Change the PEN price. Sales by product updates on the right.");
+    expect(current).toContain("<strong>Try it</strong>");
+    const salesTipMarkup = current.slice(current.indexOf('data-testid="sales-tip"'), current.indexOf('aria-label="Results"'));
+    expect(salesTipMarkup).not.toContain("Not saved yet");
+    expect(current.indexOf('data-testid="sales-tip"')).toBeLessThan(current.indexOf('aria-label="Results"'));
+    const resultsHeader = current.slice(current.indexOf('class="ts-results-heading"'), current.indexOf('class="ts-result-cards"'));
+    expect(resultsHeader).toContain(">Hide results</button>");
+    expect(current.indexOf('aria-label="Sales by product values"')).toBeLessThan(current.indexOf("ts-mini-chart-region"));
+    expect(current).toContain("The chart is shown in Report.");
+    const unknown = render({
+      view, currentness: "unknown", outcome: "unknown", j4DefinitionIds: ["summary-1"],
+      j4Results: [{ definitionId: "summary-1", revision: "rev-1", groups: [{ category: "PEN", value: 800 }], diagnostics: [] }],
+    });
+    expect(unknown).toContain('data-result-state="G"');
+    expect(unknown).not.toContain(">800<");
+    expect(unknown).toContain("These results can’t be confirmed. Use Refresh in the header to read the work again.");
+  });
+
+  it("uses the approved Sales tip copy for confirmed, pending, attention, and refresh states", () => {
+    const base = {
+      view: makeView(),
+      j4DefinitionIds: ["summary-1"],
+      j4Results: [summaryResult("summary-1", 800)],
+      report: { definitionId: "summary-1", type: "bar" as const, title: "Sales by product", categoryLabel: "Product", valueLabel: "Revenue", legendVisible: false },
+      salesEntryTip: { occurrence: "occ-1", collection: "release_items", field: "price" },
+    };
+    const updated = render({ ...base, salesExampleChanged: true });
+    expect(updated).toContain("<strong>Updated</strong>");
+    expect(updated).toContain("Sales by product includes your change. Save a copy to keep it.");
+
+    const updating = render({ ...base, currentness: "pending" });
+    expect(updating).toContain("<strong>Updating</strong>");
+    expect(updating).toContain("Wait for confirmation before editing.");
+
+    const attention = render({ ...base, j4Results: [{ ...summaryResult("summary-1", 800), diagnostics: [{ code: "stale", entity: null, field: null, lookup_key: null, candidates: [] }] }] });
+    expect(attention).toContain("<strong>Needs attention</strong>");
+    expect(attention).toContain("Check Results for the next step.");
+
+    const refresh = render({ ...base, currentness: "unknown" });
+    expect(refresh).toContain("<strong>Needs refresh</strong>");
+    expect(refresh).toContain("Values could not be confirmed. Refresh first.");
   });
 
   it("marks unknown outcomes and freshness instead of presenting values as current", () => {

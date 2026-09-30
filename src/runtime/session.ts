@@ -60,6 +60,14 @@ export class SheetSessionError extends Error {
   }
 }
 
+/** Kit/client startup failed before Sheet dispatched any mutating operation. */
+export class RuntimeStartupError extends Error {
+  constructor(cause: unknown) {
+    super("The local runtime could not complete its startup check.", { cause });
+    this.name = "RuntimeStartupError";
+  }
+}
+
 /** Publication succeeded, but its replacement projection could not be confirmed. */
 export class PublishedProjectionRecoveryError extends Error {
   readonly publication: PublicationProjection;
@@ -131,12 +139,38 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   function loadKitOnce(): Promise<ReadyKit> {
     if (ready === null) {
-      ready = loadKit().then((kit) => ({
-        kit,
-        client: kit.createExperimentalDesignerClient(),
-      }));
+      ready = (async () => {
+        try {
+          const kit = await loadKit();
+          const client = kit.createExperimentalDesignerClient();
+          try {
+            const occurrence = await client.observeOccurrence();
+            if (!isOccurrenceProjection(occurrence)) {
+              throw new Error("The runtime startup observation was not a valid occurrence projection.");
+            }
+          } catch (cause) {
+            if (!isNoProjectOpen(kit, cause)) throw cause;
+          }
+          return { kit, client };
+        } catch (cause) {
+          if (cause instanceof RuntimeStartupError) throw cause;
+          throw new RuntimeStartupError(cause);
+        }
+      })();
     }
     return ready;
+  }
+
+  function isOccurrenceProjection(value: unknown): value is { scope: string; revision: string } {
+    if (typeof value !== "object" || value === null) return false;
+    const occurrence = value as { scope?: unknown; revision?: unknown };
+    return typeof occurrence.scope === "string" && occurrence.scope.length > 0 &&
+      typeof occurrence.revision === "string" && occurrence.revision.length > 0;
+  }
+
+  function isNoProjectOpen(kit: CoreKit, error: unknown): boolean {
+    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError &&
+      (error as { failure?: { code?: string } }).failure?.code === "no_project_open";
   }
 
   function session(): ActiveWork {
@@ -858,7 +892,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }
   }
 
+  function prepare(): Promise<void> {
+    if (closed) return Promise.reject(new SheetSessionError("closed", "The sheet session is closed."));
+    return loadKitOnce().then(() => undefined);
+  }
+
   return {
+    prepare,
     openFiles, openCanonical, openOpaque, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,

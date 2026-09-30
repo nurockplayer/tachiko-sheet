@@ -16,10 +16,14 @@ import {
   type KeyedGroupedSumBindingChoice,
   type KeyedGroupedSumResult,
   type LocalCopies,
+  LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE,
   type OperationOutcome,
   type PresentationAttachment,
   type ReportConfiguration,
   type SaveStatus,
+  type SalesEntryOutcome,
+  type SalesCatalogLayoutMarker,
+  type SalesEntryTipMarker,
   type SavedCopySummary,
   type ScalarEdit,
   type SheetRuntime,
@@ -30,6 +34,7 @@ import {
   OpenedProjectionRecoveryError,
   NoResidentWorkError,
   PublishedProjectionRecoveryError,
+  RuntimeStartupError,
   SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
@@ -130,16 +135,142 @@ export function runIfRecoveryCleared<T>(
   return unknownOpenRecovery ? blocked() : action();
 }
 
-/** Consume the mount-local launch attempt before dispatching it. */
-export function startInitialExampleOnce(
-  attempted: { current: boolean },
-  openExample: () => Promise<void>,
-  onKnownFailure: (error: unknown) => void,
-  onSettled: () => void = () => undefined,
-): void {
-  if (attempted.current) return;
-  attempted.current = true;
-  void openExample().catch(onKnownFailure).finally(onSettled);
+const SALES_SUMMARY_FIELD_TYPES = {
+  "sales.product_code": "text",
+  "sales.quantity": "number",
+  "catalog.code": "text",
+  "catalog.category": "text",
+  "catalog.price": "number",
+} as const;
+
+/** Resolve the approved Sales binding only from one unambiguous live catalog. */
+export function resolveSalesSummaryBinding(catalog: KeyedGroupedSumBindingCatalog): KeyedGroupedSumBindingChoice {
+  const collection = (key: "sales" | "catalog") => {
+    const matches = catalog.collections.filter((candidate) => candidate.key === key);
+    if (matches.length !== 1) throw new Error(`The ${key} table could not be resolved uniquely from the current schema.`);
+    return matches[0]!;
+  };
+  const field = (collectionKey: "sales" | "catalog", fieldKey: string, fieldType: string): void => {
+    const matches = collection(collectionKey).fields.filter((candidate) => candidate.key === fieldKey);
+    if (matches.length !== 1 || matches[0]!.fieldType !== fieldType) {
+      throw new Error(`The ${collectionKey}.${fieldKey} field does not match the required ${fieldType} schema.`);
+    }
+  };
+  for (const [qualified, fieldType] of Object.entries(SALES_SUMMARY_FIELD_TYPES)) {
+    const [collectionKey, fieldKey] = qualified.split(".") as ["sales" | "catalog", string];
+    field(collectionKey, fieldKey, fieldType);
+  }
+  return {
+    ordersCollection: "sales",
+    orderLookupKeyField: "product_code",
+    orderQuantityField: "quantity",
+    productsCollection: "catalog",
+    productKeyField: "code",
+    productCategoryField: "category",
+    productPriceField: "price",
+  };
+}
+
+/** One source gate shared by manual and coordinated report binding. */
+export function confirmedReportSource(
+  live: Pick<WorkbookView, "revision"> | null,
+  results: readonly KeyedGroupedSumResult[],
+  definitionId: string,
+): KeyedGroupedSumResult | null {
+  if (!live || !definitionId) return null;
+  const matches = results.filter((candidate) => candidate.definitionId === definitionId);
+  if (matches.length !== 1) return null;
+  const source = matches[0]!;
+  return source.revision === live.revision && source.diagnostics.length === 0 ? source : null;
+}
+
+export function salesReportConfiguration(definitionId: string): ReportConfiguration {
+  return {
+    definitionId,
+    type: "bar",
+    title: "Sales by product",
+    categoryLabel: "Product",
+    valueLabel: "Revenue",
+    legendVisible: false,
+  };
+}
+
+/** Open recovery is never described as a no-change refusal to Home. */
+export function salesEntryOutcomeAfterReplacement(
+  kind: "confirmed" | "blocked" | "refused" | "acknowledged-recovery" | "unknown-recovery" | "startup-unavailable",
+): SalesEntryOutcome | null {
+  if (kind === "confirmed") return null;
+  if (kind === "startup-unavailable") return { kind: "startup-unavailable" };
+  if (kind === "acknowledged-recovery") return { kind: "acknowledged-open-recovery" };
+  if (kind === "unknown-recovery") return { kind: "unknown-open-recovery" };
+  return { kind: "refused", message: kind === "blocked" ? "Recovery must be resolved before entering the Sales example." : "The Sales example could not be opened." };
+}
+
+export function salesEntryOutcomeAfterCleanupFailure(): SalesEntryOutcome {
+  return { kind: "reload-required", message: LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE };
+}
+
+export function salesEntryTipAfterSuccessfulSave(
+  marker: SalesEntryTipMarker | null,
+  savedOccurrence: string,
+): SalesEntryTipMarker | null {
+  return marker?.occurrence === savedOccurrence ? null : marker;
+}
+
+export function salesInitialOccurrenceAfterConfirmedChange(
+  initialOccurrence: string | null,
+  changedOccurrence: string,
+): string | null {
+  return initialOccurrence === changedOccurrence ? null : initialOccurrence;
+}
+
+export function salesChangeOccurrenceAfterConfirmedEdit(
+  tip: SalesEntryTipMarker | null,
+  changedOccurrence: string,
+): string | null {
+  return tip?.occurrence === changedOccurrence ? changedOccurrence : null;
+}
+
+export interface SalesOccurrenceMarkers {
+  salesEntryTip: SalesEntryTipMarker | null;
+  salesCatalogLayout: SalesCatalogLayoutMarker | null;
+  salesInitialOccurrence: string | null;
+  salesChangedOccurrence: string | null;
+}
+
+export function salesMarkersAfterBoundary(
+  markers: SalesOccurrenceMarkers,
+  boundary: "abandon" | "known-publication-recovery" | "unknown-open-recovery" | "prepublication-refusal" | "unknown-publication",
+  occurrence?: string,
+  confirmedEdit = false,
+): SalesOccurrenceMarkers {
+  if (boundary === "abandon") return { salesEntryTip: null, salesCatalogLayout: null, salesInitialOccurrence: null, salesChangedOccurrence: null };
+  if (boundary === "known-publication-recovery" && occurrence) {
+    return {
+      ...markers,
+      salesInitialOccurrence: salesInitialOccurrenceAfterConfirmedChange(markers.salesInitialOccurrence, occurrence),
+      salesChangedOccurrence: confirmedEdit
+        ? salesChangeOccurrenceAfterConfirmedEdit(markers.salesEntryTip, occurrence)
+        : markers.salesChangedOccurrence,
+    };
+  }
+  return markers;
+}
+
+export function targetedResultRefreshIsAdmitted(input: {
+  currentness: Currentness;
+  live: Pick<WorkbookView, "occurrence" | "revision"> | null;
+  witness: ViewWitness;
+  definitionIds: readonly string[];
+  definitionId: string;
+}): boolean {
+  return input.currentness === "current" && input.live !== null &&
+    input.live.occurrence === input.witness.occurrence && input.live.revision === input.witness.revision &&
+    input.definitionIds.includes(input.definitionId);
+}
+
+export function savedCopiesRequestIsCurrent(request: number, latestRequest: number): boolean {
+  return request === latestRequest;
 }
 
 /** A confirmed import is a new occurrence and cannot inherit a prior report attachment. */
@@ -211,7 +342,6 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
  */
 export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [view, setView] = useState<WorkbookView | null>(null);
-  const [initialLaunchPending, setInitialLaunchPending] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [currentness, setCurrentness] = useState<Currentness>("current");
@@ -219,9 +349,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("not-saved");
   const [message, setMessage] = useState<string | null>(null);
   const [savedCopies, setSavedCopies] = useState<SavedCopySummary[]>([]);
+  const [savedCopiesStatus, setSavedCopiesStatus] = useState<"checking" | "ready" | "unavailable">("checking");
+  const savedCopiesRequestRef = useRef(0);
   const [j4Results, setJ4Results] = useState<KeyedGroupedSumResult[]>([]);
   const [j4DefinitionIds, setJ4DefinitionIds] = useState<string[]>([]);
   const [report, setReport] = useState<ReportConfiguration | null>(null);
+  const [salesEntryTip, setSalesEntryTip] = useState<SalesEntryTipMarker | null>(null);
+  const [salesCatalogLayout, setSalesCatalogLayout] = useState<SalesCatalogLayoutMarker | null>(null);
+  const [salesInitialOccurrence, setSalesInitialOccurrence] = useState<string | null>(null);
+  const [salesChangedOccurrence, setSalesChangedOccurrence] = useState<string | null>(null);
   const [interop, setInterop] = useState<InteropState | null>(null);
   const [localHistory, setLocalHistory] = useState<LocalHistorySnapshot>(() => emptyLocalHistory());
   const importBytesRef = useRef<ArrayBuffer | null>(null);
@@ -232,6 +368,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const viewRef = useRef<WorkbookView | null>(null);
   const localHistoryRef = useRef<LocalHistorySnapshot>(emptyLocalHistory());
   const inflightRef = useRef(false);
+  const terminalReloadRequiredRef = useRef(false);
+  const [reloadRequired, setReloadRequired] = useState(false);
+  const startupUnavailableRef = useRef(false);
+  const [startupUnavailable, setStartupUnavailable] = useState(false);
   const pendingDirtyRef = useRef(false);
   const draftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
@@ -253,9 +393,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   // Independent of the old-work checkpoint: an unknown Open may start from
   // the home screen, so recovery must remain fail-closed even without one.
   const unknownOpenRecoveryRef = useRef(false);
-  // This is intentionally never cleared: Close and an initial failure must
-  // leave the no-work surface available rather than relaunching the example.
-  const initialExampleAttemptedRef = useRef(false);
   // A known import publication can still lose its first projection. This is
   // separate from operation outcome: the candidate source identity is not
   // safe to expose or save until an authoritative refresh settles it.
@@ -291,6 +428,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   };
   const openRecoveryCheckpointRef = useRef<OpenRecoveryCheckpoint | null>(null);
 
+  type ReplacementOutcome =
+    | { kind: "confirmed" }
+    | { kind: "refused" }
+    | { kind: "blocked" }
+    | { kind: "startup-unavailable" }
+    | { kind: "acknowledged-recovery" }
+    | { kind: "unknown-recovery" };
+
   const syncDirty = useCallback((): void => {
     const next = pendingDirtyRef.current || draftDirtyRef.current || reportDraftDirtyRef.current || presentationDirtyRef.current;
     dirtyRef.current = next;
@@ -298,16 +443,38 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }, []);
 
   const refreshCopies = useCallback(async (): Promise<void> => {
+    const request = ++savedCopiesRequestRef.current;
+    setSavedCopiesStatus("checking");
     try {
-      setSavedCopies(await copies.list());
-    } catch (error) {
-      setMessage(describe(error, "Saved copies could not be listed."));
+      const next = await copies.list();
+      if (terminalReloadRequiredRef.current || !savedCopiesRequestIsCurrent(request, savedCopiesRequestRef.current)) return;
+      setSavedCopies(next);
+      setSavedCopiesStatus("ready");
+    } catch {
+      if (terminalReloadRequiredRef.current || !savedCopiesRequestIsCurrent(request, savedCopiesRequestRef.current)) return;
+      setSavedCopiesStatus("unavailable");
     }
   }, [copies]);
 
   useEffect(() => {
     void refreshCopies();
   }, [refreshCopies]);
+
+  const startupEffectGenerationRef = useRef(0);
+  useEffect(() => {
+    const generation = ++startupEffectGenerationRef.current;
+    let active = true;
+    void runtime.prepare().catch((error: unknown) => {
+      if (!active || generation !== startupEffectGenerationRef.current || !(error instanceof RuntimeStartupError)) return;
+      startupUnavailableRef.current = true;
+      setStartupUnavailable(true);
+      setOutcome("idle");
+      setMessage(null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [runtime]);
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent): void {
@@ -340,6 +507,16 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setReport(next);
     presentationDirtyRef.current = dirty;
     syncDirty();
+  }
+
+  function abandonSalesOccurrenceMarkers(): void {
+    const markers = salesMarkersAfterBoundary({
+      salesEntryTip, salesCatalogLayout, salesInitialOccurrence, salesChangedOccurrence,
+    }, "abandon");
+    setSalesEntryTip(markers.salesEntryTip);
+    setSalesCatalogLayout(markers.salesCatalogLayout);
+    setSalesInitialOccurrence(markers.salesInitialOccurrence);
+    setSalesChangedOccurrence(markers.salesChangedOccurrence);
   }
 
   function installJ4DefinitionIds(ids: string[]): void {
@@ -446,7 +623,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   /** Synchronous guard: a second click cannot dispatch before React re-renders. */
   function begin(): boolean {
-    if (inflightRef.current) return false;
+    if (inflightRef.current || terminalReloadRequiredRef.current || startupUnavailableRef.current) return false;
     inflightRef.current = true;
     setBusy(true);
     setOutcome("pending");
@@ -522,6 +699,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function blockUnknownOpenRecovery(): boolean {
+    if (terminalReloadRequiredRef.current || startupUnavailableRef.current) return true;
     return runIfRecoveryCleared(
       unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current,
       () => false,
@@ -576,6 +754,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     provenance: ReplacementProvenance = {},
     preserveProvenanceCheckpoint = false,
   ): void {
+    if (error.operationOutcome === "opened") abandonSalesOccurrenceMarkers();
     // An unknown Open has no trustworthy candidate identity. Keep only the
     // recovery checkpoint; candidate source metadata must not leak into the
     // unconfirmed occurrence. A confirmed Open may retain its own candidate
@@ -600,6 +779,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     provenance: ReplacementProvenance = {},
     recoveredReport: ReportConfiguration | null = null,
   ): void {
+    abandonSalesOccurrenceMarkers();
     installView(next);
     installJ4Results(results);
     installReport(recoveredReport);
@@ -623,8 +803,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setOutcome("idle");
   }
 
-  async function replaceWork(open: () => Promise<WorkbookView>, provenance: ReplacementProvenance = {}): Promise<boolean> {
-    if (blockUnknownOpenRecovery()) return false;
+  async function replaceWork(open: () => Promise<WorkbookView>, provenance: ReplacementProvenance = {}): Promise<ReplacementOutcome> {
+    if (blockUnknownOpenRecovery()) return { kind: "blocked" };
     let next: WorkbookView | null = null;
     checkpointBeforeOpen();
     try {
@@ -641,26 +821,40 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // A known runtime Open is not an unknown operation, but the paired
         // host-private presentation is still unconfirmed. Keep the complete
         // candidate for Refresh instead of publishing a partial saved copy.
+        abandonSalesOccurrenceMarkers();
         failClosedAfterReplacement(provenance, next);
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
         clearOpenCheckpoint();
         setOutcome("idle");
         setMessage("The saved work opened, but its report configuration could not be confirmed. Refresh to re-read the paired work.");
-        return false;
+        return { kind: "acknowledged-recovery" };
       }
       commitReplacement(next, results, provenance, recoveredReport);
       unknownOpenRecoveryRef.current = false;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
-      return true;
+      return { kind: "confirmed" };
     } catch (error) {
+      if (error instanceof RuntimeStartupError) {
+        startupUnavailableRef.current = true;
+        setStartupUnavailable(true);
+        setOutcome("idle");
+        setMessage(null);
+        clearOpenCheckpoint();
+        unknownOpenRecoveryRef.current = false;
+        provenanceUnconfirmedRef.current = false;
+        return { kind: "startup-unavailable" };
+      }
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error, provenance);
         if (error.operationOutcome !== "unknown") clearOpenCheckpoint();
-        return false;
+        return error.operationOutcome === "unknown"
+          ? { kind: "unknown-recovery" }
+          : { kind: "acknowledged-recovery" };
       }
       if (next !== null) {
+        abandonSalesOccurrenceMarkers();
         failClosedAfterReplacement(provenance, next);
         unknownOpenRecoveryRef.current = false;
         provenanceUnconfirmedRef.current = false;
@@ -669,7 +863,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // leaves freshness unknown, not the Open operation outcome.
         setOutcome("idle");
         setMessage("The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.");
-        return false;
+        return { kind: "acknowledged-recovery" };
       }
       // A known refusal happened before replacement; the old resident and
       // every piece of its provenance remain authoritative.
@@ -680,7 +874,17 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
-  function failClosedAfterPublicationRecovery(): void {
+  function failClosedAfterPublicationRecovery(knownPublishedOccurrence?: string, confirmedEditOccurrence?: string | null): void {
+    if (knownPublishedOccurrence) {
+      setSalesInitialOccurrence((initialOccurrence) => salesMarkersAfterBoundary({
+        salesEntryTip: null, salesCatalogLayout: null, salesInitialOccurrence: initialOccurrence, salesChangedOccurrence: null,
+      }, "known-publication-recovery", knownPublishedOccurrence).salesInitialOccurrence);
+    }
+    if (knownPublishedOccurrence && confirmedEditOccurrence) {
+      setSalesChangedOccurrence((changedOccurrence) => salesMarkersAfterBoundary({
+        salesEntryTip, salesCatalogLayout, salesInitialOccurrence: null, salesChangedOccurrence,
+      }, "known-publication-recovery", knownPublishedOccurrence, true).salesChangedOccurrence);
+    }
     viewRef.current = null;
     installView(null);
     clearJ4Results();
@@ -764,14 +968,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
-      if (!await replaceWork(() => runtime.openFiles(files))) return;
+      if ((await replaceWork(() => runtime.openFiles(files))).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       importBytesRef.current = null;
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
         return;
-      } else if (viewRef.current === null && dirtyRef.current && currentness === "unknown") {
+      } else if (viewRef.current === null && dirtyRef.current &&
+        (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
         setCurrentness("unknown");
         setOutcome("unknown");
         setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
@@ -793,14 +998,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
-      if (!await replaceWork(async () => runtime.openCanonical(await loadExampleFiles()))) return;
+      if ((await replaceWork(async () => runtime.openCanonical(await loadExampleFiles()))).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       importBytesRef.current = null;
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
         return;
-      } else if (viewRef.current === null && dirtyRef.current && currentness === "unknown") {
+      } else if (viewRef.current === null && dirtyRef.current &&
+        (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
         setCurrentness("unknown");
         setOutcome("unknown");
         setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
@@ -815,32 +1021,164 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
-  useEffect(() => {
-    // The ref consumes React development effect replay before the async open
-    // starts, while manual Open routes remain available after a known failure.
-    startInitialExampleOnce(initialExampleAttemptedRef, openExample, (error) => {
-      setMessage(describe(error, "The example work could not be opened."));
-    }, () => setInitialLaunchPending(false));
-  }, []);
+  function resetClosedWorkState(): void {
+    viewRef.current = null;
+    installView(null);
+    installJ4DefinitionIds([]);
+    clearJ4Results();
+    installReport(null);
+    abandonSalesOccurrenceMarkers();
+    recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "close");
+    pendingDirtyRef.current = false;
+    draftDirtyRef.current = false;
+    reportDraftDirtyRef.current = false;
+    syncDirty();
+    savedRevisionRef.current = null;
+    setSaveStatus("not-saved");
+    importedSourceRef.current = null;
+    importBytesRef.current = null;
+    preparedDownloadRef.current = null;
+    setInterop(null);
+    cleanupPreviewContextRef.current = null;
+    pendingReplacementRef.current = null;
+    unknownOpenRecoveryRef.current = false;
+    provenanceUnconfirmedRef.current = false;
+    clearOpenCheckpoint();
+    setCurrentness("current");
+    setOutcome("idle");
+  }
 
-  async function openJ4Canary(): Promise<void> {
-    if (blockUnknownOpenRecovery()) return;
-    if (!begin()) return;
+  async function refuseSalesEntry(
+    opened: Pick<WorkbookView, "occurrence" | "revision"> | null,
+    error: unknown,
+  ): Promise<SalesEntryOutcome> {
+    const detail = describe(error, "The Sales example could not be prepared.");
+    const live = viewRef.current;
+    if (opened && live?.occurrence === opened.occurrence && live.revision === opened.revision &&
+      !pendingDirtyRef.current && !draftDirtyRef.current &&
+      !unknownOpenRecoveryRef.current && !provenanceUnconfirmedRef.current) {
+      try {
+        await runtime.close();
+        resetClosedWorkState();
+      } catch {
+        terminalReloadRequiredRef.current = true;
+        savedCopiesRequestRef.current += 1;
+        setReloadRequired(true);
+        abandonSalesOccurrenceMarkers();
+        viewRef.current = null;
+        installView(null);
+        installJ4DefinitionIds([]);
+        clearJ4Results();
+        installReport(null);
+        pendingDirtyRef.current = false;
+        draftDirtyRef.current = false;
+        reportDraftDirtyRef.current = false;
+        presentationDirtyRef.current = false;
+        syncDirty();
+        savedRevisionRef.current = null;
+        setSaveStatus("not-saved");
+        importedSourceRef.current = null;
+        importBytesRef.current = null;
+        preparedDownloadRef.current = null;
+        setInterop(null);
+        cleanupPreviewContextRef.current = null;
+        pendingReplacementRef.current = null;
+        setCurrentness("unknown");
+        setOutcome("idle");
+        setMessage(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+        return salesEntryOutcomeAfterCleanupFailure();
+      }
+    }
+    setCurrentness("current");
+    setOutcome("idle");
+    setMessage(detail);
+    return { kind: "refused", message: detail };
+  }
+
+  async function openJ4Canary(): Promise<SalesEntryOutcome> {
+    if (startupUnavailableRef.current) return { kind: "startup-unavailable" };
+    if (terminalReloadRequiredRef.current) {
+      return { kind: "reload-required", message: "The local runtime was invalidated. Reload this page before continuing." };
+    }
+    if (blockUnknownOpenRecovery()) return { kind: "refused", message: "Recovery must be resolved before entering the Sales example." };
+    if (!begin()) return { kind: "refused", message: "Another operation is in progress." };
+    let opened: WorkbookView | null = null;
+    let createDispatched = false;
+    let published = false;
     try {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
-      if (!await replaceWork(async () => runtime.openCanonical(await loadJ4CanaryFiles()))) return;
+      const replaced = await replaceWork(async () => runtime.openCanonical(await loadJ4CanaryFiles()));
+      const nonConfirmed = salesEntryOutcomeAfterReplacement(replaced.kind);
+      if (nonConfirmed) return nonConfirmed;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
       importBytesRef.current = null;
-    } catch (error) {
-      if (error instanceof OpenedProjectionRecoveryError) {
-        failClosedAfterOpenRecovery(error);
-        return;
+      opened = viewRef.current;
+      if (!opened) {
+        return { kind: "refused", message: "The Sales example opened, but its current view could not be confirmed." };
       }
+      if (j4DefinitionIdsRef.current.length !== 0 || j4ResultsRef.current.length !== 0) {
+        return await refuseSalesEntry(opened, new Error("The new Sales occurrence already contains a cross-table summary."));
+      }
+      const witness = witnessOf(opened);
+      const catalog = await runtime.listKeyedGroupedSumBindings(witness);
+      if (bindingCatalogContainsDate(catalog)) {
+        return await refuseSalesEntry(opened, new Error(DATE_SUMMARY_UNSUPPORTED_MESSAGE));
+      }
+      const binding = resolveSalesSummaryBinding(catalog);
+      setCurrentness("pending");
+      createDispatched = true;
+      const created = await runtime.createKeyedGroupedSum(witness, binding);
+      published = true;
+      const next = await runtime.read();
+      if (next.occurrence !== opened.occurrence || next.revision !== created.revision) {
+        throw new Error("The generated Sales summary could not be matched to the current work revision.");
+      }
+      const results = await readJ4Results(next);
+      const source = confirmedReportSource(next, results, created.definitionId);
+      const ids = results.map((result) => result.definitionId);
+      if (!source || ids.length !== 1 || new Set(ids).size !== 1 || ids[0] !== created.definitionId ||
+        created.revision !== next.revision || created.diagnostics.length !== 0) {
+        throw new Error("The generated Sales summary was not uniquely confirmed at the current revision.");
+      }
+      const catalogCollection = catalog.collections.find((collection) => collection.key === "catalog");
+      if (!catalogCollection) throw new Error("The Catalog table could not be resolved from the current schema.");
+      const selected = next.table.collection.key === catalogCollection.key
+        ? next
+        : await runtime.selectCollection(witnessOf(next), catalogCollection.key);
+      if (selected.occurrence !== opened.occurrence || selected.revision !== next.revision ||
+        selected.table.collection.key !== catalogCollection.key) {
+        throw new Error("The confirmed Sales summary could not land on the Catalog table.");
+      }
+      installView(selected);
+      installJ4Results(results);
+      pendingDirtyRef.current = true;
+      syncDirty();
+      markNotSaved();
+      installReport(salesReportConfiguration(created.definitionId), true);
+      setSalesEntryTip({ occurrence: selected.occurrence, collection: "catalog", field: "price" });
+      setSalesCatalogLayout({ occurrence: selected.occurrence, collectionId: selected.table.collection.id });
+      setSalesInitialOccurrence(selected.occurrence);
+      setSalesChangedOccurrence(null);
       setCurrentness("current");
       setOutcome("idle");
-      throw new Error(describe(error, "Could not open the sales example."));
+      setMessage(null);
+      return { kind: "confirmed", occurrence: selected.occurrence, revision: selected.revision, definitionId: created.definitionId };
+    } catch (error) {
+      if (published || (createDispatched && error instanceof PublishedProjectionRecoveryError)) {
+        installReport(null);
+        abandonSalesOccurrenceMarkers();
+        failClosedAfterPublicationRecovery();
+        return { kind: "published-recovery" };
+      }
+      if (createDispatched && error instanceof UnknownOperationOutcomeError) {
+        installReport(null);
+        abandonSalesOccurrenceMarkers();
+        failClosedAfterUnknownJ4();
+        return { kind: "unknown-recovery" };
+      }
+      return await refuseSalesEntry(opened, error);
     } finally {
       end();
     }
@@ -877,16 +1215,17 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
             return copy.presentation!;
           })()
         : null;
-      if (!await replaceWork(
+      if ((await replaceWork(
         () => copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation },
-      )) return;
+      )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
         failClosedAfterOpenRecovery(error);
         return;
-      } else if (viewRef.current === null && dirtyRef.current && currentness === "unknown") {
+      } else if (viewRef.current === null && dirtyRef.current &&
+        (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
         setCurrentness("unknown");
         setOutcome("unknown");
         setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
@@ -970,6 +1309,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       installJ4DefinitionIds([]);
       clearJ4Results();
       installView(imported.view);
+      abandonSalesOccurrenceMarkers();
       const presentation = presentationAfterConfirmedImport(reportRef.current);
       installReport(presentation.report, presentation.presentationDirty);
       preparedDownloadRef.current = null;
@@ -1071,13 +1411,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // no longer current; keep definition IDs so explicit Refresh can query
       // the newly published revision.
       clearJ4Results();
+      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
       installView(next); pendingDirtyRef.current = true; syncDirty(); markNotSaved();
       clearCleanupPreview();
       setOutcome("idle");
       return true;
     } catch (error) {
       if (error instanceof PublishedProjectionRecoveryError) {
-        failClosedAfterPublicationRecovery();
+        failClosedAfterPublicationRecovery(witness.occurrence);
       } else if (error instanceof UnknownOperationOutcomeError) {
         failClosedAfterUnknownCleanup();
       } else {
@@ -1165,11 +1506,16 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
       const next = confirmed.view;
       await completePublishedObservation(next, priorJ4, witness.occurrence);
+      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
+      setSalesChangedOccurrence(salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence));
       return true;
     } catch (error) {
       if (published || error instanceof PublishedProjectionRecoveryError) {
         installLocalHistory(emptyLocalHistory());
-        failClosedAfterPublicationRecovery();
+        failClosedAfterPublicationRecovery(
+          witness.occurrence,
+          salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence),
+        );
         // Publication is known; avoid SheetShell's rejected-draft path and
         // ordinary semantic retry while only observation remains unresolved.
         return true;
@@ -1214,11 +1560,16 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       published = true;
       installLocalHistory(confirmHistoryCommand(localHistoryRef.current, confirmed.view, confirmed.publication, direction));
       await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
+      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
+      setSalesChangedOccurrence(salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence));
       return confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null;
     } catch (error) {
       installLocalHistory(emptyLocalHistory());
       if (published || error instanceof PublishedProjectionRecoveryError) {
-        failClosedAfterPublicationRecovery();
+        failClosedAfterPublicationRecovery(
+          witness.occurrence,
+          salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence),
+        );
       } else {
         failClosedAfterUnknownHistory(direction);
       }
@@ -1283,6 +1634,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         current.revision === snapshotRevision &&
         receipt.revision === snapshotRevision;
       if (stillCurrent) {
+        setSalesEntryTip((marker) => salesEntryTipAfterSuccessfulSave(marker, live.occurrence));
+        setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, live.occurrence));
         savedRevisionRef.current = receipt.revision;
         pendingDirtyRef.current = false;
         presentationDirtyRef.current = false;
@@ -1343,6 +1696,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       clearJ4Results();
       await runtime.createKeyedGroupedSum(witness, binding);
       published = true;
+      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
       const next = await runtime.read();
       const results = await readJ4Results(next);
       installView(next);
@@ -1361,11 +1715,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         return false;
       }
       if (published) {
-        failClosedAfterPublicationRecovery();
+        failClosedAfterPublicationRecovery(witness.occurrence);
         return true;
       }
       if (error instanceof PublishedProjectionRecoveryError) {
-        failClosedAfterPublicationRecovery();
+        failClosedAfterPublicationRecovery(witness.occurrence);
         return true;
       }
       if (error instanceof UnknownOperationOutcomeError) {
@@ -1388,11 +1742,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function refreshJ4(witness: ViewWitness, definitionId: string): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
+    const admitted = viewRef.current;
+    if (!admitted || !targetedResultRefreshIsAdmitted({ currentness, live: admitted, witness, definitionIds: j4DefinitionIdsRef.current, definitionId })) return false;
     if (!begin()) return false;
     try {
       setMessage(null);
       setCurrentness("pending");
       const result = await runtime.queryKeyedGroupedSum(witness, definitionId);
+      const current = viewRef.current;
+      if (!current || current.occurrence !== admitted.occurrence || current.revision !== admitted.revision ||
+        current.occurrence !== witness.occurrence || current.revision !== witness.revision) return false;
+      if (result.definitionId !== definitionId || result.revision !== admitted.revision) {
+        throw new Error("The summary refresh returned a result for a different definition or revision.");
+      }
       // A targeted refresh must not discard sibling summaries. Replace the
       // requested result in place, or append it only when it was not already
       // visible; the definition inventory remains the recovery control set.
@@ -1401,12 +1763,20 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setOutcome("idle");
       return true;
     } catch (error) {
+      const current = viewRef.current;
+      if (!current || current.occurrence !== admitted.occurrence || current.revision !== admitted.revision) return false;
+      if (error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("The work could not be confirmed. Refresh the workbook to recheck all results.");
+        return false;
+      }
       // A failed targeted refresh invalidates only that result. Other current
       // summaries and every definition refresh control remain available.
       dropJ4Result(definitionId);
       setCurrentness("current");
       setOutcome("idle");
-      setMessage(describe(error, "The cross-table summary could not be refreshed."));
+      setMessage(null);
       return false;
     } finally {
       end();
@@ -1419,9 +1789,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage("Wait for the published work and all grouped summaries to be confirmed before creating a report.");
       return;
     }
-    const source = live && j4ResultsRef.current.find((candidate) =>
-      candidate.definitionId === definitionId && candidate.revision === live.revision && candidate.diagnostics.length === 0,
-    );
+    const source = confirmedReportSource(live, j4ResultsRef.current, definitionId);
     if (!source) {
       setMessage("Refresh the cross-table result before creating a report.");
       return;
@@ -1434,12 +1802,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       valueLabel: "Value",
       legendVisible: true,
     }, true);
+    setSalesInitialOccurrence((occurrence) => occurrence === live?.occurrence ? null : occurrence);
     markNotSaved();
   }
 
   function updateReport(next: ReportConfiguration): void {
     if (next.definitionId.length === 0 || (next.type !== "bar" && next.type !== "line")) return;
     installReport(next, true);
+    setSalesInitialOccurrence((occurrence) => occurrence === viewRef.current?.occurrence ? null : occurrence);
     markNotSaved();
   }
 
@@ -1448,6 +1818,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     try {
       if (!viewRef.current || reportRef.current === null) return false;
       installReport(null, true);
+      setSalesInitialOccurrence((occurrence) => occurrence === viewRef.current?.occurrence ? null : occurrence);
       markNotSaved();
       setOutcome("idle");
       setMessage("The report configuration was removed. Table data and the cross-table definition were kept.");
@@ -1472,7 +1843,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function close(): Promise<void> {
-    if (inflightRef.current) return;
+    if (terminalReloadRequiredRef.current || startupUnavailableRef.current || inflightRef.current) return;
     inflightRef.current = true;
     setBusy(true);
     try {
@@ -1486,6 +1857,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       installJ4DefinitionIds([]);
       clearJ4Results();
       installReport(null);
+      abandonSalesOccurrenceMarkers();
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "close");
       pendingDirtyRef.current = false;
       draftDirtyRef.current = false;
@@ -1666,6 +2038,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // gone. Discard its dirty/recovery context so normal Open routes can
         // safely establish a fresh occurrence without replaying anything.
         const recovered = noResidentRecoveryState();
+        abandonSalesOccurrenceMarkers();
         pendingDirtyRef.current = recovered.dirty;
         draftDirtyRef.current = false;
         installReport(null);
@@ -1693,6 +2066,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function onDraftChange(next: boolean): void {
+    if (terminalReloadRequiredRef.current || startupUnavailableRef.current) return;
     if (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) {
       draftDirtyRef.current = false;
       syncDirty();
@@ -1710,6 +2084,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function onReportDraftChange(next: boolean): void {
+    if (terminalReloadRequiredRef.current || startupUnavailableRef.current) return;
     if (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) {
       reportDraftDirtyRef.current = false;
       syncDirty();
@@ -1728,38 +2103,24 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   return (
     <div
-      className={initialLaunchPending ? "ts-app-root ts-app" : "ts-app-root"}
+      className="ts-app-root"
       data-work-dirty={dirty ? "true" : "false"}
       data-work-currentness={view ? currentness : undefined}
     >
-      {initialLaunchPending ? (
-        <main className="ts-home">
-          <header className="ts-home-head">
-            <div className="ts-home-heading">
-              <h1 className="ts-brand">Tachiko Sheet</h1>
-              <p
-                className="ts-subtle"
-                role="status"
-                aria-live="polite"
-                aria-busy="true"
-                data-testid="initial-launch"
-              >
-                Opening your work…
-              </p>
-            </div>
-          </header>
-        </main>
-      ) : (
-        <SheetShell
+      <SheetShell
           appearancePreference={appearancePreference}
           view={view}
           busy={busy}
           dirty={dirty}
           currentness={currentness}
+          reloadRequired={reloadRequired}
+          startupUnavailable={startupUnavailable}
           outcome={outcome}
           saveStatus={saveStatus}
           message={message}
           copies={savedCopies}
+          copiesStatus={savedCopiesStatus}
+          onRetryCopies={refreshCopies}
           onOpenFiles={openFiles}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
@@ -1778,6 +2139,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onCreateJ4={createJ4}
           onRefreshJ4={refreshJ4}
           onOpenJ4Canary={openJ4Canary}
+          salesEntryTip={salesEntryTip}
+          salesCatalogLayout={salesCatalogLayout}
+          salesInitialNotSaved={salesInitialOccurrence === view?.occurrence}
+          salesExampleChanged={salesChangedOccurrence === view?.occurrence}
+          onDismissSalesEntryTip={() => { if (!terminalReloadRequiredRef.current && !startupUnavailableRef.current) setSalesEntryTip(null); }}
           report={report}
           onCreateReport={createReport}
           onUpdateReport={updateReport}
@@ -1794,15 +2160,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onPrepareDownload={prepareDownload}
           onDownload={download}
         />
-      )}
-      <footer className="ts-notices">
+      {reloadRequired || startupUnavailable ? null : <footer className="ts-notices">
         <span>Tachiko Sheet · experimental core kit notices: </span>
         <a href="/core-kit/notices/THIRD_PARTY_LICENSES.md">third-party licenses</a>
         <span aria-hidden="true"> · </span>
         <a href="/core-kit/notices/LICENSE-MIT">MIT</a>
         <span aria-hidden="true"> · </span>
         <a href="/core-kit/notices/LICENSE-APACHE">Apache-2.0</a>
-      </footer>
+      </footer>}
     </div>
   );
 }

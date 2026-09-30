@@ -29,6 +29,7 @@ import {
 import {
   OpenedProjectionRecoveryError,
   NoResidentWorkError,
+  RuntimeStartupError,
   SheetSessionError,
   createSheetRuntime,
 } from "./session.js";
@@ -104,7 +105,7 @@ class FakeClient {
   hooks: Hooks = {};
 
   #open = false;
-  noProjectCode = "no_project";
+  noProjectCode = "no_project_open";
   #scope = 0;
   #counter = 0;
   #revision = "r0";
@@ -456,6 +457,92 @@ function catalogTable(
 }
 
 describe("createSheetRuntime", () => {
+  it("shares one read-only preparation and client with later explicit work", async () => {
+    const client = new FakeClient();
+    const kitParts = makeKit(client);
+    const loadKit = vi.fn(async () => kitParts.kit);
+    const runtime = createSheetRuntime(loadKit);
+
+    await Promise.all([runtime.prepare(), runtime.prepare(), runtime.prepare()]);
+
+    expect(loadKit).toHaveBeenCalledTimes(1);
+    expect(kitParts.createExperimentalDesignerClient).toHaveBeenCalledTimes(1);
+    expect(client.calls.observeOccurrence).toBe(1);
+    expect(client.calls.openProject).toHaveLength(0);
+    const view = await runtime.openFiles(FILES);
+    expect(client.calls.observeOccurrence).toBe(2);
+    expect(client.calls.openProject).toHaveLength(1);
+    expect(view.occurrence).toBe("scope-1");
+    expect(kitParts.createExperimentalDesignerClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares a cached startup failure with prepare and a racing explicit Open", async () => {
+    const client = new FakeClient();
+    const kitParts = makeKit(client);
+    const startupCause = new FakeDesignerRuntimeError("worker_start_failed", "resident/0");
+    client.hooks.observeOccurrence = async () => { throw startupCause; };
+    const runtime = createSheetRuntime(async () => kitParts.kit);
+
+    const prepared = runtime.prepare();
+    const open = runtime.openFiles(FILES);
+    const prepareError = await failure(prepared);
+    const openError = await failure(open);
+
+    expect(prepareError).toBeInstanceOf(RuntimeStartupError);
+    expect(openError).toBe(prepareError);
+    expect(client.calls.observeOccurrence).toBe(1);
+    expect(client.calls.openProject).toHaveLength(0);
+    expect(kitParts.createExperimentalDesignerClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("proves same-client startup readiness with one read-only observation before the first Open", async () => {
+    const client = new FakeClient();
+    const kitParts = makeKit(client);
+    client.hooks.observeOccurrence = async () => {
+      expect(client.calls.openProject).toHaveLength(0);
+      throw new FakeDesignerRuntimeError("no_project_open", "resident/0");
+    };
+    const runtime = createSheetRuntime(async () => kitParts.kit);
+
+    const view = await runtime.openFiles(FILES);
+
+    expect(client.calls.observeOccurrence).toBe(2);
+    expect(client.calls.openProject).toHaveLength(1);
+    expect(kitParts.createExperimentalDesignerClient).toHaveBeenCalledTimes(1);
+    expect(view.occurrence).toBe("scope-1");
+  });
+
+  it("caches a typed non-no-project startup failure and never dispatches Open", async () => {
+    const client = new FakeClient();
+    const kitParts = makeKit(client);
+    const startupCause = new FakeDesignerRuntimeError("worker_start_failed", "resident/0");
+    client.hooks.observeOccurrence = async () => { throw startupCause; };
+    const runtime = createSheetRuntime(async () => kitParts.kit);
+
+    const first = await failure(runtime.openFiles(FILES));
+    const second = await failure(runtime.openCanonical(CANONICAL_FILES));
+
+    expect(first).toBeInstanceOf(RuntimeStartupError);
+    expect((first as RuntimeStartupError).cause).toBe(startupCause);
+    expect(second).toBe(first);
+    expect(client.calls.observeOccurrence).toBe(1);
+    expect(client.calls.openProject).toHaveLength(0);
+    expect(kitParts.createExperimentalDesignerClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a malformed startup observation as typed pre-Open failure", async () => {
+    const client = new FakeClient();
+    const kitParts = makeKit(client);
+    client.hooks.observeOccurrence = async () => ({ scope: "", revision: "resident/0" });
+    const runtime = createSheetRuntime(async () => kitParts.kit);
+
+    const error = await failure(runtime.openFiles(FILES));
+
+    expect(error).toBeInstanceOf(RuntimeStartupError);
+    expect((error as RuntimeStartupError).cause).toMatchObject({ message: expect.stringMatching(/valid occurrence projection/) });
+    expect(client.calls.openProject).toHaveLength(0);
+  });
+
   it("confirms scalar and tracker history publications against the coherent resident occurrence", async () => {
     const { client, runtime, view } = await opened();
     const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
@@ -602,7 +689,7 @@ describe("createSheetRuntime", () => {
     const refreshed = await runtime.read();
     expect(refreshed.occurrence).toBe("scope-1");
     expect(refreshed.revision).toBe("r1");
-    expect(client.calls.observeOccurrence).toBe(2);
+    expect(client.calls.observeOccurrence).toBe(3);
     expect(createExperimentalDesignerClient).toHaveBeenCalledTimes(1);
 
     await runtime.close();
@@ -713,7 +800,7 @@ describe("createSheetRuntime", () => {
 
     const read = runtime.read();
     await tick();
-    expect(client.calls.observeOccurrence).toBe(2);
+    expect(client.calls.observeOccurrence).toBe(3);
 
     await runtime.close();
     expect(client.calls.closeProject).toBe(1);

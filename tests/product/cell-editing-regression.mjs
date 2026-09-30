@@ -2,9 +2,11 @@
 // Added by the lead before production implementation; no scalar/formula mocks.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
 const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : null);
 if (!url) { console.error("BLOCKED: WORK_CLIENT_URL or WORK_DIST is required."); process.exit(78); }
@@ -12,6 +14,8 @@ const expected = JSON.parse(await readFile(new URL("../fixtures/expected.json", 
 const schemas = JSON.parse(await readFile(new URL("../fixtures/release-plan.roproj/schemas.json", import.meta.url), "utf8"));
 const fields = Object.fromEntries(schemas[0].fields.map((field) => [field.key, field.id]));
 const fixture = fileURLToPath(new URL("../fixtures/release-plan.roproj", import.meta.url));
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const j4CanaryFolder = path.join(process.env.WORK_DIST ?? path.join(root, "dist-acceptance"), "examples", "j4-catalog-sales");
 const cell = (page, key) => page.getByTestId(`cell:${expected.entity}:${fields[key]}`);
 const editor = (page) => page.getByRole("textbox", { name: "Edit cell", exact: true });
 const state = (page) => page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
@@ -19,10 +23,7 @@ const dispatches = (page) => page.evaluate(() => window.__tachikoAcceptance.exec
 const focused = (target) => target.evaluate((node) => node === document.activeElement);
 async function open(page) {
   await page.goto(url);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByTestId("open-project").setInputFiles(fixture);
-  await page.getByTestId("project-ready").waitFor();
+  await openReleasePlanExample(page);
 }
 async function entry(page, key, mode = "double-click") {
   const target = cell(page, key);
@@ -236,8 +237,8 @@ const cases = [
     // Fresh normal entry for the existing Catalog/Sales report fixture.
     await page.getByRole("button", { name: "Close project", exact: true }).click();
     await page.getByRole("button", { name: "Close without saving", exact: true }).click();
-    await page.getByRole("button", { name: "Try sales example", exact: true }).click();
-    await page.getByTestId("project-ready").waitFor();
+    await waitForColdHome(page);
+    await openFolder(page, j4CanaryFolder);
     await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
     await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
     for (const [label, value] of [["Orders table", "sales"], ["Order lookup key", "product_code"], ["Order quantity", "quantity"], ["Products table", "catalog"], ["Product key", "code"], ["Product category", "category"], ["Product price", "price"]]) {

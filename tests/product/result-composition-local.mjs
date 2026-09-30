@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -53,14 +54,13 @@ async function start() {
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForColdHome(page);
   return page;
 }
 
 async function importWorkbook(page) {
   await page.setViewportSize({ width: 1512, height: 982 });
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  await (await homeImportInput(page)).setInputFiles(fixture);
   const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await dialog.waitFor();
   const types = dialog.locator("select");

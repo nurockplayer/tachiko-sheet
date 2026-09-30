@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -40,16 +41,14 @@ async function start() {
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForColdHome(page);
   await waitForHomeOpen(page);
   return page;
 }
 
 async function waitForHomeOpen(page) {
   await page.getByRole("region", { name: "Recovery", exact: true }).waitFor({ state: "detached" });
-  const input = page.getByLabel("Choose CSV or XLSX", { exact: true });
-  await input.waitFor();
+  const input = await homeImportInput(page);
   await page.waitForFunction(() => {
     const candidate = document.querySelector('input[type="file"][accept*=".csv"]');
     return candidate instanceof HTMLInputElement && !candidate.disabled && candidate.value === "";
@@ -58,7 +57,7 @@ async function waitForHomeOpen(page) {
 
 async function importFixture(page) {
   await page.setViewportSize({ width: 1512, height: 982 });
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  await (await homeImportInput(page)).setInputFiles(fixture);
   const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await dialog.waitFor();
   const approvedPanel = await dialog.boundingBox();
@@ -232,7 +231,7 @@ try {
   // invent a candidate; Refresh must report the real no-resident core failure.
   const importBeforeNoResident = await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount());
   await page.evaluate(() => window.__tachikoAcceptance.loseNextImportBeforeDispatch());
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  await (await homeImportInput(page)).setInputFiles(fixture);
   const unknownImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await unknownImport.waitFor();
   await unknownImport.locator("select").nth(2).selectOption("number");
@@ -269,7 +268,7 @@ try {
   const exportBeforeImportReplyLoss = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
   const copiesBeforeImportReplyLoss = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
   await page.evaluate(() => window.__tachikoAcceptance.loseNextImportReplyAfterDispatch());
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  await (await homeImportInput(page)).setInputFiles(fixture);
   const replyLossImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await replyLossImport.waitFor();
   await replyLossImport.locator("select").nth(2).selectOption("number");
@@ -312,7 +311,7 @@ try {
   const exportBeforeImportProjectionLoss = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
   const copiesBeforeImportProjectionLoss = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
   await page.evaluate(() => window.__tachikoAcceptance.failNextImportProjection());
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(fixture);
+  await (await homeImportInput(page)).setInputFiles(fixture);
   const projectionLossImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await projectionLossImport.waitFor();
   await projectionLossImport.locator("select").nth(2).selectOption("number");
@@ -438,7 +437,7 @@ try {
     await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
   }
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(exported);
+  await (await homeImportInput(page)).setInputFiles(exported);
   const reimport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await reimport.waitFor();
   await reimport.locator("select").nth(2).selectOption("number");
