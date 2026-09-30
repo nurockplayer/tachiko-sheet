@@ -2611,7 +2611,7 @@ body { margin: 0; }
   .ts-home-example { padding: 20px 16px; }
   .ts-home-example-title { margin-bottom: 8px; }
   .ts-home-example-copy { line-height: 22px; }
-  .ts-home-example-flow { flex-wrap: nowrap; white-space: nowrap; gap: 4px; margin: 16px 0 20px; font-size: 12px; }
+  .ts-home-example-flow { flex-wrap: wrap; white-space: normal; gap: 4px; margin: 16px 0 20px; font-size: 12px; }
   .ts-home-example-flow .ts-home-flow-field { display: none; }
   .ts-home-example-action { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .ts-home-example-action > .ts-button { width: 100%; min-height: 44px; }

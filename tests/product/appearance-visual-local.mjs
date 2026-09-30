@@ -1625,6 +1625,9 @@ async function auditHomeViewportBounds(page, browser) {
             const rowActions = otherRows.map((row) => row.querySelector("button, label.ts-home-file-action"));
             const actionBoxes = rowActions.map((node) => { const rect = node.getBoundingClientRect(); return { x: rect.x, right: rect.right, width: rect.width, height: rect.height }; });
             const flow = document.querySelector(".ts-home-example-flow");
+            const flowRect = flow.getBoundingClientRect();
+            const exampleAction = document.querySelector(".ts-home-example-action > button");
+            const exampleActionRect = exampleAction.getBoundingClientRect();
             const tracks = getComputedStyle(grid).gridTemplateColumns;
             return {
               pageWidth: document.documentElement.scrollWidth,
@@ -1635,8 +1638,22 @@ async function auditHomeViewportBounds(page, browser) {
               purpose: document.querySelector("#home-purpose-title")?.textContent?.trim() ?? null,
               panelOrder,
               tracks,
-              exampleButton: document.querySelector(".ts-home-example-action > button")?.textContent?.trim() ?? null,
-              exampleFlow: { label: flow.getAttribute("aria-label"), width: flow.clientWidth, scrollWidth: flow.scrollWidth },
+              exampleButton: {
+                text: exampleAction.textContent?.trim() ?? null,
+                x: exampleActionRect.x,
+                right: exampleActionRect.right,
+                y: exampleActionRect.y,
+                bottom: exampleActionRect.bottom,
+              },
+              exampleFlow: {
+                label: flow.getAttribute("aria-label"),
+                x: flowRect.x,
+                right: flowRect.right,
+                width: flow.clientWidth,
+                scrollWidth: flow.scrollWidth,
+                whiteSpace: getComputedStyle(flow).whiteSpace,
+                flexWrap: getComputedStyle(flow).flexWrap,
+              },
               actions: actionBoxes,
               rows: otherRows.length,
               imports: document.querySelectorAll('.ts-home-other-row input[type="file"][accept]').length,
@@ -1649,8 +1666,40 @@ async function auditHomeViewportBounds(page, browser) {
           assert.ok(layout.pageWidth <= width, `${width}px ${profile.id}/${density.id} empty Home has no horizontal overflow: ${JSON.stringify(layout)}`);
           assert.equal(layout.purpose, "Change a value, and the summaries and charts that use it update.");
           assert.deepEqual(layout.panelOrder, ["Sales and catalog example", "Saved copies", "Other ways to start"]);
-          assert.equal(layout.exampleButton, "Open sales example");
+          assert.equal(layout.exampleButton.text, "Open sales example");
           assert.equal(layout.exampleFlow.label, "Catalog prices times Sales quantities gives Sales by product");
+          assert.ok(layout.exampleFlow.scrollWidth <= layout.exampleFlow.width + 1,
+            `${width}px ${profile.id}/${density.id} empty Home Sales flow fits its own content box`, layout.exampleFlow);
+          assert.ok(layout.exampleButton.x >= 0 && layout.exampleButton.right <= width + 1,
+            `${width}px ${profile.id}/${density.id} empty Home Sales CTA remains unobstructed`, layout.exampleButton);
+          if (width === 320) {
+            assert.equal(layout.exampleFlow.whiteSpace, "normal");
+            assert.equal(layout.exampleFlow.flexWrap, "wrap");
+            if (profile.id === "tachiko" && density.id === "compact" && process.env.SHEET_CONTROL_ARTIFACT_DIR) {
+              const cta = emptyPage.locator(".ts-home-example-action > button");
+              await emptyPage.getByRole("button", { name: "Appearance", exact: true }).focus();
+              await emptyPage.keyboard.press("Tab");
+              await cta.scrollIntoViewIfNeeded();
+              const focus = await cta.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                const extent = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset);
+                return {
+                  active: element === document.activeElement,
+                  outlineStyle: style.outlineStyle,
+                  rect: { x: rect.x, right: rect.right, y: rect.y, bottom: rect.bottom },
+                  painted: { x: rect.x - extent, right: rect.right + extent, y: rect.y - extent, bottom: rect.bottom + extent },
+                  viewport: { width: innerWidth, height: innerHeight },
+                };
+              });
+              assert.equal(focus.active, true, "keyboard focus can be placed on the 320px Sales action");
+              assert.notEqual(focus.outlineStyle, "none", "320px Sales action shows its keyboard focus indicator");
+              assert.ok(focus.painted.x >= 0 && focus.painted.right <= 320 && focus.painted.y >= 0 && focus.painted.bottom <= 640,
+                "320px Sales action focus paint remains inside the viewport", focus);
+              await captureHeldControl(emptyPage, "home-sales-flow-empty-320.png");
+              await emptyPage.evaluate(() => document.activeElement?.blur());
+            }
+          }
           assert.equal(layout.rows, 3, "Other ways retains import, folder, and release-plan example actions");
           assert.equal(layout.imports, 1, "Home retains one real single-file import input");
           assert.equal(layout.folders, 1, "Home retains one real directory input");
@@ -2242,6 +2291,10 @@ async function auditHomeViewportBounds(page, browser) {
       const app = document.querySelector('.ts-app[data-view="home"]');
       const home = document.querySelector(".ts-home");
       const notices = document.querySelector(".ts-notices");
+      const flow = document.querySelector(".ts-home-example-flow");
+      const flowRect = flow.getBoundingClientRect();
+      const exampleAction = document.querySelector(".ts-home-example-action > button");
+      const exampleActionRect = exampleAction.getBoundingClientRect();
       const rootRect = root?.getBoundingClientRect();
       const appRect = app?.getBoundingClientRect();
       const noticesRect = notices?.getBoundingClientRect();
@@ -2263,6 +2316,21 @@ async function auditHomeViewportBounds(page, browser) {
           const rect = section.getBoundingClientRect();
           return { label: section.getAttribute("aria-label"), x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom };
         }),
+        exampleFlow: {
+          label: flow.getAttribute("aria-label"),
+          x: flowRect.x,
+          right: flowRect.right,
+          width: flow.clientWidth,
+          scrollWidth: flow.scrollWidth,
+          whiteSpace: getComputedStyle(flow).whiteSpace,
+          flexWrap: getComputedStyle(flow).flexWrap,
+        },
+        exampleButton: {
+          x: exampleActionRect.x,
+          right: exampleActionRect.right,
+          y: exampleActionRect.y,
+          bottom: exampleActionRect.bottom,
+        },
         otherActions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
           const rect = action.getBoundingClientRect();
           return { label: action.textContent.trim(), x: rect.x, right: rect.right, y: rect.y, width: rect.width, height: rect.height };
@@ -2320,6 +2388,39 @@ async function auditHomeViewportBounds(page, browser) {
       ? ["Saved copies", "Sales and catalog example", "Other ways to start"]
       : ["Sales and catalog example", "Saved copies", "Other ways to start"],
     `${width}px ${profile.id}/${density.id} populated Home places saved copies first only in the compact returning-user order`, layout.gridPanels);
+    assert.equal(layout.exampleFlow.label, "Catalog prices times Sales quantities gives Sales by product");
+    assert.ok(layout.exampleFlow.scrollWidth <= layout.exampleFlow.width + 1,
+      `${width}px ${profile.id}/${density.id} populated Home Sales flow fits its own content box`, layout.exampleFlow);
+    assert.ok(layout.exampleButton.x >= 0 && layout.exampleButton.right <= width + 1,
+      `${width}px ${profile.id}/${density.id} populated Home Sales CTA remains unobstructed`, layout.exampleButton);
+    if (width === 320) {
+      assert.equal(layout.exampleFlow.whiteSpace, "normal");
+      assert.equal(layout.exampleFlow.flexWrap, "wrap");
+      if (profile.id === "tachiko" && density.id === "compact") {
+        const cta = page.locator(".ts-home-example-action > button");
+        await cta.scrollIntoViewIfNeeded();
+        await page.locator(".ts-home-copy-action").last().focus();
+        await page.keyboard.press("Tab");
+        await cta.scrollIntoViewIfNeeded();
+        const focus = await cta.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const extent = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset);
+          return {
+            active: element === document.activeElement,
+            outlineStyle: style.outlineStyle,
+            painted: { x: rect.x - extent, right: rect.right + extent, y: rect.y - extent, bottom: rect.bottom + extent },
+            viewport: { width: innerWidth, height: innerHeight },
+          };
+        });
+        assert.equal(focus.active, true, "keyboard focus can be placed on the populated 320px Sales action");
+        assert.notEqual(focus.outlineStyle, "none", "populated 320px Sales action shows its keyboard focus indicator");
+        assert.ok(focus.painted.x >= 0 && focus.painted.right <= 320 && focus.painted.y >= 0 && focus.painted.bottom <= 640,
+          "populated 320px Sales action focus paint remains inside the viewport", focus);
+        await captureHeldControl(page, "home-sales-flow-populated-320.png");
+        await page.evaluate(() => document.activeElement?.blur());
+      }
+    }
     if (width === 768 && profile.id === "tachiko" && density.id === "compact") {
       const appearanceTrigger = page.locator(".ts-home .ts-appearance-trigger");
       await appearanceTrigger.focus();
