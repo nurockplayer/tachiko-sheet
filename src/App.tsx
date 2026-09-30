@@ -42,6 +42,7 @@ import { SheetShell } from "./ui/SheetShell.js";
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
 const EXAMPLE_BASE = "/examples/release-plan/";
 const J4_CANARY_BASE = "/examples/j4-catalog-sales/";
+const SALES_EXAMPLE_BASE = "/examples/sales-catalog/";
 const EXAMPLE_FILES: readonly string[] = [
   "manifest.json",
   "schemas.json",
@@ -321,6 +322,10 @@ async function loadExampleFiles(): Promise<CanonicalProjectFile[]> {
 
 async function loadJ4CanaryFiles(): Promise<CanonicalProjectFile[]> {
   return loadFixtureFiles(J4_CANARY_BASE);
+}
+
+async function loadSalesExampleFiles(): Promise<CanonicalProjectFile[]> {
+  return loadFixtureFiles(SALES_EXAMPLE_BASE);
 }
 
 async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
@@ -1109,7 +1114,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
-      const replaced = await replaceWork(async () => runtime.openCanonical(await loadJ4CanaryFiles()));
+      const replaced = await replaceWork(async () => runtime.openCanonical(await loadSalesExampleFiles()));
       const nonConfirmed = salesEntryOutcomeAfterReplacement(replaced.kind);
       if (nonConfirmed) return nonConfirmed;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
