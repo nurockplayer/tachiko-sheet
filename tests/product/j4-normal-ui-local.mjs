@@ -1,24 +1,25 @@
 // Real built-product J4 journey over the fixed Sheet canary. This uses only
 // visible controls and labels; core IDs stay inside the runtime adapter.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const canary = path.join(dist, "examples", "j4-catalog-sales");
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
-const profile = await mkdtemp(path.join(tmpdir(), "tachiko-j4-product-"));
+let profile;
 let context;
 let salesCopySequence = 0;
 const resultsEvidenceDir = process.env.RESULTS_SCREENSHOT_DIR;
 if (resultsEvidenceDir) await mkdir(resultsEvidenceDir, { recursive: true });
 
 async function start() {
+  const { chromium } = await import("playwright-core");
+  profile ??= await mkdtemp(path.join(tmpdir(), "tachiko-j4-product-"));
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   const page = await context.newPage();
@@ -506,40 +507,123 @@ async function allGroupRows(page) {
   return Promise.all(tables.map((table) => groupRows(table)));
 }
 
-async function captureRecoveryVisuals(page, screenshotDir) {
-  if (!screenshotDir) return;
-  const initialProfile = await page.evaluate(() =>
-    document.querySelector('.ts-home .ts-appearance-profile-options input:checked')?.getAttribute("value") ?? "tachiko",
+async function selectedAppearanceProfile(page) {
+  const selected = await page.locator(".ts-home .ts-appearance-profile-options input:checked").evaluateAll(
+    (inputs) => inputs.map((input) => input.value),
   );
+  assert.equal(selected.length, 1, "the Appearance UI has exactly one selected profile");
+  return selected[0];
+}
+
+async function selectAppearanceProfile(page, profile) {
+  if (await selectedAppearanceProfile(page) === profile) return;
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  const appearance = page.getByRole("dialog", { name: "Appearance", exact: true });
+  const label = profile === "tachiko" ? "Tachiko" : profile === "familiar-spreadsheet" ? "Familiar Spreadsheet" : "Minimal-Focus";
+  await appearance.getByRole("radio", { name: label, exact: true }).check();
+  await appearance.getByRole("button", { name: "Close", exact: true }).click();
+  assert.equal(await selectedAppearanceProfile(page), profile, `Appearance UI selects ${profile}`);
+}
+
+function createPlaywrightRecoveryCaptureDriver(page) {
+  let screenshotCount = 0;
+  return {
+    selectedProfile: () => selectedAppearanceProfile(page),
+    selectProfile: (profile) => selectAppearanceProfile(page, profile),
+    setViewport: ({ width, height }) => page.setViewportSize({ width, height }),
+    viewport: () => page.viewportSize(),
+    appearanceDialogCount: () => page.getByRole("dialog", { name: "Appearance", exact: true }).count(),
+    waitForRecovery: () => page.getByRole("region", { name: "Recovery", exact: true }).waitFor({ state: "visible" }),
+    geometry: () => page.evaluate(readRecoveryVisualGeometry),
+    actionEnabled: async (name) => page.getByRole("region", { name: "Recovery", exact: true })
+      .getByRole("button", { name, exact: true }).isEnabled(),
+    screenshot: async (options) => {
+      screenshotCount += 1;
+      return page.screenshot(options);
+    },
+    screenshotCount: () => screenshotCount,
+  };
+}
+
+function createEgoRecoveryCaptureDriver(page) {
+  let screenshotCount = 0;
+  const role = (kind, name) => `loc=role:${kind}[name='${name}']`;
+  const labelFor = (profile) => profile === "tachiko" ? "Tachiko" :
+    profile === "familiar-spreadsheet" ? "Familiar Spreadsheet" : "Minimal-Focus";
+  const selectedProfile = async () => {
+    const selected = await page.evaluate(() => [...document.querySelectorAll(
+      ".ts-home .ts-appearance-profile-options input:checked",
+    )].map((input) => input.value));
+    assert.equal(selected.length, 1, "the Appearance UI has exactly one selected profile");
+    return selected[0];
+  };
+  const viewport = async () => {
+    const { w, h } = await page.info();
+    return { width: w, height: h };
+  };
+  return {
+    selectedProfile,
+    selectProfile: async (profile) => {
+      if (await selectedProfile() === profile) return;
+      await page.click(role("button", "Appearance"));
+      await page.click(role("radio", labelFor(profile)));
+      await page.click(role("button", "Close"));
+      assert.equal(await selectedProfile(), profile, `Appearance UI selects ${profile}`);
+    },
+    setViewport: async ({ width, height }) => {
+      await page.cdp("Emulation.setDeviceMetricsOverride", {
+        width, height, deviceScaleFactor: 1, mobile: false,
+      });
+      assert.deepEqual(await viewport(), { width, height }, "Ego-lite viewport matches requested dimensions");
+    },
+    viewport,
+    appearanceDialogCount: () => page.evaluate(() =>
+      document.querySelectorAll('[role="dialog"][aria-modal="false"]:not([hidden])').length,
+    ),
+    waitForRecovery: () => page.waitForSelector(role("region", "Recovery"), { state: "visible" }),
+    geometry: () => page.evaluate(readRecoveryVisualGeometry),
+    actionEnabled: (name) => page.evaluate((buttonName) => {
+      const recovery = document.querySelector('[aria-label="Recovery"]');
+      const button = [...(recovery?.querySelectorAll("button") ?? [])]
+        .find((candidate) => candidate.textContent?.trim() === buttonName);
+      return Boolean(button && !button.disabled);
+    }, name),
+    screenshot: async ({ path: screenshotPath, fullPage }) => {
+      screenshotCount += 1;
+      return page.screenshot({ path: screenshotPath, fullPage });
+    },
+    screenshotCount: () => screenshotCount,
+  };
+}
+
+function readRecoveryVisualGeometry() {
+  const recovery = document.querySelector('[aria-label="Recovery"]');
+  const persistence = recovery?.querySelector('[data-testid="persistence-status"]');
+  const refresh = recovery?.querySelector('button');
+  const close = recovery?.querySelectorAll('button')[1];
+  const rect = (element) => {
+    if (!(element instanceof HTMLElement)) return null;
+    const bounds = element.getBoundingClientRect();
+    return { x: bounds.x, right: bounds.right, y: bounds.y, bottom: bounds.bottom,
+      width: bounds.width, height: bounds.height, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth };
+  };
+  return { viewport: { width: innerWidth, height: innerHeight }, pageWidth: document.documentElement.scrollWidth,
+    recovery: rect(recovery), persistence: rect(persistence), refresh: rect(refresh), close: rect(close),
+    labels: { persistence: persistence?.textContent?.trim(), refresh: refresh?.textContent?.trim(), close: close?.textContent?.trim() } };
+}
+
+async function captureRecoveryVisuals(page, screenshotDir, driver = createPlaywrightRecoveryCaptureDriver(page)) {
+  if (!screenshotDir) return;
+  const initialProfile = await driver.selectedProfile();
   for (const profile of ["tachiko", "familiar-spreadsheet", "minimal-focus"]) {
-    if (profile !== initialProfile) {
-      await page.getByRole("button", { name: "Appearance", exact: true }).click();
-      const appearance = page.getByRole("dialog", { name: "Appearance", exact: true });
-      await appearance.getByRole("radio", { name: profile === "tachiko" ? "Tachiko" : profile === "familiar-spreadsheet" ? "Familiar Spreadsheet" : "Minimal-Focus", exact: true }).check();
-      await appearance.getByRole("button", { name: "Close", exact: true }).click();
+    if (await driver.selectedProfile() !== profile) {
+      await driver.selectProfile(profile);
     }
     for (const [width, height] of [[1440, 900], [390, 844]]) {
-      await page.setViewportSize({ width, height });
-      const recovery = page.getByRole("region", { name: "Recovery", exact: true });
-      const persistence = recovery.getByTestId("persistence-status");
-      const refresh = recovery.getByRole("button", { name: "Refresh", exact: true });
-      const close = recovery.getByRole("button", { name: "Close and abandon recovery", exact: true });
-      await persistence.waitFor({ state: "visible" });
-      const geometry = await page.evaluate(() => {
-        const recovery = document.querySelector('[aria-label="Recovery"]');
-        const persistence = recovery?.querySelector('[data-testid="persistence-status"]');
-        const refresh = recovery?.querySelector('button');
-        const close = recovery?.querySelectorAll('button')[1];
-        const rect = (element) => {
-          if (!(element instanceof HTMLElement)) return null;
-          const bounds = element.getBoundingClientRect();
-          return { x: bounds.x, right: bounds.right, y: bounds.y, bottom: bounds.bottom,
-            width: bounds.width, height: bounds.height, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth };
-        };
-        return { viewport: { width: innerWidth, height: innerHeight }, pageWidth: document.documentElement.scrollWidth,
-          recovery: rect(recovery), persistence: rect(persistence), refresh: rect(refresh), close: rect(close),
-          labels: { persistence: persistence?.textContent?.trim(), refresh: refresh?.textContent?.trim(), close: close?.textContent?.trim() } };
-      });
+      await driver.setViewport({ width, height });
+      await driver.waitForRecovery();
+      const geometry = await driver.geometry();
+      assert.deepEqual(geometry.viewport, { width, height }, `${profile} capture uses its named viewport`);
       assert.equal(geometry.labels.persistence, "Not saved yet");
       assert.equal(geometry.labels.refresh, "Refresh");
       assert.equal(geometry.labels.close, "Close and abandon recovery");
@@ -549,22 +633,65 @@ async function captureRecoveryVisuals(page, screenshotDir) {
         `${profile} ${width}px Recovery actions fit the viewport`);
       assert.ok(geometry.refresh.scrollWidth <= geometry.refresh.clientWidth && geometry.close.scrollWidth <= geometry.close.clientWidth,
         `${profile} ${width}px Recovery action labels are not clipped`);
-      assert.equal(await refresh.isEnabled(), true);
-      assert.equal(await close.isEnabled(), true);
-      await page.screenshot({ path: path.join(screenshotDir, `recovery-${profile}-${width}x${height}.png`), fullPage: true });
+      assert.equal(await driver.actionEnabled("Refresh"), true);
+      assert.equal(await driver.actionEnabled("Close and abandon recovery"), true);
+      assert.equal(await driver.selectedProfile(), profile,
+        `recovery-${profile}-${width}x${height}.png captures the selected ${profile} Appearance profile`);
+      await driver.screenshot({ path: path.join(screenshotDir, `recovery-${profile}-${width}x${height}.png`), fullPage: true });
     }
   }
-  if (initialProfile !== "tachiko") {
-    await page.getByRole("button", { name: "Appearance", exact: true }).click();
-    const appearance = page.getByRole("dialog", { name: "Appearance", exact: true });
-    const label = initialProfile === "familiar-spreadsheet" ? "Familiar Spreadsheet" : "Minimal-Focus";
-    await appearance.getByRole("radio", { name: label, exact: true }).check();
-    await appearance.getByRole("button", { name: "Close", exact: true }).click();
-  }
-  await page.setViewportSize({ width: 1440, height: 900 });
+  if (await driver.selectedProfile() !== initialProfile) await driver.selectProfile(initialProfile);
+  await driver.setViewport({ width: 1440, height: 900 });
 }
 
-try {
+async function verifyRecoveryVisualCaptureRegression(page, driver = createPlaywrightRecoveryCaptureDriver(page)) {
+  const evidenceParent = resultsEvidenceDir ?? tmpdir();
+  const evidenceRoot = await mkdtemp(path.join(evidenceParent, "recovery-appearance-regression-"));
+  const profiles = ["tachiko", "familiar-spreadsheet", "minimal-focus"];
+  const originalProfile = await driver.selectedProfile();
+  const originalViewport = await driver.viewport();
+  assert.ok(originalViewport, "regression caller has an incoming viewport");
+  console.log(JSON.stringify({ case: "recovery-appearance-regression", evidenceDir: evidenceRoot, initialProfiles: profiles }));
+
+  for (const initialProfile of profiles) {
+    await driver.selectProfile(initialProfile);
+    await driver.setViewport({ width: 1440, height: 900 });
+    const viewportBeforeNoop = await driver.viewport();
+    const dialogCountBeforeNoop = await driver.appearanceDialogCount();
+    const screenshotsBeforeNoop = driver.screenshotCount();
+    await captureRecoveryVisuals(page, undefined, driver);
+    assert.equal(driver.screenshotCount(), screenshotsBeforeNoop, "no screenshot is taken without screenshotDir");
+    assert.equal(await driver.selectedProfile(), initialProfile, "screenshotDir-absent call preserves the selected profile");
+    assert.deepEqual(await driver.viewport(), viewportBeforeNoop, "screenshotDir-absent call preserves the viewport");
+    assert.equal(await driver.appearanceDialogCount(), dialogCountBeforeNoop,
+      "screenshotDir-absent call preserves Appearance dialog state");
+
+    const caseDir = path.join(evidenceRoot, initialProfile);
+    await mkdir(caseDir, { recursive: true });
+    const viewportBeforeCapture = await driver.viewport();
+    await captureRecoveryVisuals(page, caseDir, driver);
+    assert.equal(await driver.selectedProfile(), initialProfile, `capture restores initial ${initialProfile} profile`);
+    assert.deepEqual(await driver.viewport(), viewportBeforeCapture, `capture restores the incoming viewport for ${initialProfile}`);
+    assert.equal(await driver.appearanceDialogCount(), 0,
+      `capture leaves the Appearance dialog closed for ${initialProfile}`);
+    assert.deepEqual((await readdir(caseDir)).sort(), [
+      "recovery-familiar-spreadsheet-1440x900.png",
+      "recovery-familiar-spreadsheet-390x844.png",
+      "recovery-minimal-focus-1440x900.png",
+      "recovery-minimal-focus-390x844.png",
+      "recovery-tachiko-1440x900.png",
+      "recovery-tachiko-390x844.png",
+    ], `the ${initialProfile} case retains six correctly named captures`);
+  }
+
+  await driver.selectProfile(originalProfile);
+  await driver.setViewport(originalViewport);
+  console.log(JSON.stringify({ case: "recovery-appearance-regression", evidenceDir: evidenceRoot, initialProfiles: profiles }));
+}
+
+export { captureRecoveryVisuals, createEgoRecoveryCaptureDriver, verifyRecoveryVisualCaptureRegression };
+
+if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   let page = await start();
   const initialSalesCopy = await enterSalesFromHome(page);
   await verifyConfiguredSalesSaveReopen(page, initialSalesCopy);
@@ -946,7 +1073,13 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copiesBeforeFault, "recovery dispatches no copy write");
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), exportsBeforeFault, "recovery dispatches no semantic export");
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), executeBeforeFault + 1, "published edit is never retried after query failure");
+  const profileBeforeRecoveryCaptures = await selectedAppearanceProfile(page);
+  const viewportBeforeRecoveryCaptures = page.viewportSize();
   await captureRecoveryVisuals(page, resultsEvidenceDir);
+  assert.equal(await selectedAppearanceProfile(page), profileBeforeRecoveryCaptures,
+    "standard recovery captures preserve the incoming Appearance profile");
+  assert.deepEqual(page.viewportSize(), viewportBeforeRecoveryCaptures, "standard recovery captures preserve the incoming viewport");
+  await verifyRecoveryVisualCaptureRegression(page);
   const queryFault = await page.evaluate(() => window.__tachikoAcceptance.scalarRequeryFaultProbe());
   assert.equal(queryFault.publicationAcknowledged, true, "fault is armed only after a real scalar publication acknowledgement");
   assert.equal(typeof queryFault.attemptId, "number", "the scalar witness belongs to one immutable attempt");
@@ -1345,5 +1478,5 @@ try {
     await cleanupPage?.evaluate(() => window.__tachikoAcceptance?.resetTargetedQueryReplyFault()).catch(() => {});
     await context.close().catch(() => {});
   }
-  await rm(profile, { recursive: true, force: true });
+  if (profile) await rm(profile, { recursive: true, force: true });
 }
