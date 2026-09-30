@@ -1,7 +1,7 @@
 // Real built-product J4 journey over the fixed Sheet canary. This uses only
 // visible controls and labels; core IDs stay inside the runtime adapter.
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,24 +10,443 @@ import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
+const canary = path.join(dist, "examples", "j4-catalog-sales");
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const profile = await mkdtemp(path.join(tmpdir(), "tachiko-j4-product-"));
 let context;
+let salesCopySequence = 0;
+const resultsEvidenceDir = process.env.RESULTS_SCREENSHOT_DIR;
+if (resultsEvidenceDir) await mkdir(resultsEvidenceDir, { recursive: true });
 
 async function start() {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
+  page.on("pageerror", (error) => { throw error; });
+  page.on("console", (message) => { if (message.type() === "error") throw new Error(`page console error: ${message.text()}`); });
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByTestId("open-project").waitFor();
   return page;
 }
 
 async function openCanary(page) {
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
+  await page.getByTestId("open-project").setInputFiles(canary);
   await page.getByTestId("project-ready").waitFor();
+}
+
+async function enterSalesFromHome(page, { addAnotherSummary = false } = {}) {
+  const openBefore = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
+  await page.getByRole("button", { name: "Open sales example", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  const openAfter = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
+  assert.equal(openAfter - openBefore, 1, "healthy readiness is followed by exactly one canonical Open");
+  await page.waitForFunction(() => document.querySelector("#ts-active-table")?.value === "catalog");
+  assert.equal(await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).inputValue(), "catalog", "confirmed entry selects Catalog");
+  const resultsPane = page.getByTestId("results-pane");
+  await resultsPane.waitFor();
+  assert.equal(await resultsPane.locator(".ts-result-card").count(), 1, "Sales lands with its per-definition Results card");
+  const catalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const priceIndex = catalogHeaders.filter((header) => header !== "Row").indexOf("price");
+  assert.ok(priceIndex >= 0, "Catalog exposes its visible price column");
+  const penPrice = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
+  await penPrice.waitFor();
+  assert.equal(await penPrice.evaluate((cell) => document.activeElement === cell), true, "Sales landing focuses the exact Catalog PEN price cell");
+  assert.equal(await page.locator('[data-testid="work-state"]').textContent(), "Not saved yet", "initial Sales D10 appears only in Work status");
+  assert.equal(await page.locator(".ts-sales-tip").getByText("Not saved yet", { exact: true }).count(), 0, "Sales tip does not duplicate the D10 footer label");
+  assert.equal(await resultsPane.locator(".ts-result-status").getByText("Up to date", { exact: true }).count(), 1, "current Results card binds the discovered revision");
+  const chart = resultsPane.locator("svg.ts-mini-chart");
+  if (await chart.count() === 1) {
+    assert.equal(await chart.getAttribute("aria-hidden"), "true", "the measured chart is decorative to assistive technology");
+    assert.equal(await chart.getAttribute("focusable"), "false");
+  } else {
+    assert.equal(await resultsPane.getByText("The chart is shown in Report.", { exact: true }).count(), 1, "a chart that does not fit is deferred without altering the value table");
+  }
+  assert.deepEqual(await groupRows(resultsPane.getByRole("table", { name: "Sales by product values", exact: true })), ["NOTE: 1000", "PEN: 800"]);
+  await verifyResultsViewportMatrix(page, resultsEvidenceDir);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "Hide results", exact: true }).click();
+  await page.getByRole("button", { name: "Show results", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("results-pane").count(), 0, "Hide removes the Results pane while retaining its one-shot layout marker");
+  await page.getByRole("button", { name: "Show results", exact: true }).click();
+  await page.getByTestId("results-pane").waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), "Hide results", "Show returns focus to the Results heading action");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 1, "one Home action installs one generated summary");
+  assert.deepEqual(await groupRows(page.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 1000", "PEN: 800"]);
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), "catalog.price", "confirmed entry exposes its one-shot Catalog price landing marker");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await page.getByLabel("Current report data", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), "Sales by product");
+  assert.equal(await page.getByLabel("Category label", { exact: true }).inputValue(), "Product");
+  assert.equal(await page.getByLabel("Value label", { exact: true }).inputValue(), "Revenue");
+  assert.equal(await page.getByLabel("Show legend", { exact: true }).isChecked(), false);
+  if (addAnotherSummary) {
+    await chooseBinding(page, { orderQuantity: "product_code" });
+    await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+    await page.getByRole("alert").waitFor();
+    assert.equal(await page.locator('[data-testid="work-state"]').textContent(), "Not saved yet", "a pre-publication Create refusal preserves initial D10");
+    assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), "catalog.price", "pre-publication refusal preserves the Sales tip");
+    await chooseBinding(page);
+    await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="j4-result-"]').length === 2 &&
+      document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
+    assert.notEqual(await page.locator('[data-testid="work-state"]').textContent(), "Not saved yet", "confirmed Create ends initial D10 for this occurrence");
+    assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "confirmed Create installs the second definition without replacing the first");
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
+    const tip = page.getByTestId("sales-tip");
+    await tip.getByRole("button", { name: "Dismiss tip", exact: true }).click();
+    await tip.waitFor({ state: "detached" });
+    assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), null, "dismissal clears only the one-shot Sales tip marker");
+    await page.waitForFunction(() => {
+      const table = document.querySelector('table[aria-label="Table"]');
+      const active = document.activeElement;
+      const currentCell = table?.querySelector("td[data-work-occurrence][data-work-revision]");
+      return active instanceof HTMLTableCellElement && active.closest('table[aria-label="Table"]') === table &&
+        active.dataset.workOccurrence === currentCell?.getAttribute("data-work-occurrence") &&
+        active.dataset.workRevision === currentCell?.getAttribute("data-work-revision");
+    });
+    assert.equal(await page.evaluate(() => document.activeElement?.matches('table[aria-label="Table"] td[data-work-occurrence][data-work-revision]') ?? false), true, "dismissing the Sales tip restores focus to a current grid cell");
+  }
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const savedName = `sales-entry-marker-saved-${++salesCopySequence}`;
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(savedName);
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), null, "successful Save consumes the one-shot Sales entry tip");
+  return savedName;
+}
+
+async function verifyConfiguredSalesSaveReopen(page, initialCopyName) {
+  const initialSaved = await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), initialCopyName);
+  assert.equal(initialSaved?.kind, "opaque", "configured Sales is preserved as the real opaque copy");
+  assert.ok(initialSaved?.presentation, "the initial Sales copy retains its paired report presentation");
+  assert.equal(initialSaved.presentation?.snapshotRevision, initialSaved.revision, "initial report attachment names the exact saved snapshot revision");
+  assert.equal(initialSaved.presentation?.snapshotDigest, initialSaved.bytesHash, "initial report attachment digest names the exact opaque snapshot bytes");
+  assert.deepEqual(initialSaved.presentation?.report, {
+    definitionId: initialSaved.presentation?.report.definitionId,
+    type: "bar", title: "Sales by product", categoryLabel: "Product", valueLabel: "Revenue", legendVisible: false,
+  }, "the receipt carries the configured Sales report and definition identity");
+  const firstOccurrence = (await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot())).occurrence;
+  await closeWithoutSaving(page);
+  await page.evaluate(() => window.__tachikoAcceptance.resetQueryDefinitionIds());
+  await page.getByRole("button", { name: `Open saved ${initialCopyName}`, exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  const reopenedInitial = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  assert.notEqual(reopenedInitial.occurrence, firstOccurrence, "opening the saved initial Sales copy creates a fresh occurrence");
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), null, "a saved-copy reopen does not restore the UI-only Sales tip marker");
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-catalog-layout"), null, "a saved-copy reopen does not restore the UI-only compact-layout marker");
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current", "the initial saved Sales copy completes authoritative discovery");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  const initialRows = await groupRows(page.getByLabel("Cross-table groups", { exact: true }));
+  assert.deepEqual(initialRows, ["NOTE: 1000", "PEN: 800"], "fresh initial-copy query returns the configured Sales values");
+  const initialIds = await page.evaluate(() => window.__tachikoAcceptance.queryDefinitionIds());
+  assert.equal(initialIds.length, 1, "initial Sales reopen re-queries exactly its one persisted definition");
+  assert.equal(initialSaved.presentation?.report.definitionId, initialIds[0], "initial report receipt belongs to the generated definition discovered after reopen");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const initialCard = page.getByTestId("results-pane").locator('article[data-testid^="result-card:"]');
+  assert.equal(await initialCard.count(), 1);
+  assert.equal(await initialCard.getAttribute("data-testid"), `result-card:${initialIds[0]}`, "the current Results card is paired to the definition queried from the saved copy");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  const initialReport = page.getByLabel("Current report data", { exact: true });
+  await initialReport.waitFor();
+  assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), "Sales by product");
+  assert.equal(await page.getByLabel("Category label", { exact: true }).inputValue(), "Product");
+  assert.equal(await page.getByLabel("Value label", { exact: true }).inputValue(), "Revenue");
+  assert.equal(await page.getByLabel("Show legend", { exact: true }).isChecked(), false);
+  assert.match(await initialReport.textContent(), /NOTE\s*1000/);
+  assert.match(await initialReport.textContent(), /PEN\s*800/);
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await verifyPhoneOpenReport(page, 390);
+  await verifyPhoneOpenReport(page, 375);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+  const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" });
+  await penRow.first().locator("td").nth(priceIndex).dblclick();
+  const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await editor.fill("250");
+  await editor.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  assert.deepEqual(await groupRows(page.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 1000", "PEN: 1000"], "confirmed PEN250 edit automatically updates the saved-copy source values");
+
+  const editedCopyName = `sales-edited-pen250-${++salesCopySequence}`;
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(editedCopyName);
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  const editedSaved = await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), editedCopyName);
+  assert.equal(editedSaved?.kind, "opaque");
+  assert.equal(editedSaved?.presentation?.snapshotRevision, editedSaved?.revision, "edited report attachment names the exact PEN250 snapshot revision");
+  assert.equal(editedSaved?.presentation?.snapshotDigest, editedSaved?.bytesHash, "edited report attachment digest names the exact opaque snapshot bytes");
+  assert.deepEqual(editedSaved?.presentation?.report, {
+    definitionId: editedSaved?.presentation?.report.definitionId,
+    type: "bar", title: "Sales by product", categoryLabel: "Product", valueLabel: "Revenue", legendVisible: false,
+  }, "the edited receipt retains the report paired to the same definition");
+  assert.deepEqual(await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), initialCopyName), initialSaved, "saving the edited copy leaves the earlier initial Sales copy unchanged");
+  const editedOccurrence = (await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot())).occurrence;
+  await closeWithoutSaving(page);
+  await page.evaluate(() => window.__tachikoAcceptance.resetQueryDefinitionIds());
+  await page.getByRole("button", { name: `Open saved ${editedCopyName}`, exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  const reopenedEdited = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  assert.notEqual(reopenedEdited.occurrence, editedOccurrence, "opening the edited Sales copy creates a fresh occurrence");
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), null, "edited-copy reopen does not restore the UI-only Sales tip marker");
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-catalog-layout"), null, "edited-copy reopen does not restore the UI-only compact-layout marker");
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current", "the edited saved copy completes authoritative discovery");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  assert.deepEqual(await groupRows(page.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 1000", "PEN: 1000"], "fresh edited-copy query returns the PEN250 values");
+  const editedIds = await page.evaluate(() => window.__tachikoAcceptance.queryDefinitionIds());
+  assert.equal(editedIds.length, 1, "edited Sales reopen re-queries exactly one persisted definition");
+  assert.equal(editedIds[0], initialIds[0], "both copies retain the same real grouped-summary definition identity");
+  assert.equal(editedSaved.presentation?.report.definitionId, editedIds[0], "edited report receipt belongs to the generated definition discovered after reopen");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const editedCard = page.getByTestId("results-pane").locator('article[data-testid^="result-card:"]');
+  assert.equal(await editedCard.count(), 1);
+  assert.equal(await editedCard.getAttribute("data-testid"), `result-card:${editedIds[0]}`, "the current Results card is paired to the definition queried from the edited copy");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  const editedReport = page.getByLabel("Current report data", { exact: true });
+  await editedReport.waitFor();
+  assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), "Sales by product");
+  assert.equal(await page.getByLabel("Category label", { exact: true }).inputValue(), "Product");
+  assert.equal(await page.getByLabel("Value label", { exact: true }).inputValue(), "Revenue");
+  assert.equal(await page.getByLabel("Show legend", { exact: true }).isChecked(), false);
+  assert.match(await editedReport.textContent(), /NOTE\s*1000/);
+  assert.match(await editedReport.textContent(), /PEN\s*1000/);
+  console.log(JSON.stringify({
+    case: "sales-initial-and-edited-save-reopen",
+    initial: { name: initialCopyName, receipt: initialSaved, occurrence: reopenedInitial.occurrence, revision: reopenedInitial.revision, definitionIds: initialIds, groups: initialRows },
+    edited: { name: editedCopyName, receipt: editedSaved, occurrence: reopenedEdited.occurrence, revision: reopenedEdited.revision, definitionIds: editedIds, groups: ["NOTE: 1000", "PEN: 1000"] },
+  }));
+}
+
+async function verifyResultsViewportMatrix(page, screenshotDir) {
+  const sizes = [
+    [1440, 900], [1100, 900], [834, 1112], [768, 1024], [390, 844], [375, 812],
+    [1023, 900], [1024, 900], [1199, 900], [1200, 900],
+  ];
+  const observations = [];
+  for (const [width, height] of sizes) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const measured = await page.evaluate(() => {
+      const tip = document.querySelector('[data-testid="sales-tip"]');
+      const region = document.querySelector(".ts-work-region");
+      const grid = document.querySelector(".ts-grid-scroll");
+      const table = document.querySelector('table[aria-label="Table"]');
+      const pane = document.querySelector('[data-testid="results-pane"]');
+      const priceColumn = Array.from(table?.querySelectorAll("thead th") ?? []).findIndex((header) => header.textContent?.trim() === "price");
+      const priceRow = Array.from(table?.querySelectorAll("tbody tr") ?? []).find((row) => row.textContent?.includes("PEN"));
+      const priceCell = priceRow?.querySelectorAll("td")[priceColumn - 1] ?? null;
+      const scroll = grid?.getBoundingClientRect();
+      const cell = priceCell?.getBoundingClientRect();
+      const work = region?.getBoundingClientRect();
+      const result = pane?.getBoundingClientRect();
+      const tipRect = tip?.getBoundingClientRect();
+      const gridRect = grid?.getBoundingClientRect();
+      const intersects = Boolean(scroll && cell && cell.left >= scroll.left - 1 && cell.right <= scroll.right + 1 && cell.top >= scroll.top - 1 && cell.bottom <= scroll.bottom + 1);
+      return {
+        scrollWidth: grid?.scrollWidth ?? -1, clientWidth: grid?.clientWidth ?? -1,
+        intersects, tipBeforeGrid: Boolean(tip && grid && tip.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING),
+        side: Boolean(work && result && result.left >= work.right - 1),
+        stacked: Boolean(tipRect && gridRect && pane && pane.getBoundingClientRect().top >= gridRect.bottom - 1),
+        tipSideVisible: Boolean(tip && getComputedStyle(tip.querySelector(".ts-sales-tip-body--side")).display !== "none"),
+        tipStackedVisible: Boolean(tip && getComputedStyle(tip.querySelector(".ts-sales-tip-body--stacked")).display !== "none"),
+        gridHeight: gridRect?.height ?? 0,
+        gridMax: grid ? Number.parseFloat(getComputedStyle(grid).maxHeight) : 0,
+        windowScrollY: window.scrollY,
+      };
+    });
+    assert.ok(measured.intersects, `focused PEN price remains fully visible at ${width}x${height}: ${JSON.stringify(measured)}`);
+    assert.ok(measured.tipBeforeGrid, `the Sales tip precedes the grid at ${width}x${height}`);
+    assert.ok(measured.scrollWidth <= measured.clientWidth + 1, `qualified Sales Catalog has no horizontal grid overflow at ${width}x${height}: ${JSON.stringify(measured)}`);
+    assert.ok(measured.gridHeight <= measured.gridMax + 1, `Sales grid respects its measured viewport cap at ${width}x${height}: ${JSON.stringify(measured)}`);
+    if (width >= 1024) {
+      assert.ok(measured.side && measured.tipSideVisible && !measured.tipStackedVisible, `wide layout places Results beside the table and uses right-side tip copy at ${width}`);
+    } else {
+      assert.ok(measured.stacked && !measured.tipSideVisible && measured.tipStackedVisible, `narrow layout stacks Results below the table and uses below-table tip copy at ${width}`);
+    }
+    if ([1440, 834, 390, 375].includes(width)) {
+      const tipHeights = await measureSalesTipVariants(page, { fontSize: 12, longTitle: false });
+      assert.ok(Math.max(...tipHeights.heights) - Math.min(...tipHeights.heights) <= 1, `all Sales tip variants share a stable slot at ${width}px: ${JSON.stringify(tipHeights)}`);
+      const enlarged = await measureSalesTipVariants(page, { fontSize: 18, longTitle: true });
+      assert.ok(Math.max(...enlarged.heights) - Math.min(...enlarged.heights) <= 1, `enlarged text and long/wrapping titles retain the shared tip slot at ${width}px: ${JSON.stringify(enlarged)}`);
+      observations.push({ tipWidths: { width, standard: tipHeights, enlargedLongTitle: enlarged } });
+    }
+    if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, `results-${width}x${height}.png`), fullPage: true });
+    observations.push({ width, height, ...measured });
+  }
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-catalog-layout"), "true", "the responsive compact layout remains bound to the current Sales Catalog occurrence");
+  const resultsPane = page.getByTestId("results-pane");
+  const svg = resultsPane.locator("svg.ts-mini-chart");
+  await svg.waitFor();
+  await page.evaluate(() => {
+    const prototype = CanvasRenderingContext2D.prototype;
+    const original = prototype.measureText;
+    window.__chartFontProbe = { original, wide: true };
+    prototype.measureText = function (text) {
+      return window.__chartFontProbe.wide ? { width: 1000 } : window.__chartFontProbe.original.call(this, text);
+    };
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  await resultsPane.locator(".ts-result-deferred").waitFor();
+  assert.equal(await svg.count(), 0, "a completed font change rechecks measured labels and defers a chart that no longer fits");
+  await page.evaluate(() => {
+    window.__chartFontProbe.wide = false;
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  await svg.waitFor();
+  await page.evaluate(() => { CanvasRenderingContext2D.prototype.measureText = window.__chartFontProbe.original; delete window.__chartFontProbe; });
+  assert.equal(await resultsPane.locator(".ts-result-deferred").count(), 0, "a subsequent font change redraws the chart after labels fit again");
+  console.log(JSON.stringify({ case: "results-responsive-matrix", observations }));
+}
+
+async function measureSalesTipVariants(page, { fontSize, longTitle }) {
+  return page.evaluate(({ fontSize, longTitle }) => {
+    const original = document.querySelector('[data-testid="sales-tip"]');
+    const app = document.querySelector('.ts-app');
+    if (!(original instanceof HTMLElement) || !(app instanceof HTMLElement)) throw new Error("Sales tip host is unavailable");
+    const width = original.getBoundingClientRect().width;
+    const clone = original.cloneNode(true);
+    if (!(clone instanceof HTMLElement)) throw new Error("Sales tip clone failed");
+    clone.style.position = "fixed";
+    clone.style.left = "-10000px";
+    clone.style.top = "0";
+    clone.style.width = `${width}px`;
+    clone.style.visibility = "hidden";
+    clone.style.pointerEvents = "none";
+    clone.style.fontSize = `${fontSize}px`;
+    clone.setAttribute("aria-hidden", "true");
+    if (longTitle) {
+      for (const body of clone.querySelectorAll(".ts-sales-tip-body--side")) body.textContent = "Change the PEN price. Annual revenue by product and region across multiple fiscal periods updates on the right.";
+      for (const body of clone.querySelectorAll(".ts-sales-tip-body--stacked")) body.textContent = "Change the PEN price. Annual revenue by product and region across multiple fiscal periods updates below the table.";
+    }
+    app.append(clone);
+    const keys = ["try-it", "updating", "updated", "needs-attention", "needs-refresh"];
+    const heights = keys.map((key) => {
+      clone.className = original.className.replace(/ts-sales-tip--(?:try-it|updating|updated|needs-attention|needs-refresh)/g, "").trim();
+      clone.classList.add(`ts-sales-tip--${key}`);
+      for (const variant of clone.querySelectorAll("[data-tip-variant]")) {
+        variant.setAttribute("aria-hidden", String(variant.getAttribute("data-tip-variant") !== key));
+      }
+      return clone.getBoundingClientRect().height;
+    });
+    clone.remove();
+    return { width, heights, keys };
+  }, { fontSize, longTitle });
+}
+
+async function verifyPhoneOpenReport(page, width) {
+  await page.setViewportSize({ width, height: width === 390 ? 844 : 812 });
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByTestId("results-pane").waitFor();
+  const composition = page.locator(".ts-table-composition");
+  const openReport = page.getByRole("button", { name: "Open report", exact: true });
+  assert.equal(await openReport.count(), 1, `one Open report action is available at phone width ${width}`);
+  const compositionBox = await composition.boundingBox();
+  assert.ok(compositionBox, `Table composition is mounted at ${width}`);
+  await page.mouse.move(compositionBox.x + compositionBox.width / 2, compositionBox.y + compositionBox.height / 2);
+  await page.mouse.wheel(0, 520);
+  await page.waitForFunction(() => (document.querySelector(".ts-table-composition")?.scrollTop ?? 0) > 0);
+  await page.waitForFunction(() => {
+    const button = [...document.querySelectorAll(".ts-results-pane button")].find((node) => node.textContent?.trim() === "Open report");
+    const composition = document.querySelector(".ts-table-composition");
+    if (!(button instanceof HTMLElement) || !(composition instanceof HTMLElement)) return false;
+    const rect = button.getBoundingClientRect();
+    const port = composition.getBoundingClientRect();
+    return rect.top - 4 >= port.top && rect.bottom + 4 <= port.bottom;
+  });
+  const pointerWitness = await phoneActionWitness(page, openReport, composition);
+  assert.ok(pointerWitness.height >= 44, `Open report meets the 44px touch target at ${width}: ${JSON.stringify(pointerWitness)}`);
+  assert.ok(pointerWitness.inScrollport && pointerWitness.visible && pointerWitness.unobstructed, `wheel-scrolled Open report is visible and unobstructed at ${width}: ${JSON.stringify(pointerWitness)}`);
+  assert.ok(pointerWitness.containerScrollTop > 0 || pointerWitness.windowScrollY > 0, `the real phone surface scrolls to Open report at ${width}: ${JSON.stringify(pointerWitness)}`);
+  await page.mouse.click(pointerWitness.left + pointerWitness.width / 2, pointerWitness.top + pointerWitness.height / 2);
+  await page.getByLabel("Current report data", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("tab", { name: "Report", exact: true }).getAttribute("aria-selected"), "true");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const grid = page.getByRole("grid", { name: "Table", exact: true });
+  const gridRows = grid.locator("tbody tr");
+  assert.ok(await gridRows.count() > 0, "the reopened Catalog has a visible grid row");
+  const gridCell = gridRows.nth(0).locator("td").nth(0);
+  await gridCell.focus();
+  assert.equal(await gridCell.evaluate((cell) => document.activeElement === cell), true, "keyboard path starts in the Catalog grid");
+  const tabTrace = [];
+  for (let step = 0; step < 80; step += 1) {
+    await page.keyboard.press("Tab");
+    const active = await page.evaluate(() => {
+      const node = document.activeElement;
+      return node instanceof HTMLElement ? { tag: node.tagName, text: node.textContent?.trim() ?? "", className: typeof node.className === "string" ? node.className : "" } : null;
+    });
+    tabTrace.push(active);
+    if (await openReport.evaluate((button) => document.activeElement === button)) break;
+  }
+  assert.equal(await openReport.evaluate((button) => document.activeElement === button), true, `keyboard Tab from grid reaches Open report at ${width}: ${JSON.stringify(tabTrace)}`);
+  const keyboardWitness = await phoneActionWitness(page, openReport, composition);
+  assert.ok(keyboardWitness.height >= 44 && keyboardWitness.inScrollport && keyboardWitness.visible && keyboardWitness.unobstructed, `keyboard-focused action remains visible, 44px, and unobstructed at ${width}: ${JSON.stringify(keyboardWitness)}`);
+  if (resultsEvidenceDir) await page.screenshot({ path: path.join(resultsEvidenceDir, `keyboard-open-report-${width}.png`), fullPage: false });
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await openReport.evaluate((button) => document.activeElement !== button), true, "reverse Tab leaves Open report");
+  await page.keyboard.press("Tab");
+  assert.equal(await openReport.evaluate((button) => document.activeElement === button), true, "forward Tab returns to Open report");
+  await openReport.press("Enter");
+  await page.getByLabel("Current report data", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("tab", { name: "Report", exact: true }).getAttribute("aria-selected"), "true");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const hideResults = page.getByRole("button", { name: "Hide results", exact: true });
+  await hideResults.focus();
+  await hideResults.press("Enter");
+  const showResults = page.getByRole("button", { name: "Show results", exact: true });
+  await page.waitForFunction(() => document.activeElement?.matches(".ts-results-show") ?? false);
+  const showWitness = await phoneActionWitness(page, showResults, composition);
+  assert.ok(showWitness.inScrollport && showWitness.unobstructed, `keyboard Hide returns visible focus to Show results at ${width}: ${JSON.stringify(showWitness)}`);
+  await showResults.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.matches(".ts-results-hide") ?? false);
+  const hideWitness = await phoneActionWitness(page, hideResults, composition);
+  assert.ok(hideWitness.inScrollport && hideWitness.unobstructed, `keyboard Show restores visible focus to Hide results at ${width}: ${JSON.stringify(hideWitness)}`);
+  console.log(JSON.stringify({ case: "phone-open-report", width, pointerWitness, keyboardWitness, showWitness, hideWitness, openedTwice: true, tabTrace }));
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+}
+
+async function phoneActionWitness(page, button, composition) {
+  const [rect, containerScrollTop, windowScrollY] = await Promise.all([
+    button.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+      const composition = node.closest(".ts-table-composition");
+      const port = composition?.getBoundingClientRect();
+      const footer = document.querySelector(".ts-workspace-footer")?.getBoundingClientRect();
+      return {
+        left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height,
+        visible: bounds.width > 0 && bounds.height > 0 && bounds.top >= 0 && bounds.bottom <= window.innerHeight,
+        inScrollport: Boolean(port && bounds.top - 4 >= port.top && bounds.bottom + 4 <= port.bottom),
+        unobstructed: hit === node || node.contains(hit),
+        activeElement: document.activeElement instanceof HTMLElement
+          ? { tag: document.activeElement.tagName, className: document.activeElement.className, text: document.activeElement.textContent?.trim() }
+          : null,
+        composition: port ? { top: port.top, bottom: port.bottom, scrollTop: composition.scrollTop } : null,
+        footer: footer ? { top: footer.top, bottom: footer.bottom, height: footer.height } : null,
+        documentScroll: { x: window.scrollX, y: window.scrollY },
+      };
+    }),
+    composition.evaluate((node) => node.scrollTop),
+    page.evaluate(() => window.scrollY),
+  ]);
+  return { ...rect, containerScrollTop, windowScrollY };
+}
+
+async function closeWithoutSaving(page) {
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  if (await page.getByRole("button", { name: "Close without saving", exact: true }).count()) {
+    await page.getByRole("button", { name: "Close without saving", exact: true }).click();
+  }
+  await page.getByTestId("open-project").waitFor();
 }
 
 async function chooseBinding(page, {
@@ -35,7 +454,8 @@ async function chooseBinding(page, {
   productsTable = "catalog", productKey = "code", productCategory = "category", productPrice = "price",
 } = {}) {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
+  const choose = page.getByRole("button", { name: "Choose tables and fields", exact: true });
+  if (await choose.count()) await choose.click();
   await page.getByLabel("Orders table", { exact: true }).selectOption(ordersTable);
   await page.getByLabel("Order lookup key", { exact: true }).selectOption(orderLookupKey);
   await page.getByLabel("Order quantity", { exact: true }).selectOption(orderQuantity);
@@ -77,6 +497,25 @@ async function allGroupRows(page) {
 
 try {
   let page = await start();
+  const initialSalesCopy = await enterSalesFromHome(page);
+  await verifyConfiguredSalesSaveReopen(page, initialSalesCopy);
+  await closeWithoutSaving(page);
+  await enterSalesFromHome(page, { addAnotherSummary: true });
+  await closeWithoutSaving(page);
+  await page.evaluate(() => window.__tachikoAcceptance.failNextJ4PostPublicationRead());
+  await page.getByRole("button", { name: "Open sales example", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 0, "post-publication recovery exposes no partial result");
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).count(), 0, "known-publication recovery withholds Save");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByLabel("Cross-table groups", { exact: true }).waitFor();
+  assert.deepEqual(await groupRows(page.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 1000", "PEN: 800"], "one ordinary Refresh discovers the resident summary");
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 1, "recovery does not replay creation");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  assert.equal(await page.getByLabel("Current report data", { exact: true }).count(), 0, "recovery does not reconstruct report setup");
+  await closeWithoutSaving(page);
   await openCanary(page);
   await bindAndCreate(page, { failPostPublicationRead: true });
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
@@ -766,6 +1205,36 @@ try {
     canonical: exportsBeforeTargetedRefresh.canonical,
     opaque: exportsBeforeTargetedRefresh.opaque + 1,
   }, "only the blocked Save's prerequisite snapshot export occurs; targeted failure and recovery dispatch none");
+  await closeWithoutSaving(page);
+  await openCanary(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.locator(".ts-app").getAttribute("data-sales-catalog-layout"), null, "replacement clears UI-only Sales layout eligibility");
+  const ordinaryGrid = page.locator('table[aria-label="Table"]');
+  const ordinaryScrollport = page.locator(".ts-grid-scroll");
+  await ordinaryGrid.waitFor();
+  const ordinarySizing = await ordinaryGrid.evaluate((table) => ({
+    minWidth: getComputedStyle(table).minWidth,
+    scrollWidth: table.scrollWidth,
+    clientWidth: table.parentElement?.clientWidth ?? 0,
+    scrollportHeight: table.parentElement?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.equal(await page.locator(".ts-grid--sales-catalog").count(), 0, "an ordinary workbook never inherits the Sales compact selector");
+  assert.equal(ordinarySizing.minWidth, "1024px", "an ordinary workbook retains the generic minimum width");
+  assert.ok(ordinarySizing.scrollWidth > ordinarySizing.clientWidth, `an ordinary narrow workbook keeps horizontal grid scrolling: ${JSON.stringify(ordinarySizing)}`);
+  assert.ok(ordinarySizing.scrollportHeight >= 168, `an ordinary workbook keeps the 168px row viewport floor: ${JSON.stringify(ordinarySizing)}`);
+  assert.equal(await page.locator(".ts-workspace-footer").isVisible(), true, "the ordinary workbook footer stays available at phone width");
+  const ordinaryCell = ordinaryGrid.locator("tbody td").first();
+  await ordinaryCell.click();
+  assert.equal(await ordinaryCell.evaluate((cell) => document.activeElement === cell), true, "ordinary grid selection remains keyboard focusable");
+  await ordinaryCell.press("Enter");
+  const ordinaryEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await ordinaryEditor.waitFor();
+  const ordinaryValue = await ordinaryEditor.inputValue();
+  await ordinaryEditor.press("Escape");
+  assert.equal(await ordinaryEditor.count(), 0, "ordinary editor still closes with Escape");
+  assert.equal(await ordinaryCell.textContent(), ordinaryValue, "cancelling the ordinary edit leaves the source value intact");
+  if (resultsEvidenceDir) await page.screenshot({ path: path.join(resultsEvidenceDir, "ordinary-wide-grid-390x844.png"), fullPage: true });
+  console.log(JSON.stringify({ case: "ordinary-wide-grid-regression", viewport: [390, 844], ordinarySizing, sourceValue: ordinaryValue }));
   console.log(JSON.stringify({
     case: "steward-46-clause-8-targeted-refresh",
     actualDefinitionIds: { a: targetId, afterB: targetDefinitionIds },

@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   clearRecoveryOccurrenceContext,
+  confirmedReportSource,
   noResidentRecoveryState,
   openRecoveryRestoreDecision,
   presentationAfterConfirmedImport,
@@ -9,13 +10,24 @@ import {
   recoveryDraftAfterBoundary,
   runIfRecoveryCleared,
   settledSaveStatus,
-  startInitialExampleOnce,
+  resolveSalesSummaryBinding,
+  salesReportConfiguration,
+  salesEntryOutcomeAfterReplacement,
+  salesEntryOutcomeAfterCleanupFailure,
+  salesEntryTipAfterSuccessfulSave,
+  salesInitialOccurrenceAfterConfirmedChange,
+  salesChangeOccurrenceAfterConfirmedEdit,
+  salesMarkersAfterBoundary,
+  targetedResultRefreshIsAdmitted,
+  savedCopiesRequestIsCurrent,
 } from "./App.js";
 import {
   bindingCatalogContainsDate,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   reportPresentationLimitViolation,
   reportPresentationTextLimitViolation,
+  savedCopiesAreVisible,
+  LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE,
 } from "./contracts.js";
 import { OpenedProjectionRecoveryError } from "./runtime/session.js";
 
@@ -25,6 +37,57 @@ describe("completed copy save status", () => {
     expect(settledSaveStatus("saving", "revision-1", "revision-1", false)).toBe("saved");
     expect(settledSaveStatus("saving", "revision-1", "revision-2", false)).toBe("not-saved");
     expect(settledSaveStatus("failed", "revision-1", "revision-1", false)).toBe("failed");
+  });
+});
+
+describe("Sales tip and initial footer lifecycle", () => {
+  const markers = {
+    salesEntryTip: { occurrence: "sales-1", collection: "catalog", field: "price" },
+    salesCatalogLayout: { occurrence: "sales-1", collectionId: "catalog-id" },
+    salesInitialOccurrence: "sales-1",
+    salesChangedOccurrence: null,
+  };
+
+  it("clears every UI-only marker only when an occurrence is abandoned", () => {
+    expect(salesMarkersAfterBoundary(markers, "abandon")).toEqual({
+      salesEntryTip: null, salesCatalogLayout: null, salesInitialOccurrence: null, salesChangedOccurrence: null,
+    });
+    for (const boundary of ["unknown-open-recovery", "prepublication-refusal", "unknown-publication"] as const) {
+      expect(salesMarkersAfterBoundary(markers, boundary)).toEqual(markers);
+    }
+  });
+
+  it("ends initial D10 only for a known publication in the matching occurrence and does not claim Updated", () => {
+    expect(salesMarkersAfterBoundary(markers, "known-publication-recovery", "sales-1")).toEqual({
+      ...markers, salesInitialOccurrence: null,
+    });
+    expect(salesMarkersAfterBoundary(markers, "known-publication-recovery", "sales-1", true)).toEqual({
+      ...markers, salesInitialOccurrence: null, salesChangedOccurrence: "sales-1",
+    });
+    expect(salesMarkersAfterBoundary(markers, "known-publication-recovery", "other-occurrence")).toEqual(markers);
+  });
+
+  it("clears the initial footer only for a confirmed change in its occurrence", () => {
+    expect(salesInitialOccurrenceAfterConfirmedChange("sales-1", "sales-2")).toBe("sales-1");
+    expect(salesInitialOccurrenceAfterConfirmedChange("sales-1", "sales-1")).toBe(null);
+  });
+
+  it("marks the tip Updated only for a confirmed edit in the matching Sales occurrence", () => {
+    const marker = { occurrence: "sales-1", collection: "catalog", field: "price" };
+    expect(salesChangeOccurrenceAfterConfirmedEdit(marker, "sales-1")).toBe("sales-1");
+    expect(salesChangeOccurrenceAfterConfirmedEdit(marker, "sales-2")).toBe(null);
+    expect(salesChangeOccurrenceAfterConfirmedEdit(null, "sales-1")).toBe(null);
+  });
+});
+
+describe("targeted Results refresh admission", () => {
+  const witness = { occurrence: "o1", revision: "r1" };
+  const live = { occurrence: "o1", revision: "r1" };
+  it("requires currentness, exact occurrence/revision, and a known definition", () => {
+    expect(targetedResultRefreshIsAdmitted({ currentness: "current", live, witness, definitionIds: ["d1"], definitionId: "d1" })).toBe(true);
+    expect(targetedResultRefreshIsAdmitted({ currentness: "pending", live, witness, definitionIds: ["d1"], definitionId: "d1" })).toBe(false);
+    expect(targetedResultRefreshIsAdmitted({ currentness: "current", live: { ...live, revision: "r2" }, witness, definitionIds: ["d1"], definitionId: "d1" })).toBe(false);
+    expect(targetedResultRefreshIsAdmitted({ currentness: "current", live, witness, definitionIds: ["d1"], definitionId: "foreign" })).toBe(false);
   });
 });
 
@@ -233,38 +296,98 @@ describe("acknowledged saved-open presentation recovery", () => {
   });
 });
 
-describe("first-entry example launch", () => {
-  it("dispatches once and does not retry after a known failure", async () => {
-    const attempted = { current: false };
-    const failure = new Error("fixture unavailable");
-    const openExample = vi.fn(async () => { throw failure; });
-    const onKnownFailure = vi.fn();
-    const onSettled = vi.fn();
+describe("coordinated Sales entry bindings", () => {
+  const catalog = { collections: [
+    { key: "sales", fields: [
+      { key: "product_code", fieldType: "text" },
+      { key: "quantity", fieldType: "number" },
+    ] },
+    { key: "catalog", fields: [
+      { key: "code", fieldType: "text" },
+      { key: "category", fieldType: "text" },
+      { key: "price", fieldType: "number" },
+    ] },
+  ] };
 
-    startInitialExampleOnce(attempted, openExample, onKnownFailure, onSettled);
-    startInitialExampleOnce(attempted, openExample, onKnownFailure, onSettled);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(openExample).toHaveBeenCalledTimes(1);
-    expect(onKnownFailure).toHaveBeenCalledWith(failure);
-    expect(onSettled).toHaveBeenCalledTimes(1);
-    expect(attempted.current).toBe(true);
+  it("resolves the exact field identities and types from the authoritative catalog", () => {
+    expect(resolveSalesSummaryBinding(catalog)).toEqual({
+      ordersCollection: "sales",
+      orderLookupKeyField: "product_code",
+      orderQuantityField: "quantity",
+      productsCollection: "catalog",
+      productKeyField: "code",
+      productCategoryField: "category",
+      productPriceField: "price",
+    });
   });
 
-  it("keeps the completed launch latch after Close", async () => {
-    const attempted = { current: false };
-    const openExample = vi.fn(async () => undefined);
+  it("refuses missing, duplicate, or wrong-type identities instead of choosing a nearby field", () => {
+    expect(() => resolveSalesSummaryBinding({ collections: [...catalog.collections,
+      { key: "sales", fields: [] },
+    ] })).toThrow(/resolved uniquely/);
+    expect(() => resolveSalesSummaryBinding({ collections: [
+      { ...catalog.collections[0]!, fields: catalog.collections[0]!.fields.filter((field) => field.key !== "quantity") },
+      catalog.collections[1]!,
+    ] })).toThrow(/sales.quantity/);
+    expect(() => resolveSalesSummaryBinding({ collections: [
+      { ...catalog.collections[0]!, fields: [
+        { key: "product_code", fieldType: "text" }, { key: "quantity", fieldType: "text" },
+      ] },
+      catalog.collections[1]!,
+    ] })).toThrow(/sales.quantity/);
+  });
 
-    const onSettled = vi.fn();
-    startInitialExampleOnce(attempted, openExample, vi.fn(), onSettled);
-    await Promise.resolve();
-    // Close deliberately does not reset the mount-scoped latch.
-    startInitialExampleOnce(attempted, openExample, vi.fn(), onSettled);
-    await Promise.resolve();
+  it("admits only one current clean generated definition as a report source", () => {
+    const live = { revision: "revision-2" };
+    const source = { definitionId: "generated-1", revision: "revision-2", groups: [], diagnostics: [] };
+    expect(confirmedReportSource(live, [source], "generated-1")).toEqual(source);
+    expect(confirmedReportSource(live, [{ ...source, revision: "revision-1" }], "generated-1")).toBe(null);
+    expect(confirmedReportSource(live, [{ ...source, diagnostics: [{ code: "invalid", entity: null, field: null, lookup_key: null, candidates: [] }] }], "generated-1")).toBe(null);
+    expect(confirmedReportSource(live, [source, source], "generated-1")).toBe(null);
+  });
 
-    expect(openExample).toHaveBeenCalledTimes(1);
-    expect(onSettled).toHaveBeenCalledTimes(1);
-    expect(attempted.current).toBe(true);
+  it("uses the fixed approved Sales report copy", () => {
+    expect(salesReportConfiguration("generated-1")).toEqual({
+      definitionId: "generated-1", type: "bar", title: "Sales by product",
+      categoryLabel: "Product", valueLabel: "Revenue", legendVisible: false,
+    });
+  });
+});
+
+describe("Sales entry recovery outcomes", () => {
+  it("does not collapse acknowledged or unknown Open recovery into a refusal", () => {
+    expect(salesEntryOutcomeAfterReplacement("acknowledged-recovery")).toEqual({ kind: "acknowledged-open-recovery" });
+    expect(salesEntryOutcomeAfterReplacement("unknown-recovery")).toEqual({ kind: "unknown-open-recovery" });
+    expect(salesEntryOutcomeAfterReplacement("confirmed")).toBe(null);
+    expect(salesEntryOutcomeAfterReplacement("refused")?.kind).toBe("refused");
+  });
+
+  it("routes a pre-Open startup failure to the typed unavailable state", () => {
+    expect(salesEntryOutcomeAfterReplacement("startup-unavailable")).toEqual({ kind: "startup-unavailable" });
+  });
+
+  it("requires page reload after a failed owned cleanup, without claiming an unknown create", () => {
+    expect(salesEntryOutcomeAfterCleanupFailure()).toEqual({
+      kind: "reload-required",
+      message: LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE,
+    });
+    expect(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE).not.toMatch(/schema|close failed/i);
+  });
+
+  it("clears the one-shot marker for the saved occurrence only", () => {
+    const marker = { occurrence: "sales-1", collection: "catalog", field: "price" };
+    expect(salesEntryTipAfterSuccessfulSave(marker, "sales-1")).toBe(null);
+    expect(salesEntryTipAfterSuccessfulSave(marker, "sales-2")).toBe(marker);
+  });
+});
+
+describe("saved-copy inventory freshness", () => {
+  it("hides stale entries while checking or unavailable and accepts only the latest request", () => {
+    expect(savedCopiesAreVisible("checking", 3)).toBe(false);
+    expect(savedCopiesAreVisible("unavailable", 3)).toBe(false);
+    expect(savedCopiesAreVisible("ready", 0)).toBe(false);
+    expect(savedCopiesAreVisible("ready", 3)).toBe(true);
+    expect(savedCopiesRequestIsCurrent(2, 3)).toBe(false);
+    expect(savedCopiesRequestIsCurrent(3, 3)).toBe(true);
   });
 });

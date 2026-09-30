@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { linked, rejected, saveFailed, reopened, unknown } from "../oracles.mjs";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) {
@@ -65,12 +66,39 @@ async function shown(page, id, value) {
 }
 
 async function open(page) {
+  const bundledExampleRequests = [];
+  const traceRequest = (request) => {
+    if (new URL(request.url()).pathname.startsWith("/examples/")) bundledExampleRequests.push(request.url());
+  };
+  page.on("request", traceRequest);
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByTestId("open-project").waitFor();
+  await waitForColdHome(page);
+  await page.evaluate(() => {
+    const input = document.querySelector('[data-testid="open-project"]');
+    window.__m1FixtureSelection = null;
+    input.addEventListener("change", (event) => {
+      const target = event.currentTarget;
+      window.__m1FixtureSelection = {
+        directory: target.hasAttribute("webkitdirectory"),
+        files: Array.from(target.files ?? []).map((file) => ({ name: file.name, relativePath: file.webkitRelativePath })),
+      };
+    }, { once: true });
+  });
   await page.getByTestId("open-project").setInputFiles(fixture);
-  await page.getByTestId("project-ready").waitFor();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  page.off("request", traceRequest);
+  const selection = await page.evaluate(() => window.__m1FixtureSelection);
+  assert.ok(selection?.directory && selection.files.some((file) => file.name === "manifest.json"),
+    "M1 opened the selected original project directory");
+  assert.deepEqual(bundledExampleRequests, [], "M1 folder entry does not request a bundled example");
+  console.log(JSON.stringify({
+    case: "M1 original fixture folder-entry trace",
+    status: "PASS",
+    fixturePath: fixture,
+    fixtureSourceHash: await sourceHash(),
+    selectedDirectory: selection,
+    bundledExampleRequests,
+  }));
 }
 
 const snapshot = (page) => page.evaluate(() => window.__tachikoAcceptance.observe());
@@ -153,8 +181,7 @@ const cases = [
       await env.restart();
       page = env.page;
       await page.goto(LOCAL_ORIGIN);
-      await page.getByTestId("project-ready").waitFor();
-      await page.getByRole("button", { name: "Close project", exact: true }).click();
+      await waitForColdHome(page);
       await page.getByRole("button", { name: "Open saved review-copy", exact: true }).click();
       await page.getByTestId("project-ready").waitFor();
       reopened({ before: confirmed, after: await snapshot(page), browserProcessRestarted: true, authoritativeRead: true });

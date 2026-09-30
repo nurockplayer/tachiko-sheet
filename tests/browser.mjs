@@ -7,6 +7,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {linked,rejected,saveFailed,reopened,unknown} from './oracles.mjs';
+import {waitForColdHome} from './product/home-entry.mjs';
 const block=message=>{console.error(`BLOCKED: ${message}`);process.exit(78);};
 const url=process.env.WORK_CLIENT_URL;
 if(!url)block('WORK_CLIENT_URL is required; no real client/canary has been supplied.');
@@ -25,8 +26,29 @@ async function sourceHash(){
 async function shown(page,id,value){
  await page.waitForFunction(({id,value})=>Array.from(document.querySelectorAll('[data-testid]')).some(el=>el.dataset.testid===id&&el.textContent.trim()===String(value)),{id,value});
 }
-async function freshHome(page){await page.goto(url);await page.getByTestId('project-ready').waitFor();await page.getByRole('button',{name:'Close project',exact:true}).click();await page.getByTestId('open-project').waitFor();}
-async function open(page){await freshHome(page);await page.getByTestId('open-project').setInputFiles(fixture);await page.getByTestId('project-ready').waitFor();}
+async function freshHome(page){await page.goto(url);await waitForColdHome(page);await page.getByTestId('open-project').waitFor();}
+async function open(page){
+ const bundledExampleRequests=[];
+ const traceRequest=request=>{if(new URL(request.url()).pathname.startsWith('/examples/'))bundledExampleRequests.push(request.url());};
+ page.on('request',traceRequest);
+ await page.goto(url);
+ await waitForColdHome(page);
+ await page.evaluate(()=>{
+  const input=document.querySelector('[data-testid="open-project"]');
+  window.__m1FixtureSelection=null;
+  input.addEventListener('change',event=>{
+   const target=event.currentTarget;
+   window.__m1FixtureSelection={directory:target.hasAttribute('webkitdirectory'),files:Array.from(target.files??[]).map(file=>({name:file.name,relativePath:file.webkitRelativePath}))};
+  },{once:true});
+ });
+ await page.getByTestId('open-project').setInputFiles(fixture);
+ await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+ page.off('request',traceRequest);
+ const selection=await page.evaluate(()=>window.__m1FixtureSelection);
+ assert.ok(selection?.directory&&selection.files.some(file=>file.name==='manifest.json'),'M1 opened the selected original project directory');
+ assert.deepEqual(bundledExampleRequests,[],'M1 folder entry does not request a bundled example');
+ console.log(JSON.stringify({case:'M1 original fixture folder-entry trace',status:'PASS',fixturePath:fixture,fixtureSourceHash:await sourceHash(),selectedDirectory:selection,bundledExampleRequests}));
+}
 async function snapshot(page){return page.evaluate(()=>window.__tachikoAcceptance.observe());}
 async function rendered(page,view){
  const id=f=>view==='table'?cell(f):`brief:${expected.entity}:${f}`;

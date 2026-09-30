@@ -52,6 +52,8 @@ export type ScalarEdit =
   | { kind: "date"; value: string };
 
 export interface SheetRuntime {
+  /** Read-only, cached client/kit readiness; never opens or creates work. */
+  prepare(): Promise<void>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
   /**
@@ -151,6 +153,26 @@ export interface KeyedGroupedSumBindingChoice {
   productCategoryField: string;
   productPriceField: string;
 }
+/** Result of the one explicit Home-to-Sales setup action. */
+export type SalesEntryOutcome =
+  | { kind: "confirmed"; occurrence: string; revision: string; definitionId: string }
+  | { kind: "refused"; message: string }
+  | { kind: "startup-unavailable" }
+  | { kind: "acknowledged-open-recovery" }
+  | { kind: "unknown-open-recovery" }
+  | { kind: "published-recovery" }
+  | { kind: "unknown-recovery" }
+  | { kind: "reload-required"; message: string };
+export interface SalesEntryTipMarker {
+  occurrence: string;
+  collection: string;
+  field: string;
+}
+/** UI-only compact landing evidence for the active Catalog projection. */
+export interface SalesCatalogLayoutMarker {
+  occurrence: string;
+  collectionId: string;
+}
 /** Disposable, revision-scoped core output. IDs are retained only for re-query, never requested from users. */
 export interface KeyedGroupedSumResult {
   definitionId: string;
@@ -222,6 +244,11 @@ export interface LocalCopies {
 }
 
 export type Currentness = "current" | "pending" | "unknown";
+export const LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE =
+  "The local work could not be safely released. Reload this page before continuing.";
+export function savedCopiesAreVisible(status: "checking" | "ready" | "unavailable", count: number): boolean {
+  return status === "ready" && count > 0;
+}
 export type OperationOutcome = "idle" | "pending" | "unknown";
 export type SaveStatus = "not-saved" | "saving" | "saved" | "failed";
 export interface SheetShellProps {
@@ -230,10 +257,14 @@ export interface SheetShellProps {
   busy: boolean;
   dirty: boolean;
   currentness: Currentness;
+  reloadRequired?: boolean;
+  startupUnavailable?: boolean;
   outcome: OperationOutcome;
   saveStatus: SaveStatus;
   message: string | null;
   copies: SavedCopySummary[];
+  copiesStatus?: "checking" | "ready" | "unavailable";
+  onRetryCopies?(): Promise<void>;
   onOpenFiles(files: FileList): Promise<void>;
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
@@ -253,7 +284,14 @@ export interface SheetShellProps {
   onPrepareJ4Bindings?(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog>;
   onCreateJ4?(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean>;
   onRefreshJ4?(witness: ViewWitness, definitionId: string): Promise<boolean>;
-  onOpenJ4Canary?(): Promise<void>;
+  onOpenJ4Canary?(): Promise<SalesEntryOutcome>;
+  salesEntryTip?: SalesEntryTipMarker | null;
+  salesCatalogLayout?: SalesCatalogLayoutMarker | null;
+  /** True only until a real edit/history or applied report setting changes this Sales occurrence. */
+  salesInitialNotSaved?: boolean;
+  /** Authoritative edit/history has completed successfully in this Sales occurrence. */
+  salesExampleChanged?: boolean;
+  onDismissSalesEntryTip?(): void;
   report?: ReportConfiguration | null;
   onCreateReport?(definitionId: string, type: ReportConfiguration["type"]): void;
   onUpdateReport?(report: ReportConfiguration): void;

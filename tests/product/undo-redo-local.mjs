@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { installDistRoutes, LOCAL_ORIGIN } from "./dist-routes.mjs";
+import { openFolder, openReleasePlanExample } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -76,10 +77,7 @@ async function createSalesSummary(productCategory) {
 }
 try {
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
 
   const undo = page.getByRole("button", { name: "Undo", exact: true });
   const redo = page.getByRole("button", { name: "Redo", exact: true });
@@ -493,10 +491,7 @@ try {
   // The release-plan product fixture exposes editable Brief notes for draft-lock behavior.
   const notesPage = await context.newPage();
   await notesPage.goto(LOCAL_ORIGIN);
-  await notesPage.getByTestId("project-ready").waitFor();
-  await notesPage.getByRole("button", { name: "Close project", exact: true }).click();
-  await notesPage.getByTestId("open-project").setInputFiles(path.join(root, "tests/fixtures/release-plan.roproj"));
-  await notesPage.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  await openReleasePlanExample(notesPage);
   const notesUndo = notesPage.getByRole("button", { name: "Undo", exact: true });
   const notesCell = notesPage.locator('table[aria-label="Table"] tbody tr').first().locator("td").first();
   await editForPage(notesPage, await notesCell.getAttribute("data-testid"), "UNDO-NOTES-BASE");

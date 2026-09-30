@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -29,7 +30,7 @@ async function openApp(page) {
   await installDistRoutes(context, dist);
   page.setDefaultTimeout(10000);
   await page.goto(LOCAL_ORIGIN);
-  await page.locator(".ts-app").waitFor();
+  await waitForColdHome(page);
 }
 
 async function setAppearance(page, profileId, density, { compositionInput = null, axisOrder = "profile-first" } = {}) {
@@ -172,9 +173,10 @@ try {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   const page = await context.newPage();
   await openApp(page);
-  await page.getByTestId("project-ready").waitFor();
+  await openReleasePlanExample(page);
   await assertViewsTabBeforePanelKeyboardOrder(page);
   await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForColdHome(page);
   const homeSelector = page.locator(".ts-home-head .ts-appearance-selector");
   await homeSelector.waitFor({ state: "visible" });
   assert.equal(await homeSelector.count(), 1, "Home owns the application selector");
@@ -193,19 +195,19 @@ try {
 
   const secondTab = await context.newPage();
   await openApp(secondTab);
-  await secondTab.getByTestId("project-ready").waitFor();
+  await waitForColdHome(secondTab);
   assert.equal(await secondTab.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "structured");
   await setAppearance(page, "minimal-focus", "comfortable");
   assert.equal(await secondTab.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "structured", "another tab does not live-swap appearance");
   await secondTab.reload();
-  await secondTab.locator(".ts-app").waitFor();
+  await waitForColdHome(secondTab);
   await secondTab.waitForFunction(() =>
     document.documentElement.getAttribute("data-ts-profile-chrome") === "quiet" &&
     document.documentElement.getAttribute("data-ts-profile-density") === "comfortable",
   );
   await setAppearance(page, "tachiko", "compact");
 
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
   await page.getByTestId("project-ready").waitFor();
   assert.equal(await page.locator(".ts-workbook-head > .ts-appearance-selector").count(), 1, "workbook application header owns the selector");
   const selectorPosition = await page.evaluate(() => {
@@ -481,7 +483,7 @@ try {
     };
   }, key);
   await openApp(corrupt);
-  await corrupt.getByTestId("project-ready").waitFor();
+  await waitForColdHome(corrupt);
   assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
   assert.equal(await corrupt.evaluate(() => document.documentElement.getAttribute("data-ts-profile-density")), "compact");
   await corrupt.getByRole("button", { name: "Appearance", exact: true }).click();
@@ -506,7 +508,7 @@ try {
     };
   }, key);
   await openApp(readFailure);
-  await readFailure.getByTestId("project-ready").waitFor();
+  await waitForColdHome(readFailure);
   assert.equal(await readFailure.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain");
   await readFailure.getByRole("button", { name: "Appearance", exact: true }).click();
   const readFailureNotice = readFailure.getByText("Saved appearance could not be loaded. Using Tachiko for this session.", { exact: true });
@@ -522,7 +524,7 @@ try {
     };
   }, key);
   await openApp(writeFailure);
-  await writeFailure.getByTestId("project-ready").waitFor();
+  await waitForColdHome(writeFailure);
   const unsavedPreference = await writeFailure.evaluate((storageKey) => localStorage.getItem(storageKey), key);
   await writeFailure.getByRole("button", { name: "Appearance", exact: true }).click();
   await writeFailure.locator(".ts-appearance-profile-option").filter({ hasText: "Familiar Spreadsheet" }).click();
@@ -538,7 +540,7 @@ try {
     localStorage.setItem(oldKey, raw);
   }, { currentKey: key, oldKey: legacyKey, raw: legacyRecord });
   await openApp(legacy);
-  await legacy.getByTestId("project-ready").waitFor();
+  await waitForColdHome(legacy);
   assert.equal(await legacy.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "structured", "missing v2 reads the exact legacy built-in preference");
   assert.equal(await legacy.evaluate(() => document.documentElement.getAttribute("data-ts-profile-density")), "comfortable");
   assert.deepEqual(await legacy.evaluate(({ currentKey, oldKey }) => [localStorage.getItem(currentKey), localStorage.getItem(oldKey)],
@@ -550,7 +552,7 @@ try {
     localStorage.setItem(currentKey, "{broken");
   }, { currentKey: key, oldKey: legacyKey, raw: legacyRecord });
   await openApp(corruptV2WithLegacy);
-  await corruptV2WithLegacy.getByTestId("project-ready").waitFor();
+  await waitForColdHome(corruptV2WithLegacy);
   assert.equal(await corruptV2WithLegacy.evaluate(() => document.documentElement.getAttribute("data-ts-profile-chrome")), "porcelain", "present corrupt v2 never revives a stale valid v1 choice");
   await corruptV2WithLegacy.getByRole("button", { name: "Appearance", exact: true }).click();
   await corruptV2WithLegacy.getByText("Saved appearance could not be loaded. Using Tachiko for this session.", { exact: true }).waitFor();

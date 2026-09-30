@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { homeImportInput, openFolder, openReleasePlanExample } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -86,10 +87,7 @@ async function sample(button, label) {
 const results = [];
 try {
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByTestId("open-project").setInputFiles(path.join(root, "tests/fixtures/release-plan.roproj"));
-  await page.getByTestId("project-ready").waitFor();
+  await openReleasePlanExample(page);
   results.push(...await sample(page.getByRole("button", { name: "Save a copy", exact: true }), "Save a copy"));
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   const copyName = page.getByRole("textbox", { name: "Copy name", exact: true });
@@ -162,10 +160,7 @@ try {
 
   // Reset the uncommitted draft by reloading, then use the J4 canary for summary/report.
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
 
   // Configure the real J4 canary summary without invoking publication yet.
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
@@ -184,8 +179,7 @@ try {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const closeDialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });
   if (await closeDialog.count()) await closeDialog.getByRole("button", { name: "Close without saving", exact: true }).click();
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).waitFor();
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(csv);
+  await (await homeImportInput(page)).setInputFiles(csv);
   const importDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
   await importDialog.waitFor();
   const importButton = importDialog.getByRole("button", { name: "Import candidate", exact: true });

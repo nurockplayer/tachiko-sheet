@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { installDistRoutes, LOCAL_ORIGIN } from "./dist-routes.mjs";
+import { waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST ?? "dist";
 let chromium;
@@ -24,8 +25,7 @@ try {
   await installDistRoutes(context, dist);
   const page = await context.newPage();
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForColdHome(page);
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByTestId("project-ready").waitFor();
 

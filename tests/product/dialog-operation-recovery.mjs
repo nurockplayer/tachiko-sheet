@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) {
@@ -31,11 +32,8 @@ try {
   const page = context.pages()[0] ?? await context.newPage();
   page.setDefaultTimeout(8_000);
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
-  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
-  const input = page.getByLabel("Choose CSV or XLSX", { exact: true });
+  await waitForColdHome(page);
+  const input = await homeImportInput(page);
 
   // One invalid inspection owns one alert; retry clears it before the delayed
   // valid inspection has completed.
@@ -49,7 +47,7 @@ try {
   assert.equal(await page.getByRole("alert").count(), 1, "inspection failure has one alert owner");
   await page.route("**/examples/release-plan/manifest.json", (route) =>
     route.fulfill({ status: 503, contentType: "text/plain", body: "controlled follow-up open failure" }));
-  await page.getByRole("button", { name: "Try example", exact: true }).click();
+  await page.getByRole("button", { name: "Open release plan example", exact: true }).click();
   const followUpOpenError = page.getByRole("alert").filter({ hasText: "example file manifest.json is unavailable (503)" });
   await followUpOpenError.waitFor();
   assert.equal(await page.getByRole("alert").count(), 2, "a failed Home open does not get hidden by the stale Import alert");

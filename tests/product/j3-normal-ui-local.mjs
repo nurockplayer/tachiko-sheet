@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) {
@@ -27,7 +28,8 @@ const textSentinels = path.join(corpus, "fixtures/text-sentinels.csv");
 const launch = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 
 async function choose(page, file) {
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).setInputFiles(file);
+  const input = await homeImportInput(page);
+  await input.setInputFiles(file);
   return page.getByRole("dialog", { name: "Review import candidate", exact: true });
 }
 
@@ -87,16 +89,15 @@ try {
   page.setDefaultTimeout(8_000);
   console.log("J3 normal UI: open CSV");
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).waitFor();
+  await waitForColdHome(page);
+  await homeImportInput(page);
 
   // I02: cancellation has no resident workbook or semantic side effect.
   let dialog = await choose(page, messyCsv);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));
-  assert.equal(await page.getByLabel("Choose CSV or XLSX", { exact: true }).evaluate((input) => document.activeElement === input), true, "cancel must restore focus to the spreadsheet trigger");
+  assert.equal(await homeImportInput(page).then((input) => input.evaluate((node) => document.activeElement === node)), true, "cancel must restore focus to the spreadsheet trigger");
   // A long candidate keeps its real rejected-import alert visible outside the
   // internally scrolling column/ledger region.
   const longInvalidCsv = path.join(output, "long-invalid.csv");
@@ -194,7 +195,7 @@ try {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const correctedImportClose = page.getByRole("dialog", { name: "Unsaved work", exact: true });
   await correctedImportClose.getByRole("button", { name: "Close without saving", exact: true }).click();
-  await page.getByLabel("Choose CSV or XLSX", { exact: true }).waitFor();
+  await homeImportInput(page);
 
   // I01/I07: normal CSV selection, visible candidate and explicit choices.
   await importWithTypes(page, messyCsv);
@@ -272,8 +273,7 @@ try {
   await installDistRoutes(context, dist);
   page = context.pages()[0] ?? await context.newPage();
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForColdHome(page);
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await page.getByRole("button", { name: "Open saved j3-normal-copy", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
@@ -303,8 +303,7 @@ try {
   await installDistRoutes(context, dist);
   page = context.pages()[0] ?? await context.newPage();
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await waitForColdHome(page);
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await page.getByRole("button", { name: "Open saved j3-sentinel-copy", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();

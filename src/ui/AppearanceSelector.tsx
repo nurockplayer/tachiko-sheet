@@ -60,6 +60,12 @@ export function AppearanceSelector({
   const rejectedStatusRef = useRef<HTMLDivElement>(null);
   const fileRequestGeneration = useRef(0);
   const focusAfterRender = useRef<"candidate" | "rejected" | "import" | "imported" | null>(null);
+  const densityFieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const densityFocusFrameRef = useRef<number | null>(null);
+  const densityFocusGenerationRef = useRef(0);
+  const densityFocusRequestRef = useRef<{ panel: HTMLElement; fieldset: HTMLFieldSetElement; input: HTMLInputElement; generation: number } | null>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
   const id = useId();
   const dialogId = `appearance-dialog-${id}`;
   const profileGroupName = `appearance-profile-${id}`;
@@ -72,6 +78,109 @@ export function AppearanceSelector({
     : activeChoice.kind === "imported" ? activeChoice : null;
   const selectedProfileId = selection.kind === "built-in" ? selection.profileId : null;
   const selectedDensity = appearanceDensity(selection);
+
+  const cancelDensityFocusReveal = useCallback((): void => {
+    densityFocusGenerationRef.current += 1;
+    densityFocusRequestRef.current = null;
+    if (densityFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(densityFocusFrameRef.current);
+      densityFocusFrameRef.current = null;
+    }
+  }, []);
+
+  const scheduleDensityFocusReveal = useCallback((input: HTMLInputElement): void => {
+    cancelDensityFocusReveal();
+    const panel = popoverRef.current;
+    const fieldset = densityFieldsetRef.current;
+    if (!panel || !fieldset || !fieldset.contains(input)) return;
+
+    const request = {
+      panel,
+      fieldset,
+      input,
+      generation: densityFocusGenerationRef.current,
+    };
+    densityFocusRequestRef.current = request;
+
+    const isCurrentRequest = (): boolean => {
+      const current = densityFocusRequestRef.current;
+      return current === request && current.generation === densityFocusGenerationRef.current &&
+        openRef.current && popoverRef.current === request.panel && densityFieldsetRef.current === request.fieldset &&
+        request.panel.isConnected && !request.panel.hidden && request.panel.contains(request.fieldset) &&
+        request.fieldset.isConnected && request.fieldset.contains(request.input) &&
+        request.input.isConnected && request.input.type === "radio" && document.activeElement === request.input;
+    };
+
+    const revealPaintedRadio = (followPlacementOnce: boolean): void => {
+      densityFocusFrameRef.current = null;
+      if (!isCurrentRequest()) return;
+      const content = request.panel.querySelector<HTMLElement>(".ts-appearance-content");
+      const label = request.input.closest<HTMLElement>(".ts-appearance-density-option");
+      if (!content || !label || !request.fieldset.contains(label)) return;
+
+      const panelBefore = request.panel.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const viewportRect = {
+        left: viewport?.offsetLeft ?? 0,
+        top: viewport?.offsetTop ?? 0,
+        right: (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth),
+        bottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight),
+      };
+      const scrollport = {
+        left: contentRect.left + content.clientLeft,
+        top: contentRect.top + content.clientTop,
+        right: contentRect.left + content.clientLeft + content.clientWidth,
+        bottom: contentRect.top + content.clientTop + content.clientHeight,
+      };
+      const panelRect = request.panel.getBoundingClientRect();
+      const visible = {
+        left: Math.max(scrollport.left, panelRect.left, viewportRect.left),
+        top: Math.max(scrollport.top, panelRect.top, viewportRect.top),
+        right: Math.min(scrollport.right, panelRect.right, viewportRect.right),
+        bottom: Math.min(scrollport.bottom, panelRect.bottom, viewportRect.bottom),
+      };
+      const outline = window.getComputedStyle(label);
+      const numberOfPixels = (value: string): number => Number.parseFloat(value) || 0;
+      const focusExtent = Math.max(0, numberOfPixels(outline.outlineWidth) + numberOfPixels(outline.outlineOffset));
+      const painted = {
+        top: labelRect.top - focusExtent,
+        bottom: labelRect.bottom + focusExtent,
+      };
+      if (visible.bottom <= visible.top || painted.bottom - painted.top > visible.bottom - visible.top) return;
+
+      let requestedScrollTop = content.scrollTop;
+      if (painted.top < visible.top) requestedScrollTop -= Math.ceil(visible.top - painted.top);
+      else if (painted.bottom > visible.bottom) requestedScrollTop += Math.ceil(painted.bottom - visible.bottom);
+      const maximumScrollTop = Math.max(0, content.scrollHeight - content.clientHeight);
+      const nextScrollTop = Math.max(0, Math.min(maximumScrollTop, requestedScrollTop));
+      const moved = Math.abs(nextScrollTop - content.scrollTop) >= 0.5;
+      if (moved) content.scrollTop = nextScrollTop;
+
+      if (moved && followPlacementOnce) {
+        densityFocusFrameRef.current = window.requestAnimationFrame(() => {
+          densityFocusFrameRef.current = null;
+          if (!isCurrentRequest()) return;
+          const panelAfter = request.panel.getBoundingClientRect();
+          if (Math.abs(panelAfter.left - panelBefore.left) > 0.25 || Math.abs(panelAfter.top - panelBefore.top) > 0.25 ||
+            Math.abs(panelAfter.width - panelBefore.width) > 0.25 || Math.abs(panelAfter.height - panelBefore.height) > 0.25) {
+            revealPaintedRadio(false);
+          }
+        });
+      }
+    };
+
+    densityFocusFrameRef.current = window.requestAnimationFrame(() => revealPaintedRadio(true));
+  }, [cancelDensityFocusReveal]);
+
+  useEffect(() => {
+    if (!open) {
+      cancelDensityFocusReveal();
+      return;
+    }
+    return () => cancelDensityFocusReveal();
+  }, [cancelDensityFocusReveal, open]);
 
   useLayoutEffect(() => {
     const panel = popoverRef.current;
@@ -312,13 +421,14 @@ export function AppearanceSelector({
   };
 
   const closeAndReturnFocus = useCallback(() => {
+    cancelDensityFocusReveal();
     if (physicalSpaceDownRef.current) canceledSpaceRef.current = true;
     setOpen(false);
     const trigger = triggerRef.current;
     if (!trigger) return;
     if (document.activeElement === trigger) trigger.blur();
     trigger.focus();
-  }, []);
+  }, [cancelDensityFocusReveal]);
 
   useEffect(() => {
     const isSpace = (event: globalThis.KeyboardEvent) => event.key === " " || event.code === "Space";
@@ -505,7 +615,19 @@ export function AppearanceSelector({
           {exportMessage && <p className="ts-appearance-export-status" role="status" aria-live="polite">{exportMessage}</p>}
         </section>
 
-        <fieldset className="ts-appearance-group ts-appearance-group--density">
+      <fieldset
+        ref={densityFieldsetRef}
+        className="ts-appearance-group ts-appearance-group--density"
+          onFocusCapture={(event) => {
+            const target = event.target;
+            if (target instanceof HTMLInputElement && target.type === "radio") scheduleDensityFocusReveal(target);
+            else cancelDensityFocusReveal();
+          }}
+          onBlurCapture={(event) => {
+            const nextTarget = event.relatedTarget;
+            if (!(nextTarget instanceof Node) || !densityFieldsetRef.current?.contains(nextTarget)) cancelDensityFocusReveal();
+          }}
+        >
           <legend>Density</legend>
           <div className="ts-appearance-density-options">
             {DENSITIES.map(({ id: density, label }) => (
@@ -518,7 +640,10 @@ export function AppearanceSelector({
                   name={densityGroupName}
                   value={density}
                   checked={selectedDensity === density}
-                  onChange={() => syncPendingPresentation(onSelectDensity(density))}
+                  onChange={(event) => {
+                    syncPendingPresentation(onSelectDensity(density));
+                    scheduleDensityFocusReveal(event.currentTarget);
+                  }}
                 />
                 <span>{label}</span>
               </label>

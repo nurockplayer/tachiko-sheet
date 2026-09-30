@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { openFolder } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const mapping = JSON.parse(await readFile(path.join(root, "docs/design/interface-profile-v1-mapping.json"), "utf8"));
 const profile = {
   schemaVersion: 1, name: "Appearance boundary probe", colorScheme: "light",
@@ -23,7 +25,7 @@ const profile = {
 };
 const browser = await chromium.launch({ headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-await installDistRoutes(context, process.env.WORK_DIST ?? path.join(root, "dist-acceptance"));
+await installDistRoutes(context, dist);
 const page = await context.newPage();
 page.setDefaultTimeout(10000);
 
@@ -128,10 +130,7 @@ async function forcedColorPaintEvidence(label) {
 
 try {
   await page.goto(LOCAL_ORIGIN);
-  await page.getByTestId("project-ready").waitFor();
-  await page.getByRole("button", { name: "Close project", exact: true }).click();
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
   for (const [label, value] of [

@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { openFolder, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -88,7 +89,7 @@ async function openApp(context, page) {
   await installDistRoutes(context, dist);
   page.setDefaultTimeout(10000);
   await page.goto(LOCAL_ORIGIN);
-  await page.locator(".ts-app").waitFor();
+  await waitForColdHome(page);
 }
 
 async function choose(page, profileId, density) {
@@ -105,19 +106,38 @@ async function choose(page, profileId, density) {
   { chrome: profile.chrome, density });
 }
 
-async function openCanary(context, page) {
-  await page.getByTestId("project-ready").waitFor();
-  const closeProject = page.getByRole("button", { name: "Close project", exact: true });
-  if (await closeProject.count()) {
-    await closeProject.click();
-  } else {
-    const overflow = page.locator('.ts-command-overflow > summary[aria-label="More document commands"]');
-    if (await overflow.isVisible()) {
-      await overflow.click();
-      await page.locator(".ts-command-overflow").getByRole("button", { name: "Close project", exact: true }).click();
+async function closeWorkbookToHome(page) {
+  if (await page.locator('.ts-app[data-view="home"]').count()) return waitForColdHome(page);
+  const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  if (await unsaved.count() === 0) {
+    const directClose = page.locator(".ts-close-project-desktop");
+    if (await directClose.isVisible()) {
+      await directClose.click();
+    } else {
+      const overflow = page.locator(".ts-command-overflow");
+      if (!(await overflow.evaluate((element) => element.open))) await overflow.locator(":scope > summary").click();
+      const menuClose = overflow.locator(".ts-command-menu button").last();
+      assert.equal((await menuClose.textContent())?.trim(), "Close project", "compact Close uses the final native overflow command");
+      await menuClose.click();
     }
   }
-  const canary = page.getByRole("button", { name: "Try sales example", exact: true });
+  const disposition = await Promise.race([
+    page.locator('.ts-app[data-view="home"]').waitFor().then(() => "home"),
+    unsaved.waitFor().then(() => "unsaved"),
+  ]);
+  if (disposition === "unsaved") {
+    await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  }
+  await waitForColdHome(page);
+}
+
+async function openCanary(context, page) {
+  await page.locator(".ts-app").waitFor();
+  if (await page.locator('.ts-app[data-view="home"]').count() === 0) {
+    await closeWorkbookToHome(page);
+  }
+  await waitForColdHome(page);
+  const canary = page.getByRole("button", { name: "Open sales example", exact: true });
   try {
     await canary.waitFor({ state: "visible", timeout: 2500 });
   } catch (error) {
@@ -135,6 +155,16 @@ async function openCanary(context, page) {
   }
   await canary.click();
   await page.getByTestId("project-ready").waitFor();
+  await page.getByRole("tab", { name: "Table", exact: true }).waitFor();
+  const firstCell = page.locator(".ts-grid tbody .ts-cell").first();
+  await firstCell.focus();
+  await page.waitForSelector(".ts-cell--focused");
+}
+
+async function openGenericJ4(page) {
+  await closeWorkbookToHome(page);
+  await waitForColdHome(page);
+  await openFolder(page, path.join(dist, "examples", "j4-catalog-sales"));
   await page.getByRole("tab", { name: "Table", exact: true }).waitFor();
   const firstCell = page.locator(".ts-grid tbody .ts-cell").first();
   await firstCell.focus();
@@ -170,15 +200,15 @@ async function waitForAppearancePanelToSettle(page, selector = ".ts-home .ts-app
 }
 
 async function savedCopyAccessibilityNode(page, exactButtonText) {
-  const rowIndex = await page.locator(".ts-copy-item").evaluateAll((rows, name) =>
-    rows.findIndex((row) => row.querySelector(".ts-home-saved-action")?.textContent === name), exactButtonText);
+  const rowIndex = await page.locator(".ts-home-copy-row").evaluateAll((rows, name) =>
+    rows.findIndex((row) => row.querySelector(".ts-home-copy-action")?.getAttribute("aria-label") === name), exactButtonText);
   assert.ok(rowIndex >= 0, `Home contains the exact saved action ${JSON.stringify(exactButtonText)}`);
   const client = await page.context().newCDPSession(page);
   try {
     const { root } = await client.send("DOM.getDocument", { depth: -1 });
     const { nodeId } = await client.send("DOM.querySelector", {
       nodeId: root.nodeId,
-      selector: `.ts-copy-item:nth-child(${rowIndex + 1}) .ts-home-saved-action`,
+      selector: `.ts-home-copy-row:nth-child(${rowIndex + 1}) .ts-home-copy-action`,
     });
     assert.ok(nodeId, `Chromium can resolve the exact saved action ${JSON.stringify(exactButtonText)}`);
     const { node } = await client.send("DOM.describeNode", { nodeId });
@@ -198,31 +228,87 @@ async function savedCopyAccessibilityNode(page, exactButtonText) {
 }
 
 async function clickSavedCopyByLiteralName(page, name) {
-  const buttonText = `Open saved ${name}`;
-  const index = await page.locator(".ts-home-saved-action").evaluateAll((buttons, exactText) =>
-    buttons.findIndex((button) => button.textContent === exactText), buttonText);
-  assert.ok(index >= 0, `Home contains the literal saved-copy action ${JSON.stringify(buttonText)}`);
-  const button = page.locator(".ts-home-saved-action").nth(index);
-  assert.equal(await button.textContent(), buttonText, "saved-copy action retains its literal stored name");
+  const buttonName = `Open saved ${name}`;
+  const index = await page.locator(".ts-home-copy-action").evaluateAll((buttons, exactName) =>
+    buttons.findIndex((button) => button.getAttribute("aria-label") === exactName), buttonName);
+  assert.ok(index >= 0, `Home contains the literal saved-copy action ${JSON.stringify(buttonName)}`);
+  const button = page.locator(".ts-home-copy-action").nth(index);
+  assert.equal(await button.getAttribute("aria-label"), buttonName, "saved-copy action retains its literal stored name");
   await button.scrollIntoViewIfNeeded();
   await button.click();
 }
 
-async function editFirstCellForSavedCopy(page, value) {
-  await page.locator(".ts-grid tbody tr").first().locator("td").first().dblclick();
+async function selectCatalogForSavedCopy(page) {
+  await page.locator("#ts-active-table").selectOption("catalog");
+  await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
+}
+
+async function waitForHomeViewportLayout(page, width, populated) {
+  await page.waitForFunction(({ expectedWidth, hasCopies }) => {
+    if (innerWidth !== expectedWidth) return false;
+    const compact = matchMedia("(max-width: 1023px)").matches;
+    const grid = document.querySelector(".ts-home-grid");
+    if (!grid || compact !== (expectedWidth <= 1023)) return false;
+    const panels = [...grid.querySelectorAll(":scope > section")];
+    const labels = panels.map((panel) => panel.getAttribute("aria-label"));
+    const expected = hasCopies && compact
+      ? ["Saved copies", "Sales and catalog example", "Other ways to start"]
+      : ["Sales and catalog example", "Saved copies", "Other ways to start"];
+    if (JSON.stringify(labels) !== JSON.stringify(expected)) return false;
+    if (hasCopies && document.querySelectorAll(".ts-home-copy-row").length === 0) return false;
+    const rects = panels.map((panel) => panel.getBoundingClientRect());
+    if (compact) return rects[0].top < rects[1].top && rects[1].top < rects[2].top;
+    return Math.abs(rects[0].top - rects[1].top) < 1 && rects[0].left < rects[1].left;
+  }, { expectedWidth: width, hasCopies: populated });
+}
+
+async function editCatalogPriceForSavedCopy(page, value) {
+  await selectCatalogForSavedCopy(page);
+  const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  assert.ok(priceIndex >= 0, "saved-copy Home probe retains the real Catalog price field");
+  const penPrice = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
+  await penPrice.dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill(value);
   await editor.press("Enter");
   await page.waitForFunction((expected) =>
-    [...document.querySelectorAll(".ts-grid tbody tr:first-child .ts-cell-value")]
-      .some((cell) => cell.textContent === expected), value);
+    [...document.querySelectorAll('table[aria-label="Table"] tbody tr')]
+      .find((row) => row.textContent?.includes("PEN")) &&
+      [...[...document.querySelectorAll('table[aria-label="Table"] tbody tr')]
+        .find((row) => row.textContent?.includes("PEN")).querySelectorAll(".ts-cell-value")]
+        .some((cell) => cell.textContent === expected), value);
+}
+
+async function assertCatalogPenPriceAndCurrentSummary(page, value) {
+  await selectCatalogForSavedCopy(page);
+  const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
+  const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  assert.ok(priceIndex >= 0, "Catalog exposes its real price field");
+  assert.equal((await penRow.locator("td").nth(priceIndex).innerText()).trim(), value,
+    `Catalog PEN price is exactly ${value} before the copy is saved`);
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current",
+    "the configured summary is authoritatively current before Save");
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.locator(".ts-summary-result").waitFor();
+  assert.ok(await page.locator(".ts-content-meta").filter({ hasText: "up to date" }).count() > 0,
+    "the current summary carries its matching revision status before Save");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.locator('table[aria-label="Table"] tbody tr').first().waitFor();
 }
 
 async function saveCopyByName(page, name) {
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
-  await page.getByRole("dialog", { name: "Save a copy" }).waitFor({ state: "detached" });
+  const dialog = page.getByRole("dialog", { name: "Save a copy" });
+  await Promise.race([
+    dialog.waitFor({ state: "detached" }),
+    page.locator(".ts-modal [role='alert']").waitFor({ state: "visible" }),
+  ]);
+  assert.equal(await dialog.count(), 0,
+    `Save a copy ${JSON.stringify(name)} completes without an in-dialog refusal: ${await page.locator(".ts-modal [role='alert']").allTextContents()}`);
 }
 
 const colorTargets = [
@@ -342,6 +428,142 @@ async function menuViewportAndOpen(page, tag) {
   return bounds;
 }
 
+async function auditDensityFocusRevealLifecycle(page, { context, height = 800, scale = 1, forcedColors = "none" }) {
+  const previousViewport = page.viewportSize();
+  const selector = context === "home" ? ".ts-home .ts-appearance-selector" : ".ts-workbook-head > .ts-appearance-selector";
+  const trigger = page.locator(selector).getByRole("button", { name: "Appearance", exact: true });
+  const panel = page.locator(selector).locator(".ts-appearance-popover");
+  const tag = `${context} Appearance density reveal ${height}px scale ${scale}${forcedColors === "active" ? " forced-colors" : ""}`;
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await page.setViewportSize({ width: 320, height });
+    await page.emulateMedia({ forcedColors });
+    await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: scale });
+    if (await trigger.getAttribute("aria-expanded") === "true") {
+      await panel.getByRole("button", { name: "Close", exact: true }).click();
+      await page.waitForFunction((selector) => document.querySelector(`${selector} .ts-appearance-trigger`)?.getAttribute("aria-expanded") === "false", selector);
+    }
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await panel.waitFor({ state: "visible" });
+    await waitForAppearancePanelToSettle(page, `${selector} .ts-appearance-popover`);
+
+    const focusWithoutNativeScroll = async (value, initialScrollTop, transferTo = null) => {
+      const before = await page.evaluate(({ selector, value, initialScrollTop, transferTo }) => {
+        const panel = document.querySelector(`${selector} .ts-appearance-popover`);
+        const content = panel.querySelector(".ts-appearance-content");
+        content.scrollTop = initialScrollTop;
+        const measure = (candidateValue) => {
+          const input = panel.querySelector(`.ts-appearance-density-option input[value="${candidateValue}"]`);
+          const label = input.closest(".ts-appearance-density-option");
+          const rect = label.getBoundingClientRect();
+          const contentRect = content.getBoundingClientRect();
+          const panelRect = panel.getBoundingClientRect();
+          const viewport = visualViewport;
+          const top = Math.max(contentRect.top + content.clientTop, panelRect.top, viewport?.offsetTop ?? 0);
+          const bottom = Math.min(contentRect.top + content.clientTop + content.clientHeight, panelRect.bottom,
+            (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight));
+          const style = getComputedStyle(label);
+          const extent = Math.max(0, (Number.parseFloat(style.outlineWidth) || 0) + (Number.parseFloat(style.outlineOffset) || 0));
+          const paint = { top: rect.top - extent, bottom: rect.bottom + extent };
+          let expected = content.scrollTop;
+          if (paint.top < top) expected -= Math.ceil(top - paint.top);
+          else if (paint.bottom > bottom) expected += Math.ceil(paint.bottom - bottom);
+          expected = Math.max(0, Math.min(content.scrollHeight - content.clientHeight, expected));
+          return { rect: rect.toJSON(), paint, clip: { top, bottom }, scrollTop: content.scrollTop, expected,
+            outline: { width: style.outlineWidth, offset: style.outlineOffset, color: style.outlineColor } };
+        };
+        const first = panel.querySelector(`.ts-appearance-density-option input[value="${value}"]`);
+        const second = transferTo === null ? null : panel.querySelector(`.ts-appearance-density-option input[value="${transferTo}"]`);
+        first.focus({ preventScroll: true });
+        if (second) second.focus({ preventScroll: true });
+        const target = measure(transferTo ?? value);
+        return { target, startScrollTop: content.scrollTop, documentScrollTop: document.scrollingElement?.scrollTop ?? 0 };
+      }, { selector, value, initialScrollTop, transferTo });
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const after = await page.evaluate((selector) => {
+        const panel = document.querySelector(`${selector} .ts-appearance-popover`);
+        const content = panel.querySelector(".ts-appearance-content");
+        const input = document.activeElement;
+        const label = input.closest(".ts-appearance-density-option");
+        const rect = label.getBoundingClientRect();
+        const style = getComputedStyle(label);
+        const extent = Math.max(0, (Number.parseFloat(style.outlineWidth) || 0) + (Number.parseFloat(style.outlineOffset) || 0));
+        const contentRect = content.getBoundingClientRect();
+        return { value: input.value, contentScrollTop: content.scrollTop, scrollHeight: content.scrollHeight, clientHeight: content.clientHeight,
+          documentScrollTop: document.scrollingElement?.scrollTop ?? 0,
+          paint: { top: rect.top - extent, bottom: rect.bottom + extent },
+          outline: { width: style.outlineWidth, offset: style.outlineOffset, color: style.outlineColor },
+          content: contentRect.toJSON(), panel: panel.getBoundingClientRect().toJSON() };
+      }, selector);
+      return { before, after };
+    };
+
+    // A top-of-content state makes the density row sit below the scrollport;
+    // focusing it must reveal only the local Appearance scroll owner.
+    const downward = await focusWithoutNativeScroll("compact", 0);
+    evidence(downward.after.value === "compact" && Math.abs(downward.after.contentScrollTop - downward.before.target.expected) <= 1 &&
+      downward.after.paint.top >= downward.after.content.top - 1 &&
+      downward.after.paint.bottom <= downward.after.content.bottom + 1 &&
+      downward.after.documentScrollTop === downward.before.documentScrollTop,
+    `${tag} reveals the density row downward with minimum local-only scroll`, downward);
+
+    const noOp = await focusWithoutNativeScroll("comfortable", downward.after.contentScrollTop);
+    evidence(noOp.after.value === "comfortable" && noOp.before.target.expected === noOp.before.target.scrollTop &&
+      noOp.after.contentScrollTop === noOp.before.target.scrollTop && noOp.after.documentScrollTop === noOp.before.documentScrollTop,
+    `${tag} leaves an already-visible focus target unchanged`, noOp);
+
+    const rapidTransfer = await focusWithoutNativeScroll("compact", 0, "comfortable");
+    evidence(rapidTransfer.after.value === "comfortable" &&
+      Math.abs(rapidTransfer.after.contentScrollTop - rapidTransfer.before.target.expected) <= 1 &&
+      rapidTransfer.after.documentScrollTop === rapidTransfer.before.documentScrollTop,
+    `${tag} cancels a replaced focus request and reveals only the latest radio`, rapidTransfer);
+
+    let upward = null;
+    if (height < 300) {
+      upward = await focusWithoutNativeScroll("compact", Number.MAX_SAFE_INTEGER);
+      evidence(upward.before.target.expected < upward.before.target.scrollTop && upward.after.value === "compact" &&
+        Math.abs(upward.after.contentScrollTop - upward.before.target.expected) <= 1 &&
+        upward.after.paint.top >= upward.after.content.top - 1 && upward.after.paint.bottom <= upward.after.content.bottom + 1,
+      `${tag} reveals a top-clipped focus target by scrolling upward`, upward);
+    }
+
+    const canceled = await page.evaluate((selector) => {
+      const host = document.querySelector(selector);
+      const panel = host.querySelector(".ts-appearance-popover");
+      const content = panel.querySelector(".ts-appearance-content");
+      content.scrollTop = 0;
+      const before = content.scrollTop;
+      panel.querySelector('.ts-appearance-density-option input[value="compact"]').focus({ preventScroll: true });
+      panel.querySelector(".ts-appearance-close").click();
+      return { before, afterClick: content.scrollTop, hidden: panel.hidden,
+        activeTrigger: document.activeElement === host.querySelector(".ts-appearance-trigger") };
+    }, selector);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const canceledAfterFrames = await page.evaluate((selector) => {
+      const content = document.querySelector(`${selector} .ts-appearance-content`);
+      const panel = document.querySelector(`${selector} .ts-appearance-popover`);
+      return { scrollTop: content.scrollTop, hidden: panel.hidden, active: document.activeElement?.className ?? null };
+    }, selector);
+    evidence(canceled.activeTrigger && canceled.afterClick === canceled.before &&
+      canceledAfterFrames.hidden && canceledAfterFrames.scrollTop === canceled.before &&
+      canceledAfterFrames.active === "ts-button ts-appearance-trigger",
+    `${tag} cancels queued local scrolling when the panel closes`, { canceled, canceledAfterFrames });
+
+    if (forcedColors === "active") {
+      evidence(downward.after.outline.width === "3px" && downward.after.outline.color !== "rgba(0, 0, 0, 0)",
+        `${tag} retains a visible system focus indicator after reveal`, downward.after.outline);
+    }
+    observations.push({ densityFocusRevealLifecycle: { tag, downward, noOp, rapidTransfer, ...(upward ? { upward } : {}), canceled, canceledAfterFrames } });
+  } finally {
+    if (await trigger.getAttribute("aria-expanded") === "true") await panel.getByRole("button", { name: "Close", exact: true }).click();
+    await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+    await page.emulateMedia({ forcedColors: "none" });
+    await page.setViewportSize(previousViewport);
+    await cdp.detach();
+  }
+}
+
 async function auditNarrowedAppearanceContent(page, context) {
   await page.setViewportSize({ width: 320, height: 800 });
   const trigger = page.getByRole("button", { name: "Appearance", exact: true });
@@ -427,7 +649,47 @@ async function auditNarrowedAppearanceContent(page, context) {
     `${tag} wraps each of the three complete profile labels inside its control`, narrowed.profiles);
 
     const readFocusPaint = async (name, advance = true) => {
-      if (advance) await page.keyboard.press("Tab");
+      const beforeFocus = await page.evaluate((focusName) => {
+        const panel = document.querySelector(".ts-home .ts-appearance-popover");
+        const content = panel.querySelector(".ts-appearance-content");
+        const active = document.activeElement;
+        const density = focusName === "Compact density" ? "compact" :
+          focusName === "Comfortable density" ? "comfortable" : null;
+        const input = density === null ? null : panel.querySelector(`.ts-appearance-density-option input[value="${density}"]`);
+        const label = input?.closest(".ts-appearance-density-option") ?? null;
+        const contentRect = content.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        const viewport = visualViewport;
+        const visibleTop = Math.max(contentRect.top + content.clientTop, panelRect.top, viewport?.offsetTop ?? 0);
+        const visibleBottom = Math.min(contentRect.top + content.clientTop + content.clientHeight, panelRect.bottom,
+          (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight));
+        const scrollport = { top: visibleTop, bottom: visibleBottom };
+        let expectedScrollTop = content.scrollTop;
+        if (label) {
+          const rect = label.getBoundingClientRect();
+          const style = getComputedStyle(label);
+          const extent = Math.max(0,
+            (Number.parseFloat(style.getPropertyValue("--ts-appearance-focus-width")) || 3) +
+            (Number.parseFloat(style.getPropertyValue("--ts-appearance-focus-offset")) || 2));
+          const top = rect.top - extent;
+          const bottom = rect.bottom + extent;
+          if (top < visibleTop) expectedScrollTop -= Math.ceil(visibleTop - top);
+          else if (bottom > visibleBottom) expectedScrollTop += Math.ceil(bottom - visibleBottom);
+          expectedScrollTop = Math.max(0, Math.min(content.scrollHeight - content.clientHeight, expectedScrollTop));
+        }
+        return {
+          active: { tag: active.tagName, className: active.className, text: active.textContent?.trim() ?? "" },
+          content: { scrollTop: content.scrollTop, scrollHeight: content.scrollHeight, clientHeight: content.clientHeight, rect: contentRect.toJSON() },
+          panel: panelRect.toJSON(),
+          document: { scrollTop: document.scrollingElement?.scrollTop ?? 0, scrollLeft: document.scrollingElement?.scrollLeft ?? 0 },
+          viewport: { top: visualViewport?.offsetTop ?? 0, height: visualViewport?.height ?? innerHeight, scale: visualViewport?.scale ?? 1 },
+          densityTarget: label ? { density, rect: label.getBoundingClientRect().toJSON(), visible: scrollport, expectedScrollTop } : null,
+        };
+      }, name);
+      if (advance) {
+        await page.keyboard.press("Tab");
+      }
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const observed = await page.evaluate(() => {
         const active = document.activeElement;
         const target = active.closest(".ts-appearance-profile-option, .ts-appearance-density-option, button") ?? active;
@@ -436,9 +698,19 @@ async function auditNarrowedAppearanceContent(page, context) {
           ? panel
           : panel.querySelector(".ts-appearance-content");
         const control = target.getBoundingClientRect();
+        const activeRect = active.getBoundingClientRect();
         const clip = content.getBoundingClientRect();
         const style = getComputedStyle(target);
+        const activeStyle = getComputedStyle(active);
         const gutter = (Number.parseFloat(style.outlineWidth) || 0) + (Number.parseFloat(style.outlineOffset) || 0);
+        const scrollAncestors = [];
+        for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          const ancestorStyle = getComputedStyle(ancestor);
+          if (/(auto|scroll|overlay)/.test(`${ancestorStyle.overflowY} ${ancestorStyle.overflow}`)) {
+            scrollAncestors.push({ tag: ancestor.tagName, className: ancestor.className, scrollTop: ancestor.scrollTop,
+              scrollHeight: ancestor.scrollHeight, clientHeight: ancestor.clientHeight, rect: ancestor.getBoundingClientRect().toJSON() });
+          }
+        }
         return {
           tag: active.tagName, className: active.className, value: active.value ?? null,
           targetTag: target.tagName, targetClassName: target.className,
@@ -448,6 +720,18 @@ async function auditNarrowedAppearanceContent(page, context) {
           paint: { left: control.left - gutter, top: control.top - gutter, right: control.right + gutter, bottom: control.bottom + gutter },
           clip: { left: clip.left, top: clip.top, right: clip.right, bottom: clip.bottom },
           control: control.toJSON(),
+          activeRect: activeRect.toJSON(),
+          activeStyle: { position: activeStyle.position, width: activeStyle.width, height: activeStyle.height,
+            overflow: activeStyle.overflow, clip: activeStyle.clip, clipPath: activeStyle.clipPath },
+          panelRect: panel.getBoundingClientRect().toJSON(),
+          panelPlacement: { top: panel.style.top, left: panel.style.left, maxHeight: panel.style.maxHeight,
+            maxWidth: panel.style.maxWidth, selectorRect: panel.parentElement.getBoundingClientRect().toJSON() },
+          contentScroll: { top: panel.querySelector(".ts-appearance-content").scrollTop,
+            height: panel.querySelector(".ts-appearance-content").scrollHeight,
+            clientHeight: panel.querySelector(".ts-appearance-content").clientHeight },
+          scrollAncestors,
+          documentScroll: { top: document.scrollingElement?.scrollTop ?? 0, left: document.scrollingElement?.scrollLeft ?? 0 },
+          viewport: { top: visualViewport?.offsetTop ?? 0, height: visualViewport?.height ?? innerHeight, scale: visualViewport?.scale ?? 1 },
         };
       });
       const reachesExpectedControl = {
@@ -466,7 +750,16 @@ async function auditNarrowedAppearanceContent(page, context) {
         observed.paint.top >= observed.clip.top - 1 && observed.paint.bottom <= observed.clip.bottom + 1;
       evidence(reachesExpectedControl && observed.focusVisible && observed.outlineWidth === "3px" && observed.outlineOffset === "2px" && inside,
         `${tag} preserves ${name} keyboard focus paint inside the scrollport`, observed);
-      focusPaint.push({ name, ...observed });
+      if (beforeFocus.densityTarget) {
+        evidence(Math.abs(observed.contentScroll.top - beforeFocus.densityTarget.expectedScrollTop) <= 1 &&
+          observed.documentScroll.top === beforeFocus.document.scrollTop && observed.documentScroll.left === beforeFocus.document.scrollLeft,
+        `${tag} reveals ${name} with only the minimum local vertical scroll`, {
+          name, beforeScrollTop: beforeFocus.content.scrollTop, expectedScrollTop: beforeFocus.densityTarget.expectedScrollTop,
+          actualScrollTop: observed.contentScroll.top, documentBefore: beforeFocus.document, documentAfter: observed.documentScroll,
+          targetBefore: beforeFocus.densityTarget.rect, targetAfter: observed.control,
+        });
+      }
+      focusPaint.push({ name, before: beforeFocus, after: observed });
       return observed;
     };
     await readFocusPaint("Close");
@@ -739,6 +1032,8 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
     await page.getByRole("tab", { name: viewName, exact: true }).click();
     const layout = await page.evaluate(() => {
       const panel = document.querySelector('[role="tabpanel"]');
+      const tableScrollOwner = panel?.querySelector(".ts-table-composition");
+      const scrollOwner = tableScrollOwner ?? panel;
       const footer = document.querySelector(".ts-workspace-footer");
       const grid = document.querySelector(".ts-grid-scroll");
       const panelRect = panel?.getBoundingClientRect();
@@ -801,9 +1096,10 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
         panelTop: panelRect?.top ?? null,
         panelBottom: panelRect?.bottom ?? null,
         panelHeight: panelRect?.height ?? null,
-        panelClientHeight: panel?.clientHeight ?? null,
-        panelScrollHeight: panel?.scrollHeight ?? null,
-        panelOverflowY: panel ? getComputedStyle(panel).overflowY : "missing",
+        panelClientHeight: scrollOwner?.clientHeight ?? null,
+        panelScrollHeight: scrollOwner?.scrollHeight ?? null,
+        panelOverflowY: scrollOwner ? getComputedStyle(scrollOwner).overflowY : "missing",
+        scrollOwner: tableScrollOwner ? ".ts-table-composition" : '[role="tabpanel"]',
         panelClientWidth: panel?.clientWidth ?? null,
         panelScrollWidth: panel?.scrollWidth ?? null,
         panelBackground: panelStyle?.backgroundColor ?? null,
@@ -827,7 +1123,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
     const appearance = page.locator(".ts-workbook-head .ts-appearance-trigger");
     const heldAppearance = await sampleButtonStates(page, appearance, `${label} appearance command`);
     observations.push({ viewHeldControl: label, states: heldAppearance });
-    evidence(layout.panelOverflowY === "auto", `${label} panel can scroll its own long content`, layout);
+    evidence(layout.panelOverflowY === "auto", `${label} view scroll owner can scroll its own long content`, layout);
     evidence(layout.panelBottom <= layout.footerTop + 1, `${label} panel ends before the Views/status footer`, layout);
     evidence(layout.footerBottom <= height + 1, `${label} keeps the complete Views/status footer in the viewport`, layout);
     evidence(layout.pageHeight <= height + 1 && layout.scrollY === 0, `${label} does not push the document beyond the viewport`, layout);
@@ -959,10 +1255,6 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
         `${label} renders the result count with the approved reset and typography`, spacing);
       }
     }
-    if (width === 320 && viewName === "Table") {
-      evidence(layout.gridOverflowX === "auto" && layout.gridScrollWidth > layout.gridClientWidth,
-        `${label} preserves the Table's own horizontal grid scroller`, layout);
-    }
     observations.push({ workbookViewport: label, ...layout });
   }
 }
@@ -972,7 +1264,6 @@ async function auditInteropPreviewTrimCases(browser) {
   try {
     const page = await context.newPage();
     await openApp(context, page);
-    await page.getByTestId("project-ready").waitFor();
     await openCanary(context, page);
 
     const salesPen = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
@@ -1289,7 +1580,7 @@ async function auditTallGridLayoutOnly(page) {
   await page.setViewportSize({ width: 1512, height: 982 });
   await page.evaluate(() => {
     const panel = document.querySelector(".ts-panel");
-    if (panel) panel.style.flex = "0 0 300px";
+    if (panel) panel.style.height = "300px";
   });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const resizedPanel = await page.evaluate(() => {
@@ -1306,7 +1597,7 @@ async function auditTallGridLayoutOnly(page) {
     "panel ResizeObserver updates the grid cap when the panel changes size without a viewport resize", resizedPanel);
   observations.push({ tallGridPanelResize: resizedPanel });
   await page.evaluate(() => {
-    document.querySelector(".ts-panel")?.style.removeProperty("flex");
+    document.querySelector(".ts-panel")?.style.removeProperty("height");
     document.querySelectorAll("[data-layout-stress-row]").forEach((row) => row.remove());
   });
 }
@@ -1316,99 +1607,107 @@ async function auditHomeViewportBounds(page, browser) {
   try {
     const emptyPage = await emptyContext.newPage();
     await openApp(emptyContext, emptyPage);
-    await emptyPage.getByTestId("project-ready").waitFor();
-    await emptyPage.getByRole("button", { name: "Close project", exact: true }).click();
-    await emptyPage.locator('.ts-app[data-view="home"]').waitFor();
+    await waitForColdHome(emptyPage);
     for (const profile of profiles) {
       for (const density of densities) {
         await choose(emptyPage, profile.id, density.id);
         await emptyPage.keyboard.press("Escape");
-        for (const [width, height] of [[1512, 982], [768, 640], [600, 640], [320, 640]]) {
+        for (const [width, height] of [[1512, 982], [1024, 640], [1023, 640], [1024, 640], [1023, 640], [834, 640], [768, 640], [600, 640], [599, 640], [390, 640], [375, 640], [320, 640]]) {
           await emptyPage.setViewportSize({ width, height });
+          await waitForHomeViewportLayout(emptyPage, width, false);
           const layout = await emptyPage.evaluate(() => {
             const home = document.querySelector(".ts-home");
             const homeRect = home.getBoundingClientRect();
             const headerRect = document.querySelector(".ts-home-head").getBoundingClientRect();
-            const visibleIntro = [...document.querySelectorAll(".ts-home-intro")].find((node) => getComputedStyle(node).display !== "none");
-            const introRect = visibleIntro.getBoundingClientRect();
-            const actions = [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")]
-              .map((node) => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, right: rect.right, width: rect.width, height: rect.height }; });
-            const importAction = document.querySelector(".ts-home-import-action").getBoundingClientRect();
-            const importDesktop = document.querySelector(".ts-home-import-desktop-help");
-            const importCompact = document.querySelector(".ts-home-import-compact-help");
-            const openDesktop = document.querySelector(".ts-home-open-desktop-help");
-            const openCompact = document.querySelector(".ts-home-open-compact-help");
-            const isVisible = (node) => getComputedStyle(node).display !== "none";
-            const help = isVisible(importCompact) ? importCompact : importDesktop;
-            const helpRect = help.getBoundingClientRect();
-            const actionRect = document.querySelector(".ts-home-import-action").getBoundingClientRect();
+            const grid = document.querySelector(".ts-home-grid");
+            const panelOrder = [...grid.querySelectorAll(":scope > section")].map((node) => node.getAttribute("aria-label"));
+            const otherRows = [...document.querySelectorAll(".ts-home-other-row")];
+            const rowActions = otherRows.map((row) => row.querySelector("button, label.ts-home-file-action"));
+            const actionBoxes = rowActions.map((node) => { const rect = node.getBoundingClientRect(); return { x: rect.x, right: rect.right, width: rect.width, height: rect.height }; });
+            const flow = document.querySelector(".ts-home-example-flow");
+            const flowRect = flow.getBoundingClientRect();
+            const exampleAction = document.querySelector(".ts-home-example-action > button");
+            const exampleActionRect = exampleAction.getBoundingClientRect();
+            const tracks = getComputedStyle(grid).gridTemplateColumns;
             return {
               pageWidth: document.documentElement.scrollWidth,
-              empty: document.querySelectorAll(".ts-copy-item").length === 0,
-              savedMessage: document.querySelector(".ts-empty")?.textContent?.trim() ?? null,
+              empty: document.querySelectorAll(".ts-home-copy-row").length === 0,
+              savedMessage: document.querySelector(".ts-home-copy-empty strong")?.textContent?.trim() ?? null,
               home: { x: homeRect.x, y: homeRect.y, width: homeRect.width, height: homeRect.height },
               header: { x: headerRect.x, contentX: document.querySelector(".ts-brand").getBoundingClientRect().x, y: headerRect.y },
-              intro: { x: introRect.x, contentX: introRect.x + Number.parseFloat(getComputedStyle(visibleIntro).paddingLeft), y: introRect.y, width: introRect.width, right: introRect.right },
-              introText: [...document.querySelectorAll(".ts-home-intro")]
-                .filter(isVisible).map((node) => node.textContent.trim()),
-              openBorderTop: getComputedStyle(document.querySelector('[aria-label="Open project"]')).borderTopStyle,
-              openActionGap: Number.parseFloat(getComputedStyle(document.querySelector(".ts-home-open-actions")).rowGap),
-              actions,
-              openHelper: [openDesktop, openCompact].find(isVisible)?.textContent?.trim() ?? null,
-              visibleOpenHelpers: Number(isVisible(openDesktop)) + Number(isVisible(openCompact)),
-              importAction: { x: importAction.x, y: importAction.y, right: importAction.right, width: importAction.width, height: importAction.height },
-              importHelper: { text: help.textContent.trim(), y: helpRect.y, visibleCopies: Number(isVisible(importDesktop)) + Number(isVisible(importCompact)) },
-              importHeadingGap: actionRect.top - document.querySelector('[aria-label="Import spreadsheet"] .ts-h2').getBoundingClientRect().bottom,
-              importChooserBeforeHelper: actionRect.bottom <= helpRect.y + 1,
-              imports: document.querySelectorAll(".ts-home-import-action input[type=file]").length,
-              folders: document.querySelectorAll(".ts-home-open-actions input[type=file]").length,
+              purpose: document.querySelector("#home-purpose-title")?.textContent?.trim() ?? null,
+              panelOrder,
+              tracks,
+              exampleButton: {
+                text: exampleAction.textContent?.trim() ?? null,
+                x: exampleActionRect.x,
+                right: exampleActionRect.right,
+                y: exampleActionRect.y,
+                bottom: exampleActionRect.bottom,
+              },
+              exampleFlow: {
+                label: flow.getAttribute("aria-label"),
+                x: flowRect.x,
+                right: flowRect.right,
+                width: flow.clientWidth,
+                scrollWidth: flow.scrollWidth,
+                whiteSpace: getComputedStyle(flow).whiteSpace,
+                flexWrap: getComputedStyle(flow).flexWrap,
+              },
+              actions: actionBoxes,
+              rows: otherRows.length,
+              imports: document.querySelectorAll('.ts-home-other-row input[type="file"][accept]').length,
+              folders: document.querySelectorAll('.ts-home-other-row input[type="file"][multiple]').length,
               appearance: document.querySelectorAll(".ts-home-head .ts-appearance-trigger").length,
             };
           });
           assert.equal(layout.empty, true, `${width}px ${profile.id}/${density.id} observes empty Home`);
-          assert.equal(layout.savedMessage, "No saved copies yet.");
+          assert.equal(layout.savedMessage, "No saved copies yet");
           assert.ok(layout.pageWidth <= width, `${width}px ${profile.id}/${density.id} empty Home has no horizontal overflow: ${JSON.stringify(layout)}`);
-          assert.equal(layout.visibleOpenHelpers, 1, "one responsive Open helper is visible and exposed at a time");
-          assert.equal(layout.introText.length, 1, "one responsive Home intro is visible and exposed at a time");
-          if (width < 600) {
-            assert.deepEqual(layout.introText, ["Open a local project or a saved copy."]);
-            assert.equal(layout.openHelper, "The source folder stays unchanged.");
-          } else {
-            assert.deepEqual(layout.introText, ["Open a project folder, or reopen a copy saved in this browser profile."]);
-            assert.equal(layout.openHelper, "Choose a local project folder. Its source stays unchanged.");
+          assert.equal(layout.purpose, "Change a value, and the summaries and charts that use it update.");
+          assert.deepEqual(layout.panelOrder, ["Sales and catalog example", "Saved copies", "Other ways to start"]);
+          assert.equal(layout.exampleButton.text, "Open sales example");
+          assert.equal(layout.exampleFlow.label, "Catalog prices times Sales quantities gives Sales by product");
+          assert.ok(layout.exampleFlow.scrollWidth <= layout.exampleFlow.width + 1,
+            `${width}px ${profile.id}/${density.id} empty Home Sales flow fits its own content box`, layout.exampleFlow);
+          assert.ok(layout.exampleButton.x >= 0 && layout.exampleButton.right <= width + 1,
+            `${width}px ${profile.id}/${density.id} empty Home Sales CTA remains unobstructed`, layout.exampleButton);
+          if (width === 320) {
+            assert.equal(layout.exampleFlow.whiteSpace, "normal");
+            assert.equal(layout.exampleFlow.flexWrap, "wrap");
+            if (profile.id === "tachiko" && density.id === "compact" && process.env.SHEET_CONTROL_ARTIFACT_DIR) {
+              const cta = emptyPage.locator(".ts-home-example-action > button");
+              await emptyPage.getByRole("button", { name: "Appearance", exact: true }).focus();
+              await emptyPage.keyboard.press("Tab");
+              await cta.scrollIntoViewIfNeeded();
+              const focus = await cta.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                const extent = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset);
+                return {
+                  active: element === document.activeElement,
+                  outlineStyle: style.outlineStyle,
+                  rect: { x: rect.x, right: rect.right, y: rect.y, bottom: rect.bottom },
+                  painted: { x: rect.x - extent, right: rect.right + extent, y: rect.y - extent, bottom: rect.bottom + extent },
+                  viewport: { width: innerWidth, height: innerHeight },
+                };
+              });
+              assert.equal(focus.active, true, "keyboard focus can be placed on the 320px Sales action");
+              assert.notEqual(focus.outlineStyle, "none", "320px Sales action shows its keyboard focus indicator");
+              assert.ok(focus.painted.x >= 0 && focus.painted.right <= 320 && focus.painted.y >= 0 && focus.painted.bottom <= 640,
+                "320px Sales action focus paint remains inside the viewport", focus);
+              await captureHeldControl(emptyPage, "home-sales-flow-empty-320.png");
+              await emptyPage.evaluate(() => document.activeElement?.blur());
+            }
           }
-          assert.equal(layout.importHelper.text, "Review the source and column types before importing.");
-          assert.equal(layout.importHelper.visibleCopies, 1, "one responsive Import helper is visible and exposed at a time");
-          assert.equal(layout.imports, 1, "empty Home retains one real single-file import input");
-          assert.equal(layout.folders, 1, "empty Home retains one real directory input");
+          assert.equal(layout.rows, 3, "Other ways retains import, folder, and release-plan example actions");
+          assert.equal(layout.imports, 1, "Home retains one real single-file import input");
+          assert.equal(layout.folders, 1, "Home retains one real directory input");
           assert.equal(layout.appearance, 1, "empty Home keeps Appearance available");
           assert.ok(layout.actions.every((action) => action.x >= 0 && action.right <= width + 1),
-            `${width}px ${profile.id}/${density.id} Open actions remain inside the viewport`, layout);
-          assert.ok(layout.importAction.x >= 0 && layout.importAction.right <= width + 1,
-            `${width}px ${profile.id}/${density.id} Import action remains inside the viewport`, layout);
-          if (width < 600) {
-            assert.ok(Math.abs(layout.home.y - 28) <= 1, "compact Home keeps its 28px top origin", layout);
-            assert.equal(layout.header.contentX, 32, "compact Home header content uses the 16px inner inset");
-            assert.equal(layout.intro.contentX, 32, "compact Home intro content uses the 16px inner inset");
-            assert.equal(layout.openBorderTop, "none", "only compact Open loses its top separator");
-            assert.equal(layout.openActionGap, 16, "compact Home Open action row has the approved 16px gap");
-            for (let index = 1; index < layout.actions.length; index += 1) {
-              assert.equal(layout.actions[index].y - layout.actions[index - 1].y - layout.actions[index - 1].height, 16,
-                "adjacent compact Open actions are separated by 16px");
-            }
-            assert.ok(layout.actions.every((action) => Math.abs(action.width - layout.home.width) <= 1),
-              "compact Open actions fill the Home content width", layout);
-            assert.equal(layout.importChooserBeforeHelper, true, "compact Import chooser precedes helper in visual and DOM order");
-            assert.equal(layout.importHeadingGap, 20, "compact Import chooser follows its heading with the approved gap");
-            assert.ok(layout.importHelper.y >= layout.importAction.y + layout.importAction.height + 15,
-              "compact Import helper follows the chooser with the approved gap", layout);
-            if (density.id === "comfortable") assert.ok(layout.actions.every(({ height }) => height >= 36));
-          } else {
-            assert.equal(layout.openBorderTop, "solid", "desktop retains the approved Open divider");
-            assert.equal(layout.openActionGap, 12, "desktop retains its 12px Open action gap");
-            assert.ok(layout.importHelper.y < layout.importAction.y,
-              "desktop retains its approved helper-before-chooser presentation order", layout);
-          }
+            `${width}px ${profile.id}/${density.id} Home start actions remain inside the viewport`, layout);
+          assert.ok(layout.tracks.split(" ").length === (width >= 1024 ? 2 : 1),
+            `${width}px ${profile.id}/${density.id} Home uses the approved two-column/stacked breakpoint`, layout);
           let appearancePopover = null;
           if (width === 320) {
             await emptyPage.getByRole("button", { name: "Appearance", exact: true }).click();
@@ -1516,7 +1815,8 @@ async function auditHomeViewportBounds(page, browser) {
     await choose(emptyPage, "tachiko", "compact");
     await emptyPage.keyboard.press("Escape");
     await auditNarrowedAppearanceContent(emptyPage, emptyContext);
-    await emptyPage.setViewportSize({ width: 320, height: 200 });
+    await auditDensityFocusRevealLifecycle(emptyPage, { context: "home", height: 800, scale: 1.5 });
+    await emptyPage.setViewportSize({ width: 320, height: 180 });
     const shortTrigger = emptyPage.getByRole("button", { name: "Appearance", exact: true });
     if (await shortTrigger.getAttribute("aria-expanded") !== "true") await shortTrigger.click();
     const shortPanel = emptyPage.locator(".ts-home .ts-appearance-popover");
@@ -1560,16 +1860,16 @@ async function auditHomeViewportBounds(page, browser) {
     });
     evidence(shortAppearanceGeometry.page.width <= 320 && shortAppearanceGeometry.panel.x >= 0 &&
       shortAppearanceGeometry.panel.right <= 321 && shortAppearanceGeometry.panel.y >= 0 &&
-      shortAppearanceGeometry.panel.bottom <= 201,
-    "320x200 Home Appearance uses the contained short-viewport fallback", shortAppearanceGeometry);
+      shortAppearanceGeometry.panel.bottom <= 181,
+    "320x180 Home Appearance uses the contained short-viewport fallback", shortAppearanceGeometry);
     evidence(shortAppearanceGeometry.content.scrollHeight > shortAppearanceGeometry.content.clientHeight &&
       ["auto", "scroll"].includes(shortAppearanceGeometry.content.overflowY),
-    "320x200 Home Appearance preserves internal scrolling for short-viewport content", shortAppearanceGeometry);
+    "320x180 Home Appearance preserves internal scrolling for short-viewport content", shortAppearanceGeometry);
     evidence(shortAppearanceGeometry.usableMinimum.belowSide < shortAppearanceGeometry.usableMinimum.total &&
       shortAppearanceGeometry.usableMinimum.aboveSide < shortAppearanceGeometry.usableMinimum.total &&
       shortAppearanceGeometry.panel.y === shortAppearanceGeometry.visualViewport.top + 12 &&
       shortAppearanceGeometry.panel.height <= shortAppearanceGeometry.visualViewport.height - 24,
-    "320x200 Home Appearance clamps to the inset visual viewport when neither side fits measured usable height",
+    "320x180 Home Appearance clamps to the inset visual viewport when neither side fits measured usable height",
     shortAppearanceGeometry);
     const shortReachability = await emptyPage.evaluate(() => {
       const panel = document.querySelector(".ts-home .ts-appearance-popover");
@@ -1588,7 +1888,8 @@ async function auditHomeViewportBounds(page, browser) {
       return { controls, closeReachable: close.top >= panelRect.top && close.bottom <= panelRect.bottom };
     });
     evidence(shortReachability.controls.every(({ reachable }) => reachable) && shortReachability.closeReachable,
-      "320x200 Home Appearance keeps Density, Import, Export and Close reachable", shortReachability);
+      "320x180 Home Appearance keeps Density, Import, Export and Close reachable", shortReachability);
+    await auditDensityFocusRevealLifecycle(emptyPage, { context: "home", height: 180, scale: 1 });
     await emptyPage.keyboard.press("Escape");
     await emptyPage.waitForFunction(() => document.querySelector(".ts-home .ts-appearance-trigger")?.getAttribute("aria-expanded") === "false");
     observations.push({ homeAppearanceShortViewport: { geometry: shortAppearanceGeometry, reachability: shortReachability } });
@@ -1657,9 +1958,38 @@ async function auditHomeViewportBounds(page, browser) {
     await emptyContext.close();
   }
 
+  const directTabletContext = await browser.newContext({ viewport: { width: 834, height: 640 }, deviceScaleFactor: 1 });
+  try {
+    const directTabletPage = await directTabletContext.newPage();
+    await openApp(directTabletContext, directTabletPage);
+    await waitForColdHome(directTabletPage);
+    await waitForHomeViewportLayout(directTabletPage, 834, false);
+    const directTablet = await directTabletPage.evaluate(() => ({
+      view: document.querySelector(".ts-app")?.getAttribute("data-view"),
+      panels: [...document.querySelectorAll(".ts-home-grid > section")].map((panel) => ({
+        label: panel.getAttribute("aria-label"), top: panel.getBoundingClientRect().top, left: panel.getBoundingClientRect().left,
+      })),
+      savedRows: document.querySelectorAll(".ts-home-copy-row").length,
+      viewportWidth: innerWidth,
+    }));
+    assert.equal(directTablet.view, "home", "a cold tablet-width entry remains on Home");
+    assert.equal(directTablet.savedRows, 0, "fresh tablet Home does not auto-open or fabricate a saved copy");
+    assert.deepEqual(directTablet.panels.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
+    assert.ok(directTablet.panels[0].top < directTablet.panels[1].top && directTablet.panels[1].top < directTablet.panels[2].top,
+      "a direct cold 834px entry settles into the one-column Home stack", directTablet);
+    observations.push({ homeDirectTabletColdEntry: directTablet });
+  } finally {
+    await directTabletContext.close();
+  }
+
   await choose(page, "tachiko", "compact");
   await page.setViewportSize({ width: 1512, height: 982 });
-  const canaryRowsBeforeSave = await page.locator(".ts-grid tbody").innerText();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  const savedSourceTable = await page.evaluate(() => ({
+    key: document.querySelector("#ts-active-table").value,
+    headers: [...document.querySelectorAll("table[aria-label='Table'] th[scope='col']")].map((header) => header.textContent.trim()),
+    rows: document.querySelector(".ts-grid tbody").innerText,
+  }));
   const unbrokenName = "home-unbroken-" + "x".repeat(112);
   const cjkName = "Home 中文名稱保存測試" + "界".repeat(72);
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
@@ -1671,48 +2001,48 @@ async function auditHomeViewportBounds(page, browser) {
 
   const ordinaryHomeGeometry = await page.evaluate(() => ({
     surface: getComputedStyle(document.querySelector('.ts-app[data-view="home"]')).backgroundColor,
-    actions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
-      const rect = action.getBoundingClientRect();
-      return [rect.x, rect.y, rect.width];
-    }),
-    lines: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => ({
-      top: section.getBoundingClientRect().top,
-      bottom: section.getBoundingClientRect().bottom,
+    sections: [...document.querySelectorAll(".ts-home-grid > section")].map((section) => ({
+      label: section.getAttribute("aria-label"),
+      rect: (() => { const rect = section.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom }; })(),
     })),
-    import: (() => {
-      const rect = document.querySelector(".ts-home-import-action").getBoundingClientRect();
-      return [rect.x, rect.y, rect.width];
-    })(),
-    saved: (() => {
-      const rect = document.querySelector(".ts-copy-item .ts-button").getBoundingClientRect();
-      return [rect.x, rect.y, rect.width];
-    })(),
-    metadataX: document.querySelector(".ts-copy-meta").getBoundingClientRect().x,
+    actions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
+      const rect = action.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right };
+    }),
+    savedRows: [...document.querySelectorAll(".ts-home-copy-row")].map((row) => ({
+      action: (() => { const rect = row.querySelector(".ts-home-copy-action").getBoundingClientRect(); return { x: rect.x, right: rect.right, width: rect.width }; })(),
+      timestamp: (() => { const rect = row.querySelector(".ts-home-copy-time").getBoundingClientRect(); return { x: rect.x, right: rect.right }; })(),
+    })),
   }));
   assert.equal(ordinaryHomeGeometry.surface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
-  assert.deepEqual(ordinaryHomeGeometry.actions, [[32, 220, 184], [228, 220, 128], [368, 220, 224]]);
-  assert.deepEqual(ordinaryHomeGeometry.lines.map(({ top }) => top), [144, 344, 552]);
-  assert.deepEqual(ordinaryHomeGeometry.import, [32, 468, 196]);
-  assert.deepEqual(ordinaryHomeGeometry.saved, [32, 684, 288]);
-  assert.equal(ordinaryHomeGeometry.metadataX, 352);
-  assert.equal(ordinaryHomeGeometry.lines.at(-1).bottom - 1, 732,
-    "the single ordinary saved-copy specimen ends at the approved y=732 divider");
+  assert.deepEqual(ordinaryHomeGeometry.sections.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
+  assert.equal(ordinaryHomeGeometry.sections.length, 3, "Home keeps its three approved content regions");
+  assert.equal(ordinaryHomeGeometry.actions.length, 3, "the Other ways region contains import, folder, and release-plan actions");
+  assert.ok(ordinaryHomeGeometry.actions.every(({ x, right }) => x >= 0 && right <= 1513), "Other ways actions remain within the desktop viewport");
+  assert.equal(ordinaryHomeGeometry.savedRows.length, 1, "the saved copy appears in the Saved copies region");
+  assert.ok(ordinaryHomeGeometry.savedRows[0].action.x >= 0 && ordinaryHomeGeometry.savedRows[0].timestamp.right <= 1512,
+    "saved name and timestamp remain within the desktop viewport", ordinaryHomeGeometry.savedRows[0]);
   const homePresentation = await page.evaluate(() => ({
-    sections: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => section.getAttribute("aria-label")),
-    homeCards: document.querySelectorAll(".ts-home > .ts-card").length,
+    sections: [...document.querySelectorAll(".ts-home-grid > section")].map((section) => section.getAttribute("aria-label")),
+    homeCards: document.querySelectorAll(".ts-home-grid > .ts-card").length,
     appearance: document.querySelectorAll(".ts-home-head .ts-appearance-selector").length,
-    openLabel: document.querySelector(".ts-home-open-actions .ts-home-file-action")?.textContent?.trim(),
-    importLabel: document.querySelector(".ts-home-import-action")?.textContent?.trim(),
-    savedTimestamp: document.querySelector(".ts-copy-meta")?.textContent?.trim(),
+    openLabel: document.querySelector(".ts-home-example-action > button")?.textContent?.trim(),
+    importLabel: document.querySelector(".ts-home-other-row .ts-home-file-action span")?.textContent?.trim(),
+    savedTimestamp: document.querySelector(".ts-home-copy-time")?.textContent?.trim(),
   }));
-  assert.deepEqual(homePresentation.sections, ["Open project", "Import spreadsheet", "Saved copies"]);
-  assert.equal(homePresentation.homeCards, 0, "Home tasks use the approved divider hierarchy without elevated cards");
+  assert.deepEqual(homePresentation.sections, ["Sales and catalog example", "Saved copies", "Other ways to start"]);
+  assert.equal(homePresentation.homeCards, 0, "Home uses the approved three-region hierarchy without extra cards");
   assert.equal(homePresentation.appearance, 1, "Home keeps Appearance available");
-  assert.equal(homePresentation.openLabel, "Open project folder");
-  assert.equal(homePresentation.importLabel, "Choose CSV or XLSX");
+  assert.equal(homePresentation.openLabel, "Open sales example");
+  assert.equal(homePresentation.importLabel, "Choose file…");
   assert.match(homePresentation.savedTimestamp, /^Saved \d+ /);
   const folderInput = page.getByTestId("open-project");
   await page.getByRole("button", { name: "Appearance", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim()), "Open sales example",
+    "Tab from Appearance follows the approved primary Sales action order");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   const folderFocus = await folderInput.evaluate((input) => ({
     active: document.activeElement === input,
@@ -1725,11 +2055,11 @@ async function auditHomeViewportBounds(page, browser) {
   assert.equal(folderFocus.outlineStyle, "solid", "the visible folder action shows keyboard focus");
   assert.equal(folderFocus.outlineWidth, "3px");
   const folderChooserReady = page.waitForEvent("filechooser");
-  await page.locator(".ts-home-open-actions .ts-home-file-action").click();
+  await page.locator(".ts-home-other-row").nth(1).locator("label.ts-home-file-action").click();
   const folderChooser = await folderChooserReady;
   assert.equal(folderChooser.isMultiple(), true, "the visible folder action opens the existing directory picker");
   const importChooserReady = page.waitForEvent("filechooser");
-  await page.locator(".ts-home-import-action").click();
+  await page.locator(".ts-home-other-row").nth(0).locator("label.ts-home-file-action").click();
   const importChooser = await importChooserReady;
   assert.equal(importChooser.isMultiple(), false, "the visible import action opens the existing single-file picker");
   const disabledReference = await page.evaluate(() => {
@@ -1748,7 +2078,7 @@ async function auditHomeViewportBounds(page, browser) {
     }
     return paint;
   });
-  for (const selector of [".ts-home-open-actions .ts-home-file-action", ".ts-home-import-action"]) {
+  for (const selector of [".ts-home-other-row:nth-child(2) .ts-home-file-action", ".ts-home-other-row:nth-child(1) .ts-home-file-action"]) {
     const label = page.locator(selector);
     const rect = await label.boundingBox();
     await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
@@ -1766,9 +2096,12 @@ async function auditHomeViewportBounds(page, browser) {
     }
   });
   await page.getByRole("button", { name: "Open saved Viewport home probe", exact: true }).click();
-  await page.getByTestId("project-ready").waitFor();
-  assert.equal(await page.locator(".ts-grid tbody").innerText(), canaryRowsBeforeSave,
-    "opening the ordinary saved copy retains the original visible rows and values");
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await page.locator("#ts-active-table").selectOption(savedSourceTable.key);
+  await page.waitForFunction(({ key, headers }) => document.querySelector("#ts-active-table")?.value === key &&
+    JSON.stringify([...document.querySelectorAll("table[aria-label='Table'] th[scope='col']")].map((header) => header.textContent.trim())) === JSON.stringify(headers), savedSourceTable);
+  assert.equal(await page.locator(".ts-grid tbody").innerText(), savedSourceTable.rows,
+    "opening the ordinary saved copy retains the same selected table values");
   for (const name of [unbrokenName, cjkName]) {
     await page.getByRole("button", { name: "Save a copy", exact: true }).click();
     await page.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
@@ -1782,26 +2115,31 @@ async function auditHomeViewportBounds(page, browser) {
     const savedCopy = page.getByRole("button", { name: `Open saved ${name}`, exact: true });
     await savedCopy.waitFor();
     await savedCopy.click();
-    await page.getByTestId("project-ready").waitFor();
-    assert.equal(await page.locator(".ts-grid tbody").innerText(), canaryRowsBeforeSave,
-      `reopening saved copy ${name} retains the original visible rows and values`);
-    await page.getByRole("button", { name: "Close project", exact: true }).click();
-    await page.locator('.ts-app[data-view="home"]').waitFor();
+    await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+    await page.locator("#ts-active-table").selectOption(savedSourceTable.key);
+    await page.waitForFunction(({ key, headers }) => document.querySelector("#ts-active-table")?.value === key &&
+      JSON.stringify([...document.querySelectorAll("table[aria-label='Table'] th[scope='col']")].map((header) => header.textContent.trim())) === JSON.stringify(headers), savedSourceTable);
+    assert.equal(await page.locator(".ts-grid tbody").innerText(), savedSourceTable.rows,
+      `reopening saved copy ${name} retains the same selected table values`);
+    await closeWorkbookToHome(page);
   }
 
   const singleSpaceName = "Plan review";
   const doubledSpaceName = "Plan  review";
   await clickSavedCopyByLiteralName(page, "Viewport home probe");
   await page.getByTestId("project-ready").waitFor();
-  await editFirstCellForSavedCopy(page, "Whitespace identity first value");
+  await editCatalogPriceForSavedCopy(page, "810");
+  await assertCatalogPenPriceAndCurrentSummary(page, "810");
   const singleSpaceRows = await page.locator(".ts-grid tbody").innerText();
   await saveCopyByName(page, singleSpaceName);
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
 
   await clickSavedCopyByLiteralName(page, singleSpaceName);
-  await page.getByTestId("project-ready").waitFor();
-  await editFirstCellForSavedCopy(page, "Whitespace identity second value");
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
+  await editCatalogPriceForSavedCopy(page, "820");
+  await assertCatalogPenPriceAndCurrentSummary(page, "820");
   const doubledSpaceRows = await page.locator(".ts-grid tbody").innerText();
   assert.notEqual(doubledSpaceRows, singleSpaceRows, "distinct saved-name targets carry different actual workbook values");
   await saveCopyByName(page, doubledSpaceName);
@@ -1810,8 +2148,10 @@ async function auditHomeViewportBounds(page, browser) {
 
   const zeroWidthName = "Plan\u200breview";
   await clickSavedCopyByLiteralName(page, singleSpaceName);
-  await page.getByTestId("project-ready").waitFor();
-  await editFirstCellForSavedCopy(page, "Whitespace identity zero-width value");
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
+  await editCatalogPriceForSavedCopy(page, "830");
+  await assertCatalogPenPriceAndCurrentSummary(page, "830");
   const zeroWidthRows = await page.locator(".ts-grid tbody").innerText();
   assert.notEqual(zeroWidthRows, singleSpaceRows, "the zero-width saved-name target carries a distinct actual workbook value");
   await saveCopyByName(page, zeroWidthName);
@@ -1821,7 +2161,8 @@ async function auditHomeViewportBounds(page, browser) {
   const noWhitespaceName = "Planreview";
   await clickSavedCopyByLiteralName(page, "Viewport home probe");
   await page.getByTestId("project-ready").waitFor();
-  await editFirstCellForSavedCopy(page, "No whitespace identity value");
+  await editCatalogPriceForSavedCopy(page, "840");
+  await assertCatalogPenPriceAndCurrentSummary(page, "840");
   const noWhitespaceRows = await page.locator(".ts-grid tbody").innerText();
   assert.notEqual(noWhitespaceRows, zeroWidthRows,
     "the no-whitespace and zero-width saved-name targets carry distinct actual workbook values");
@@ -1830,14 +2171,14 @@ async function auditHomeViewportBounds(page, browser) {
   await page.locator('.ts-app[data-view="home"]').waitFor();
 
   const whitespaceIdentity = await page.evaluate(() => {
-    const buttons = [...document.querySelectorAll(".ts-home-saved-action")];
+    const buttons = [...document.querySelectorAll(".ts-home-copy-action")];
     const read = (name) => {
-      const button = buttons.find((candidate) => candidate.textContent === `Open saved ${name}`);
+      const button = buttons.find((candidate) => candidate.getAttribute("aria-label") === `Open saved ${name}`);
       if (!button) return null;
       const rect = button.getBoundingClientRect();
-      const text = button.firstChild;
+      const text = button.querySelector(".ts-home-copy-name").firstChild;
       const value = text?.textContent ?? "";
-      const offset = value.indexOf(name) + "Plan".length;
+      const offset = "Plan".length;
       const rangeWidth = (count) => {
         const range = document.createRange();
         range.setStart(text, offset);
@@ -1845,9 +2186,10 @@ async function auditHomeViewportBounds(page, browser) {
         return range.getBoundingClientRect().width;
       };
       const computed = getComputedStyle(button);
+      const nameStyle = getComputedStyle(button.querySelector(".ts-home-copy-name"));
       return {
         text: value,
-        whiteSpace: computed.whiteSpace,
+        whiteSpace: nameStyle.whiteSpace,
         rect: { x: rect.x, right: rect.right, width: rect.width, height: rect.height },
         oneSpaceAdvance: rangeWidth(1),
         twoSpaceAdvance: rangeWidth(2),
@@ -1861,9 +2203,9 @@ async function auditHomeViewportBounds(page, browser) {
     };
   });
   assert.ok(whitespaceIdentity.single && whitespaceIdentity.doubled, "Home renders both whitespace-distinct saved copies");
-  assert.equal(whitespaceIdentity.single.text, "Open saved Plan review");
-  assert.equal(whitespaceIdentity.doubled.text, "Open saved Plan  review");
-  assert.equal(whitespaceIdentity.doubled.whiteSpace, "break-spaces");
+  assert.equal(whitespaceIdentity.single.text, "Plan review");
+  assert.equal(whitespaceIdentity.doubled.text, "Plan  review");
+  assert.equal(whitespaceIdentity.doubled.whiteSpace, "pre");
   assert.ok(whitespaceIdentity.doubled.twoSpaceAdvance >= whitespaceIdentity.doubled.oneSpaceAdvance * 1.75,
     "two contained name spaces retain two rendered character advances", whitespaceIdentity);
   assert.ok(whitespaceIdentity.single.rect.x >= 0 && whitespaceIdentity.doubled.rect.right <= whitespaceIdentity.viewportWidth &&
@@ -1891,25 +2233,29 @@ async function auditHomeViewportBounds(page, browser) {
     noWhitespaceAX, zeroWidthAX, singleSpaceRows, doubledSpaceRows, noWhitespaceRows, zeroWidthRows });
 
   await clickSavedCopyByLiteralName(page, singleSpaceName);
-  await page.getByTestId("project-ready").waitFor();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
   assert.equal(await page.locator(".ts-grid tbody").innerText(), singleSpaceRows,
     "opening the single-space saved name targets its exact stored workbook");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
   await clickSavedCopyByLiteralName(page, doubledSpaceName);
-  await page.getByTestId("project-ready").waitFor();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
   assert.equal(await page.locator(".ts-grid tbody").innerText(), doubledSpaceRows,
     "opening the double-space saved name targets its different exact stored workbook");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
   await clickSavedCopyByLiteralName(page, zeroWidthName);
-  await page.getByTestId("project-ready").waitFor();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
   assert.equal(await page.locator(".ts-grid tbody").innerText(), zeroWidthRows,
     "opening the zero-width saved name targets its exact distinct stored workbook");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
   await clickSavedCopyByLiteralName(page, noWhitespaceName);
-  await page.getByTestId("project-ready").waitFor();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
   assert.equal(await page.locator(".ts-grid tbody").innerText(), noWhitespaceRows,
     "opening the no-whitespace saved name targets its exact distinct stored workbook");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
@@ -1918,13 +2264,15 @@ async function auditHomeViewportBounds(page, browser) {
   const emojiName = "Emoji 👩‍💻 ✈️";
   await clickSavedCopyByLiteralName(page, "Viewport home probe");
   await page.getByTestId("project-ready").waitFor();
-  await editFirstCellForSavedCopy(page, "Joined emoji identity value");
+  await editCatalogPriceForSavedCopy(page, "850");
+  await assertCatalogPenPriceAndCurrentSummary(page, "850");
   const emojiRows = await page.locator(".ts-grid tbody").innerText();
   await saveCopyByName(page, emojiName);
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.locator('.ts-app[data-view="home"]').waitFor();
   await clickSavedCopyByLiteralName(page, emojiName);
-  await page.getByTestId("project-ready").waitFor();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await selectCatalogForSavedCopy(page);
   assert.equal(await page.locator(".ts-grid tbody").innerText(), emojiRows,
     "the joined emoji and variation-selector name remains the exact reopen target");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
@@ -1934,14 +2282,19 @@ async function auditHomeViewportBounds(page, browser) {
     for (const density of densities) {
       await choose(page, profile.id, density.id);
       await page.keyboard.press("Escape");
-      for (const [width, height] of [[1512, 982], [768, 640], [600, 640], [320, 640]]) {
+      for (const [width, height] of [[1512, 982], [1024, 640], [1023, 640], [1024, 640], [1023, 640], [834, 640], [768, 640], [600, 640], [599, 640], [390, 640], [375, 640], [320, 640]]) {
         await page.setViewportSize({ width, height });
+        await waitForHomeViewportLayout(page, width, true);
         await page.evaluate(() => window.scrollTo(0, 0));
     const layout = await page.evaluate(() => {
       const root = document.querySelector(".ts-app-root");
       const app = document.querySelector('.ts-app[data-view="home"]');
       const home = document.querySelector(".ts-home");
       const notices = document.querySelector(".ts-notices");
+      const flow = document.querySelector(".ts-home-example-flow");
+      const flowRect = flow.getBoundingClientRect();
+      const exampleAction = document.querySelector(".ts-home-example-action > button");
+      const exampleActionRect = exampleAction.getBoundingClientRect();
       const rootRect = root?.getBoundingClientRect();
       const appRect = app?.getBoundingClientRect();
       const noticesRect = notices?.getBoundingClientRect();
@@ -1959,39 +2312,51 @@ async function auditHomeViewportBounds(page, browser) {
         noticesTop: noticesRect?.top ?? null,
         noticesBottom: noticesRect?.bottom ?? null,
         pageSurface: getComputedStyle(app).backgroundColor,
-        openActionsWidth: document.querySelector(".ts-home-open-actions")?.getBoundingClientRect().width ?? null,
-        openActions: [...document.querySelectorAll(".ts-home-open-actions > .ts-home-file-action, .ts-home-open-actions > button")].map((action) => {
-          const rect = action.getBoundingClientRect();
-          return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        gridPanels: [...document.querySelectorAll(".ts-home-grid > section")].map((section) => {
+          const rect = section.getBoundingClientRect();
+          return { label: section.getAttribute("aria-label"), x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom };
         }),
-        importAction: (() => {
-          const rect = document.querySelector(".ts-home-import-action")?.getBoundingClientRect();
-          return rect ? { x: rect.x, y: rect.y, width: rect.width } : null;
-        })(),
-        sectionLines: [...document.querySelectorAll(".ts-home > .ts-home-section")].map((section) => ({
-          label: section.getAttribute("aria-label"),
-          top: section.getBoundingClientRect().top,
-          bottom: section.getBoundingClientRect().bottom,
-        })),
+        exampleFlow: {
+          label: flow.getAttribute("aria-label"),
+          x: flowRect.x,
+          right: flowRect.right,
+          width: flow.clientWidth,
+          scrollWidth: flow.scrollWidth,
+          whiteSpace: getComputedStyle(flow).whiteSpace,
+          flexWrap: getComputedStyle(flow).flexWrap,
+        },
+        exampleButton: {
+          x: exampleActionRect.x,
+          right: exampleActionRect.right,
+          y: exampleActionRect.y,
+          bottom: exampleActionRect.bottom,
+        },
+        otherActions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
+          const rect = action.getBoundingClientRect();
+          return { label: action.textContent.trim(), x: rect.x, right: rect.right, y: rect.y, width: rect.width, height: rect.height };
+        }),
         savedAction: (() => {
-          const action = document.querySelector(".ts-copy-item .ts-button");
+          const action = document.querySelector(".ts-home-copy-row .ts-home-copy-action");
           const rect = action?.getBoundingClientRect();
           return rect ? {
             x: rect.x,
             y: rect.y,
             width: rect.width,
             height: rect.height,
-            borderColor: getComputedStyle(action).borderTopColor,
+            borderWidth: getComputedStyle(action).borderTopWidth,
           } : null;
         })(),
-        savedMetadataX: document.querySelector(".ts-copy-meta")?.getBoundingClientRect().x ?? null,
-        savedRows: [...document.querySelectorAll(".ts-copy-item")].map((row) => {
+        savedRows: [...document.querySelectorAll(".ts-home-copy-row")].map((row) => {
           const rowRect = row.getBoundingClientRect();
-          const action = row.querySelector(".ts-button");
+          const action = row.querySelector(".ts-home-copy-action");
           const actionRect = action?.getBoundingClientRect();
-          const metadataRect = row.querySelector(".ts-copy-meta")?.getBoundingClientRect();
+          const name = row.querySelector(".ts-home-copy-name");
+          const nameStyle = name ? getComputedStyle(name) : null;
+          const metadataRect = row.querySelector(".ts-home-copy-time")?.getBoundingClientRect();
           return {
             name: action?.textContent?.trim() ?? null,
+            literalName: name?.textContent ?? null,
+            nameOverflow: name ? { clientWidth: name.clientWidth, scrollWidth: name.scrollWidth, overflow: nameStyle.overflow, textOverflow: nameStyle.textOverflow, whiteSpace: nameStyle.whiteSpace } : null,
             row: { x: rowRect.x, y: rowRect.y, width: rowRect.width, height: rowRect.height, right: rowRect.right, bottom: rowRect.bottom },
             action: actionRect ? { x: actionRect.x, y: actionRect.y, width: actionRect.width, height: actionRect.height, right: actionRect.right, bottom: actionRect.bottom } : null,
             metadata: metadataRect ? { x: metadataRect.x, y: metadataRect.y, width: metadataRect.width, height: metadataRect.height, right: metadataRect.right, bottom: metadataRect.bottom } : null,
@@ -2013,45 +2378,129 @@ async function auditHomeViewportBounds(page, browser) {
       `${width}x${height} Home root expands with its content`, layout);
     if (width === 1512 && profile.id === "tachiko" && density.id === "compact") {
       assert.equal(layout.pageSurface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
-      assert.deepEqual(layout.openActions.map(({ x, y, width: actionWidth }) => [x, y, actionWidth]), [
-        [32, 220, 184], [228, 220, 128], [368, 220, 224],
-      ], "desktop Open actions match the approved positions and widths");
-      assert.deepEqual(layout.sectionLines.map(({ top }) => top), [144, 344, 552]);
-      assert.deepEqual(layout.importAction && [layout.importAction.x, layout.importAction.y, layout.importAction.width], [32, 468, 196]);
-      assert.deepEqual(layout.savedAction && [layout.savedAction.x, layout.savedAction.y, layout.savedAction.width], [32, 684, 288]);
-      assert.equal(layout.savedAction?.borderColor, "rgba(0, 0, 0, 0)",
-        "the saved-copy ghost action keeps its approved transparent border");
-      assert.equal(layout.savedMetadataX, 352);
+      assert.deepEqual(layout.gridPanels.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
+      assert.ok(layout.gridPanels[0].x < layout.gridPanels[1].x && layout.gridPanels[0].y === layout.gridPanels[1].y,
+        "desktop Home places the example and saved copies in parallel columns", layout.gridPanels);
+      assert.equal(layout.otherActions.length, 3, "the secondary start region retains all three supported actions");
+      assert.equal(layout.savedAction?.borderWidth, "0px", "the saved-copy action keeps its approved quiet border");
+    }
+    assert.deepEqual(layout.gridPanels.map(({ label }) => label), width <= 1023
+      ? ["Saved copies", "Sales and catalog example", "Other ways to start"]
+      : ["Sales and catalog example", "Saved copies", "Other ways to start"],
+    `${width}px ${profile.id}/${density.id} populated Home places saved copies first only in the compact returning-user order`, layout.gridPanels);
+    assert.equal(layout.exampleFlow.label, "Catalog prices times Sales quantities gives Sales by product");
+    assert.ok(layout.exampleFlow.scrollWidth <= layout.exampleFlow.width + 1,
+      `${width}px ${profile.id}/${density.id} populated Home Sales flow fits its own content box`, layout.exampleFlow);
+    assert.ok(layout.exampleButton.x >= 0 && layout.exampleButton.right <= width + 1,
+      `${width}px ${profile.id}/${density.id} populated Home Sales CTA remains unobstructed`, layout.exampleButton);
+    if (width === 320) {
+      assert.equal(layout.exampleFlow.whiteSpace, "normal");
+      assert.equal(layout.exampleFlow.flexWrap, "wrap");
+      if (profile.id === "tachiko" && density.id === "compact") {
+        const cta = page.locator(".ts-home-example-action > button");
+        await cta.scrollIntoViewIfNeeded();
+        await page.locator(".ts-home-copy-action").last().focus();
+        await page.keyboard.press("Tab");
+        await cta.scrollIntoViewIfNeeded();
+        const focus = await cta.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const extent = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset);
+          return {
+            active: element === document.activeElement,
+            outlineStyle: style.outlineStyle,
+            painted: { x: rect.x - extent, right: rect.right + extent, y: rect.y - extent, bottom: rect.bottom + extent },
+            viewport: { width: innerWidth, height: innerHeight },
+          };
+        });
+        assert.equal(focus.active, true, "keyboard focus can be placed on the populated 320px Sales action");
+        assert.notEqual(focus.outlineStyle, "none", "populated 320px Sales action shows its keyboard focus indicator");
+        assert.ok(focus.painted.x >= 0 && focus.painted.right <= 320 && focus.painted.y >= 0 && focus.painted.bottom <= 640,
+          "populated 320px Sales action focus paint remains inside the viewport", focus);
+        await captureHeldControl(page, "home-sales-flow-populated-320.png");
+        await page.evaluate(() => document.activeElement?.blur());
+      }
+    }
+    if (width === 768 && profile.id === "tachiko" && density.id === "compact") {
+      const appearanceTrigger = page.locator(".ts-home .ts-appearance-trigger");
+      await appearanceTrigger.focus();
+      assert.equal(await appearanceTrigger.evaluate((element) => element === document.activeElement), true,
+        "the keyboard-order audit starts from the visible Appearance control");
+      const savedCopyCount = await page.locator(".ts-home-copy-action").count();
+      assert.ok(savedCopyCount > 1, "keyboard order audit has multiple independently rendered saved-copy actions");
+      const expectedControls = [
+        ...Array.from({ length: savedCopyCount }, (_, index) => [
+          `saved copy ${index + 1}`,
+          page.locator(".ts-home-copy-action").nth(index),
+        ]),
+        ["Sales example", page.locator(".ts-home-example-action > button")],
+        ["CSV or Excel file input", page.locator('.ts-home-other-row input[type="file"][accept]')],
+        ["project folder input", page.locator('.ts-home-other-row input[type="file"][multiple]')],
+        ["release plan example", page.getByRole("button", { name: "Open release plan example", exact: true })],
+      ];
+      const assertFocus = async (label, locator) => {
+        const focused = await locator.evaluate((element) => element === document.activeElement);
+        if (focused) return;
+        const focusWitness = await page.evaluate(() => {
+          const active = document.activeElement;
+          const rect = (element) => {
+            const box = element?.getBoundingClientRect();
+            return box ? { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom } : null;
+          };
+          return {
+            active: active ? { tag: active.tagName, id: active.id, className: typeof active.className === "string" ? active.className : "", ariaLabel: active.getAttribute("aria-label"), text: active.textContent?.trim(), rect: rect(active) } : null,
+            expectedSales: (() => { const element = document.querySelector(".ts-home-example-action > button"); return element ? { disabled: element.disabled, tabIndex: element.tabIndex, rect: rect(element), display: getComputedStyle(element).display, visibility: getComputedStyle(element).visibility } : null; })(),
+            order: [...document.querySelectorAll(".ts-home-grid > section")].map((panel) => ({ label: panel.getAttribute("aria-label"), rect: rect(panel) })),
+            savedActions: [...document.querySelectorAll(".ts-home-copy-action")].map((element) => ({ name: element.getAttribute("aria-label"), rect: rect(element) })),
+            viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+          };
+        });
+        assert.fail(`native Tab did not reach ${label} in the populated 768px Home order: ${JSON.stringify(focusWitness)}`);
+      };
+      for (const [label, locator] of expectedControls) {
+        await page.keyboard.press("Tab");
+        await assertFocus(label, locator);
+      }
+      for (const [label, locator] of [["project folder input", expectedControls.at(-2)[1]], ["CSV or Excel file input", expectedControls.at(-3)[1]], ["Sales example", expectedControls.at(-4)[1]], ...expectedControls.slice(0, savedCopyCount).reverse()]) {
+        await page.keyboard.press("Shift+Tab");
+        await assertFocus(label, locator);
+      }
+      await page.keyboard.press("Shift+Tab");
+      await assertFocus("Appearance", appearanceTrigger);
+      const tabWitness = await page.evaluate(() => ({
+        active: document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim(),
+        order: [...document.querySelectorAll(".ts-home-grid > section")].map((panel) => panel.getAttribute("aria-label")),
+        savedCopyLabels: [...document.querySelectorAll(".ts-home-copy-action")].map((button) => button.getAttribute("aria-label")),
+        viewportWidth: innerWidth,
+      }));
+      observations.push({ homePopulatedTabletTabOrder: tabWitness });
     }
     if (width === 320) {
-      assert.ok(layout.openActions.every(({ width }) => width === layout.openActionsWidth),
-        "all three Open actions use the full available width at 320px");
-      assert.equal(layout.savedAction?.x, 16);
-      assert.equal(layout.savedAction?.width, layout.openActionsWidth,
-        "the 320px saved-copy action uses the full available width");
+      assert.ok(layout.otherActions.every(({ x, right }) => x >= 0 && right <= width + 1),
+        "all secondary start actions remain visible within the 320px viewport");
+      assert.ok(layout.savedAction?.x >= 0 && layout.savedAction?.x + layout.savedAction?.width <= width + 1,
+        "the 320px saved-copy action remains within the viewport");
       if (density.id === "comfortable") {
-        assert.ok(layout.openActions.every(({ height }) => height >= 36),
-          "Comfortable density keeps all three 320px Open actions at least 36px tall");
+        assert.ok(layout.otherActions.every(({ height }) => height >= 36),
+          "Comfortable density keeps the three secondary actions at least 36px tall");
         assert.ok(layout.savedAction.height >= 36,
           "the 320px saved-copy action retains the Comfortable target height");
       }
-      assert.equal(layout.savedAction?.borderColor, layout.strongBorderColor,
-        "the 320px saved-copy action uses the profile's shared secondary border");
     }
     for (const [index, saved] of layout.savedRows.entries()) {
       assert.ok(saved.action && saved.metadata, "every accepted saved name and timestamp has a visible Home box");
       assert.ok(saved.action.x >= 0 && saved.action.right <= width + 1 && saved.metadata.x >= 0 && saved.metadata.right <= width + 1,
         `${width}px ${profile.id}/${density.id} saved name and timestamp stay inside the viewport`, saved);
-      if (width >= 600) {
-        assert.ok(saved.metadata.x >= saved.action.right + 31,
-          `${width}px ${profile.id}/${density.id} desktop metadata keeps the 32px gap`, saved);
-      } else {
-        assert.ok(saved.metadata.y >= saved.action.bottom + 3,
-          `${width}px ${profile.id}/${density.id} compact metadata sits below the saved action`, saved);
-      }
+      assert.ok(saved.metadata.x >= 0 && saved.metadata.right <= width + 1,
+        `${width}px ${profile.id}/${density.id} saved timestamp remains within the viewport`, saved);
       if (index > 0) assert.ok(layout.savedRows[index - 1].row.bottom <= saved.row.y + 1,
         `${width}px ${profile.id}/${density.id} saved rows do not overlap`);
     }
+    const unbroken = layout.savedRows.find((saved) => saved.literalName === unbrokenName);
+    assert.ok(unbroken?.nameOverflow && unbroken.nameOverflow.scrollWidth > unbroken.nameOverflow.clientWidth &&
+      unbroken.nameOverflow.overflow === "hidden" && unbroken.nameOverflow.textOverflow === "ellipsis" &&
+      unbroken.nameOverflow.whiteSpace === "pre",
+    `${width}px ${profile.id}/${density.id} long literal copy name keeps its identity while clipping inside the row`, unbroken);
     if (layout.appBottom !== null && layout.noticesTop !== null) {
       evidence(layout.noticesTop >= layout.appBottom - 1 && layout.noticesBottom <= layout.pageHeight + 1,
         `${width}x${height} legal notices follow Home content without overlap or clipping`, layout);
@@ -2059,7 +2508,7 @@ async function auditHomeViewportBounds(page, browser) {
     const savedCopy = page.getByRole("button", { name: `Open saved ${unbrokenName}`, exact: true });
     await savedCopy.scrollIntoViewIfNeeded();
     const homeHeld = await sampleButtonStates(page, savedCopy,
-      `${width}x${height} ${profile.id}/${density.id} Home saved-copy command`);
+      `${width}x${height} ${profile.id}/${density.id} Home saved-copy command`, null, 2);
     if (width < 600) {
       const sharedSunken = await page.evaluate(() => {
         const probe = document.createElement("button");
@@ -2085,29 +2534,108 @@ async function auditHomeViewportBounds(page, browser) {
   }
   await choose(page, "tachiko", "compact");
   await page.setViewportSize({ width: 320, height: 640 });
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector(".ts-home .ts-appearance-trigger")?.getAttribute("aria-expanded") === "false");
+  const forcedAppearanceTrigger = page.locator(".ts-home .ts-appearance-trigger");
+  await forcedAppearanceTrigger.focus();
+  await page.keyboard.press("Tab");
+  const forcedSavedAction = page.locator(".ts-home-copy-action").first();
+  assert.equal(await forcedSavedAction.evaluate((element) => element === document.activeElement), true,
+    "native Tab reaches the first saved-copy action before forced-color focus inspection");
   await page.emulateMedia({ forcedColors: "active" });
   const systemPaint = await page.evaluate(() => {
-    const reference = document.createElement("button");
-    reference.className = "ts-button";
-    document.querySelector(".ts-home").append(reference);
-    const expected = getComputedStyle(reference);
-    const action = document.querySelector(".ts-home-saved-action");
+    const home = document.querySelector(".ts-home");
+    const probes = Object.fromEntries(["Canvas", "ButtonText", "CanvasText", "GrayText", "Highlight"].map((role) => {
+      const probe = document.createElement("span");
+      probe.style.color = role;
+      home.append(probe);
+      const value = getComputedStyle(probe).color;
+      probe.remove();
+      return [role, value];
+    }));
+    const action = document.querySelector(".ts-home-copy-action");
     const actual = getComputedStyle(action);
+    const row = action.closest(".ts-home-copy-row");
+    const panel = action.closest(".ts-home-panel");
+    const focusVisible = action.matches(":focus-visible");
     const result = {
-      expected: { color: expected.color, background: expected.backgroundColor, border: expected.borderTopColor },
-      actual: { color: actual.color, background: actual.backgroundColor, border: actual.borderTopColor },
+      roles: probes,
+      actual: {
+        color: actual.color,
+        background: actual.backgroundColor,
+        borderWidth: actual.borderTopWidth,
+        name: getComputedStyle(action.querySelector(".ts-home-copy-name")).color,
+        time: getComputedStyle(action.querySelector(".ts-home-copy-time")).color,
+        icon: getComputedStyle(action.querySelector(".ts-home-copy-icon")).color,
+        iconBackground: getComputedStyle(action.querySelector(".ts-home-copy-icon")).backgroundColor,
+        chevron: getComputedStyle(action.querySelector(".ts-home-copy-chevron")).stroke,
+        rowBoundary: getComputedStyle(row).borderTopColor,
+        panelBoundary: getComputedStyle(panel).borderTopColor,
+      },
+      focus: { focusVisible, outlineStyle: actual.outlineStyle, outlineWidth: actual.outlineWidth, outlineColor: actual.outlineColor },
     };
-    reference.remove();
     return result;
   });
-  assert.deepEqual(systemPaint.actual, systemPaint.expected,
-    "the saved action uses shared system foreground, surface and border roles in forced colors");
+  assert.deepEqual(systemPaint.actual, {
+    color: systemPaint.roles.ButtonText,
+    background: systemPaint.roles.Canvas,
+    borderWidth: "0px",
+    name: systemPaint.roles.ButtonText,
+    time: systemPaint.roles.ButtonText,
+    icon: systemPaint.roles.ButtonText,
+    iconBackground: systemPaint.roles.Canvas,
+    chevron: systemPaint.roles.ButtonText,
+    rowBoundary: systemPaint.roles.CanvasText,
+    panelBoundary: systemPaint.roles.CanvasText,
+  }, "the saved-copy row uses system surface, foreground and painted separators in forced colors without adding a button border");
+  assert.equal(systemPaint.focus.focusVisible, true, "native Tab focus remains visible on the saved action in forced colors");
+  assert.equal(systemPaint.focus.outlineStyle, "solid", "the forced-colors focus indicator remains solid");
+  assert.equal(systemPaint.focus.outlineWidth, "2px", "the forced-colors focus indicator retains its 2px width");
+  assert.equal(systemPaint.focus.outlineColor, systemPaint.roles.Highlight,
+    "the saved action retains a visible Highlight-colored keyboard focus ring in forced colors");
+  await forcedSavedAction.hover();
+  const forcedHoverPaint = await forcedSavedAction.evaluate((element) => ({
+    hovered: element.matches(":hover"),
+    background: getComputedStyle(element).backgroundColor,
+    color: getComputedStyle(element).color,
+  }));
+  assert.deepEqual(forcedHoverPaint, {
+    hovered: true,
+    background: systemPaint.roles.Canvas,
+    color: systemPaint.roles.ButtonText,
+  }, "enabled saved-copy hover keeps Canvas and ButtonText in forced colors");
+  const forcedActionRect = await forcedSavedAction.boundingBox();
+  assert.ok(forcedActionRect, "the enabled saved-copy action has a measured pointer target");
+  const forcedPointer = { x: forcedActionRect.x + forcedActionRect.width / 2, y: forcedActionRect.y + forcedActionRect.height / 2 };
+  await page.mouse.move(forcedPointer.x, forcedPointer.y);
+  await page.mouse.down();
+  const forcedActivePaint = await forcedSavedAction.evaluate((element) => ({
+    active: element.matches(":active"),
+    background: getComputedStyle(element).backgroundColor,
+    color: getComputedStyle(element).color,
+    held: element.hasAttribute("data-ts-held"),
+    contour: (() => {
+      const mark = getComputedStyle(element, "::after");
+      return { inset: mark.top, width: mark.borderTopWidth, color: mark.borderTopColor, radius: mark.borderTopLeftRadius };
+    })(),
+  }));
+  assert.deepEqual(forcedActivePaint, {
+    active: true,
+    background: systemPaint.roles.Canvas,
+    color: systemPaint.roles.ButtonText,
+    held: true,
+    contour: { inset: "2px", width: "2px", color: systemPaint.roles.ButtonText, radius: "0px" },
+  }, "enabled saved-copy active state keeps Canvas and ButtonText in forced colors");
+  await page.mouse.move(0, 0);
+  await page.mouse.up();
+  await captureHeldControl(page, "home-copy-forced-colors-320.png");
   await page.emulateMedia({ forcedColors: "none" });
   await page.keyboard.press("Escape");
 
+  await auditHomeCopyHeldLifecycle(page);
   await page.setViewportSize({ width: 320, height: 450 });
   await page.evaluate(() => window.__tachikoAcceptance.loseNextOpenReply());
-  await page.getByRole("button", { name: "Try sales example", exact: true }).click();
+  await page.getByRole("button", { name: "Open sales example", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("open-project").isDisabled(), true,
     "a real unknown-open recovery state disables the folder input");
@@ -2135,6 +2663,149 @@ async function auditHomeViewportBounds(page, browser) {
   await page.locator('.ts-app[data-view="home"]').waitFor();
 }
 
+async function auditHomeCopyHeldLifecycle(page) {
+  const savedCopy = () => page.getByRole("button", { name: "Open saved Viewport home probe", exact: true });
+  const button = savedCopy();
+  await button.scrollIntoViewIfNeeded();
+
+  const installTrace = async () => button.evaluate((element) => {
+    element.dataset.copyClicks = "0";
+    element.dataset.pointerId = "";
+    if (element.dataset.copyTraceInstalled !== "true") {
+      element.dataset.copyTraceInstalled = "true";
+      element.addEventListener("pointerdown", (event) => { element.dataset.pointerId = String(event.pointerId); });
+      element.addEventListener("click", () => { element.dataset.copyClicks = String(Number(element.dataset.copyClicks) + 1); });
+    }
+  });
+  const read = async (handle) => handle.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const mark = getComputedStyle(element, "::after");
+    return {
+      connected: element.isConnected,
+      disabled: element.disabled,
+      held: element.hasAttribute("data-ts-held"),
+      inset: mark.top,
+      border: mark.borderTopWidth,
+      foreground: getComputedStyle(element).color,
+      contourColor: mark.borderTopColor,
+      radius: mark.borderTopLeftRadius,
+      width: rect.width,
+      height: rect.height,
+      clicks: Number(element.dataset.copyClicks ?? 0),
+    };
+  });
+  const activateAndReturnHome = async (heldElement) => {
+    try {
+      await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+    } catch (error) {
+      const state = await page.evaluate(() => ({
+        view: document.querySelector(".ts-app")?.getAttribute("data-view") ?? null,
+        ready: document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") ?? null,
+        alerts: [...document.querySelectorAll('[role="alert"]')].map((element) => element.textContent?.trim() ?? ""),
+        dialogs: [...document.querySelectorAll('[role="dialog"]')].map((element) => element.getAttribute("aria-label")),
+        copyRows: [...document.querySelectorAll(".ts-home-copy-row")].map((row) => row.textContent?.trim() ?? ""),
+      }));
+      throw new Error(`Home saved-copy activation did not settle to a workbook: ${JSON.stringify(state)}; ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const detachedAfterOpen = await read(heldElement);
+    evidence(detachedAfterOpen.clicks === 1 && !detachedAfterOpen.held,
+      "Home saved-copy activation dispatches exactly once and clears held state before unmount", detachedAfterOpen);
+    await closeWorkbookToHome(page);
+    return detachedAfterOpen;
+  };
+
+  await installTrace();
+  const pointerHandle = await button.elementHandle();
+  assert.ok(pointerHandle, "populated Home exposes a real saved-copy button");
+  const box = await button.boundingBox();
+  assert.ok(box, "Home saved-copy action has pointer bounds");
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  const down = await read(pointerHandle);
+  await page.mouse.move(1, 1);
+  const exited = await read(pointerHandle);
+  await page.mouse.move(point.x, point.y);
+  const reentered = await read(pointerHandle);
+  evidence(down.held && down.inset === "2px" && down.border === "2px" && down.contourColor === down.foreground && down.radius === "0px",
+    "Home saved-copy primary pointerdown paints its 2px currentColor contour inside the borderless row", down);
+  evidence(!exited.held && reentered.held && reentered.width === down.width && reentered.height === down.height,
+    "Home saved-copy pointer exit clears and same-pointer reentry restores the contour without geometry change", { exited, reentered, down });
+  await page.mouse.up();
+  const pointerActivation = await activateAndReturnHome(pointerHandle);
+
+  const cancelButton = savedCopy();
+  await cancelButton.scrollIntoViewIfNeeded();
+  await installTrace();
+  const cancelHandle = await cancelButton.elementHandle();
+  const cancelBox = await cancelButton.boundingBox();
+  assert.ok(cancelHandle && cancelBox, "Home row is available for pointer-cancel coverage");
+  await page.mouse.move(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
+  await page.mouse.down();
+  const pointerId = await cancelHandle.evaluate((element) => Number(element.dataset.pointerId));
+  const cancelDown = await read(cancelHandle);
+  await page.evaluate((id) => document.dispatchEvent(new PointerEvent("pointercancel", {
+    bubbles: true, pointerId: id, isPrimary: true, button: 0, buttons: 0,
+  })), pointerId);
+  const cancelled = await read(cancelHandle);
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
+  evidence(cancelDown.held && !cancelled.held && cancelled.clicks === 0,
+    "Home saved-copy pointer cancellation clears the contour without activation", { pointerId, cancelDown, cancelled });
+
+  const blurButton = savedCopy();
+  await blurButton.scrollIntoViewIfNeeded();
+  await installTrace();
+  const blurHandle = await blurButton.elementHandle();
+  const blurBox = await blurButton.boundingBox();
+  assert.ok(blurHandle && blurBox, "Home row is available for window-blur coverage");
+  await page.mouse.move(blurBox.x + blurBox.width / 2, blurBox.y + blurBox.height / 2);
+  await page.mouse.down();
+  const blurDown = await read(blurHandle);
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  const blurred = await read(blurHandle);
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
+  evidence(blurDown.held && !blurred.held && blurred.clicks === 0,
+    "Home saved-copy window blur clears the contour without activation", { blurDown, blurred });
+
+  const keyboardButton = savedCopy();
+  await keyboardButton.scrollIntoViewIfNeeded();
+  await installTrace();
+  const spaceHandle = await keyboardButton.elementHandle();
+  assert.ok(spaceHandle, "Home row is available for Space coverage");
+  await keyboardButton.focus();
+  await page.keyboard.down("Space");
+  const spaceDown = await read(spaceHandle);
+  await page.keyboard.up("Space");
+  const spaceActivation = await activateAndReturnHome(spaceHandle);
+  evidence(spaceDown.held && spaceDown.inset === "2px" && spaceActivation.clicks === 1 && !spaceActivation.held,
+    "Home saved-copy Space uses the held contour and one native activation", { spaceDown, spaceActivation });
+
+  const enterButton = savedCopy();
+  await enterButton.scrollIntoViewIfNeeded();
+  await installTrace();
+  const enterHandle = await enterButton.elementHandle();
+  assert.ok(enterHandle, "Home row is available for Enter coverage");
+  await enterButton.focus();
+  await page.keyboard.down("Enter");
+  const enterActivation = await activateAndReturnHome(enterHandle);
+  evidence(enterActivation.clicks === 1 && !enterActivation.held,
+    "Home saved-copy Enter remains immediate and clears the cue before unmount", enterActivation);
+
+  const disabledButton = savedCopy();
+  const disabled = await disabledButton.evaluate((element) => {
+    element.disabled = true;
+    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, isPrimary: true, button: 0, buttons: 1, pointerId: 77 }));
+    const held = element.hasAttribute("data-ts-held");
+    element.disabled = false;
+    return held;
+  });
+  evidence(!disabled, "disabled Home saved-copy actions never receive a held cue");
+  observations.push({ homeCopyHeldLifecycle: { down, exited, reentered, pointerActivation, cancelDown, cancelled, blurDown, blurred,
+    spaceDown, spaceActivation, enterActivation, disabledHeld: disabled } });
+}
+
 async function auditFirstEntryStates(browser, dist) {
   const sizes = [[320, 640], [1512, 982]];
   const pendingContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
@@ -2151,13 +2822,28 @@ async function auditFirstEntryStates(browser, dist) {
     await route.fulfill({ status: 200, contentType: "application/json", body: manifest });
   });
   await pendingPage.goto(LOCAL_ORIGIN, { waitUntil: "domcontentloaded" });
-  await pendingPage.getByTestId("initial-launch").waitFor();
+  await waitForColdHome(pendingPage);
+  assert.equal(await pendingPage.getByTestId("project-ready").count(), 0,
+    "cold Home has no resident workbook before the explicit release-plan action");
+  assert.equal(await pendingPage.getByRole("button", { name: "Open release plan example", exact: true }).isEnabled(), true,
+    "release-plan Open remains available from cold Home");
+  await pendingPage.getByRole("button", { name: "Open release plan example", exact: true }).click();
   await manifestRequested;
+  assert.equal(await pendingPage.getByTestId("project-ready").count(), 0,
+    "a held explicit release-plan open does not claim a resident workbook");
+  await pendingPage.waitForFunction(() => {
+    const button = [...document.querySelectorAll("button")].find((candidate) => candidate.getAttribute("aria-label") === "Open release plan example");
+    return button?.disabled === true;
+  });
+  await pendingPage.evaluate(() => window.scrollTo(0, 0));
+  await pendingPage.waitForFunction(() => window.scrollY === 0);
   for (const [width, height] of sizes) {
     await pendingPage.setViewportSize({ width, height });
+    await pendingPage.evaluate(() => window.scrollTo(0, 0));
+    await pendingPage.waitForFunction(() => window.scrollY === 0);
     const layout = await pendingPage.evaluate(() => {
       const root = document.querySelector(".ts-app-root");
-      const content = document.querySelector('[data-testid="initial-launch"]');
+      const content = document.querySelector(".ts-home");
       const rootRect = root?.getBoundingClientRect();
       const contentRect = content?.getBoundingClientRect();
       return {
@@ -2173,12 +2859,12 @@ async function auditFirstEntryStates(browser, dist) {
         notices: document.querySelector(".ts-notices")?.getBoundingClientRect().toJSON() ?? null,
       };
     });
-    evidence(layout.pageWidth <= width, `${width}x${height} first-entry loading has no horizontal overflow`, layout);
+    evidence(layout.pageWidth <= width, `${width}x${height} held manual-open Home has no horizontal overflow`, layout);
     evidence(layout.contentLeft >= 0 && layout.contentRight <= width && layout.contentTop >= 0 && layout.contentBottom <= layout.rootBottom,
-      `${width}x${height} first-entry loading content fits its natural root`, layout);
+      `${width}x${height} held manual-open Home fits its natural root`, layout);
     if (layout.notices) evidence(layout.notices.top >= layout.contentBottom - 1 && layout.notices.bottom <= layout.pageHeight + 1,
-      `${width}x${height} first-entry loading legal notice follows content without clipping`, layout);
-    observations.push({ firstEntry: `loading ${width}x${height}`, ...layout });
+      `${width}x${height} held manual-open legal notice follows Home without clipping`, layout);
+    observations.push({ firstEntry: `held manual-open ${width}x${height}`, ...layout });
   }
   releaseManifest();
   await pendingPage.getByTestId("project-ready").waitFor();
@@ -2190,14 +2876,22 @@ async function auditFirstEntryStates(browser, dist) {
   await failurePage.route("**/examples/release-plan/manifest.json", (route) =>
     route.fulfill({ status: 503, contentType: "text/plain", body: "controlled initial-open failure" }));
   await failurePage.goto(LOCAL_ORIGIN, { waitUntil: "domcontentloaded" });
+  await waitForColdHome(failurePage);
+  assert.equal(await failurePage.getByTestId("project-ready").count(), 0,
+    "cold Home does not dispatch the release-plan Open before the user action");
+  await failurePage.getByRole("button", { name: "Open release plan example", exact: true }).click();
   const alert = failurePage.getByRole("alert").filter({ hasText: "example file manifest.json is unavailable (503)" });
   await alert.waitFor();
+  await failurePage.evaluate(() => window.scrollTo(0, 0));
+  await failurePage.waitForFunction(() => window.scrollY === 0);
   for (const [width, height] of sizes) {
     await failurePage.setViewportSize({ width, height });
+    await failurePage.evaluate(() => window.scrollTo(0, 0));
+    await failurePage.waitForFunction(() => window.scrollY === 0);
     const layout = await failurePage.evaluate(() => {
       const root = document.querySelector(".ts-app-root");
       const app = document.querySelector('.ts-app[data-view="home"]');
-      const alert = document.querySelector(".ts-error");
+      const alert = document.querySelector(".ts-error[role=alert]");
       const rootRect = root?.getBoundingClientRect();
       const appRect = app?.getBoundingClientRect();
       const alertRect = alert?.getBoundingClientRect();
@@ -2208,6 +2902,7 @@ async function auditFirstEntryStates(browser, dist) {
         pageWidth: document.documentElement.scrollWidth,
         pageHeight: document.documentElement.scrollHeight,
         rootBottom: rootRect?.bottom ?? null,
+        appTop: appRect?.top ?? null,
         appBottom: appRect?.bottom ?? null,
         alertLeft: alertRect?.left ?? null,
         alertRight: alertRect?.right ?? null,
@@ -2216,12 +2911,12 @@ async function auditFirstEntryStates(browser, dist) {
         noticesTop: noticesRect?.top ?? null,
       };
     });
-    evidence(layout.pageWidth <= width, `${width}x${height} first-entry error has no horizontal overflow`, layout);
-    evidence(layout.alertLeft >= 0 && layout.alertRight <= width && layout.alertTop >= 0 && layout.alertBottom <= layout.appBottom,
-      `${width}x${height} first-entry error remains within Home content`, layout);
+    evidence(layout.pageWidth <= width, `${width}x${height} manual-open failure Home has no horizontal overflow`, layout);
+    evidence(layout.alertLeft >= 0 && layout.alertRight <= width && layout.alertTop >= layout.appTop && layout.alertBottom <= layout.appBottom,
+      `${width}x${height} manual-open failure alert remains within the Home app`, layout);
     if (layout.noticesTop !== null) evidence(layout.noticesTop >= layout.appBottom - 1,
-      `${width}x${height} first-entry error legal notice does not overlap Home`, layout);
-    observations.push({ firstEntry: `error ${width}x${height}`, ...layout });
+      `${width}x${height} manual-open failure legal notice does not overlap Home`, layout);
+    observations.push({ firstEntry: `manual-open error ${width}x${height}`, ...layout });
   }
   await failureContext.close();
 }
@@ -2336,7 +3031,7 @@ async function auditFocusModes(context, page) {
   }
 }
 
-async function sampleButtonStates(page, button, tag, captureName = null) {
+async function sampleButtonStates(page, button, tag, captureName = null, heldInset = 1) {
   await page.mouse.move(1, 1);
   const read = () => button.evaluate((element) => ({
     background: getComputedStyle(element).backgroundColor,
@@ -2383,8 +3078,9 @@ async function sampleButtonStates(page, button, tag, captureName = null) {
   const pressed = await read();
   if (captureName) await captureHeldControl(page, captureName);
   evidence(pressed.active, `${tag} sample reaches the real pressed state`, pressed);
-  evidence(pressed.held && pressed.contour.content === '""' && pressed.contour.insetTop === "1px" &&
-    pressed.contour.insetRight === "1px" && pressed.contour.insetBottom === "1px" && pressed.contour.insetLeft === "1px" &&
+  const expectedInset = `${heldInset}px`;
+  evidence(pressed.held && pressed.contour.content === '""' && pressed.contour.insetTop === expectedInset &&
+    pressed.contour.insetRight === expectedInset && pressed.contour.insetBottom === expectedInset && pressed.contour.insetLeft === expectedInset &&
     pressed.contour.borderTop === "2px" && pressed.contour.borderColor === pressed.foreground,
   `${tag} held input paints a 2px contour in the control foreground`, pressed);
   evidence(pressed.contour.outerTop === 2 && pressed.contour.outerLeft === 2 &&
@@ -3227,11 +3923,17 @@ async function main() {
     const context = await browser.newContext({ viewport: { width: 1024, height: 900 }, deviceScaleFactor: 1 });
     const page = await context.newPage();
     await openApp(context, page);
-    await page.getByTestId("project-ready").waitFor();
+    await waitForColdHome(page);
     await focusAudit(page, "Appearance selector");
     await openCanary(context, page);
     await page.locator(".ts-workbook-head > .ts-appearance-selector").waitFor();
+    await auditDensityFocusRevealLifecycle(page, { context: "workbook", height: 800, scale: 1 });
+    await auditDensityFocusRevealLifecycle(page, { context: "workbook", height: 640, scale: 1, forcedColors: "active" });
+    await openGenericJ4(page);
     await auditTallGridLayoutOnly(page);
+    await closeWorkbookToHome(page);
+    await openCanary(context, page);
+    await page.locator(".ts-workbook-head > .ts-appearance-selector").waitFor();
 
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });
