@@ -374,6 +374,7 @@ try {
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "unknown");
   assert.equal(await page.locator('[data-testid^="cell:"]').count(), 0, "known-publication recovery withholds the stale grid");
+  assert.equal((await page.getByTestId("persistence-status").textContent())?.trim(), "Not saved yet", "known history publication preserves the unsaved persistence obligation");
   assert.equal(await undo.count(), 0, "recovery exposes no Undo control or history");
   assert.equal(await redo.count(), 0, "recovery exposes no Redo control or history");
   assert.equal(await methodCount(), historyCommandsBeforeFault + 1, "the failed observation never replays trackerHistory");
@@ -453,6 +454,8 @@ try {
   await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
   await undo.click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal((await page.getByTestId("operation-outcome").textContent())?.trim(), "Outcome needs review", "lost history reply remains an unknown outcome, not confirmed publication");
+  assert.equal((await page.getByTestId("persistence-status").textContent())?.trim(), "Not saved yet", "unknown history recovery keeps its known unsaved obligation visible");
   await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
   const recoveryTrackerCount = await methodCount();
   const recoveryPublicationCount = await publicationCount();

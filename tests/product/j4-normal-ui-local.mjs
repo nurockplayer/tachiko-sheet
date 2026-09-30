@@ -495,6 +495,64 @@ async function allGroupRows(page) {
   return Promise.all(tables.map((table) => groupRows(table)));
 }
 
+async function captureRecoveryVisuals(page, screenshotDir) {
+  if (!screenshotDir) return;
+  const initialProfile = await page.evaluate(() =>
+    document.querySelector('.ts-home .ts-appearance-profile-options input:checked')?.getAttribute("value") ?? "tachiko",
+  );
+  for (const profile of ["tachiko", "familiar-spreadsheet", "minimal-focus"]) {
+    if (profile !== initialProfile) {
+      await page.getByRole("button", { name: "Appearance", exact: true }).click();
+      const appearance = page.getByRole("dialog", { name: "Appearance", exact: true });
+      await appearance.getByRole("radio", { name: profile === "tachiko" ? "Tachiko" : profile === "familiar-spreadsheet" ? "Familiar Spreadsheet" : "Minimal-Focus", exact: true }).check();
+      await appearance.getByRole("button", { name: "Close", exact: true }).click();
+    }
+    for (const [width, height] of [[1440, 900], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      const recovery = page.getByRole("region", { name: "Recovery", exact: true });
+      const persistence = recovery.getByTestId("persistence-status");
+      const refresh = recovery.getByRole("button", { name: "Refresh", exact: true });
+      const close = recovery.getByRole("button", { name: "Close and abandon recovery", exact: true });
+      await persistence.waitFor({ state: "visible" });
+      const geometry = await page.evaluate(() => {
+        const recovery = document.querySelector('[aria-label="Recovery"]');
+        const persistence = recovery?.querySelector('[data-testid="persistence-status"]');
+        const refresh = recovery?.querySelector('button');
+        const close = recovery?.querySelectorAll('button')[1];
+        const rect = (element) => {
+          if (!(element instanceof HTMLElement)) return null;
+          const bounds = element.getBoundingClientRect();
+          return { x: bounds.x, right: bounds.right, y: bounds.y, bottom: bounds.bottom,
+            width: bounds.width, height: bounds.height, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth };
+        };
+        return { viewport: { width: innerWidth, height: innerHeight }, pageWidth: document.documentElement.scrollWidth,
+          recovery: rect(recovery), persistence: rect(persistence), refresh: rect(refresh), close: rect(close),
+          labels: { persistence: persistence?.textContent?.trim(), refresh: refresh?.textContent?.trim(), close: close?.textContent?.trim() } };
+      });
+      assert.equal(geometry.labels.persistence, "Not saved yet");
+      assert.equal(geometry.labels.refresh, "Refresh");
+      assert.equal(geometry.labels.close, "Close and abandon recovery");
+      assert.ok(geometry.pageWidth <= width, `${profile} ${width}px Recovery has no horizontal page clipping`);
+      assert.ok(geometry.persistence && geometry.persistence.scrollWidth <= geometry.persistence.clientWidth, `${profile} ${width}px persistence text is not clipped`);
+      assert.ok(geometry.refresh && geometry.close && geometry.refresh.x >= 0 && geometry.refresh.right <= width && geometry.close.x >= 0 && geometry.close.right <= width,
+        `${profile} ${width}px Recovery actions fit the viewport`);
+      assert.ok(geometry.refresh.scrollWidth <= geometry.refresh.clientWidth && geometry.close.scrollWidth <= geometry.close.clientWidth,
+        `${profile} ${width}px Recovery action labels are not clipped`);
+      assert.equal(await refresh.isEnabled(), true);
+      assert.equal(await close.isEnabled(), true);
+      await page.screenshot({ path: path.join(screenshotDir, `recovery-${profile}-${width}x${height}.png`), fullPage: true });
+    }
+  }
+  if (initialProfile !== "tachiko") {
+    await page.getByRole("button", { name: "Appearance", exact: true }).click();
+    const appearance = page.getByRole("dialog", { name: "Appearance", exact: true });
+    const label = initialProfile === "familiar-spreadsheet" ? "Familiar Spreadsheet" : "Minimal-Focus";
+    await appearance.getByRole("radio", { name: label, exact: true }).check();
+    await appearance.getByRole("button", { name: "Close", exact: true }).click();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
 try {
   let page = await start();
   const initialSalesCopy = await enterSalesFromHome(page);
@@ -867,6 +925,8 @@ try {
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
   assert.match(await page.locator("body").textContent(), /change was published/i);
+  assert.equal((await page.getByTestId("persistence-status").textContent())?.trim(), "Not saved yet", "known publication recovery visibly preserves the unsaved persistence obligation");
+  assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true", "the existing dirty authority remains independently known in recovery");
   assert.doesNotMatch(await page.locator("body").textContent(), /change was not applied/i);
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 0, "the successful first query must not be partially installed");
   assert.equal(await page.getByLabel("Current report data", { exact: true }).count(), 0, "recovery withholds the prior report as current");
@@ -875,6 +935,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copiesBeforeFault, "recovery dispatches no copy write");
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), exportsBeforeFault, "recovery dispatches no semantic export");
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), executeBeforeFault + 1, "published edit is never retried after query failure");
+  await captureRecoveryVisuals(page, resultsEvidenceDir);
   const queryFault = await page.evaluate(() => window.__tachikoAcceptance.scalarRequeryFaultProbe());
   assert.equal(queryFault.publicationAcknowledged, true, "fault is armed only after a real scalar publication acknowledgement");
   assert.equal(typeof queryFault.attemptId, "number", "the scalar witness belongs to one immutable attempt");
@@ -904,9 +965,27 @@ try {
     discardedDefinitionId: queryFault.discardedDefinitionId,
   }));
 
+  await page.evaluate(() => window.__tachikoAcceptance.failNextOpenProjection());
+  const copiesBeforeTransientRefresh = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  const exportsBeforeTransientRefresh = await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts());
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown", "a transient failed Refresh retains Recovery");
+  assert.equal((await page.getByTestId("persistence-status").textContent())?.trim(), "Not saved yet", "a failed transient Refresh retains the unsaved obligation");
+  assert.doesNotMatch(await page.locator("body").textContent(), /Saved on this device|Up to date/i, "a failed Refresh claims neither Save nor currentness");
+  assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).count(), 0, "Save stays withheld after failed Refresh");
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copiesBeforeTransientRefresh, "failed Refresh dispatches no copy write");
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.exportDispatchCounts()), exportsBeforeTransientRefresh, "failed Refresh dispatches no export");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), executeBeforeFault + 1, "failed Refresh does not replay the published scalar edit");
+
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
+  assert.equal((await page.locator("[data-testid=work-state]").textContent())?.trim(), "Edited — not saved", "successful Refresh confirms observation without saving the publication");
+  const recoveredCatalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
+  const recoveredPriceIndex = recoveredCatalogHeaders.filter((header) => header !== "Row").indexOf("price");
+  const recoveredPenPrice = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(recoveredPriceIndex);
+  assert.equal((await recoveredPenPrice.locator(".ts-cell-value").textContent())?.trim(), "250", "one successful Refresh confirms the published scalar value");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "one explicit Refresh re-observes the complete definition set");
   const recoveredGroups = await allGroupRows(page);
@@ -918,6 +997,11 @@ try {
   assert.match(await recoveredReport.textContent(), /NOTE\s*1000/);
   assert.equal(await page.getByLabel("Title", { exact: true }).inputValue(), "Second query recovery report", "report configuration and presentation draft survive recovery");
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), executeBeforeFault + 1, "Refresh observes; it does not replay the semantic edit");
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("scalar-recovery-saved");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  assert.equal((await page.locator("[data-testid=work-state]").textContent())?.trim(), "Unchanged", "only the actual durable Save receipt clears the unsaved status");
   await page.evaluate(() => window.__tachikoAcceptance.resetScalarRequeryFaultProbe());
   assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.scalarRequeryFaultProbe()), {
     attemptId: null,

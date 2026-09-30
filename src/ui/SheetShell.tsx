@@ -1558,6 +1558,11 @@ export function SheetShell(props: SheetShellProps) {
                 <span className="ts-chip" data-testid="currentness" data-currentness={currentness}>
                   {currentnessLabel(currentness)}
                 </span>
+                {dirty ? (
+                  <span className="ts-chip ts-chip--edited" data-testid="persistence-status">
+                    Not saved yet
+                  </span>
+                ) : null}
                 {outcome !== "idle" ? (
                   <span className={`ts-chip ts-chip--${outcome}`} data-testid="operation-outcome">
                     {outcomeLabel(outcome)}
