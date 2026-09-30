@@ -15,7 +15,8 @@ RUN corepack enable \
       /workspace/public/examples \
       /workspace/dist \
       /home/node/.cache/node/corepack \
-      /home/node/.local/share/pnpm/store
+      /home/node/.local/share/pnpm/store \
+    && chown node:node /workspace
 
 COPY --chown=node:node package.json pnpm-lock.yaml ./
 USER node
