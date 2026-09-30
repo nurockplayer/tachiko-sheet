@@ -24,6 +24,7 @@ import { applyResolvedProfile, resolveInterfaceProfile } from "../ui/interface-p
 export interface AcceptanceRuntimeSnapshot {
   occurrence: string;
   revision: string;
+  title: string;
   opaqueBytesHash: string;
 }
 
@@ -1520,7 +1521,7 @@ export async function runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot> {
   const { runtime } = requireWiring();
   const view = await runtime.read();
   const snapshot = await runtime.exportOpaque({ occurrence: view.occurrence, revision: view.revision });
-  return { occurrence: view.occurrence, revision: view.revision, opaqueBytesHash: await hashBytes(snapshot.bytes) };
+  return { occurrence: view.occurrence, revision: view.revision, title: view.title, opaqueBytesHash: await hashBytes(snapshot.bytes) };
 }
 
 /** Readonly host observation; opaque bytes and their attachment are never decoded or rewritten. */

@@ -8,10 +8,12 @@ import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { j4CanaryInventory, j4CanaryText } from '../tests/fixtures/j4-catalog-sales.mjs';
+import { salesCatalogInventory, salesCatalogText } from './sales-catalog-source.mjs';
 
 const source = fileURLToPath(new URL('../tests/fixtures/release-plan.roproj', import.meta.url));
 const target = fileURLToPath(new URL('../public/examples/release-plan', import.meta.url));
 const j4Target = fileURLToPath(new URL('../public/examples/j4-catalog-sales', import.meta.url));
+const salesTarget = fileURLToPath(new URL('../public/examples/sales-catalog', import.meta.url));
 const shards = Array.from('0123456789abcdef', (shard) => `entities/${shard}.jsonl`);
 const inventory = ['manifest.json', 'schemas.json', ...shards];
 
@@ -28,3 +30,10 @@ for (const entry of j4CanaryInventory) {
   await writeFile(path.join(j4Target, entry), j4CanaryText[entry]);
 }
 console.log(`Copied ${j4CanaryInventory.length} unchanged J4 canary files to ${j4Target}`);
+
+await rm(salesTarget, { recursive: true, force: true });
+await mkdir(path.join(salesTarget, 'entities'), { recursive: true });
+for (const entry of salesCatalogInventory) {
+  await writeFile(path.join(salesTarget, entry), salesCatalogText[entry]);
+}
+console.log(`Generated ${salesCatalogInventory.length} title-only Sales source files at ${salesTarget}`);

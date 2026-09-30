@@ -35,10 +35,17 @@ async function openCanary(page) {
   await page.getByTestId("project-ready").waitFor();
 }
 
+async function assertSalesWorkbookTitle(page, seam) {
+  const snapshot = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  assert.equal(snapshot.title, "Sales and catalog", `${seam} runtime snapshot reads the source-backed workbook title`);
+  assert.equal(await page.locator(".ts-title").textContent(), "Sales and catalog", `${seam} visible workbook title reflects runtime truth`);
+}
+
 async function enterSalesFromHome(page, { addAnotherSummary = false } = {}) {
   const openBefore = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
   await page.getByRole("button", { name: "Open sales example", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
+  await assertSalesWorkbookTitle(page, "Home open");
   const openAfter = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
   assert.equal(openAfter - openBefore, 1, "healthy readiness is followed by exactly one canonical Open");
   await page.waitForFunction(() => document.querySelector("#ts-active-table")?.value === "catalog");
@@ -134,6 +141,8 @@ async function verifyConfiguredSalesSaveReopen(page, initialCopyName) {
   await page.getByRole("button", { name: `Open saved ${initialCopyName}`, exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   const reopenedInitial = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  assert.equal(reopenedInitial.title, "Sales and catalog", "initial saved-copy reopen retains the runtime workbook title");
+  assert.equal(await page.locator(".ts-title").textContent(), "Sales and catalog", "initial saved-copy reopen visibly retains the workbook title");
   assert.notEqual(reopenedInitial.occurrence, firstOccurrence, "opening the saved initial Sales copy creates a fresh occurrence");
   assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), null, "a saved-copy reopen does not restore the UI-only Sales tip marker");
   assert.equal(await page.locator(".ts-app").getAttribute("data-sales-catalog-layout"), null, "a saved-copy reopen does not restore the UI-only compact-layout marker");
@@ -196,6 +205,8 @@ async function verifyConfiguredSalesSaveReopen(page, initialCopyName) {
   await page.getByRole("button", { name: `Open saved ${editedCopyName}`, exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   const reopenedEdited = await page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
+  assert.equal(reopenedEdited.title, "Sales and catalog", "edited saved-copy reopen retains the runtime workbook title");
+  assert.equal(await page.locator(".ts-title").textContent(), "Sales and catalog", "edited saved-copy reopen visibly retains the workbook title");
   assert.notEqual(reopenedEdited.occurrence, editedOccurrence, "opening the edited Sales copy creates a fresh occurrence");
   assert.equal(await page.locator(".ts-app").getAttribute("data-sales-entry-tip"), null, "edited-copy reopen does not restore the UI-only Sales tip marker");
   assert.equal(await page.locator(".ts-app").getAttribute("data-sales-catalog-layout"), null, "edited-copy reopen does not restore the UI-only compact-layout marker");
