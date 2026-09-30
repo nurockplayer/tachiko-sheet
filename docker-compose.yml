@@ -1,0 +1,78 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["pnpm", "dev", "--host", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - node_modules:/workspace/node_modules
+      - examples:/workspace/public/examples
+    init: true
+    user: node
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1.0
+    mem_limit: 1536m
+    pids_limit: 128
+
+  check:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - sh
+      - -lc
+      - pnpm typecheck && pnpm verify:core-kit && pnpm test
+    network_mode: none
+    volumes:
+      - node_modules:/workspace/node_modules
+    init: true
+    user: node
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1.0
+    mem_limit: 1536m
+    pids_limit: 128
+
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["pnpm", "build"]
+    network_mode: none
+    volumes:
+      - node_modules:/workspace/node_modules
+      - examples:/workspace/public/examples
+      - dist:/workspace/dist
+    init: true
+    user: node
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1.0
+    mem_limit: 1536m
+    pids_limit: 128
+
+volumes:
+  node_modules:
+  examples:
+  dist:
