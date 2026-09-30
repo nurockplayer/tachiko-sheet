@@ -19,7 +19,7 @@ if (resultsEvidenceDir) await mkdir(resultsEvidenceDir, { recursive: true });
 
 async function start() {
   const { chromium } = await import("playwright-core");
-  profile = await mkdtemp(path.join(tmpdir(), "tachiko-j4-product-"));
+  profile ??= await mkdtemp(path.join(tmpdir(), "tachiko-j4-product-"));
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   const page = await context.newPage();
