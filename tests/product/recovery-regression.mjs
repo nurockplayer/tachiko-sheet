@@ -66,6 +66,7 @@ try {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByTestId("open-project").setInputFiles(fixture);
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+  assert.equal(await page.getByTestId("persistence-status").count(), 0, "a clean replacement Open does not inherit the previous work's unsaved status");
   assert.equal(
     await page.getByTestId("operation-outcome").count(),
     0,

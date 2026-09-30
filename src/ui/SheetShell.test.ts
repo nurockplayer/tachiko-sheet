@@ -318,7 +318,29 @@ describe("recovery presentation", () => {
     const markup = render({ currentness: "unknown", outcome: "idle" });
     expect(chipText(markup, "currentness")).toBe("Needs refresh");
     expect(chipText(markup, "operation-outcome")).toBe(null);
+    expect(chipText(markup, "persistence-status")).toBe(null);
     expect(markup).not.toContain('data-testid="operation-outcome"');
+  });
+
+  it("shows known unsaved work alongside recovery without replacing the other status", () => {
+    const markup = render({ currentness: "unknown", outcome: "idle", dirty: true });
+    expect(chipText(markup, "currentness")).toBe("Needs refresh");
+    expect(chipText(markup, "persistence-status")).toBe("Not saved yet");
+    expect(chipText(markup, "operation-outcome")).toBe(null);
+
+    const unknownMutation = render({ currentness: "unknown", outcome: "unknown", dirty: true });
+    expect(chipText(unknownMutation, "persistence-status")).toBe("Not saved yet");
+    expect(chipText(unknownMutation, "operation-outcome")).toBe("Outcome needs review");
+    expect(unknownMutation).not.toContain("change was published");
+
+    const cleanReplacement = render({ currentness: "unknown", outcome: "unknown", dirty: false });
+    expect(chipText(cleanReplacement, "persistence-status")).toBe(null);
+    expect(cleanReplacement).not.toContain("Not saved yet");
+    expect(cleanReplacement).not.toContain("Edited — not saved");
+
+    const ordinaryHome = render({ currentness: "current", dirty: true });
+    expect(chipText(ordinaryHome, "persistence-status")).toBe(null);
+    expect(ordinaryHome).not.toContain("Not saved yet");
   });
 
   it("does not render an editable stale workbook during published recovery", () => {
