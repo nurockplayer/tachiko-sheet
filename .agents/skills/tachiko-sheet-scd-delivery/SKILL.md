@@ -36,7 +36,7 @@ Record `FINAL_CANDIDATE <sha>` only when:
 - applicable focused and affected-regression checks are green;
 - the PR is otherwise believed merge-ready.
 
-Only then run full applicable hosted gates and one fresh independent exact-HEAD **Oracle latest Extra High** review through the qualified **ego-lite → Oracle** transport. Run deterministic/hosted gates first and verify requested/effective model and **Extra High** effort fail-closed before review credit.
+Only then run full applicable hosted gates and one fresh independent exact-HEAD **Oracle latest Extra High** review through the qualified **ego-lite → Oracle** transport. Run deterministic/hosted gates first and qualify provenance under live #1's 2026-09-29 supported-visible-evidence rule and `docs/DELIVERY.md` before review credit.
 
 A material commit after that checkpoint invalidates Final Candidate status and requires the applicable exact-head gates and review again.
 
@@ -45,7 +45,9 @@ A material commit after that checkpoint invalidates Final Candidate status and r
 ego-lite is the default Oracle execution transport for Sheet. It does not change reviewer authority or merge gates.
 
 - keep Oracle read-only, independent and exact-HEAD-bound;
-- unknown model/effort provenance or transport/session failure gives no review credit;
+- capture requested **Latest / Extra High** before submission and correlate the complete response to the same conversation/turn and frozen exact HEAD; require full required coverage and literal `No blocking findings.`;
+- inspect effective model/effort metadata when the supported product exposes it; contradictions block credit, but hidden or product-unexposed metadata absence alone does not;
+- missing required visible provenance, incomplete coverage or no complete recoverable verdict gives no review credit; do not probe credentials or guess private/auth endpoints;
 - do not start a duplicate review merely because one is slow;
 - a material HEAD change invalidates the candidate-bound receipt;
 - GPT-6 Pro/Astra remain separate judgment/architecture consultation paths, not hidden Oracle fallbacks.

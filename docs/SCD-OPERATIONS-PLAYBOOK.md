@@ -40,7 +40,7 @@ next bounded package, or Final Candidate
 Rules:
 
 - one active production writer/worktree for the current package;
-- Sol remains the engineering decision-maker and integrator;
+- Sol remains the sole Mission Lead/integrator; Astra's disposition controls a material questioned point when consulted under live #1;
 - Sol does not concurrently edit the same source while Luna owns the package;
 - a worker handback releases the current writer slot but does not by itself start another production package;
 - the next package starts only after the current package is merged/closed, explicitly blocked and released, or ownership is durably transferred;
@@ -96,9 +96,9 @@ Before each Luna package, Sol records a compact decision when one is material:
 - relevant rejected alternative;
 - rollback/reversal path when material.
 
-Give Luna only the settled implementation/test package. If implementation reveals a new choice, return it to Sol to classify against the governing authority rather than letting the worker improvise. Sol decides choices inside settled engineering boundaries; product scope, specifications or material acceptance choices go to ChatGPT Steward; conflicts with Accepted semantics, storage or authorization go to the relevant upstream authority, with Steward included when product scope or acceptance is involved. Do not freeze a follow-on Luna package or declare a Final Candidate until the required outside authority resolves the question. Complete any applicable #1 Astra/Pro consultation separately; it does not replace this authority routing.
+Give Luna only the settled implementation/test package. If implementation reveals a new choice, return it to Sol to classify against the governing authority rather than letting the worker improvise. Sol decides choices inside settled engineering boundaries subject to Astra's controlling disposition on consulted material questions; product scope, specifications or material acceptance choices go to ChatGPT Steward; conflicts with Accepted semantics, storage or authorization go to the relevant upstream authority, with Steward included when product scope or acceptance is involved. Do not freeze a follow-on Luna package or declare a Final Candidate until the required outside authority resolves the question. Complete any applicable #1 Astra/Pro consultation separately; it does not replace this authority routing.
 
-Before freezing an architecture decision or assigning Luna a package, Sol checks live #1 for mandatory Astra consultation and any conditional Pro escalation, and completes the applicable steps when a trigger applies.
+Before freezing a decision or assigning implementation on a material difficulty, ambiguity or decision question, Sol obtains Astra consultation under live #1's 2026-09-28 directive; architecture triggers are a minimum, not a ceiling. Record the question, evidence, Astra conclusion, resulting disposition, important rejected alternatives and reversal path. Further escalation is required only when Astra requests additional analysis or the question exceeds #1/founder delegation; older automatic Pro triggers are superseded. If genuinely required escalation is unavailable, record HOLD with the exact unresolved question. Routine mechanical repair and clear reversible local choices do not require consultation unless a live #1 trigger applies.
 
 Prefer packages that can be independently checked, for example:
 
@@ -203,7 +203,9 @@ Use one fresh, independent **Oracle latest Extra High** session only after the c
 Required behavior:
 
 - use ego-lite by default rather than launching the browser Oracle path directly;
-- verify requested/effective reviewer model and **Extra High** effort fail-closed before granting review credit;
+- apply live #1's 2026-09-29 supported-visible-provenance rule: capture requested **Latest / Extra High** before submission and correlate the complete response to the same review conversation/turn and frozen candidate;
+- inspect effective model/effort metadata when the supported product exposes it; contradictions block credit, but hidden or product-unexposed metadata absence alone does not;
+- missing required visible provenance or incomplete required coverage gives no review credit; do not probe credentials or guess private/auth endpoints;
 - attach the exact HEAD/base and complete relevant diff/context;
 - require every valid blocking finding with its appropriate priority and concrete evidence, including trigger/file/line when applicable;
 - require literal terminal verdict `No blocking findings.` only when there are no blockers;
