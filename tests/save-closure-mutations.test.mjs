@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { EventEmitter, once } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -13,9 +14,12 @@ import {
   cleanGateCandidateMatches,
   classifyM6ProductionProof,
   classifyMutationReceipt,
+  compareM6DiagnosticEvidence,
   createM6ReadinessProof,
   executeFrozenSaveControl,
   finalizeM6ReadinessProof,
+  findM6IconReferences,
+  qualifyM6AssetInventory,
   recordM6ConsoleError,
   reconcileHostedProductEvidence,
   validateAuthorizedCandidate,
@@ -254,6 +258,55 @@ test('M6 readiness budget leaves restoration and upload reserve untouched', () =
   assert.equal(boundedM6ProbeBudget(99_999), null);
 });
 
+test('M6 icon audit finds explicit source and emitted icon references without matching ordinary stylesheet links', () => {
+  assert.equal(findM6IconReferences('<link rel="stylesheet" href="/assets/app.css">', 'index.html').length, 0);
+  assert.deepEqual(findM6IconReferences('<link rel="icon" href="/favicon.ico"><script>fetch("/favicon.ico")</script>', 'built.html')
+    .map((row) => row.kind).sort(), ['favicon-literal', 'favicon-literal', 'icon-link', 'ico-literal', 'ico-literal'].sort());
+});
+
+test('M6 served build inventory requires every recorded file status and full-body hash to match', () => {
+  const files = [
+    ['index.html', 'a'.repeat(64)],
+    ['assets/index-app.js', 'b'.repeat(64)],
+    ['core-kit/experimental-client.worker.js', 'c'.repeat(64)],
+    ['core-kit/designer_runtime.wasm', 'd'.repeat(64)],
+  ];
+  const receipt = { status: 'PASS', artifact: { digest: createHash('sha256').update(JSON.stringify(files)).digest('hex'), files } };
+  const observed = files.map(([file, hash]) => ({ path: file, status: 200, bodySha256: hash }));
+  assert.equal(qualifyM6AssetInventory(receipt, observed).status, 'PASS');
+  assert.equal(qualifyM6AssetInventory(receipt, observed.slice(0, -1)).status, 'BLOCKED');
+  assert.equal(qualifyM6AssetInventory(receipt, observed.map((row) => row.path.endsWith('.wasm') ? { ...row, bodySha256: 'e'.repeat(64) } : row)).status, 'BLOCKED');
+  assert.equal(qualifyM6AssetInventory(receipt, observed.map((row) => row.path.endsWith('.worker.js') ? { ...row, status: 404 } : row)).status, 'BLOCKED');
+});
+
+test('M6 clean/mutant favicon parity remains diagnostic and every observed 404 still blocks readiness', () => {
+  const faviconHash = createHash('sha256').update('Not found').digest('hex');
+  const build = (candidateKind, entryPath, entryHash, port) => {
+    const proof = createM6ReadinessProof({ candidateSha256: (candidateKind === 'mutant' ? 'a' : 'f').repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) }, { candidateKind });
+    proof.browserVersion = 'Chrome/151.0.7922.34';
+    proof.productionEntryAssetPath = entryPath;
+    proof.independentHttpGets.push({ name: 'production-favicon', requestedUrl: `http://127.0.0.1:${port}/favicon.ico`,
+      url: `http://127.0.0.1:${port}/favicon.ico`, sameOrigin: true, method: 'GET', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' });
+    proof.sourceIconAudit = { status: 'PASS', references: [] };
+    proof.emittedHtmlAudit = { status: 'PASS', references: [], domAudit: { iconLinks: [], references: [] } };
+    proof.hookFreeControl = { status: 'CONTROL_OBSERVED', browserVersion: proof.browserVersion,
+      domAudit: { scriptCount: 0, links: [] }, serverRequests: [{ method: 'GET', path: '/favicon.ico', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' }] };
+    const files = [['index.html', '1'.repeat(64)], [entryPath.slice(1), entryHash],
+      ['core-kit/experimental-client.worker.js', '2'.repeat(64)], ['core-kit/designer_runtime.wasm', '3'.repeat(64)]];
+    proof.assetInventoryVerification = { status: 'PASS', recordedArtifactDigest: candidateKind, expectedFiles: files.map(([path, sha256]) => ({ path, sha256 })) };
+    return proof;
+  };
+  const mutant = build('mutant', '/assets/index-mutant.js', '4'.repeat(64), 3101);
+  const clean = build('clean', '/assets/index-clean.js', '5'.repeat(64), 3102);
+  const comparison = compareM6DiagnosticEvidence(mutant, clean);
+  assert.equal(comparison.status, 'OBSERVED_PARITY');
+  assert.equal(comparison.readinessRuleChanged, false);
+  assert.equal(comparison.artifactParity.requiredCoreKitAssetCount, 2);
+  Object.assign(mutant, { httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200, cdpReady: true, coldHomeReady: true });
+  mutant.diagnostics.responses.push({ url: 'http://127.0.0.1:3101/', status: 200, resourceType: 'document' });
+  assert.equal(finalizeM6ReadinessProof(mutant).status, 'BLOCKED');
+});
+
 test('M6 diagnostics attribute a real HTTP 404 by URL, status, resource type, and console location', async () => {
   const server = createServer((_request, response) => {
     response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -310,7 +363,11 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
   Object.assign(readiness, {
     httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200,
     cdpReady: true, browserVersion: 'Chrome/136.0.0.0', coldHomeReady: true,
+    assetInventoryVerification: { status: 'PASS' },
   });
+  readiness.independentHttpGets.push({ name: 'production-favicon', requestedUrl: 'http://127.0.0.1:34701/favicon.ico',
+    url: 'http://127.0.0.1:34701/favicon.ico', sameOrigin: true, method: 'GET', status: 200, redirected: false,
+    bodyByteCount: 2, bodySha256: createHash('sha256').update('ok').digest('hex'), bodyText: 'ok' });
   readiness.diagnostics.responses.push(
     { url: 'http://127.0.0.1:34701/', status: 200, resourceType: 'document' },
     { url: 'http://127.0.0.1:34701/assets/index-app.js', status: 200, resourceType: 'script' },

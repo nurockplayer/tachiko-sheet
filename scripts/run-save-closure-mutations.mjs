@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -210,13 +211,200 @@ export function cleanGateCandidateMatches(candidate, expected, archivedProductEv
     && archived.get(file.slice('evidence/product-acceptance/'.length)) === hash);
 }
 
-export function createM6ReadinessProof(mutationIdentity) {
+export function createM6ReadinessProof(mutationIdentity, { candidateKind = 'mutant', buildDigest = null } = {}) {
   return {
     status: 'BLOCKED', startedAt: nowIso(), httpIndexStatus: null, productionAssetStatus: null,
     cdpReady: false, browserVersion: null, coldHomeReady: false, browserNavigationStatus: null,
-    mutantCandidateIdentity: mutationIdentity.candidateSha256, mutationPatchSha256: mutationIdentity.patchSha256,
-    mutatedLoaderSha256: mutationIdentity.loaderSha256,
+    candidateKind, candidateIdentity: mutationIdentity.candidateSha256, buildDigest,
+    mutantCandidateIdentity: candidateKind === 'mutant' ? mutationIdentity.candidateSha256 : null,
+    mutationPatchSha256: mutationIdentity.patchSha256 ?? null,
+    mutatedLoaderSha256: mutationIdentity.loaderSha256 ?? null,
+    independentHttpGets: [], assetInventoryVerification: null, sourceIconAudit: null,
+    emittedHtmlAudit: null, hookFreeControl: null,
     diagnostics: { requests: [], pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [], captureErrors: [], droppedEvents: 0 },
+  };
+}
+
+const M6_ICON_TEXT_PATTERNS = [
+  { name: 'favicon-literal', expression: /favicon/gi },
+  { name: 'ico-literal', expression: /\.ico(?:[?#"'`\s]|$)/gi },
+  { name: 'icon-link', expression: /<link\b[^>]*\brel\s*=\s*["'][^"']*\bicon\b/gi },
+];
+
+export function findM6IconReferences(text, source) {
+  const matches = [];
+  for (const { name, expression } of M6_ICON_TEXT_PATTERNS) {
+    expression.lastIndex = 0;
+    for (const match of text.matchAll(expression)) {
+      const start = Math.max(0, match.index - 60);
+      const end = Math.min(text.length, match.index + match[0].length + 60);
+      matches.push({ source, kind: name, text: text.slice(start, end) });
+      if (matches.length >= 50) return matches;
+    }
+  }
+  return matches;
+}
+
+export function qualifyM6AssetInventory(receipt, observedRows) {
+  const files = receipt?.artifact?.files;
+  const digest = Array.isArray(files) ? bytesHash(Buffer.from(JSON.stringify(files))) : null;
+  const errors = [];
+  if (receipt?.status !== 'PASS' || !Array.isArray(files) || digest !== receipt?.artifact?.digest) {
+    errors.push({ kind: 'recorded-build-inventory-invalid', expectedDigest: receipt?.artifact?.digest ?? null, recomputedDigest: digest });
+  }
+  const expected = new Map();
+  for (const row of Array.isArray(files) ? files : []) {
+    if (!Array.isArray(row) || row.length !== 2 || typeof row[0] !== 'string' || !/^[a-f0-9]{64}$/.test(row[1]) || expected.has(row[0])) {
+      errors.push({ kind: 'recorded-build-inventory-row-invalid', row });
+      continue;
+    }
+    expected.set(row[0], row[1]);
+  }
+  const observed = new Map();
+  for (const row of Array.isArray(observedRows) ? observedRows : []) {
+    if (!row || typeof row.path !== 'string' || observed.has(row.path)) {
+      errors.push({ kind: 'observed-asset-row-invalid-or-duplicate', path: row?.path ?? null });
+      continue;
+    }
+    observed.set(row.path, row);
+  }
+  for (const [file, sha256] of expected) {
+    const row = observed.get(file);
+    if (!row) errors.push({ kind: 'asset-not-fetched', path: file });
+    else if (row.status !== 200 || row.bodySha256 !== sha256) {
+      errors.push({ kind: 'served-asset-differs-from-recorded-build', path: file, status: row.status, expectedSha256: sha256, observedSha256: row.bodySha256 ?? null });
+    }
+  }
+  for (const file of observed.keys()) if (!expected.has(file)) errors.push({ kind: 'unrecorded-asset-fetched', path: file });
+  return {
+    status: errors.length === 0 && expected.size > 0 ? 'PASS' : 'BLOCKED',
+    recordedArtifactDigest: receipt?.artifact?.digest ?? null,
+    recomputedArtifactDigest: digest,
+    expectedFileCount: expected.size,
+    observedFileCount: observed.size,
+    expectedFiles: [...expected].map(([path, sha256]) => ({ path, sha256 })),
+    observedRows,
+    errors,
+  };
+}
+
+function m6FaviconTuple(proof) {
+  const row = (proof?.independentHttpGets ?? []).find((item) => item.name === 'production-favicon');
+  return row && { requestedPath: new URL(row.requestedUrl).pathname, responsePath: new URL(row.url).pathname, sameOrigin: row.sameOrigin,
+    method: row.method, status: row.status, redirected: row.redirected ?? null, contentType: row.contentType ?? null,
+    bodyByteCount: row.bodyByteCount, bodySha256: row.bodySha256, bodyText: row.bodyText };
+}
+
+function m6BlankControlTuple(proof) {
+  const control = proof?.hookFreeControl;
+  const diagnostics = control?.diagnostics ?? {};
+  const pathOf = (url) => {
+    if (!url) return url ?? null;
+    try { return new URL(url).pathname; } catch { return url; }
+  };
+  return control && {
+    status: control.status,
+    browserVersion: control.browserVersion,
+    scriptCount: control.domAudit?.scriptCount ?? null,
+    links: control.domAudit?.links ?? null,
+    serverRequests: (control.serverRequests ?? []).map((row) => ({ method: row.method, path: row.path, status: row.status,
+      contentType: row.contentType, bodyByteCount: row.bodyByteCount, bodySha256: row.bodySha256, bodyText: row.bodyText })),
+    diagnostics: {
+      requests: (diagnostics.requests ?? []).map((row) => ({ path: pathOf(row.url), method: row.method, resourceType: row.resourceType, source: row.source })),
+      requestFailures: (diagnostics.requestFailures ?? []).map((row) => ({ path: pathOf(row.url), method: row.method, resourceType: row.resourceType, source: row.source, error: row.error })),
+      responses: (diagnostics.responses ?? []).map((row) => ({ path: pathOf(row.url), status: row.status, resourceType: row.resourceType, method: row.method, contentType: row.contentType, source: row.source })),
+      responseErrors: (diagnostics.responseErrors ?? []).map((row) => ({ ...row, url: undefined, path: pathOf(row.url) })),
+      consoleErrors: (diagnostics.consoleErrors ?? []).map((row) => ({ type: row.type, message: row.message, path: pathOf(row.location?.url), lineNumber: row.location?.lineNumber ?? null, columnNumber: row.location?.columnNumber ?? null })),
+      pageErrors: (diagnostics.pageErrors ?? []).map((row) => ({ message: row.message })),
+      captureErrors: diagnostics.captureErrors ?? [], droppedEvents: diagnostics.droppedEvents ?? 0,
+    },
+  };
+}
+
+export function compareM6DiagnosticEvidence(mutant, clean) {
+  const mutantFavicon = m6FaviconTuple(mutant);
+  const cleanFavicon = m6FaviconTuple(clean);
+  const mutantControl = m6BlankControlTuple(mutant);
+  const cleanControl = m6BlankControlTuple(clean);
+  const mutantAssets = mutant?.assetInventoryVerification;
+  const cleanAssets = clean?.assetInventoryVerification;
+  const mutantRows = new Map((mutantAssets?.expectedFiles ?? []).map((row) => [row.path, row.sha256]));
+  const cleanRows = new Map((cleanAssets?.expectedFiles ?? []).map((row) => [row.path, row.sha256]));
+  const mutantEntry = mutant?.productionEntryAssetPath ?? null;
+  const cleanEntry = clean?.productionEntryAssetPath ?? null;
+  const ignored = new Set(['index.html', mutantEntry?.replace(/^\//, ''), cleanEntry?.replace(/^\//, '')].filter(Boolean));
+  const shared = [...mutantRows.keys()].filter((file) => cleanRows.has(file) && !ignored.has(file));
+  const assetDifferences = [];
+  for (const file of shared) if (mutantRows.get(file) !== cleanRows.get(file)) assetDifferences.push(file);
+  const nonEntryOnlyMutant = [...mutantRows.keys()].filter((file) => !cleanRows.has(file) && !ignored.has(file));
+  const nonEntryOnlyClean = [...cleanRows.keys()].filter((file) => !mutantRows.has(file) && !ignored.has(file));
+  const requiredCoreAssets = shared.filter((file) => file.startsWith('core-kit/'));
+  const sourceClean = (proof) => proof?.sourceIconAudit?.status === 'PASS'
+    && (proof.sourceIconAudit.references ?? []).length === 0;
+  const emittedClean = (proof) => proof?.emittedHtmlAudit?.status === 'PASS'
+    && (proof.emittedHtmlAudit.references ?? []).length === 0
+    && (proof.emittedHtmlAudit.domAudit?.iconLinks ?? []).length === 0;
+  const controlComplete = (control) => control?.status === 'CONTROL_OBSERVED'
+    && control.browserVersion && control.domAudit?.scriptCount === 0
+    && Array.isArray(control.domAudit.links) && control.domAudit.links.length === 0
+    && (control.serverRequests ?? []).some((row) => row.method === 'GET' && row.path === '/favicon.ico' && row.status === 404);
+  const sameJson = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  const faviconParity = Boolean(mutantFavicon && cleanFavicon && sameJson(mutantFavicon, cleanFavicon));
+  const controlParity = Boolean(mutantControl && cleanControl && mutantControl.browserVersion === cleanControl.browserVersion
+    && mutantControl.scriptCount === cleanControl.scriptCount && sameJson(mutantControl.links, cleanControl.links)
+    && sameJson(mutantControl.serverRequests, cleanControl.serverRequests)
+    && sameJson(mutantControl.diagnostics, cleanControl.diagnostics));
+  const browserParity = Boolean(mutant?.browserVersion && mutant.browserVersion === clean?.browserVersion);
+  const normalizePath = (url, entryPath) => {
+    if (!url) return url ?? null;
+    try {
+      const parsed = new URL(url);
+      return parsed.pathname === entryPath ? '<production-entry>' : parsed.pathname;
+    } catch { return url; }
+  };
+  const normalizeDiagnostics = (proof) => {
+    const entry = proof?.productionEntryAssetPath ?? null;
+    const diagnostics = proof?.diagnostics ?? {};
+    return {
+      requests: (diagnostics.requests ?? []).map((row) => ({ path: normalizePath(row.url, entry), method: row.method, resourceType: row.resourceType, source: row.source })),
+      requestFailures: (diagnostics.requestFailures ?? []).map((row) => ({ path: normalizePath(row.url, entry), method: row.method, resourceType: row.resourceType, source: row.source, error: row.error })),
+      responses: (diagnostics.responses ?? []).map((row) => ({ path: normalizePath(row.url, entry), status: row.status, resourceType: row.resourceType, method: row.method, contentType: row.contentType, source: row.source })),
+      responseErrors: (diagnostics.responseErrors ?? []).map((row) => ({ ...row, url: undefined, path: normalizePath(row.url, entry) })),
+      consoleErrors: (diagnostics.consoleErrors ?? []).map((row) => ({ message: row.message, path: normalizePath(row.location?.url, entry), lineNumber: row.location?.lineNumber ?? null, columnNumber: row.location?.columnNumber ?? null })),
+      pageErrors: (diagnostics.pageErrors ?? []).map((row) => ({ message: row.message })),
+      captureErrors: diagnostics.captureErrors ?? [], droppedEvents: diagnostics.droppedEvents ?? 0,
+    };
+  };
+  const mutantDiagnostics = normalizeDiagnostics(mutant);
+  const cleanDiagnostics = normalizeDiagnostics(clean);
+  const productDiagnosticsParity = sameJson(mutantDiagnostics, cleanDiagnostics);
+  const artifactParity = mutantAssets?.status === 'PASS' && cleanAssets?.status === 'PASS'
+    && assetDifferences.length === 0 && nonEntryOnlyMutant.length === 0 && nonEntryOnlyClean.length === 0;
+  const complete = faviconParity && controlParity && browserParity && productDiagnosticsParity && artifactParity
+    && sourceClean(mutant) && sourceClean(clean) && emittedClean(mutant) && emittedClean(clean)
+    && controlComplete(mutant?.hookFreeControl) && controlComplete(clean?.hookFreeControl);
+  return {
+    status: complete ? 'OBSERVED_PARITY' : 'INCOMPLETE_OR_DIFFERENT',
+    readinessRuleChanged: false,
+    mutantCandidateIdentity: mutant?.candidateIdentity ?? null,
+    cleanCandidateIdentity: clean?.candidateIdentity ?? null,
+    browserParity,
+    productDiagnosticsParity,
+    normalizedProductDiagnostics: { mutant: mutantDiagnostics, clean: cleanDiagnostics },
+    faviconParity,
+    favicon: { mutant: mutantFavicon, clean: cleanFavicon },
+    hookFreeControl: { mutant: mutantControl, clean: cleanControl, parity: controlParity },
+    sourceAudit: { mutant: mutant?.sourceIconAudit ?? null, clean: clean?.sourceIconAudit ?? null },
+    emittedDomAudit: { mutant: mutant?.emittedHtmlAudit ?? null, clean: clean?.emittedHtmlAudit ?? null },
+    artifactParity: {
+      matchedSharedAssetCount: shared.length,
+      requiredCoreKitAssetCount: requiredCoreAssets.length,
+      changedSharedAssets: assetDifferences,
+      mutantOnlyAssets: nonEntryOnlyMutant,
+      cleanOnlyAssets: nonEntryOnlyClean,
+      mutantBuildDigest: mutantAssets?.recordedArtifactDigest ?? null,
+      cleanBuildDigest: cleanAssets?.recordedArtifactDigest ?? null,
+    },
   };
 }
 
@@ -344,8 +532,15 @@ export function recordM6ConsoleError(proof, message) {
 
 export function finalizeM6ReadinessProof(proof) {
   const diagnostics = proof?.diagnostics ?? {};
+  const independentHttpErrors = (proof?.independentHttpGets ?? []).some((row) => row.status < 200 || row.status >= 400);
+  const faviconGet = (proof?.independentHttpGets ?? []).find((row) => row.name === 'production-favicon');
+  const faviconCaptureIncomplete = !faviconGet || faviconGet.sameOrigin !== true || faviconGet.method !== 'GET'
+    || faviconGet.redirected !== false || !Number.isSafeInteger(faviconGet.bodyByteCount)
+    || !/^[a-f0-9]{64}$/.test(faviconGet.bodySha256 ?? '') || typeof faviconGet.bodyText !== 'string';
+  const assetInventoryInvalid = proof?.assetInventoryVerification?.status !== 'PASS';
   const failure = proof?.httpIndexStatus !== 200 || proof?.productionAssetStatus !== 200 || proof?.browserNavigationStatus !== 200
     || proof?.cdpReady !== true || !proof?.browserVersion || proof?.coldHomeReady !== true
+    || independentHttpErrors || faviconCaptureIncomplete || assetInventoryInvalid
     || (diagnostics.pageErrors?.length ?? 0) > 0 || (diagnostics.consoleErrors?.length ?? 0) > 0
     || (diagnostics.requestFailures?.length ?? 0) > 0 || (diagnostics.responseErrors?.length ?? 0) > 0
     || (diagnostics.captureErrors?.length ?? 0) > 0 || (diagnostics.droppedEvents ?? 0) > 0
@@ -740,9 +935,188 @@ async function settleBefore(promise, timeoutMs, label) {
   } finally { clearTimeout(timer); }
 }
 
-async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutationIdentity) {
+const M6_MAX_SINGLE_ASSET_BYTES = 32 * 1024 * 1024;
+const M6_MAX_TOTAL_ASSET_BYTES = 128 * 1024 * 1024;
+const M6_BLANK_CONTROL_HTML = '<!doctype html><html><head><title>M6 blank control</title></head><body>blank control</body></html>';
+
+async function readM6ResponseBody(response, maximumBytes, label) {
+  const chunks = [];
+  let byteCount = 0;
+  if (response.body) {
+    const reader = response.body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteCount += value.byteLength;
+        if (byteCount > maximumBytes) {
+          await reader.cancel(`${label} exceeded ${maximumBytes} bytes`).catch(() => {});
+          throw new Error(`BLOCKED: ${label} exceeded its ${maximumBytes}-byte evidence bound.`);
+        }
+        chunks.push(Buffer.from(value));
+      }
+    } finally { reader.releaseLock(); }
+  }
+  return Buffer.concat(chunks, byteCount);
+}
+
+async function fetchM6BuildInventory(worktree, evidenceDir, origin, timeoutMs) {
+  const receiptPath = path.join(evidenceDir, 'production-build.json');
+  const receipt = await readJson(receiptPath);
+  const expectedRows = receipt?.artifact?.files;
+  if (!Array.isArray(expectedRows) || expectedRows.length < 1 || expectedRows.length > 200) {
+    throw new Error('BLOCKED: M6 recorded production asset inventory is missing or outside its 1–200 file bound.');
+  }
+  const rows = [];
+  let totalBytes = 0;
+  for (const item of expectedRows) {
+    if (!Array.isArray(item) || item.length !== 2 || typeof item[0] !== 'string'
+      || item[0].startsWith('/') || item[0].split('/').includes('..') || !/^[a-f0-9]{64}$/.test(item[1])) {
+      throw new Error('BLOCKED: M6 production build inventory contains an unsafe or malformed file row.');
+    }
+    const file = item[0];
+    const url = new URL(`/${file.split('/').map(encodeURIComponent).join('/')}`, origin);
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs()) });
+    const body = await readM6ResponseBody(response, M6_MAX_SINGLE_ASSET_BYTES, `M6 asset ${file}`);
+    totalBytes += body.byteLength;
+    if (totalBytes > M6_MAX_TOTAL_ASSET_BYTES) throw new Error(`BLOCKED: M6 served asset inventory exceeded ${M6_MAX_TOTAL_ASSET_BYTES} bytes.`);
+    rows.push({ path: file, url: response.url, method: 'GET', status: response.status,
+      contentType: response.headers.get('content-type'), bodyByteCount: body.byteLength,
+      bodySha256: bytesHash(body), expectedSha256: item[1] });
+  }
+  const verification = qualifyM6AssetInventory(receipt, rows);
+  return { ...verification, totalBodyByteCount: totalBytes };
+}
+
+async function auditM6SourceAndBuild(worktree, buildInventory, entryPath, emittedHtml) {
+  const tracked = await git(['ls-files', '-z', '--', 'index.html', 'src', 'public'], { cwd: worktree, maxOutputBytes: 128 * 1024 });
+  if (tracked.outcome !== 'EXITED' || tracked.code !== 0) throw new Error('BLOCKED: M6 source icon audit could not enumerate tracked application sources.');
+  const paths = tracked.output.split('\0').filter(Boolean);
+  if (paths.length < 1 || paths.length > 2000) throw new Error(`BLOCKED: M6 source icon audit file count ${paths.length} is outside its bound.`);
+  const sourceFiles = [];
+  const references = [];
+  let scannedBytes = 0;
+  const textFile = /\.(?:html|[cm]?js|jsx|ts|tsx|css|json|svg)$/i;
+  for (const file of paths) {
+    if (/\.(?:ico)$/i.test(file) || /(?:^|\/)favicon(?:\.|$)/i.test(file)) references.push({ source: file, kind: 'icon-file-path', text: file });
+    if (!textFile.test(file)) continue;
+    const bytes = await readFile(path.join(worktree, file));
+    scannedBytes += bytes.byteLength;
+    if (scannedBytes > 32 * 1024 * 1024 || bytes.byteLength > 4 * 1024 * 1024) throw new Error('BLOCKED: M6 source icon audit exceeded its byte bound.');
+    sourceFiles.push({ path: file, byteCount: bytes.byteLength, sha256: bytesHash(bytes) });
+    references.push(...findM6IconReferences(bytes.toString('utf8'), file));
+  }
+  const sourceIconAudit = { status: references.length === 0 && sourceFiles.some((item) => item.path === 'index.html') ? 'PASS' : 'BLOCKED',
+    filesScanned: sourceFiles.length, byteCount: scannedBytes, sourceFiles, references };
+  const assetMap = new Map((buildInventory.expectedFiles ?? []).map((row) => [row.path, row.sha256]));
+  const entryAsset = entryPath.replace(/^\//, '');
+  const entryExpectedSha = assetMap.get(entryAsset);
+  if (!entryExpectedSha) throw new Error('BLOCKED: emitted production entry is absent from the recorded build inventory.');
+  const scriptAssets = [];
+  for (const [file, expectedSha256] of buildInventory.expectedFiles.filter((row) => /\.m?js$/i.test(row.path)).map((row) => [row.path, row.sha256])) {
+    const bytes = await readFile(path.join(worktree, 'dist', file));
+    const row = { path: file, byteCount: bytes.byteLength, sha256: bytesHash(bytes), expectedSha256,
+      references: findM6IconReferences(bytes.toString('utf8'), `dist/${file}`) };
+    if (row.sha256 !== expectedSha256) throw new Error(`BLOCKED: emitted production script ${file} differs from the recorded build inventory.`);
+    scriptAssets.push(row);
+  }
+  if (scriptAssets.length > 128) throw new Error('BLOCKED: emitted production script audit exceeded its 128-file bound.');
+  const entryScriptAudit = scriptAssets.find((row) => row.path === entryAsset);
+  if (!entryScriptAudit || entryScriptAudit.sha256 !== entryExpectedSha) throw new Error('BLOCKED: emitted production entry differs from the recorded build inventory.');
+  const htmlReferences = findM6IconReferences(emittedHtml, 'served-dist/index.html');
+  const scriptReferences = scriptAssets.flatMap((row) => row.references);
+  const emittedHtmlAudit = { status: htmlReferences.length === 0 && scriptReferences.length === 0 ? 'PASS' : 'BLOCKED',
+    byteCount: Buffer.byteLength(emittedHtml), sha256: bytesHash(Buffer.from(emittedHtml)),
+    references: [...htmlReferences, ...scriptReferences], entryScriptAudit, scriptAssets, domAudit: null };
+  return { sourceIconAudit, emittedHtmlAudit };
+}
+
+async function startM6HookFreeControlServer() {
+  const serverRequests = [];
+  let observeIconRequest;
+  const faviconObserved = new Promise((resolve) => { observeIconRequest = resolve; });
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+    const startedAt = nowIso();
+    const isRootGet = request.method === 'GET' && pathname === '/';
+    const isFaviconGet = request.method === 'GET' && pathname === '/favicon.ico';
+    const status = isRootGet ? 200 : 404;
+    const body = Buffer.from(isRootGet ? M6_BLANK_CONTROL_HTML : 'Not found');
+    response.writeHead(status, { 'content-type': isRootGet ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+    response.end(body, () => {
+      const row = { method: request.method, path: pathname, startedAt, completedAt: nowIso(), status,
+        contentType: isRootGet ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8',
+        bodyByteCount: body.byteLength, bodySha256: bytesHash(body), bodyText: body.toString('utf8') };
+      serverRequests.push(row);
+      if (isFaviconGet) observeIconRequest(row);
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  return { server, serverRequests, faviconObserved, origin: `http://127.0.0.1:${address.port}`, html: M6_BLANK_CONTROL_HTML };
+}
+
+async function runM6HookFreeBrowserControl(browser, parentProof, timeoutMs) {
+  const control = { status: 'BLOCKED', startedAt: nowIso(), browserVersion: parentProof.browserVersion,
+    htmlByteCount: Buffer.byteLength(M6_BLANK_CONTROL_HTML), htmlSha256: bytesHash(Buffer.from(M6_BLANK_CONTROL_HTML)),
+    diagnostics: { requests: [], pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [], captureErrors: [], droppedEvents: 0 } };
+  let serverBundle;
+  let context;
+  let page;
+  try {
+    serverBundle = await startM6HookFreeControlServer();
+    context = await browser.newContext();
+    attachM6BrowserNetworkDiagnostics(context, { diagnostics: control.diagnostics });
+    page = await context.newPage();
+    page.setDefaultTimeout(timeoutMs(5_000));
+    page.setDefaultNavigationTimeout(timeoutMs(5_000));
+    page.on('pageerror', (error) => { control.diagnostics.pageErrors.push({ message: error.message, stack: error.stack ?? null }); });
+    page.on('console', (message) => {
+      const entry = { type: message.type(), message: message.text(), location: message.location() };
+      if (entry.type === 'error') control.diagnostics.consoleErrors.push(entry);
+    });
+    const response = await page.goto(serverBundle.origin, { waitUntil: 'domcontentloaded', timeout: timeoutMs() });
+    control.navigationStatus = response?.status() ?? null;
+    control.domAudit = await page.evaluate(() => {
+      const html = document.documentElement?.outerHTML ?? '';
+      const links = [...document.querySelectorAll('link')].map((item) => ({ rel: item.rel, href: item.href }));
+      const iconLinks = links.filter((item) => /(?:^|\s)icon(?:\s|$)/i.test(item.rel) || /\.ico(?:[?#]|$)/i.test(item.href));
+      return { url: location.href, title: document.title, outerHtml: html, htmlByteCount: new TextEncoder().encode(html).byteLength,
+        htmlSha256: null, scriptCount: document.scripts.length, scripts: [...document.scripts].map((item) => item.src || item.textContent || ''), links, iconLinks };
+    });
+    control.domAudit.references = findM6IconReferences(control.domAudit.outerHtml, 'blank-control-dom');
+    delete control.domAudit.outerHtml;
+    const waitMs = Math.min(2_000, timeoutMs());
+    const sawBrowserRequest = await Promise.race([
+      serverBundle.faviconObserved.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), waitMs)),
+    ]);
+    control.serverRequests = serverBundle.serverRequests;
+    control.browserFaviconRequestObserved = sawBrowserRequest;
+    control.status = control.navigationStatus === 200 && control.domAudit.scriptCount === 0
+      && control.domAudit.links.length === 0 && control.domAudit.iconLinks.length === 0
+      && control.domAudit.references.length === 0 && sawBrowserRequest ? 'CONTROL_OBSERVED' : 'BLOCKED';
+  } catch (error) {
+    control.error = { name: error.name, code: error.code ?? null, message: error.message, stack: error.stack ?? null };
+    if (serverBundle) control.serverRequests = serverBundle.serverRequests;
+  } finally {
+    if (context) await settleBefore(context.close(), 3_000, 'M6 control browser-context close').catch((error) => { control.closeError = error.message; });
+    if (serverBundle) {
+      serverBundle.server.closeAllConnections();
+      await settleBefore(new Promise((resolve, reject) => serverBundle.server.close((error) => error ? reject(error) : resolve())),
+        3_000, 'M6 control HTTP server close').catch((error) => { control.serverCloseError = error.message; });
+    }
+  }
+  if (control.closeError || control.serverCloseError) control.status = 'BLOCKED';
+  control.completedAt = nowIso();
+  return control;
+}
+
+async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutationIdentity, { candidateKind = 'mutant', buildEvidenceDir = evidenceDir } = {}) {
   await mkdir(evidenceDir, { recursive: true });
-  const proof = createM6ReadinessProof(mutationIdentity);
+  const proof = createM6ReadinessProof(mutationIdentity, { candidateKind });
   const probeBudgetMs = boundedM6ProbeBudget(ctx.remainingMs());
   if (probeBudgetMs === null) {
     proof.reason = `remaining job budget ${ctx.remainingMs()}ms is below the bounded M6 readiness probe plus restore/upload reserve.`;
@@ -789,6 +1163,11 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
   let browser;
   let stopErrors = [];
   try {
+    const buildReceipt = await readJson(path.join(buildEvidenceDir, 'production-build.json'));
+    if (buildReceipt?.status !== 'PASS' || buildReceipt?.candidate?.sha256 !== mutationIdentity.candidateSha256) {
+      throw new Error('BLOCKED: M6 readiness probe does not have a matching recorded production build receipt.');
+    }
+    proof.buildDigest = buildReceipt.artifact?.digest ?? null;
     serverPort = await settleBefore(freePort(), opTimeout(2_000), 'production HTTP port allocation');
     browserPort = await settleBefore(freePort(), opTimeout(2_000), 'managed-browser CDP port allocation');
     profile = await settleBefore(mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-m6-profile-')), opTimeout(2_000), 'managed-browser profile allocation');
@@ -847,7 +1226,8 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     }
     recordM6ResponseDiagnostic(proof, index, { source: 'node-preflight', resourceType: 'document', method: 'GET' });
     proof.httpIndexStatus = index.status;
-    const html = await settleBefore(index.text(), opTimeout(3_000), 'production HTTP index body');
+    const indexBody = await settleBefore(readM6ResponseBody(index, 2 * 1024 * 1024, 'M6 production index'), opTimeout(3_000), 'production HTTP index body');
+    const html = indexBody.toString('utf8');
     const entryPath = html.match(/<script[^>]+src=["']([^"']+\.js)["']/i)?.[1];
     proof.productionEntryAssetPath = entryPath ?? null;
     if (index.status !== 200 || !entryPath) throw new Error('BLOCKED: independent production HTTP index/entry discovery did not qualify.');
@@ -864,14 +1244,53 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     recordM6ResponseDiagnostic(proof, assetResponse, { source: 'node-preflight', resourceType: 'script', method: 'GET' });
     proof.productionAssetStatus = assetResponse.status;
     if (assetResponse.status !== 200) throw new Error(`BLOCKED: production JavaScript entry returned HTTP ${assetResponse.status}.`);
+    const entryBody = await settleBefore(readM6ResponseBody(assetResponse, M6_MAX_SINGLE_ASSET_BYTES, 'M6 production entry script'), opTimeout(5_000), 'production entry script body');
+    proof.independentHttpGets.push({ name: 'production-index', url: index.url, method: 'GET', status: index.status,
+      contentType: index.headers.get('content-type'), bodyByteCount: indexBody.byteLength, bodySha256: bytesHash(indexBody) });
+    proof.independentHttpGets.push({ name: 'production-entry', url: assetResponse.url, method: 'GET', status: assetResponse.status,
+      contentType: assetResponse.headers.get('content-type'), bodyByteCount: entryBody.byteLength, bodySha256: bytesHash(entryBody) });
+
+    const faviconUrl = new URL('/favicon.ico', origin);
+    const favicon = await fetch(faviconUrl, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(opTimeout(5_000)) });
+    const faviconBody = await settleBefore(readM6ResponseBody(favicon, 64 * 1024, 'M6 independent favicon GET'), opTimeout(3_000), 'independent favicon response body');
+    const faviconResponseUrl = new URL(favicon.url);
+    proof.independentHttpGets.push({ name: 'production-favicon', requestedUrl: faviconUrl.href, url: favicon.url,
+      sameOrigin: faviconResponseUrl.origin === faviconUrl.origin && faviconResponseUrl.pathname === faviconUrl.pathname && !favicon.redirected,
+      method: 'GET', status: favicon.status,
+      redirected: favicon.redirected, contentType: favicon.headers.get('content-type'), bodyByteCount: faviconBody.byteLength,
+      bodySha256: bytesHash(faviconBody), bodyText: faviconBody.toString('utf8') });
+
+    const artifactInventory = await fetchM6BuildInventory(worktree, buildEvidenceDir, origin, opTimeout);
+    proof.assetInventoryVerification = artifactInventory;
+    const audits = await settleBefore(auditM6SourceAndBuild(worktree, artifactInventory, entryPath, html), opTimeout(10_000), 'M6 source/emitted icon audit');
+    proof.sourceIconAudit = audits.sourceIconAudit;
+    proof.emittedHtmlAudit = audits.emittedHtmlAudit;
+    if (proof.assetInventoryVerification.status !== 'PASS') throw new Error('BLOCKED: served production assets differ from the exact recorded build inventory.');
+
+    const control = await runM6HookFreeBrowserControl(browser, proof, opTimeout);
+    proof.hookFreeControl = control;
+
     const response = await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: opTimeout(8_000) });
     proof.browserNavigationStatus = response?.status() ?? null;
     await page.getByRole('heading', { name: 'Tachiko Sheet', exact: true }).waitFor({ state: 'visible', timeout: opTimeout(5_000) });
     const open = page.getByRole('button', { name: 'Open sales example', exact: true });
     await open.waitFor({ state: 'visible', timeout: opTimeout(5_000) });
     proof.coldHomeReady = true;
+    const dom = await page.evaluate(() => {
+      const html = document.documentElement?.outerHTML ?? '';
+      const links = [...document.querySelectorAll('link')].map((item) => ({ rel: item.rel, href: item.href }));
+      const iconLinks = links.filter((item) => /(?:^|\s)icon(?:\s|$)/i.test(item.rel) || /\.ico(?:[?#]|$)/i.test(item.href));
+      return { url: location.href, title: document.title, outerHtml: html, scriptCount: document.scripts.length,
+        scripts: [...document.scripts].map((item) => item.src || item.textContent || ''), links, iconLinks };
+    });
+    proof.emittedHtmlAudit.domAudit = { url: dom.url, title: dom.title, scriptCount: dom.scriptCount,
+      scripts: dom.scripts, links: dom.links, iconLinks: dom.iconLinks,
+      byteCount: Buffer.byteLength(dom.outerHtml), sha256: bytesHash(Buffer.from(dom.outerHtml)),
+      references: findM6IconReferences(dom.outerHtml, 'production-cold-home-dom') };
+    proof.emittedHtmlAudit.status = proof.emittedHtmlAudit.references.length === 0
+      && proof.emittedHtmlAudit.entryScriptAudit.references.length === 0
+      && proof.emittedHtmlAudit.domAudit.references.length === 0 && proof.emittedHtmlAudit.domAudit.iconLinks.length === 0 ? 'PASS' : 'BLOCKED';
     Object.assign(proof, finalizeM6ReadinessProof(proof));
-    if (proof.status !== 'READINESS_PASS') throw new Error(`BLOCKED: ${proof.reason}`);
   } catch (error) {
     proof.status = 'BLOCKED';
     proof.reason = error.message;
@@ -928,15 +1347,23 @@ async function runBuildAndCleanProduction(ctx, worktree, evidenceDir, label) {
 async function runCleanProductionGate(ctx, worktree, evidenceDir, label, expectedCandidateSha) {
   const build = await runBuildAndCleanProduction(ctx, worktree, evidenceDir, label);
   if (build.status !== 'PASS') return build;
+  let readinessProofPath = null;
+  if (label === 'm6-restored-clean') {
+    const readinessEvidenceDir = path.join(evidenceDir, 'm6-restored-clean-production-probe');
+    const readiness = await runM6ProductionReadinessProbe(ctx, worktree, readinessEvidenceDir, {
+      candidateSha256: expectedCandidateSha, patchSha256: null, loaderSha256: await pathHash(path.join(worktree, 'src/core-loader.ts')),
+    }, { candidateKind: 'clean', buildEvidenceDir: evidenceDir });
+    readinessProofPath = path.relative(rootEvidence(), path.join(readinessEvidenceDir, 'm6-production-readiness.json')).split(path.sep).join('/');
+  }
   const gate = await commandRunner(ctx, `${label}-pnpm-acceptance-production-lifecycle`, 'pnpm', ['acceptance:production-lifecycle'], worktree, evidenceDir, {
     timeoutMs: 180_000, minimumMs: 45_000, env: { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: evidenceDir },
   });
   const summary = await readJson(path.join(evidenceDir, 'summary.json')).catch(() => null);
   const candidate = summary?.candidateIdentity ?? summary?.identity?.candidate;
   if (gate.result.code !== 0 || summary?.gates?.productionLifecycle !== 'PASS' || candidate?.sha256 !== expectedCandidateSha) {
-    return { status: 'BLOCKED', step: 'clean production lifecycle', gate: gate.command, summaryStatus: summary?.status ?? 'MISSING' };
+    return { status: 'BLOCKED', step: 'clean production lifecycle', gate: gate.command, summaryStatus: summary?.status ?? 'MISSING', readinessProofPath };
   }
-  return { status: 'PASS', build, gate: gate.command, candidateIdentity: candidate.sha256, caseId: productionCase };
+  return { status: 'PASS', build, gate: gate.command, candidateIdentity: candidate.sha256, caseId: productionCase, readinessProofPath };
 }
 
 async function runM6ProductionLifecycle(ctx, worktree, evidenceDir, expectedCandidateSha) {
@@ -995,7 +1422,7 @@ async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
       const probe = await runM6ProductionReadinessProbe(ctx, worktree, path.join(evidenceDir, 'm6-production-probe'), {
         candidateSha256: record.mutantIdentity.sha256, patchSha256: record.fault.patchSha256,
         loaderSha256: record.fault.sourceHashesAfterPatch?.['src/core-loader.ts'],
-      });
+      }, { candidateKind: 'mutant', buildEvidenceDir: fresh.outputDir });
       record.productionReadiness = { status: probe.status, proof: path.relative(rootEvidence(), path.join(evidenceDir, 'm6-production-probe', 'm6-production-readiness.json')).split(path.sep).join('/'), httpIndexStatus: probe.httpIndexStatus, productionAssetStatus: probe.productionAssetStatus, browserNavigationStatus: probe.browserNavigationStatus, cdpReady: probe.cdpReady, browserVersion: probe.browserVersion, diagnostics: probe.diagnostics, reason: probe.reason ?? null };
       if (probe.status !== 'READINESS_PASS') throw new Error(`M6 independent production HTTP/browser readiness did not qualify: ${probe.reason ?? probe.status}`);
       const lifecycle = await runM6ProductionLifecycle(ctx, worktree, fresh.outputDir, record.mutantIdentity.sha256);
@@ -1073,6 +1500,11 @@ async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
     if (definition.id === 'M6' && record.cleanAfterRestore.status === 'PASS') {
       const prod = await runCleanProductionGate(ctx, root, clean.outputDir, 'm6-restored-clean', cleanCandidate.sha256);
       record.cleanProductionAfterRestore = prod;
+      if (prod.readinessProofPath) {
+        const mutantProof = await readJson(path.join(evidenceDir, 'm6-production-probe', 'm6-production-readiness.json')).catch(() => null);
+        const cleanProof = await readJson(path.join(rootEvidence(), prod.readinessProofPath)).catch(() => null);
+        record.diagnosticComparison = compareM6DiagnosticEvidence(mutantProof, cleanProof);
+      }
       if (prod.status !== 'PASS') { record.status = 'BLOCKED'; ctx.stopAfterMutation = true; }
     }
   } else {
