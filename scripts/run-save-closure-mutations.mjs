@@ -220,14 +220,10 @@ export function classifyM6ProductionProof(readiness, lifecycleReceipt, identity,
     || lifecycleReceipt?.error?.name !== 'AssertionError' || !lifecycleReceipt.error.message?.includes(expectedAssertion)) {
     return { status: 'BLOCKED', reason: 'The frozen production lifecycle did not fail at its exact Home/Open runtime assertion.' };
   }
-  const processEvidenceValid = lifecycleAuxiliaryAuthorized
-    ? Array.isArray(lifecycleReceipt.processEvidence) && lifecycleReceipt.processEvidence.length === 1 && lifecycleReceipt.processEvidence[0]?.launch === 1
-      && lifecycleReceipt.processEvidence[0].endpointReady === true && Boolean(lifecycleReceipt.processEvidence[0].browserVersion)
-      && !Object.hasOwn(lifecycleReceipt.processEvidence[0], 'exit')
-    : Array.isArray(lifecycleReceipt.processEvidence) && lifecycleReceipt.processEvidence.length === 2
-      && JSON.stringify(lifecycleReceipt.processEvidence.map((row) => row.launch).sort()) === JSON.stringify([1, 2])
-      && lifecycleReceipt.processEvidence.every((row) => row.endpointReady === true && row.browserVersion
-        && row.exit?.observed === true && row.exit.code === 0 && row.exit.signal === null);
+  const processEvidenceValid = Array.isArray(lifecycleReceipt.processEvidence) && lifecycleReceipt.processEvidence.length === 1
+    && lifecycleReceipt.processEvidence[0]?.launch === 1
+    && lifecycleReceipt.processEvidence[0].endpointReady === true && Boolean(lifecycleReceipt.processEvidence[0].browserVersion)
+    && !Object.hasOwn(lifecycleReceipt.processEvidence[0], 'exit');
   if (!processEvidenceValid) return { status: 'BLOCKED', reason: 'The frozen lifecycle raw receipt does not match its qualified status-specific browser process shape.' };
   return { status: 'BEHAVIORAL_RED', assertion: expectedAssertion, phase: lifecycleReceipt.phase, error: lifecycleReceipt.error };
 }
@@ -1133,7 +1129,10 @@ async function readCleanGate(evidenceDir) {
   return { summary, save, prod, candidate };
 }
 
-function requireCleanAcceptance(summary, expectedCandidate, expectedHead) {
+export function requireCleanAcceptance(summary, expectedCandidate, expectedHead) {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return { status: 'BLOCKED', reason: 'Restored clean acceptance produced no readable summary.' };
+  }
   if ((summary.gates?.saveClosure ?? summary.gate?.status) !== 'PASS') {
     return { status: 'BLOCKED', reason: 'Restored clean save-closure gate did not PASS.' };
   }
@@ -2028,6 +2027,8 @@ async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
     const clean = await runAcceptance(ctx, root, cleanDir, `${definition.id.toLowerCase()}-restored-clean`);
     record.cleanAfterRestore = requireCleanAcceptance(clean.summary, cleanCandidate, cleanCandidate.head);
     record.cleanAfterRestore.command = clean.command;
+    record.cleanAfterRestore.commandOutcome = clean.commandOutcome;
+    record.cleanAfterRestore.exitCode = clean.exitCode;
     if (record.cleanAfterRestore.status !== 'PASS' || clean.commandOutcome !== 'EXITED' || clean.exitCode !== 0) {
       record.status = 'BLOCKED';
       ctx.stopAfterMutation = true;

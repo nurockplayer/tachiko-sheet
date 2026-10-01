@@ -27,6 +27,7 @@ import {
   qualifyM6AssetInventory,
   recordM6ConsoleError,
   reconcileHostedProductEvidence,
+  requireCleanAcceptance,
   validateAuthorizedCandidate,
 } from '../scripts/run-save-closure-mutations.mjs';
 import { readCommittedSourceIdentities } from '../scripts/runner-source-identity.mjs';
@@ -171,6 +172,16 @@ test('M1 controls execute the exact frozen wait predicate and Saved assertion', 
   ]) assert.equal(executeFrozenSaveControl(source, { observations }).status, 'BLOCKED');
   assert.equal(executeFrozenSaveControl(source, { infrastructureError: new Error('NavigationError') }).status, 'BLOCKED');
   assert.equal(executeFrozenSaveControl(source, { infrastructureError: new Error('TransportError') }).status, 'BLOCKED');
+});
+
+test('a missing restored-clean summary is BLOCKED rather than crashing', () => {
+  const expectedCandidate = { sha256: 'a'.repeat(64) };
+  assert.deepEqual(requireCleanAcceptance(undefined, expectedCandidate, 'candidate-head'), {
+    status: 'BLOCKED', reason: 'Restored clean acceptance produced no readable summary.',
+  });
+  assert.deepEqual(requireCleanAcceptance(null, expectedCandidate, 'candidate-head'), {
+    status: 'BLOCKED', reason: 'Restored clean acceptance produced no readable summary.',
+  });
 });
 
 test('a mutation only earns RED for the complete registered suite and its owned assertion', () => {
@@ -673,12 +684,17 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
     base: '375d25ea12262bec32e2303b3c63662f0b69322f', phase: 'cold-Home-and-production-runtime',
     boundary: 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit',
     error: { name: 'AssertionError', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready', stack: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready\n    at frozen lifecycle seed' },
-    processEvidence: [1, 2].map((launch) => ({ launch, pid: 1234 + launch, remoteDebuggingPort: 9221 + launch,
-      profile: '/tmp/profile', endpointReady: true, browserVersion: 'Chrome/136.0.0.0', exit: { observed: true, code: 0, signal: null } })),
+    processEvidence: [{ launch: 1, pid: 1234, remoteDebuggingPort: 9222,
+      profile: '/tmp/profile', endpointReady: true, browserVersion: 'Chrome/136.0.0.0' }],
     networkEvidence: [{ path: '/index.html', status: 200 }, { path: '/assets/index-app.js', status: 200 }],
     diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [] },
   };
   assert.equal(classifyM6ProductionProof(readiness, lifecycle, identity).status, 'BEHAVIORAL_RED');
+  const cleanProcessShape = structuredClone(lifecycle);
+  cleanProcessShape.processEvidence = [1, 2].map((launch) => ({ launch, endpointReady: true,
+    browserVersion: 'Chrome/136.0.0.0', exit: { observed: true, code: 0, signal: null } }));
+  assert.equal(classifyM6ProductionProof(readiness, cleanProcessShape, identity).status, 'BLOCKED',
+    'a clean PASS process shape cannot stand in for the frozen early RED receipt');
   assert.equal(classifyM6ProductionProof({ ...readiness, httpIndexStatus: 404 }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, requestFailures: [{ url: '/unrelated' }] } }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, responses: [...readiness.diagnostics.responses, { status: 404 }] } }, lifecycle, identity).status, 'BLOCKED');
