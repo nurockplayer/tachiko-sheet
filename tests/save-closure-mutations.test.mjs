@@ -13,6 +13,8 @@ import {
   attachM6BrowserNetworkDiagnostics,
   cleanGateCandidateMatches,
   classifyM6ProductionProof,
+  classifyM6ReadinessFaviconDisposition,
+  classifyM6LifecycleFaviconDisposition,
   classifyMutationReceipt,
   compareM6DiagnosticEvidence,
   createM6OperationTimeout,
@@ -20,6 +22,7 @@ import {
   executeFrozenSaveControl,
   fetchM6BuildInventory,
   finalizeM6ReadinessProof,
+  finalizeM6AuxiliaryDisposition,
   findM6IconReferences,
   qualifyM6AssetInventory,
   recordM6ConsoleError,
@@ -389,6 +392,200 @@ test('M6 diagnostics attribute a real HTTP 404 by URL, status, resource type, an
   }
 });
 
+function m6AuxiliaryFixture(kind, port) {
+  const candidateSha = kind === 'mutant' ? 'a'.repeat(64) : 'f'.repeat(64);
+  const origin = `http://127.0.0.1:${port}`;
+  const faviconBody = 'Not found';
+  const faviconHash = createHash('sha256').update(faviconBody).digest('hex');
+  const entry = `assets/index-${kind}.js`;
+  const files = [
+    ['index.html', '1'.repeat(64)], [entry, kind === 'mutant' ? '2'.repeat(64) : '3'.repeat(64)],
+    ['assets/index.css', '4'.repeat(64)], ['core-kit/experimental-client.worker.js', '5'.repeat(64)],
+    ['core-kit/designer_runtime.wasm', '6'.repeat(64)],
+  ];
+  const artifact = { digest: createHash('sha256').update(JSON.stringify(files)).digest('hex'), files };
+  const buildReceipt = { status: 'PASS', candidate: { sha256: candidateSha }, artifact };
+  const faviconConsole = (url) => ({ message: 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+    location: { url, lineNumber: 0, columnNumber: 0 } });
+  const outerHtml = '<html><head><title>M6 blank control</title></head><body>blank control</body></html>';
+  const control = {
+    status: 'CONTROL_OBSERVED', browserVersion: 'Chrome/151.0.7922.34', browserFaviconRequestObserved: true, navigationStatus: 200,
+    domAudit: { url: `${origin}/`, outerHtml, htmlByteCount: Buffer.byteLength(outerHtml),
+      htmlSha256: createHash('sha256').update(outerHtml).digest('hex'), scriptCount: 0, links: [], iconLinks: [], references: [] },
+    serverRequests: [
+      { method: 'GET', path: '/', status: 200, bodyText: '<!doctype html><html><head><title>M6 blank control</title></head><body>blank control</body></html>' },
+      { method: 'GET', path: '/favicon.ico', status: 404, bodyText: faviconBody,
+        bodyByteCount: Buffer.byteLength(faviconBody), bodySha256: faviconHash },
+    ],
+    diagnostics: { requests: [{ url: `${origin}/`, method: 'GET', resourceType: 'document' }],
+      responses: [{ url: `${origin}/`, status: 200, method: 'GET', resourceType: 'document' }],
+      consoleErrors: [faviconConsole(`${origin}/favicon.ico`)], pageErrors: [], requestFailures: [], responseErrors: [], captureErrors: [], droppedEvents: 0 },
+  };
+  const requests = files.map(([file]) => ({ url: `${origin}/${file}`, method: 'GET', resourceType:
+    file.endsWith('.css') ? 'stylesheet' : file.endsWith('.wasm') ? 'fetch' : file.endsWith('index.html') ? 'document' : 'script' }));
+  const proof = {
+    status: 'BLOCKED', candidateKind: kind, candidateIdentity: candidateSha,
+    mutantCandidateIdentity: kind === 'mutant' ? candidateSha : null,
+    httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200, cdpReady: true, coldHomeReady: true,
+    browserVersion: 'Chrome/151.0.7922.34', playwrightVersion: '1.62.1', buildDigest: artifact.digest,
+    productionEntryAssetPath: `/${entry}`,
+    independentHttpGets: [
+      { name: 'production-index', url: `${origin}/`, method: 'GET', status: 200 },
+      { name: 'production-entry', url: `${origin}/${entry}`, method: 'GET', status: 200 },
+      { name: 'production-favicon', requestedUrl: `${origin}/favicon.ico`, url: `${origin}/favicon.ico`,
+        sameOrigin: true, method: 'GET', status: 404, redirected: false, bodyByteCount: Buffer.byteLength(faviconBody),
+        bodySha256: faviconHash, bodyText: faviconBody },
+    ],
+    diagnostics: { requests, responses: requests.map((row) => ({ ...row, status: 200 })),
+      consoleErrors: [faviconConsole(`${origin}/favicon.ico`)], pageErrors: [], requestFailures: [], responseErrors: [], captureErrors: [], droppedEvents: 0 },
+    sourceIconAudit: { status: 'PASS', references: [] },
+    emittedHtmlAudit: { status: 'PASS', references: [],
+      entryScriptAudit: { path: entry, sha256: files.find(([file]) => file === entry)[1], references: [] },
+      scriptAssets: files.filter(([file]) => /\.m?js$/i.test(file)).map(([path, sha256]) =>
+        ({ path, sha256, expectedSha256: sha256, references: [] })),
+      domAudit: { url: `${origin}/`, references: [], iconLinks: [] } },
+    assetInventoryVerification: { status: 'PASS', recordedArtifactDigest: artifact.digest,
+      expectedFileCount: files.length, expectedFiles: files.map(([path, sha256]) => ({ path, sha256 })),
+      observedRows: files.map(([path, bodySha256]) => ({ path, url: new URL(`/${path.split('/').map(encodeURIComponent).join('/')}`, origin).href,
+        method: 'GET', status: 200, bodySha256 })) },
+    hookFreeControl: control, stopErrors: [], ownedProcesses: [
+      { role: 'production-http', command: 'node scripts/serve-dist.mjs', exit: { code: 0 } },
+      { role: 'managed-chromium', command: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', exit: { code: 0 } },
+    ],
+  };
+  return { candidateSha, origin, faviconBody, faviconHash, files, artifact, buildReceipt, proof };
+}
+
+function m6LifecycleFixture(fixture, readiness, expectedStatus) {
+  const origin = 'http://127.0.0.1:4197';
+  const target = `${origin}/favicon.ico`;
+  const errors = [1, 2].map((launch) => ({ launch,
+    message: 'Failed to load resource: the server responded with a status of 404 (Not Found)', url: target }));
+  const processEvidence = [1, 2].map((launch) => ({ launch, endpointReady: true,
+    browserVersion: 'Chrome/151.0.7922.34', exit: { observed: true, signal: null, code: 0 } }));
+  const receipt = {
+    status: expectedStatus, base: '375d25ea12262bec32e2303b3c63662f0b69322f',
+    boundary: 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit',
+    phase: 'cold-Home-and-production-runtime', caseIds: [],
+    expectedCaseIds: ['production-sales-edit-save-process-restart-reopen-edit-png'],
+    error: { name: 'AssertionError', message: 'normal Home Sales Open is enabled when the production runtime is ready' },
+    environment: { origin, playwrightVersion: '1.62.1', executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', browserVersion: 'Chrome/151.0.7922.34' },
+    processEvidence,
+    diagnostics: { consoleErrors: errors, pageErrors: [], requestFailures: [], responseErrors: [], captureErrors: [], droppedEvents: 0 },
+    networkEvidence: [],
+    artifacts: { production: fixture.artifact,
+      servedResponses: fixture.files.map(([path, sha256]) => ({ path, sha256, status: 200 })) },
+  };
+  const summary = { status: expectedStatus, lifecycle: expectedStatus, candidate: { sha256: fixture.candidateSha },
+    command: { outcome: 'EXITED', exitCode: expectedStatus === 'BEHAVIORAL_RED' ? 1 : 0 },
+    buildEvidence: { artifact: fixture.artifact } };
+  const faviconProbe = { status: 'PASS', origin, method: 'GET', requestedUrl: target, url: target, sameOrigin: true,
+    redirected: false, statusCode: 404, bodyByteCount: fixture.faviconBody.length,
+    bodySha256: fixture.faviconHash, bodyText: fixture.faviconBody, cleanupErrors: [], serverExit: { observed: true, code: 0 } };
+  return { receipt, summary, buildReceipt: fixture.buildReceipt, faviconProbe };
+}
+
+test('M6 auxiliary default-favicon disposition requires paired readiness and frozen lifecycle provenance', () => {
+  const mutant = m6AuxiliaryFixture('mutant', 3101);
+  const clean = m6AuxiliaryFixture('clean', 3102);
+  const mutantLifecycle = m6LifecycleFixture(mutant, mutant.proof, 'BEHAVIORAL_RED');
+  const cleanLifecycle = m6LifecycleFixture(clean, clean.proof, 'PASS');
+  cleanLifecycle.receipt.caseIds = ['production-sales-edit-save-process-restart-reopen-edit-png'];
+  cleanLifecycle.receipt.error = null;
+  const comparison = compareM6DiagnosticEvidence(mutant.proof, clean.proof);
+  assert.equal(comparison.auxiliaryEvidenceParity, true);
+  const changedHtml = structuredClone(clean.proof);
+  changedHtml.assetInventoryVerification.expectedFiles[0].sha256 = 'e'.repeat(64);
+  assert.equal(compareM6DiagnosticEvidence(mutant.proof, changedHtml).auxiliaryEvidenceParity, false,
+    'the clean/mutant parity check includes emitted index.html');
+  assert.equal(classifyM6ReadinessFaviconDisposition(mutant.proof,
+    { candidateSha256: mutant.candidateSha }, mutant.buildReceipt).status, 'AUXILIARY_CANDIDATE');
+  assert.equal(classifyM6LifecycleFaviconDisposition(mutantLifecycle.receipt, mutantLifecycle.summary,
+    mutant.buildReceipt, mutantLifecycle.faviconProbe, mutant.candidateSha, mutant.proof).status, 'AUXILIARY_CANDIDATE');
+  assert.equal(classifyM6LifecycleFaviconDisposition(cleanLifecycle.receipt, cleanLifecycle.summary,
+    clean.buildReceipt, cleanLifecycle.faviconProbe, clean.candidateSha, clean.proof, 'PASS').status, 'AUXILIARY_CANDIDATE');
+  const disposition = finalizeM6AuxiliaryDisposition({
+    mutantReadiness: mutant.proof, cleanReadiness: clean.proof,
+    mutantIdentity: { candidateSha256: mutant.candidateSha }, cleanIdentity: { candidateSha256: clean.candidateSha },
+    mutantBuildReceipt: mutant.buildReceipt, cleanBuildReceipt: clean.buildReceipt,
+    mutantLifecycle, cleanLifecycle, comparison,
+    mutantReadinessSha256: '7'.repeat(64), cleanReadinessSha256: '8'.repeat(64),
+    mutantLifecycleReceiptSha256: '9'.repeat(64), cleanLifecycleReceiptSha256: '0'.repeat(64),
+  });
+  assert.equal(disposition.status, 'AUXILIARY_DEFAULT_FAVICON_404', JSON.stringify(disposition));
+  assert.equal(classifyM6ProductionProof(mutant.proof, mutantLifecycle.receipt,
+    { candidateSha256: mutant.candidateSha, patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) }, {
+      disposition, mutantBuildReceipt: mutant.buildReceipt, mutantLifecycleSummary: mutantLifecycle.summary,
+      mutantLifecycleFaviconProbe: mutantLifecycle.faviconProbe,
+      mutantReadinessSha256: disposition.receipts.mutantReadinessSha256,
+      mutantLifecycleReceiptSha256: disposition.receipts.mutantLifecycleReceiptSha256,
+    }).status, 'BEHAVIORAL_RED');
+});
+
+test('M6 readiness and lifecycle validators reject unsafe error, attribution, identity, and cleanup controls', () => {
+  const mutant = m6AuxiliaryFixture('mutant', 3201);
+  const clean = m6AuxiliaryFixture('clean', 3202);
+  const lifecycle = m6LifecycleFixture(mutant, mutant.proof, 'BEHAVIORAL_RED');
+  const missingAssets = [
+    ['missing-js', '/assets/missing.js', 'script'], ['missing-css', '/assets/missing.css', 'stylesheet'],
+    ['missing-worker', '/core-kit/missing.worker.js', 'worker'], ['missing-wasm', '/core-kit/missing.wasm', 'fetch'],
+    ['missing-chunk', '/assets/chunk-missing.js', 'script'], ['missing-home', '/', 'document'],
+  ];
+  const cases = [
+    ...missingAssets.map(([name, path, resourceType]) => [name, (p) => { p.diagnostics.responses.push({ url: `${mutant.origin}${path}`, status: 404, resourceType }); }]),
+    ['explicit-source-or-shipped-icon', (p) => { p.sourceIconAudit.references.push({ path: 'src/App.tsx', value: 'icon link' }); }],
+    ['explicit-emitted-icon', (p) => { p.emittedHtmlAudit.domAudit.iconLinks.push({ href: '/icon.svg' }); }],
+    ['query', (p) => { p.independentHttpGets[2].requestedUrl += '?cache=1'; }],
+    ['redirect', (p) => { p.independentHttpGets[2].redirected = true; }],
+    ['cross-origin', (p) => { p.independentHttpGets[2].url = 'http://example.test/favicon.ico'; }],
+    ['favicon-500', (p) => { p.independentHttpGets[2].status = 500; }],
+    ['get-mismatch', (p) => { p.independentHttpGets[2].method = 'POST'; }],
+    ['generic-or-second-error', (p) => { p.diagnostics.consoleErrors.push({ message: 'Unrelated error', location: { url: `${mutant.origin}/`, lineNumber: 1, columnNumber: 1 } }); }],
+    ['missing-attribution', (p) => { delete p.diagnostics.consoleErrors[0].location; }],
+    ['capture-overflow-or-exception', (p) => { p.diagnostics.droppedEvents = 1; }],
+    ['timeout-or-cleanup-failure', (p) => { p.stopErrors.push({ message: 'timeout or cleanup failure' }); }],
+    ['explicit-icon-fetch-request', (p) => { p.diagnostics.requests.push({ url: `${mutant.origin}/favicon.ico`, method: 'GET', resourceType: 'fetch' }); }],
+    ['wrong-candidate', (p) => { p.candidateIdentity = 'e'.repeat(64); }],
+    ['wrong-build', (p) => { p.buildDigest = 'e'.repeat(64); }],
+  ];
+  for (const [name, mutateReadiness] of cases) {
+    const bad = structuredClone(mutant.proof);
+    mutateReadiness(bad);
+    const readinessResult = classifyM6ReadinessFaviconDisposition(bad,
+      { candidateSha256: mutant.candidateSha }, mutant.buildReceipt);
+    assert.equal(readinessResult.status, 'BLOCKED', `${name}: readiness`);
+    const lifecycleResult = classifyM6LifecycleFaviconDisposition(lifecycle.receipt, lifecycle.summary,
+      mutant.buildReceipt, lifecycle.faviconProbe, mutant.candidateSha, bad);
+    assert.equal(lifecycleResult.status, 'BLOCKED', `${name}: lifecycle`);
+  }
+  const badLifecycleCases = [
+    ['missing-required-asset-404', (l) => { l.receipt.networkEvidence.push({ status: 404, url: `${mutant.origin}/core-kit/missing.js` }); }],
+    ['explicit-icon-request', (l) => { l.receipt.diagnostics.requestFailures.push({ url: `${mutant.origin}/favicon.ico?x=1` }); }],
+    ['query', (l) => { l.faviconProbe.requestedUrl += '?cache=1'; }],
+    ['redirect', (l) => { l.faviconProbe.redirected = true; }],
+    ['cross-origin', (l) => { l.faviconProbe.url = 'https://example.test/favicon.ico'; }],
+    ['favicon-500', (l) => { l.faviconProbe.statusCode = 500; }],
+    ['get-mismatch', (l) => { l.faviconProbe.method = 'POST'; }],
+    ['generic-second-console', (l) => { l.receipt.diagnostics.consoleErrors.push({ launch: 2, message: 'Unrelated', url: `${mutant.origin}/` }); }],
+    ['missing-console-attribution', (l) => { delete l.receipt.diagnostics.consoleErrors[0].url; }],
+    ['capture-overflow-or-exception', (l) => { l.receipt.diagnostics.captureErrors.push({ message: 'capture failed' }); }],
+    ['timeout-or-cleanup-failure', (l) => { l.faviconProbe.cleanupErrors.push({ message: 'cleanup failed' }); }],
+    ['wrong-candidate', (l) => { l.summary.candidate.sha256 = 'e'.repeat(64); }],
+    ['wrong-build', (l) => { l.summary.buildEvidence.artifact.digest = 'e'.repeat(64); }],
+    ['wrong-body-identity', (l) => { l.faviconProbe.bodySha256 = 'e'.repeat(64); }],
+    ['browser-exit-unobserved', (l) => { l.receipt.processEvidence[1].exit.observed = false; }],
+  ];
+  for (const [name, mutateLifecycle] of badLifecycleCases) {
+    const bad = structuredClone(lifecycle);
+    mutateLifecycle(bad);
+    const result = classifyM6LifecycleFaviconDisposition(bad.receipt, bad.summary,
+      bad.buildReceipt, bad.faviconProbe, mutant.candidateSha, mutant.proof);
+    assert.equal(result.status, 'BLOCKED', name);
+  }
+  const comparison = compareM6DiagnosticEvidence(mutant.proof, clean.proof);
+  assert.equal(comparison.auxiliaryEvidenceParity, true);
+});
+
 test('M6 requires the frozen lifecycle Home/Open assertion plus clean independent HTTP/CDP readiness', () => {
   const identity = { candidateSha256: 'a'.repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) };
   const readiness = createM6ReadinessProof(identity);
@@ -412,7 +609,8 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
     base: '375d25ea12262bec32e2303b3c63662f0b69322f', phase: 'cold-Home-and-production-runtime',
     boundary: 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit',
     error: { name: 'AssertionError', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready', stack: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready\n    at frozen lifecycle seed' },
-    processEvidence: [{ launch: 1, pid: 1234, remoteDebuggingPort: 9222, profile: '/tmp/profile', endpointReady: true, browserVersion: 'Chrome/136.0.0.0' }],
+    processEvidence: [1, 2].map((launch) => ({ launch, pid: 1234 + launch, remoteDebuggingPort: 9221 + launch,
+      profile: '/tmp/profile', endpointReady: true, browserVersion: 'Chrome/136.0.0.0', exit: { observed: true, code: 0, signal: null } })),
     networkEvidence: [{ path: '/index.html', status: 200 }, { path: '/assets/index-app.js', status: 200 }],
     diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [] },
   };
