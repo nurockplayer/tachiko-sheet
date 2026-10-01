@@ -178,8 +178,10 @@ export function classifyM6ProductionProof(readiness, lifecycleReceipt, identity)
   }
   const expectedAssertion = 'normal Home Sales Open is enabled when the production runtime is ready';
   if (lifecycleReceipt?.status !== 'BEHAVIORAL_RED' || lifecycleReceipt?.phase !== 'cold-Home-and-production-runtime'
-    || lifecycleReceipt?.error?.name !== 'AssertionError' || lifecycleReceipt?.error?.code !== 'ERR_ASSERTION'
-    || !lifecycleReceipt.error.message?.includes(expectedAssertion)) {
+    || lifecycleReceipt?.base !== base || lifecycleReceipt?.boundary !== 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit'
+    || !Array.isArray(lifecycleReceipt.caseIds) || lifecycleReceipt.caseIds.length !== 0
+    || JSON.stringify(lifecycleReceipt.expectedCaseIds) !== JSON.stringify([productionCase])
+    || lifecycleReceipt?.error?.name !== 'AssertionError' || !lifecycleReceipt.error.message?.includes(expectedAssertion)) {
     return { status: 'BLOCKED', reason: 'The frozen production lifecycle did not fail at its exact Home/Open runtime assertion.' };
   }
   if (!Array.isArray(lifecycleReceipt.processEvidence) || lifecycleReceipt.processEvidence.length !== 1
@@ -567,7 +569,7 @@ async function runOldProductAcceptance(ctx, worktree, evidenceDir) {
   const legacyEvidence = path.join(worktree, 'evidence/product-acceptance');
   const before = await captureCandidateIdentity(worktree);
   const run = await commandRunner(ctx, 'm6-old-pnpm-acceptance-product', 'pnpm', ['acceptance:product'], worktree, evidenceDir, {
-    timeoutMs: 180_000, minimumMs: 45_000,
+    timeoutMs: 300_000, minimumMs: 45_000,
   });
   const summary = await readJson(path.join(legacyEvidence, 'summary.json')).catch(() => null);
   const archived = await archiveAndRestoreProductAcceptanceEvidence(worktree, path.join(evidenceDir, 'old-gate-archive'));

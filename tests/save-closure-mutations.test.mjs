@@ -143,7 +143,7 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
     status: 'BEHAVIORAL_RED', caseIds: [], expectedCaseIds: ['production-sales-edit-save-process-restart-reopen-edit-png'],
     base: '375d25ea12262bec32e2303b3c63662f0b69322f', phase: 'cold-Home-and-production-runtime',
     boundary: 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit',
-    error: { name: 'AssertionError', code: 'ERR_ASSERTION', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready' },
+    error: { name: 'AssertionError', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready', stack: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready\n    at frozen lifecycle seed' },
     processEvidence: [{ launch: 1, pid: 1234, remoteDebuggingPort: 9222, profile: '/tmp/profile', endpointReady: true, browserVersion: 'Chrome/136.0.0.0' }],
     networkEvidence: [{ path: '/index.html', status: 200 }, { path: '/assets/index-app.js', status: 200 }],
     diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [] },
@@ -155,6 +155,7 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
   assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, pageErrors: [{ message: 'unrelated' }] } }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, error: { name: 'TimeoutError', message: 'Open timed out' } }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, status: 'BLOCKED' }, identity).status, 'BLOCKED');
+  assert.equal(Object.hasOwn(lifecycle.error, 'code'), false, 'frozen lifecycle serializes name/message/stack without an Error code field');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, phase: 'served-artifact-identity' }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, networkEvidence: [{ path: '/index.html', status: 404 }] }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, lifecycle, { ...identity, loaderSha256: null }).status, 'BLOCKED');
