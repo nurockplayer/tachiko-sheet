@@ -9,6 +9,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureRunnerCommand, createRunnerCancellation, startRunnerServer } from './runner-process-lifecycle.mjs';
+import { readCommittedSourceIdentities } from './runner-source-identity.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const base = '375d25ea12262bec32e2303b3c63662f0b69322f';
@@ -372,7 +373,7 @@ async function git(commandArgs, options = {}) {
   return captureRunnerCommand('git', commandArgs, {
     cwd: options.cwd ?? root,
     timeoutMs: options.timeoutMs ?? 20_000,
-    maxOutputBytes: 64 * 1024,
+    maxOutputBytes: options.maxOutputBytes ?? 64 * 1024,
     signal: options.signal,
   });
 }
@@ -438,12 +439,12 @@ async function captureCandidateIdentity(cwd) {
   }
   const committedRun = await git(['diff', '--name-only', `${base}..${head}`], { cwd });
   if (committedRun.code !== 0) throw new Error(`cannot enumerate candidate committed paths: ${committedRun.output}`);
-  const committedFiles = [];
-  for (const file of committedRun.output.split(/\r?\n/).filter(Boolean).sort()) {
-    const blob = await git(['show', `${head}:${file}`], { cwd });
-    if (blob.code !== 0) throw new Error(`cannot read committed path ${file}`);
-    committedFiles.push([file, bytesHash(blob.bytes)]);
-  }
+  const committedFiles = await readCommittedSourceIdentities({
+    head,
+    files: committedRun.output.split(/\r?\n/).filter(Boolean),
+    cwd,
+    runGit: (args, options) => git(args, { cwd, ...options }),
+  });
   const identity = { base, head, committedFiles, dirtyFiles };
   return { ...identity, sha256: jsonHash(identity) };
 }

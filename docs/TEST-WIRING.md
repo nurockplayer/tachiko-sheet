@@ -115,9 +115,22 @@ inventory and candidate identity afterward. The lifecycle gate writes its
 receipt/logs and updates the root `summary.json` aggregate.
 
 Receipts bind base, candidate HEAD, committed and dirty/untracked changed-path
-hashes, and all three frozen seed hashes. Candidate identity is for evidence
-association; changed-path scope remains a separate review concern outside test
-execution. The aggregate records pinned source/adapter/producer
+hashes, and all three frozen seed hashes. Committed source blobs are read using
+Git's exact object byte count and a bounded `git show` capture sized one byte
+larger; each receipt records expected and captured counts alongside the full
+SHA-256. A nonzero/unfinished read, unsafe count, or count mismatch blocks
+candidate identity instead of hashing a retained output tail. The shared
+`scripts/runner-source-identity.mjs` path is used by the save-closure,
+production-lifecycle, and mutation runners so their serialized committed-file
+identities match. Regression coverage changes only a prefix in a blob larger
+than 64 KiB and checks that a short capture is rejected. The helper and its
+tests are tooling only. The bounded file scope is `scripts/runner-source-identity.mjs`,
+`scripts/run-save-closure-acceptance.mjs`,
+`scripts/run-production-lifecycle.mjs`,
+`scripts/run-save-closure-mutations.mjs`, `tests/save-closure-mutations.test.mjs`,
+and this wiring note. The three frozen acceptance drivers remain byte-for-byte
+unchanged. Candidate identity is for evidence association; changed-path scope
+remains a separate review concern outside test execution. The aggregate records pinned source/adapter/producer
 identities, exact expected-case registries and outcomes, artifact manifests,
 process/profile identities, diagnostics, and receipt/log paths. Missing cases
 remain `NOT RUN` or `BLOCKED`; no missing row becomes `PASS`. Outcomes are

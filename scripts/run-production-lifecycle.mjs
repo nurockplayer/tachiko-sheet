@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { captureRunnerCommand, createRunnerCancellation, finalizeProductionLifecycleServer, startRunnerServer } from './runner-process-lifecycle.mjs';
+import { readCommittedSourceIdentities } from './runner-source-identity.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const cancellation = createRunnerCancellation();
@@ -48,12 +49,12 @@ async function candidateIdentity() {
   const trackedDirty = nulPaths((await run('git', ['diff', '--name-only', '-z', 'HEAD'])).output);
   const untracked = nulPaths((await run('git', ['ls-files', '--others', '--exclude-standard', '-z'])).output);
   const dirty = [...new Set([...trackedDirty, ...untracked])].sort();
-  const committedFiles = [];
-  for (const file of committed) {
-    const blob = await run('git', ['show', `HEAD:${file}`]);
-    if (blob.code !== 0) throw new Error(`BLOCKED: cannot hash committed candidate path ${file}`);
-    committedFiles.push([file, sha256(blob.bytes)]);
-  }
+  const committedFiles = await readCommittedSourceIdentities({
+    head,
+    files: committed,
+    cwd: root,
+    runGit: (args, options) => run('git', args, {}, { cwd: root, ...options }),
+  });
   const dirtyFiles = [];
   for (const file of dirty) {
     try { dirtyFiles.push([file, sha256(await readFile(path.join(root, file)))]); }

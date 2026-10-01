@@ -18,6 +18,7 @@ import {
   recordM6ConsoleError,
   reconcileHostedProductEvidence,
 } from '../scripts/run-save-closure-mutations.mjs';
+import { readCommittedSourceIdentities } from '../scripts/runner-source-identity.mjs';
 
 const currentCases = [
   'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
@@ -26,6 +27,54 @@ const currentCases = [
   'E-profile-refusal-rows-65.csv', 'E-profile-refusal-fields-17.csv',
   'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
 ];
+
+test('all runner identities hash complete committed blobs and fail closed on truncated output', async () => {
+  const sourceBytes = Buffer.alloc(79_339, 0x61);
+  const prefixOnlyChange = Buffer.from(sourceBytes);
+  prefixOnlyChange[0] = 0x62;
+  assert.deepEqual(prefixOnlyChange.subarray(65_536), sourceBytes.subarray(65_536));
+
+  function gitReader(bytes, { truncate = false } = {}) {
+    return async (args, options) => {
+      if (args[0] === 'cat-file' && args[1] === '-s') {
+        return { outcome: 'EXITED', code: 0, output: `${bytes.length}\n`, bytes: Buffer.from(`${bytes.length}\n`) };
+      }
+      assert.deepEqual(args, ['show', 'candidate:scripts/large-source.mjs']);
+      assert.equal(options.maxOutputBytes, bytes.length + 1);
+      const captured = truncate ? bytes.subarray(0, 65_536) : bytes;
+      return { outcome: 'EXITED', code: 0, output: '', bytes: captured };
+    };
+  }
+  const original = (await readCommittedSourceIdentities({
+    head: 'candidate', files: ['scripts/large-source.mjs'], cwd: '/repo', runGit: gitReader(sourceBytes),
+  }))[0];
+  const changed = (await readCommittedSourceIdentities({
+    head: 'candidate', files: ['scripts/large-source.mjs'], cwd: '/repo', runGit: gitReader(prefixOnlyChange),
+  }))[0];
+  assert.equal(original.byteCount, 79_339);
+  assert.equal(original.capturedByteCount, 79_339);
+  assert.equal(changed.byteCount, 79_339);
+  assert.equal(changed.capturedByteCount, 79_339);
+  assert.equal(original.path, 'scripts/large-source.mjs');
+  assert.equal(original.sha256.length, 64);
+  assert.notEqual(original.sha256, changed.sha256);
+  for (const runner of [
+    '../scripts/run-save-closure-mutations.mjs',
+    '../scripts/run-save-closure-acceptance.mjs',
+    '../scripts/run-production-lifecycle.mjs',
+  ]) {
+    const source = await readFile(new URL(runner, import.meta.url), 'utf8');
+    assert.match(source, /import \{ readCommittedSourceIdentities \} from '\.\/runner-source-identity\.mjs';/);
+    assert.match(source, /await readCommittedSourceIdentities\(/);
+  }
+  await assert.rejects(
+    readCommittedSourceIdentities({
+      head: 'candidate', files: ['scripts/large-source.mjs'], cwd: '/repo',
+      runGit: gitReader(sourceBytes, { truncate: true }),
+    }),
+    /expected 79339 bytes, captured 65536; refusing candidate identity/,
+  );
+});
 
 test('M1 controls execute the exact frozen wait predicate and Saved assertion', async () => {
   const source = await readFile(new URL('../tests/product/web-save-closure-current.mjs', import.meta.url), 'utf8');
