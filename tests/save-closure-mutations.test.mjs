@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   boundedM6ProbeBudget,
+  cleanGateCandidateMatches,
   classifyM6ProductionProof,
   classifyMutationReceipt,
   executeFrozenSaveControl,
@@ -106,6 +107,16 @@ test('hosted preflight archives and restores only generated product-acceptance e
     await writeFile(path.join(source, 'App.tsx'), 'product source edit\n');
     await assert.rejects(reconcileHostedProductEvidence(repo, archiveRoot), /dirty paths outside generated product-acceptance evidence/);
   } finally { await rm(temporary, { recursive: true, force: true }); }
+});
+
+test('clean gate receipts may bind archived product evidence while committed candidate identity stays exact', () => {
+  const committedFiles = [['src/App.tsx', 'a'.repeat(64)]];
+  const clean = { base: 'b'.repeat(40), head: 'c'.repeat(40), committedFiles, dirtyFiles: [], sha256: 'd'.repeat(64) };
+  const gate = { ...clean, dirtyFiles: [['evidence/product-acceptance/summary.json', 'e'.repeat(64)]], sha256: 'f'.repeat(64) };
+  assert.equal(cleanGateCandidateMatches(gate, clean, [['summary.json', 'e'.repeat(64)]]), true);
+  assert.equal(cleanGateCandidateMatches({ ...gate, dirtyFiles: [['src/App.tsx', 'e'.repeat(64)]] }, clean, [['summary.json', 'e'.repeat(64)]]), false);
+  assert.equal(cleanGateCandidateMatches({ ...gate, committedFiles: [['src/App.tsx', '9'.repeat(64)]] }, clean, [['summary.json', 'e'.repeat(64)]]), false);
+  assert.equal(cleanGateCandidateMatches(gate, clean, [['summary.json', '0'.repeat(64)]]), false);
 });
 
 test('M6 readiness budget leaves restoration and upload reserve untouched', () => {

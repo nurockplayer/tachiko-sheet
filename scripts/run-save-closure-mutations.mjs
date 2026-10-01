@@ -193,6 +193,17 @@ export function boundedM6ProbeBudget(remainingMs, reserveMs = 90_000, maximumMs 
   return budgetMs >= minimumMs ? budgetMs : null;
 }
 
+export function cleanGateCandidateMatches(candidate, expected, archivedProductEvidence = []) {
+  if (!candidate || candidate.base !== expected?.base || candidate.head !== expected?.head
+    || JSON.stringify(candidate.committedFiles) !== JSON.stringify(expected?.committedFiles)) return false;
+  if (candidate.sha256 === expected.sha256) return true;
+  const dirty = candidate.dirtyFiles;
+  if (!Array.isArray(dirty) || !dirty.length || !Array.isArray(archivedProductEvidence)) return false;
+  const archived = new Map(archivedProductEvidence);
+  return dirty.every(([file, hash]) => file.startsWith('evidence/product-acceptance/')
+    && archived.get(file.slice('evidence/product-acceptance/'.length)) === hash);
+}
+
 function rootEvidence() {
   return path.resolve(process.env.TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR ?? path.join(os.tmpdir(), `tachiko-sheet-146-mutations-${process.pid}`));
 }
@@ -979,7 +990,8 @@ export async function executeMutationQualification() {
     const baseStatus = await git(['status', '--porcelain=v1', '-z'], { cwd: root });
     if (baseStatus.code !== 0 || baseStatus.output) throw new Error('candidate checkout is not clean before mutations.');
     const cleanEvidence = await readCleanGate(evidenceDir);
-    if (cleanEvidence.save !== 'PASS' || cleanEvidence.prod !== 'PASS' || cleanEvidence.candidate?.sha256 !== ctx.candidate.sha256) {
+    if (cleanEvidence.save !== 'PASS' || cleanEvidence.prod !== 'PASS'
+      || !cleanGateCandidateMatches(cleanEvidence.candidate, ctx.candidate, ctx.summary.hostedProductEvidenceReconciliation.generated)) {
       throw new Error('the exact-candidate clean 7/11 and production lifecycle receipts are required before mutations.');
     }
     for (const [file, expected] of Object.entries(expectedSeeds)) {
