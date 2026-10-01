@@ -1,1 +1,140 @@
-zºè¬&§µÊÞj×­…ë2šX§‘ú+šémŠÈ^–[·õ,z»?µ§!ŠJ&kùhq©²Ö­{÷çšk¥¶+!zYlÿ_të]{÷O;ß¼ïŽLk&Þ¶«yªÞ²‰žŠË.zÌ"¶^®h¬²*'±ú+¶Š·œ¶Šò:—«jØ¨žz-¥êæŠÛ^v‹®º+Õ¥µÁ½ÉÐÑ•ÍÐ™É½´€¹½‘”éÑ•ÍÐœì)¥µÁ½ÉÐ…ÍÍ•ÉÐ™É½´€¹½‘”é…ÍÍ•ÉÐ½ÍÑÉ¥Ðœì)¥µÁ½ÉÐì•á•¥±•Må¹Œô™É½´€¹½‘”é¡¥±‘}ÁÉ½•ÍÌœì)¥µÁ½ÉÐìµ­‘Ñ•µÀ°µ­‘¥È°É•…‘¥±”°É´°ÝÉ¥Ñ•¥±”ô™É½´€¹½‘”é™Ì½ÁÉ½µ¥Í•Ìœì)¥µÁ½ÉÐ½Ì™É½´€¹½‘”é½Ìœì)¥µÁ½ÉÐÁ…Ñ ™É½´€¹½‘”éÁ…Ñ œì)¥µÁ½ÉÐì(€‰½Õ¹‘•‘4ÙAÉ½‰•	Õ‘•Ð°(€±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜°(€±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ°(€•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°°(€É•½¹¥±•!½ÍÑ•‘AÉ½‘ÕÑÙ¥‘•¹”°)ô™É½´€œ¸¸½ÍÉ¥ÁÑÌ½ÉÕ¸µÍ…Ù”µ±½ÍÕÉ”µµÕÑ…Ñ¥½¹Ì¹µ©Ìœì()½¹ÍÐÕÉÉ•¹Ñ…Í•Ì€ôl(€€µ…Ñ”µ½¹±äµ¹½Éµ…°µM…Ù”µ™É•Í µÉ•½Á•¸œ°€µÍ…µ”µÑ…‰±”µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°œ°(€€µÕ¹É•±…Ñ•µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°œ°€µ•µÁÑäµÕ¹É•±…Ñ•µ…Ñ”µÍ¡•µ„µÉ•™ÕÍ…°œ°(€€µ…¹½¹¥…°µ½Á…ÅÕ”µ½µÁ±•Ñ”µ½Áäµ½¹ÑÉ½±Ìœ°€µMXØÐµÉ½Üµ½¹ÑÉ½°œ°€µMXÄØµ½±Õµ¸µ½¹ÑÉ½°œ°(€€µÁÉ½™¥±”µÉ•™ÕÍ…°µÉ½ÝÌ´ØÔ¹ÍØœ°€µÁÉ½™¥±”µÉ•™ÕÍ…°µ™¥•±‘Ì´ÄÜ¹ÍØœ°(€€µ•á¥ÍÑ¥¹œµÉ•…µ™…Õ±Ðµ¹¼µÁÕ‰±¥…Ñ¥½¸µÉ•½Ù•Éäœ°€HµÕ¹¡…¹•µÁÉ¥Ù…Ñ”µÉ•…‘•Èµ…Ñ”µ™¥áÑÕÉ”œ°)tì()Ñ•ÍÐ 4Ä½¹ÑÉ½±Ì•á•ÕÑ”Ñ¡”•á…Ð™É½é•¸Ý…¥ÐÁÉ•‘¥…Ñ”…¹M…Ù•…ÍÍ•ÉÑ¥½¸œ°…Íå¹Œ€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô…Ý…¥ÐÉ•…‘¥±”¡¹•ÜUI0 œ¸¸½Ñ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÕÉÉ•¹Ð¹µ©Ìœ°¥µÁ½ÉÐ¹µ•Ñ„¹ÕÉ°¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡Í½ÕÉ”°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè€M…Ù•½¸Ñ¡¥Ì‘•Ù¥”œ°Í…Ù•¥…±½=Á•¸è™…±Í”õtô¤¹ÍÑ…ÑÕÌ°€AMLœ¤ì(€½¹ÍÐ™…¥±•€ô•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡Í½ÕÉ”°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè€M…Ù”™…¥±•œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”õtô¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™…¥±•¹ÍÑ…ÑÕÌ°€	!Y%=I1}Iœ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡™…¥±•¹…ÍÍ•ÉÑ¥½¸°€½M…Ù”„½ÁäµÕÍÐÍÕ••…¹±½Í”Ñ¡”ÕÉÉ•¹ÐM…Ù”‘¥…±½œ¼¤ì(€™½È€¡½¹ÍÐ½‰Í•ÉÙ…Ñ¥½¹Ì½˜l(€€€mìÍÑ…ÑÕÌè€M…Ù•½¸Ñ¡¥Ì‘•Ù¥”œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”õt°(€€€mìÍÑ…ÑÕÌè¹Õ±°°Í…Ù•¥…±½=Á•¸è™…±Í”õt°(€€€mìÍÑ…ÑÕÌè€M…Ù¥¹ŸŠ˜œ°Í…Ù•¥…±½=Á•¸è™…±Í”ô°ìÍÑ…ÑÕÌè€M…Ù¥¹ŸŠ˜œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”õt°(€t¤…ÍÍ•ÉÐ¹•ÅÕ…°¡•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡Í½ÕÉ”°ì½‰Í•ÉÙ…Ñ¥½¹Ìô¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡Í½ÕÉ”°ì¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½Èè¹•ÜÉÉ½È 9…Ù¥…Ñ¥½¹ÉÉ½Èœ¤ô¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡Í½ÕÉ”°ì¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½Èè¹•ÜÉÉ½È QÉ…¹ÍÁ½ÉÑÉÉ½Èœ¤ô¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì)ô¤ì()Ñ•ÍÐ „µÕÑ…Ñ¥½¸½¹±ä•…É¹ÌI™½ÈÑ¡”½µÁ±•Ñ”É•¥ÍÑ•É•ÍÕ¥Ñ”…¹¥ÑÌ½Ý¹•…ÍÍ•ÉÑ¥½¸œ°€ ¤€ôøì(€½¹ÍÐµÕÑ…Ñ¥½¸€ôì¥è€4Äœ°•áÁ•Ñ•‘…Í•ÌèmÕÉÉ•¹Ñ…Í•ÍlÁut°…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½M…Ù”„½ÁäµÕÍÐÍÕ••…¹±½Í”Ñ¡”ÕÉÉ•¹ÐM…Ù”‘¥…±½œ¼ôì(€½¹ÍÐÉ••¥ÁÐ€ôìÍÑ…ÑÕÌè€	!Y%=I1}Iœ°É•ÍÕ±ÑÌèÕÉÉ•¹Ñ…Í•Ì¹µ…À ¡¥°¥¹‘•à¤€ôø€¡ì(€€€¥°É•ÍÕ±Ðè¥¹‘•à€ôôô€À€ü€	!Y%=I1}Iœ€è€AMLœ°(€€€µ•ÍÍ…”è¥¹‘•à€ôôô€À€ü€ÍÍ•ÉÑ¥½¹ÉÉ½ÈèM…Ù”„½ÁäµÕÍÐÍÕ••…¹±½Í”Ñ¡”ÕÉÉ•¹ÐM…Ù”‘¥…±½œœ€è€œœ°(€€€½‰Í•ÉÙ•è¥¹‘•à€ôôô€À€üìÍ…Ù”è€M…Ù”™…¥±•œô€èÕ¹‘•™¥¹•°(€ô¤¤ôì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡É••¥ÁÐ°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	!Y%=I1}Iœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡ì€¸¸¹É••¥ÁÐ°É•ÍÕ±ÑÌèÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹Í±¥” Ä¤ô°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡ì€¸¸¹É••¥ÁÐ°É•ÍÕ±ÑÌèÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹µ…À ¡¥Ñ•´°¥¹‘•à¤€ôø¥¹‘•à€ü¥Ñ•´€èì€¸¸¹¥Ñ•´°É•ÍÕ±Ðè€	1=-œ°µ•ÍÍ…”è€¹…Ù¥…Ñ¥½¸Ñ¥µ•½ÕÐœô¤ô°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡ì€¸¸¹É••¥ÁÐ°É•ÍÕ±ÑÌèÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹µ…À ¡¥Ñ•´°¥¹‘•à¤€ôø¥¹‘•à€ü¥Ñ•´€èì€¸¸¹¥Ñ•´°µ•ÍÍ…”è€Í•ÑÕÀ™…¥±•œô¤ô°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡ì€¸¸¹É••¥ÁÐ°É•ÍÕ±ÑÌèÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹µ…À ¡¥Ñ•´°¥¹‘•à¤€ôø¥¹‘•à€ü¥Ñ•´€èì€¸¸¹¥Ñ•´°½‰Í•ÉÙ•èìÍ…Ù”è€M…Ù•½¸Ñ¡¥Ì‘•Ù¥”œôô¤ô°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡ì€¸¸¹É••¥ÁÐ°É•ÍÕ±ÑÌèÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹µ…À ¡¥Ñ•´°¥¹‘•à¤€ôø¥¹‘•à€ü¥Ñ•´€èì€¸¸¹¥Ñ•´°½‰Í•ÉÙ•èìÍ…Ù”è€M…Ù”™…¥±•œô°µ•ÍÍ…”è€9…Ù¥…Ñ¥½¹ÉÉ½ÈèÑÉ…¹ÍÁ½ÉÐÕ¹…Ù…¥±…‰±”œô¤ô°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì)ô¤ì()Ñ•ÍÐ …Ñ”É•™ÕÍ…°µÕÑ…¹ÑÌ…•ÁÐÑ¡”•á¥ÍÑ¥¹œ•áÁ±¥¥Ðé•É¼µÍÕµµ…ÉäÉ•™ÕÍ…°½É…±”°¹½Ð„•¹•É¥Œ…ÍÍ•ÉÑ¥½¸œ°€ ¤€ôøì(€½¹ÍÐ´È€ôì¥è€4Èœ°•áÁ•Ñ•‘…Í•ÌèmÕÉÉ•¹Ñ…Í•ÍlÅut°…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½…Ñ”É•™ÕÍ…°½ÕÉÌ‰•™½É”ÁÉ½‘Õ•ÈÉ•…Ñ”‘¥ÍÁ…Ñ¡ñ9¼ÕÉÉ•¹ÐÉ½ÍÌµÑ…‰±”É•ÍÕ±Ð¥Ì…Ù…¥±…‰±•ñÉ•¹‘•É•MÕµµ…Éä¡…Ìé•É¼•á¥ÍÑ¥¹œ½Èµ¥ÍÍ¥¹œ‘•™¥¹¥Ñ¥½¸…É‘Ì¼ôì(€½¹ÍÐÉ••¥ÁÐ€ôìÍÑ…ÑÕÌè€	!Y%=I1}Iœ°É•ÍÕ±ÑÌèÕÉÉ•¹Ñ…Í•Ì¹µ…À ¡¥¤€ôø€¡ì¥°É•ÍÕ±Ðè€AMLœ°µ•ÍÍ…”è€œœô¤¤ôì(€½¹ÍÐÉ½Ü€ôÕÉÉ•¹Ñ…Í•Ì¹¥¹‘•á=˜¡ÕÉÉ•¹Ñ…Í•ÍlÅt¤ì(€É••¥ÁÐ¹É•ÍÕ±ÑÍmÉ½Ýt€ôì¥èÕÉÉ•¹Ñ…Í•ÍlÅt°É•ÍÕ±Ðè€	!Y%=I1}Iœ°µ•ÍÍ…”è€Q¡”¥¹ÁÕÐ‘¥¹½Ðµ…Ñ €½9¼ÕÉÉ•¹ÐÉ½ÍÌµÑ…‰±”É•ÍÕ±Ð¥Ì…Ù…¥±…‰±”½¤¸œôì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡É••¥ÁÐ°´È¤¹ÍÑ…ÑÕÌ°€	!Y%=I1}Iœ¤ì(€É••¥ÁÐ¹É•ÍÕ±ÑÍmÉ½Ýt€ôì€¸¸¹É••¥ÁÐ¹É•ÍÕ±ÑÍmÉ½Ýt°µ•ÍÍ…”è€ÍÍ•ÉÑ¥½¹ÉÉ½Èè•áÁ•Ñ•Í½µ•Ñ¡¥¹œÑ¼¡…ÁÁ•¸œôì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡É••¥ÁÐ°´È¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì)ô¤ì()Ñ•ÍÐ 4Õˆ…ÑÑÉ¥‰ÕÑ•ÌÑ¡”•…É±¥•ÍÐ•á¥ÍÑ¥¹œÍ½ÕÉ”µ¹…µ”ÁÉ•Í•ÉÙ…Ñ¥½¸…ÍÍ•ÉÑ¥½¸œ°€ ¤€ôøì(€½¹ÍÐµÕÑ…Ñ¥½¸€ôì¥è€4Õˆœ°•áÁ•Ñ•‘…Í•ÌèmÕÉÉ•¹Ñ…Í•ÍlÁut°…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½áÁ•Ñ•Ù…±Õ•ÌÑ¼‰”ÍÑÉ¥Ñ±ä•ÅÕ…°émqÍqMt©p¬Õ¹‘•™¥¹•‘mqÍqMt¨´€‘…Ñ”µ½¹±åp¹ÍØœ¼ôì(€½¹ÍÐÉ••¥ÁÐ€ôìÍÑ…ÑÕÌè€	!Y%=I1}Iœ°É•ÍÕ±ÑÌèÕÉÉ•¹Ñ…Í•Ì¹µ…À ¡¥¤€ôø€¡ì¥°É•ÍÕ±Ðè€AMLœ°µ•ÍÍ…”è€œœô¤¤ôì(€½¹ÍÐÉ½Ü€ôÕÉÉ•¹Ñ…Í•Ì¹¥¹‘•á=˜¡ÕÉÉ•¹Ñ…Í•ÍlÁt¤ì(€±•ÐÍ½ÕÉ•9…µ•ÍÍ•ÉÑ¥½¸ì(€ÑÉäì…ÍÍ•ÉÐ¹•ÅÕ…°¡Õ¹‘•™¥¹•°€‘…Ñ”µ½¹±ä¹ÍØœ¤ìô…Ñ €¡•ÉÉ½È¤ìÍ½ÕÉ•9…µ•ÍÍ•ÉÑ¥½¸€ô•ÉÉ½È¹µ•ÍÍ…”ìô(€É••¥ÁÐ¹É•ÍÕ±ÑÍmÉ½Ýt€ôì¥èÕÉÉ•¹Ñ…Í•ÍlÁt°É•ÍÕ±Ðè€	!Y%=I1}Iœ°µ•ÍÍ…”èÍ½ÕÉ•9…µ•ÍÍ•ÉÑ¥½¸ôì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡É••¥ÁÐ°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	!Y%=I1}Iœ¤ì(€É••¥ÁÐ¹É•ÍÕ±ÑÍmÉ½Ýt€ôì€¸¸¹É••¥ÁÐ¹É•ÍÕ±ÑÍmÉ½Ýt°µ•ÍÍ…”è€ÍÍ•ÉÑ¥½¹ÉÉ½ÈèÕ¹É•±…Ñ•Í½ÕÉ”¡…Í µ¥Íµ…Ñ œôì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡É••¥ÁÐ°µÕÑ…Ñ¥½¸¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì)ô¤ì()Ñ•ÍÐ ¡½ÍÑ•ÁÉ•™±¥¡Ð…É¡¥Ù•Ì…¹É•ÍÑ½É•Ì½¹±ä•¹•É…Ñ•ÁÉ½‘ÕÐµ…•ÁÑ…¹”•Ù¥‘•¹”œ°…Íå¹Œ€ ¤€ôøì(€½¹ÍÐÑ•µÁ½É…Éä€ô…Ý…¥Ðµ­‘Ñ•µÀ¡Á…Ñ ¹©½¥¸¡½Ì¹ÑµÁ‘¥È ¤°€Ñ…¡¥­¼µÍ¡••Ð´ÄÐØµ•Ù¥‘•¹”µÉ•½¹¥±”´œ¤¤ì(€½¹ÍÐÉ•Á¼€ôÁ…Ñ ¹©½¥¸¡Ñ•µÁ½É…Éä°€É•Á¼œ¤ì(€½¹ÍÐ•Ù¥‘•¹”€ôÁ…Ñ ¹©½¥¸¡É•Á¼°€•Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ¤ì(€½¹ÍÐÍ½ÕÉ”€ôÁ…Ñ ¹©½¥¸¡É•Á¼°€ÍÉŒœ¤ì(€½¹ÍÐ…É¡¥Ù•I½½Ð€ôÁ…Ñ ¹©½¥¸¡Ñ•µÁ½É…Éä°€…É¡¥Ù”µÉ½½Ðœ¤ì(€…Ý…¥Ðµ­‘¥È¡•Ù¥‘•¹”°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€…Ý…¥Ðµ­‘¥È¡Í½ÕÉ”°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐ½É¥¥¹…±MÕµµ…Éä€ô€‘í)M=8¹ÍÑÉ¥¹¥™ä¡ìÍÑ…ÑÕÌè€AMLœ°ÍÕµµ…ÉäèmìÍÑ…ÑÕÌè€AMLœõtô¥õq¹€ì(€½¹ÍÐ½É¥¥¹…±1½œ€ô€½µµ¥ÑÑ•¡¥ÍÑ½É¥…°±½q¸œì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€ÍÕµµ…Éä¹©Í½¸œ¤°½É¥¥¹…±MÕµµ…Éä¤ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€‰É½ÝÍ•Èµ´Ä¹±½œœ¤°½É¥¥¹…±1½œ¤ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡Í½ÕÉ”°€ÁÀ¹ÑÍàœ¤°€Õ¹¡…¹•Í½ÕÉ•q¸œ¤ì(€½¹ÍÐ¥Ð€ô€¡…ÉÌ¤€ôø•á•¥±•Må¹Œ ¥Ðœ°…ÉÌ°ìÝèÉ•Á¼°ÍÑ‘¥¼è€Á¥Á”œô¤ì(€ÑÉäì(€€€¥Ð¡l¥¹¥Ðœ°€œ´µÅÕ¥•Ðt¤ì(€€€¥Ð¡l…‘œ°€œ¸t¤ì(€€€¥Ð¡lœµŒœ°€ÕÍ•È¹¹…µ”õÅÕ…±¥™¥…Ñ¥½¸µÑ•ÍÐœ°€œµŒœ°€ÕÍ•È¹•µ…¥°õÅÕ…±¥™¥…Ñ¥½¸µÑ•ÍÑ•á…µÁ±”¹¥¹Ù…±¥œ°€½µµ¥Ðœ°€œ´µÅÕ¥•Ðœ°€œµ´œ°€‰…Í•±¥¹”t¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€ÍÕµµ…Éä¹©Í½¸œ¤°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡ìÍÑ…ÑÕÌè€AMLœ°ÍÕµµ…ÉäèmìÍÑ…ÑÕÌè€AMLœõt°ÉÕ¸è€Èô¥õq¹€¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€‰É½ÝÍ•Èµ´Ä¹±½œœ¤°€ÕÉÉ•¹Ð¡½ÍÑ•½ÕÑÁÕÑq¸œ¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€¹•ÜµÍÑ•À¹±½œœ¤°€…‘‘¥Ñ¥½¹…°•¹•É…Ñ•½ÕÑÁÕÑq¸œ¤ì(€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥ÐÉ•½¹¥±•!½ÍÑ•‘AÉ½‘ÕÑÙ¥‘•¹”¡É•Á¼°…É¡¥Ù•I½½Ð¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹ÍÑ…ÑÕÌ°€AMLœ¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹É•½¹¥±•°ÑÉÕ”¤ì(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€ÍÕµµ…Éä¹©Í½¸œ¤°€ÕÑ˜àœ¤°½É¥¥¹…±MÕµµ…Éä¤ì(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€‰É½ÝÍ•Èµ´Ä¹±½œœ¤°€ÕÑ˜àœ¤°½É¥¥¹…±1½œ¤ì(€€€…Ý…¥Ð…ÍÍ•ÉÐ¹É•©•ÑÌ¡É•…‘¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹”°€¹•ÜµÍÑ•À¹±½œœ¤¤°ì½‘”è€9=9Pœô¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥Ð¡lÍÑ…ÑÕÌœ°€œ´µÁ½É•±…¥¸t¤¹Ñ½MÑÉ¥¹œ ¤°€œœ¤ì(€€€½¹ÍÐ…É¡¥Ù•€ôÁ…Ñ ¹©½¥¸¡…É¡¥Ù•I½½Ð°É•ÍÕ±Ð¹…É¡¥Ù”¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡…É¡¥Ù•°€ÍÕµµ…Éä¹©Í½¸œ¤°€ÕÑ˜àœ¤°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡ìÍÑ…ÑÕÌè€AMLœ°ÍÕµµ…ÉäèmìÍÑ…ÑÕÌè€AMLœõt°ÉÕ¸è€Èô¥õq¹€¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡…É¡¥Ù•°€¹•ÜµÍÑ•À¹±½œœ¤°€ÕÑ˜àœ¤°€…‘‘¥Ñ¥½¹…°•¹•É…Ñ•½ÕÑÁÕÑq¸œ¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡Í½ÕÉ”°€ÁÀ¹ÑÍàœ¤°€ÁÉ½‘ÕÐÍ½ÕÉ”•‘¥Ñq¸œ¤ì(€€€…Ý…¥Ð…ÍÍ•ÉÐ¹É•©•ÑÌ¡É•½¹¥±•!½ÍÑ•‘AÉ½‘ÕÑÙ¥‘•¹”¡É•Á¼°…É¡¥Ù•I½½Ð¤°€½‘¥ÉÑäÁ…Ñ¡Ì½ÕÑÍ¥‘”•¹•É…Ñ•ÁÉ½‘ÕÐµ…•ÁÑ…¹”•Ù¥‘•¹”¼¤ì(€ô™¥¹…±±äì…Ý…¥ÐÉ´¡Ñ•µÁ½É…Éä°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°™½É”èÑÉÕ”ô¤ìô)ô¤ì()Ñ•ÍÐ 4ØÉ•…‘¥¹•ÍÌ‰Õ‘•Ð±•…Ù•ÌÉ•ÍÑ½É…Ñ¥½¸…¹ÕÁ±½…É•Í•ÉÙ”Õ¹Ñ½Õ¡•œ°€ ¤€ôøì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½Õ¹‘•‘4ÙAÉ½‰•	Õ‘•Ð ÄàÁ|ÀÀÀ¤°€ÐÕ|ÀÀÀ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½Õ¹‘•‘4ÙAÉ½‰•	Õ‘•Ð ÄÌÁ|ÀÀÀ¤°€ÐÁ|ÀÀÀ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½Õ¹‘•‘4ÙAÉ½‰•	Õ‘•Ð äå|äää¤°¹Õ±°¤ì)ô¤ì()Ñ•ÍÐ 4ØÉ•ÅÕ¥É•ÌÑ¡”™É½é•¸±¥™•å±”!½µ”½=Á•¸…ÍÍ•ÉÑ¥½¸Á±ÕÌ±•…¸¥¹‘•Á•¹‘•¹Ð!QQ@½@É•…‘¥¹•ÍÌœ°€ ¤€ôøì(€½¹ÍÐÉ•…‘¥¹•ÍÌ€ôì(€€€ÍÑ…ÑÕÌè€I%9MM}AMLœ°¡ÑÑÁ%¹‘•áMÑ…ÑÕÌè€ÈÀÀ°ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌè€ÈÀÀ°‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌè€ÈÀÀ°(€€€‘ÁI•…‘äèÑÉÕ”°‰É½ÝÍ•ÉY•ÉÍ¥½¸è€¡É½µ”¼ÄÌØ¸À¸À¸Àœ°½±‘!½µ•I•…‘äèÑÉÕ”°(€€€‘¥…¹½ÍÑ¥ÌèìÁ…•ÉÉ½ÉÌèmt°½¹Í½±•ÉÉ½ÉÌèmt°É•ÅÕ•ÍÑ…¥±ÕÉ•Ìèmt°É•ÍÁ½¹Í•ÉÉ½ÉÌèmt°É•ÍÁ½¹Í•ÌèmìÍÑ…ÑÕÌè€ÈÀÀô°ìÍÑ…ÑÕÌè€ÈÀÀõtô°(€ôì(€½¹ÍÐ±¥™•å±”€ôì(€€€ÍÑ…ÑÕÌè€	1=-}=I}%0œ°Á¡…Í”è€½±µ!½µ”µ…¹µÁÉ½‘ÕÑ¥½¸µÉÕ¹Ñ¥µ”œ°(€€€•ÉÉ½Èèì¹…µ”è€ÍÍ•ÉÑ¥½¹ÉÉ½Èœ°µ•ÍÍ…”è€ÍÍ•ÉÑ¥½¹ÉÉ½ÈmII}MMIQ%=9tè¹½Éµ…°!½µ”M…±•Ì=Á•¸¥Ì•¹…‰±•Ý¡•¸Ñ¡”ÁÉ½‘ÕÑ¥½¸ÉÕ¹Ñ¥µ”¥ÌÉ•…‘äœô°(€€€ÁÉ½•ÍÍÙ¥‘•¹”èmì•¹‘Á½¥¹ÑI•…‘äèÑÉÕ”°‰É½ÝÍ•ÉY•ÉÍ¥½¸è€¡É½µ”¼ÄÌØ¸À¸À¸Àœõt°(€€€¹•ÑÝ½É­Ù¥‘•¹”èmìÁ…Ñ è€œ½¥¹‘•à¹¡Ñµ°œ°ÍÑ…ÑÕÌè€ÈÀÀô°ìÁ…Ñ è€œ½…ÍÍ•ÑÌ½¥¹‘•àµ…ÁÀ¹©Ìœ°ÍÑ…ÑÕÌè€ÈÀÀõt°(€€€‘¥…¹½ÍÑ¥ÌèìÁ…•ÉÉ½ÉÌèmt°½¹Í½±•ÉÉ½ÉÌèmt°É•ÅÕ•ÍÑ…¥±ÕÉ•Ìèmt°É•ÍÁ½¹Í•ÉÉ½ÉÌèmtô°(€ôì(€½¹ÍÐ¥‘•¹Ñ¥Ñä€ôì…¹‘¥‘…Ñ•M¡„ÈÔØè€„œ¹É•Á•…Ð ØÐ¤°Á…Ñ¡M¡„ÈÔØè€ˆœ¹É•Á•…Ð ØÐ¤°±½…‘•ÉM¡„ÈÔØè€Œœ¹É•Á•…Ð ØÐ¤ôì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡É•…‘¥¹•ÍÌ°±¥™•å±”°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	!Y%=I1}Iœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡ì€¸¸¹É•…‘¥¹•ÍÌ°¡ÑÑÁ%¹‘•áMÑ…ÑÕÌè€ÐÀÐô°±¥™•å±”°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡ì€¸¸¹É•…‘¥¹•ÍÌ°‘¥…¹½ÍÑ¥Ìèì€¸¸¹É•…‘¥¹•ÍÌ¹‘¥…¹½ÍÑ¥Ì°É•ÅÕ•ÍÑ…¥±ÕÉ•ÌèmìÕÉ°è€œ½Õ¹É•±…Ñ•œõtôô°±¥™•å±”°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡ì€¸¸¹É•…‘¥¹•ÍÌ°‘¥…¹½ÍÑ¥Ìèì€¸¸¹É•…‘¥¹•ÍÌ¹‘¥…¹½ÍÑ¥Ì°É•ÍÁ½¹Í•Ìèl¸¸¹É•…‘¥¹•ÍÌ¹‘¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•Ì°ìÍÑ…ÑÕÌè€ÐÀÐõtôô°±¥™•å±”°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡ì€¸¸¹É•…‘¥¹•ÍÌ°‘¥…¹½ÍÑ¥Ìèì€¸¸¹É•…‘¥¹•ÍÌ¹‘¥…¹½ÍÑ¥Ì°Á…•ÉÉ½ÉÌèmìµ•ÍÍ…”è€Õ¹É•±…Ñ•œõtôô°±¥™•å±”°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡É•…‘¥¹•ÍÌ°ì€¸¸¹±¥™•å±”°•ÉÉ½Èèì¹…µ”è€Q¥µ•½ÕÑÉÉ½Èœ°µ•ÍÍ…”è€=Á•¸Ñ¥µ•½ÕÐœôô°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡É•…‘¥¹•ÍÌ°ì€¸¸¹±¥™•å±”°Á¡…Í”è€Í•ÉÙ•µ…ÉÑ¥™…Ðµ¥‘•¹Ñ¥Ñäœô°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡É•…‘¥¹•ÍÌ°ì€¸¸¹±¥™•å±”°¹•ÑÝ½É­Ù¥‘•¹”èmìÁ…Ñ è€œ½¥¹‘•à¹¡Ñµ°œ°ÍÑ…ÑÕÌè€ÐÀÐõtô°¥‘•¹Ñ¥Ñä¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡É•…‘¥¹•ÍÌ°±¥™•å±”°ì€¸¸¹¥‘•¹Ñ¥Ñä°±½…‘•ÉM¡„ÈÔØè¹Õ±°ô¤¹ÍÑ…ÑÕÌ°€	1=-œ¤ì)ô¤ì(
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  boundedM6ProbeBudget,
+  classifyM6ProductionProof,
+  classifyMutationReceipt,
+  executeFrozenSaveControl,
+  reconcileHostedProductEvidence,
+} from '../scripts/run-save-closure-mutations.mjs';
+
+const currentCases = [
+  'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
+  'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
+  'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV16-column-control',
+  'E-profile-refusal-rows-65.csv', 'E-profile-refusal-fields-17.csv',
+  'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
+];
+
+test('M1 controls execute the exact frozen wait predicate and Saved assertion', async () => {
+  const source = await readFile(new URL('../tests/product/web-save-closure-current.mjs', import.meta.url), 'utf8');
+  assert.deepEqual(executeFrozenSaveControl(source, { observations: [{ status: 'Saved on this device', saveDialogOpen: false }] }).status, 'PASS');
+  const failed = executeFrozenSaveControl(source, { observations: [{ status: 'Save failed', saveDialogOpen: true }] });
+  assert.equal(failed.status, 'BEHAVIORAL_RED');
+  assert.match(failed.assertion, /Save a copy must succeed and close the current Save dialog/);
+  for (const observations of [
+    [{ status: 'Saved on this device', saveDialogOpen: true }],
+    [{ status: null, saveDialogOpen: false }],
+    [{ status: 'Savingâ€¦', saveDialogOpen: false }, { status: 'Savingâ€¦', saveDialogOpen: true }],
+  ]) assert.equal(executeFrozenSaveControl(source, { observations }).status, 'BLOCKED');
+  assert.equal(executeFrozenSaveControl(source, { infrastructureError: new Error('NavigationError') }).status, 'BLOCKED');
+  assert.equal(executeFrozenSaveControl(source, { infrastructureError: new Error('TransportError') }).status, 'BLOCKED');
+});
+
+test('a mutation only earns RED for the complete registered suite and its owned assertion', () => {
+  const mutation = { id: 'M1', expectedCases: [currentCases[0]], assertionPattern: /Save a copy must succeed and close the current Save dialog/ };
+  const receipt = { status: 'BEHAVIORAL_RED', results: currentCases.map((id, index) => ({
+    id, result: index === 0 ? 'BEHAVIORAL_RED' : 'PASS',
+    message: index === 0 ? 'AssertionError: Save a copy must succeed and close the current Save dialog' : '',
+    observed: index === 0 ? { save: 'Save failed' } : undefined,
+  })) };
+  assert.equal(classifyMutationReceipt(receipt, mutation).status, 'BEHAVIORAL_RED');
+  assert.equal(classifyMutationReceipt({ ...receipt, results: receipt.results.slice(1) }, mutation).status, 'BLOCKED');
+  assert.equal(classifyMutationReceipt({ ...receipt, results: receipt.results.map((item, index) => index ? item : { ...item, result: 'BLOCKED', message: 'navigation timeout' }) }, mutation).status, 'BLOCKED');
+  assert.equal(classifyMutationReceipt({ ...receipt, results: receipt.results.map((item, index) => index ? item : { ...item, message: 'setup failed' }) }, mutation).status, 'BLOCKED');
+  assert.equal(classifyMutationReceipt({ ...receipt, results: receipt.results.map((item, index) => index ? item : { ...item, observed: { save: 'Saved on this device' } }) }, mutation).status, 'BLOCKED');
+  assert.equal(classifyMutationReceipt({ ...receipt, results: receipt.results.map((item, index) => index ? item : { ...item, observed: { save: 'Save failed' }, message: 'NavigationError: transport unavailable' }) }, mutation).status, 'BLOCKED');
+});
+
+test('Date refusal mutants accept the existing explicit zero-summary refusal oracle, not a generic assertion', () => {
+  const m2 = { id: 'M2', expectedCases: [currentCases[1]], assertionPattern: /Date refusal occurs before producer Create dispatch|No current cross-table result is available|rendered Summary has zero existing or missing definition cards/ };
+  const receipt = { status: 'BEHAVIORAL_RED', results: currentCases.map((id) => ({ id, result: 'PASS', message: '' })) };
+  const row = currentCases.indexOf(currentCases[1]);
+  receipt.results[row] = { id: currentCases[1], result: 'BEHAVIORAL_RED', message: 'The input did not match /No current cross-table result is available/i.' };
+  assert.equal(classifyMutationReceipt(receipt, m2).status, 'BEHAVIORAL_RED');
+  receipt.results[row] = { ...receipt.results[row], message: 'AssertionError: expected something to happen' };
+  assert.equal(classifyMutationReceipt(receipt, m2).status, 'BLOCKED');
+});
+
+test('M5b attributes the earliest existing source-name preservation assertion', () => {
+  const mutation = { id: 'M5b', expectedCases: [currentCases[0]], assertionPattern: /Expected values to be strictly equal:[\s\S]*\+ undefined[\s\S]*- 'date-only\.csv'/ };
+  const receipt = { status: 'BEHAVIORAL_RED', results: currentCases.map((id) => ({ id, result: 'PASS', message: '' })) };
+  const row = currentCases.indexOf(currentCases[0]);
+  let sourceNameAssertion;
+  try { assert.equal(undefined, 'date-only.csv'); } catch (error) { sourceNameAssertion = error.message; }
+  receipt.results[row] = { id: currentCases[0], result: 'BEHAVIORAL_RED', message: sourceNameAssertion };
+  assert.equal(classifyMutationReceipt(receipt, mutation).status, 'BEHAVIORAL_RED');
+  receipt.results[row] = { ...receipt.results[row], message: 'AssertionError: unrelated source hash mismatch' };
+  assert.equal(classifyMutationReceipt(receipt, mutation).status, 'BLOCKED');
+});
+
+test('hosted preflight archives and restores only generated product-acceptance evidence', async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-evidence-reconcile-'));
+  const repo = path.join(temporary, 'repo');
+  const evidence = path.join(repo, 'evidence/product-acceptance');
+  const source = path.join(repo, 'src');
+  const archiveRoot = path.join(temporary, 'archive-root');
+  await mkdir(evidence, { recursive: true });
+  await mkdir(source, { recursive: true });
+  const originalSummary = `${JSON.stringify({ status: 'PASS', summary: [{ status: 'PASS' }] })}\n`;
+  const originalLog = 'committed historical log\n';
+  await writeFile(path.join(evidence, 'summary.json'), originalSummary);
+  await writeFile(path.join(evidence, 'browser-m1.log'), originalLog);
+  await writeFile(path.join(source, 'App.tsx'), 'unchanged source\n');
+  const git = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  try {
+    git(['init', '--quiet']);
+    git(['add', '.']);
+    git(['-c', 'user.name=qualification-test', '-c', 'user.email=qualification-test@example.invalid', 'commit', '--quiet', '-m', 'baseline']);
+    await writeFile(path.join(evidence, 'summary.json'), `${JSON.stringify({ status: 'PASS', summary: [{ status: 'PASS' }], run: 2 })}\n`);
+    await writeFile(path.join(evidence, 'browser-m1.log'), 'current hosted output\n');
+    await writeFile(path.join(evidence, 'new-step.log'), 'additional generated output\n');
+    const result = await reconcileHostedProductEvidence(repo, archiveRoot);
+    assert.equal(result.status, 'PASS');
+    assert.equal(result.reconciled, true);
+    assert.deepEqual(await readFile(path.join(evidence, 'summary.json'), 'utf8'), originalSummary);
+    assert.deepEqual(await readFile(path.join(evidence, 'browser-m1.log'), 'utf8'), originalLog);
+    await assert.rejects(readFile(path.join(evidence, 'new-step.log')), { code: 'ENOENT' });
+    assert.equal(git(['status', '--porcelain']).toString(), '');
+    const archived = path.join(archiveRoot, result.archive);
+    assert.equal(await readFile(path.join(archived, 'summary.json'), 'utf8'), `${JSON.stringify({ status: 'PASS', summary: [{ status: 'PASS' }], run: 2 })}\n`);
+    assert.equal(await readFile(path.join(archived, 'new-step.log'), 'utf8'), 'additional generated output\n');
+    await writeFile(path.join(source, 'App.tsx'), 'product source edit\n');
+    await assert.rejects(reconcileHostedProductEvidence(repo, archiveRoot), /dirty paths outside generated product-acceptance evidence/);
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+});
+
+test('M6 readiness budget leaves restoration and upload reserve untouched', () => {
+  assert.equal(boundedM6ProbeBudget(180_000), 45_000);
+  assert.equal(boundedM6ProbeBudget(130_000), 40_000);
+  assert.equal(boundedM6ProbeBudget(99_999), null);
+});
+
+test('M6 requires the frozen lifecycle Home/Open assertion plus clean independent HTTP/CDP readiness', () => {
+  const readiness = {
+    status: 'READINESS_PASS', httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200,
+    cdpReady: true, browserVersion: 'Chrome/136.0.0.0', coldHomeReady: true,
+    diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [{ status: 200 }, { status: 200 }] },
+  };
+  const lifecycle = {
+    status: 'BLOCKED_OR_FAIL', phase: 'cold-Home-and-production-runtime',
+    error: { name: 'AssertionError', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready' },
+    processEvidence: [{ endpointReady: true, browserVersion: 'Chrome/136.0.0.0' }],
+    networkEvidence: [{ path: '/index.html', status: 200 }, { path: '/assets/index-app.js', status: 200 }],
+    diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [] },
+  };
+  const identity = { candidateSha256: 'a'.repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) };
+  assert.equal(classifyM6ProductionProof(readiness, lifecycle, identity).status, 'BEHAVIORAL_RED');
+  assert.equal(classifyM6ProductionProof({ ...readiness, httpIndexStatus: 404 }, lifecycle, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, requestFailures: [{ url: '/unrelated' }] } }, lifecycle, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, responses: [...readiness.diagnostics.responses, { status: 404 }] } }, lifecycle, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, pageErrors: [{ message: 'unrelated' }] } }, lifecycle, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, error: { name: 'TimeoutError', message: 'Open timed out' } }, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, phase: 'served-artifact-identity' }, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, networkEvidence: [{ path: '/index.html', status: 404 }] }, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof(readiness, lifecycle, { ...identity, loaderSha256: null }).status, 'BLOCKED');
+});
