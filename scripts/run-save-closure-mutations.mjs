@@ -200,6 +200,17 @@ export function boundedM6ProbeBudget(remainingMs, reserveMs = 90_000, maximumMs 
   return budgetMs >= minimumMs ? budgetMs : null;
 }
 
+export function createM6OperationTimeout(deadlineMs, now = () => Date.now()) {
+  return (maximumMs) => {
+    if (!Number.isFinite(maximumMs) || maximumMs < 1) {
+      throw new TypeError('M6 operation timeout requires a finite positive maximum.');
+    }
+    const remaining = Math.min(maximumMs, deadlineMs - now());
+    if (remaining < 1) throw new Error('BLOCKED: M6 readiness probe exhausted its absolute budget.');
+    return remaining;
+  };
+}
+
 export function cleanGateCandidateMatches(candidate, expected, archivedProductEvidence = []) {
   if (!candidate || candidate.base !== expected?.base || candidate.head !== expected?.head
     || JSON.stringify(candidate.committedFiles) !== JSON.stringify(expected?.committedFiles)) return false;
@@ -960,7 +971,7 @@ async function readM6ResponseBody(response, maximumBytes, label) {
   return Buffer.concat(chunks, byteCount);
 }
 
-async function fetchM6BuildInventory(worktree, evidenceDir, origin, timeoutMs) {
+export async function fetchM6BuildInventory(worktree, evidenceDir, origin, timeoutMs, fetchImpl = fetch) {
   const receiptPath = path.join(evidenceDir, 'production-build.json');
   const receipt = await readJson(receiptPath);
   const expectedRows = receipt?.artifact?.files;
@@ -976,7 +987,7 @@ async function fetchM6BuildInventory(worktree, evidenceDir, origin, timeoutMs) {
     }
     const file = item[0];
     const url = new URL(`/${file.split('/').map(encodeURIComponent).join('/')}`, origin);
-    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs()) });
+    const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs(5_000)) });
     const body = await readM6ResponseBody(response, M6_MAX_SINGLE_ASSET_BYTES, `M6 asset ${file}`);
     totalBytes += body.byteLength;
     if (totalBytes > M6_MAX_TOTAL_ASSET_BYTES) throw new Error(`BLOCKED: M6 served asset inventory exceeded ${M6_MAX_TOTAL_ASSET_BYTES} bytes.`);
@@ -1078,7 +1089,7 @@ async function runM6HookFreeBrowserControl(browser, parentProof, timeoutMs) {
       const entry = { type: message.type(), message: message.text(), location: message.location() };
       if (entry.type === 'error') control.diagnostics.consoleErrors.push(entry);
     });
-    const response = await page.goto(serverBundle.origin, { waitUntil: 'domcontentloaded', timeout: timeoutMs() });
+    const response = await page.goto(serverBundle.origin, { waitUntil: 'domcontentloaded', timeout: timeoutMs(5_000) });
     control.navigationStatus = response?.status() ?? null;
     control.domAudit = await page.evaluate(() => {
       const html = document.documentElement?.outerHTML ?? '';
@@ -1089,7 +1100,7 @@ async function runM6HookFreeBrowserControl(browser, parentProof, timeoutMs) {
     });
     control.domAudit.references = findM6IconReferences(control.domAudit.outerHtml, 'blank-control-dom');
     delete control.domAudit.outerHtml;
-    const waitMs = Math.min(2_000, timeoutMs());
+    const waitMs = timeoutMs(2_000);
     const sawBrowserRequest = await Promise.race([
       serverBundle.faviconObserved.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), waitMs)),
     ]);
@@ -1124,11 +1135,7 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     return proof;
   }
   const deadline = Date.now() + probeBudgetMs;
-  const opTimeout = (maximum) => {
-    const remaining = Math.min(maximum, deadline - Date.now());
-    if (remaining < 1) throw new Error('BLOCKED: M6 readiness probe exhausted its absolute budget.');
-    return remaining;
-  };
+  const opTimeout = createM6OperationTimeout(deadline);
   if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true') {
     proof.reason = 'M6 production CDP probe runs only on the approved hosted Ubuntu locked-Playwright job.';
     await writeMutationJson(path.join(evidenceDir, 'm6-production-readiness.json'), proof);

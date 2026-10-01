@@ -15,8 +15,10 @@ import {
   classifyM6ProductionProof,
   classifyMutationReceipt,
   compareM6DiagnosticEvidence,
+  createM6OperationTimeout,
   createM6ReadinessProof,
   executeFrozenSaveControl,
+  fetchM6BuildInventory,
   finalizeM6ReadinessProof,
   findM6IconReferences,
   qualifyM6AssetInventory,
@@ -256,6 +258,32 @@ test('M6 readiness budget leaves restoration and upload reserve untouched', () =
   assert.equal(boundedM6ProbeBudget(180_000), 45_000);
   assert.equal(boundedM6ProbeBudget(130_000), 40_000);
   assert.equal(boundedM6ProbeBudget(99_999), null);
+});
+
+test('M6 inventory execution uses finite caps through the real absolute-deadline callback', async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-m6-budget-'));
+  try {
+    const files = [['index.html', 'index bytes'], ['core-kit/runtime.wasm', 'wasm bytes']]
+      .map(([file, body]) => [file, createHash('sha256').update(body).digest('hex')]);
+    await writeFile(path.join(temporary, 'production-build.json'), JSON.stringify({ status: 'PASS',
+      artifact: { files, digest: createHash('sha256').update(JSON.stringify(files)).digest('hex') } }));
+    let now = 1_000;
+    const timeout = createM6OperationTimeout(3_400, () => now);
+    const timeoutRequests = [];
+    const boundedTimeout = (maximum) => { timeoutRequests.push(maximum); return timeout(maximum); };
+    const bodies = new Map([['index.html', 'index bytes'], ['core-kit/runtime.wasm', 'wasm bytes']]);
+    const inventory = await fetchM6BuildInventory('.', temporary, 'https://sheet.test', boundedTimeout, async (url, options) => {
+      assert.equal(options.redirect, 'manual');
+      assert.equal(options.signal.aborted, false);
+      return new Response(bodies.get(new URL(url).pathname.slice(1)), { status: 200 });
+    });
+    assert.deepEqual(timeoutRequests, [5_000, 5_000]);
+    assert.equal(timeout(5_000), 2_400);
+    assert.equal(inventory.status, 'PASS');
+    now = 3_400;
+    assert.throws(() => timeout(5_000), /exhausted its absolute budget/);
+    assert.throws(() => timeout(undefined), /finite positive maximum/);
+  } finally { await rm(temporary, { recursive: true, force: true }); }
 });
 
 test('M6 icon audit finds explicit source and emitted icon references without matching ordinary stylesheet links', () => {
