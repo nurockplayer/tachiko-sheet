@@ -177,8 +177,9 @@ export function classifyM6ProductionProof(readiness, lifecycleReceipt, identity)
     return { status: 'BLOCKED', reason: 'Frozen lifecycle raw evidence includes an HTTP/request/page error.' };
   }
   const expectedAssertion = 'normal Home Sales Open is enabled when the production runtime is ready';
-  if (lifecycleReceipt?.status !== 'BLOCKED_OR_FAIL' || lifecycleReceipt?.phase !== 'cold-Home-and-production-runtime'
-    || lifecycleReceipt?.error?.name !== 'AssertionError' || !lifecycleReceipt.error.message?.includes(expectedAssertion)) {
+  if (lifecycleReceipt?.status !== 'BEHAVIORAL_RED' || lifecycleReceipt?.phase !== 'cold-Home-and-production-runtime'
+    || lifecycleReceipt?.error?.name !== 'AssertionError' || lifecycleReceipt?.error?.code !== 'ERR_ASSERTION'
+    || !lifecycleReceipt.error.message?.includes(expectedAssertion)) {
     return { status: 'BLOCKED', reason: 'The frozen production lifecycle did not fail at its exact Home/Open runtime assertion.' };
   }
   if (!Array.isArray(lifecycleReceipt.processEvidence) || lifecycleReceipt.processEvidence.length !== 1
@@ -202,6 +203,29 @@ export function cleanGateCandidateMatches(candidate, expected, archivedProductEv
   const archived = new Map(archivedProductEvidence);
   return dirty.every(([file, hash]) => file.startsWith('evidence/product-acceptance/')
     && archived.get(file.slice('evidence/product-acceptance/'.length)) === hash);
+}
+
+export function createM6ReadinessProof(mutationIdentity) {
+  return {
+    status: 'BLOCKED', startedAt: nowIso(), httpIndexStatus: null, productionAssetStatus: null,
+    cdpReady: false, browserVersion: null, coldHomeReady: false, browserNavigationStatus: null,
+    mutantCandidateIdentity: mutationIdentity.candidateSha256, mutationPatchSha256: mutationIdentity.patchSha256,
+    mutatedLoaderSha256: mutationIdentity.loaderSha256,
+    diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [] },
+  };
+}
+
+export function finalizeM6ReadinessProof(proof) {
+  const diagnostics = proof?.diagnostics ?? {};
+  const failure = proof?.httpIndexStatus !== 200 || proof?.productionAssetStatus !== 200 || proof?.browserNavigationStatus !== 200
+    || proof?.cdpReady !== true || !proof?.browserVersion || proof?.coldHomeReady !== true
+    || (diagnostics.pageErrors?.length ?? 0) > 0 || (diagnostics.consoleErrors?.length ?? 0) > 0
+    || (diagnostics.requestFailures?.length ?? 0) > 0 || (diagnostics.responseErrors?.length ?? 0) > 0
+    || !(diagnostics.responses ?? []).length
+    || (diagnostics.responses ?? []).some((response) => response.status < 200 || response.status >= 400);
+  return failure
+    ? { status: 'BLOCKED', reason: 'Independent cold-Home readiness contained an HTTP, request, response, console, page or CDP error.' }
+    : { status: 'READINESS_PASS', reason: null };
 }
 
 function rootEvidence() {
@@ -589,12 +613,7 @@ async function settleBefore(promise, timeoutMs, label) {
 
 async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutationIdentity) {
   await mkdir(evidenceDir, { recursive: true });
-  const proof = {
-    status: 'BLOCKED', startedAt: nowIso(), httpIndexStatus: null, productionAssetStatus: null,
-    cdpReady: false, browserVersion: null, coldHomeReady: false, browserNavigationStatus: null,
-    mutantCandidateIdentity: mutationIdentity.candidateSha256, mutationPatchSha256: mutationIdentity.patchSha256,
-    mutatedLoaderSha256: mutationIdentity.loaderSha256, diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responses: [] },
-  };
+  const proof = createM6ReadinessProof(mutationIdentity);
   const probeBudgetMs = boundedM6ProbeBudget(ctx.remainingMs());
   if (probeBudgetMs === null) {
     proof.reason = `remaining job budget ${ctx.remainingMs()}ms is below the bounded M6 readiness probe plus restore/upload reserve.`;
@@ -704,13 +723,8 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     const open = page.getByRole('button', { name: 'Open sales example', exact: true });
     await open.waitFor({ state: 'visible', timeout: opTimeout(5_000) });
     proof.coldHomeReady = true;
-    const statuses = proof.diagnostics.responses.map((response) => response.status);
-    if (proof.httpIndexStatus !== 200 || proof.productionAssetStatus !== 200 || proof.browserNavigationStatus !== 200
-      || proof.diagnostics.pageErrors.length || proof.diagnostics.requestFailures.length || proof.diagnostics.responseErrors.length
-      || proof.diagnostics.consoleErrors.length || statuses.some((status) => status < 200 || status >= 400)) {
-      throw new Error('BLOCKED: independent cold-Home readiness contained an HTTP, request, response, console or page error.');
-    }
-    proof.status = 'READINESS_PASS';
+    Object.assign(proof, finalizeM6ReadinessProof(proof));
+    if (proof.status !== 'READINESS_PASS') throw new Error(`BLOCKED: ${proof.reason}`);
   } catch (error) {
     proof.status = 'BLOCKED';
     proof.reason = error.message;

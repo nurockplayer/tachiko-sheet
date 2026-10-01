@@ -9,7 +9,9 @@ import {
   cleanGateCandidateMatches,
   classifyM6ProductionProof,
   classifyMutationReceipt,
+  createM6ReadinessProof,
   executeFrozenSaveControl,
+  finalizeM6ReadinessProof,
   reconcileHostedProductEvidence,
 } from '../scripts/run-save-closure-mutations.mjs';
 
@@ -127,25 +129,32 @@ test('M6 readiness budget leaves restoration and upload reserve untouched', () =
 });
 
 test('M6 requires the frozen lifecycle Home/Open assertion plus clean independent HTTP/CDP readiness', () => {
-  const readiness = {
-    status: 'READINESS_PASS', httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200,
+  const identity = { candidateSha256: 'a'.repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) };
+  const readiness = createM6ReadinessProof(identity);
+  Object.assign(readiness, {
+    httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200,
     cdpReady: true, browserVersion: 'Chrome/136.0.0.0', coldHomeReady: true,
-    diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [{ status: 200 }, { status: 200 }] },
-  };
+  });
+  readiness.diagnostics.responses.push({ status: 200 }, { status: 200 });
+  assert.deepEqual(readiness.diagnostics.responseErrors, []);
+  Object.assign(readiness, finalizeM6ReadinessProof(readiness));
+  assert.equal(readiness.status, 'READINESS_PASS');
   const lifecycle = {
-    status: 'BLOCKED_OR_FAIL', phase: 'cold-Home-and-production-runtime',
-    error: { name: 'AssertionError', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready' },
-    processEvidence: [{ endpointReady: true, browserVersion: 'Chrome/136.0.0.0' }],
+    status: 'BEHAVIORAL_RED', caseIds: [], expectedCaseIds: ['production-sales-edit-save-process-restart-reopen-edit-png'],
+    base: '375d25ea12262bec32e2303b3c63662f0b69322f', phase: 'cold-Home-and-production-runtime',
+    boundary: 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit',
+    error: { name: 'AssertionError', code: 'ERR_ASSERTION', message: 'AssertionError [ERR_ASSERTION]: normal Home Sales Open is enabled when the production runtime is ready' },
+    processEvidence: [{ launch: 1, pid: 1234, remoteDebuggingPort: 9222, profile: '/tmp/profile', endpointReady: true, browserVersion: 'Chrome/136.0.0.0' }],
     networkEvidence: [{ path: '/index.html', status: 200 }, { path: '/assets/index-app.js', status: 200 }],
     diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [] },
   };
-  const identity = { candidateSha256: 'a'.repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) };
   assert.equal(classifyM6ProductionProof(readiness, lifecycle, identity).status, 'BEHAVIORAL_RED');
   assert.equal(classifyM6ProductionProof({ ...readiness, httpIndexStatus: 404 }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, requestFailures: [{ url: '/unrelated' }] } }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, responses: [...readiness.diagnostics.responses, { status: 404 }] } }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof({ ...readiness, diagnostics: { ...readiness.diagnostics, pageErrors: [{ message: 'unrelated' }] } }, lifecycle, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, error: { name: 'TimeoutError', message: 'Open timed out' } }, identity).status, 'BLOCKED');
+  assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, status: 'BLOCKED' }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, phase: 'served-artifact-identity' }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, networkEvidence: [{ path: '/index.html', status: 404 }] }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, lifecycle, { ...identity, loaderSha256: null }).status, 'BLOCKED');
