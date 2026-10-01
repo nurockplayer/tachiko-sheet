@@ -133,7 +133,16 @@ is empty and preserves the original failure result.
 
 The hosted `product.yml` gate provisions the locked Playwright Chromium on
 `ubuntu-24.04`. A system Chromium diagnostic or a failed official Playwright
-browser download is not managed-browser qualification. M1–M6 disposable fault
-probes remain `NOT RUN` until recorded separately against one-fault-at-a-time
-disposable candidates; the lifecycle seed's blank-PNG negative control is its
+browser download is not managed-browser qualification. On pull requests, after
+the clean gates pass, the serial M1–M6 qualification records each disposable
+fault separately; the lifecycle seed's blank-PNG negative control remains its
 fixed oracle check and does not replace those probes.
+# Issue #146 save-closure mutation qualification
+
+The existing `scripts/run-save-closure-mutations.mjs` wires the accepted M1–M6 fault contract to the frozen Save closure and production acceptance oracles. The product workflow runs it only for pull requests, after the unchanged clean prerequisite/current Save closure and production lifecycle gates pass. It verifies the PR head against the fixed authorized candidate and base before creating any disposable worktree.
+
+Mutations run serially, one fault per detached worktree. Each worktree receives a link to the already-installed dependencies; no package or product source is committed as a fault. Raw source preimages, patch bytes and hashes, per-command output, seed receipts, candidate identities, assertions, and restoration proofs are retained under the workflow evidence directory. Every fault is restored and checked against original source hashes before the clean 7 prerequisite and 11 current cases are rerun. A timeout, navigation/setup failure, incomplete receipt, or unrelated blocked case remains `BLOCKED` and stops further fault runs.
+
+M1’s independent terminal-state controls accept only `Save failed` or `Saved on this device` with the current Save dialog closed. The fixed M1 oracle then asserts the actual Saved state. M2–M5 require the contract’s existing whole-work refusal, producer-dispatch, Date edit, or source-preservation assertion. M6 first runs the existing acceptance gate unchanged against the same production-only loader mutant, archives and clears only its generated evidence, then records fresh acceptance/build receipts and runs a hosted locked-Playwright HTTP/CDP/Home/Open assertion. Only an Open refusal on the patch-hash-bound loader mutant after independent HTTP and browser readiness checks qualifies as M6 RED; timeout or setup errors remain BLOCKED. After restoring M6, the clean production build and lifecycle gate run again.
+
+The mutation stage stays within the workflow’s existing 20-minute job timeout and reserves time for owned-process cleanup, evidence writes, and artifact upload. It does not change frozen seed files, Work pin, manifest, fixtures, workflow permissions, dependencies, or acceptance rules. No Mac browser is launched; M6 uses only the existing hosted Ubuntu Playwright installation.

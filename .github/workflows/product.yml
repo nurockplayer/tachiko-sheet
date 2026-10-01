@@ -20,12 +20,16 @@ jobs:
     timeout-minutes: 20
     env:
       TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: /tmp/tachiko-sheet-146-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+      TACHIKO_MUTATION_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Start qualification budget clock
+        run: printf 'TACHIKO_QUALIFICATION_STARTED_AT=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -78,6 +82,12 @@ jobs:
 
       - name: "Run Sheet #146 production lifecycle acceptance"
         run: pnpm acceptance:production-lifecycle
+
+      - name: "Run serial Sheet #146 save-closure mutation qualification"
+        if: github.event_name == 'pull_request'
+        run: |
+          node --test tests/save-closure-mutations.test.mjs
+          node scripts/run-save-closure-mutations.mjs
 
       - name: Retain Sheet #146 acceptance evidence
         if: always()
