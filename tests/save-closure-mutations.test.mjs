@@ -316,15 +316,20 @@ test('M6 clean/mutant favicon parity remains diagnostic and every observed 404 s
     const proof = createM6ReadinessProof({ candidateSha256: (candidateKind === 'mutant' ? 'a' : 'f').repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) }, { candidateKind });
     proof.browserVersion = 'Chrome/151.0.7922.34';
     proof.productionEntryAssetPath = entryPath;
+    const indexHtml = `<html><head></head><body><script type="module" src="${entryPath}"></script></body></html>`;
+    const indexHash = createHash('sha256').update(indexHtml).digest('hex');
+    proof.independentHttpGets.push({ name: 'production-index', url: `http://127.0.0.1:${port}/`, method: 'GET', status: 200,
+      bodyText: indexHtml, bodyByteCount: Buffer.byteLength(indexHtml), bodySha256: indexHash });
     proof.independentHttpGets.push({ name: 'production-favicon', requestedUrl: `http://127.0.0.1:${port}/favicon.ico`,
       url: `http://127.0.0.1:${port}/favicon.ico`, sameOrigin: true, method: 'GET', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' });
     proof.sourceIconAudit = { status: 'PASS', references: [] };
-    proof.emittedHtmlAudit = { status: 'PASS', references: [], domAudit: { iconLinks: [], references: [] } };
+    proof.emittedHtmlAudit = { status: 'PASS', byteCount: Buffer.byteLength(indexHtml), sha256: indexHash,
+      references: [], domAudit: { iconLinks: [], references: [] } };
     const blankDom = '<html><head></head><body>blank control</body></html>';
     proof.hookFreeControl = { status: 'CONTROL_OBSERVED', browserVersion: proof.browserVersion,
       domAudit: { outerHtml: blankDom, htmlByteCount: Buffer.byteLength(blankDom), htmlSha256: createHash('sha256').update(blankDom).digest('hex'), scriptCount: 0, links: [] },
       serverRequests: [{ method: 'GET', path: '/favicon.ico', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' }] };
-    const files = [['index.html', '1'.repeat(64)], [entryPath.slice(1), entryHash],
+    const files = [['index.html', indexHash], [entryPath.slice(1), entryHash],
       ['core-kit/experimental-client.worker.js', '2'.repeat(64)], ['core-kit/designer_runtime.wasm', '3'.repeat(64)]];
     proof.assetInventoryVerification = { status: 'PASS', recordedArtifactDigest: candidateKind, expectedFiles: files.map(([path, sha256]) => ({ path, sha256 })) };
     return proof;
@@ -398,8 +403,9 @@ function m6AuxiliaryFixture(kind, port) {
   const faviconBody = 'Not found';
   const faviconHash = createHash('sha256').update(faviconBody).digest('hex');
   const entry = `assets/index-${kind}.js`;
+  const indexHtml = `<html><head></head><body><script type="module" src="/${entry}"></script></body></html>`;
   const files = [
-    ['index.html', '1'.repeat(64)], [entry, kind === 'mutant' ? '2'.repeat(64) : '3'.repeat(64)],
+    ['index.html', createHash('sha256').update(indexHtml).digest('hex')], [entry, kind === 'mutant' ? '2'.repeat(64) : '3'.repeat(64)],
     ['assets/index.css', '4'.repeat(64)], ['core-kit/experimental-client.worker.js', '5'.repeat(64)],
     ['core-kit/designer_runtime.wasm', '6'.repeat(64)],
   ];
@@ -424,13 +430,14 @@ function m6AuxiliaryFixture(kind, port) {
   const requests = files.map(([file]) => ({ url: `${origin}/${file}`, method: 'GET', resourceType:
     file.endsWith('.css') ? 'stylesheet' : file.endsWith('.wasm') ? 'fetch' : file.endsWith('index.html') ? 'document' : 'script' }));
   const proof = {
-    status: 'BLOCKED', candidateKind: kind, candidateIdentity: candidateSha,
+    status: 'BLOCKED', reason: 'Independent cold-Home readiness contained an HTTP, request, response, console, page or CDP error.', candidateKind: kind, candidateIdentity: candidateSha,
     mutantCandidateIdentity: kind === 'mutant' ? candidateSha : null,
     httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200, cdpReady: true, coldHomeReady: true,
     browserVersion: 'Chrome/151.0.7922.34', playwrightVersion: '1.62.1', buildDigest: artifact.digest,
     productionEntryAssetPath: `/${entry}`,
     independentHttpGets: [
-      { name: 'production-index', url: `${origin}/`, method: 'GET', status: 200 },
+      { name: 'production-index', url: `${origin}/`, method: 'GET', status: 200,
+        bodyByteCount: Buffer.byteLength(indexHtml), bodySha256: createHash('sha256').update(indexHtml).digest('hex'), bodyText: indexHtml },
       { name: 'production-entry', url: `${origin}/${entry}`, method: 'GET', status: 200 },
       { name: 'production-favicon', requestedUrl: `${origin}/favicon.ico`, url: `${origin}/favicon.ico`,
         sameOrigin: true, method: 'GET', status: 404, redirected: false, bodyByteCount: Buffer.byteLength(faviconBody),
@@ -438,9 +445,10 @@ function m6AuxiliaryFixture(kind, port) {
     ],
     diagnostics: { requests, responses: requests.map((row) => ({ ...row, status: 200 })),
       consoleErrors: [faviconConsole(`${origin}/favicon.ico`)], pageErrors: [], requestFailures: [], responseErrors: [], captureErrors: [], droppedEvents: 0 },
-    sourceIconAudit: { status: 'PASS', references: [] },
-    emittedHtmlAudit: { status: 'PASS', references: [],
-      entryScriptAudit: { path: entry, sha256: files.find(([file]) => file === entry)[1], references: [] },
+    sourceIconAudit: { status: 'PASS', references: [], sourceFiles: [{ path: 'index.html', sha256: 'a'.repeat(64) }] },
+    emittedHtmlAudit: { status: 'PASS', byteCount: Buffer.byteLength(indexHtml), sha256: createHash('sha256').update(indexHtml).digest('hex'), references: [],
+      entryScriptAudit: { path: entry, sha256: files.find(([file]) => file === entry)[1],
+        expectedSha256: files.find(([file]) => file === entry)[1], references: [] },
       scriptAssets: files.filter(([file]) => /\.m?js$/i.test(file)).map(([path, sha256]) =>
         ({ path, sha256, expectedSha256: sha256, references: [] })),
       domAudit: { url: `${origin}/`, references: [], iconLinks: [] } },
@@ -457,24 +465,38 @@ function m6AuxiliaryFixture(kind, port) {
 }
 
 function m6LifecycleFixture(fixture, readiness, expectedStatus) {
-  const origin = 'http://127.0.0.1:4197';
+  const origin = readiness.independentHttpGets.find((row) => row.name === 'production-index').url.replace(/\/$/, '');
   const target = `${origin}/favicon.ico`;
-  const errors = [1, 2].map((launch) => ({ launch,
+  const launches = expectedStatus === 'BEHAVIORAL_RED' ? [1] : [1, 2];
+  const errors = launches.map((launch) => ({ launch,
     message: 'Failed to load resource: the server responded with a status of 404 (Not Found)', url: target }));
-  const processEvidence = [1, 2].map((launch) => ({ launch, endpointReady: true,
-    browserVersion: 'Chrome/151.0.7922.34', exit: { observed: true, signal: null, code: 0 } }));
+  const processEvidence = launches.map((launch) => ({ launch, endpointReady: true,
+    browserVersion: 'Chrome/151.0.7922.34', ...(expectedStatus === 'PASS' ? { exit: { observed: true, signal: null, code: 0 } } : {}) }));
+  const inventory = fixture.artifact;
+  const served = fixture.files.map(([path, sha256]) => ({ path: `/${path}`, sha256, status: 200 }));
   const receipt = {
     status: expectedStatus, base: '375d25ea12262bec32e2303b3c63662f0b69322f',
     boundary: 'production lifecycle seed; setup/HTTP/browser errors are never mutant credit',
-    phase: 'cold-Home-and-production-runtime', caseIds: [],
+    phase: 'cold-Home-and-production-runtime', caseIds: expectedStatus === 'PASS' ? ['production-sales-edit-save-process-restart-reopen-edit-png'] : [],
     expectedCaseIds: ['production-sales-edit-save-process-restart-reopen-edit-png'],
-    error: { name: 'AssertionError', message: 'normal Home Sales Open is enabled when the production runtime is ready' },
-    environment: { origin, playwrightVersion: '1.62.1', executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', browserVersion: 'Chrome/151.0.7922.34' },
+    ...(expectedStatus === 'BEHAVIORAL_RED' ? {
+      origin,
+      productionInventory: inventory,
+      acceptanceInventory: fixture.acceptanceArtifact ?? inventory,
+      networkEvidence: served.map((row) => ({ ...row, pid: 42, launch: 1 })),
+      error: { name: 'AssertionError', message: 'normal Home Sales Open is enabled when the production runtime is ready', stack: 'AssertionError: Home/Open\n    at frozen lifecycle' },
+    } : {
+      error: null,
+      environment: { node: 'v24.15.0', platform: 'linux', arch: 'x64', origin, playwrightVersion: '1.62.1',
+        executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', browserVersion: 'Chrome/151.0.7922.34',
+        profile: '/tmp/profile', copyName: 'fixture-copy' },
+      artifacts: { production: inventory, acceptance: fixture.acceptanceArtifact ?? inventory,
+        productionManifestSha256: inventory.digest, acceptanceManifestSha256: (fixture.acceptanceArtifact ?? inventory).digest,
+        servedResponses: served, png: { path: '/tmp/result.png', sha256: 'a'.repeat(64), bytes: 10, facts: { status: 'PASS' },
+          blankPngControl: 'REJECTED_AS_EXPECTED' } },
+    }),
     processEvidence,
     diagnostics: { consoleErrors: errors, pageErrors: [], requestFailures: [], responseErrors: [], captureErrors: [], droppedEvents: 0 },
-    networkEvidence: [],
-    artifacts: { production: fixture.artifact,
-      servedResponses: fixture.files.map(([path, sha256]) => ({ path, sha256, status: 200 })) },
   };
   const summary = { status: expectedStatus, lifecycle: expectedStatus, candidate: { sha256: fixture.candidateSha },
     command: { outcome: 'EXITED', exitCode: expectedStatus === 'BEHAVIORAL_RED' ? 1 : 0 },
@@ -482,14 +504,24 @@ function m6LifecycleFixture(fixture, readiness, expectedStatus) {
   const faviconProbe = { status: 'PASS', origin, method: 'GET', requestedUrl: target, url: target, sameOrigin: true,
     redirected: false, statusCode: 404, bodyByteCount: fixture.faviconBody.length,
     bodySha256: fixture.faviconHash, bodyText: fixture.faviconBody, cleanupErrors: [], serverExit: { observed: true, code: 0 } };
-  return { receipt, summary, buildReceipt: fixture.buildReceipt, faviconProbe };
+  const browserProvenance = { status: 'PASS', candidateSha256: fixture.candidateSha, buildDigest: fixture.artifact.digest,
+    frozenSeedSha256: 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
+    playwrightTestVersion: '1.62.1', playwrightCoreVersion: '1.62.1',
+    executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', executableIsFile: true, executableBytes: 100 };
+  return { receipt: JSON.parse(JSON.stringify(receipt)), summary, buildReceipt: fixture.buildReceipt, faviconProbe, browserProvenance };
 }
 
 test('M6 auxiliary default-favicon disposition requires paired readiness and frozen lifecycle provenance', () => {
   const mutant = m6AuxiliaryFixture('mutant', 3101);
-  const clean = m6AuxiliaryFixture('clean', 3102);
+  const clean = m6AuxiliaryFixture('clean', 3101);
   const mutantLifecycle = m6LifecycleFixture(mutant, mutant.proof, 'BEHAVIORAL_RED');
   const cleanLifecycle = m6LifecycleFixture(clean, clean.proof, 'PASS');
+  assert.equal(Object.hasOwn(mutantLifecycle.receipt, 'environment'), false);
+  assert.equal(Object.hasOwn(mutantLifecycle.receipt, 'artifacts'), false);
+  assert.equal(mutantLifecycle.receipt.processEvidence.length, 1);
+  assert.equal(Object.hasOwn(mutantLifecycle.receipt.processEvidence[0], 'exit'), false);
+  assert.equal(cleanLifecycle.receipt.processEvidence.length, 2);
+  assert.equal(cleanLifecycle.receipt.processEvidence.every((row) => row.exit?.observed === true), true);
   cleanLifecycle.receipt.caseIds = ['production-sales-edit-save-process-restart-reopen-edit-png'];
   cleanLifecycle.receipt.error = null;
   const comparison = compareM6DiagnosticEvidence(mutant.proof, clean.proof);
@@ -498,17 +530,31 @@ test('M6 auxiliary default-favicon disposition requires paired readiness and fro
   changedHtml.assetInventoryVerification.expectedFiles[0].sha256 = 'e'.repeat(64);
   assert.equal(compareM6DiagnosticEvidence(mutant.proof, changedHtml).auxiliaryEvidenceParity, false,
     'the clean/mutant parity check includes emitted index.html');
+  const unexpectedHtml = structuredClone(clean.proof);
+  const indexBody = unexpectedHtml.independentHttpGets.find((row) => row.name === 'production-index');
+  indexBody.bodyText = indexBody.bodyText.replace('</head>', '<meta name="unexpected-change"> </head>');
+  indexBody.bodyByteCount = Buffer.byteLength(indexBody.bodyText);
+  indexBody.bodySha256 = createHash('sha256').update(indexBody.bodyText).digest('hex');
+  unexpectedHtml.emittedHtmlAudit.byteCount = indexBody.bodyByteCount;
+  unexpectedHtml.emittedHtmlAudit.sha256 = indexBody.bodySha256;
+  unexpectedHtml.assetInventoryVerification.expectedFiles.find((row) => row.path === 'index.html').sha256 = indexBody.bodySha256;
+  unexpectedHtml.assetInventoryVerification.observedRows.find((row) => row.path === 'index.html').bodySha256 = indexBody.bodySha256;
+  const unexpectedParity = compareM6DiagnosticEvidence(mutant.proof, unexpectedHtml);
+  assert.equal(unexpectedParity.artifactParity.indexHtmlParity, false,
+    'only the exact candidate-specific production script reference is normalized in index.html');
+  assert.equal(unexpectedParity.auxiliaryEvidenceParity, false);
   assert.equal(classifyM6ReadinessFaviconDisposition(mutant.proof,
     { candidateSha256: mutant.candidateSha }, mutant.buildReceipt).status, 'AUXILIARY_CANDIDATE');
   assert.equal(classifyM6LifecycleFaviconDisposition(mutantLifecycle.receipt, mutantLifecycle.summary,
-    mutant.buildReceipt, mutantLifecycle.faviconProbe, mutant.candidateSha, mutant.proof).status, 'AUXILIARY_CANDIDATE');
+    mutant.buildReceipt, mutantLifecycle.faviconProbe, mutant.candidateSha, mutant.proof, 'BEHAVIORAL_RED', mutantLifecycle.browserProvenance).status, 'AUXILIARY_CANDIDATE');
   assert.equal(classifyM6LifecycleFaviconDisposition(cleanLifecycle.receipt, cleanLifecycle.summary,
-    clean.buildReceipt, cleanLifecycle.faviconProbe, clean.candidateSha, clean.proof, 'PASS').status, 'AUXILIARY_CANDIDATE');
+    clean.buildReceipt, cleanLifecycle.faviconProbe, clean.candidateSha, clean.proof, 'PASS', cleanLifecycle.browserProvenance).status, 'AUXILIARY_CANDIDATE');
   const disposition = finalizeM6AuxiliaryDisposition({
     mutantReadiness: mutant.proof, cleanReadiness: clean.proof,
     mutantIdentity: { candidateSha256: mutant.candidateSha }, cleanIdentity: { candidateSha256: clean.candidateSha },
     mutantBuildReceipt: mutant.buildReceipt, cleanBuildReceipt: clean.buildReceipt,
-    mutantLifecycle, cleanLifecycle, comparison,
+    mutantLifecycle: { ...mutantLifecycle, buildReceipt: mutant.buildReceipt },
+    cleanLifecycle: { ...cleanLifecycle, buildReceipt: clean.buildReceipt }, comparison,
     mutantReadinessSha256: '7'.repeat(64), cleanReadinessSha256: '8'.repeat(64),
     mutantLifecycleReceiptSha256: '9'.repeat(64), cleanLifecycleReceiptSha256: '0'.repeat(64),
   });
@@ -517,6 +563,7 @@ test('M6 auxiliary default-favicon disposition requires paired readiness and fro
     { candidateSha256: mutant.candidateSha, patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) }, {
       disposition, mutantBuildReceipt: mutant.buildReceipt, mutantLifecycleSummary: mutantLifecycle.summary,
       mutantLifecycleFaviconProbe: mutantLifecycle.faviconProbe,
+      mutantLifecycleBrowserProvenance: mutantLifecycle.browserProvenance,
       mutantReadinessSha256: disposition.receipts.mutantReadinessSha256,
       mutantLifecycleReceiptSha256: disposition.receipts.mutantLifecycleReceiptSha256,
     }).status, 'BEHAVIORAL_RED');
@@ -547,6 +594,15 @@ test('M6 readiness and lifecycle validators reject unsafe error, attribution, id
     ['explicit-icon-fetch-request', (p) => { p.diagnostics.requests.push({ url: `${mutant.origin}/favicon.ico`, method: 'GET', resourceType: 'fetch' }); }],
     ['wrong-candidate', (p) => { p.candidateIdentity = 'e'.repeat(64); }],
     ['wrong-build', (p) => { p.buildDigest = 'e'.repeat(64); }],
+    ['missing-required-array', (p) => { delete p.diagnostics.captureErrors; }],
+    ['missing-dropped-event-count', (p) => { delete p.diagnostics.droppedEvents; }],
+    ['missing-source-audit-arrays', (p) => { delete p.sourceIconAudit.references; }],
+    ['duplicate-script-replaces-worker', (p) => { p.emittedHtmlAudit.scriptAssets[1].path = p.emittedHtmlAudit.scriptAssets[0].path; }],
+    ['wrong-production-index-url', (p) => { p.independentHttpGets[0].url = `${mutant.origin}/other`; }],
+    ['wrong-emitted-html-hash', (p) => { p.emittedHtmlAudit.sha256 = 'e'.repeat(64); }],
+    ['explicit-readiness-timeout', (p) => { p.reason = 'TimeoutError: readiness probe timed out'; }],
+    ['control-close-error', (p) => { p.hookFreeControl.closeError = 'context close failed'; }],
+    ['control-server-close-error', (p) => { p.hookFreeControl.serverCloseError = 'server close failed'; }],
   ];
   for (const [name, mutateReadiness] of cases) {
     const bad = structuredClone(mutant.proof);
@@ -573,13 +629,15 @@ test('M6 readiness and lifecycle validators reject unsafe error, attribution, id
     ['wrong-candidate', (l) => { l.summary.candidate.sha256 = 'e'.repeat(64); }],
     ['wrong-build', (l) => { l.summary.buildEvidence.artifact.digest = 'e'.repeat(64); }],
     ['wrong-body-identity', (l) => { l.faviconProbe.bodySha256 = 'e'.repeat(64); }],
-    ['browser-exit-unobserved', (l) => { l.receipt.processEvidence[1].exit.observed = false; }],
+    ['wrong-body-byte-count', (l) => { l.faviconProbe.bodyByteCount = 10; }],
+    ['owned-server-kill', (l) => { l.faviconProbe.serverExit.code = 1; l.faviconProbe.serverExit.signal = 'SIGKILL'; }],
+    ['browser-exit-unobserved', (l) => { l.receipt.processEvidence[0].endpointReady = false; }],
   ];
   for (const [name, mutateLifecycle] of badLifecycleCases) {
     const bad = structuredClone(lifecycle);
     mutateLifecycle(bad);
     const result = classifyM6LifecycleFaviconDisposition(bad.receipt, bad.summary,
-      bad.buildReceipt, bad.faviconProbe, mutant.candidateSha, mutant.proof);
+      bad.buildReceipt, bad.faviconProbe, mutant.candidateSha, mutant.proof, 'BEHAVIORAL_RED', bad.browserProvenance);
     assert.equal(result.status, 'BLOCKED', name);
   }
   const comparison = compareM6DiagnosticEvidence(mutant.proof, clean.proof);

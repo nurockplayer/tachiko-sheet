@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -172,7 +173,8 @@ export function classifyM6ProductionProof(readiness, lifecycleReceipt, identity,
   const disposition = auxiliaryContext?.disposition;
   const mutantReadyDisposition = classifyM6ReadinessFaviconDisposition(readiness, identity, auxiliaryContext?.mutantBuildReceipt);
   const mutantLifecycleDisposition = classifyM6LifecycleFaviconDisposition(lifecycleReceipt, auxiliaryContext?.mutantLifecycleSummary,
-    auxiliaryContext?.mutantBuildReceipt, auxiliaryContext?.mutantLifecycleFaviconProbe, identity?.candidateSha256, readiness, 'BEHAVIORAL_RED');
+    auxiliaryContext?.mutantBuildReceipt, auxiliaryContext?.mutantLifecycleFaviconProbe, identity?.candidateSha256, readiness,
+    'BEHAVIORAL_RED', auxiliaryContext?.mutantLifecycleBrowserProvenance);
   const auxiliaryAuthorized = disposition?.status === 'AUXILIARY_DEFAULT_FAVICON_404'
     && disposition.readinessRuleChanged === false && disposition.rawErrorsPreserved === true
     && disposition.mutantCandidateIdentity === identity?.candidateSha256
@@ -218,12 +220,15 @@ export function classifyM6ProductionProof(readiness, lifecycleReceipt, identity,
     || lifecycleReceipt?.error?.name !== 'AssertionError' || !lifecycleReceipt.error.message?.includes(expectedAssertion)) {
     return { status: 'BLOCKED', reason: 'The frozen production lifecycle did not fail at its exact Home/Open runtime assertion.' };
   }
-  if (!Array.isArray(lifecycleReceipt.processEvidence) || lifecycleReceipt.processEvidence.length !== 2
-    || JSON.stringify(lifecycleReceipt.processEvidence.map((row) => row.launch).sort()) !== JSON.stringify([1, 2])
-    || lifecycleReceipt.processEvidence.some((row) => row.endpointReady !== true || !row.browserVersion
-      || row.exit?.observed !== true || row.exit.code !== 0 || row.exit.signal !== null)) {
-    return { status: 'BLOCKED', reason: 'The frozen lifecycle raw receipt lacks both managed-browser process restart and clean exit proofs.' };
-  }
+  const processEvidenceValid = lifecycleAuxiliaryAuthorized
+    ? Array.isArray(lifecycleReceipt.processEvidence) && lifecycleReceipt.processEvidence.length === 1 && lifecycleReceipt.processEvidence[0]?.launch === 1
+      && lifecycleReceipt.processEvidence[0].endpointReady === true && Boolean(lifecycleReceipt.processEvidence[0].browserVersion)
+      && !Object.hasOwn(lifecycleReceipt.processEvidence[0], 'exit')
+    : Array.isArray(lifecycleReceipt.processEvidence) && lifecycleReceipt.processEvidence.length === 2
+      && JSON.stringify(lifecycleReceipt.processEvidence.map((row) => row.launch).sort()) === JSON.stringify([1, 2])
+      && lifecycleReceipt.processEvidence.every((row) => row.endpointReady === true && row.browserVersion
+        && row.exit?.observed === true && row.exit.code === 0 && row.exit.signal === null);
+  if (!processEvidenceValid) return { status: 'BLOCKED', reason: 'The frozen lifecycle raw receipt does not match its qualified status-specific browser process shape.' };
   return { status: 'BEHAVIORAL_RED', assertion: expectedAssertion, phase: lifecycleReceipt.phase, error: lifecycleReceipt.error };
 }
 
@@ -379,7 +384,7 @@ export function compareM6DiagnosticEvidence(mutant, clean) {
   const mutantEntry = mutant?.productionEntryAssetPath ?? null;
   const cleanEntry = clean?.productionEntryAssetPath ?? null;
   const ignored = new Set([mutantEntry?.replace(/^\//, ''), cleanEntry?.replace(/^\//, '')].filter(Boolean));
-  const shared = [...mutantRows.keys()].filter((file) => cleanRows.has(file) && !ignored.has(file));
+  const shared = [...mutantRows.keys()].filter((file) => cleanRows.has(file) && !ignored.has(file) && file !== 'index.html');
   const assetDifferences = [];
   for (const file of shared) if (mutantRows.get(file) !== cleanRows.get(file)) assetDifferences.push(file);
   const nonEntryOnlyMutant = [...mutantRows.keys()].filter((file) => !cleanRows.has(file) && !ignored.has(file));
@@ -398,6 +403,23 @@ export function compareM6DiagnosticEvidence(mutant, clean) {
   const faviconParity = Boolean(mutantFavicon && cleanFavicon && sameJson(mutantFavicon, cleanFavicon));
   const controlParity = Boolean(mutantControl && cleanControl && sameJson(mutantControl, cleanControl));
   const browserParity = Boolean(mutant?.browserVersion && mutant.browserVersion === clean?.browserVersion);
+  const exactIndex = (proof, entryPath) => {
+    const row = proof?.independentHttpGets?.find((item) => item.name === 'production-index');
+    const origin = m6ReadinessOrigin(proof);
+    const entry = normalizedLifecycleAssetPath(entryPath);
+    if (!row || !origin || !entry || row.url !== `${origin}/` || row.method !== 'GET' || row.status !== 200
+      || typeof row.bodyText !== 'string' || Buffer.byteLength(row.bodyText, 'utf8') !== row.bodyByteCount
+      || bytesHash(Buffer.from(row.bodyText, 'utf8')) !== row.bodySha256
+      || row.bodyByteCount !== proof.emittedHtmlAudit?.byteCount || row.bodySha256 !== proof.emittedHtmlAudit?.sha256) return null;
+    const scriptTags = [...row.bodyText.matchAll(/<script\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>\s*<\/script\s*>/gi)];
+    if (scriptTags.length !== 1 || scriptTags[0][2] !== entryPath) return null;
+    const normalized = row.bodyText.replace(scriptTags[0][0], scriptTags[0][0].replace(scriptTags[0][2], '<QUALIFIED-PRODUCTION-ENTRY>'));
+    return { normalized, sha256: row.bodySha256, byteCount: row.bodyByteCount, entryPath };
+  };
+  const mutantIndex = exactIndex(mutant, mutantEntry);
+  const cleanIndex = exactIndex(clean, cleanEntry);
+  const indexHtmlParity = Boolean(mutantIndex && cleanIndex && mutantRows.get('index.html') === mutantIndex.sha256
+    && cleanRows.get('index.html') === cleanIndex.sha256 && mutantIndex.normalized === cleanIndex.normalized);
   const normalizePath = (url, entryPath) => {
     if (!url) return url ?? null;
     try {
@@ -421,7 +443,7 @@ export function compareM6DiagnosticEvidence(mutant, clean) {
   const mutantDiagnostics = normalizeDiagnostics(mutant);
   const cleanDiagnostics = normalizeDiagnostics(clean);
   const productDiagnosticsParity = sameJson(mutantDiagnostics, cleanDiagnostics);
-  const artifactParity = mutantAssets?.status === 'PASS' && cleanAssets?.status === 'PASS'
+  const artifactParity = mutantAssets?.status === 'PASS' && cleanAssets?.status === 'PASS' && indexHtmlParity
     && assetDifferences.length === 0 && nonEntryOnlyMutant.length === 0 && nonEntryOnlyClean.length === 0;
   const auxiliaryEvidenceParity = faviconParity && controlParity && browserParity && artifactParity
     && sourceClean(mutant) && sourceClean(clean) && emittedClean(mutant) && emittedClean(clean)
@@ -447,6 +469,9 @@ export function compareM6DiagnosticEvidence(mutant, clean) {
       matchedSharedAssetCount: shared.length,
       requiredCoreKitAssetCount: requiredCoreAssets.length,
       changedSharedAssets: assetDifferences,
+      indexHtmlParity,
+      mutantIndexHtmlSha256: mutantIndex?.sha256 ?? null,
+      cleanIndexHtmlSha256: cleanIndex?.sha256 ?? null,
       mutantOnlyAssets: nonEntryOnlyMutant,
       cleanOnlyAssets: nonEntryOnlyClean,
       mutantBuildDigest: mutantAssets?.recordedArtifactDigest ?? null,
@@ -625,7 +650,8 @@ function validM6FaviconFetch(row, origin) {
     && (typeof row.status === 'number' ? row.status : row.statusCode) === 404
     && Number.isSafeInteger(row.bodyByteCount) && row.bodyByteCount > 0 && row.bodyByteCount <= 64 * 1024
     && /^[a-f0-9]{64}$/.test(row.bodySha256 ?? '') && typeof row.bodyText === 'string'
-    && row.bodyText.length <= 64 * 1024 && bytesHash(Buffer.from(row.bodyText, 'utf8')) === row.bodySha256);
+    && row.bodyText.length <= 64 * 1024 && Buffer.byteLength(row.bodyText, 'utf8') === row.bodyByteCount
+    && bytesHash(Buffer.from(row.bodyText, 'utf8')) === row.bodySha256);
 }
 
 function onlyM6FaviconConsoleError(rows, target, { launches = null } = {}) {
@@ -636,12 +662,12 @@ function onlyM6FaviconConsoleError(rows, target, { launches = null } = {}) {
 }
 
 function noM6OtherDiagnostics(diagnostics, { allowedConsole = false } = {}) {
-  return (diagnostics?.pageErrors?.length ?? 0) === 0
-    && (diagnostics?.requestFailures?.length ?? 0) === 0
-    && (diagnostics?.responseErrors?.length ?? 0) === 0
-    && (diagnostics?.captureErrors?.length ?? 0) === 0
-    && (diagnostics?.droppedEvents ?? 0) === 0
-    && (allowedConsole || (diagnostics?.consoleErrors?.length ?? 0) === 0);
+  return ['pageErrors', 'requestFailures', 'responseErrors', 'captureErrors', 'consoleErrors'].every((key) =>
+    Array.isArray(diagnostics?.[key]))
+    && diagnostics.pageErrors.length === 0 && diagnostics.requestFailures.length === 0
+    && diagnostics.responseErrors.length === 0 && diagnostics.captureErrors.length === 0
+    && Number.isSafeInteger(diagnostics.droppedEvents) && diagnostics.droppedEvents === 0
+    && (allowedConsole || diagnostics.consoleErrors.length === 0);
 }
 
 function inventoryRowsMatch(receipt, observed, origin) {
@@ -676,21 +702,33 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
   const controlFavicon = controlOrigin && `${controlOrigin}/favicon.ico`;
   const controlRoot = (control?.serverRequests ?? []).find((row) => row.method === 'GET' && row.path === '/');
   const controlIcon = (control?.serverRequests ?? []).filter((row) => row.path?.split('?')[0] === '/favicon.ico');
-  const sourceClear = proof?.sourceIconAudit?.status === 'PASS' && (proof.sourceIconAudit.references ?? []).length === 0;
+  const sourceClear = proof?.sourceIconAudit?.status === 'PASS' && Array.isArray(proof.sourceIconAudit.references)
+    && proof.sourceIconAudit.references.length === 0 && Array.isArray(proof.sourceIconAudit.sourceFiles)
+    && proof.sourceIconAudit.sourceFiles.length > 0;
   const emitted = proof?.emittedHtmlAudit;
   const recordedFiles = buildReceipt?.artifact?.files;
   const expectedScripts = Array.isArray(recordedFiles) ? recordedFiles.filter((row) => Array.isArray(row)
     && typeof row[0] === 'string' && /\.m?js$/i.test(row[0])) : [];
   const emittedScripts = emitted?.scriptAssets ?? [];
-  const emittedScriptsBound = expectedScripts.length > 0 && Array.isArray(emittedScripts) && emittedScripts.length === expectedScripts.length
-    && emittedScripts.every((row) => row && expectedScripts.some(([file, sha256]) => row.path === file && row.sha256 === sha256 && row.expectedSha256 === sha256))
+  const expectedScriptMap = new Map(expectedScripts);
+  const emittedScriptMap = new Map(Array.isArray(emittedScripts) ? emittedScripts.filter((row) => row && typeof row.path === 'string').map((row) => [row.path, row]) : []);
+  const emittedScriptsBound = expectedScripts.length > 0 && Array.isArray(emittedScripts) && emittedScriptMap.size === expectedScripts.length
+    && emittedScripts.length === expectedScripts.length && [...expectedScriptMap].every(([file, sha256]) => {
+      const row = emittedScriptMap.get(file);
+      return row?.sha256 === sha256 && row.expectedSha256 === sha256 && Array.isArray(row.references);
+    })
     && emitted?.entryScriptAudit?.path === proof?.productionEntryAssetPath?.replace(/^\//, '')
-    && emitted.entryScriptAudit.sha256 === expectedScripts.find(([file]) => file === proof.productionEntryAssetPath?.replace(/^\//, ''))?.[1];
-  const emittedClear = emitted?.status === 'PASS' && (emitted.references ?? []).length === 0
-    && (emitted.entryScriptAudit?.references ?? []).length === 0
-    && (emitted.scriptAssets ?? []).every((row) => (row.references ?? []).length === 0)
+    && emitted.entryScriptAudit.sha256 === expectedScriptMap.get(proof.productionEntryAssetPath?.replace(/^\//, ''))
+    && emitted.entryScriptAudit.expectedSha256 === emitted.entryScriptAudit.sha256
+    && Array.isArray(emitted.entryScriptAudit.references)
+    && emitted.byteCount === (proof.independentHttpGets ?? []).find((row) => row.name === 'production-index')?.bodyByteCount
+    && emitted.sha256 === (proof.independentHttpGets ?? []).find((row) => row.name === 'production-index')?.bodySha256;
+  const emittedClear = emitted?.status === 'PASS' && Array.isArray(emitted.references) && emitted.references.length === 0
+    && emittedScriptsBound && Array.isArray(emitted.scriptAssets)
+    && emitted.scriptAssets.every((row) => Array.isArray(row.references) && row.references.length === 0)
+    && Array.isArray(emitted.domAudit?.references) && Array.isArray(emitted.domAudit?.iconLinks)
     && emittedScriptsBound
-    && (emitted.domAudit?.references ?? []).length === 0 && (emitted.domAudit?.iconLinks ?? []).length === 0;
+    && emitted.domAudit.references.length === 0 && emitted.domAudit.iconLinks.length === 0;
   const expectedConsole = onlyM6FaviconConsoleError(proof?.diagnostics?.consoleErrors, target)
     && proof.diagnostics.consoleErrors.length === 1
     && noM6OtherDiagnostics(proof?.diagnostics, { allowedConsole: true });
@@ -704,16 +742,20 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
     && control.diagnostics.responses[0].url === `${controlOrigin}/` && control.diagnostics.responses[0].status === 200
     && control.diagnostics.responses[0].method === 'GET' && control.diagnostics.responses[0].resourceType === 'document';
   const controlValid = control?.status === 'CONTROL_OBSERVED' && control.browserVersion === proof?.browserVersion
+    && !control.closeError && !control.serverCloseError
     && control.browserFaviconRequestObserved === true
     && control.navigationStatus === 200
     && controlNetwork
     && control.domAudit?.scriptCount === 0 && Array.isArray(control.domAudit?.links) && control.domAudit.links.length === 0
-    && (control.domAudit?.iconLinks ?? []).length === 0 && (control.domAudit?.references ?? []).length === 0
+    && Array.isArray(control.domAudit?.iconLinks) && control.domAudit.iconLinks.length === 0
+    && Array.isArray(control.domAudit?.references) && control.domAudit.references.length === 0
     && typeof control.domAudit?.outerHtml === 'string' && Buffer.byteLength(control.domAudit.outerHtml) === control.domAudit.htmlByteCount
     && bytesHash(Buffer.from(control.domAudit.outerHtml)) === control.domAudit.htmlSha256
     && (control.serverRequests ?? []).length === 2
     && controlRoot?.status === 200 && controlRoot.bodyText === M6_BLANK_CONTROL_HTML
     && controlIcon.length === 1 && controlIcon[0].method === 'GET' && controlIcon[0].path === '/favicon.ico' && controlIcon[0].status === 404
+    && typeof controlIcon[0].bodyText === 'string' && Buffer.byteLength(controlIcon[0].bodyText, 'utf8') === controlIcon[0].bodyByteCount
+    && bytesHash(Buffer.from(controlIcon[0].bodyText, 'utf8')) === controlIcon[0].bodySha256
     && controlIcon[0].bodyByteCount === favicon?.bodyByteCount && controlIcon[0].bodySha256 === favicon?.bodySha256
     && controlIcon[0].bodyText === favicon?.bodyText && controlConsole;
   const responsesClean = Array.isArray(proof?.diagnostics?.responses) && proof.diagnostics.responses.length > 0
@@ -727,6 +769,9 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
       } catch { return false; }
     });
   const getsComplete = gets.length === 3 && ['production-index', 'production-entry', 'production-favicon'].every((name) => gets.filter((row) => row.name === name).length === 1)
+    && typeof gets.find((row) => row.name === 'production-index')?.bodyText === 'string'
+    && Buffer.byteLength(gets.find((row) => row.name === 'production-index').bodyText, 'utf8') === gets.find((row) => row.name === 'production-index').bodyByteCount
+    && bytesHash(Buffer.from(gets.find((row) => row.name === 'production-index').bodyText, 'utf8')) === gets.find((row) => row.name === 'production-index').bodySha256
     && gets.filter((row) => row.name !== 'production-favicon').every((row) => {
       try { return row.status === 200 && new URL(row.url).origin === origin; } catch { return false; }
     });
@@ -742,7 +787,9 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
   const cleanProcess = (proof?.stopErrors ?? []).length === 0 && Array.isArray(proof?.ownedProcesses)
     && proof.ownedProcesses.length === 2 && proof.ownedProcesses.every((item) => item.exit && (item.exit.code === 0 || item.exit.signal === 'SIGTERM'))
     && proof.ownedProcesses.some((item) => item.role === 'managed-chromium' && typeof item.command === 'string' && item.command.includes('ms-playwright'));
-  const valid = proof?.status === 'BLOCKED' && finalizeM6ReadinessProof(proof).status === 'BLOCKED'
+  const frozenReadiness = finalizeM6ReadinessProof(proof);
+  const valid = proof?.status === 'BLOCKED' && frozenReadiness.status === 'BLOCKED'
+    && proof.reason === frozenReadiness.reason && !proof.error
     && ['mutant', 'clean'].includes(proof?.candidateKind) && /^[a-f0-9]{64}$/.test(identity?.candidateSha256 ?? '')
     && origin && target && proof.httpIndexStatus === 200 && proof.productionAssetStatus === 200
     && gets.find((row) => row.name === 'production-index')?.url === `${origin}/`
@@ -756,7 +803,7 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
   return valid ? { status: 'AUXILIARY_CANDIDATE', origin, target, candidateIdentity: identity.candidateSha256,
     buildDigest: buildReceipt.artifact.digest, browserVersion: proof.browserVersion, faviconStatus: favicon.status,
     faviconBodySha256: favicon.bodySha256, sourceAudit: 'PASS', emittedAudit: 'PASS', hookFreeControl: 'PASS',
-    assetCount: proof.assetInventoryVerification.expectedFileCount, strictReadinessStatus: finalizeM6ReadinessProof(proof).status }
+    assetCount: proof.assetInventoryVerification.expectedFileCount, strictReadinessStatus: frozenReadiness.status }
     : { status: 'BLOCKED', origin, target, reason: 'Readiness proof did not satisfy every exact-origin default favicon provenance condition.' };
 }
 
@@ -768,13 +815,26 @@ function browserVersionValue(value) {
   return typeof value === 'string' ? value.replace(/^Chrome\//, '') : null;
 }
 
+function normalizedLifecycleAssetPath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[?#\\]/.test(value)) return null;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    if (!decoded || decoded.split('/').some((part) => !part || part === '.' || part === '..')) return null;
+    return decoded;
+  } catch { return null; }
+}
+
 export function classifyM6LifecycleFaviconDisposition(lifecycleReceipt, lifecycleSummary, buildReceipt,
-  faviconProbe, expectedCandidateSha, readinessProof, expectedLifecycleStatus = 'BEHAVIORAL_RED') {
-  const origin = exactM6LocalOrigin(lifecycleReceipt?.environment?.origin);
+  faviconProbe, expectedCandidateSha, readinessProof, expectedLifecycleStatus = 'BEHAVIORAL_RED', browserProvenance = null) {
+  const rawOrigin = expectedLifecycleStatus === 'BEHAVIORAL_RED' ? lifecycleReceipt?.origin : lifecycleReceipt?.environment?.origin;
+  const origin = exactM6LocalOrigin(rawOrigin);
   const target = origin && `${origin}/favicon.ico`;
   const lifecycleErrors = lifecycleReceipt?.diagnostics?.consoleErrors;
-  const served = lifecycleReceipt?.artifacts?.servedResponses;
-  const productionInventory = lifecycleReceipt?.artifacts?.production;
+  const processRows = lifecycleReceipt?.processEvidence;
+  const productionInventory = expectedLifecycleStatus === 'BEHAVIORAL_RED'
+    ? lifecycleReceipt?.productionInventory : lifecycleReceipt?.artifacts?.production;
+  const served = expectedLifecycleStatus === 'BEHAVIORAL_RED'
+    ? lifecycleReceipt?.networkEvidence : lifecycleReceipt?.artifacts?.servedResponses;
   const lifecycleReadinessOrigin = m6ReadinessOrigin(readinessProof);
   const lifecycleReadinessFavicon = (readinessProof?.independentHttpGets ?? []).find((row) => row.name === 'production-favicon');
   const readinessDisposition = classifyM6ReadinessFaviconDisposition(readinessProof,
@@ -784,50 +844,77 @@ export function classifyM6LifecycleFaviconDisposition(lifecycleReceipt, lifecycl
     || (lifecycleReceipt?.phase === 'cold-Home-and-production-runtime'
       && lifecycleReceipt?.error?.name === 'AssertionError'
       && lifecycleReceipt.error.message?.includes('normal Home Sales Open is enabled when the production runtime is ready'));
-  const processRows = lifecycleReceipt?.processEvidence;
-  const processBound = lifecycleReceipt?.environment?.playwrightVersion === '1.62.1'
-    && typeof lifecycleReceipt?.environment?.executable === 'string' && lifecycleReceipt.environment.executable.includes('ms-playwright')
-    && browserVersionValue(lifecycleReceipt?.environment?.browserVersion) === browserVersionValue(readinessProof?.browserVersion)
-    && Array.isArray(processRows) && processRows.length === 2
-    && JSON.stringify(processRows.map((row) => row.launch).sort()) === JSON.stringify([1, 2])
-    && processRows.every((row) => row.endpointReady === true && row.exit?.observed === true
-      && row.exit.signal === null && row.exit.code === 0
-      && browserVersionValue(row.browserVersion) === browserVersionValue(readinessProof?.browserVersion));
-  const exactConsole = Array.isArray(lifecycleErrors) && lifecycleErrors.length === 2 && lifecycleErrors.every((row) =>
-    row.message === M6_FAVICON_404_CONSOLE_MESSAGE && row.url === target && [1, 2].includes(row.launch))
-    && JSON.stringify(lifecycleErrors.map((row) => row.launch).sort()) === JSON.stringify([1, 2]);
+  const browserRows = expectedLifecycleStatus === 'BEHAVIORAL_RED'
+    ? Array.isArray(processRows) && processRows.length === 1 && processRows[0]?.launch === 1
+      && processRows[0].endpointReady === true && !Object.hasOwn(processRows[0], 'exit')
+      && browserVersionValue(processRows[0].browserVersion) === browserVersionValue(readinessProof?.browserVersion)
+    : Array.isArray(processRows) && processRows.length === 2
+      && JSON.stringify(processRows.map((row) => row.launch).sort()) === JSON.stringify([1, 2])
+      && processRows.every((row) => row.endpointReady === true && row.exit?.observed === true
+        && row.exit.signal === null && row.exit.code === 0
+        && browserVersionValue(row.browserVersion) === browserVersionValue(readinessProof?.browserVersion));
+  const executable = browserProvenance?.executable;
+  const browserProvenanceBound = browserProvenance?.status === 'PASS'
+    && browserProvenance.candidateSha256 === expectedCandidateSha
+    && browserProvenance.buildDigest === buildReceipt?.artifact?.digest
+    && browserProvenance.playwrightTestVersion === '1.62.1' && browserProvenance.playwrightCoreVersion === '1.62.1'
+    && browserProvenance.frozenSeedSha256 === expectedSeeds['tests/product/production-lifecycle.mjs']
+    && typeof executable === 'string' && path.isAbsolute(executable)
+    && browserProvenance.executableIsFile === true && Number.isSafeInteger(browserProvenance.executableBytes) && browserProvenance.executableBytes > 0
+    && (expectedLifecycleStatus === 'BEHAVIORAL_RED'
+      ? !Object.hasOwn(lifecycleReceipt ?? {}, 'environment') && !Object.hasOwn(lifecycleReceipt ?? {}, 'artifacts')
+      : lifecycleReceipt?.environment?.playwrightVersion === browserProvenance.playwrightTestVersion
+        && lifecycleReceipt.environment.executable === executable)
+    && browserVersionValue(lifecycleReceipt?.environment?.browserVersion ?? processRows?.[0]?.browserVersion)
+      === browserVersionValue(readinessProof?.browserVersion);
+  const expectedLaunches = expectedLifecycleStatus === 'BEHAVIORAL_RED' ? [1] : [1, 2];
+  const exactConsole = Array.isArray(lifecycleErrors) && lifecycleErrors.length === expectedLaunches.length
+    && lifecycleErrors.every((row) => row && row.message === M6_FAVICON_404_CONSOLE_MESSAGE
+      && row.url === target && expectedLaunches.includes(row.launch))
+    && JSON.stringify(lifecycleErrors.map((row) => row.launch).sort()) === JSON.stringify(expectedLaunches);
   const inventoryBound = buildReceipt?.status === 'PASS' && buildReceipt.candidate?.sha256 === expectedCandidateSha
     && lifecycleSummary?.candidate?.sha256 === expectedCandidateSha
     && lifecycleSummary?.status === expectedLifecycleStatus
+    && lifecycleSummary?.lifecycle === expectedLifecycleStatus
     && lifecycleSummary?.command?.outcome === 'EXITED'
     && lifecycleSummary?.command?.exitCode === (expectedLifecycleStatus === 'BEHAVIORAL_RED' ? 1 : 0)
-    && buildReceipt.artifact?.digest === lifecycleSummary?.buildEvidence?.artifact?.digest
+    && lifecycleSummary?.buildEvidence?.artifact?.digest === buildReceipt.artifact?.digest
     && sameM6Inventory(buildReceipt.artifact, lifecycleSummary?.buildEvidence?.artifact)
     && productionInventory?.digest === buildReceipt.artifact.digest
     && JSON.stringify(productionInventory?.files) === JSON.stringify(buildReceipt.artifact.files)
-    && Array.isArray(served) && served.length > 0 && served.every((row) => row.status === 200
-      && buildReceipt.artifact.files.some(([file, sha256]) => file === row.path && sha256 === row.sha256));
+    && Array.isArray(served) && served.length > 0 && served.every((row) => {
+      const file = normalizedLifecycleAssetPath(row?.path);
+      return file && row.status === 200 && buildReceipt.artifact.files.some(([asset, sha256]) => asset === file && sha256 === row.sha256);
+    });
+  const lifecycleDiagnosticArraysPresent = ['pageErrors', 'consoleErrors', 'requestFailures', 'responseErrors']
+    .every((key) => Array.isArray(lifecycleReceipt?.diagnostics?.[key]));
   const directGetBound = faviconProbe?.status === 'PASS' && faviconProbe.origin === origin
     && validM6FaviconFetch(faviconProbe, origin)
     && faviconProbe.bodySha256 === lifecycleReadinessFavicon?.bodySha256
     && faviconProbe.bodyByteCount === lifecycleReadinessFavicon?.bodyByteCount
     && lifecycleFaviconGetSameOrigin(lifecycleReadinessFavicon, lifecycleReadinessOrigin);
   const normalStatus = lifecycleReceipt?.status === expectedLifecycleStatus
-    && lifecycleSummary?.lifecycle === expectedLifecycleStatus
     && JSON.stringify(lifecycleReceipt?.caseIds) === JSON.stringify(expectedCase)
     && JSON.stringify(lifecycleReceipt?.expectedCaseIds) === JSON.stringify([productionCase]);
-  const noOtherErrors = ['pageErrors', 'requestFailures', 'responseErrors', 'captureErrors'].every((key) => (lifecycleReceipt?.diagnostics?.[key]?.length ?? 0) === 0)
-    && (lifecycleReceipt?.diagnostics?.droppedEvents ?? 0) === 0
-    && (lifecycleReceipt?.networkEvidence ?? []).every((row) => row.status === 200)
+  const noOtherErrors = lifecycleDiagnosticArraysPresent
+    && lifecycleReceipt.diagnostics.pageErrors.length === 0
+    && lifecycleReceipt.diagnostics.requestFailures.length === 0
+    && lifecycleReceipt.diagnostics.responseErrors.length === 0
+    && (!Array.isArray(lifecycleReceipt?.diagnostics?.captureErrors) || lifecycleReceipt.diagnostics.captureErrors.length === 0)
+    && (!Number.isSafeInteger(lifecycleReceipt?.diagnostics?.droppedEvents) || lifecycleReceipt.diagnostics.droppedEvents === 0)
+    && Array.isArray(served) && served.every((row) => row.status === 200)
     && exactConsole && Array.isArray(faviconProbe?.cleanupErrors) && faviconProbe.cleanupErrors.length === 0
-    && faviconProbe.serverExit?.observed === true;
+    && faviconProbe.serverExit?.observed === true
+    && (faviconProbe.serverExit.code === 0 || faviconProbe.serverExit.signal === 'SIGTERM')
+    && !readinessProof?.hookFreeControl?.closeError && !readinessProof?.hookFreeControl?.serverCloseError;
   return origin && target && readinessDisposition.status === 'AUXILIARY_CANDIDATE' && normalStatus && exactAssertion
-    && processBound && inventoryBound && directGetBound && noOtherErrors
+    && browserRows && browserProvenanceBound && inventoryBound && directGetBound && noOtherErrors
     ? { status: 'AUXILIARY_CANDIDATE', origin, target, candidateIdentity: expectedCandidateSha,
-      buildDigest: buildReceipt.artifact.digest, browserVersion: lifecycleReceipt.environment.browserVersion,
+      buildDigest: buildReceipt.artifact.digest, browserVersion: lifecycleReceipt?.environment?.browserVersion ?? processRows[0].browserVersion,
       lifecycleStatus: lifecycleReceipt.status, lifecycleConsoleErrorCount: lifecycleErrors.length,
-      faviconBodySha256: faviconProbe.bodySha256, servedAssetCount: served.length }
-    : { status: 'BLOCKED', origin, target, reason: 'Frozen lifecycle favicon evidence is not bound to the exact origin, candidate, inventory, browser, and clean 404 attribution.' };
+      lifecycleLaunchCount: processRows.length, faviconBodySha256: faviconProbe.bodySha256, servedAssetCount: served.length,
+      processExitRecordedInFrozenReceipt: processRows.every((row) => row.exit?.observed === true) }
+    : { status: 'BLOCKED', origin, target, reason: 'Frozen lifecycle receipt did not satisfy its status-specific schema or candidate/build/browser/error/cleanup provenance.' };
 }
 
 function lifecycleFaviconGetSameOrigin(row, origin) {
@@ -840,9 +927,11 @@ export function finalizeM6AuxiliaryDisposition({ mutantReadiness, cleanReadiness
   const mutantReady = classifyM6ReadinessFaviconDisposition(mutantReadiness, mutantIdentity, mutantBuildReceipt);
   const cleanReady = classifyM6ReadinessFaviconDisposition(cleanReadiness, cleanIdentity, cleanBuildReceipt);
   const mutantLifecycleDisposition = classifyM6LifecycleFaviconDisposition(mutantLifecycle?.receipt, mutantLifecycle?.summary,
-    mutantLifecycle?.buildReceipt, mutantLifecycle?.faviconProbe, mutantIdentity?.candidateSha256, mutantReadiness, 'BEHAVIORAL_RED');
+    mutantLifecycle?.buildReceipt, mutantLifecycle?.faviconProbe, mutantIdentity?.candidateSha256, mutantReadiness,
+    'BEHAVIORAL_RED', mutantLifecycle?.browserProvenance);
   const cleanLifecycleDisposition = classifyM6LifecycleFaviconDisposition(cleanLifecycle?.receipt, cleanLifecycle?.summary,
-    cleanLifecycle?.buildReceipt, cleanLifecycle?.faviconProbe, cleanIdentity?.candidateSha256, cleanReadiness, 'PASS');
+    cleanLifecycle?.buildReceipt, cleanLifecycle?.faviconProbe, cleanIdentity?.candidateSha256, cleanReadiness,
+    'PASS', cleanLifecycle?.browserProvenance);
   const mutantFavicon = m6FaviconTuple(mutantReadiness);
   const cleanFavicon = m6FaviconTuple(cleanReadiness);
   const mutantLifecycleGet = mutantLifecycle?.faviconProbe;
@@ -1568,7 +1657,8 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     if (assetResponse.status !== 200) throw new Error(`BLOCKED: production JavaScript entry returned HTTP ${assetResponse.status}.`);
     const entryBody = await settleBefore(readM6ResponseBody(assetResponse, M6_MAX_SINGLE_ASSET_BYTES, 'M6 production entry script'), opTimeout(5_000), 'production entry script body');
     proof.independentHttpGets.push({ name: 'production-index', url: index.url, method: 'GET', status: index.status,
-      contentType: index.headers.get('content-type'), bodyByteCount: indexBody.byteLength, bodySha256: bytesHash(indexBody) });
+      contentType: index.headers.get('content-type'), bodyByteCount: indexBody.byteLength, bodySha256: bytesHash(indexBody),
+      bodyText: indexBody.toString('utf8') });
     proof.independentHttpGets.push({ name: 'production-entry', url: assetResponse.url, method: 'GET', status: assetResponse.status,
       contentType: assetResponse.headers.get('content-type'), bodyByteCount: entryBody.byteLength, bodySha256: bytesHash(entryBody) });
 
@@ -1668,7 +1758,7 @@ async function runBuildAndCleanProduction(ctx, worktree, evidenceDir, label) {
 
 async function probeM6LifecycleOriginFavicon(ctx, worktree, evidenceDir, label, lifecycleReceipt) {
   await mkdir(evidenceDir, { recursive: true });
-  const proof = { status: 'BLOCKED', label, startedAt: nowIso(), origin: exactM6LocalOrigin(lifecycleReceipt?.environment?.origin),
+  const proof = { status: 'BLOCKED', label, startedAt: nowIso(), origin: exactM6LocalOrigin(lifecycleReceipt?.environment?.origin ?? lifecycleReceipt?.origin),
     method: 'GET', requestedUrl: null, url: null, sameOrigin: false, redirected: null, statusCode: null,
     contentType: null, bodyByteCount: null, bodySha256: null, bodyText: null, cleanupErrors: [], serverExit: null };
   const remaining = ctx.remainingMs() - 90_000;
@@ -1707,31 +1797,63 @@ async function probeM6LifecycleOriginFavicon(ctx, worktree, evidenceDir, label, 
     proof.error = { name: error.name, code: error.code ?? null, message: error.message, stack: error.stack ?? null };
   } finally {
     if (server) {
-      try { await server.stop(); } catch (error) { proof.cleanupErrors.push({ phase: 'stop', message: error.message }); }
+      try {
+        const exit = await server.stop();
+        proof.serverExit = { observed: Boolean(exit), code: exit?.code ?? null, signal: exit?.signal ?? null };
+        if (!exit || (exit.code !== 0 && exit.signal !== 'SIGTERM')) proof.cleanupErrors.push({ phase: 'stop', message: 'owned lifecycle favicon server did not exit successfully', exit: proof.serverExit });
+      } catch (error) { proof.cleanupErrors.push({ phase: 'stop', message: error.message }); }
       try {
         const exit = await settleBefore(server.exit, 5_000, `${label} lifecycle favicon server exit`);
         proof.serverExit = { observed: Boolean(exit), code: exit?.code ?? null, signal: exit?.signal ?? null };
-        if (!exit) proof.cleanupErrors.push({ phase: 'exit', message: 'owned lifecycle favicon server exit was not observed within 5 seconds' });
+        if (!exit || (exit.code !== 0 && exit.signal !== 'SIGTERM')) proof.cleanupErrors.push({ phase: 'exit', message: 'owned lifecycle favicon server exit was unsuccessful', exit: exit ?? null });
       } catch (error) { proof.cleanupErrors.push({ phase: 'exit', message: error.message }); }
     }
   }
   proof.status = proof.statusCode === 404 && validM6FaviconFetch({ ...proof, url: proof.url }, proof.origin) && !proof.cleanupErrors.length
-    && proof.serverExit?.observed === true ? 'PASS' : 'BLOCKED';
+    && proof.serverExit?.observed === true
+    && (proof.serverExit.code === 0 || proof.serverExit.signal === 'SIGTERM') ? 'PASS' : 'BLOCKED';
   proof.completedAt = nowIso();
   await writeMutationJson(path.join(evidenceDir, 'lifecycle-favicon-get.json'), proof);
+  return proof;
+}
+
+async function captureM6LifecycleBrowserProvenance(worktree, candidateSha256, buildReceipt) {
+  const proof = { status: 'BLOCKED', candidateSha256, buildDigest: buildReceipt?.artifact?.digest ?? null,
+    frozenSeedSha256: null, playwrightTestVersion: null, playwrightCoreVersion: null, executable: null };
+  try {
+    const testPackage = JSON.parse(await readFile(path.join(worktree, 'node_modules/@playwright/test/package.json'), 'utf8'));
+    const corePackage = JSON.parse(await readFile(path.join(worktree, 'node_modules/playwright-core/package.json'), 'utf8'));
+    const requireFromWorktree = createRequire(path.join(worktree, 'package.json'));
+    const chromium = requireFromWorktree('playwright-core').chromium;
+    proof.playwrightTestVersion = testPackage.version;
+    proof.playwrightCoreVersion = corePackage.version;
+    proof.executable = path.resolve(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || chromium.executablePath());
+    proof.frozenSeedSha256 = await pathHash(path.join(worktree, 'tests/product/production-lifecycle.mjs'));
+    const stat = await (await import('node:fs/promises')).stat(proof.executable);
+    proof.executableIsFile = stat.isFile();
+    proof.executableBytes = stat.size;
+    proof.status = candidateSha256 === buildReceipt?.candidate?.sha256
+      && proof.playwrightTestVersion === '1.62.1' && proof.playwrightCoreVersion === '1.62.1'
+      && proof.frozenSeedSha256 === expectedSeeds['tests/product/production-lifecycle.mjs']
+      && path.isAbsolute(proof.executable) && proof.executableIsFile ? 'PASS' : 'BLOCKED';
+  } catch (error) { proof.error = { name: error.name, code: error.code ?? null, message: error.message }; }
   return proof;
 }
 
 async function runCleanProductionGate(ctx, worktree, evidenceDir, label, expectedCandidateSha) {
   const build = await runBuildAndCleanProduction(ctx, worktree, evidenceDir, label);
   if (build.status !== 'PASS') return build;
+  let lifecycleBuildReceipt = null;
+  let lifecycleBrowserProvenance = null;
   let readinessProofPath = null;
   if (label === 'm6-restored-clean') {
+    lifecycleBuildReceipt = await readJson(path.join(evidenceDir, 'production-build.json')).catch(() => null);
     const readinessEvidenceDir = path.join(evidenceDir, 'm6-restored-clean-production-probe');
     const readiness = await runM6ProductionReadinessProbe(ctx, worktree, readinessEvidenceDir, {
       candidateSha256: expectedCandidateSha, patchSha256: null, loaderSha256: await pathHash(path.join(worktree, 'src/core-loader.ts')),
     }, { candidateKind: 'clean', buildEvidenceDir: evidenceDir });
     readinessProofPath = path.relative(rootEvidence(), path.join(readinessEvidenceDir, 'm6-production-readiness.json')).split(path.sep).join('/');
+    lifecycleBrowserProvenance = await captureM6LifecycleBrowserProvenance(worktree, expectedCandidateSha, lifecycleBuildReceipt);
   }
   const gate = await commandRunner(ctx, `${label}-pnpm-acceptance-production-lifecycle`, 'pnpm', ['acceptance:production-lifecycle'], worktree, evidenceDir, {
     timeoutMs: 180_000, minimumMs: 45_000, env: { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: evidenceDir },
@@ -1745,10 +1867,10 @@ async function runCleanProductionGate(ctx, worktree, evidenceDir, label, expecte
     const lifecycleSummaryPath = path.join(evidenceDir, 'production-lifecycle', 'summary.json');
     const lifecycleSummary = await readJson(lifecycleSummaryPath).catch(() => null);
     const buildReceiptPath = path.join(evidenceDir, 'production-build.json');
-    const buildReceipt = await readJson(buildReceiptPath).catch(() => null);
+    const buildReceipt = lifecycleBuildReceipt ?? await readJson(buildReceiptPath).catch(() => null);
     const faviconProbe = await probeM6LifecycleOriginFavicon(ctx, worktree,
       path.join(evidenceDir, 'm6-restored-clean-lifecycle-favicon-probe'), 'm6-restored-clean', lifecycleReceipt);
-    lifecycleAuxiliaryEvidence = { lifecycleReceiptPath, lifecycleReceipt, lifecycleSummaryPath, lifecycleSummary,
+    lifecycleAuxiliaryEvidence = { lifecycleReceiptPath, lifecycleReceipt, lifecycleSummaryPath, lifecycleSummary, browserProvenance: lifecycleBrowserProvenance,
       lifecycleReceiptSha256: lifecycleReceipt ? await pathHash(lifecycleReceiptPath) : null,
       buildReceiptPath, buildReceipt, buildReceiptSha256: buildReceipt ? await pathHash(buildReceiptPath) : null, faviconProbe };
   }
@@ -1759,13 +1881,15 @@ async function runCleanProductionGate(ctx, worktree, evidenceDir, label, expecte
 }
 
 async function runM6ProductionLifecycle(ctx, worktree, evidenceDir, expectedCandidateSha) {
+  const buildReceiptPath = path.join(evidenceDir, 'production-build.json');
+  const buildReceipt = await readJson(buildReceiptPath).catch(() => null);
+  const browserProvenance = await captureM6LifecycleBrowserProvenance(worktree, expectedCandidateSha, buildReceipt);
   const run = await commandRunner(ctx, 'm6-frozen-pnpm-acceptance-production-lifecycle', 'pnpm', ['acceptance:production-lifecycle'], worktree, evidenceDir, {
     timeoutMs: 180_000, minimumMs: 45_000, env: { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: evidenceDir },
   });
   const summary = await readJson(path.join(evidenceDir, 'production-lifecycle', 'summary.json')).catch(() => null);
   const receiptPath = path.join(evidenceDir, 'production-lifecycle', 'production-lifecycle.seed.json');
   const receipt = await readJson(receiptPath).catch(() => null);
-  const buildReceipt = await readJson(path.join(evidenceDir, 'production-build.json')).catch(() => null);
   const candidate = summary?.candidate?.sha256;
   const status = summary?.status === 'BEHAVIORAL_RED' && run.result.outcome === 'EXITED' && run.result.code === 1
     && candidate === expectedCandidateSha ? 'BEHAVIORAL_RED' : 'BLOCKED';
@@ -1774,7 +1898,7 @@ async function runM6ProductionLifecycle(ctx, worktree, evidenceDir, expectedCand
   return { status,
     command: run.command, outcome: run.result.outcome, exitCode: run.result.code, candidateIdentity: candidate ?? null,
     summary, receipt, receiptPath, receiptSha256: receipt ? await pathHash(receiptPath) : null,
-    buildReceipt, buildReceiptSha256: buildReceipt ? await pathHash(path.join(evidenceDir, 'production-build.json')) : null,
+    buildReceipt, buildReceiptSha256: buildReceipt ? await pathHash(buildReceiptPath) : null, browserProvenance,
     faviconProbe };
 }
 
@@ -1836,10 +1960,11 @@ async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
       }
       const lifecycle = await runM6ProductionLifecycle(ctx, worktree, fresh.outputDir, record.mutantIdentity.sha256);
       const lifecycleDisposition = classifyM6LifecycleFaviconDisposition(lifecycle.receipt, lifecycle.summary,
-        lifecycle.buildReceipt, lifecycle.faviconProbe, record.mutantIdentity.sha256, probe, 'BEHAVIORAL_RED');
+        lifecycle.buildReceipt, lifecycle.faviconProbe, record.mutantIdentity.sha256, probe, 'BEHAVIORAL_RED', lifecycle.browserProvenance);
       record.m6MutantLifecycleEvidence = { receipt: lifecycle.receipt, receiptPath: lifecycle.receiptPath,
         receiptSha256: lifecycle.receiptSha256, summary: lifecycle.summary, buildReceipt: lifecycle.buildReceipt,
         buildReceiptSha256: lifecycle.buildReceiptSha256, faviconProbe: lifecycle.faviconProbe,
+        browserProvenance: lifecycle.browserProvenance,
         disposition: lifecycleDisposition };
       if (lifecycle.status !== 'BEHAVIORAL_RED') throw new Error(`M6 frozen production lifecycle did not reach its intended assertion: ${lifecycle.summary?.status ?? lifecycle.status}`);
       if (probe.status !== 'READINESS_PASS' && lifecycleDisposition.status !== 'AUXILIARY_CANDIDATE') {
@@ -1941,9 +2066,11 @@ async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
           mutantBuildReceipt,
           cleanBuildReceipt,
           mutantLifecycle: { receipt: mutantLifecycle.receipt, summary: mutantLifecycle.summary,
-            buildReceipt: mutantBuildReceipt, faviconProbe: mutantLifecycle.faviconProbe },
+            buildReceipt: mutantBuildReceipt, faviconProbe: mutantLifecycle.faviconProbe,
+            browserProvenance: mutantLifecycle.browserProvenance },
           cleanLifecycle: { receipt: cleanLifecycle.lifecycleReceipt, summary: cleanLifecycle.lifecycleSummary,
-            buildReceipt: cleanBuildReceipt, faviconProbe: cleanLifecycle.faviconProbe },
+            buildReceipt: cleanBuildReceipt, faviconProbe: cleanLifecycle.faviconProbe,
+            browserProvenance: cleanLifecycle.browserProvenance },
           comparison: record.diagnosticComparison,
           mutantReadinessSha256: await pathHash(mutantProofPath).catch(() => null),
           cleanReadinessSha256: await pathHash(cleanProofPath).catch(() => null),
@@ -1959,6 +2086,7 @@ async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
             mutantBuildReceipt,
             mutantLifecycleSummary: mutantLifecycle.summary,
             mutantLifecycleFaviconProbe: mutantLifecycle.faviconProbe,
+            mutantLifecycleBrowserProvenance: mutantLifecycle.browserProvenance,
             mutantReadinessSha256: disposition.receipts.mutantReadinessSha256,
             mutantLifecycleReceiptSha256: disposition.receipts.mutantLifecycleReceiptSha256,
           });
