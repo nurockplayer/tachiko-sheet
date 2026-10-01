@@ -1,875 +1,1 @@
-// Serial, disposable #146 mutation qualification. Product faults exist only in
-// short-lived Git worktrees and are restored before a clean rerun.
-import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import net from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { captureRunnerCommand, createRunnerCancellation, startRunnerServer } from './runner-process-lifecycle.mjs';
-
-const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const base = '375d25ea12262bec32e2303b3c63662f0b69322f';
-const expectedHead = 'f6121d5bb5990b8cb9004062642aa2937fcfab4f';
-const implementationPaths = [
-  '.github/workflows/product.yml', 'docs/TEST-WIRING.md',
-  'scripts/run-save-closure-mutations.mjs', 'tests/save-closure-mutations.test.mjs',
-];
-const expectedSeeds = {
-  'tests/product/web-save-closure-current.mjs': 'f0da11bca23206789c1ad0d4c2db771febfd37cb8343fd7c1f07c45758cbd3a8',
-  'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
-  'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
-};
-const workPin = '518aaa55e046a4e4676b4d5e05d8189c4c6343fe';
-const kitManifest = 'ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b';
-const currentCases = [
-  'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
-  'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
-  'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV16-column-control',
-  'E-profile-refusal-rows-65.csv', 'E-profile-refusal-fields-17.csv',
-  'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
-];
-const prerequisiteCases = [
-  'KIT-date-only-csv', 'KIT-unrelated-populated-date-xlsx', 'KIT-unrelated-empty-date-schema-xlsx',
-  'ADAPTER-stale-witness', 'ADAPTER-stale-bootstrap', 'ADAPTER-stale-table',
-  'ADAPTER-unavailable-unrelated-table',
-];
-const productionCase = 'production-sales-edit-save-process-restart-reopen-edit-png';
-const productFiles = ['src/App.tsx', 'src/runtime/session.ts', 'src/ui/SheetShell.tsx', 'src/core-loader.ts'];
-const fixtureFiles = [
-  'acceptance/web-save-closure/fixtures/date-only.csv',
-  'acceptance/web-save-closure/fixtures/unrelated-date.xlsx',
-  'acceptance/web-save-closure/fixtures/unrelated-date-empty.xlsx',
-  'acceptance/web-save-closure/fixtures/date-only-private.bin',
-  'acceptance/web-save-closure/fixtures/date-only-private.json',
-];
-const immutableFiles = [
-  ...Object.keys(expectedSeeds), 'core-kit.lock.json', ...fixtureFiles,
-  'src/App.tsx', 'src/runtime/session.ts', 'src/ui/SheetShell.tsx', 'src/core-loader.ts',
-];
-const mutationCases = [
-  {
-    id: 'M1', expectedCases: ['A-Date-only-normal-Save-fresh-reopen'],
-    assertionPattern: /Save a copy must succeed and close the current Save dialog/,
-    patches: [{ path: 'src/App.tsx', before: ': bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));', after: ': false;' }],
-  },
-  {
-    id: 'M2', expectedCases: [
-      'B-same-table-Date-summary-refusal', 'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
-    ],
-    assertionPattern: /Date refusal occurs before producer Create dispatch|No current cross-table result is available|rendered Summary has zero existing or missing definition cards|visible source fidelity ledger is unchanged by refusal|whole runtime snapshot remains unchanged/,
-    patches: [
-      { path: 'src/App.tsx', before: `      if (bindingCatalogContainsDate(catalog)) {\n        setMessage(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n        setOutcome("idle");\n        return false;\n      }\n      creationStarted = true;`, after: `      if (false && bindingCatalogContainsDate(catalog)) {\n        setMessage(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n        setOutcome("idle");\n        return false;\n      }\n      creationStarted = true;` },
-      { path: 'src/runtime/session.ts', before: `      if (bindingCatalogContainsDate(catalog)) {\n        throw new Error(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n      }\n      const orders = selectedTable(tables, binding.ordersCollection);`, after: `      if (false && bindingCatalogContainsDate(catalog)) {\n        throw new Error(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n      }\n      const orders = selectedTable(tables, binding.ordersCollection);` },
-    ],
-  },
-  {
-    id: 'M3', expectedCases: ['C-unrelated-Date-summary-refusal'],
-    assertionPattern: /Date refusal occurs before producer Create dispatch|No current cross-table result is available|rendered Summary has zero existing or missing definition cards|visible source fidelity ledger is unchanged by refusal|whole runtime snapshot remains unchanged/,
-    patches: [
-      { path: 'src/App.tsx', before: `      if (bindingCatalogContainsDate(catalog)) {\n        setMessage(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n        setOutcome("idle");\n        return false;\n      }\n      creationStarted = true;`, after: `      if (bindingCatalogContainsDate({ collections: catalog.collections.filter((collection) => collection.key === binding.ordersCollection || collection.key === binding.productsCollection) })) {\n        setMessage(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n        setOutcome("idle");\n        return false;\n      }\n      creationStarted = true;` },
-      { path: 'src/runtime/session.ts', before: `      if (bindingCatalogContainsDate(catalog)) {\n        throw new Error(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n      }\n      const orders = selectedTable(tables, binding.ordersCollection);`, after: `      if (bindingCatalogContainsDate({ collections: catalog.collections.filter((collection) => collection.key === binding.ordersCollection || collection.key === binding.productsCollection) })) {\n        throw new Error(DATE_SUMMARY_UNSUPPORTED_MESSAGE);\n      }\n      const orders = selectedTable(tables, binding.ordersCollection);` },
-    ],
-  },
-  {
-    id: 'M4', expectedCases: ['C-empty-unrelated-Date-schema-refusal'],
-    assertionPattern: /Date refusal occurs before producer Create dispatch|No current cross-table result is available|rendered Summary has zero existing or missing definition cards|visible source fidelity ledger is unchanged by refusal|whole runtime snapshot remains unchanged/,
-    patches: [{ path: 'src/runtime/session.ts', before: 'fields: table.columns.map((column) => ({ key: column.key, fieldType: column.field_type })),', after: 'fields: table.columns.filter((column) => table.rows.length > 0 || column.field_type !== "date").map((column) => ({ key: column.key, fieldType: column.field_type })),' }],
-  },
-  {
-    id: 'M5a', expectedCases: ['A-Date-only-normal-Save-fresh-reopen'],
-    assertionPattern: /Date edit must reach real producer editDate exactly once/,
-    patches: [{ path: 'src/ui/SheetShell.tsx', before: 'column_types: importTypes as ImportSelection["column_types"],', after: 'column_types: importTypes.map((types) => types.map((type) => type === "date" ? "text" : type)) as ImportSelection["column_types"],' }],
-  },
-  {
-    id: 'M5b', expectedCases: ['A-Date-only-normal-Save-fresh-reopen'],
-    assertionPattern: /7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5/,
-    patches: [{ path: 'src/App.tsx', before: `        receipt = await copies.createOpaque(name, {\n          ...snapshot,\n          importedSource: importedSourceRef.current ?? undefined,\n          presentation,`, after: `        receipt = await copies.createOpaque(name, {\n          ...snapshot,\n          importedSource: hasDateColumn ? undefined : (importedSourceRef.current ?? undefined),\n          presentation,` }],
-  },
-  {
-    id: 'M6', expectedCases: [],
-    patches: [{ path: 'src/core-loader.ts', before: '  const entry = PUBLIC_CLIENT_ENTRY;', after: '  if (import.meta.env.MODE === "production") throw new Error("M6 production kit loader mutant: rejected by design.");\n  const entry = PUBLIC_CLIENT_ENTRY;' }],
-  },
-];
-
-const bytesHash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const jsonHash = (value) => bytesHash(Buffer.from(JSON.stringify(value)));
-const nowIso = () => new Date().toISOString();
-const safeName = (value) => value.replace(/[^A-Za-z0-9._-]+/g, '-');
-const currentSeedPath = (dir) => path.join(dir, 'save-closure', 'current-save-closure.seed.json');
-
-export function classifySaveTerminalObservation(status, saveDialogOpen) {
-  if (status === 'Save failed') return 'SAVE_FAILED';
-  if (status === 'Saved on this device' && saveDialogOpen === false) return 'SAVED';
-  return 'PENDING';
-}
-
-export function classifyMutationReceipt(receipt, mutation) {
-  if (!receipt || receipt.status !== 'BEHAVIORAL_RED' || !Array.isArray(receipt.results)) {
-    return { status: 'BLOCKED', reason: 'Current seed did not produce an attributable behavioral-red receipt.' };
-  }
-  if (JSON.stringify(receipt.results.map((item) => item.id)) !== JSON.stringify(currentCases)) {
-    return { status: 'BLOCKED', reason: 'Current seed case registry is missing, duplicated, reordered, or unexpected.' };
-  }
-  const targeted = mutation.expectedCases.map((id) => receipt.results.find((item) => item.id === id));
-  if (targeted.some((item) => !item)) return { status: 'BLOCKED', reason: 'A mutation-owned oracle row is absent.' };
-  if (mutation.id === 'M1' && targeted.some((item) => item.observed?.save?.trim() !== 'Save failed')) {
-    return { status: 'BLOCKED', reason: 'M1 did not observe the actual Save failed terminal state before the explicit Saved assertion.' };
-  }
-  const unrelatedBlocked = receipt.results.some((item) => item.result === 'BLOCKED');
-  if (unrelatedBlocked) return { status: 'BLOCKED', reason: 'At least one current case was blocked; setup or transport failure earns no mutation credit.' };
-  if (targeted.some((item) => item.result !== 'BEHAVIORAL_RED' || !mutation.assertionPattern.test(item.message ?? ''))) {
-    return { status: 'BLOCKED', reason: `Expected assertion(s) were not the source of RED for ${mutation.id}.` };
-  }
-  return { status: 'BEHAVIORAL_RED', assertionMessages: targeted.map((item) => ({ id: item.id, message: item.message })) };
-}
-
-export function classifyM6OpenProof(proof) {
-  const qualified = proof?.httpIndexStatus === 200 && proof?.productionAssetStatus === 200
-    && proof?.browserNavigationStatus === 200
-    && proof?.cdpReady === true && typeof proof?.browserVersion === 'string' && proof.browserVersion.length > 0
-    && proof?.coldHomeReady === true && proof?.openClicked === true
-    && /^[a-f0-9]{64}$/.test(proof?.mutantCandidateIdentity ?? '')
-    && /^[a-f0-9]{64}$/.test(proof?.mutationPatchSha256 ?? '')
-    && /^[a-f0-9]{64}$/.test(proof?.mutatedLoaderSha256 ?? '');
-  if (!qualified) return { status: 'BLOCKED', reason: 'HTTP/browser/CDP/Home/Open preconditions did not all qualify.' };
-  if (proof.openOutcome === 'ready') return { status: 'BLOCKED', reason: 'M6 production loader mutant survived the normal Open assertion.', mutantSurvived: true };
-  if (proof.openOutcome !== 'refused' || !proof.alertText?.includes('Couldnâ€™t open the sales example.')) {
-    return { status: 'BLOCKED', reason: 'The normal Open refusal alert was not observed after the exact M6 mutant and production preconditions qualified.' };
-  }
-  return { status: 'BEHAVIORAL_RED', assertion: 'normal production Home Open must reach project-ready after HTTP and CDP qualify', alertText: proof.alertText };
-}
-
-function rootEvidence() {
-  return path.resolve(process.env.TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR ?? path.join(os.tmpdir(), `tachiko-sheet-146-mutations-${process.pid}`));
-}
-
-function readJson(file) { return readFile(file, 'utf8').then((text) => JSON.parse(text)); }
-
-async function pathHash(file) { return bytesHash(await readFile(file)); }
-
-async function hashSnapshot(cwd) {
-  const out = {};
-  for (const file of immutableFiles) out[file] = await pathHash(path.join(cwd, file));
-  return out;
-}
-
-async function git(commandArgs, options = {}) {
-  return captureRunnerCommand('git', commandArgs, {
-    cwd: options.cwd ?? root,
-    timeoutMs: options.timeoutMs ?? 20_000,
-    maxOutputBytes: 64 * 1024,
-    signal: options.signal,
-  });
-}
-
-function serializeCommand(label, command, args, cwd, started, result, logFile) {
-  return {
-    label, command, args, cwd, startedAt: started, completedAt: nowIso(),
-    durationMs: Date.now() - Date.parse(started), outcome: result.outcome,
-    exitCode: result.code, signal: result.signal, error: result.error ?? null,
-    log: logFile, logSha256: bytesHash(result.bytes),
-  };
-}
-
-async function commandRunner(ctx, label, command, args, cwd, evidenceDir, options = {}) {
-  const remaining = ctx.remainingMs();
-  const reserve = options.reserveMs ?? 90_000;
-  const timeoutMs = Math.min(options.timeoutMs ?? 180_000, remaining - reserve);
-  if (timeoutMs < (options.minimumMs ?? 10_000)) {
-    return { result: { code: 124, signal: null, outcome: 'SOFT_STOP', error: 'insufficient job budget; reserved time for restore, receipt write and artifact upload', bytes: Buffer.alloc(0), output: '' }, command: null };
-  }
-  const logName = `${String(ctx.commandCounter++).padStart(2, '0')}-${safeName(label)}.log`;
-  const logPath = path.join(evidenceDir, 'commands', logName);
-  await mkdir(path.dirname(logPath), { recursive: true });
-  const started = nowIso();
-  const result = await captureRunnerCommand(command, args, {
-    cwd,
-    env: { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: process.env.TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR, ...(options.env ?? {}) },
-    timeoutMs,
-    maxOutputBytes: 128 * 1024,
-    signal: ctx.cancellation.signal,
-  });
-  await writeFile(logPath, result.bytes);
-  const relLog = path.relative(rootEvidence(), logPath).split(path.sep).join('/');
-  const commandReceipt = serializeCommand(label, command, args, cwd, started, result, relLog);
-  ctx.commands.push(commandReceipt);
-  await writeFile(path.join(rootEvidence(), 'mutations', 'commands.json'), `${JSON.stringify(ctx.commands, null, 2)}\n`);
-  return { result, command: commandReceipt };
-}
-
-async function writeSummary(ctx) {
-  ctx.summary.updatedAt = nowIso();
-  await mkdir(path.join(rootEvidence(), 'mutations'), { recursive: true });
-  const target = path.join(rootEvidence(), 'mutations', 'mutation-summary.json');
-  const temporary = `${target}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(ctx.summary, null, 2)}\n`);
-  await rm(target, { force: true });
-  await (await import('node:fs/promises')).rename(temporary, target);
-}
-
-async function captureCandidateIdentity(cwd) {
-  const headRun = await git(['rev-parse', 'HEAD'], { cwd });
-  if (headRun.code !== 0) throw new Error(`cannot resolve candidate HEAD: ${headRun.output}`);
-  const head = headRun.output.trim();
-  const baseRun = await git(['merge-base', '--is-ancestor', base, head], { cwd });
-  if (baseRun.code !== 0) throw new Error(`candidate HEAD ${head} is not descended from base ${base}`);
-  const dirtyRun = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], { cwd });
-  if (dirtyRun.code !== 0) throw new Error(`cannot enumerate candidate working tree: ${dirtyRun.output}`);
-  const dirtyPaths = [...new Set(dirtyRun.output.split('\0').filter(Boolean).map((row) => row.slice(3)))].sort();
-  const dirtyFiles = [];
-  for (const file of dirtyPaths) {
-    const bytes = await readFile(path.join(cwd, file)).catch(() => null);
-    dirtyFiles.push([file, bytes ? bytesHash(bytes) : 'DELETED']);
-  }
-  const committedRun = await git(['diff', '--name-only', `${base}..${head}`], { cwd });
-  if (committedRun.code !== 0) throw new Error(`cannot enumerate candidate committed paths: ${committedRun.output}`);
-  const committedFiles = [];
-  for (const file of committedRun.output.split(/\r?\n/).filter(Boolean).sort()) {
-    const blob = await git(['show', `${head}:${file}`], { cwd });
-    if (blob.code !== 0) throw new Error(`cannot read committed path ${file}`);
-    committedFiles.push([file, bytesHash(blob.bytes)]);
-  }
-  const identity = { base, head, committedFiles, dirtyFiles };
-  return { ...identity, sha256: jsonHash(identity) };
-}
-
-async function validateAuthorizedCandidate(cwd, head) {
-  const requested = process.env.TACHIKO_MUTATION_PR_HEAD;
-  if (requested) {
-    const anchor = await git(['merge-base', '--is-ancestor', expectedHead, requested], { cwd });
-    if (anchor.code !== 0) throw new Error(`workflow PR head ${requested} is not based on the authorized clean candidate ${expectedHead}`);
-    const delta = await git(['diff', '--name-only', `${expectedHead}..${requested}`], { cwd });
-    if (delta.code !== 0) throw new Error(`cannot enumerate the implementation delta from the authorized candidate: ${delta.output}`);
-    const paths = delta.output.split(/\r?\n/).filter(Boolean).sort();
-    if (JSON.stringify(paths) !== JSON.stringify(implementationPaths)) {
-      throw new Error(`PR head delta from authorized candidate must contain exactly the four admitted implementation paths; got ${paths.join(', ')}`);
-    }
-    if (head !== requested) {
-      const parents = await git(['rev-list', '--parents', '-n', '1', head], { cwd });
-      const [, first, second, ...extra] = parents.output.trim().split(/\s+/);
-      if (parents.code !== 0 || first !== base || second !== requested || extra.length) {
-        throw new Error(`workflow checkout ${head} is not the expected merge of base ${base} and authorized PR head ${requested}`);
-      }
-    }
-    return { anchorHead: expectedHead, pullRequestHead: requested, checkoutHead: head, implementationPaths: paths };
-  }
-  if (head !== expectedHead) throw new Error(`mutation script requires exact candidate ${expectedHead}; got ${head}`);
-  return { pullRequestHead: expectedHead, checkoutHead: head };
-}
-
-async function applyPatchSet(worktree, definition, preimages) {
-  for (const patch of definition.patches) {
-    const fileBytes = preimages.get(patch.path);
-    if (!fileBytes) throw new Error(`mutation ${definition.id} has no frozen preimage for ${patch.path}`);
-    const original = fileBytes.toString('utf8');
-    const hits = original.split(patch.before).length - 1;
-    if (hits !== 1) throw new Error(`mutation ${definition.id} preimage matched ${hits} times in ${patch.path}; expected exactly one`);
-    await writeFile(path.join(worktree, patch.path), original.replace(patch.before, patch.after));
-  }
-}
-
-async function exactChangedPaths(worktree) {
-  const result = await git(['diff', '--name-only'], { cwd: worktree });
-  if (result.code !== 0) throw new Error(`cannot enumerate mutated source files: ${result.output}`);
-  return result.output.split(/\r?\n/).filter(Boolean).sort();
-}
-
-async function archiveFileEvidence(worktree, definition, evidenceDir, preimages) {
-  const beforeDir = path.join(evidenceDir, 'preimages');
-  await mkdir(beforeDir, { recursive: true });
-  const preimageManifest = {};
-  for (const [file, bytes] of preimages) {
-    const dest = path.join(beforeDir, file);
-    await mkdir(path.dirname(dest), { recursive: true });
-    await writeFile(dest, bytes);
-    preimageManifest[file] = bytesHash(bytes);
-  }
-  await writeFile(path.join(evidenceDir, 'preimages.json'), `${JSON.stringify(preimageManifest, null, 2)}\n`);
-  const diff = await git(['diff', '--binary', '--', ...[...new Set(definition.patches.map((patch) => patch.path))]], { cwd: worktree });
-  if (diff.code !== 0 || !diff.output) throw new Error(`mutation ${definition.id} did not produce its expected raw patch: ${diff.output}`);
-  const rawPatch = Buffer.from(diff.output);
-  await writeFile(path.join(evidenceDir, 'mutation.patch'), rawPatch);
-  return {
-    changedPaths: await exactChangedPaths(worktree),
-    patchSha256: bytesHash(rawPatch),
-    patch: path.relative(rootEvidence(), path.join(evidenceDir, 'mutation.patch')).split(path.sep).join('/'),
-    preimages: preimageManifest,
-  };
-}
-
-async function readCleanGate(evidenceDir) {
-  const summary = await readJson(path.join(evidenceDir, 'summary.json'));
-  const save = summary.gates?.saveClosure ?? summary.gate?.status;
-  const prod = summary.gates?.productionLifecycle ?? 'NOT RUN';
-  const candidate = summary.candidateIdentity ?? summary.identity?.candidate;
-  return { summary, save, prod, candidate };
-}
-
-function requireCleanAcceptance(summary, expectedCandidate, expectedHead) {
-  if ((summary.gates?.saveClosure ?? summary.gate?.status) !== 'PASS') {
-    return { status: 'BLOCKED', reason: 'Restored clean save-closure gate did not PASS.' };
-  }
-  const candidate = summary.candidateIdentity ?? summary.identity?.candidate;
-  if (!candidate || candidate.head !== expectedHead || candidate.sha256 !== expectedCandidate.sha256) {
-    return { status: 'BLOCKED', reason: 'Restored clean gate candidate identity differs from the original clean candidate.' };
-  }
-  const all = [...(summary.caseOutcomes ?? [])];
-  const prerequisites = all.filter((entry) => entry.id?.startsWith('KIT-') || entry.id?.startsWith('ADAPTER-'));
-  const current = all.filter((entry) => currentCases.includes(entry.id));
-  if (prerequisites.length !== prerequisiteCases.length || prerequisites.some((entry) => entry.status !== 'PASS')
-    || current.length !== currentCases.length || current.some((entry) => entry.status !== 'PASS')) {
-    return { status: 'BLOCKED', reason: 'Restored clean gate did not prove all seven prerequisites and eleven current cases.' };
-  }
-  return { status: 'PASS', candidateIdentity: candidate.sha256, prerequisites: '7/7 PASS', current: '11/11 PASS' };
-}
-
-async function verifyBaselineInvariants(worktree, baselineHashes, stage) {
-  const mismatches = [];
-  for (const [file, expected] of Object.entries(baselineHashes)) {
-    const actual = await pathHash(path.join(worktree, file)).catch(() => 'MISSING');
-    if (actual !== expected) mismatches.push({ file, expected, actual });
-  }
-  if (mismatches.length) return { status: 'BLOCKED', stage, mismatches };
-  const changed = await exactChangedPaths(worktree);
-  if (changed.length) return { status: 'BLOCKED', stage, changedPathsAfterRestore: changed };
-  return { status: 'PASS', stage, verifiedFiles: Object.keys(baselineHashes) };
-}
-
-async function createWorktree(ctx, definition, evidenceDir) {
-  const tempBase = await mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-mutation-'));
-  const worktree = path.join(tempBase, definition.id);
-  const result = await commandRunner(ctx, `${definition.id}-create-worktree`, 'git', ['worktree', 'add', '--detach', worktree, ctx.candidate.head], root, evidenceDir, { timeoutMs: 20_000, minimumMs: 2_000 });
-  if (result.result.code !== 0) throw new Error(`could not create disposable worktree: ${result.result.error ?? result.result.output}`);
-  try {
-    const depPath = path.join(root, 'node_modules');
-    const depStat = await (await import('node:fs/promises')).stat(depPath).catch(() => null);
-    if (!depStat) throw new Error('pinned dependencies are unavailable: root node_modules is absent');
-    await symlink(depPath, path.join(worktree, 'node_modules'), 'dir');
-  } catch (error) {
-    await git(['worktree', 'remove', '--force', worktree], { cwd: root, timeoutMs: 30_000 }).catch(() => {});
-    await rm(tempBase, { recursive: true, force: true }).catch(() => {});
-    throw error;
-  }
-  ctx.worktree = worktree;
-  ctx.worktreeTempRoot = tempBase;
-  return worktree;
-}
-
-async function removeWorktree(ctx, worktree, evidenceDir, definitionId) {
-  if (!worktree) return { status: 'PASS', skipped: true };
-  let result;
-  let loggingFailure = null;
-  try {
-    result = await commandRunner(ctx, `${definitionId}-remove-worktree`, 'git', ['worktree', 'remove', '--force', worktree], root, evidenceDir, { timeoutMs: 30_000, minimumMs: 2_000, reserveMs: 45_000 });
-  } catch (error) {
-    loggingFailure = error.message;
-    result = await git(['worktree', 'remove', '--force', worktree], { cwd: root, timeoutMs: 30_000 }).then((fallback) => ({ result: fallback })).catch((fallbackError) => ({ result: { code: 127, outcome: 'SPAWN_ERROR', error: fallbackError.message } }));
-  }
-  const removeStatus = result.result.code === 0 && !loggingFailure ? 'PASS' : 'BLOCKED';
-  if (result.result.code === 0) {
-    await rm(ctx.worktreeTempRoot, { recursive: true, force: true }).catch(() => {});
-    ctx.worktree = null;
-    ctx.worktreeTempRoot = null;
-  }
-  return { status: removeStatus, exitCode: result.result.code, outcome: result.result.outcome ?? 'EXITED', error: loggingFailure ?? result.result.error ?? null,
-    pathRetainedForInspection: result.result.code !== 0 };
-}
-
-async function copyRawEvidence(source, destination) {
-  await mkdir(destination, { recursive: true });
-  await cp(source, destination, { recursive: true, force: true, errorOnExist: false });
-}
-
-async function runAcceptance(ctx, worktree, evidenceDir, label) {
-  const outputDir = path.join(evidenceDir, label);
-  await mkdir(outputDir, { recursive: true });
-  const run = await commandRunner(ctx, `${label}-pnpm-acceptance-save-closure`, 'pnpm', ['acceptance:save-closure'], worktree, outputDir, {
-    timeoutMs: 180_000, minimumMs: 45_000, env: { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: outputDir },
-  });
-  let summary;
-  try { summary = await readJson(path.join(outputDir, 'summary.json')); }
-  catch (error) { return { status: 'BLOCKED', reason: `save-closure summary missing: ${error.message}`, command: run.command, outputDir }; }
-  return { status: summary.gates?.saveClosure ?? summary.gate?.status ?? 'BLOCKED', command: run.command, outputDir, summary, commandOutcome: run.result.outcome, exitCode: run.result.code };
-}
-
-async function inspectMutationGate(run, mutation) {
-  let seed;
-  try { seed = await readJson(currentSeedPath(run.outputDir)); }
-  catch (error) { return { status: 'BLOCKED', reason: `raw current seed receipt missing: ${error.message}` }; }
-  const commandResult = { outcome: run.commandOutcome, code: run.exitCode };
-  if (commandResult.outcome !== 'EXITED') return { status: 'BLOCKED', reason: `seed command outcome ${commandResult.outcome} is not behavioral evidence` };
-  return classifyMutationReceipt(seed, mutation);
-}
-
-async function writeMutationJson(file, value) {
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-async function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
-}
-
-async function waitForEitherOpenOutcome(page, timeoutMs) {
-  try {
-    const handle = await page.waitForFunction(() => {
-      if (document.querySelector('[data-testid="project-ready"][aria-busy="false"]')) return 'ready';
-      if (document.querySelector('.ts-home-example-error[role="alert"]')) return 'refused';
-      return false;
-    }, null, { timeout: timeoutMs });
-    return await handle.jsonValue();
-  } catch (error) {
-    if (/Timeout/.test(error.name ?? '') || /Timeout/.test(error.message ?? '')) return 'timeout';
-    throw error;
-  }
-}
-
-async function runM6ProductionBootProbe(ctx, worktree, evidenceDir, mutationIdentity) {
-  await mkdir(evidenceDir, { recursive: true });
-  const proof = {
-    status: 'BLOCKED', startedAt: nowIso(), httpIndexStatus: null, productionAssetStatus: null,
-    cdpReady: false, browserVersion: null, coldHomeReady: false, openClicked: false,
-    mutantCandidateIdentity: mutationIdentity.candidateSha256, mutationPatchSha256: mutationIdentity.patchSha256,
-    mutatedLoaderSha256: mutationIdentity.loaderSha256,
-    openOutcome: 'NOT RUN', alertText: null, diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responses: [] },
-  };
-  if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true') {
-    proof.reason = 'M6 production CDP probe runs only on the approved hosted Ubuntu locked-Playwright job.';
-    return proof;
-  }
-  const { chromium } = await import('playwright-core');
-  const playwrightVersion = JSON.parse(await readFile(path.join(worktree, 'node_modules/playwright-core/package.json'), 'utf8')).version;
-  if (playwrightVersion !== '1.62.1') {
-    proof.reason = `locked Playwright version mismatch: ${playwrightVersion}`;
-    proof.playwrightVersion = playwrightVersion;
-    return proof;
-  }
-  proof.playwrightVersion = playwrightVersion;
-  const serverPort = await freePort();
-  const browserPort = await freePort();
-  const profile = await mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-m6-profile-'));
-  let staticServer;
-  let browserProcess;
-  let browser;
-  let stopErrors = [];
-  try {
-    staticServer = await startRunnerServer({
-      name: 'm6-production-http', command: process.execPath,
-      args: [path.join(worktree, 'scripts/serve-dist.mjs'), path.join(worktree, 'dist')],
-      cwd: worktree, env: { PORT: String(serverPort) }, readyText: 'Sheet product server:', signal: ctx.cancellation.signal,
-      startupTimeoutMs: 15_000, maxOutputBytes: 64 * 1024,
-      startupLogPath: path.join(evidenceDir, 'm6-http-startup.log'), serverLogPath: path.join(evidenceDir, 'm6-http-server.log'),
-    });
-    ctx.serverPids.push({ role: 'production-http', pid: staticServer.child?.pid ?? null });
-    browserProcess = await startRunnerServer({
-      name: 'm6-managed-chromium-cdp', command: chromium.executablePath(),
-      args: [
-        '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-allow-origins=*',
-        '--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${browserPort}`,
-        `--user-data-dir=${profile}`, 'about:blank',
-      ],
-      cwd: worktree, env: {}, readyText: 'DevTools listening on ws://', signal: ctx.cancellation.signal,
-      startupTimeoutMs: 20_000, maxOutputBytes: 64 * 1024,
-      startupLogPath: path.join(evidenceDir, 'm6-chromium-startup.log'), serverLogPath: path.join(evidenceDir, 'm6-chromium-server.log'),
-    });
-    ctx.serverPids.push({ role: 'managed-chromium', pid: browserProcess.child?.pid ?? null });
-    const versionResponse = await fetch(`http://127.0.0.1:${browserPort}/json/version`);
-    if (!versionResponse.ok) throw new Error(`BLOCKED: Chrome DevTools HTTP endpoint returned ${versionResponse.status}`);
-    const cdpVersion = await versionResponse.json();
-    proof.cdpReady = true;
-    proof.cdpProtocolVersion = cdpVersion['Protocol-Version'] ?? null;
-    proof.browserVersion = cdpVersion.Browser ?? null;
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${browserPort}`, { timeout: 10_000 });
-    const origin = `http://127.0.0.1:${serverPort}`;
-    const index = await fetch(`${origin}/`, { signal: AbortSignal.timeout(5000) });
-    proof.httpIndexStatus = index.status;
-    const html = await index.text();
-    const entryPath = html.match(/<script[^>]+src=["']([^"']+\.js)["']/i)?.[1];
-    proof.productionEntryAssetPath = entryPath ?? null;
-    if (index.status !== 200 || !entryPath) throw new Error('BLOCKED: independent production HTTP index/entry discovery did not qualify.');
-    const entryUrl = new URL(entryPath, origin);
-    if (entryUrl.origin !== origin) throw new Error('BLOCKED: production entry asset escaped the same-origin boundary.');
-    const assetResponse = await fetch(entryUrl, { signal: AbortSignal.timeout(5000) });
-    proof.productionAssetStatus = assetResponse.status;
-    if (assetResponse.status !== 200) throw new Error(`BLOCKED: production JavaScript entry returned HTTP ${assetResponse.status}.`);
-    const context = browser.contexts()[0] ?? await browser.newContext();
-    const page = context.pages()[0] ?? await context.newPage();
-    await page.setViewportSize({ width: 1280, height: 900 });
-    page.on('pageerror', (error) => proof.diagnostics.pageErrors.push({ message: error.message }));
-    page.on('console', (message) => { if (message.type() === 'error') proof.diagnostics.consoleErrors.push({ message: message.text() }); });
-    page.on('requestfailed', (request) => proof.diagnostics.requestFailures.push({ url: request.url(), error: request.failure()?.errorText ?? null }));
-    page.on('response', async (response) => {
-      const url = new URL(response.url());
-      if (url.origin !== `http://127.0.0.1:${serverPort}`) return;
-      proof.diagnostics.responses.push({ path: url.pathname, status: response.status() });
-      if (url.pathname === '/index.html') proof.httpIndexStatus = response.status();
-      if (/^\/assets\/index-.*\.js$/.test(url.pathname)) proof.productionAssetStatus = response.status();
-    });
-    const response = await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 10_000 });
-    proof.browserNavigationStatus = response?.status() ?? null;
-    await page.getByRole('heading', { name: 'Tachiko Sheet', exact: true }).waitFor({ state: 'visible', timeout: 5000 });
-    const open = page.getByRole('button', { name: 'Open sales example', exact: true });
-    await open.waitFor({ state: 'visible', timeout: 5000 });
-    proof.coldHomeReady = true;
-    await open.click();
-    proof.openClicked = true;
-    proof.openOutcome = await waitForEitherOpenOutcome(page, 10_000);
-    if (proof.openOutcome === 'refused') {
-      proof.alertText = await page.locator('.ts-home-example-error[role="alert"]').innerText();
-    }
-    const classified = classifyM6OpenProof(proof);
-    proof.status = classified.status;
-    proof.classification = classified;
-    if (proof.status === 'BEHAVIORAL_RED') {
-      try { assert.equal(proof.openOutcome, 'ready', classified.assertion); }
-      catch (error) { proof.assertion = { name: error.name, code: error.code ?? null, message: error.message, stack: error.stack }; }
-    }
-    if (proof.openOutcome === 'timeout') proof.reason = 'normal production Open did not reach ready or the explicit refusal alert before its observation deadline';
-  } catch (error) {
-    proof.status = 'BLOCKED';
-    proof.reason = error.message;
-    proof.error = { name: error.name, code: error.code ?? null, message: error.message, stack: error.stack };
-  } finally {
-    try { await browser?.close(); } catch (error) { stopErrors.push({ role: 'cdp-client', message: error.message }); }
-    proof.ownedProcesses = [];
-    for (const [role, server] of [['managed-chromium', browserProcess], ['production-http', staticServer]]) {
-      if (!server) continue;
-      try { await server.stop(); } catch (error) { stopErrors.push({ role, message: error.message }); }
-      let exit = null;
-      try { exit = await server.exit; } catch (error) { stopErrors.push({ role: `${role}-exit`, message: error.message }); }
-      proof.ownedProcesses.push({ role, pid: server.child?.pid ?? null, command: role === 'managed-chromium' ? chromium.executablePath() : process.execPath,
-        args: role === 'managed-chromium' ? ['--headless=new', '--no-sandbox', '--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${browserPort}`, `--user-data-dir=${profile}`, 'about:blank'] : [path.join(worktree, 'scripts/serve-dist.mjs'), path.join(worktree, 'dist')],
-        exit: exit ? { code: exit.code, signal: exit.signal, outcome: exit.outcome ?? null } : null,
-        log: role === 'managed-chromium' ? 'm6-chromium-server.log' : 'm6-http-server.log' });
-    }
-    await rm(profile, { recursive: true, force: true }).catch((error) => stopErrors.push({ role: 'profile-cleanup', message: error.message }));
-  }
-  proof.completedAt = nowIso();
-  proof.stopErrors = stopErrors;
-  if (stopErrors.length) proof.status = 'BLOCKED';
-  await writeMutationJson(path.join(evidenceDir, 'm6-production-open-proof.json'), proof);
-  return proof;
-}
-
-async function runBuildAndCleanProduction(ctx, worktree, evidenceDir, label) {
-  const candidateBeforeBuild = await captureCandidateIdentity(worktree);
-  const env = { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: evidenceDir };
-  const clear = await commandRunner(ctx, `${label}-clear-build-receipt`, process.execPath, [path.join(worktree, 'scripts/run-production-lifecycle.mjs'), '--clear-build-receipt'], worktree, evidenceDir, { timeoutMs: 30_000, minimumMs: 3_000, env });
-  if (clear.result.code !== 0) return { status: 'BLOCKED', step: 'clear-build-receipt', command: clear.command };
-  const build = await commandRunner(ctx, `${label}-pnpm-build`, 'pnpm', ['build'], worktree, evidenceDir, { timeoutMs: 180_000, minimumMs: 30_000, env });
-  if (build.result.code !== 0) return { status: 'BLOCKED', step: 'pnpm build', command: build.command };
-  const record = await commandRunner(ctx, `${label}-record-build`, process.execPath, [path.join(worktree, 'scripts/run-production-lifecycle.mjs'), '--record-build'], worktree, evidenceDir, { timeoutMs: 30_000, minimumMs: 5_000, env });
-  if (record.result.code !== 0) return { status: 'BLOCKED', step: 'record production build', command: record.command };
-  const receipt = await readJson(path.join(evidenceDir, 'production-build.json')).catch(() => null);
-  const candidateAfterBuild = await captureCandidateIdentity(worktree);
-  if (receipt?.status !== 'PASS' || receipt.candidate?.sha256 !== candidateBeforeBuild.sha256
-    || candidateAfterBuild.sha256 !== candidateBeforeBuild.sha256) {
-    return { status: 'BLOCKED', step: 'production build candidate binding', candidateBefore: candidateBeforeBuild.sha256,
-      candidateReceipt: receipt?.candidate?.sha256 ?? null, candidateAfter: candidateAfterBuild.sha256 };
-  }
-  return { status: 'PASS', clear: clear.command, build: build.command, record: record.command,
-    receipt: path.relative(rootEvidence(), path.join(evidenceDir, 'production-build.json')).split(path.sep).join('/'),
-    candidateIdentity: candidateBeforeBuild.sha256, artifactManifestSha256: receipt.artifact?.digest ?? null };
-}
-
-async function runCleanProductionGate(ctx, worktree, evidenceDir, label, expectedCandidateSha) {
-  const build = await runBuildAndCleanProduction(ctx, worktree, evidenceDir, label);
-  if (build.status !== 'PASS') return build;
-  const gate = await commandRunner(ctx, `${label}-pnpm-acceptance-production-lifecycle`, 'pnpm', ['acceptance:production-lifecycle'], worktree, evidenceDir, {
-    timeoutMs: 180_000, minimumMs: 45_000, env: { TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: evidenceDir },
-  });
-  const summary = await readJson(path.join(evidenceDir, 'summary.json')).catch(() => null);
-  const candidate = summary?.candidateIdentity ?? summary?.identity?.candidate;
-  if (gate.result.code !== 0 || summary?.gates?.productionLifecycle !== 'PASS' || candidate?.sha256 !== expectedCandidateSha) {
-    return { status: 'BLOCKED', step: 'clean production lifecycle', gate: gate.command, summaryStatus: summary?.status ?? 'MISSING' };
-  }
-  return { status: 'PASS', build, gate: gate.command, candidateIdentity: candidate.sha256, caseId: productionCase };
-}
-
-async function clearGeneratedEvidence(evidencePath, archivePath) {
-  const entries = await readdir(evidencePath, { withFileTypes: true });
-  const names = entries.map((entry) => entry.name).sort();
-  if (!names.length) throw new Error('M6 old-gate evidence archive was unexpectedly empty.');
-  await copyRawEvidence(evidencePath, archivePath);
-  for (const name of names) await rm(path.join(evidencePath, name), { recursive: true, force: true });
-  const remaining = await readdir(evidencePath);
-  return { archived: true, archivedPaths: names, archivePath, clearedOnlyGeneratedEvidence: remaining.length === 0, remainingPaths: remaining };
-}
-
-async function runOneMutation(ctx, definition, baselineHashes, cleanCandidate) {
-  const evidenceDir = path.join(rootEvidence(), 'mutations', definition.id);
-  await mkdir(evidenceDir, { recursive: true });
-  const record = { id: definition.id, startedAt: nowIso(), status: 'NOT RUN', workspace: null, fault: null, oldGate: null, cleanAfterRestore: null, diagnostics: [] };
-  ctx.summary.mutations.push(record);
-  await writeSummary(ctx);
-  let worktree = null;
-  let preimages = new Map();
-  let mutated = false;
-  try {
-    worktree = await createWorktree(ctx, definition, evidenceDir);
-    record.workspace = worktree;
-    record.candidateBeforeMutation = await captureCandidateIdentity(worktree);
-    if (record.candidateBeforeMutation.head !== cleanCandidate.head) throw new Error('disposable mutation worktree HEAD differs from the qualified candidate');
-    for (const file of new Set(definition.patches.map((patch) => patch.path))) preimages.set(file, await readFile(path.join(worktree, file)));
-    const expectedChanged = [...new Set(definition.patches.map((patch) => patch.path))].sort();
-    await applyPatchSet(worktree, definition, preimages);
-    mutated = true;
-    record.fault = await archiveFileEvidence(worktree, definition, evidenceDir, preimages);
-    if (JSON.stringify(record.fault.changedPaths) !== JSON.stringify(expectedChanged)) throw new Error(`mutant changed paths differ from its fixed patch: ${record.fault.changedPaths.join(', ')}`);
-    const actualChanged = await exactChangedPaths(worktree);
-    if (JSON.stringify(actualChanged) !== JSON.stringify(expectedChanged)) throw new Error(`mutant changed paths differ after patch application: ${actualChanged.join(', ')}`);
-    record.mutantIdentity = await captureCandidateIdentity(worktree);
-    record.fault.sourceHashesAfterPatch = Object.fromEntries(await Promise.all(expectedChanged.map(async (file) => [file, await pathHash(path.join(worktree, file))])));
-    await writeSummary(ctx);
-
-    if (definition.id === 'M6') {
-      const oldEvidence = path.join(evidenceDir, 'old-gate-generated');
-      const old = await runAcceptance(ctx, worktree, evidenceDir, 'm6-gate');
-      const oldCandidate = old.summary?.identity?.candidate;
-      const oldSeed = await readJson(currentSeedPath(old.outputDir)).catch(() => null);
-      record.oldGate = {
-        status: old.status === 'PASS' && old.commandOutcome === 'EXITED' && old.exitCode === 0 ? 'PASS' : 'BLOCKED',
-        command: old.command, candidateIdentity: oldCandidate?.sha256 ?? null,
-        caseCounts: { prerequisites: old.summary?.caseOutcomes?.filter((item) => prerequisiteCases.includes(item.id) && item.status === 'PASS').length ?? 0,
-          current: old.summary?.caseOutcomes?.filter((item) => currentCases.includes(item.id) && item.status === 'PASS').length ?? 0 },
-        rawReceiptPaths: oldSeed ? ['prerequisites.seed.json', 'current-save-closure.seed.json'] : [],
-      };
-      if (record.oldGate.status !== 'PASS' || oldCandidate?.sha256 !== record.mutantIdentity.sha256) throw new Error('M6 unchanged old acceptance gate was not GREEN on the same mutant identity.');
-      const archived = await clearGeneratedEvidence(old.outputDir, path.join(evidenceDir, 'old-gate-archive'));
-      record.oldGate.archiveAndEvidenceRestore = archived;
-      if (!archived.clearedOnlyGeneratedEvidence) throw new Error('M6 could not restore only the generated evidence paths before fresh mutant receipts.');
-      const fresh = await runAcceptance(ctx, worktree, evidenceDir, 'm6-gate');
-      const freshCandidate = fresh.summary?.identity?.candidate;
-      record.freshSaveClosure = { status: fresh.status === 'PASS' && fresh.exitCode === 0 && fresh.commandOutcome === 'EXITED' ? 'PASS' : 'BLOCKED', command: fresh.command, candidateIdentity: freshCandidate?.sha256 ?? null };
-      if (record.freshSaveClosure.status !== 'PASS' || freshCandidate?.sha256 !== record.mutantIdentity.sha256) throw new Error('M6 fresh save-closure prerequisites/current receipts are not PASS for the unchanged mutant identity.');
-      const built = await runBuildAndCleanProduction(ctx, worktree, fresh.outputDir, 'm6-mutant');
-      record.productionBuild = built;
-      if (built.status !== 'PASS') throw new Error(`M6 fresh production build did not qualify: ${built.step}`);
-      const beforeProbe = await captureCandidateIdentity(worktree);
-      if (beforeProbe.sha256 !== record.mutantIdentity.sha256) throw new Error('M6 product patch identity changed between old gate and production assertion.');
-      const postArchiveIdentity = await captureCandidateIdentity(worktree);
-      record.mutationIdentityAfterEvidenceReset = postArchiveIdentity.sha256;
-      if (postArchiveIdentity.sha256 !== record.mutantIdentity.sha256) throw new Error('M6 archive/evidence reset changed the production mutant candidate identity.');
-      const probe = await runM6ProductionBootProbe(ctx, worktree, path.join(evidenceDir, 'm6-production-probe'), {
-        candidateSha256: record.mutantIdentity.sha256, patchSha256: record.fault.patchSha256,
-        loaderSha256: record.fault.sourceHashesAfterPatch?.['src/core-loader.ts'],
-      });
-      record.productionAssertion = { status: probe.status, proof: path.relative(rootEvidence(), path.join(evidenceDir, 'm6-production-probe', 'm6-production-open-proof.json')).split(path.sep).join('/'), assertion: probe.assertion ?? null, reason: probe.reason ?? null, browserVersion: probe.browserVersion ?? null, cdpProtocolVersion: probe.cdpProtocolVersion ?? null };
-      if (probe.status !== 'BEHAVIORAL_RED') throw new Error(`M6 intended production boot/Open assertion did not RED: ${probe.reason ?? probe.status}`);
-      const afterProbe = await captureCandidateIdentity(worktree);
-      if (afterProbe.sha256 !== record.mutantIdentity.sha256) throw new Error('M6 product patch identity changed during the production assertion.');
-      record.status = 'BEHAVIORAL_RED';
-    } else {
-      const mutationRun = await runAcceptance(ctx, worktree, evidenceDir, `${definition.id.toLowerCase()}-mutated-gate`);
-      record.mutationGate = { command: mutationRun.command, gateStatus: mutationRun.status, candidateIdentity: mutationRun.summary?.identity?.candidate?.sha256 ?? null };
-      const seed = await readJson(currentSeedPath(mutationRun.outputDir)).catch(() => null);
-      const prerequisiteRows = (mutationRun.summary?.caseOutcomes ?? []).filter((item) => prerequisiteCases.includes(item.id));
-      record.mutationPrerequisites = {
-        status: prerequisiteRows.length === prerequisiteCases.length && prerequisiteRows.every((item) => item.status === 'PASS') ? 'PASS' : 'BLOCKED',
-        caseOutcomes: prerequisiteRows,
-      };
-      record.faultResult = record.mutationPrerequisites.status === 'PASS'
-        ? classifyMutationReceipt(seed, definition)
-        : { status: 'BLOCKED', reason: 'All seven real prerequisites did not PASS before current mutation-case credit.' };
-      record.faultResult.commandOutcome = mutationRun.commandOutcome;
-      if (mutationRun.summary?.identity?.candidate?.sha256 !== record.mutantIdentity.sha256) {
-        record.faultResult = { status: 'BLOCKED', reason: 'Mutation receipt candidate identity differs from the exact mutant patch.' };
-      }
-      if (mutationRun.commandOutcome !== 'EXITED') record.faultResult = { status: 'BLOCKED', reason: `Mutation command ended as ${mutationRun.commandOutcome}.` };
-      if (record.faultResult.status !== 'BEHAVIORAL_RED') throw new Error(`${definition.id} expected oracle RED was not proven: ${record.faultResult.reason}`);
-      record.status = 'BEHAVIORAL_RED';
-    }
-  } catch (error) {
-    record.status = record.status === 'BEHAVIORAL_RED' ? record.status : 'BLOCKED';
-    record.diagnostics.push({ status: 'BLOCKED', message: error.message, stack: error.stack });
-    ctx.stopAfterMutation = true;
-  } finally {
-    if (worktree && preimages.size) {
-      const restoreManifest = {};
-      for (const [file, bytes] of preimages) {
-        try { await writeFile(path.join(worktree, file), bytes); restoreManifest[file] = { sha256: bytesHash(await readFile(path.join(worktree, file))), expectedSha256: bytesHash(bytes) }; }
-        catch (error) { restoreManifest[file] = { error: error.message }; }
-      }
-      record.restore = { productSourceFiles: restoreManifest, verified: Object.values(restoreManifest).every((item) => item.sha256 && item.sha256 === item.expectedSha256) };
-      record.restoredInvariants = await verifyBaselineInvariants(worktree, baselineHashes, `${definition.id}-restore`).catch((error) => ({ status: 'BLOCKED', reason: error.message }));
-      if (!record.restore.verified || record.restoredInvariants.status !== 'PASS') {
-        record.status = 'BLOCKED';
-        ctx.stopAfterMutation = true;
-      }
-      await writeMutationJson(path.join(evidenceDir, 'restore-proof.json'), { restore: record.restore, invariants: record.restoredInvariants, changedPathsAfterRestore: await exactChangedPaths(worktree).catch((error) => [`ERROR:${error.message}`]) })
-        .catch((error) => { record.status = 'BLOCKED'; ctx.stopAfterMutation = true; record.diagnostics.push({ status: 'BLOCKED', message: `restoration receipt write failed: ${error.message}` }); });
-    }
-    const removed = await removeWorktree(ctx, worktree, evidenceDir, definition.id).catch((error) => ({ status: 'BLOCKED', error: error.message }));
-    record.workspaceCleanup = removed;
-    if (removed.status !== 'PASS') { record.status = 'BLOCKED'; ctx.stopAfterMutation = true; }
-    record.completedAt = nowIso();
-    await writeSummary(ctx);
-  }
-
-  if (record.restore?.verified && record.restoredInvariants?.status === 'PASS' && record.workspaceCleanup?.status === 'PASS') {
-    const cleanDir = path.join(evidenceDir, 'clean-rerun');
-    const clean = await runAcceptance(ctx, worktree ?? root, cleanDir, `${definition.id.toLowerCase()}-restored-clean`);
-    record.cleanAfterRestore = requireCleanAcceptance(clean.summary, cleanCandidate, cleanCandidate.head);
-    record.cleanAfterRestore.command = clean.command;
-    if (record.cleanAfterRestore.status !== 'PASS' || clean.commandOutcome !== 'EXITED' || clean.exitCode !== 0) {
-      record.status = 'BLOCKED';
-      ctx.stopAfterMutation = true;
-    }
-    record.cleanAfterRestore.acceptanceArtifact = clean.summary?.acceptanceArtifact ?? null;
-    if (!record.cleanAfterRestore.acceptanceArtifact?.digest) {
-      record.cleanAfterRestore.status = 'BLOCKED';
-      record.cleanAfterRestore.reason = 'Restored clean acceptance artifact inventory was not recorded for the candidate.';
-      ctx.stopAfterMutation = true;
-    }
-    if (definition.id === 'M6' && record.cleanAfterRestore.status === 'PASS') {
-      const prod = await runCleanProductionGate(ctx, root, clean.outputDir, 'm6-restored-clean', cleanCandidate.sha256);
-      record.cleanProductionAfterRestore = prod;
-      if (prod.status !== 'PASS') { record.status = 'BLOCKED'; ctx.stopAfterMutation = true; }
-    }
-  } else {
-    record.cleanAfterRestore = { status: 'NOT RUN', reason: 'restoration or owned worktree cleanup did not verify.' };
-  }
-  record.completedAt = nowIso();
-  await writeSummary(ctx);
-  return record;
-}
-
-function mutationReceiptSummary(ctx) {
-  const allRun = ctx.summary.mutations.length === mutationCases.length;
-  const allDetected = ctx.summary.mutations.every((item) => item.status === 'BEHAVIORAL_RED' && item.cleanAfterRestore?.status === 'PASS');
-  const m6 = ctx.summary.mutations.find((item) => item.id === 'M6');
-  const m6RestoredProduction = m6?.cleanProductionAfterRestore?.status === 'PASS';
-  return allRun && allDetected && m6RestoredProduction && ctx.summary.controls?.status === 'PASS' ? 'PASS' : 'BLOCKED';
-}
-
-async function runControls(ctx, baselineHashes) {
-  const driver = await readFile(path.join(root, 'tests/product/web-save-closure-current.mjs'), 'utf8');
-  const requiredFragments = [
-    'return save === "Save failed" || (save === "Saved on this device" && !document.querySelector(".ts-modal--save"));',
-    'assert.equal(save, "Saved on this device", "Save a copy must succeed and close the current Save dialog");',
-  ];
-  const missing = requiredFragments.filter((fragment) => !driver.includes(fragment));
-  const cases = [
-    { name: 'immediate-clean-saved-closed', status: classifySaveTerminalObservation('Saved on this device', false), expected: 'SAVED' },
-    { name: 'actual-save-failed', status: classifySaveTerminalObservation('Save failed', true), expected: 'SAVE_FAILED' },
-    { name: 'stale-saved-current-dialog-open', status: classifySaveTerminalObservation('Saved on this device', true), expected: 'PENDING' },
-    { name: 'missing-status', status: classifySaveTerminalObservation(null, true), expected: 'PENDING' },
-    { name: 'indefinitely-saving', status: classifySaveTerminalObservation('Savingâ€¦', true), expected: 'PENDING' },
-  ];
-  const passed = !missing.length && cases.every((item) => item.status === item.expected)
-    && baselineHashes['tests/product/web-save-closure-current.mjs'] === expectedSeeds['tests/product/web-save-closure-current.mjs'];
-  const result = {
-    status: passed ? 'PASS' : 'BLOCKED', cases,
-    sourceAssertionFragmentsPresent: missing.length === 0,
-    missingFragments: missing,
-    note: 'Synthetic terminal observations are a separate unit-control receipt; they do not replace actual M1 or clean preservation/reopen runs.',
-  };
-  await writeMutationJson(path.join(rootEvidence(), 'mutations', 'm1-controls.json'), result);
-  ctx.summary.controls = result;
-  await writeSummary(ctx);
-  return result;
-}
-
-export async function executeMutationQualification() {
-  const evidenceDir = rootEvidence();
-  await mkdir(path.join(evidenceDir, 'mutations'), { recursive: true });
-  const cancellation = createRunnerCancellation();
-  const ctx = {
-    cancellation,
-    commands: [],
-    commandCounter: 0,
-    serverPids: [],
-    worktree: null,
-    worktreeTempRoot: null,
-    stopAfterMutation: false,
-    startedAt: Date.now(),
-    remainingMs() {
-      const jobStart = Number(process.env.TACHIKO_QUALIFICATION_STARTED_AT ?? 0) * 1000;
-      const start = jobStart > 0 ? jobStart : this.startedAt;
-      return 20 * 60 * 1000 - (Date.now() - start);
-    },
-    summary: {
-      status: 'NOT RUN', base, expectedHead, startedAt: nowIso(), environment: { platform: process.platform, arch: process.arch, node: process.version, os: os.release() },
-      frozenSeedHashes: expectedSeeds, workPin, kitManifest, mutations: [], commands: [], diagnostics: [], controls: { status: 'NOT RUN' },
-      limits: { serial: true, mutationsPerWorkspace: 1, jobTimeoutMinutes: 20, uploadReserveMs: 90_000, browser: 'hosted Ubuntu locked Playwright 1.62.1 only for M6; no Mac Chrome/Brave browser launch' },
-    },
-  };
-  ctx.summary.evidenceRoot = evidenceDir;
-  const baselineHashes = {};
-  try {
-    ctx.candidate = await captureCandidateIdentity(root);
-    ctx.summary.candidate = ctx.candidate;
-    ctx.summary.prIdentity = await validateAuthorizedCandidate(root, ctx.candidate.head);
-    if (ctx.candidate.dirtyFiles.length) throw new Error(`clean qualification checkout is dirty before mutations: ${ctx.candidate.dirtyFiles.map(([file]) => file).join(', ')}`);
-    const baseStatus = await git(['status', '--porcelain=v1', '-z'], { cwd: root });
-    if (baseStatus.code !== 0 || baseStatus.output) throw new Error('candidate checkout is not clean before mutations.');
-    const cleanEvidence = await readCleanGate(evidenceDir);
-    if (cleanEvidence.save !== 'PASS' || cleanEvidence.prod !== 'PASS' || cleanEvidence.candidate?.sha256 !== ctx.candidate.sha256) {
-      throw new Error('the exact-candidate clean 7/11 and production lifecycle receipts are required before mutations.');
-    }
-    for (const [file, expected] of Object.entries(expectedSeeds)) {
-      const actual = await pathHash(path.join(root, file));
-      if (actual !== expected) throw new Error(`frozen seed hash mismatch: ${file}`);
-    }
-    const lock = JSON.parse(await readFile(path.join(root, 'core-kit.lock.json'), 'utf8'));
-    const lockText = JSON.stringify(lock);
-    if (!lockText.includes(workPin) || !lockText.includes(kitManifest)) throw new Error('qualified Work pin or manifest hash differs from the fixed mutation contract.');
-    Object.assign(baselineHashes, await hashSnapshot(root));
-    ctx.summary.cleanCandidateIdentity = cleanEvidence.candidate.sha256;
-    ctx.summary.invariantsBefore = baselineHashes;
-    const controls = await runControls(ctx, baselineHashes);
-    if (controls.status !== 'PASS') throw new Error('M1 terminal observation controls did not pass.');
-    await writeSummary(ctx);
-
-    for (const definition of mutationCases) {
-      if (ctx.stopAfterMutation || ctx.cancellation.signal.aborted) {
-        ctx.summary.mutations.push({ id: definition.id, status: 'NOT RUN', reason: 'A prior mutation stage was blocked or runner cancellation was received.' });
-        await writeSummary(ctx);
-        continue;
-      }
-      if (ctx.remainingMs() < 4 * 60 * 1000) {
-        ctx.stopAfterMutation = true;
-        ctx.summary.mutations.push({ id: definition.id, status: 'NOT RUN', reason: '20-minute job budget soft stop; cleanup and artifact upload reserve retained.' });
-        await writeSummary(ctx);
-        continue;
-      }
-      await runOneMutation(ctx, definition, baselineHashes, cleanEvidence.candidate);
-    }
-    ctx.summary.status = mutationReceiptSummary(ctx);
-    ctx.summary.completedAt = nowIso();
-  } catch (error) {
-    ctx.summary.status = 'BLOCKED';
-    ctx.summary.diagnostics.push({ status: 'BLOCKED', message: error.message, stack: error.stack });
-    if (ctx.worktree) {
-      const existing = ctx.summary.mutations.at(-1);
-      if (existing) existing.status = 'BLOCKED';
-    }
-    const recorded = new Set(ctx.summary.mutations.map((item) => item.id));
-    for (const definition of mutationCases) {
-      if (!recorded.has(definition.id)) ctx.summary.mutations.push({ id: definition.id, status: 'NOT RUN', reason: 'A prior setup, cleanup, or evidence write failed; remaining mutation stages were not run.' });
-    }
-  } finally {
-    ctx.summary.commands = ctx.commands;
-    ctx.summary.ownedProcessGroups = ctx.serverPids;
-    ctx.summary.cancelled = cancellation.receivedSignal ?? null;
-    ctx.summary.completedAt ??= nowIso();
-    await writeSummary(ctx).catch(() => {});
-    cancellation.dispose();
-  }
-  return ctx.summary;
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  const result = await executeMutationQualification();
-  console.log(JSON.stringify({ status: result.status, candidate: result.candidate?.head ?? null, mutations: result.mutations.map(({ id, status, cleanAfterRestore, diagnostics }) => ({ id, status, cleanAfterRestore: cleanAfterRestore?.status ?? 'NOT RUN', diagnostics })), evidence: path.join(rootEvidence(), 'mutations', 'mutation-summary.json') }, null, 2));
-  if (result.status !== 'PASS') process.exitCode = 78;
-}
+zºè¬&§µÊÞj×­…ë2šX§‘ú+šémŠÈ^–[·õ,z»?µ§!ŠJ&kùhq©²Ö­{÷çšk¥¶+!zYlÿ_tçm{÷O;ß¼ÛžÌk&Þ¶«yªÞ²‰žŠË.zÌ"¶^®h¬²*'±ú+¶Š·œ¶Šò:—«jØ¨žz-¥êæŠÛ^v‹®º+Ô¼¼M•É¥…°°‘¥ÍÁ½Í…‰±”€ŒÄÐØµÕÑ…Ñ¥½¸ÅÕ…±¥™¥…Ñ¥½¸¸AÉ½‘ÕÐ™…Õ±ÑÌ•á¥ÍÐ½¹±ä¥¸(¼¼Í¡½ÉÐµ±¥Ù•¥ÐÝ½É­ÑÉ••Ì…¹…É”É•ÍÑ½É•‰•™½É”„±•…¸É•ÉÕ¸¸)¥µÁ½ÉÐ…ÍÍ•ÉÐ™É½´€¹½‘”é…ÍÍ•ÉÐ½ÍÑÉ¥Ðœì)¥µÁ½ÉÐìÉ•…Ñ•!…Í ô™É½´€¹½‘”éÉåÁÑ¼œì)¥µÁ½ÉÐìÀ°µ­‘¥È°µ­‘Ñ•µÀ°É•…‘¥±”°É•…‘‘¥È°É´°Íåµ±¥¹¬°ÝÉ¥Ñ•¥±”ô™É½´€¹½‘”é™Ì½ÁÉ½µ¥Í•Ìœì)¥µÁ½ÉÐ¹•Ð™É½´€¹½‘”é¹•Ðœì)¥µÁ½ÉÐ½Ì™É½´€¹½‘”é½Ìœì)¥µÁ½ÉÐÁ…Ñ ™É½´€¹½‘”éÁ…Ñ œì)¥µÁ½ÉÐÙ´™É½´€¹½‘”éÙ´œì)¥µÁ½ÉÐì™¥±•UI1Q½A…Ñ °Á…Ñ¡Q½¥±•UI0ô™É½´€¹½‘”éÕÉ°œì)¥µÁ½ÉÐì…ÁÑÕÉ•IÕ¹¹•É½µµ…¹°É•…Ñ•IÕ¹¹•É…¹•±±…Ñ¥½¸°ÍÑ…ÉÑIÕ¹¹•ÉM•ÉÙ•Èô™É½´€œ¸½ÉÕ¹¹•ÈµÁÉ½•ÍÌµ±¥™•å±”¹µ©Ìœì()½¹ÍÐÉ½½Ð€ôÁ…Ñ ¹É•Í½±Ù”¡™¥±•UI1Q½A…Ñ ¡¹•ÜUI0 œ¸¸œ°¥µÁ½ÉÐ¹µ•Ñ„¹ÕÉ°¤¤¤ì)½¹ÍÐ‰…Í”€ô€œÌÜÕÈÕ•„ÄÈÈØÉ‰•ŒÌÉ”ÈÌÀÍˆÍŒØÌØØÉ˜ÁˆØäÌÈÉ˜œì)½¹ÍÐ•áÁ•Ñ•‘!•…€ô€˜ØÄÈÅÕ‰ˆÔääÁˆáˆäÀÀÐÀØÈØÐÉ…„ÈäÌÝ™™…ˆÑ˜œì)½¹ÍÐ¥µÁ±•µ•¹Ñ…Ñ¥½¹A…Ñ¡Ì€ôl(€€œ¹¥Ñ¡Õˆ½Ý½É­™±½ÝÌ½ÁÉ½‘ÕÐ¹åµ°œ°€‘½Ì½QMPµ]%I%9¹µœ°(€€ÍÉ¥ÁÑÌ½ÉÕ¸µÍ…Ù”µ±½ÍÕÉ”µµÕÑ…Ñ¥½¹Ì¹µ©Ìœ°€Ñ•ÍÑÌ½Í…Ù”µ±½ÍÕÉ”µµÕÑ…Ñ¥½¹Ì¹Ñ•ÍÐ¹µ©Ìœ°)tì)½¹ÍÐ•áÁ•Ñ•‘M••‘Ì€ôì(€€Ñ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÕÉÉ•¹Ð¹µ©Ìœè€˜Á‘„ÄÅ‰„ÈÌÈÀØÜàåŒÅ…ÁÑŒÉ‘ˆÜÜÅ™•‰™ÌÝˆàÌÐÍ™ÝŒÅ˜ÀÝŒÐÔÜÔá‰Í„àœ°(€€Ñ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÁÉ•É•ÅÕ¥Í¥Ñ•Ì¹µ©Ìœè€ˆÍ”Á˜å„äåˆØÑ‘ˆåá‰ŒÁ…„ÌÕ”Üá™ŒÜäÜÍ˜äØàäÙ‰àÑ˜ÑÜÝ•ˆÕ•ŒÀá‰å”ÜÀÐœ°(€€Ñ•ÍÑÌ½ÁÉ½‘ÕÐ½ÁÉ½‘ÕÑ¥½¸µ±¥™•å±”¹µ©Ìœè€•ˆåˆÈØÑ˜ÅÝ”ÔØÅ”ÔÀØàÄÁ„Õ…”Ñ‰ˆÅ‰”ÀàØÄÀÈäÜÝˆÍ„ÜàÙá˜äÐàá„ÐÔÉ•ˆÜÝœ°)ôì)½¹ÍÐÝ½É­A¥¸€ô€œÔÄá……„ÔÕ”ÀÐÙ„Ñ”ÐØÜÙˆÑÕ”ÀÕàÄàåŒÑŒØÌÐÍ™”œì)½¹ÍÐ­¥Ñ5…¹¥™•ÍÐ€ô€…”àÉØàÔäÉˆÜÍ…ŒÕ‘„Ñ˜ÜÉ™”äÈÐÈàÌÍ˜É”å‰„ÄÕ”äÌÐàÁ™…ŒÀÅÕÜÜÔÅˆàØÄÈÕˆœì)½¹ÍÐÕÉÉ•¹Ñ…Í•Ì€ôl(€€µ…Ñ”µ½¹±äµ¹½Éµ…°µM…Ù”µ™É•Í µÉ•½Á•¸œ°€µÍ…µ”µÑ…‰±”µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°œ°(€€µÕ¹É•±…Ñ•µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°œ°€µ•µÁÑäµÕ¹É•±…Ñ•µ…Ñ”µÍ¡•µ„µÉ•™ÕÍ…°œ°(€€µ…¹½¹¥…°µ½Á…ÅÕ”µ½µÁ±•Ñ”µ½Áäµ½¹ÑÉ½±Ìœ°€µMXØÐµÉ½Üµ½¹ÑÉ½°œ°€µMXÄØµ½±Õµ¸µ½¹ÑÉ½°œ°(€€µÁÉ½™¥±”µÉ•™ÕÍ…°µÉ½ÝÌ´ØÔ¹ÍØœ°€µÁÉ½™¥±”µÉ•™ÕÍ…°µ™¥•±‘Ì´ÄÜ¹ÍØœ°(€€µ•á¥ÍÑ¥¹œµÉ•…µ™…Õ±Ðµ¹¼µÁÕ‰±¥…Ñ¥½¸µÉ•½Ù•Éäœ°€HµÕ¹¡…¹•µÁÉ¥Ù…Ñ”µÉ•…‘•Èµ…Ñ”µ™¥áÑÕÉ”œ°)tì)½¹ÍÐÁÉ•É•ÅÕ¥Í¥Ñ•…Í•Ì€ôl(€€-%Pµ‘…Ñ”µ½¹±äµÍØœ°€-%PµÕ¹É•±…Ñ•µÁ½ÁÕ±…Ñ•µ‘…Ñ”µá±Íàœ°€-%PµÕ¹É•±…Ñ•µ•µÁÑäµ‘…Ñ”µÍ¡•µ„µá±Íàœ°(€€AQHµÍÑ…±”µÝ¥Ñ¹•ÍÌœ°€AQHµÍÑ…±”µ‰½½ÑÍÑÉ…Àœ°€AQHµÍÑ…±”µÑ…‰±”œ°(€€AQHµÕ¹…Ù…¥±…‰±”µÕ¹É•±…Ñ•µÑ…‰±”œ°)tì)½¹ÍÐÁÉ½‘ÕÑ¥½¹…Í”€ô€ÁÉ½‘ÕÑ¥½¸µÍ…±•Ìµ•‘¥ÐµÍ…Ù”µÁÉ½•ÍÌµÉ•ÍÑ…ÉÐµÉ•½Á•¸µ•‘¥ÐµÁ¹œœì)½¹ÍÐÁÉ½‘ÕÑ¥±•Ì€ôlÍÉŒ½ÁÀ¹ÑÍàœ°€ÍÉŒ½ÉÕ¹Ñ¥µ”½Í•ÍÍ¥½¸¹ÑÌœ°€ÍÉŒ½Õ¤½M¡••ÑM¡•±°¹ÑÍàœ°€ÍÉŒ½½É”µ±½…‘•È¹ÑÌtì)½¹ÍÐ™¥áÑÕÉ•¥±•Ì€ôl(€€…•ÁÑ…¹”½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”½™¥áÑÕÉ•Ì½‘…Ñ”µ½¹±ä¹ÍØœ°(€€…•ÁÑ…¹”½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”½™¥áÑÕÉ•Ì½Õ¹É•±…Ñ•µ‘…Ñ”¹á±Íàœ°(€€…•ÁÑ…¹”½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”½™¥áÑÕÉ•Ì½Õ¹É•±…Ñ•µ‘…Ñ”µ•µÁÑä¹á±Íàœ°(€€…•ÁÑ…¹”½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”½™¥áÑÕÉ•Ì½‘…Ñ”µ½¹±äµÁÉ¥Ù…Ñ”¹‰¥¸œ°(€€…•ÁÑ…¹”½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”½™¥áÑÕÉ•Ì½‘…Ñ”µ½¹±äµÁÉ¥Ù…Ñ”¹©Í½¸œ°)tì)½¹ÍÐ¥µµÕÑ…‰±•¥±•Ì€ôl(€€¸¸¹=‰©•Ð¹­•åÌ¡•áÁ•Ñ•‘M••‘Ì¤°€½É”µ­¥Ð¹±½¬¹©Í½¸œ°€¸¸¹™¥áÑÕÉ•¥±•Ì°(€€ÍÉŒ½ÁÀ¹ÑÍàœ°€ÍÉŒ½ÉÕ¹Ñ¥µ”½Í•ÍÍ¥½¸¹ÑÌœ°€ÍÉŒ½Õ¤½M¡••ÑM¡•±°¹ÑÍàœ°€ÍÉŒ½½É”µ±½…‘•È¹ÑÌœ°)tì)½¹ÍÐµÕÑ…Ñ¥½¹…Í•Ì€ôl(€ì(€€€¥è€4Äœ°•áÁ•Ñ•‘…Í•Ìèlµ…Ñ”µ½¹±äµ¹½Éµ…°µM…Ù”µ™É•Í µÉ•½Á•¸t°(€€€…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½M…Ù”„½ÁäµÕÍÐÍÕ••…¹±½Í”Ñ¡”ÕÉÉ•¹ÐM…Ù”‘¥…±½œ¼°(€€€Á…Ñ¡•ÌèmìÁ…Ñ è€ÍÉŒ½ÁÀ¹ÑÍàœ°‰•™½É”è€œè‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ý…¥ÐÉÕ¹Ñ¥µ”¹±¥ÍÑ-•å•‘É½ÕÁ•‘MÕµ	¥¹‘¥¹Ì¡Ý¥Ñ¹•ÍÍ=˜¡±¥Ù”¤¤¤ìœ°…™Ñ•Èè€œè™…±Í”ìœõt°(€ô°(€ì(€€€¥è€4Èœ°•áÁ•Ñ•‘…Í•Ìèl(€€€€€€µÍ…µ”µÑ…‰±”µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°œ°€µÕ¹É•±…Ñ•µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°œ°€µ•µÁÑäµÕ¹É•±…Ñ•µ…Ñ”µÍ¡•µ„µÉ•™ÕÍ…°œ°(€€€t°(€€€…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½…Ñ”É•™ÕÍ…°½ÕÉÌ‰•™½É”ÁÉ½‘Õ•ÈÉ•…Ñ”‘¥ÍÁ…Ñ¡ñ9¼ÕÉÉ•¹ÐÉ½ÍÌµÑ…‰±”É•ÍÕ±Ð¥Ì…Ù…¥±…‰±•ñÉ•¹‘•É•MÕµµ…Éä¡…Ìé•É¼•á¥ÍÑ¥¹œ½Èµ¥ÍÍ¥¹œ‘•™¥¹¥Ñ¥½¸…É‘ÍñÙ¥Í¥‰±”Í½ÕÉ”™¥‘•±¥Ñä±•‘•È¥ÌÕ¹¡…¹•‰äÉ•™ÕÍ…±ñÝ¡½±”ÉÕ¹Ñ¥µ”Í¹…ÁÍ¡½ÐÉ•µ…¥¹ÌÕ¹¡…¹•¼°(€€€Á…Ñ¡•Ìèl(€€€€€ìÁ…Ñ è€ÍÉŒ½ÁÀ¹ÑÍàœ°‰•™½É”è€€€€€€¥˜€¡‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ñ…±½œ¤¤íq¸€€€€€€€Í•Ñ5•ÍÍ…”¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€€€Í•Ñ=ÕÑ½µ” ‰¥‘±”ˆ¤íq¸€€€€€€€É•ÑÕÉ¸™…±Í”íq¸€€€€€õq¸€€€€€É•…Ñ¥½¹MÑ…ÉÑ•€ôÑÉÕ”í€°…™Ñ•Èè€€€€€€¥˜€¡™…±Í”€˜˜‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ñ…±½œ¤¤íq¸€€€€€€€Í•Ñ5•ÍÍ…”¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€€€Í•Ñ=ÕÑ½µ” ‰¥‘±”ˆ¤íq¸€€€€€€€É•ÑÕÉ¸™…±Í”íq¸€€€€€õq¸€€€€€É•…Ñ¥½¹MÑ…ÉÑ•€ôÑÉÕ”í€ô°(€€€€€ìÁ…Ñ è€ÍÉŒ½ÉÕ¹Ñ¥µ”½Í•ÍÍ¥½¸¹ÑÌœ°‰•™½É”è€€€€€€¥˜€¡‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ñ…±½œ¤¤íq¸€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€õq¸€€€€€½¹ÍÐ½É‘•ÉÌ€ôÍ•±•Ñ•‘Q…‰±”¡Ñ…‰±•Ì°‰¥¹‘¥¹œ¹½É‘•ÉÍ½±±•Ñ¥½¸¤í€°…™Ñ•Èè€€€€€€¥˜€¡™…±Í”€˜˜‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ñ…±½œ¤¤íq¸€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€õq¸€€€€€½¹ÍÐ½É‘•ÉÌ€ôÍ•±•Ñ•‘Q…‰±”¡Ñ…‰±•Ì°‰¥¹‘¥¹œ¹½É‘•ÉÍ½±±•Ñ¥½¸¤í€ô°(€€€t°(€ô°(€ì(€€€¥è€4Ìœ°•áÁ•Ñ•‘…Í•ÌèlµÕ¹É•±…Ñ•µ…Ñ”µÍÕµµ…ÉäµÉ•™ÕÍ…°t°(€€€…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½…Ñ”É•™ÕÍ…°½ÕÉÌ‰•™½É”ÁÉ½‘Õ•ÈÉ•…Ñ”‘¥ÍÁ…Ñ¡ñ9¼ÕÉÉ•¹ÐÉ½ÍÌµÑ…‰±”É•ÍÕ±Ð¥Ì…Ù…¥±…‰±•ñÉ•¹‘•É•MÕµµ…Éä¡…Ìé•É¼•á¥ÍÑ¥¹œ½Èµ¥ÍÍ¥¹œ‘•™¥¹¥Ñ¥½¸…É‘ÍñÙ¥Í¥‰±”Í½ÕÉ”™¥‘•±¥Ñä±•‘•È¥ÌÕ¹¡…¹•‰äÉ•™ÕÍ…±ñÝ¡½±”ÉÕ¹Ñ¥µ”Í¹…ÁÍ¡½ÐÉ•µ…¥¹ÌÕ¹¡…¹•¼°(€€€Á…Ñ¡•Ìèl(€€€€€ìÁ…Ñ è€ÍÉŒ½ÁÀ¹ÑÍàœ°‰•™½É”è€€€€€€¥˜€¡‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ñ…±½œ¤¤íq¸€€€€€€€Í•Ñ5•ÍÍ…”¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€€€Í•Ñ=ÕÑ½µ” ‰¥‘±”ˆ¤íq¸€€€€€€€É•ÑÕÉ¸™…±Í”íq¸€€€€€õq¸€€€€€É•…Ñ¥½¹MÑ…ÉÑ•€ôÑÉÕ”í€°…™Ñ•Èè€€€€€€¥˜€¡‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡ì½±±•Ñ¥½¹Ìè…Ñ…±½œ¹½±±•Ñ¥½¹Ì¹™¥±Ñ•È ¡½±±•Ñ¥½¸¤€ôø½±±•Ñ¥½¸¹­•ä€ôôô‰¥¹‘¥¹œ¹½É‘•ÉÍ½±±•Ñ¥½¸ñð½±±•Ñ¥½¸¹­•ä€ôôô‰¥¹‘¥¹œ¹ÁÉ½‘ÕÑÍ½±±•Ñ¥½¸¤ô¤¤íq¸€€€€€€€Í•Ñ5•ÍÍ…”¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€€€Í•Ñ=ÕÑ½µ” ‰¥‘±”ˆ¤íq¸€€€€€€€É•ÑÕÉ¸™…±Í”íq¸€€€€€õq¸€€€€€É•…Ñ¥½¹MÑ…ÉÑ•€ôÑÉÕ”í€ô°(€€€€€ìÁ…Ñ è€ÍÉŒ½ÉÕ¹Ñ¥µ”½Í•ÍÍ¥½¸¹ÑÌœ°‰•™½É”è€€€€€€¥˜€¡‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡…Ñ…±½œ¤¤íq¸€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€õq¸€€€€€½¹ÍÐ½É‘•ÉÌ€ôÍ•±•Ñ•‘Q…‰±”¡Ñ…‰±•Ì°‰¥¹‘¥¹œ¹½É‘•ÉÍ½±±•Ñ¥½¸¤í€°…™Ñ•Èè€€€€€€¥˜€¡‰¥¹‘¥¹…Ñ…±½½¹Ñ…¥¹Í…Ñ”¡ì½±±•Ñ¥½¹Ìè…Ñ…±½œ¹½±±•Ñ¥½¹Ì¹™¥±Ñ•È ¡½±±•Ñ¥½¸¤€ôø½±±•Ñ¥½¸¹­•ä€ôôô‰¥¹‘¥¹œ¹½É‘•ÉÍ½±±•Ñ¥½¸ñð½±±•Ñ¥½¸¹­•ä€ôôô‰¥¹‘¥¹œ¹ÁÉ½‘ÕÑÍ½±±•Ñ¥½¸¤ô¤¤íq¸€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡Q}MU55Ie}U9MUAA=IQ}5MM¤íq¸€€€€€õq¸€€€€€½¹ÍÐ½É‘•ÉÌ€ôÍ•±•Ñ•‘Q…‰±”¡Ñ…‰±•Ì°‰¥¹‘¥¹œ¹½É‘•ÉÍ½±±•Ñ¥½¸¤í€ô°(€€€t°(€ô°(€ì(€€€¥è€4Ðœ°•áÁ•Ñ•‘…Í•Ìèlµ•µÁÑäµÕ¹É•±…Ñ•µ…Ñ”µÍ¡•µ„µÉ•™ÕÍ…°t°(€€€…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½…Ñ”É•™ÕÍ…°½ÕÉÌ‰•™½É”ÁÉ½‘Õ•ÈÉ•…Ñ”‘¥ÍÁ…Ñ¡ñ9¼ÕÉÉ•¹ÐÉ½ÍÌµÑ…‰±”É•ÍÕ±Ð¥Ì…Ù…¥±…‰±•ñÉ•¹‘•É•MÕµµ…Éä¡…Ìé•É¼•á¥ÍÑ¥¹œ½Èµ¥ÍÍ¥¹œ‘•™¥¹¥Ñ¥½¸…É‘ÍñÙ¥Í¥‰±”Í½ÕÉ”™¥‘•±¥Ñä±•‘•È¥ÌÕ¹¡…¹•‰äÉ•™ÕÍ…±ñÝ¡½±”ÉÕ¹Ñ¥µ”Í¹…ÁÍ¡½ÐÉ•µ…¥¹ÌÕ¹¡…¹•¼°(€€€Á…Ñ¡•ÌèmìÁ…Ñ è€ÍÉŒ½ÉÕ¹Ñ¥µ”½Í•ÍÍ¥½¸¹ÑÌœ°‰•™½É”è€™¥•±‘ÌèÑ…‰±”¹½±Õµ¹Ì¹µ…À ¡½±Õµ¸¤€ôø€¡ì­•äè½±Õµ¸¹­•ä°™¥•±‘QåÁ”è½±Õµ¸¹™¥•±‘}ÑåÁ”ô¤¤°œ°…™Ñ•Èè€™¥•±‘ÌèÑ…‰±”¹½±Õµ¹Ì¹™¥±Ñ•È ¡½±Õµ¸¤€ôøÑ…‰±”¹É½ÝÌ¹±•¹Ñ €ø€Àñð½±Õµ¸¹™¥•±‘}ÑåÁ”€„ôô€‰‘…Ñ”ˆ¤¹µ…À ¡½±Õµ¸¤€ôø€¡ì­•äè½±Õµ¸¹­•ä°™¥•±‘QåÁ”è½±Õµ¸¹™¥•±‘}ÑåÁ”ô¤¤°œõt°(€ô°(€ì(€€€¥è€4Õ„œ°•áÁ•Ñ•‘…Í•Ìèlµ…Ñ”µ½¹±äµ¹½Éµ…°µM…Ù”µ™É•Í µÉ•½Á•¸t°(€€€…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½…Ñ”•‘¥ÐµÕÍÐÉ•… É•…°ÁÉ½‘Õ•È•‘¥Ñ…Ñ”•á…Ñ±ä½¹”¼°(€€€Á…Ñ¡•ÌèmìÁ…Ñ è€ÍÉŒ½Õ¤½M¡••ÑM¡•±°¹ÑÍàœ°‰•™½É”è€½±Õµ¹}ÑåÁ•Ìè¥µÁ½ÉÑQåÁ•Ì…Ì%µÁ½ÉÑM•±•Ñ¥½¹l‰½±Õµ¹}ÑåÁ•Ì‰t°œ°…™Ñ•Èè€½±Õµ¹}ÑåÁ•Ìè¥µÁ½ÉÑQåÁ•Ì¹µ…À ¡ÑåÁ•Ì¤€ôøÑåÁ•Ì¹µ…À ¡ÑåÁ”¤€ôøÑåÁ”€ôôô€‰‘…Ñ”ˆ€ü€‰Ñ•áÐˆ€èÑåÁ”¤¤…Ì%µÁ½ÉÑM•±•Ñ¥½¹l‰½±Õµ¹}ÑåÁ•Ì‰t°œõt°(€ô°(€ì(€€€¥è€4Õˆœ°•áÁ•Ñ•‘…Í•Ìèlµ…Ñ”µ½¹±äµ¹½Éµ…°µM…Ù”µ™É•Í µÉ•½Á•¸t°(€€€…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸è€½áÁ•Ñ•Ù…±Õ•ÌÑ¼‰”ÍÑÉ¥Ñ±ä•ÅÕ…°émqÍqMt©p¬Õ¹‘•™¥¹•‘mqÍqMt¨´€‘…Ñ”µ½¹±åp¹ÍØœ¼°(€€€Á…Ñ¡•ÌèmìÁ…Ñ è€ÍÉŒ½ÁÀ¹ÑÍàœ°‰•™½É”è€€€€€€€€É••¥ÁÐ€ô…Ý…¥Ð½Á¥•Ì¹É•…Ñ•=Á…ÅÕ”¡¹…µ”°íq¸€€€€€€€€€€¸¸¹Í¹…ÁÍ¡½Ð±q¸€€€€€€€€€¥µÁ½ÉÑ•‘M½ÕÉ”è¥µÁ½ÉÑ•‘M½ÕÉ•I•˜¹ÕÉÉ•¹Ð€üüÕ¹‘•™¥¹•±q¸€€€€€€€€€ÁÉ•Í•¹Ñ…Ñ¥½¸±€°…™Ñ•Èè€€€€€€€€É••¥ÁÐ€ô…Ý…¥Ð½Á¥•Ì¹É•…Ñ•=Á…ÅÕ”¡¹…µ”°íq¸€€€€€€€€€€¸¸¹Í¹…ÁÍ¡½Ð±q¸€€€€€€€€€¥µÁ½ÉÑ•‘M½ÕÉ”è¡…Í…Ñ•½±Õµ¸€üÕ¹‘•™¥¹•€è€¡¥µÁ½ÉÑ•‘M½ÕÉ•I•˜¹ÕÉÉ•¹Ð€üüÕ¹‘•™¥¹•¤±q¸€€€€€€€€€ÁÉ•Í•¹Ñ…Ñ¥½¸±€õt°(€ô°(€ì(€€€¥è€4Øœ°•áÁ•Ñ•‘…Í•Ìèmt°(€€€Á…Ñ¡•ÌèmìÁ…Ñ è€ÍÉŒ½½É”µ±½…‘•È¹ÑÌœ°‰•™½É”è€œ€½¹ÍÐ•¹ÑÉä€ôAU	1%}1%9Q}9QIdìœ°…™Ñ•Èè€œ€¥˜€¡¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹5=€ôôô€‰ÁÉ½‘ÕÑ¥½¸ˆ¤Ñ¡É½Ü¹•ÜÉÉ½È ‰4ØÁÉ½‘ÕÑ¥½¸­¥Ð±½…‘•ÈµÕÑ…¹ÐèÉ•©•Ñ•‰ä‘•Í¥¸¸ˆ¤íq¸€½¹ÍÐ•¹ÑÉä€ôAU	1%}1%9Q}9QIdìœõt°(€ô°)tì()½¹ÍÐ‰åÑ•Í!…Í €ô€¡‰åÑ•Ì¤€ôøÉ•…Ñ•!…Í  Í¡„ÈÔØœ¤¹ÕÁ‘…Ñ”¡‰åÑ•Ì¤¹‘¥•ÍÐ ¡•àœ¤ì)½¹ÍÐ©Í½¹!…Í €ô€¡Ù…±Õ”¤€ôø‰åÑ•Í!…Í ¡	Õ™™•È¹™É½´¡)M=8¹ÍÑÉ¥¹¥™ä¡Ù…±Õ”¤¤¤ì)½¹ÍÐ¹½Ý%Í¼€ô€ ¤€ôø¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤ì)½¹ÍÐÍ…™•9…µ”€ô€¡Ù…±Õ”¤€ôøÙ…±Õ”¹É•Á±…” ½myµi„µèÀ´ä¹|µt¬½œ°€œ´œ¤ì)½¹ÍÐÕÉÉ•¹ÑM••‘A…Ñ €ô€¡‘¥È¤€ôøÁ…Ñ ¹©½¥¸¡‘¥È°€Í…Ù”µ±½ÍÕÉ”œ°€ÕÉÉ•¹ÐµÍ…Ù”µ±½ÍÕÉ”¹Í••¹©Í½¸œ¤ì()•áÁ½ÉÐ™Õ¹Ñ¥½¸•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡Í½ÕÉ”°ì½‰Í•ÉÙ…Ñ¥½¹Ì€ômt°¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½È€ô¹Õ±°ô€ôíô¤ì(€¥˜€¡¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½È¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€‰É½ÝÍ•È¹…Ù¥…Ñ¥½¸½ÈÑÉ…¹ÍÁ½ÉÐ™…¥±•‰•™½É”Ñ¡”™É½é•¸M…Ù”½‰Í•ÉÙ…Ñ¥½¸É•Í½±Ù•¸œ°•ÉÉ½ÈèMÑÉ¥¹œ¡¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½È¹µ•ÍÍ…”€üü¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½È¤ôì(€½¹ÍÐÁÉ•‘¥…Ñ•5…Ñ €ôÍ½ÕÉ”¹µ…Ñ  ½…Ý…¥Ð…Ñ¥Ù•A…•p¹Ý…¥Ñ½ÉÕ¹Ñ¥½¹p   üép¡p¤€ôøqì¥mqÍqMt¨ýq¸€qô¥p¤ì¼¤ì(€½¹ÍÐ…ÍÍ•ÉÑ¥½¹5…Ñ €ôÍ½ÕÉ”¹µ…Ñ  ½…ÍÍ•ÉÑp¹•ÅÕ…±p¡Í…Ù”°€‰M…Ù•½¸Ñ¡¥Ì‘•Ù¥”ˆ°€‰M…Ù”„½ÁäµÕÍÐÍÕ••…¹±½Í”Ñ¡”ÕÉÉ•¹ÐM…Ù”‘¥…±½œ‰p¤ì¼¤ì(€¥˜€ …ÁÉ•‘¥…Ñ•5…Ñ ñð€……ÍÍ•ÉÑ¥½¹5…Ñ ¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Ñ¡”Á¥¹¹•…µ•¹‘•4ÄÝ…¥ÐÁÉ•‘¥…Ñ”½È•áÁ±¥¥ÐM…Ù•…ÍÍ•ÉÑ¥½¸Ý…Ì¹½Ð™½Õ¹¥¸Ñ¡”™É½é•¸Í½ÕÉ”¸œôì(€±•ÐÑ•Éµ¥¹…°€ô¹Õ±°ì(€ÑÉäì(€€€™½È€¡½¹ÍÐ½‰Í•ÉÙ…Ñ¥½¸½˜½‰Í•ÉÙ…Ñ¥½¹Ì¤ì(€€€€€½¹ÍÐ‘½Õµ•¹Ð€ôìÅÕ•ÉåM•±•Ñ½È¡Í•±•Ñ½È¤ì(€€€€€€€¥˜€¡Í•±•Ñ½È€ôôô€m‘…Ñ„µÑ•ÍÑ¥ô‰Í…Ù”µÍÑ…ÑÕÌ‰tœ¤É•ÑÕÉ¸½‰Í•ÉÙ…Ñ¥½¸¹ÍÑ…ÑÕÌ€ôô¹Õ±°€ü¹Õ±°€èìÑ•áÑ½¹Ñ•¹Ðè½‰Í•ÉÙ…Ñ¥½¸¹ÍÑ…ÑÕÌôì(€€€€€€€¥˜€¡Í•±•Ñ½È€ôôô€œ¹ÑÌµµ½‘…°´µÍ…Ù”œ¤É•ÑÕÉ¸½‰Í•ÉÙ…Ñ¥½¸¹Í…Ù•¥…±½=Á•¸€üíô€è¹Õ±°ì(€€€€€€€É•ÑÕÉ¸¹Õ±°ì(€€€€€ôôì(€€€€€¥˜€¡Ù´¹ÉÕ¹%¹9•Ý½¹Ñ•áÐ¡€ ‘íÁÉ•‘¥…Ñ•5…Ñ¡lÅuô¤ ¥€°ì‘½Õµ•¹Ðô¤¤ìÑ•Éµ¥¹…°€ô½‰Í•ÉÙ…Ñ¥½¸ì‰É•…¬ìô(€€€ô(€ô…Ñ €¡•ÉÉ½È¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Ñ¡”™É½é•¸M…Ù”½‰Í•ÉÙ…Ñ¥½¸™…¥±•‰•™½É”Ñ•Éµ¥¹…°ÍÑ…Ñ”¸œ°•ÉÉ½Èè€‘í•ÉÉ½È¹¹…µ•ôè€‘í•ÉÉ½È¹µ•ÍÍ…•õ€ôì(€ô(€¥˜€ …Ñ•Éµ¥¹…°¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Ñ¡”™É½é•¸M…Ù”Ý…¥ÐÁÉ•‘¥…Ñ”É•µ…¥¹•¹½¹Ñ•Éµ¥¹…°Ñ¡É½Õ ¥ÑÌ‰½Õ¹‘•½‰Í•ÉÙ…Ñ¥½¸Ý¥¹‘½Ü¸œôì(€½¹ÍÐÍ…Ù”€ôÑ•Éµ¥¹…°¹ÍÑ…ÑÕÌì(€ÑÉäì(€€€Ù´¹ÉÕ¹%¹9•Ý½¹Ñ•áÐ¡€  ¤€ôøì½¹ÍÐÍ…Ù”€ô€‘í)M=8¹ÍÑÉ¥¹¥™ä¡Í…Ù”¥ôì€‘í…ÍÍ•ÉÑ¥½¹5…Ñ¡lÁuôô¤ ¥€°ì…ÍÍ•ÉÐô¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°½‰Í•ÉÙ•èÍ…Ù”°Í…Ù•¥…±½=Á•¸è	½½±•…¸¡Ñ•Éµ¥¹…°¹Í…Ù•¥…±½=Á•¸¤°…ÍÍ•ÉÑ¥½¸è…ÍÍ•ÉÑ¥½¹5…Ñ¡lÁtôì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€¥˜€¡Í…Ù”€ôôô€M…Ù”™…¥±•œ€˜˜•ÉÉ½È¹½‘”€ôôô€II}MMIQ%=8œ¤ì(€€€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	!Y%=I1}Iœ°½‰Í•ÉÙ•èÍ…Ù”°Í…Ù•¥…±½=Á•¸è	½½±•…¸¡Ñ•Éµ¥¹…°¹Í…Ù•¥…±½=Á•¸¤°…ÍÍ•ÉÑ¥½¸è•ÉÉ½È¹µ•ÍÍ…”ôì(€€€ô(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Ñ¡”™É½é•¸M…Ù•…ÍÍ•ÉÑ¥½¸™…¥±•™½È…¸½‰Í•ÉÙ…Ñ¥½¸½Ñ¡•ÈÑ¡…¸¥ÑÌ¥¹Ñ•¹‘•M…Ù”™…¥±•½¹ÑÉ½°¸œ°•ÉÉ½Èè€‘í•ÉÉ½È¹¹…µ•ôè€‘í•ÉÉ½È¹µ•ÍÍ…•õ€ôì(€ô)ô()•áÁ½ÉÐ™Õ¹Ñ¥½¸±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡É••¥ÁÐ°µÕÑ…Ñ¥½¸¤ì(€¥˜€ …É••¥ÁÐñðÉ••¥ÁÐ¹ÍÑ…ÑÕÌ€„ôô€	!Y%=I1}Iœñð€…ÉÉ…ä¹¥ÍÉÉ…ä¡É••¥ÁÐ¹É•ÍÕ±ÑÌ¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€ÕÉÉ•¹ÐÍ••‘¥¹½ÐÁÉ½‘Õ”…¸…ÑÑÉ¥‰ÕÑ…‰±”‰•¡…Ù¥½É…°µÉ•É••¥ÁÐ¸œôì(€ô(€¥˜€¡)M=8¹ÍÑÉ¥¹¥™ä¡É••¥ÁÐ¹É•ÍÕ±ÑÌ¹µ…À ¡¥Ñ•´¤€ôø¥Ñ•´¹¥¤¤€„ôô)M=8¹ÍÑÉ¥¹¥™ä¡ÕÉÉ•¹Ñ…Í•Ì¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€ÕÉÉ•¹ÐÍ••…Í”É•¥ÍÑÉä¥Ìµ¥ÍÍ¥¹œ°‘ÕÁ±¥…Ñ•°É•½É‘•É•°½ÈÕ¹•áÁ•Ñ•¸œôì(€ô(€½¹ÍÐÑ…É•Ñ•€ôµÕÑ…Ñ¥½¸¹•áÁ•Ñ•‘…Í•Ì¹µ…À ¡¥¤€ôøÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹™¥¹ ¡¥Ñ•´¤€ôø¥Ñ•´¹¥€ôôô¥¤¤ì(€¥˜€¡Ñ…É•Ñ•¹Í½µ” ¡¥Ñ•´¤€ôø€…¥Ñ•´¤¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€µÕÑ…Ñ¥½¸µ½Ý¹•½É…±”É½Ü¥Ì…‰Í•¹Ð¸œôì(€¥˜€¡µÕÑ…Ñ¥½¸¹¥€ôôô€4Äœ€˜˜Ñ…É•Ñ•¹Í½µ” ¡¥Ñ•´¤€ôø¥Ñ•´¹½‰Í•ÉÙ•ü¹Í…Ù”ü¹ÑÉ¥´ ¤€„ôô€M…Ù”™…¥±•œ¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€4Ä‘¥¹½Ð½‰Í•ÉÙ”Ñ¡”…ÑÕ…°M…Ù”™…¥±•Ñ•Éµ¥¹…°ÍÑ…Ñ”‰•™½É”Ñ¡”•áÁ±¥¥ÐM…Ù•…ÍÍ•ÉÑ¥½¸¸œôì(€ô(€½¹ÍÐÕ¹É•±…Ñ•‘	±½­•€ôÉ••¥ÁÐ¹É•ÍÕ±ÑÌ¹Í½µ” ¡¥Ñ•´¤€ôø¥Ñ•´¹É•ÍÕ±Ð€ôôô€	1=-œ¤ì(€¥˜€¡Õ¹É•±…Ñ•‘	±½­•¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Ð±•…ÍÐ½¹”ÕÉÉ•¹Ð…Í”Ý…Ì‰±½­•ìÍ•ÑÕÀ½ÈÑÉ…¹ÍÁ½ÉÐ™…¥±ÕÉ”•…É¹Ì¹¼µÕÑ…Ñ¥½¸É•‘¥Ð¸œôì(€¥˜€¡Ñ…É•Ñ•¹Í½µ” ¡¥Ñ•´¤€ôø¥Ñ•´¹É•ÍÕ±Ð€„ôô€	!Y%=I1}Iœñð€…µÕÑ…Ñ¥½¸¹…ÍÍ•ÉÑ¥½¹A…ÑÑ•É¸¹Ñ•ÍÐ¡¥Ñ•´¹µ•ÍÍ…”€üü€œœ¤¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸èáÁ•Ñ•…ÍÍ•ÉÑ¥½¸¡Ì¤Ý•É”¹½ÐÑ¡”Í½ÕÉ”½˜I™½È€‘íµÕÑ…Ñ¥½¸¹¥‘ô¹€ôì(€ô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	!Y%=I1}Iœ°…ÍÍ•ÉÑ¥½¹5•ÍÍ…•ÌèÑ…É•Ñ•¹µ…À ¡¥Ñ•´¤€ôø€¡ì¥è¥Ñ•´¹¥°µ•ÍÍ…”è¥Ñ•´¹µ•ÍÍ…”ô¤¤ôì)ô()•áÁ½ÉÐ™Õ¹Ñ¥½¸±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡É•…‘¥¹•ÍÌ°±¥™•å±•I••¥ÁÐ°¥‘•¹Ñ¥Ñä¤ì(€½¹ÍÐ‘¥…¹½ÍÑ¥Ì€ôÉ•…‘¥¹•ÍÌü¹‘¥…¹½ÍÑ¥Ì€üüíôì(€½¹ÍÐÉ•…‘¥¹•ÍÍ!…Í…¥±ÕÉ•Ì€ô€¡‘¥…¹½ÍÑ¥Ì¹Á…•ÉÉ½ÉÌü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡‘¥…¹½ÍÑ¥Ì¹É•ÅÕ•ÍÑ…¥±ÕÉ•Ìü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡‘¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•ÉÉ½ÉÌü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡‘¥…¹½ÍÑ¥Ì¹½¹Í½±•ÉÉ½ÉÌü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡‘¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•Ì€üümt¤¹Í½µ” ¡É•ÍÁ½¹Í”¤€ôøÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ€ð€ÈÀÀñðÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ€øô€ÐÀÀ¤ì(€½¹ÍÐÅÕ…±¥™¥•€ôÉ•…‘¥¹•ÍÌü¹ÍÑ…ÑÕÌ€ôôô€I%9MM}AMLœ€˜˜É•…‘¥¹•ÍÌ¹¡ÑÑÁ%¹‘•áMÑ…ÑÕÌ€ôôô€ÈÀÀ(€€€€˜˜É•…‘¥¹•ÍÌ¹ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌ€ôôô€ÈÀÀ€˜˜É•…‘¥¹•ÍÌ¹‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌ€ôôô€ÈÀÀ(€€€€˜˜É•…‘¥¹•ÍÌ¹‘ÁI•…‘ä€ôôôÑÉÕ”€˜˜ÑåÁ•½˜É•…‘¥¹•ÍÌ¹‰É½ÝÍ•ÉY•ÉÍ¥½¸€ôôô€ÍÑÉ¥¹œœ€˜˜É•…‘¥¹•ÍÌ¹‰É½ÝÍ•ÉY•ÉÍ¥½¸¹±•¹Ñ €ø€À(€€€€˜˜É•…‘¥¹•ÍÌ¹½±‘!½µ•I•…‘ä€ôôôÑÉÕ”€˜˜€…É•…‘¥¹•ÍÍ!…Í…¥±ÕÉ•Ì(€€€€˜˜€½ym„µ˜À´åuìØÑô¼¹Ñ•ÍÐ¡¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ•M¡„ÈÔØ€üü€œœ¤(€€€€˜˜€½ym„µ˜À´åuìØÑô¼¹Ñ•ÍÐ¡¥‘•¹Ñ¥Ñäü¹Á…Ñ¡M¡„ÈÔØ€üü€œœ¤(€€€€˜˜€½ym„µ˜À´åuìØÑô¼¹Ñ•ÍÐ¡¥‘•¹Ñ¥Ñäü¹±½…‘•ÉM¡„ÈÔØ€üü€œœ¤ì(€¥˜€ …ÅÕ…±¥™¥•¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€%¹‘•Á•¹‘•¹ÐÁÉ½‘ÕÑ¥½¸!QQ@°µ…¹…•µ‰É½ÝÍ•È°@…¹½±µ!½µ”É•…‘¥¹•ÍÌ‘¥¹½Ð…±°ÅÕ…±¥™ä¸œôì(€½¹ÍÐ±¥™•å±•¥…¹½ÍÑ¥Ì€ô±¥™•å±•I••¥ÁÐü¹‘¥…¹½ÍÑ¥Ì€üüíôì(€½¹ÍÐ¹•ÑÝ½É­Ù¥‘•¹”€ô±¥™•å±•I••¥ÁÐü¹¹•ÑÝ½É­Ù¥‘•¹”€üümtì(€½¹ÍÐ±¥™•å±•!…ÍÉÉ½ÉÌ€ô€¡±¥™•å±•¥…¹½ÍÑ¥Ì¹Á…•ÉÉ½ÉÌü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡±¥™•å±•¥…¹½ÍÑ¥Ì¹É•ÅÕ•ÍÑ…¥±ÕÉ•Ìü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡±¥™•å±•¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•ÉÉ½ÉÌü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð€¡±¥™•å±•¥…¹½ÍÑ¥Ì¹½¹Í½±•ÉÉ½ÉÌü¹±•¹Ñ €üü€À¤€ø€À(€€€ñð¹•ÑÝ½É­Ù¥‘•¹”¹Í½µ” ¡É•ÍÁ½¹Í”¤€ôøÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ€„ôô€ÈÀÀ¤ì(€¥˜€¡±¥™•å±•!…ÍÉÉ½ÉÌñð¹•ÑÝ½É­Ù¥‘•¹”¹Í½µ” ¡É•ÍÁ½¹Í”¤€ôøÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ€„ôô€ÈÀÀ¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€É½é•¸±¥™•å±”É…Ü•Ù¥‘•¹”¥¹±Õ‘•Ì…¸!QQ@½É•ÅÕ•ÍÐ½Á…”•ÉÉ½È¸œôì(€ô(€½¹ÍÐ•áÁ•Ñ•‘ÍÍ•ÉÑ¥½¸€ô€¹½Éµ…°!½µ”M…±•Ì=Á•¸¥Ì•¹…‰±•Ý¡•¸Ñ¡”ÁÉ½‘ÕÑ¥½¸ÉÕ¹Ñ¥µ”¥ÌÉ•…‘äœì(€¥˜€¡±¥™•å±•I••¥ÁÐü¹ÍÑ…ÑÕÌ€„ôô€	1=-}=I}%0œñð±¥™•å±•I••¥ÁÐü¹Á¡…Í”€„ôô€½±µ!½µ”µ…¹µÁÉ½‘ÕÑ¥½¸µÉÕ¹Ñ¥µ”œ(€€€ñð±¥™•å±•I••¥ÁÐü¹•ÉÉ½Èü¹¹…µ”€„ôô€ÍÍ•ÉÑ¥½¹ÉÉ½Èœñð€…±¥™•å±•I••¥ÁÐ¹•ÉÉ½È¹µ•ÍÍ…”ü¹¥¹±Õ‘•Ì¡•áÁ•Ñ•‘ÍÍ•ÉÑ¥½¸¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Q¡”™É½é•¸ÁÉ½‘ÕÑ¥½¸±¥™•å±”‘¥¹½Ð™…¥°…Ð¥ÑÌ•á…Ð!½µ”½=Á•¸ÉÕ¹Ñ¥µ”…ÍÍ•ÉÑ¥½¸¸œôì(€ô(€¥˜€ …ÉÉ…ä¹¥ÍÉÉ…ä¡±¥™•å±•I••¥ÁÐ¹ÁÉ½•ÍÍÙ¥‘•¹”¤ñð±¥™•å±•I••¥ÁÐ¹ÁÉ½•ÍÍÙ¥‘•¹”¹±•¹Ñ €„ôô€Ä(€€€ñð±¥™•å±•I••¥ÁÐ¹ÁÉ½•ÍÍÙ¥‘•¹•lÁt¹•¹‘Á½¥¹ÑI•…‘ä€„ôôÑÉÕ”ñð€…±¥™•å±•I••¥ÁÐ¹ÁÉ½•ÍÍÙ¥‘•¹•lÁt¹‰É½ÝÍ•ÉY•ÉÍ¥½¸¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€Q¡”™É½é•¸±¥™•å±”É…ÜÉ••¥ÁÐ±…­Ìµ…¹…•µ‰É½ÝÍ•ÈÁÉ½•ÍÌÉ•…‘¥¹•ÍÌ•Ù¥‘•¹”¸œôì(€ô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	!Y%=I1}Iœ°…ÍÍ•ÉÑ¥½¸è•áÁ•Ñ•‘ÍÍ•ÉÑ¥½¸°Á¡…Í”è±¥™•å±•I••¥ÁÐ¹Á¡…Í”°•ÉÉ½Èè±¥™•å±•I••¥ÁÐ¹•ÉÉ½Èôì)ô()•áÁ½ÉÐ™Õ¹Ñ¥½¸‰½Õ¹‘•‘4ÙAÉ½‰•	Õ‘•Ð¡É•µ…¥¹¥¹5Ì°É•Í•ÉÙ•5Ì€ô€äÁ|ÀÀÀ°µ…á¥µÕµ5Ì€ô€ÐÕ|ÀÀÀ°µ¥¹¥µÕµ5Ì€ô€ÄÁ|ÀÀÀ¤ì(€½¹ÍÐ‰Õ‘•Ñ5Ì€ô5…Ñ ¹µ¥¸¡µ…á¥µÕµ5Ì°É•µ…¥¹¥¹5Ì€´É•Í•ÉÙ•5Ì¤ì(€É•ÑÕÉ¸‰Õ‘•Ñ5Ì€øôµ¥¹¥µÕµ5Ì€ü‰Õ‘•Ñ5Ì€è¹Õ±°ì)ô()™Õ¹Ñ¥½¸É½½ÑÙ¥‘•¹” ¤ì(€É•ÑÕÉ¸Á…Ñ ¹É•Í½±Ù”¡ÁÉ½•ÍÌ¹•¹Ø¹Q!%-=}MY}1=MUI}Y%9}%H€üüÁ…Ñ ¹©½¥¸¡½Ì¹ÑµÁ‘¥È ¤°Ñ…¡¥­¼µÍ¡••Ð´ÄÐØµµÕÑ…Ñ¥½¹Ì´‘íÁÉ½•ÍÌ¹Á¥‘õ€¤¤ì)ô()™Õ¹Ñ¥½¸É•…‘)Í½¸¡™¥±”¤ìÉ•ÑÕÉ¸É•…‘¥±”¡™¥±”°€ÕÑ˜àœ¤¹Ñ¡•¸ ¡Ñ•áÐ¤€ôø)M=8¹Á…ÉÍ”¡Ñ•áÐ¤¤ìô()…Íå¹Œ™Õ¹Ñ¥½¸Á…Ñ¡!…Í ¡™¥±”¤ìÉ•ÑÕÉ¸‰åÑ•Í!…Í ¡…Ý…¥ÐÉ•…‘¥±”¡™¥±”¤¤ìô()…Íå¹Œ™Õ¹Ñ¥½¸¡…Í¡M¹…ÁÍ¡½Ð¡Ý¤ì(€½¹ÍÐ½ÕÐ€ôíôì(€™½È€¡½¹ÍÐ™¥±”½˜¥µµÕÑ…‰±•¥±•Ì¤½ÕÑm™¥±•t€ô…Ý…¥ÐÁ…Ñ¡!…Í ¡Á…Ñ ¹©½¥¸¡Ý°™¥±”¤¤ì(€É•ÑÕÉ¸½ÕÐì)ô()…Íå¹Œ™Õ¹Ñ¥½¸¥Ð¡½µµ…¹‘ÉÌ°½ÁÑ¥½¹Ì€ôíô¤ì(€É•ÑÕÉ¸…ÁÑÕÉ•IÕ¹¹•É½µµ…¹ ¥Ðœ°½µµ…¹‘ÉÌ°ì(€€€Ýè½ÁÑ¥½¹Ì¹Ý€üüÉ½½Ð°(€€€Ñ¥µ•½ÕÑ5Ìè½ÁÑ¥½¹Ì¹Ñ¥µ•½ÕÑ5Ì€üü€ÈÁ|ÀÀÀ°(€€€µ…á=ÕÑÁÕÑ	åÑ•Ìè€ØÐ€¨€ÄÀÈÐ°(€€€Í¥¹…°è½ÁÑ¥½¹Ì¹Í¥¹…°°(€ô¤ì)ô()™Õ¹Ñ¥½¸Í•É¥…±¥é•½µµ…¹¡±…‰•°°½µµ…¹°…ÉÌ°Ý°ÍÑ…ÉÑ•°É•ÍÕ±Ð°±½¥±”¤ì(€É•ÑÕÉ¸ì(€€€±…‰•°°½µµ…¹°…ÉÌ°Ý°ÍÑ…ÉÑ•‘ÐèÍÑ…ÉÑ•°½µÁ±•Ñ•‘Ðè¹½Ý%Í¼ ¤°(€€€‘ÕÉ…Ñ¥½¹5Ìè…Ñ”¹¹½Ü ¤€´…Ñ”¹Á…ÉÍ”¡ÍÑ…ÉÑ•¤°½ÕÑ½µ”èÉ•ÍÕ±Ð¹½ÕÑ½µ”°(€€€•á¥Ñ½‘”èÉ•ÍÕ±Ð¹½‘”°Í¥¹…°èÉ•ÍÕ±Ð¹Í¥¹…°°•ÉÉ½ÈèÉ•ÍÕ±Ð¹•ÉÉ½È€üü¹Õ±°°(€€€±½œè±½¥±”°±½M¡„ÈÔØè‰åÑ•Í!…Í ¡É•ÍÕ±Ð¹‰åÑ•Ì¤°(€ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸½µµ…¹‘IÕ¹¹•È¡Ñà°±…‰•°°½µµ…¹°…ÉÌ°Ý°•Ù¥‘•¹•¥È°½ÁÑ¥½¹Ì€ôíô¤ì(€½¹ÍÐÉ•µ…¥¹¥¹œ€ôÑà¹É•µ…¥¹¥¹5Ì ¤ì(€½¹ÍÐÉ•Í•ÉÙ”€ô½ÁÑ¥½¹Ì¹É•Í•ÉÙ•5Ì€üü€äÁ|ÀÀÀì(€½¹ÍÐÑ¥µ•½ÕÑ5Ì€ô5…Ñ ¹µ¥¸¡½ÁÑ¥½¹Ì¹Ñ¥µ•½ÕÑ5Ì€üü€ÄàÁ|ÀÀÀ°É•µ…¥¹¥¹œ€´É•Í•ÉÙ”¤ì(€¥˜€¡Ñ¥µ•½ÕÑ5Ì€ð€¡½ÁÑ¥½¹Ì¹µ¥¹¥µÕµ5Ì€üü€ÄÁ|ÀÀÀ¤¤ì(€€€É•ÑÕÉ¸ìÉ•ÍÕ±Ðèì½‘”è€ÄÈÐ°Í¥¹…°è¹Õ±°°½ÕÑ½µ”è€M=Q}MQ=@œ°•ÉÉ½Èè€¥¹ÍÕ™™¥¥•¹Ð©½ˆ‰Õ‘•ÐìÉ•Í•ÉÙ•Ñ¥µ”™½ÈÉ•ÍÑ½É”°É••¥ÁÐÝÉ¥Ñ”…¹…ÉÑ¥™…ÐÕÁ±½…œ°‰åÑ•Ìè	Õ™™•È¹…±±½Œ À¤°½ÕÑÁÕÐè€œœô°½µµ…¹è¹Õ±°ôì(€ô(€½¹ÍÐ±½9…µ”€ô€‘íMÑÉ¥¹œ¡Ñà¹½µµ…¹‘½Õ¹Ñ•È¬¬¤¹Á…‘MÑ…ÉÐ È°€œÀœ¥ô´‘íÍ…™•9…µ”¡±…‰•°¥ô¹±½€ì(€½¹ÍÐ±½A…Ñ €ôÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€½µµ…¹‘Ìœ°±½9…µ”¤ì(€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹‘¥É¹…µ”¡±½A…Ñ ¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÍÑ…ÉÑ•€ô¹½Ý%Í¼ ¤ì(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð…ÁÑÕÉ•IÕ¹¹•É½µµ…¹¡½µµ…¹°…ÉÌ°ì(€€€Ý°(€€€•¹ØèìQ!%-=}MY}1=MUI}Y%9}%HèÁÉ½•ÍÌ¹•¹Ø¹Q!%-=}MY}1=MUI}Y%9}%H°€¸¸¸¡½ÁÑ¥½¹Ì¹•¹Ø€üüíô¤ô°(€€€Ñ¥µ•½ÕÑ5Ì°(€€€µ…á=ÕÑÁÕÑ	åÑ•Ìè€ÄÈà€¨€ÄÀÈÐ°(€€€Í¥¹…°èÑà¹…¹•±±…Ñ¥½¸¹Í¥¹…°°(€ô¤ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡±½A…Ñ °É•ÍÕ±Ð¹‰åÑ•Ì¤ì(€½¹ÍÐÉ•±1½œ€ôÁ…Ñ ¹É•±…Ñ¥Ù”¡É½½ÑÙ¥‘•¹” ¤°±½A…Ñ ¤¹ÍÁ±¥Ð¡Á…Ñ ¹Í•À¤¹©½¥¸ œ¼œ¤ì(€½¹ÍÐ½µµ…¹‘I••¥ÁÐ€ôÍ•É¥…±¥é•½µµ…¹¡±…‰•°°½µµ…¹°…ÉÌ°Ý°ÍÑ…ÉÑ•°É•ÍÕ±Ð°É•±1½œ¤ì(€Ñà¹½µµ…¹‘Ì¹ÁÕÍ ¡½µµ…¹‘I••¥ÁÐ¤ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡É½½ÑÙ¥‘•¹” ¤°€µÕÑ…Ñ¥½¹Ìœ°€½µµ…¹‘Ì¹©Í½¸œ¤°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡Ñà¹½µµ…¹‘Ì°¹Õ±°°€È¥õq¹€¤ì(€É•ÑÕÉ¸ìÉ•ÍÕ±Ð°½µµ…¹è½µµ…¹‘I••¥ÁÐôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€Ñà¹ÍÕµµ…Éä¹ÕÁ‘…Ñ•‘Ð€ô¹½Ý%Í¼ ¤ì(€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹©½¥¸¡É½½ÑÙ¥‘•¹” ¤°€µÕÑ…Ñ¥½¹Ìœ¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÑ…É•Ð€ôÁ…Ñ ¹©½¥¸¡É½½ÑÙ¥‘•¹” ¤°€µÕÑ…Ñ¥½¹Ìœ°€µÕÑ…Ñ¥½¸µÍÕµµ…Éä¹©Í½¸œ¤ì(€½¹ÍÐÑ•µÁ½É…Éä€ô€‘íÑ…É•Ñô¹ÑµÁ€ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Ñ•µÁ½É…Éä°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡Ñà¹ÍÕµµ…Éä°¹Õ±°°€È¥õq¹€¤ì(€…Ý…¥ÐÉ´¡Ñ…É•Ð°ì™½É”èÑÉÕ”ô¤ì(€…Ý…¥Ð€¡…Ý…¥Ð¥µÁ½ÉÐ ¹½‘”é™Ì½ÁÉ½µ¥Í•Ìœ¤¤¹É•¹…µ”¡Ñ•µÁ½É…Éä°Ñ…É•Ð¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý¤ì(€½¹ÍÐ¡•…‘IÕ¸€ô…Ý…¥Ð¥Ð¡lÉ•ØµÁ…ÉÍ”œ°€!t°ìÝô¤ì(€¥˜€¡¡•…‘IÕ¸¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½ÐÉ•Í½±Ù”…¹‘¥‘…Ñ”!è€‘í¡•…‘IÕ¸¹½ÕÑÁÕÑõ€¤ì(€½¹ÍÐ¡•…€ô¡•…‘IÕ¸¹½ÕÑÁÕÐ¹ÑÉ¥´ ¤ì(€½¹ÍÐ‰…Í•IÕ¸€ô…Ý…¥Ð¥Ð¡lµ•É”µ‰…Í”œ°€œ´µ¥Ìµ…¹•ÍÑ½Èœ°‰…Í”°¡•…‘t°ìÝô¤ì(€¥˜€¡‰…Í•IÕ¸¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹‘¥‘…Ñ”!€‘í¡•…‘ô¥Ì¹½Ð‘•Í•¹‘•™É½´‰…Í”€‘í‰…Í•õ€¤ì(€½¹ÍÐ‘¥ÉÑåIÕ¸€ô…Ý…¥Ð¥Ð¡lÍÑ…ÑÕÌœ°€œ´µÁ½É•±…¥¸õØÄœ°€œµèœ°€œ´µÕ¹ÑÉ…­•µ™¥±•Ìõ…±°t°ìÝô¤ì(€¥˜€¡‘¥ÉÑåIÕ¸¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½Ð•¹Õµ•É…Ñ”…¹‘¥‘…Ñ”Ý½É­¥¹œÑÉ•”è€‘í‘¥ÉÑåIÕ¸¹½ÕÑÁÕÑõ€¤ì(€½¹ÍÐ‘¥ÉÑåA…Ñ¡Ì€ôl¸¸¹¹•ÜM•Ð¡‘¥ÉÑåIÕ¸¹½ÕÑÁÕÐ¹ÍÁ±¥Ð pÀœ¤¹™¥±Ñ•È¡	½½±•…¸¤¹µ…À ¡É½Ü¤€ôøÉ½Ü¹Í±¥” Ì¤¤¥t¹Í½ÉÐ ¤ì(€½¹ÍÐ‘¥ÉÑå¥±•Ì€ômtì(€™½È€¡½¹ÍÐ™¥±”½˜‘¥ÉÑåA…Ñ¡Ì¤ì(€€€½¹ÍÐ‰åÑ•Ì€ô…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡Ý°™¥±”¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€€€‘¥ÉÑå¥±•Ì¹ÁÕÍ ¡m™¥±”°‰åÑ•Ì€ü‰åÑ•Í!…Í ¡‰åÑ•Ì¤€è€1Qt¤ì(€ô(€½¹ÍÐ½µµ¥ÑÑ•‘IÕ¸€ô…Ý…¥Ð¥Ð¡l‘¥™˜œ°€œ´µ¹…µ”µ½¹±äœ°€‘í‰…Í•ô¸¸‘í¡•…‘õt°ìÝô¤ì(€¥˜€¡½µµ¥ÑÑ•‘IÕ¸¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½Ð•¹Õµ•É…Ñ”…¹‘¥‘…Ñ”½µµ¥ÑÑ•Á…Ñ¡Ìè€‘í½µµ¥ÑÑ•‘IÕ¸¹½ÕÑÁÕÑõ€¤ì(€½¹ÍÐ½µµ¥ÑÑ•‘¥±•Ì€ômtì(€™½È€¡½¹ÍÐ™¥±”½˜½µµ¥ÑÑ•‘IÕ¸¹½ÕÑÁÕÐ¹ÍÁ±¥Ð ½qÈýq¸¼¤¹™¥±Ñ•È¡	½½±•…¸¤¹Í½ÉÐ ¤¤ì(€€€½¹ÍÐ‰±½ˆ€ô…Ý…¥Ð¥Ð¡lÍ¡½Üœ°€‘í¡•…‘ôè‘í™¥±•õt°ìÝô¤ì(€€€¥˜€¡‰±½ˆ¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½ÐÉ•…½µµ¥ÑÑ•Á…Ñ €‘í™¥±•õ€¤ì(€€€½µµ¥ÑÑ•‘¥±•Ì¹ÁÕÍ ¡m™¥±”°‰åÑ•Í!…Í ¡‰±½ˆ¹‰åÑ•Ì¥t¤ì(€ô(€½¹ÍÐ¥‘•¹Ñ¥Ñä€ôì‰…Í”°¡•…°½µµ¥ÑÑ•‘¥±•Ì°‘¥ÉÑå¥±•Ìôì(€É•ÑÕÉ¸ì€¸¸¹¥‘•¹Ñ¥Ñä°Í¡„ÈÔØè©Í½¹!…Í ¡¥‘•¹Ñ¥Ñä¤ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸Ù…±¥‘…Ñ•ÕÑ¡½É¥é•‘…¹‘¥‘…Ñ”¡Ý°¡•…¤ì(€½¹ÍÐÉ•ÅÕ•ÍÑ•€ôÁÉ½•ÍÌ¹•¹Ø¹Q!%-=}5UQQ%=9}AI}!ì(€¥˜€¡É•ÅÕ•ÍÑ•¤ì(€€€½¹ÍÐ…¹¡½È€ô…Ý…¥Ð¥Ð¡lµ•É”µ‰…Í”œ°€œ´µ¥Ìµ…¹•ÍÑ½Èœ°•áÁ•Ñ•‘!•…°É•ÅÕ•ÍÑ•‘t°ìÝô¤ì(€€€¥˜€¡…¹¡½È¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡Ý½É­™±½ÜAH¡•…€‘íÉ•ÅÕ•ÍÑ•‘ô¥Ì¹½Ð‰…Í•½¸Ñ¡”…ÕÑ¡½É¥é•±•…¸…¹‘¥‘…Ñ”€‘í•áÁ•Ñ•‘!•…‘õ€¤ì(€€€½¹ÍÐ‘•±Ñ„€ô…Ý…¥Ð¥Ð¡l‘¥™˜œ°€œ´µ¹…µ”µ½¹±äœ°€‘í•áÁ•Ñ•‘!•…‘ô¸¸‘íÉ•ÅÕ•ÍÑ•‘õt°ìÝô¤ì(€€€¥˜€¡‘•±Ñ„¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½Ð•¹Õµ•É…Ñ”Ñ¡”¥µÁ±•µ•¹Ñ…Ñ¥½¸‘•±Ñ„™É½´Ñ¡”…ÕÑ¡½É¥é•…¹‘¥‘…Ñ”è€‘í‘•±Ñ„¹½ÕÑÁÕÑõ€¤ì(€€€½¹ÍÐÁ…Ñ¡Ì€ô‘•±Ñ„¹½ÕÑÁÕÐ¹ÍÁ±¥Ð ½qÈýq¸¼¤¹™¥±Ñ•È¡	½½±•…¸¤¹Í½ÉÐ ¤ì(€€€¥˜€¡)M=8¹ÍÑÉ¥¹¥™ä¡Á…Ñ¡Ì¤€„ôô)M=8¹ÍÑÉ¥¹¥™ä¡¥µÁ±•µ•¹Ñ…Ñ¥½¹A…Ñ¡Ì¤¤ì(€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡AH¡•…‘•±Ñ„™É½´…ÕÑ¡½É¥é•…¹‘¥‘…Ñ”µÕÍÐ½¹Ñ…¥¸•á…Ñ±äÑ¡”™½ÕÈ…‘µ¥ÑÑ•¥µÁ±•µ•¹Ñ…Ñ¥½¸Á…Ñ¡Ìì½Ð€‘íÁ…Ñ¡Ì¹©½¥¸ œ°€œ¥õ€¤ì(€€€ô(€€€¥˜€¡¡•…€„ôôÉ•ÅÕ•ÍÑ•¤ì(€€€€€½¹ÍÐÁ…É•¹ÑÌ€ô…Ý…¥Ð¥Ð¡lÉ•Øµ±¥ÍÐœ°€œ´µÁ…É•¹ÑÌœ°€œµ¸œ°€œÄœ°¡•…‘t°ìÝô¤ì(€€€€€½¹ÍÐl°™¥ÉÍÐ°Í•½¹°€¸¸¹•áÑÉ…t€ôÁ…É•¹ÑÌ¹½ÕÑÁÕÐ¹ÑÉ¥´ ¤¹ÍÁ±¥Ð ½qÌ¬¼¤ì(€€€€€¥˜€¡Á…É•¹ÑÌ¹½‘”€„ôô€Àñð™¥ÉÍÐ€„ôô‰…Í”ñðÍ•½¹€„ôôÉ•ÅÕ•ÍÑ•ñð•áÑÉ„¹±•¹Ñ ¤ì(€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡Ý½É­™±½Ü¡•­½ÕÐ€‘í¡•…‘ô¥Ì¹½ÐÑ¡”•áÁ•Ñ•µ•É”½˜‰…Í”€‘í‰…Í•ô…¹…ÕÑ¡½É¥é•AH¡•…€‘íÉ•ÅÕ•ÍÑ•‘õ€¤ì(€€€€€ô(€€€ô(€€€É•ÑÕÉ¸ì…¹¡½É!•…è•áÁ•Ñ•‘!•…°ÁÕ±±I•ÅÕ•ÍÑ!•…èÉ•ÅÕ•ÍÑ•°¡•­½ÕÑ!•…è¡•…°¥µÁ±•µ•¹Ñ…Ñ¥½¹A…Ñ¡ÌèÁ…Ñ¡Ìôì(€ô(€¥˜€¡¡•…€„ôô•áÁ•Ñ•‘!•…¤Ñ¡É½Ü¹•ÜÉÉ½È¡µÕÑ…Ñ¥½¸ÍÉ¥ÁÐÉ•ÅÕ¥É•Ì•á…Ð…¹‘¥‘…Ñ”€‘í•áÁ•Ñ•‘!•…‘ôì½Ð€‘í¡•…‘õ€¤ì(€É•ÑÕÉ¸ìÁÕ±±I•ÅÕ•ÍÑ!•…è•áÁ•Ñ•‘!•…°¡•­½ÕÑ!•…è¡•…ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸…ÁÁ±åA…Ñ¡M•Ð¡Ý½É­ÑÉ•”°‘•™¥¹¥Ñ¥½¸°ÁÉ•¥µ…•Ì¤ì(€™½È€¡½¹ÍÐÁ…Ñ ½˜‘•™¥¹¥Ñ¥½¸¹Á…Ñ¡•Ì¤ì(€€€½¹ÍÐ™¥±•	åÑ•Ì€ôÁÉ•¥µ…•Ì¹•Ð¡Á…Ñ ¹Á…Ñ ¤ì(€€€¥˜€ …™¥±•	åÑ•Ì¤Ñ¡É½Ü¹•ÜÉÉ½È¡µÕÑ…Ñ¥½¸€‘í‘•™¥¹¥Ñ¥½¸¹¥‘ô¡…Ì¹¼™É½é•¸ÁÉ•¥µ…”™½È€‘íÁ…Ñ ¹Á…Ñ¡õ€¤ì(€€€½¹ÍÐ½É¥¥¹…°€ô™¥±•	åÑ•Ì¹Ñ½MÑÉ¥¹œ ÕÑ˜àœ¤ì(€€€½¹ÍÐ¡¥ÑÌ€ô½É¥¥¹…°¹ÍÁ±¥Ð¡Á…Ñ ¹‰•™½É”¤¹±•¹Ñ €´€Äì(€€€¥˜€¡¡¥ÑÌ€„ôô€Ä¤Ñ¡É½Ü¹•ÜÉÉ½È¡µÕÑ…Ñ¥½¸€‘í‘•™¥¹¥Ñ¥½¸¹¥‘ôÁÉ•¥µ…”µ…Ñ¡•€‘í¡¥ÑÍôÑ¥µ•Ì¥¸€‘íÁ…Ñ ¹Á…Ñ¡ôì•áÁ•Ñ••á…Ñ±ä½¹•€¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°Á…Ñ ¹Á…Ñ ¤°½É¥¥¹…°¹É•Á±…”¡Á…Ñ ¹‰•™½É”°Á…Ñ ¹…™Ñ•È¤¤ì(€ô)ô()…Íå¹Œ™Õ¹Ñ¥½¸•á…Ñ¡…¹•‘A…Ñ¡Ì¡Ý½É­ÑÉ•”¤ì(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð¥Ð¡l‘¥™˜œ°€œ´µ¹…µ”µ½¹±ät°ìÝèÝ½É­ÑÉ•”ô¤ì(€¥˜€¡É•ÍÕ±Ð¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½Ð•¹Õµ•É…Ñ”µÕÑ…Ñ•Í½ÕÉ”™¥±•Ìè€‘íÉ•ÍÕ±Ð¹½ÕÑÁÕÑõ€¤ì(€É•ÑÕÉ¸É•ÍÕ±Ð¹½ÕÑÁÕÐ¹ÍÁ±¥Ð ½qÈýq¸¼¤¹™¥±Ñ•È¡	½½±•…¸¤¹Í½ÉÐ ¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸…É¡¥Ù•¥±•Ù¥‘•¹”¡Ý½É­ÑÉ•”°‘•™¥¹¥Ñ¥½¸°•Ù¥‘•¹•¥È°ÁÉ•¥µ…•Ì¤ì(€½¹ÍÐ‰•™½É•¥È€ôÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÁÉ•¥µ…•Ìœ¤ì(€…Ý…¥Ðµ­‘¥È¡‰•™½É•¥È°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÁÉ•¥µ…•5…¹¥™•ÍÐ€ôíôì(€™½È€¡½¹ÍÐm™¥±”°‰åÑ•Ít½˜ÁÉ•¥µ…•Ì¤ì(€€€½¹ÍÐ‘•ÍÐ€ôÁ…Ñ ¹©½¥¸¡‰•™½É•¥È°™¥±”¤ì(€€€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹‘¥É¹…µ”¡‘•ÍÐ¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡‘•ÍÐ°‰åÑ•Ì¤ì(€€€ÁÉ•¥µ…•5…¹¥™•ÍÑm™¥±•t€ô‰åÑ•Í!…Í ¡‰åÑ•Ì¤ì(€ô(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÁÉ•¥µ…•Ì¹©Í½¸œ¤°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡ÁÉ•¥µ…•5…¹¥™•ÍÐ°¹Õ±°°€È¥õq¹€¤ì(€½¹ÍÐ‘¥™˜€ô…Ý…¥Ð¥Ð¡l‘¥™˜œ°€œ´µ‰¥¹…Éäœ°€œ´´œ°€¸¸¹l¸¸¹¹•ÜM•Ð¡‘•™¥¹¥Ñ¥½¸¹Á…Ñ¡•Ì¹µ…À ¡Á…Ñ ¤€ôøÁ…Ñ ¹Á…Ñ ¤¥ut°ìÝèÝ½É­ÑÉ•”ô¤ì(€¥˜€¡‘¥™˜¹½‘”€„ôô€Àñð€…‘¥™˜¹½ÕÑÁÕÐ¤Ñ¡É½Ü¹•ÜÉÉ½È¡µÕÑ…Ñ¥½¸€‘í‘•™¥¹¥Ñ¥½¸¹¥‘ô‘¥¹½ÐÁÉ½‘Õ”¥ÑÌ•áÁ•Ñ•É…ÜÁ…Ñ è€‘í‘¥™˜¹½ÕÑÁÕÑõ€¤ì(€½¹ÍÐÉ…ÝA…Ñ €ô	Õ™™•È¹™É½´¡‘¥™˜¹½ÕÑÁÕÐ¤ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€µÕÑ…Ñ¥½¸¹Á…Ñ œ¤°É…ÝA…Ñ ¤ì(€É•ÑÕÉ¸ì(€€€¡…¹•‘A…Ñ¡Ìè…Ý…¥Ð•á…Ñ¡…¹•‘A…Ñ¡Ì¡Ý½É­ÑÉ•”¤°(€€€Á…Ñ¡M¡„ÈÔØè‰åÑ•Í!…Í ¡É…ÝA…Ñ ¤°(€€€Á…Ñ èÁ…Ñ ¹É•±…Ñ¥Ù”¡É½½ÑÙ¥‘•¹” ¤°Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€µÕÑ…Ñ¥½¸¹Á…Ñ œ¤¤¹ÍÁ±¥Ð¡Á…Ñ ¹Í•À¤¹©½¥¸ œ¼œ¤°(€€€ÁÉ•¥µ…•ÌèÁÉ•¥µ…•5…¹¥™•ÍÐ°(€ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸É•…‘±•…¹…Ñ”¡•Ù¥‘•¹•¥È¤ì(€½¹ÍÐÍÕµµ…Éä€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÍÕµµ…Éä¹©Í½¸œ¤¤ì(€½¹ÍÐÍ…Ù”€ôÍÕµµ…Éä¹…Ñ•Ìü¹Í…Ù•±½ÍÕÉ”€üüÍÕµµ…Éä¹…Ñ”ü¹ÍÑ…ÑÕÌì(€½¹ÍÐÁÉ½€ôÍÕµµ…Éä¹…Ñ•Ìü¹ÁÉ½‘ÕÑ¥½¹1¥™•å±”€üü€9=PIU8œì(€½¹ÍÐ…¹‘¥‘…Ñ”€ôÍÕµµ…Éä¹…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä€üüÍÕµµ…Éä¹¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ”ì(€É•ÑÕÉ¸ìÍÕµµ…Éä°Í…Ù”°ÁÉ½°…¹‘¥‘…Ñ”ôì)ô()™Õ¹Ñ¥½¸É•ÅÕ¥É•±•…¹•ÁÑ…¹”¡ÍÕµµ…Éä°•áÁ•Ñ•‘…¹‘¥‘…Ñ”°•áÁ•Ñ•‘!•…¤ì(€¥˜€ ¡ÍÕµµ…Éä¹…Ñ•Ìü¹Í…Ù•±½ÍÕÉ”€üüÍÕµµ…Éä¹…Ñ”ü¹ÍÑ…ÑÕÌ¤€„ôô€AMLœ¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€I•ÍÑ½É•±•…¸Í…Ù”µ±½ÍÕÉ”…Ñ”‘¥¹½ÐAML¸œôì(€ô(€½¹ÍÐ…¹‘¥‘…Ñ”€ôÍÕµµ…Éä¹…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä€üüÍÕµµ…Éä¹¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ”ì(€¥˜€ ……¹‘¥‘…Ñ”ñð…¹‘¥‘…Ñ”¹¡•…€„ôô•áÁ•Ñ•‘!•…ñð…¹‘¥‘…Ñ”¹Í¡„ÈÔØ€„ôô•áÁ•Ñ•‘…¹‘¥‘…Ñ”¹Í¡„ÈÔØ¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€I•ÍÑ½É•±•…¸…Ñ”…¹‘¥‘…Ñ”¥‘•¹Ñ¥Ñä‘¥™™•ÉÌ™É½´Ñ¡”½É¥¥¹…°±•…¸…¹‘¥‘…Ñ”¸œôì(€ô(€½¹ÍÐ…±°€ôl¸¸¸¡ÍÕµµ…Éä¹…Í•=ÕÑ½µ•Ì€üümt¥tì(€½¹ÍÐÁÉ•É•ÅÕ¥Í¥Ñ•Ì€ô…±°¹™¥±Ñ•È ¡•¹ÑÉä¤€ôø•¹ÑÉä¹¥ü¹ÍÑ…ÉÑÍ]¥Ñ  -%P´œ¤ñð•¹ÑÉä¹¥ü¹ÍÑ…ÉÑÍ]¥Ñ  AQH´œ¤¤ì(€½¹ÍÐÕÉÉ•¹Ð€ô…±°¹™¥±Ñ•È ¡•¹ÑÉä¤€ôøÕÉÉ•¹Ñ…Í•Ì¹¥¹±Õ‘•Ì¡•¹ÑÉä¹¥¤¤ì(€¥˜€¡ÁÉ•É•ÅÕ¥Í¥Ñ•Ì¹±•¹Ñ €„ôôÁÉ•É•ÅÕ¥Í¥Ñ•…Í•Ì¹±•¹Ñ ñðÁÉ•É•ÅÕ¥Í¥Ñ•Ì¹Í½µ” ¡•¹ÑÉä¤€ôø•¹ÑÉä¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤(€€€ñðÕÉÉ•¹Ð¹±•¹Ñ €„ôôÕÉÉ•¹Ñ…Í•Ì¹±•¹Ñ ñðÕÉÉ•¹Ð¹Í½µ” ¡•¹ÑÉä¤€ôø•¹ÑÉä¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€I•ÍÑ½É•±•…¸…Ñ”‘¥¹½ÐÁÉ½Ù”…±°Í•Ù•¸ÁÉ•É•ÅÕ¥Í¥Ñ•Ì…¹•±•Ù•¸ÕÉÉ•¹Ð…Í•Ì¸œôì(€ô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñäè…¹‘¥‘…Ñ”¹Í¡„ÈÔØ°ÁÉ•É•ÅÕ¥Í¥Ñ•Ìè€œÜ¼ÜAMLœ°ÕÉÉ•¹Ðè€œÄÄ¼ÄÄAMLœôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸Ù•É¥™å	…Í•±¥¹•%¹Ù…É¥…¹ÑÌ¡Ý½É­ÑÉ•”°‰…Í•±¥¹•!…Í¡•Ì°ÍÑ…”¤ì(€½¹ÍÐµ¥Íµ…Ñ¡•Ì€ômtì(€™½È€¡½¹ÍÐm™¥±”°•áÁ•Ñ•‘t½˜=‰©•Ð¹•¹ÑÉ¥•Ì¡‰…Í•±¥¹•!…Í¡•Ì¤¤ì(€€€½¹ÍÐ…ÑÕ…°€ô…Ý…¥ÐÁ…Ñ¡!…Í ¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°™¥±”¤¤¹…Ñ   ¤€ôø€5%MM%9œ¤ì(€€€¥˜€¡…ÑÕ…°€„ôô•áÁ•Ñ•¤µ¥Íµ…Ñ¡•Ì¹ÁÕÍ ¡ì™¥±”°•áÁ•Ñ•°…ÑÕ…°ô¤ì(€ô(€¥˜€¡µ¥Íµ…Ñ¡•Ì¹±•¹Ñ ¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ…”°µ¥Íµ…Ñ¡•Ìôì(€½¹ÍÐ¡…¹•€ô…Ý…¥Ð•á…Ñ¡…¹•‘A…Ñ¡Ì¡Ý½É­ÑÉ•”¤ì(€¥˜€¡¡…¹•¹±•¹Ñ ¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ…”°¡…¹•‘A…Ñ¡Í™Ñ•ÉI•ÍÑ½É”è¡…¹•ôì(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°ÍÑ…”°Ù•É¥™¥•‘¥±•Ìè=‰©•Ð¹­•åÌ¡‰…Í•±¥¹•!…Í¡•Ì¤ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸É•…Ñ•]½É­ÑÉ•”¡Ñà°‘•™¥¹¥Ñ¥½¸°•Ù¥‘•¹•¥È¤ì(€½¹ÍÐÑ•µÁ	…Í”€ô…Ý…¥Ðµ­‘Ñ•µÀ¡Á…Ñ ¹©½¥¸¡½Ì¹ÑµÁ‘¥È ¤°€Ñ…¡¥­¼µÍ¡••Ð´ÄÐØµµÕÑ…Ñ¥½¸´œ¤¤ì(€½¹ÍÐÝ½É­ÑÉ•”€ôÁ…Ñ ¹©½¥¸¡Ñ•µÁ	…Í”°‘•™¥¹¥Ñ¥½¸¹¥¤ì(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í‘•™¥¹¥Ñ¥½¸¹¥‘ôµÉ•…Ñ”µÝ½É­ÑÉ••€°€¥Ðœ°lÝ½É­ÑÉ•”œ°€…‘œ°€œ´µ‘•Ñ… œ°Ý½É­ÑÉ•”°Ñà¹…¹‘¥‘…Ñ”¹¡•…‘t°É½½Ð°•Ù¥‘•¹•¥È°ìÑ¥µ•½ÕÑ5Ìè€ÈÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€É|ÀÀÀô¤ì(€¥˜€¡É•ÍÕ±Ð¹É•ÍÕ±Ð¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡½Õ±¹½ÐÉ•…Ñ”‘¥ÍÁ½Í…‰±”Ý½É­ÑÉ•”è€‘íÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹•ÉÉ½È€üüÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹½ÕÑÁÕÑõ€¤ì(€ÑÉäì(€€€½¹ÍÐ‘•ÁA…Ñ €ôÁ…Ñ ¹©½¥¸¡É½½Ð°€¹½‘•}µ½‘Õ±•Ìœ¤ì(€€€½¹ÍÐ‘•ÁMÑ…Ð€ô…Ý…¥Ð€¡…Ý…¥Ð¥µÁ½ÉÐ ¹½‘”é™Ì½ÁÉ½µ¥Í•Ìœ¤¤¹ÍÑ…Ð¡‘•ÁA…Ñ ¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€€€¥˜€ …‘•ÁMÑ…Ð¤Ñ¡É½Ü¹•ÜÉÉ½È Á¥¹¹•‘•Á•¹‘•¹¥•Ì…É”Õ¹…Ù…¥±…‰±”èÉ½½Ð¹½‘•}µ½‘Õ±•Ì¥Ì…‰Í•¹Ðœ¤ì(€€€…Ý…¥ÐÍåµ±¥¹¬¡‘•ÁA…Ñ °Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€¹½‘•}µ½‘Õ±•Ìœ¤°€‘¥Èœ¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€…Ý…¥Ð¥Ð¡lÝ½É­ÑÉ•”œ°€É•µ½Ù”œ°€œ´µ™½É”œ°Ý½É­ÑÉ••t°ìÝèÉ½½Ð°Ñ¥µ•½ÕÑ5Ìè€ÌÁ|ÀÀÀô¤¹…Ñ   ¤€ôøíô¤ì(€€€…Ý…¥ÐÉ´¡Ñ•µÁ	…Í”°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°™½É”èÑÉÕ”ô¤¹…Ñ   ¤€ôøíô¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€Ñà¹Ý½É­ÑÉ•”€ôÝ½É­ÑÉ•”ì(€Ñà¹Ý½É­ÑÉ••Q•µÁI½½Ð€ôÑ•µÁ	…Í”ì(€É•ÑÕÉ¸Ý½É­ÑÉ•”ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸É•µ½Ù•]½É­ÑÉ•”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°‘•™¥¹¥Ñ¥½¹%¤ì(€¥˜€ …Ý½É­ÑÉ•”¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°Í­¥ÁÁ•èÑÉÕ”ôì(€±•ÐÉ•ÍÕ±Ðì(€±•Ð±½¥¹…¥±ÕÉ”€ô¹Õ±°ì(€ÑÉäì(€€€É•ÍÕ±Ð€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í‘•™¥¹¥Ñ¥½¹%‘ôµÉ•µ½Ù”µÝ½É­ÑÉ••€°€¥Ðœ°lÝ½É­ÑÉ•”œ°€É•µ½Ù”œ°€œ´µ™½É”œ°Ý½É­ÑÉ••t°É½½Ð°•Ù¥‘•¹•¥È°ìÑ¥µ•½ÕÑ5Ìè€ÌÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€É|ÀÀÀ°É•Í•ÉÙ•5Ìè€ÐÕ|ÀÀÀô¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€±½¥¹…¥±ÕÉ”€ô•ÉÉ½È¹µ•ÍÍ…”ì(€€€É•ÍÕ±Ð€ô…Ý…¥Ð¥Ð¡lÝ½É­ÑÉ•”œ°€É•µ½Ù”œ°€œ´µ™½É”œ°Ý½É­ÑÉ••t°ìÝèÉ½½Ð°Ñ¥µ•½ÕÑ5Ìè€ÌÁ|ÀÀÀô¤¹Ñ¡•¸ ¡™…±±‰…¬¤€ôø€¡ìÉ•ÍÕ±Ðè™…±±‰…¬ô¤¤¹…Ñ  ¡™…±±‰…­ÉÉ½È¤€ôø€¡ìÉ•ÍÕ±Ðèì½‘”è€ÄÈÜ°½ÕÑ½µ”è€MA]9}II=Hœ°•ÉÉ½Èè™…±±‰…­ÉÉ½È¹µ•ÍÍ…”ôô¤¤ì(€ô(€½¹ÍÐÉ•µ½Ù•MÑ…ÑÕÌ€ôÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹½‘”€ôôô€À€˜˜€…±½¥¹…¥±ÕÉ”€ü€AMLœ€è€	1=-œì(€¥˜€¡É•ÍÕ±Ð¹É•ÍÕ±Ð¹½‘”€ôôô€À¤ì(€€€…Ý…¥ÐÉ´¡Ñà¹Ý½É­ÑÉ••Q•µÁI½½Ð°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°™½É”èÑÉÕ”ô¤¹…Ñ   ¤€ôøíô¤ì(€€€Ñà¹Ý½É­ÑÉ•”€ô¹Õ±°ì(€€€Ñà¹Ý½É­ÑÉ••Q•µÁI½½Ð€ô¹Õ±°ì(€ô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌèÉ•µ½Ù•MÑ…ÑÕÌ°•á¥Ñ½‘”èÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹½‘”°½ÕÑ½µ”èÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹½ÕÑ½µ”€üü€a%Qœ°•ÉÉ½Èè±½¥¹…¥±ÕÉ”€üüÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹•ÉÉ½È€üü¹Õ±°°(€€€Á…Ñ¡I•Ñ…¥¹•‘½É%¹ÍÁ•Ñ¥½¸èÉ•ÍÕ±Ð¹É•ÍÕ±Ð¹½‘”€„ôô€Àôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸½ÁåI…ÝÙ¥‘•¹”¡Í½ÕÉ”°‘•ÍÑ¥¹…Ñ¥½¸¤ì(€…Ý…¥Ðµ­‘¥È¡‘•ÍÑ¥¹…Ñ¥½¸°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€…Ý…¥ÐÀ¡Í½ÕÉ”°‘•ÍÑ¥¹…Ñ¥½¸°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°™½É”èÑÉÕ”°•ÉÉ½É=¹á¥ÍÐè™…±Í”ô¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸¥¹Ù•¹Ñ½ÉåQÉ•”¡‘¥É•Ñ½Éä¤ì(€½¹ÍÐÉ½ÝÌ€ômtì(€…Íå¹Œ™Õ¹Ñ¥½¸Ý…±¬¡É•±…Ñ¥Ù”€ô€œœ¤ì(€€€½¹ÍÐ•¹ÑÉ¥•Ì€ô…Ý…¥ÐÉ•…‘‘¥È¡Á…Ñ ¹©½¥¸¡‘¥É•Ñ½Éä°É•±…Ñ¥Ù”¤°ìÝ¥Ñ¡¥±•QåÁ•ÌèÑÉÕ”ô¤ì(€€€™½È€¡½¹ÍÐ•¹ÑÉä½˜•¹ÑÉ¥•Ì¤ì(€€€€€½¹ÍÐ¡¥±€ôÁ…Ñ ¹Á½Í¥à¹©½¥¸¡É•±…Ñ¥Ù”°•¹ÑÉä¹¹…µ”¤ì(€€€€€¥˜€¡•¹ÑÉä¹¥Í¥É•Ñ½Éä ¤¤…Ý…¥ÐÝ…±¬¡¡¥±¤ì(€€€€€•±Í”¥˜€¡•¹ÑÉä¹¥Í¥±” ¤¤É½ÝÌ¹ÁÕÍ ¡m¡¥±°…Ý…¥ÐÁ…Ñ¡!…Í ¡Á…Ñ ¹©½¥¸¡‘¥É•Ñ½Éä°¡¥±¤¥t¤ì(€€€€€•±Í”Ñ¡É½Ü¹•ÜÉÉ½È¡Õ¹•áÁ•Ñ••¹•É…Ñ•µ•Ù¥‘•¹”•¹ÑÉäè€‘í¡¥±‘õ€¤ì(€€€ô(€ô(€…Ý…¥ÐÝ…±¬ ¤ì(€É•ÑÕÉ¸É½ÝÌ¹Í½ÉÐ ¡m…t°m‰t¤€ôø„¹±½…±•½µÁ…É”¡ˆ¤¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸…É¡¥Ù•¹‘I•ÍÑ½É•AÉ½‘ÕÑ•ÁÑ…¹•Ù¥‘•¹”¡Ý½É­ÑÉ•”°…É¡¥Ù•A…Ñ ¤ì(€½¹ÍÐ•¹•É…Ñ•€ôÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€•Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ¤ì(€½¹ÍÐ‰•™½É”€ô…Ý…¥Ð¥¹Ù•¹Ñ½ÉåQÉ•”¡•¹•É…Ñ•¤¹…Ñ  ¡•ÉÉ½È¤€ôøì(€€€¥˜€¡•ÉÉ½È¹½‘”€ôôô€9=9Pœ¤É•ÑÕÉ¸¹Õ±°ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô¤ì(€¥˜€ …‰•™½É”¤Ñ¡É½Ü¹•ÜÉÉ½È ½±ÁÉ½‘ÕÐ…•ÁÑ…¹”•Ù¥‘•¹”‘¥É•Ñ½Éä¥Ìµ¥ÍÍ¥¹œ‰•™½É”…É¡¥Ù…°¸œ¤ì(€½¹ÍÐÉ…Ý=ÕÑÁÕÐ€ôÁ…Ñ ¹©½¥¸¡…É¡¥Ù•A…Ñ °€É…ÜµÁÉ½‘ÕÐµ…•ÁÑ…¹”œ¤ì(€…Ý…¥Ð½ÁåI…ÝÙ¥‘•¹”¡•¹•É…Ñ•°É…Ý=ÕÑÁÕÐ¤ì(€½¹ÍÐÉ…Ü€ô…Ý…¥Ð¥¹Ù•¹Ñ½ÉåQÉ•”¡É…Ý=ÕÑÁÕÐ¤ì(€½¹ÍÐÑÉ…­•€ô…Ý…¥Ð¥Ð¡l±Ìµ™¥±•Ìœ°€œµèœ°€œ´´œ°€•Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”t°ìÝèÝ½É­ÑÉ•”ô¤ì(€¥˜€¡ÑÉ…­•¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½Ð¥¹Ù•¹Ñ½ÉäÁÉ¥½ÈÑÉ…­•ÁÉ½‘ÕÐ…•ÁÑ…¹”•Ù¥‘•¹”è€‘íÑÉ…­•¹½ÕÑÁÕÑõ€¤ì(€½¹ÍÐÑÉ…­•‘A…Ñ¡Ì€ôÑÉ…­•¹½ÕÑÁÕÐ¹ÍÁ±¥Ð pÀœ¤¹™¥±Ñ•È¡	½½±•…¸¤ì(€½¹ÍÐ•áÁ•Ñ•‘QÉ…­•€ôíôì(€…Ý…¥ÐÉ´¡•¹•É…Ñ•°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°™½É”èÑÉÕ”ô¤ì(€™½È€¡½¹ÍÐ™¥±”½˜ÑÉ…­•‘A…Ñ¡Ì¤ì(€€€½¹ÍÐ½É¥¥¹…°€ô…Ý…¥Ð¥Ð¡lÍ¡½Üœ°!è‘í™¥±•õt°ìÝèÝ½É­ÑÉ•”ô¤ì(€€€¥˜€¡½É¥¥¹…°¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½ÐÉ•ÍÑ½É”½µµ¥ÑÑ••¹•É…Ñ•µ•Ù¥‘•¹”ÁÉ•¥µ…”€‘í™¥±•õ€¤ì(€€€½¹ÍÐ‘•ÍÑ¥¹…Ñ¥½¸€ôÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°™¥±”¤ì(€€€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹‘¥É¹…µ”¡‘•ÍÑ¥¹…Ñ¥½¸¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡‘•ÍÑ¥¹…Ñ¥½¸°½É¥¥¹…°¹‰åÑ•Ì¤ì(€€€•áÁ•Ñ•‘QÉ…­•‘mÁ…Ñ ¹Á½Í¥à¹É•±…Ñ¥Ù” •Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ°™¥±”¥t€ô‰åÑ•Í!…Í ¡½É¥¥¹…°¹‰åÑ•Ì¤ì(€ô(€½¹ÍÐÉ•ÍÑ½É•€ô…Ý…¥Ð¥¹Ù•¹Ñ½ÉåQÉ•”¡•¹•É…Ñ•¤ì(€½¹ÍÐÉ•ÍÑ½É•‘QÉ…­•€ô=‰©•Ð¹™É½µ¹ÑÉ¥•Ì¡É•ÍÑ½É•¤ì(€½¹ÍÐÙ•É¥™¥•€ôÑÉ…­•‘A…Ñ¡Ì¹•Ù•Éä ¡™¥±”¤€ôøÉ•ÍÑ½É•‘QÉ…­•‘mÁ…Ñ ¹Á½Í¥à¹É•±…Ñ¥Ù” •Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ°™¥±”¥t€ôôô•áÁ•Ñ•‘QÉ…­•‘mÁ…Ñ ¹Á½Í¥à¹É•±…Ñ¥Ù” •Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ°™¥±”¥t¤ì(€¥˜€ …Ù•É¥™¥•¤Ñ¡É½Ü¹•ÜÉÉ½È ÁÉ½‘ÕÐ…•ÁÑ…¹”ÑÉ…­••Ù¥‘•¹”‘¥¹½ÐÉ•ÍÑ½É”‰åÑ”µ™½Èµ‰åÑ”¸œ¤ì(€É•ÑÕÉ¸ì…É¡¥Ù•èÑÉÕ”°•¹•É…Ñ•‘	•™½É”è‰•™½É”°•¹•É…Ñ•‘=ÕÑÁÕÐèÉ…Ü°…É¡¥Ù•A…Ñ èÉ…Ý=ÕÑÁÕÐ°(€€€É•ÍÑ½É•‘QÉ…­•‘A…Ñ¡ÌèÑÉ…­•‘A…Ñ¡Ì°É•ÍÑ½É•‘QÉ…­•‘!…Í¡•Ìè•áÁ•Ñ•‘QÉ…­•°•¹•É…Ñ•‘Ù¥‘•¹•I•ÍÑ½É•èÙ•É¥™¥•ôì)ô()•áÁ½ÉÐ…Íå¹Œ™Õ¹Ñ¥½¸É•½¹¥±•!½ÍÑ•‘AÉ½‘ÕÑÙ¥‘•¹”¡Ý°…É¡¥Ù•I½½Ð€ôÉ½½ÑÙ¥‘•¹” ¤¤ì(€½¹ÍÐÍÑ…ÑÕÌ€ô…Ý…¥Ð¥Ð¡lÍÑ…ÑÕÌœ°€œ´µÁ½É•±…¥¸õØÄœ°€œµèœ°€œ´µÕ¹ÑÉ…­•µ™¥±•Ìõ…±°t°ìÝô¤ì(€¥˜€¡ÍÑ…ÑÕÌ¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½Ð¥¹ÍÁ•Ð¡½ÍÑ••¹•É…Ñ•µ•Ù¥‘•¹”¡…¹•Ìè€‘íÍÑ…ÑÕÌ¹½ÕÑÁÕÑõ€¤ì(€½¹ÍÐÉ½ÝÌ€ôÍÑ…ÑÕÌ¹½ÕÑÁÕÐ¹ÍÁ±¥Ð pÀœ¤¹™¥±Ñ•È¡	½½±•…¸¤ì(€½¹ÍÐÁ…Ñ¡Ì€ôÉ½ÝÌ¹µ…À ¡É½Ü¤€ôøÉ½Ü¹Í±¥” Ì¤¤ì(€¥˜€ …Á…Ñ¡Ì¹±•¹Ñ ¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°¡…¹•‘A…Ñ¡Ìèmt°É•½¹¥±•è™…±Í”ôì(€¥˜€¡Á…Ñ¡Ì¹Í½µ” ¡™¥±”¤€ôø€…™¥±”¹ÍÑ…ÉÑÍ]¥Ñ  •Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”¼œ¤¤¤ì(€€€Ñ¡É½Ü¹•ÜÉÉ½È¡¡•­½ÕÐ¡…Ì‘¥ÉÑäÁ…Ñ¡Ì½ÕÑÍ¥‘”•¹•É…Ñ•ÁÉ½‘ÕÐµ…•ÁÑ…¹”•Ù¥‘•¹”è€‘íÁ…Ñ¡Ì¹™¥±Ñ•È ¡™¥±”¤€ôø€…™¥±”¹ÍÑ…ÉÑÍ]¥Ñ  •Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”¼œ¤¤¹©½¥¸ œ°€œ¥õ€¤ì(€ô(€½¹ÍÐ½±‘…Ñ•MÕµµ…Éä€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡Ý°€•Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”½ÍÕµµ…Éä¹©Í½¸œ¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€¥˜€¡½±‘…Ñ•MÕµµ…Éäü¹ÍÑ…ÑÕÌ€„ôô€AMLœñð€…ÉÉ…ä¹¥ÍÉÉ…ä¡½±‘…Ñ•MÕµµ…Éä¹ÍÕµµ…Éä¤ñð½±‘…Ñ•MÕµµ…Éä¹ÍÕµµ…Éä¹Í½µ” ¡•¹ÑÉä¤€ôø•¹ÑÉä¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤¤ì(€€€Ñ¡É½Ü¹•ÜÉÉ½È Ñ¡”ÁÉ••‘¥¹œÕ¹¡…¹•…•ÁÑ…¹”éÁÉ½‘ÕÐ…Ñ”‘¥¹½Ð±•…Ù”„½µÁ±•Ñ”AML•Ù¥‘•¹”ÍÕµµ…Éä¸œ¤ì(€ô(€½¹ÍÐ…É¡¥Ù”€ôÁ…Ñ ¹©½¥¸¡…É¡¥Ù•I½½Ð°€µÕÑ…Ñ¥½¹Ìœ°€ÁÉ•™±¥¡ÐµÁÉ½‘ÕÐµ…•ÁÑ…¹”µ½ÕÑÁÕÐœ¤ì(€…Ý…¥Ðµ­‘¥È¡…É¡¥Ù”°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÉ…ÝI½½Ð€ôÁ…Ñ ¹©½¥¸¡…É¡¥Ù”°€É…Üµ¡•­½ÕÐµ½ÕÑÁÕÐœ¤ì(€…Ý…¥Ð½ÁåI…ÝÙ¥‘•¹”¡Á…Ñ ¹©½¥¸¡Ý°€•Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ¤°É…ÝI½½Ð¤ì(€½¹ÍÐ•¹•É…Ñ•€ô…Ý…¥Ð¥¹Ù•¹Ñ½ÉåQÉ•”¡É…ÝI½½Ð¤ì(€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡…É¡¥Ù”°€…É¡¥Ù”µµ…¹¥™•ÍÐ¹©Í½¸œ¤°ì¡…¹•‘A…Ñ¡ÌèÁ…Ñ¡Ì°•¹•É…Ñ•°…É¡¥Ù•‘Ðè¹½Ý%Í¼ ¤ô¤ì(€™½È€¡½¹ÍÐ™¥±”½˜Á…Ñ¡Ì¤ì(€€€½¹ÍÐÑÉ…­•€ô…Ý…¥Ð¥Ð¡l±Ìµ™¥±•Ìœ°€œ´µ•ÉÉ½ÈµÕ¹µ…Ñ œ°€œ´´œ°™¥±•t°ìÝô¤ì(€€€½¹ÍÐ‘•ÍÑ¥¹…Ñ¥½¸€ôÁ…Ñ ¹©½¥¸¡Ý°™¥±”¤ì(€€€¥˜€¡ÑÉ…­•¹½‘”€ôôô€À¤ì(€€€€€½¹ÍÐ½É¥¥¹…°€ô…Ý…¥Ð¥Ð¡lÍ¡½Üœ°!è‘í™¥±•õt°ìÝô¤ì(€€€€€¥˜€¡½É¥¥¹…°¹½‘”€„ôô€À¤Ñ¡É½Ü¹•ÜÉÉ½È¡…¹¹½ÐÉ•ÍÑ½É”!Ù•ÉÍ¥½¸½˜•¹•É…Ñ••Ù¥‘•¹”€‘í™¥±•õ€¤ì(€€€€€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹‘¥É¹…µ”¡‘•ÍÑ¥¹…Ñ¥½¸¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€€€€€…Ý…¥ÐÝÉ¥Ñ•¥±”¡‘•ÍÑ¥¹…Ñ¥½¸°½É¥¥¹…°¹‰åÑ•Ì¤ì(€€€ô•±Í”ì(€€€€€…Ý…¥ÐÉ´¡‘•ÍÑ¥¹…Ñ¥½¸°ì™½É”èÑÉÕ”°É•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€€€ô(€ô(€½¹ÍÐ…™Ñ•È€ô…Ý…¥Ð¥Ð¡lÍÑ…ÑÕÌœ°€œ´µÁ½É•±…¥¸õØÄœ°€œµèœ°€œ´µÕ¹ÑÉ…­•µ™¥±•Ìõ…±°t°ìÝô¤ì(€¥˜€¡…™Ñ•È¹½‘”€„ôô€Àñð…™Ñ•È¹½ÕÑÁÕÐ¤Ñ¡É½Ü¹•ÜÉÉ½È¡•¹•É…Ñ•µ•Ù¥‘•¹”É•½¹¥±¥…Ñ¥½¸‘¥¹½ÐÉ•ÍÑ½É”„±•…¸¡•­½ÕÐè€‘í…™Ñ•È¹½ÕÑÁÕÑõ€¤ì(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°½±‘…Ñ•MÕµµ…Éäè½±‘…Ñ•MÕµµ…Éä¹ÍÑ…ÑÕÌ°¡…¹•‘A…Ñ¡ÌèÁ…Ñ¡Ì°É•½¹¥±•èÑÉÕ”°…É¡¥Ù”èÁ…Ñ ¹É•±…Ñ¥Ù”¡…É¡¥Ù•I½½Ð°É…ÝI½½Ð¤¹ÍÁ±¥Ð¡Á…Ñ ¹Í•À¤¹©½¥¸ œ¼œ¤°•¹•É…Ñ•ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹•ÁÑ…¹”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°±…‰•°¤ì(€½¹ÍÐ½ÕÑÁÕÑ¥È€ôÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°±…‰•°¤ì(€…Ý…¥Ðµ­‘¥È¡½ÕÑÁÕÑ¥È°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÉÕ¸€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í±…‰•±ôµÁ¹Á´µ…•ÁÑ…¹”µÍ…Ù”µ±½ÍÕÉ•€°€Á¹Á´œ°l…•ÁÑ…¹”éÍ…Ù”µ±½ÍÕÉ”t°Ý½É­ÑÉ•”°½ÕÑÁÕÑ¥È°ì(€€€Ñ¥µ•½ÕÑ5Ìè€ÄàÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€ÐÕ|ÀÀÀ°•¹ØèìQ!%-=}MY}1=MUI}Y%9}%Hè½ÕÑÁÕÑ¥Èô°(€ô¤ì(€±•ÐÍÕµµ…Éäì(€ÑÉäìÍÕµµ…Éä€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡½ÕÑÁÕÑ¥È°€ÍÕµµ…Éä¹©Í½¸œ¤¤ìô(€…Ñ €¡•ÉÉ½È¤ìÉ•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸èÍ…Ù”µ±½ÍÕÉ”ÍÕµµ…Éäµ¥ÍÍ¥¹œè€‘í•ÉÉ½È¹µ•ÍÍ…•õ€°½µµ…¹èÉÕ¸¹½µµ…¹°½ÕÑÁÕÑ¥Èôìô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌèÍÕµµ…Éä¹…Ñ•Ìü¹Í…Ù•±½ÍÕÉ”€üüÍÕµµ…Éä¹…Ñ”ü¹ÍÑ…ÑÕÌ€üü€	1=-œ°½µµ…¹èÉÕ¸¹½µµ…¹°½ÕÑÁÕÑ¥È°ÍÕµµ…Éä°½µµ…¹‘=ÕÑ½µ”èÉÕ¸¹É•ÍÕ±Ð¹½ÕÑ½µ”°•á¥Ñ½‘”èÉÕ¸¹É•ÍÕ±Ð¹½‘”ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹=±‘AÉ½‘ÕÑ•ÁÑ…¹”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È¤ì(€½¹ÍÐ±•…åÙ¥‘•¹”€ôÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€•Ù¥‘•¹”½ÁÉ½‘ÕÐµ…•ÁÑ…¹”œ¤ì(€½¹ÍÐ‰•™½É”€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€½¹ÍÐÉÕ¸€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€´Øµ½±µÁ¹Á´µ…•ÁÑ…¹”µÁÉ½‘ÕÐœ°€Á¹Á´œ°l…•ÁÑ…¹”éÁÉ½‘ÕÐt°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°ì(€€€Ñ¥µ•½ÕÑ5Ìè€ÄàÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€ÐÕ|ÀÀÀ°(€ô¤ì(€½¹ÍÐÍÕµµ…Éä€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡±•…åÙ¥‘•¹”°€ÍÕµµ…Éä¹©Í½¸œ¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€½¹ÍÐ…É¡¥Ù•€ô…Ý…¥Ð…É¡¥Ù•¹‘I•ÍÑ½É•AÉ½‘ÕÑ•ÁÑ…¹•Ù¥‘•¹”¡Ý½É­ÑÉ•”°Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€½±µ…Ñ”µ…É¡¥Ù”œ¤¤ì(€½¹ÍÐ…™Ñ•È€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€É•ÑÕÉ¸ìÍÑ…ÑÕÌèÉÕ¸¹É•ÍÕ±Ð¹½ÕÑ½µ”€ôôô€a%Qœ€˜˜ÉÕ¸¹É•ÍÕ±Ð¹½‘”€ôôô€À€˜˜ÍÕµµ…Éäü¹ÍÑ…ÑÕÌ€ôôô€AMLœ(€€€€˜˜ÉÉ…ä¹¥ÍÉÉ…ä¡ÍÕµµ…Éä¹ÍÕµµ…Éä¤€˜˜ÍÕµµ…Éä¹ÍÕµµ…Éä¹•Ù•Éä ¡•¹ÑÉä¤€ôø•¹ÑÉä¹ÍÑ…ÑÕÌ€ôôô€AMLœ¤(€€€€˜˜…É¡¥Ù•¹•¹•É…Ñ•‘Ù¥‘•¹•I•ÍÑ½É•€˜˜…™Ñ•È¹Í¡„ÈÔØ€ôôô‰•™½É”¹Í¡„ÈÔØ€ü€AMLœ€è€	1=-œ°(€€€½µµ…¹èÉÕ¸¹½µµ…¹°½ÕÑÁÕÑ¥Èè±•…åÙ¥‘•¹”°ÍÕµµ…Éä°‰•™½É•%‘•¹Ñ¥Ñäè‰•™½É”¹Í¡„ÈÔØ°(€€€…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñäè…™Ñ•È¹Í¡„ÈÔØ°…É¡¥Ù•¹‘Ù¥‘•¹•I•ÍÑ½É”è…É¡¥Ù•°½µµ…¹‘=ÕÑ½µ”èÉÕ¸¹É•ÍÕ±Ð¹½ÕÑ½µ”°•á¥Ñ½‘”èÉÕ¸¹É•ÍÕ±Ð¹½‘”ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸¥¹ÍÁ•Ñ5ÕÑ…Ñ¥½¹…Ñ”¡ÉÕ¸°µÕÑ…Ñ¥½¸¤ì(€±•ÐÍ••ì(€ÑÉäìÍ••€ô…Ý…¥ÐÉ•…‘)Í½¸¡ÕÉÉ•¹ÑM••‘A…Ñ ¡ÉÕ¸¹½ÕÑÁÕÑ¥È¤¤ìô(€…Ñ €¡•ÉÉ½È¤ìÉ•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸èÉ…ÜÕÉÉ•¹ÐÍ••É••¥ÁÐµ¥ÍÍ¥¹œè€‘í•ÉÉ½È¹µ•ÍÍ…•õ€ôìô(€½¹ÍÐ½µµ…¹‘I•ÍÕ±Ð€ôì½ÕÑ½µ”èÉÕ¸¹½µµ…¹‘=ÕÑ½µ”°½‘”èÉÕ¸¹•á¥Ñ½‘”ôì(€¥˜€¡½µµ…¹‘I•ÍÕ±Ð¹½ÕÑ½µ”€„ôô€a%Qœ¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸èÍ••½µµ…¹½ÕÑ½µ”€‘í½µµ…¹‘I•ÍÕ±Ð¹½ÕÑ½µ•ô¥Ì¹½Ð‰•¡…Ù¥½É…°•Ù¥‘•¹•€ôì(€É•ÑÕÉ¸±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡Í••°µÕÑ…Ñ¥½¸¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡™¥±”°Ù…±Õ”¤ì(€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹‘¥É¹…µ”¡™¥±”¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€…Ý…¥ÐÝÉ¥Ñ•¥±”¡™¥±”°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡Ù…±Õ”°¹Õ±°°€È¥õq¹€¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸™É••A½ÉÐ ¤ì(€É•ÑÕÉ¸¹•ÜAÉ½µ¥Í” ¡É•Í½±Ù”°É•©•Ð¤€ôøì(€€€½¹ÍÐÍ•ÉÙ•È€ô¹•Ð¹É•…Ñ•M•ÉÙ•È ¤ì(€€€Í•ÉÙ•È¹½¹” •ÉÉ½Èœ°É•©•Ð¤ì(€€€Í•ÉÙ•È¹±¥ÍÑ•¸ À°€œÄÈÜ¸À¸À¸Äœ°€ ¤€ôøì(€€€€€½¹ÍÐ…‘‘É•ÍÌ€ôÍ•ÉÙ•È¹…‘‘É•ÍÌ ¤ì(€€€€€Í•ÉÙ•È¹±½Í” ¡•ÉÉ½È¤€ôø•ÉÉ½È€üÉ•©•Ð¡•ÉÉ½È¤€èÉ•Í½±Ù”¡…‘‘É•ÍÌ¹Á½ÉÐ¤¤ì(€€€ô¤ì(€ô¤ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸Í•ÑÑ±•	•™½É”¡ÁÉ½µ¥Í”°Ñ¥µ•½ÕÑ5Ì°±…‰•°¤ì(€±•ÐÑ¥µ•Èì(€ÑÉäì(€€€É•ÑÕÉ¸…Ý…¥ÐAÉ½µ¥Í”¹É…”¡mÁÉ½µ¥Í”°¹•ÜAÉ½µ¥Í” ¡|°É•©•Ð¤€ôøìÑ¥µ•È€ôÍ•ÑQ¥µ•½ÕÐ  ¤€ôøÉ•©•Ð¡¹•ÜÉÉ½È¡€‘í±…‰•±ô•á••‘•€‘íÑ¥µ•½ÕÑ5ÍõµÍ€¤¤°Ñ¥µ•½ÕÑ5Ì¤ìô¥t¤ì(€ô™¥¹…±±äì±•…ÉQ¥µ•½ÕÐ¡Ñ¥µ•È¤ìô)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹4ÙAÉ½‘ÕÑ¥½¹I•…‘¥¹•ÍÍAÉ½‰”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°µÕÑ…Ñ¥½¹%‘•¹Ñ¥Ñä¤ì(€…Ý…¥Ðµ­‘¥È¡•Ù¥‘•¹•¥È°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÁÉ½½˜€ôì(€€€ÍÑ…ÑÕÌè€	1=-œ°ÍÑ…ÉÑ•‘Ðè¹½Ý%Í¼ ¤°¡ÑÑÁ%¹‘•áMÑ…ÑÕÌè¹Õ±°°ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌè¹Õ±°°(€€€‘ÁI•…‘äè™…±Í”°‰É½ÝÍ•ÉY•ÉÍ¥½¸è¹Õ±°°½±‘!½µ•I•…‘äè™…±Í”°‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌè¹Õ±°°(€€€µÕÑ…¹Ñ…¹‘¥‘…Ñ•%‘•¹Ñ¥ÑäèµÕÑ…Ñ¥½¹%‘•¹Ñ¥Ñä¹…¹‘¥‘…Ñ•M¡„ÈÔØ°µÕÑ…Ñ¥½¹A…Ñ¡M¡„ÈÔØèµÕÑ…Ñ¥½¹%‘•¹Ñ¥Ñä¹Á…Ñ¡M¡„ÈÔØ°(€€€µÕÑ…Ñ•‘1½…‘•ÉM¡„ÈÔØèµÕÑ…Ñ¥½¹%‘•¹Ñ¥Ñä¹±½…‘•ÉM¡„ÈÔØ°‘¥…¹½ÍÑ¥ÌèìÁ…•ÉÉ½ÉÌèmt°½¹Í½±•ÉÉ½ÉÌèmt°É•ÅÕ•ÍÑ…¥±ÕÉ•Ìèmt°É•ÍÁ½¹Í•Ìèmtô°(€ôì(€½¹ÍÐÁÉ½‰•	Õ‘•Ñ5Ì€ô‰½Õ¹‘•‘4ÙAÉ½‰•	Õ‘•Ð¡Ñà¹É•µ…¥¹¥¹5Ì ¤¤ì(€¥˜€¡ÁÉ½‰•	Õ‘•Ñ5Ì€ôôô¹Õ±°¤ì(€€€ÁÉ½½˜¹É•…Í½¸€ôÉ•µ…¥¹¥¹œ©½ˆ‰Õ‘•Ð€‘íÑà¹É•µ…¥¹¥¹5Ì ¥õµÌ¥Ì‰•±½ÜÑ¡”‰½Õ¹‘•4ØÉ•…‘¥¹•ÍÌÁÉ½‰”Á±ÕÌÉ•ÍÑ½É”½ÕÁ±½…É•Í•ÉÙ”¹€ì(€€€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤°ÁÉ½½˜¤ì(€€€É•ÑÕÉ¸ÁÉ½½˜ì(€ô(€½¹ÍÐ‘•…‘±¥¹”€ô…Ñ”¹¹½Ü ¤€¬ÁÉ½‰•	Õ‘•Ñ5Ìì(€½¹ÍÐ½ÁQ¥µ•½ÕÐ€ô€¡µ…á¥µÕ´¤€ôøì(€€€½¹ÍÐÉ•µ…¥¹¥¹œ€ô5…Ñ ¹µ¥¸¡µ…á¥µÕ´°‘•…‘±¥¹”€´…Ñ”¹¹½Ü ¤¤ì(€€€¥˜€¡É•µ…¥¹¥¹œ€ð€Ä¤Ñ¡É½Ü¹•ÜÉÉ½È 	1=-è4ØÉ•…‘¥¹•ÍÌÁÉ½‰”•á¡…ÕÍÑ•¥ÑÌ…‰Í½±ÕÑ”‰Õ‘•Ð¸œ¤ì(€€€É•ÑÕÉ¸É•µ…¥¹¥¹œì(€ôì(€¥˜€¡ÁÉ½•ÍÌ¹Á±…Ñ™½É´€„ôô€±¥¹ÕàœñðÁÉ½•ÍÌ¹•¹Ø¹%Q!U	}Q%=9L€„ôô€ÑÉÕ”œ¤ì(€€€ÁÉ½½˜¹É•…Í½¸€ô€4ØÁÉ½‘ÕÑ¥½¸@ÁÉ½‰”ÉÕ¹Ì½¹±ä½¸Ñ¡”…ÁÁÉ½Ù•¡½ÍÑ•U‰Õ¹ÑÔ±½­•µA±…åÝÉ¥¡Ð©½ˆ¸œì(€€€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤°ÁÉ½½˜¤ì(€€€É•ÑÕÉ¸ÁÉ½½˜ì(€ô(€±•Ð¡É½µ¥Õ´ì(€ÑÉäì€¡ì¡É½µ¥Õ´ô€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡¥µÁ½ÉÐ Á±…åÝÉ¥¡Ðµ½É”œ¤°½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤°€±½­•A±…åÝÉ¥¡Ðµ½‘Õ±”±½…œ¤¤ìô(€…Ñ €¡•ÉÉ½È¤ì(€€€ÁÉ½½˜¹É•…Í½¸€ô	1=-è¡½ÍÑ•±½­•A±…åÝÉ¥¡Ð½Õ±¹½Ð±½…è€‘í•ÉÉ½È¹µ•ÍÍ…•õ€ì(€€€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤°ÁÉ½½˜¤ì(€€€É•ÑÕÉ¸ÁÉ½½˜ì(€ô(€±•ÐÁ±…åÝÉ¥¡ÑY•ÉÍ¥½¸ì(€ÑÉäìÁ±…åÝÉ¥¡ÑY•ÉÍ¥½¸€ô)M=8¹Á…ÉÍ”¡…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡É•…‘¥±”¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€¹½‘•}µ½‘Õ±•Ì½Á±…åÝÉ¥¡Ðµ½É”½Á…­…”¹©Í½¸œ¤°€ÕÑ˜àœ¤°½ÁQ¥µ•½ÕÐ É|ÀÀÀ¤°€±½­•A±…åÝÉ¥¡Ð¥‘•¹Ñ¥ÑäÉ•…œ¤¤¹Ù•ÉÍ¥½¸ìô(€…Ñ €¡•ÉÉ½È¤ì(€€€ÁÉ½½˜¹É•…Í½¸€ô	1=-è±½­•A±…åÝÉ¥¡ÐÁ…­…”¥‘•¹Ñ¥ÑäÕ¹…Ù…¥±…‰±”è€‘í•ÉÉ½È¹µ•ÍÍ…•õ€ì(€€€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤°ÁÉ½½˜¤ì(€€€É•ÑÕÉ¸ÁÉ½½˜ì(€ô(€¥˜€¡Á±…åÝÉ¥¡ÑY•ÉÍ¥½¸€„ôô€œÄ¸ØÈ¸Äœ¤ì(€€€ÁÉ½½˜¹É•…Í½¸€ô±½­•A±…åÝÉ¥¡ÐÙ•ÉÍ¥½¸µ¥Íµ…Ñ è€‘íÁ±…åÝÉ¥¡ÑY•ÉÍ¥½¹õ€ì(€€€ÁÉ½½˜¹Á±…åÝÉ¥¡ÑY•ÉÍ¥½¸€ôÁ±…åÝÉ¥¡ÑY•ÉÍ¥½¸ì(€€€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤°ÁÉ½½˜¤ì(€€€É•ÑÕÉ¸ÁÉ½½˜ì(€ô(€ÁÉ½½˜¹Á±…åÝÉ¥¡ÑY•ÉÍ¥½¸€ôÁ±…åÝÉ¥¡ÑY•ÉÍ¥½¸ì(€±•ÐÍ•ÉÙ•ÉA½ÉÐì(€±•Ð‰É½ÝÍ•ÉA½ÉÐì(€±•ÐÁÉ½™¥±”ì(€±•ÐÍÑ…Ñ¥M•ÉÙ•Èì(€±•Ð‰É½ÝÍ•ÉAÉ½•ÍÌì(€±•Ð‰É½ÝÍ•Èì(€±•ÐÍÑ½ÁÉÉ½ÉÌ€ômtì(€ÑÉäì(€€€Í•ÉÙ•ÉA½ÉÐ€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡™É••A½ÉÐ ¤°½ÁQ¥µ•½ÕÐ É|ÀÀÀ¤°€ÁÉ½‘ÕÑ¥½¸!QQ@Á½ÉÐ…±±½…Ñ¥½¸œ¤ì(€€€‰É½ÝÍ•ÉA½ÉÐ€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡™É••A½ÉÐ ¤°½ÁQ¥µ•½ÕÐ É|ÀÀÀ¤°€µ…¹…•µ‰É½ÝÍ•È@Á½ÉÐ…±±½…Ñ¥½¸œ¤ì(€€€ÁÉ½™¥±”€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡µ­‘Ñ•µÀ¡Á…Ñ ¹©½¥¸¡½Ì¹ÑµÁ‘¥È ¤°€Ñ…¡¥­¼µÍ¡••Ð´ÄÐØµ´ØµÁÉ½™¥±”´œ¤¤°½ÁQ¥µ•½ÕÐ É|ÀÀÀ¤°€µ…¹…•µ‰É½ÝÍ•ÈÁÉ½™¥±”…±±½…Ñ¥½¸œ¤ì(€€€ÍÑ…Ñ¥M•ÉÙ•È€ô…Ý…¥ÐÍÑ…ÉÑIÕ¹¹•ÉM•ÉÙ•È¡ì(€€€€€¹…µ”è€´ØµÁÉ½‘ÕÑ¥½¸µ¡ÑÑÀœ°½µµ…¹èÁÉ½•ÍÌ¹•á•A…Ñ °(€€€€€…ÉÌèmÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€ÍÉ¥ÁÑÌ½Í•ÉÙ”µ‘¥ÍÐ¹µ©Ìœ¤°Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€‘¥ÍÐœ¥t°(€€€€€ÝèÝ½É­ÑÉ•”°•¹ØèìA=IPèMÑÉ¥¹œ¡Í•ÉÙ•ÉA½ÉÐ¤ô°É•…‘åQ•áÐè€M¡••ÐÁÉ½‘ÕÐÍ•ÉÙ•Èèœ°Í¥¹…°èÑà¹…¹•±±…Ñ¥½¸¹Í¥¹…°°(€€€€€ÍÑ…ÉÑÕÁQ¥µ•½ÕÑ5Ìè½ÁQ¥µ•½ÕÐ ÄÁ|ÀÀÀ¤°µ…á=ÕÑÁÕÑ	åÑ•Ìè€ØÐ€¨€ÄÀÈÐ°(€€€€€ÍÑ…ÉÑÕÁ1½A…Ñ èÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´Øµ¡ÑÑÀµÍÑ…ÉÑÕÀ¹±½œœ¤°Í•ÉÙ•É1½A…Ñ èÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´Øµ¡ÑÑÀµÍ•ÉÙ•È¹±½œœ¤°(€€€ô¤ì(€€€Ñà¹Í•ÉÙ•ÉA¥‘Ì¹ÁÕÍ ¡ìÉ½±”è€ÁÉ½‘ÕÑ¥½¸µ¡ÑÑÀœ°Á¥èÍÑ…Ñ¥M•ÉÙ•È¹¡¥±ü¹Á¥€üü¹Õ±°ô¤ì(€€€‰É½ÝÍ•ÉAÉ½•ÍÌ€ô…Ý…¥ÐÍÑ…ÉÑIÕ¹¹•ÉM•ÉÙ•È¡ì(€€€€€¹…µ”è€´Øµµ…¹…•µ¡É½µ¥Õ´µ‘Àœ°½µµ…¹è¡É½µ¥Õ´¹•á•ÕÑ…‰±•A…Ñ  ¤°(€€€€€…ÉÌèl(€€€€€€€€œ´µ¡•…‘±•ÍÌõ¹•Üœ°€œ´µ¹¼µÍ…¹‘‰½àœ°€œ´µ‘¥Í…‰±”µÁÔœ°€œ´µ¹¼µ™¥ÉÍÐµÉÕ¸œ°€œ´µ¹¼µ‘•™…Õ±Ðµ‰É½ÝÍ•Èµ¡•¬œ°€œ´µÉ•µ½Ñ”µ…±±½Üµ½É¥¥¹Ìô¨œ°(€€€€€€€€œ´µÉ•µ½Ñ”µ‘•‰Õ¥¹œµ…‘‘É•ÍÌôÄÈÜ¸À¸À¸Äœ°€´µÉ•µ½Ñ”µ‘•‰Õ¥¹œµÁ½ÉÐô‘í‰É½ÝÍ•ÉA½ÉÑõ€°(€€€€€€€€´µÕÍ•Èµ‘…Ñ„µ‘¥Èô‘íÁÉ½™¥±•õ€°€…‰½ÕÐé‰±…¹¬œ°(€€€€€t°(€€€€€ÝèÝ½É­ÑÉ•”°•¹Øèíô°É•…‘åQ•áÐè€•ÙQ½½±Ì±¥ÍÑ•¹¥¹œ½¸ÝÌè¼¼œ°Í¥¹…°èÑà¹…¹•±±…Ñ¥½¸¹Í¥¹…°°(€€€€€ÍÑ…ÉÑÕÁQ¥µ•½ÕÑ5Ìè½ÁQ¥µ•½ÕÐ ÄÉ|ÀÀÀ¤°µ…á=ÕÑÁÕÑ	åÑ•Ìè€ØÐ€¨€ÄÀÈÐ°(€€€€€ÍÑ…ÉÑÕÁ1½A…Ñ èÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´Øµ¡É½µ¥Õ´µÍÑ…ÉÑÕÀ¹±½œœ¤°Í•ÉÙ•É1½A…Ñ èÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´Øµ¡É½µ¥Õ´µÍ•ÉÙ•È¹±½œœ¤°(€€€ô¤ì(€€€Ñà¹Í•ÉÙ•ÉA¥‘Ì¹ÁÕÍ ¡ìÉ½±”è€µ…¹…•µ¡É½µ¥Õ´œ°Á¥è‰É½ÝÍ•ÉAÉ½•ÍÌ¹¡¥±ü¹Á¥€üü¹Õ±°ô¤ì(€€€½¹ÍÐÙ•ÉÍ¥½¹I•ÍÁ½¹Í”€ô…Ý…¥Ð™•Ñ ¡¡ÑÑÀè¼¼ÄÈÜ¸À¸À¸Äè‘í‰É½ÝÍ•ÉA½ÉÑô½©Í½¸½Ù•ÉÍ¥½¹€°ìÍ¥¹…°è‰½ÉÑM¥¹…°¹Ñ¥µ•½ÕÐ¡½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤¤ô¤ì(€€€¥˜€ …Ù•ÉÍ¥½¹I•ÍÁ½¹Í”¹½¬¤Ñ¡É½Ü¹•ÜÉÉ½È¡	1=-è¡É½µ”•ÙQ½½±Ì!QQ@•¹‘Á½¥¹ÐÉ•ÑÕÉ¹•€‘íÙ•ÉÍ¥½¹I•ÍÁ½¹Í”¹ÍÑ…ÑÕÍõ€¤ì(€€€½¹ÍÐ‘ÁY•ÉÍ¥½¸€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡Ù•ÉÍ¥½¹I•ÍÁ½¹Í”¹©Í½¸ ¤°½ÁQ¥µ•½ÕÐ Í|ÀÀÀ¤°€@Ù•ÉÍ¥½¸É•ÍÁ½¹Í”‰½‘äœ¤ì(€€€ÁÉ½½˜¹‘ÁI•…‘ä€ôÑÉÕ”ì(€€€ÁÉ½½˜¹‘ÁAÉ½Ñ½½±Y•ÉÍ¥½¸€ô‘ÁY•ÉÍ¥½¹lAÉ½Ñ½½°µY•ÉÍ¥½¸t€üü¹Õ±°ì(€€€ÁÉ½½˜¹‰É½ÝÍ•ÉY•ÉÍ¥½¸€ô‘ÁY•ÉÍ¥½¸¹	É½ÝÍ•È€üü¹Õ±°ì(€€€‰É½ÝÍ•È€ô…Ý…¥Ð¡É½µ¥Õ´¹½¹¹•Ñ=Ù•É@¡¡ÑÑÀè¼¼ÄÈÜ¸À¸À¸Äè‘í‰É½ÝÍ•ÉA½ÉÑõ€°ìÑ¥µ•½ÕÐè½ÁQ¥µ•½ÕÐ á|ÀÀÀ¤ô¤ì(€€€½¹ÍÐ½É¥¥¸€ô¡ÑÑÀè¼¼ÄÈÜ¸À¸À¸Äè‘íÍ•ÉÙ•ÉA½ÉÑõ€ì(€€€½¹ÍÐ¥¹‘•à€ô…Ý…¥Ð™•Ñ ¡€‘í½É¥¥¹ô½€°ìÍ¥¹…°è‰½ÉÑM¥¹…°¹Ñ¥µ•½ÕÐ¡½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤¤ô¤ì(€€€ÁÉ½½˜¹¡ÑÑÁ%¹‘•áMÑ…ÑÕÌ€ô¥¹‘•à¹ÍÑ…ÑÕÌì(€€€½¹ÍÐ¡Ñµ°€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡¥¹‘•à¹Ñ•áÐ ¤°½ÁQ¥µ•½ÕÐ Í|ÀÀÀ¤°€ÁÉ½‘ÕÑ¥½¸!QQ@¥¹‘•à‰½‘äœ¤ì(€€€½¹ÍÐ•¹ÑÉåA…Ñ €ô¡Ñµ°¹µ…Ñ  ¼ñÍÉ¥ÁÑmxùt­ÍÉŒõlˆt¡mxˆt­p¹©Ì¥lˆt½¤¤ü¹lÅtì(€€€ÁÉ½½˜¹ÁÉ½‘ÕÑ¥½¹¹ÑÉåÍÍ•ÑA…Ñ €ô•¹ÑÉåA…Ñ €üü¹Õ±°ì(€€€¥˜€¡¥¹‘•à¹ÍÑ…ÑÕÌ€„ôô€ÈÀÀñð€…•¹ÑÉåA…Ñ ¤Ñ¡É½Ü¹•ÜÉÉ½È 	1=-è¥¹‘•Á•¹‘•¹ÐÁÉ½‘ÕÑ¥½¸!QQ@¥¹‘•à½•¹ÑÉä‘¥Í½Ù•Éä‘¥¹½ÐÅÕ…±¥™ä¸œ¤ì(€€€½¹ÍÐ•¹ÑÉåUÉ°€ô¹•ÜUI0¡•¹ÑÉåA…Ñ °½É¥¥¸¤ì(€€€¥˜€¡•¹ÑÉåUÉ°¹½É¥¥¸€„ôô½É¥¥¸¤Ñ¡É½Ü¹•ÜÉÉ½È 	1=-èÁÉ½‘ÕÑ¥½¸•¹ÑÉä…ÍÍ•Ð•Í…Á•Ñ¡”Í…µ”µ½É¥¥¸‰½Õ¹‘…Éä¸œ¤ì(€€€½¹ÍÐ…ÍÍ•ÑI•ÍÁ½¹Í”€ô…Ý…¥Ð™•Ñ ¡•¹ÑÉåUÉ°°ìÍ¥¹…°è‰½ÉÑM¥¹…°¹Ñ¥µ•½ÕÐ¡½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤¤ô¤ì(€€€ÁÉ½½˜¹ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌ€ô…ÍÍ•ÑI•ÍÁ½¹Í”¹ÍÑ…ÑÕÌì(€€€¥˜€¡…ÍÍ•ÑI•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ€„ôô€ÈÀÀ¤Ñ¡É½Ü¹•ÜÉÉ½È¡	1=-èÁÉ½‘ÕÑ¥½¸)…Ù…MÉ¥ÁÐ•¹ÑÉäÉ•ÑÕÉ¹•!QQ@€‘í…ÍÍ•ÑI•ÍÁ½¹Í”¹ÍÑ…ÑÕÍô¹€¤ì(€€€½¹ÍÐ½¹Ñ•áÐ€ô‰É½ÝÍ•È¹½¹Ñ•áÑÌ ¥lÁt€üü…Ý…¥Ð‰É½ÝÍ•È¹¹•Ý½¹Ñ•áÐ ¤ì(€€€½¹ÍÐÁ…”€ô½¹Ñ•áÐ¹Á…•Ì ¥lÁt€üü…Ý…¥Ð½¹Ñ•áÐ¹¹•ÝA…” ¤ì(€€€Á…”¹Í•Ñ•™…Õ±ÑQ¥µ•½ÕÐ¡½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤¤ì(€€€Á…”¹Í•Ñ•™…Õ±Ñ9…Ù¥…Ñ¥½¹Q¥µ•½ÕÐ¡½ÁQ¥µ•½ÕÐ á|ÀÀÀ¤¤ì(€€€…Ý…¥ÐÁ…”¹Í•ÑY¥•ÝÁ½ÉÑM¥é”¡ìÝ¥‘Ñ è€ÄÈàÀ°¡•¥¡Ðè€äÀÀô¤ì(€€€Á…”¹½¸ Á…••ÉÉ½Èœ°€¡•ÉÉ½È¤€ôøÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹Á…•ÉÉ½ÉÌ¹ÁÕÍ ¡ìµ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”ô¤¤ì(€€€Á…”¹½¸ ½¹Í½±”œ°€¡µ•ÍÍ…”¤€ôøì¥˜€¡µ•ÍÍ…”¹ÑåÁ” ¤€ôôô€•ÉÉ½Èœ¤ÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹½¹Í½±•ÉÉ½ÉÌ¹ÁÕÍ ¡ìµ•ÍÍ…”èµ•ÍÍ…”¹Ñ•áÐ ¤ô¤ìô¤ì(€€€Á…”¹½¸ É•ÅÕ•ÍÑ™…¥±•œ°€¡É•ÅÕ•ÍÐ¤€ôøÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹É•ÅÕ•ÍÑ…¥±ÕÉ•Ì¹ÁÕÍ ¡ìÕÉ°èÉ•ÅÕ•ÍÐ¹ÕÉ° ¤°•ÉÉ½ÈèÉ•ÅÕ•ÍÐ¹™…¥±ÕÉ” ¤ü¹•ÉÉ½ÉQ•áÐ€üü¹Õ±°ô¤¤ì(€€€Á…”¹½¸ É•ÍÁ½¹Í”œ°…Íå¹Œ€¡É•ÍÁ½¹Í”¤€ôøì(€€€€€½¹ÍÐÕÉ°€ô¹•ÜUI0¡É•ÍÁ½¹Í”¹ÕÉ° ¤¤ì(€€€€€¥˜€¡ÕÉ°¹½É¥¥¸€„ôô¡ÑÑÀè¼¼ÄÈÜ¸À¸À¸Äè‘íÍ•ÉÙ•ÉA½ÉÑõ€¤É•ÑÕÉ¸ì(€€€€€ÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•Ì¹ÁÕÍ ¡ìÁ…Ñ èÕÉ°¹Á…Ñ¡¹…µ”°ÍÑ…ÑÕÌèÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ ¤ô¤ì(€€€€€¥˜€¡ÕÉ°¹Á…Ñ¡¹…µ”€ôôô€œ½¥¹‘•à¹¡Ñµ°œ¤ÁÉ½½˜¹¡ÑÑÁ%¹‘•áMÑ…ÑÕÌ€ôÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ ¤ì(€€€€€¥˜€ ½yp½…ÍÍ•ÑÍp½¥¹‘•à´¸©p¹©Ì¼¹Ñ•ÍÐ¡ÕÉ°¹Á…Ñ¡¹…µ”¤¤ÁÉ½½˜¹ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌ€ôÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ ¤ì(€€€ô¤ì(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÁ…”¹½Ñ¼¡½É¥¥¸°ìÝ…¥ÑU¹Ñ¥°è€‘½µ½¹Ñ•¹Ñ±½…‘•œ°Ñ¥µ•½ÕÐè½ÁQ¥µ•½ÕÐ á|ÀÀÀ¤ô¤ì(€€€ÁÉ½½˜¹‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌ€ôÉ•ÍÁ½¹Í”ü¹ÍÑ…ÑÕÌ ¤€üü¹Õ±°ì(€€€…Ý…¥ÐÁ…”¹•Ñ	åI½±” ¡•…‘¥¹œœ°ì¹…µ”è€Q…¡¥­¼M¡••Ðœ°•á…ÐèÑÉÕ”ô¤¹Ý…¥Ñ½È¡ìÍÑ…Ñ”è€Ù¥Í¥‰±”œ°Ñ¥µ•½ÕÐè½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤ô¤ì(€€€½¹ÍÐ½Á•¸€ôÁ…”¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€=Á•¸Í…±•Ì•á…µÁ±”œ°•á…ÐèÑÉÕ”ô¤ì(€€€…Ý…¥Ð½Á•¸¹Ý…¥Ñ½È¡ìÍÑ…Ñ”è€Ù¥Í¥‰±”œ°Ñ¥µ•½ÕÐè½ÁQ¥µ•½ÕÐ Õ|ÀÀÀ¤ô¤ì(€€€ÁÉ½½˜¹½±‘!½µ•I•…‘ä€ôÑÉÕ”ì(€€€½¹ÍÐÍÑ…ÑÕÍ•Ì€ôÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•Ì¹µ…À ¡É•ÍÁ½¹Í”¤€ôøÉ•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ¤ì(€€€¥˜€¡ÁÉ½½˜¹¡ÑÑÁ%¹‘•áMÑ…ÑÕÌ€„ôô€ÈÀÀñðÁÉ½½˜¹ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌ€„ôô€ÈÀÀñðÁÉ½½˜¹‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌ€„ôô€ÈÀÀ(€€€€€ñðÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹Á…•ÉÉ½ÉÌ¹±•¹Ñ ñðÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹É•ÅÕ•ÍÑ…¥±ÕÉ•Ì¹±•¹Ñ ñðÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹É•ÍÁ½¹Í•ÉÉ½ÉÌ¹±•¹Ñ (€€€€€ñðÁÉ½½˜¹‘¥…¹½ÍÑ¥Ì¹½¹Í½±•ÉÉ½ÉÌ¹±•¹Ñ ñðÍÑ…ÑÕÍ•Ì¹Í½µ” ¡ÍÑ…ÑÕÌ¤€ôøÍÑ…ÑÕÌ€ð€ÈÀÀñðÍÑ…ÑÕÌ€øô€ÐÀÀ¤¤ì(€€€€€Ñ¡É½Ü¹•ÜÉÉ½È 	1=-è¥¹‘•Á•¹‘•¹Ð½±µ!½µ”É•…‘¥¹•ÍÌ½¹Ñ…¥¹•…¸!QQ@°É•ÅÕ•ÍÐ°É•ÍÁ½¹Í”°½¹Í½±”½ÈÁ…”•ÉÉ½È¸œ¤ì(€€€ô(€€€ÁÉ½½˜¹ÍÑ…ÑÕÌ€ô€I%9MM}AMLœì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€ÁÉ½½˜¹ÍÑ…ÑÕÌ€ô€	1=-œì(€€€ÁÉ½½˜¹É•…Í½¸€ô•ÉÉ½È¹µ•ÍÍ…”ì(€€€ÁÉ½½˜¹•ÉÉ½È€ôì¹…µ”è•ÉÉ½È¹¹…µ”°½‘”è•ÉÉ½È¹½‘”€üü¹Õ±°°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”°ÍÑ…¬è•ÉÉ½È¹ÍÑ…¬ôì(€ô™¥¹…±±äì(€€€ÑÉäì¥˜€¡‰É½ÝÍ•È¤…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡‰É½ÝÍ•È¹±½Í” ¤°€Õ|ÀÀÀ°€@±¥•¹Ð±½Í”œ¤ìô(€€€…Ñ €¡•ÉÉ½È¤ìÍÑ½ÁÉÉ½ÉÌ¹ÁÕÍ ¡ìÉ½±”è€‘Àµ±¥•¹Ðœ°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”ô¤ìô(€€€ÁÉ½½˜¹½Ý¹•‘AÉ½•ÍÍ•Ì€ômtì(€€€™½È€¡½¹ÍÐmÉ½±”°Í•ÉÙ•Ét½˜mlµ…¹…•µ¡É½µ¥Õ´œ°‰É½ÝÍ•ÉAÉ½•ÍÍt°lÁÉ½‘ÕÑ¥½¸µ¡ÑÑÀœ°ÍÑ…Ñ¥M•ÉÙ•Éut¤ì(€€€€€¥˜€ …Í•ÉÙ•È¤½¹Ñ¥¹Õ”ì(€€€€€ÑÉäì…Ý…¥ÐÍ•ÉÙ•È¹ÍÑ½À ¤ìô…Ñ €¡•ÉÉ½È¤ìÍÑ½ÁÉÉ½ÉÌ¹ÁÕÍ ¡ìÉ½±”°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”ô¤ìô(€€€€€±•Ð•á¥Ð€ô¹Õ±°ì(€€€€€ÑÉäì•á¥Ð€ô…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡Í•ÉÙ•È¹•á¥Ð°€á|ÀÀÀ°€‘íÉ½±•ô•á¥Ñ€¤ìô(€€€€€…Ñ €¡•ÉÉ½È¤ìÍÑ½ÁÉÉ½ÉÌ¹ÁÕÍ ¡ìÉ½±”è€‘íÉ½±•ôµ•á¥Ñ€°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”ô¤ìô(€€€€€¥˜€ …•á¥Ð¤ÍÑ½ÁÉÉ½ÉÌ¹ÁÕÍ ¡ìÉ½±”è€‘íÉ½±•ôµ•á¥Ñ€°µ•ÍÍ…”è€½Ý¹•ÁÉ½•ÍÌ•á¥ÐÝ…Ì¹½Ð½‰Í•ÉÙ•Ý¥Ñ¡¥¸Ñ¡”€àµÍ•½¹±•…¹ÕÀ‰½Õ¹œô¤ì(€€€€€ÁÉ½½˜¹½Ý¹•‘AÉ½•ÍÍ•Ì¹ÁÕÍ ¡ìÉ½±”°Á¥èÍ•ÉÙ•È¹¡¥±ü¹Á¥€üü¹Õ±°°½µµ…¹èÉ½±”€ôôô€µ…¹…•µ¡É½µ¥Õ´œ€ü¡É½µ¥Õ´¹•á•ÕÑ…‰±•A…Ñ  ¤€èÁÉ½•ÍÌ¹•á•A…Ñ °(€€€€€€€…ÉÌèÉ½±”€ôôô€µ…¹…•µ¡É½µ¥Õ´œ€ülœ´µ¡•…‘±•ÍÌõ¹•Üœ°€œ´µ¹¼µÍ…¹‘‰½àœ°€œ´µÉ•µ½Ñ”µ‘•‰Õ¥¹œµ…‘‘É•ÍÌôÄÈÜ¸À¸À¸Äœ°€´µÉ•µ½Ñ”µ‘•‰Õ¥¹œµÁ½ÉÐô‘í‰É½ÝÍ•ÉA½ÉÑõ€°€´µÕÍ•Èµ‘…Ñ„µ‘¥Èô‘íÁÉ½™¥±•õ€°€…‰½ÕÐé‰±…¹¬t€èmÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€ÍÉ¥ÁÑÌ½Í•ÉÙ”µ‘¥ÍÐ¹µ©Ìœ¤°Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€‘¥ÍÐœ¥t°(€€€€€€€•á¥Ðè•á¥Ð€üì½‘”è•á¥Ð¹½‘”°Í¥¹…°è•á¥Ð¹Í¥¹…°°½ÕÑ½µ”è•á¥Ð¹½ÕÑ½µ”€üü¹Õ±°ô€è¹Õ±°°(€€€€€€€±½œèÉ½±”€ôôô€µ…¹…•µ¡É½µ¥Õ´œ€ü€´Øµ¡É½µ¥Õ´µÍ•ÉÙ•È¹±½œœ€è€´Øµ¡ÑÑÀµÍ•ÉÙ•È¹±½œœô¤ì(€€€ô(€€€¥˜€¡ÁÉ½™¥±”¤ì(€€€€€ÑÉäì…Ý…¥ÐÍ•ÑÑ±•	•™½É”¡É´¡ÁÉ½™¥±”°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°™½É”èÑÉÕ”ô¤°€Õ|ÀÀÀ°€µ…¹…•µ‰É½ÝÍ•ÈÁÉ½™¥±”±•…¹ÕÀœ¤ìô(€€€€€…Ñ €¡•ÉÉ½È¤ìÍÑ½ÁÉÉ½ÉÌ¹ÁÕÍ ¡ìÉ½±”è€ÁÉ½™¥±”µ±•…¹ÕÀœ°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”ô¤ìô(€€€ô(€ô(€ÁÉ½½˜¹½µÁ±•Ñ•‘Ð€ô¹½Ý%Í¼ ¤ì(€ÁÉ½½˜¹ÍÑ½ÁÉÉ½ÉÌ€ôÍÑ½ÁÉÉ½ÉÌì(€¥˜€¡ÍÑ½ÁÉÉ½ÉÌ¹±•¹Ñ ¤ÁÉ½½˜¹ÍÑ…ÑÕÌ€ô€	1=-œì(€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤°ÁÉ½½˜¤ì(€É•ÑÕÉ¸ÁÉ½½˜ì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹	Õ¥±‘¹‘±•…¹AÉ½‘ÕÑ¥½¸¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°±…‰•°¤ì(€½¹ÍÐ…¹‘¥‘…Ñ•	•™½É•	Õ¥±€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€½¹ÍÐ•¹Ø€ôìQ!%-=}MY}1=MUI}Y%9}%Hè•Ù¥‘•¹•¥Èôì(€½¹ÍÐ±•…È€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í±…‰•±ôµ±•…Èµ‰Õ¥±µÉ••¥ÁÑ€°ÁÉ½•ÍÌ¹•á•A…Ñ °mÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€ÍÉ¥ÁÑÌ½ÉÕ¸µÁÉ½‘ÕÑ¥½¸µ±¥™•å±”¹µ©Ìœ¤°€œ´µ±•…Èµ‰Õ¥±µÉ••¥ÁÐt°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°ìÑ¥µ•½ÕÑ5Ìè€ÌÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€Í|ÀÀÀ°•¹Øô¤ì(€¥˜€¡±•…È¹É•ÍÕ±Ð¹½‘”€„ôô€À¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ•Àè€±•…Èµ‰Õ¥±µÉ••¥ÁÐœ°½µµ…¹è±•…È¹½µµ…¹ôì(€½¹ÍÐ‰Õ¥±€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í±…‰•±ôµÁ¹Á´µ‰Õ¥±‘€°€Á¹Á´œ°l‰Õ¥±t°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°ìÑ¥µ•½ÕÑ5Ìè€ÄàÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€ÌÁ|ÀÀÀ°•¹Øô¤ì(€¥˜€¡‰Õ¥±¹É•ÍÕ±Ð¹½‘”€„ôô€À¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ•Àè€Á¹Á´‰Õ¥±œ°½µµ…¹è‰Õ¥±¹½µµ…¹ôì(€½¹ÍÐÉ•½É€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í±…‰•±ôµÉ•½Éµ‰Õ¥±‘€°ÁÉ½•ÍÌ¹•á•A…Ñ °mÁ…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°€ÍÉ¥ÁÑÌ½ÉÕ¸µÁÉ½‘ÕÑ¥½¸µ±¥™•å±”¹µ©Ìœ¤°€œ´µÉ•½Éµ‰Õ¥±t°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°ìÑ¥µ•½ÕÑ5Ìè€ÌÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€Õ|ÀÀÀ°•¹Øô¤ì(€¥˜€¡É•½É¹É•ÍÕ±Ð¹½‘”€„ôô€À¤É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ•Àè€É•½ÉÁÉ½‘ÕÑ¥½¸‰Õ¥±œ°½µµ…¹èÉ•½É¹½µµ…¹ôì(€½¹ÍÐÉ••¥ÁÐ€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÁÉ½‘ÕÑ¥½¸µ‰Õ¥±¹©Í½¸œ¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€½¹ÍÐ…¹‘¥‘…Ñ•™Ñ•É	Õ¥±€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€¥˜€¡É••¥ÁÐü¹ÍÑ…ÑÕÌ€„ôô€AMLœñðÉ••¥ÁÐ¹…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€„ôô…¹‘¥‘…Ñ•	•™½É•	Õ¥±¹Í¡„ÈÔØ(€€€ñð…¹‘¥‘…Ñ•™Ñ•É	Õ¥±¹Í¡„ÈÔØ€„ôô…¹‘¥‘…Ñ•	•™½É•	Õ¥±¹Í¡„ÈÔØ¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ•Àè€ÁÉ½‘ÕÑ¥½¸‰Õ¥±…¹‘¥‘…Ñ”‰¥¹‘¥¹œœ°…¹‘¥‘…Ñ•	•™½É”è…¹‘¥‘…Ñ•	•™½É•	Õ¥±¹Í¡„ÈÔØ°(€€€€€…¹‘¥‘…Ñ•I••¥ÁÐèÉ••¥ÁÐü¹…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€üü¹Õ±°°…¹‘¥‘…Ñ•™Ñ•Èè…¹‘¥‘…Ñ•™Ñ•É	Õ¥±¹Í¡„ÈÔØôì(€ô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°±•…Èè±•…È¹½µµ…¹°‰Õ¥±è‰Õ¥±¹½µµ…¹°É•½ÉèÉ•½É¹½µµ…¹°(€€€É••¥ÁÐèÁ…Ñ ¹É•±…Ñ¥Ù”¡É½½ÑÙ¥‘•¹” ¤°Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÁÉ½‘ÕÑ¥½¸µ‰Õ¥±¹©Í½¸œ¤¤¹ÍÁ±¥Ð¡Á…Ñ ¹Í•À¤¹©½¥¸ œ¼œ¤°(€€€…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñäè…¹‘¥‘…Ñ•	•™½É•	Õ¥±¹Í¡„ÈÔØ°…ÉÑ¥™…Ñ5…¹¥™•ÍÑM¡„ÈÔØèÉ••¥ÁÐ¹…ÉÑ¥™…Ðü¹‘¥•ÍÐ€üü¹Õ±°ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹±•…¹AÉ½‘ÕÑ¥½¹…Ñ”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°±…‰•°°•áÁ•Ñ•‘…¹‘¥‘…Ñ•M¡„¤ì(€½¹ÍÐ‰Õ¥±€ô…Ý…¥ÐÉÕ¹	Õ¥±‘¹‘±•…¹AÉ½‘ÕÑ¥½¸¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°±…‰•°¤ì(€¥˜€¡‰Õ¥±¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤É•ÑÕÉ¸‰Õ¥±ì(€½¹ÍÐ…Ñ”€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€‘í±…‰•±ôµÁ¹Á´µ…•ÁÑ…¹”µÁÉ½‘ÕÑ¥½¸µ±¥™•å±•€°€Á¹Á´œ°l…•ÁÑ…¹”éÁÉ½‘ÕÑ¥½¸µ±¥™•å±”t°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°ì(€€€Ñ¥µ•½ÕÑ5Ìè€ÄàÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€ÐÕ|ÀÀÀ°•¹ØèìQ!%-=}MY}1=MUI}Y%9}%Hè•Ù¥‘•¹•¥Èô°(€ô¤ì(€½¹ÍÐÍÕµµ…Éä€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÍÕµµ…Éä¹©Í½¸œ¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€½¹ÍÐ…¹‘¥‘…Ñ”€ôÍÕµµ…Éäü¹…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä€üüÍÕµµ…Éäü¹¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ”ì(€¥˜€¡…Ñ”¹É•ÍÕ±Ð¹½‘”€„ôô€ÀñðÍÕµµ…Éäü¹…Ñ•Ìü¹ÁÉ½‘ÕÑ¥½¹1¥™•å±”€„ôô€AMLœñð…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€„ôô•áÁ•Ñ•‘…¹‘¥‘…Ñ•M¡„¤ì(€€€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€	1=-œ°ÍÑ•Àè€±•…¸ÁÉ½‘ÕÑ¥½¸±¥™•å±”œ°…Ñ”è…Ñ”¹½µµ…¹°ÍÕµµ…ÉåMÑ…ÑÕÌèÍÕµµ…Éäü¹ÍÑ…ÑÕÌ€üü€5%MM%9œôì(€ô(€É•ÑÕÉ¸ìÍÑ…ÑÕÌè€AMLœ°‰Õ¥±°…Ñ”è…Ñ”¹½µµ…¹°…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñäè…¹‘¥‘…Ñ”¹Í¡„ÈÔØ°…Í•%èÁÉ½‘ÕÑ¥½¹…Í”ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹4ÙAÉ½‘ÕÑ¥½¹1¥™•å±”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°•áÁ•Ñ•‘…¹‘¥‘…Ñ•M¡„¤ì(€½¹ÍÐÉÕ¸€ô…Ý…¥Ð½µµ…¹‘IÕ¹¹•È¡Ñà°€´Øµ™É½é•¸µÁ¹Á´µ…•ÁÑ…¹”µÁÉ½‘ÕÑ¥½¸µ±¥™•å±”œ°€Á¹Á´œ°l…•ÁÑ…¹”éÁÉ½‘ÕÑ¥½¸µ±¥™•å±”t°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°ì(€€€Ñ¥µ•½ÕÑ5Ìè€ÄàÁ|ÀÀÀ°µ¥¹¥µÕµ5Ìè€ÐÕ|ÀÀÀ°•¹ØèìQ!%-=}MY}1=MUI}Y%9}%Hè•Ù¥‘•¹•¥Èô°(€ô¤ì(€½¹ÍÐÍÕµµ…Éä€ô…Ý…¥ÐÉ•…‘)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÁÉ½‘ÕÑ¥½¸µ±¥™•å±”œ°€ÍÕµµ…Éä¹©Í½¸œ¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€½¹ÍÐÉ••¥ÁÑA…Ñ €ôÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€ÁÉ½‘ÕÑ¥½¸µ±¥™•å±”œ°€ÁÉ½‘ÕÑ¥½¸µ±¥™•å±”¹Í••¹©Í½¸œ¤ì(€½¹ÍÐÉ••¥ÁÐ€ô…Ý…¥ÐÉ•…‘)Í½¸¡É••¥ÁÑA…Ñ ¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€½¹ÍÐ…¹‘¥‘…Ñ”€ôÍÕµµ…Éäü¹…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØì(€É•ÑÕÉ¸ìÍÑ…ÑÕÌèÍÕµµ…Éäü¹ÍÑ…ÑÕÌ€ôôô€	!Y%=I1}Iœ€˜˜ÉÕ¸¹É•ÍÕ±Ð¹½ÕÑ½µ”€ôôô€a%Qœ€˜˜ÉÕ¸¹É•ÍÕ±Ð¹½‘”€ôôô€Ä(€€€€˜˜…¹‘¥‘…Ñ”€ôôô•áÁ•Ñ•‘…¹‘¥‘…Ñ•M¡„€ü€	!Y%=I1}Iœ€è€	1=-œ°(€€€½µµ…¹èÉÕ¸¹½µµ…¹°½ÕÑ½µ”èÉÕ¸¹É•ÍÕ±Ð¹½ÕÑ½µ”°•á¥Ñ½‘”èÉÕ¸¹É•ÍÕ±Ð¹½‘”°…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñäè…¹‘¥‘…Ñ”€üü¹Õ±°°(€€€ÍÕµµ…Éä°É••¥ÁÐ°É••¥ÁÑA…Ñ °É••¥ÁÑM¡„ÈÔØèÉ••¥ÁÐ€ü…Ý…¥ÐÁ…Ñ¡!…Í ¡É••¥ÁÑA…Ñ ¤€è¹Õ±°ôì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹=¹•5ÕÑ…Ñ¥½¸¡Ñà°‘•™¥¹¥Ñ¥½¸°‰…Í•±¥¹•!…Í¡•Ì°±•…¹…¹‘¥‘…Ñ”¤ì(€½¹ÍÐ•Ù¥‘•¹•¥È€ôÁ…Ñ ¹©½¥¸¡É½½ÑÙ¥‘•¹” ¤°€µÕÑ…Ñ¥½¹Ìœ°‘•™¥¹¥Ñ¥½¸¹¥¤ì(€…Ý…¥Ðµ­‘¥È¡•Ù¥‘•¹•¥È°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐÉ•½É€ôì¥è‘•™¥¹¥Ñ¥½¸¹¥°ÍÑ…ÉÑ•‘Ðè¹½Ý%Í¼ ¤°ÍÑ…ÑÕÌè€9=PIU8œ°Ý½É­ÍÁ…”è¹Õ±°°™…Õ±Ðè¹Õ±°°½±‘…Ñ”è¹Õ±°°±•…¹™Ñ•ÉI•ÍÑ½É”è¹Õ±°°‘¥…¹½ÍÑ¥Ìèmtôì(€Ñà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹ÁÕÍ ¡É•½É¤ì(€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€±•ÐÝ½É­ÑÉ•”€ô¹Õ±°ì(€±•ÐÁÉ•¥µ…•Ì€ô¹•Ü5…À ¤ì(€±•ÐµÕÑ…Ñ•€ô™…±Í”ì(€ÑÉäì(€€€Ý½É­ÑÉ•”€ô…Ý…¥ÐÉ•…Ñ•]½É­ÑÉ•”¡Ñà°‘•™¥¹¥Ñ¥½¸°•Ù¥‘•¹•¥È¤ì(€€€É•½É¹Ý½É­ÍÁ…”€ôÝ½É­ÑÉ•”ì(€€€É•½É¹…¹‘¥‘…Ñ•	•™½É•5ÕÑ…Ñ¥½¸€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€€€¥˜€¡É•½É¹…¹‘¥‘…Ñ•	•™½É•5ÕÑ…Ñ¥½¸¹¡•…€„ôô±•…¹…¹‘¥‘…Ñ”¹¡•…¤Ñ¡É½Ü¹•ÜÉÉ½È ‘¥ÍÁ½Í…‰±”µÕÑ…Ñ¥½¸Ý½É­ÑÉ•”!‘¥™™•ÉÌ™É½´Ñ¡”ÅÕ…±¥™¥•…¹‘¥‘…Ñ”œ¤ì(€€€™½È€¡½¹ÍÐ™¥±”½˜¹•ÜM•Ð¡‘•™¥¹¥Ñ¥½¸¹Á…Ñ¡•Ì¹µ…À ¡Á…Ñ ¤€ôøÁ…Ñ ¹Á…Ñ ¤¤¤ÁÉ•¥µ…•Ì¹Í•Ð¡™¥±”°…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°™¥±”¤¤¤ì(€€€½¹ÍÐ•áÁ•Ñ•‘¡…¹•€ôl¸¸¹¹•ÜM•Ð¡‘•™¥¹¥Ñ¥½¸¹Á…Ñ¡•Ì¹µ…À ¡Á…Ñ ¤€ôøÁ…Ñ ¹Á…Ñ ¤¥t¹Í½ÉÐ ¤ì(€€€…Ý…¥Ð…ÁÁ±åA…Ñ¡M•Ð¡Ý½É­ÑÉ•”°‘•™¥¹¥Ñ¥½¸°ÁÉ•¥µ…•Ì¤ì(€€€µÕÑ…Ñ•€ôÑÉÕ”ì(€€€É•½É¹™…Õ±Ð€ô…Ý…¥Ð…É¡¥Ù•¥±•Ù¥‘•¹”¡Ý½É­ÑÉ•”°‘•™¥¹¥Ñ¥½¸°•Ù¥‘•¹•¥È°ÁÉ•¥µ…•Ì¤ì(€€€¥˜€¡)M=8¹ÍÑÉ¥¹¥™ä¡É•½É¹™…Õ±Ð¹¡…¹•‘A…Ñ¡Ì¤€„ôô)M=8¹ÍÑÉ¥¹¥™ä¡•áÁ•Ñ•‘¡…¹•¤¤Ñ¡É½Ü¹•ÜÉÉ½È¡µÕÑ…¹Ð¡…¹•Á…Ñ¡Ì‘¥™™•È™É½´¥ÑÌ™¥á•Á…Ñ è€‘íÉ•½É¹™…Õ±Ð¹¡…¹•‘A…Ñ¡Ì¹©½¥¸ œ°€œ¥õ€¤ì(€€€½¹ÍÐ…ÑÕ…±¡…¹•€ô…Ý…¥Ð•á…Ñ¡…¹•‘A…Ñ¡Ì¡Ý½É­ÑÉ•”¤ì(€€€¥˜€¡)M=8¹ÍÑÉ¥¹¥™ä¡…ÑÕ…±¡…¹•¤€„ôô)M=8¹ÍÑÉ¥¹¥™ä¡•áÁ•Ñ•‘¡…¹•¤¤Ñ¡É½Ü¹•ÜÉÉ½È¡µÕÑ…¹Ð¡…¹•Á…Ñ¡Ì‘¥™™•È…™Ñ•ÈÁ…Ñ …ÁÁ±¥…Ñ¥½¸è€‘í…ÑÕ…±¡…¹•¹©½¥¸ œ°€œ¥õ€¤ì(€€€É•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€€€É•½É¹™…Õ±Ð¹Í½ÕÉ•!…Í¡•Í™Ñ•ÉA…Ñ €ô=‰©•Ð¹™É½µ¹ÑÉ¥•Ì¡…Ý…¥ÐAÉ½µ¥Í”¹…±°¡•áÁ•Ñ•‘¡…¹•¹µ…À¡…Íå¹Œ€¡™¥±”¤€ôøm™¥±”°…Ý…¥ÐÁ…Ñ¡!…Í ¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°™¥±”¤¥t¤¤¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì((€€€¥˜€¡‘•™¥¹¥Ñ¥½¸¹¥€ôôô€4Øœ¤ì(€€€€€½¹ÍÐ½±€ô…Ý…¥ÐÉÕ¹=±‘AÉ½‘ÕÑ•ÁÑ…¹”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È¤ì(€€€€€É•½É¹½±‘…Ñ”€ôì€¸¸¹½±°Í…µ•5ÕÑ…¹Ñ…¹‘¥‘…Ñ”è½±¹…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä€ôôôÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØôì(€€€€€¥˜€¡½±¹ÍÑ…ÑÕÌ€„ôô€AMLœñð½±¹…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä€„ôôÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ¤Ñ¡É½Ü¹•ÜÉÉ½È 4ØÕ¹¡…¹•Á¹Á´…•ÁÑ…¹”éÁÉ½‘ÕÐ½±…Ñ”Ý…Ì¹½ÐI8½¸Ñ¡”Í…µ”µÕÑ…¹Ð¥‘•¹Ñ¥Ñä…™Ñ•È•¹•É…Ñ••Ù¥‘•¹”É•ÍÑ½É…Ñ¥½¸¸œ¤ì(€€€€€½¹ÍÐ™É•Í €ô…Ý…¥ÐÉÕ¹•ÁÑ…¹”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°€´Øµ…Ñ”œ¤ì(€€€€€½¹ÍÐ™É•Í¡…¹‘¥‘…Ñ”€ô™É•Í ¹ÍÕµµ…Éäü¹¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ”ì(€€€€€É•½É¹™É•Í¡M…Ù•±½ÍÕÉ”€ôìÍÑ…ÑÕÌè™É•Í ¹ÍÑ…ÑÕÌ€ôôô€AMLœ€˜˜™É•Í ¹•á¥Ñ½‘”€ôôô€À€˜˜™É•Í ¹½µµ…¹‘=ÕÑ½µ”€ôôô€a%Qœ€ü€AMLœ€è€	1=-œ°½µµ…¹è™É•Í ¹½µµ…¹°…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñäè™É•Í¡…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€üü¹Õ±°ôì(€€€€€¥˜€¡É•½É¹™É•Í¡M…Ù•±½ÍÕÉ”¹ÍÑ…ÑÕÌ€„ôô€AMLœñð™É•Í¡…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€„ôôÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ¤Ñ¡É½Ü¹•ÜÉÉ½È 4Ø™É•Í Í…Ù”µ±½ÍÕÉ”ÁÉ•É•ÅÕ¥Í¥Ñ•Ì½ÕÉÉ•¹ÐÉ••¥ÁÑÌ…É”¹½ÐAML™½ÈÑ¡”Õ¹¡…¹•µÕÑ…¹Ð¥‘•¹Ñ¥Ñä¸œ¤ì(€€€€€½¹ÍÐ‰Õ¥±Ð€ô…Ý…¥ÐÉÕ¹	Õ¥±‘¹‘±•…¹AÉ½‘ÕÑ¥½¸¡Ñà°Ý½É­ÑÉ•”°™É•Í ¹½ÕÑÁÕÑ¥È°€´ØµµÕÑ…¹Ðœ¤ì(€€€€€É•½É¹ÁÉ½‘ÕÑ¥½¹	Õ¥±€ô‰Õ¥±Ðì(€€€€€¥˜€¡‰Õ¥±Ð¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤Ñ¡É½Ü¹•ÜÉÉ½È¡4Ø™É•Í ÁÉ½‘ÕÑ¥½¸‰Õ¥±‘¥¹½ÐÅÕ…±¥™äè€‘í‰Õ¥±Ð¹ÍÑ•Áõ€¤ì(€€€€€½¹ÍÐ‰•™½É•AÉ½‰”€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€€€€€¥˜€¡‰•™½É•AÉ½‰”¹Í¡„ÈÔØ€„ôôÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ¤Ñ¡É½Ü¹•ÜÉÉ½È 4ØÁÉ½‘ÕÐÁ…Ñ ¥‘•¹Ñ¥Ñä¡…¹•‰•™½É”Ñ¡”ÁÉ½‘ÕÑ¥½¸±¥™•å±”…ÍÍ•ÉÑ¥½¸¸œ¤ì(€€€€€½¹ÍÐÁÉ½‰”€ô…Ý…¥ÐÉÕ¹4ÙAÉ½‘ÕÑ¥½¹I•…‘¥¹•ÍÍAÉ½‰”¡Ñà°Ý½É­ÑÉ•”°Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÁÉ½‰”œ¤°ì(€€€€€€€…¹‘¥‘…Ñ•M¡„ÈÔØèÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ°Á…Ñ¡M¡„ÈÔØèÉ•½É¹™…Õ±Ð¹Á…Ñ¡M¡„ÈÔØ°(€€€€€€€±½…‘•ÉM¡„ÈÔØèÉ•½É¹™…Õ±Ð¹Í½ÕÉ•!…Í¡•Í™Ñ•ÉA…Ñ ü¹lÍÉŒ½½É”µ±½…‘•È¹ÑÌt°(€€€€€ô¤ì(€€€€€É•½É¹ÁÉ½‘ÕÑ¥½¹I•…‘¥¹•ÍÌ€ôìÍÑ…ÑÕÌèÁÉ½‰”¹ÍÑ…ÑÕÌ°ÁÉ½½˜èÁ…Ñ ¹É•±…Ñ¥Ù”¡É½½ÑÙ¥‘•¹” ¤°Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€´ØµÁÉ½‘ÕÑ¥½¸µÁÉ½‰”œ°€´ØµÁÉ½‘ÕÑ¥½¸µÉ•…‘¥¹•ÍÌ¹©Í½¸œ¤¤¹ÍÁ±¥Ð¡Á…Ñ ¹Í•À¤¹©½¥¸ œ¼œ¤°¡ÑÑÁ%¹‘•áMÑ…ÑÕÌèÁÉ½‰”¹¡ÑÑÁ%¹‘•áMÑ…ÑÕÌ°ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌèÁÉ½‰”¹ÁÉ½‘ÕÑ¥½¹ÍÍ•ÑMÑ…ÑÕÌ°‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌèÁÉ½‰”¹‰É½ÝÍ•É9…Ù¥…Ñ¥½¹MÑ…ÑÕÌ°‘ÁI•…‘äèÁÉ½‰”¹‘ÁI•…‘ä°‰É½ÝÍ•ÉY•ÉÍ¥½¸èÁÉ½‰”¹‰É½ÝÍ•ÉY•ÉÍ¥½¸°‘¥…¹½ÍÑ¥ÌèÁÉ½‰”¹‘¥…¹½ÍÑ¥Ì°É•…Í½¸èÁÉ½‰”¹É•…Í½¸€üü¹Õ±°ôì(€€€€€¥˜€¡ÁÉ½‰”¹ÍÑ…ÑÕÌ€„ôô€I%9MM}AMLœ¤Ñ¡É½Ü¹•ÜÉÉ½È¡4Ø¥¹‘•Á•¹‘•¹ÐÁÉ½‘ÕÑ¥½¸!QQ@½‰É½ÝÍ•ÈÉ•…‘¥¹•ÍÌ‘¥¹½ÐÅÕ…±¥™äè€‘íÁÉ½‰”¹É•…Í½¸€üüÁÉ½‰”¹ÍÑ…ÑÕÍõ€¤ì(€€€€€½¹ÍÐ±¥™•å±”€ô…Ý…¥ÐÉÕ¹4ÙAÉ½‘ÕÑ¥½¹1¥™•å±”¡Ñà°Ý½É­ÑÉ•”°™É•Í ¹½ÕÑÁÕÑ¥È°É•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ¤ì(€€€€€½¹ÍÐ±…ÍÍ¥™¥•€ô±…ÍÍ¥™å4ÙAÉ½‘ÕÑ¥½¹AÉ½½˜¡ÁÉ½‰”°±¥™•å±”¹É••¥ÁÐ°ì(€€€€€€€…¹‘¥‘…Ñ•M¡„ÈÔØèÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ°Á…Ñ¡M¡„ÈÔØèÉ•½É¹™…Õ±Ð¹Á…Ñ¡M¡„ÈÔØ°(€€€€€€€±½…‘•ÉM¡„ÈÔØèÉ•½É¹™…Õ±Ð¹Í½ÕÉ•!…Í¡•Í™Ñ•ÉA…Ñ ü¹lÍÉŒ½½É”µ±½…‘•È¹ÑÌt°(€€€€€ô¤ì(€€€€€É•½É¹ÁÉ½‘ÕÑ¥½¹ÍÍ•ÉÑ¥½¸€ôìÍÑ…ÑÕÌè±…ÍÍ¥™¥•¹ÍÑ…ÑÕÌ°½µµ…¹è±¥™•å±”¹½µµ…¹°É••¥ÁÐèÁ…Ñ ¹É•±…Ñ¥Ù”¡É½½ÑÙ¥‘•¹” ¤°±¥™•å±”¹É••¥ÁÑA…Ñ ¤¹ÍÁ±¥Ð¡Á…Ñ ¹Í•À¤¹©½¥¸ œ¼œ¤°É••¥ÁÑM¡„ÈÔØè±¥™•å±”¹É••¥ÁÑM¡„ÈÔØ°±¥™•å±•MÑ…ÑÕÌè±¥™•å±”¹ÍÕµµ…Éäü¹ÍÑ…ÑÕÌ€üü€5%MM%9œ°±¥™•å±•A¡…Í”è±¥™•å±”¹É••¥ÁÐü¹Á¡…Í”€üü¹Õ±°°…ÍÍ•ÉÑ¥½¸è±…ÍÍ¥™¥•¹…ÍÍ•ÉÑ¥½¸€üü¹Õ±°°É•…Í½¸è±…ÍÍ¥™¥•¹É•…Í½¸€üü¹Õ±°°‰É½ÝÍ•ÉY•ÉÍ¥½¸è±¥™•å±”¹É••¥ÁÐü¹ÁÉ½•ÍÍÙ¥‘•¹”ü¹lÁtü¹‰É½ÝÍ•ÉY•ÉÍ¥½¸€üüÁÉ½‰”¹‰É½ÝÍ•ÉY•ÉÍ¥½¸ôì(€€€€€¥˜€¡±…ÍÍ¥™¥•¹ÍÑ…ÑÕÌ€„ôô€	!Y%=I1}Iœñð±¥™•å±”¹ÍÑ…ÑÕÌ€„ôô€	!Y%=I1}Iœ¤Ñ¡É½Ü¹•ÜÉÉ½È¡4Ø™É½é•¸ÁÉ½‘ÕÑ¥½¸±¥™•å±”‘¥¹½ÐI…Ð¥ÑÌ¥¹Ñ•¹‘•…ÍÍ•ÉÑ¥½¸è€‘í±…ÍÍ¥™¥•¹É•…Í½¸€üü±¥™•å±”¹ÍÕµµ…Éäü¹ÍÑ…ÑÕÌ€üü±¥™•å±”¹ÍÑ…ÑÕÍõ€¤ì(€€€€€½¹ÍÐ…™Ñ•ÉAÉ½‰”€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡Ý½É­ÑÉ•”¤ì(€€€€€¥˜€¡…™Ñ•ÉAÉ½‰”¹Í¡„ÈÔØ€„ôôÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ¤Ñ¡É½Ü¹•ÜÉÉ½È 4ØÁÉ½‘ÕÐÁ…Ñ ¥‘•¹Ñ¥Ñä¡…¹•‘ÕÉ¥¹œÉ•…‘¥¹•ÍÌÅÕ…±¥™¥…Ñ¥½¸½ÈÑ¡”™É½é•¸ÁÉ½‘ÕÑ¥½¸…ÍÍ•ÉÑ¥½¸¸œ¤ì(€€€€€É•½É¹ÍÑ…ÑÕÌ€ô€	!Y%=I1}Iœì(€€€ô•±Í”ì(€€€€€½¹ÍÐµÕÑ…Ñ¥½¹IÕ¸€ô…Ý…¥ÐÉÕ¹•ÁÑ…¹”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°€‘í‘•™¥¹¥Ñ¥½¸¹¥¹Ñ½1½Ý•É…Í” ¥ôµµÕÑ…Ñ•µ…Ñ•€¤ì(€€€€€É•½É¹µÕÑ…Ñ¥½¹…Ñ”€ôì½µµ…¹èµÕÑ…Ñ¥½¹IÕ¸¹½µµ…¹°…Ñ•MÑ…ÑÕÌèµÕÑ…Ñ¥½¹IÕ¸¹ÍÑ…ÑÕÌ°…¹‘¥‘…Ñ•%‘•¹Ñ¥ÑäèµÕÑ…Ñ¥½¹IÕ¸¹ÍÕµµ…Éäü¹¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€üü¹Õ±°ôì(€€€€€½¹ÍÐÍ••€ô…Ý…¥ÐÉ•…‘)Í½¸¡ÕÉÉ•¹ÑM••‘A…Ñ ¡µÕÑ…Ñ¥½¹IÕ¸¹½ÕÑÁÕÑ¥È¤¤¹…Ñ   ¤€ôø¹Õ±°¤ì(€€€€€½¹ÍÐÁÉ•É•ÅÕ¥Í¥Ñ•I½ÝÌ€ô€¡µÕÑ…Ñ¥½¹IÕ¸¹ÍÕµµ…Éäü¹…Í•=ÕÑ½µ•Ì€üümt¤¹™¥±Ñ•È ¡¥Ñ•´¤€ôøÁÉ•É•ÅÕ¥Í¥Ñ•…Í•Ì¹¥¹±Õ‘•Ì¡¥Ñ•´¹¥¤¤ì(€€€€€É•½É¹µÕÑ…Ñ¥½¹AÉ•É•ÅÕ¥Í¥Ñ•Ì€ôì(€€€€€€€ÍÑ…ÑÕÌèÁÉ•É•ÅÕ¥Í¥Ñ•I½ÝÌ¹±•¹Ñ €ôôôÁÉ•É•ÅÕ¥Í¥Ñ•…Í•Ì¹±•¹Ñ €˜˜ÁÉ•É•ÅÕ¥Í¥Ñ•I½ÝÌ¹•Ù•Éä ¡¥Ñ•´¤€ôø¥Ñ•´¹ÍÑ…ÑÕÌ€ôôô€AMLœ¤€ü€AMLœ€è€	1=-œ°(€€€€€€€…Í•=ÕÑ½µ•ÌèÁÉ•É•ÅÕ¥Í¥Ñ•I½ÝÌ°(€€€€€ôì(€€€€€É•½É¹™…Õ±ÑI•ÍÕ±Ð€ôÉ•½É¹µÕÑ…Ñ¥½¹AÉ•É•ÅÕ¥Í¥Ñ•Ì¹ÍÑ…ÑÕÌ€ôôô€AMLœ(€€€€€€€€ü±…ÍÍ¥™å5ÕÑ…Ñ¥½¹I••¥ÁÐ¡Í••°‘•™¥¹¥Ñ¥½¸¤(€€€€€€€€èìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€±°Í•Ù•¸É•…°ÁÉ•É•ÅÕ¥Í¥Ñ•Ì‘¥¹½ÐAML‰•™½É”ÕÉÉ•¹ÐµÕÑ…Ñ¥½¸µ…Í”É•‘¥Ð¸œôì(€€€€€É•½É¹™…Õ±ÑI•ÍÕ±Ð¹½µµ…¹‘=ÕÑ½µ”€ôµÕÑ…Ñ¥½¹IÕ¸¹½µµ…¹‘=ÕÑ½µ”ì(€€€€€¥˜€¡µÕÑ…Ñ¥½¹IÕ¸¹ÍÕµµ…Éäü¹¥‘•¹Ñ¥Ñäü¹…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€„ôôÉ•½É¹µÕÑ…¹Ñ%‘•¹Ñ¥Ñä¹Í¡„ÈÔØ¤ì(€€€€€€€É•½É¹™…Õ±ÑI•ÍÕ±Ð€ôìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è€5ÕÑ…Ñ¥½¸É••¥ÁÐ…¹‘¥‘…Ñ”¥‘•¹Ñ¥Ñä‘¥™™•ÉÌ™É½´Ñ¡”•á…ÐµÕÑ…¹ÐÁ…Ñ ¸œôì(€€€€€ô(€€€€€¥˜€¡µÕÑ…Ñ¥½¹IÕ¸¹½µµ…¹‘=ÕÑ½µ”€„ôô€a%Qœ¤É•½É¹™…Õ±ÑI•ÍÕ±Ð€ôìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è5ÕÑ…Ñ¥½¸½µµ…¹•¹‘•…Ì€‘íµÕÑ…Ñ¥½¹IÕ¸¹½µµ…¹‘=ÕÑ½µ•ô¹€ôì(€€€€€¥˜€¡É•½É¹™…Õ±ÑI•ÍÕ±Ð¹ÍÑ…ÑÕÌ€„ôô€	!Y%=I1}Iœ¤Ñ¡É½Ü¹•ÜÉÉ½È¡€‘í‘•™¥¹¥Ñ¥½¸¹¥‘ô•áÁ•Ñ•½É…±”IÝ…Ì¹½ÐÁÉ½Ù•¸è€‘íÉ•½É¹™…Õ±ÑI•ÍÕ±Ð¹É•…Í½¹õ€¤ì(€€€€€É•½É¹ÍÑ…ÑÕÌ€ô€	!Y%=I1}Iœì(€€€ô(€ô…Ñ €¡•ÉÉ½È¤ì(€€€É•½É¹ÍÑ…ÑÕÌ€ôÉ•½É¹ÍÑ…ÑÕÌ€ôôô€	!Y%=I1}Iœ€üÉ•½É¹ÍÑ…ÑÕÌ€è€	1=-œì(€€€É•½É¹‘¥…¹½ÍÑ¥Ì¹ÁÕÍ ¡ìÍÑ…ÑÕÌè€	1=-œ°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”°ÍÑ…¬è•ÉÉ½È¹ÍÑ…¬ô¤ì(€€€Ñà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ì(€ô™¥¹…±±äì(€€€¥˜€¡Ý½É­ÑÉ•”€˜˜ÁÉ•¥µ…•Ì¹Í¥é”¤ì(€€€€€½¹ÍÐÉ•ÍÑ½É•5…¹¥™•ÍÐ€ôíôì(€€€€€™½È€¡½¹ÍÐm™¥±”°‰åÑ•Ít½˜ÁÉ•¥µ…•Ì¤ì(€€€€€€€ÑÉäì…Ý…¥ÐÝÉ¥Ñ•¥±”¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°™¥±”¤°‰åÑ•Ì¤ìÉ•ÍÑ½É•5…¹¥™•ÍÑm™¥±•t€ôìÍ¡„ÈÔØè‰åÑ•Í!…Í ¡…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡Ý½É­ÑÉ•”°™¥±”¤¤¤°•áÁ•Ñ•‘M¡„ÈÔØè‰åÑ•Í!…Í ¡‰åÑ•Ì¤ôìô(€€€€€€€…Ñ €¡•ÉÉ½È¤ìÉ•ÍÑ½É•5…¹¥™•ÍÑm™¥±•t€ôì•ÉÉ½Èè•ÉÉ½È¹µ•ÍÍ…”ôìô(€€€€€ô(€€€€€É•½É¹É•ÍÑ½É”€ôìÁÉ½‘ÕÑM½ÕÉ•¥±•ÌèÉ•ÍÑ½É•5…¹¥™•ÍÐ°Ù•É¥™¥•è=‰©•Ð¹Ù…±Õ•Ì¡É•ÍÑ½É•5…¹¥™•ÍÐ¤¹•Ù•Éä ¡¥Ñ•´¤€ôø¥Ñ•´¹Í¡„ÈÔØ€˜˜¥Ñ•´¹Í¡„ÈÔØ€ôôô¥Ñ•´¹•áÁ•Ñ•‘M¡„ÈÔØ¤ôì(€€€€€É•½É¹É•ÍÑ½É•‘%¹Ù…É¥…¹ÑÌ€ô…Ý…¥ÐÙ•É¥™å	…Í•±¥¹•%¹Ù…É¥…¹ÑÌ¡Ý½É­ÑÉ•”°‰…Í•±¥¹•!…Í¡•Ì°€‘í‘•™¥¹¥Ñ¥½¸¹¥‘ôµÉ•ÍÑ½É•€¤¹…Ñ  ¡•ÉÉ½È¤€ôø€¡ìÍÑ…ÑÕÌè€	1=-œ°É•…Í½¸è•ÉÉ½È¹µ•ÍÍ…”ô¤¤ì(€€€€€¥˜€ …É•½É¹É•ÍÑ½É”¹Ù•É¥™¥•ñðÉ•½É¹É•ÍÑ½É•‘%¹Ù…É¥…¹ÑÌ¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤ì(€€€€€€€É•½É¹ÍÑ…ÑÕÌ€ô€	1=-œì(€€€€€€€Ñà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ì(€€€€€ô(€€€€€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€É•ÍÑ½É”µÁÉ½½˜¹©Í½¸œ¤°ìÉ•ÍÑ½É”èÉ•½É¹É•ÍÑ½É”°¥¹Ù…É¥…¹ÑÌèÉ•½É¹É•ÍÑ½É•‘%¹Ù…É¥…¹ÑÌ°¡…¹•‘A…Ñ¡Í™Ñ•ÉI•ÍÑ½É”è…Ý…¥Ð•á…Ñ¡…¹•‘A…Ñ¡Ì¡Ý½É­ÑÉ•”¤¹…Ñ  ¡•ÉÉ½È¤€ôømII=Hè‘í•ÉÉ½È¹µ•ÍÍ…•õt¤ô¤(€€€€€€€€¹…Ñ  ¡•ÉÉ½È¤€ôøìÉ•½É¹ÍÑ…ÑÕÌ€ô€	1=-œìÑà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ìÉ•½É¹‘¥…¹½ÍÑ¥Ì¹ÁÕÍ ¡ìÍÑ…ÑÕÌè€	1=-œ°µ•ÍÍ…”èÉ•ÍÑ½É…Ñ¥½¸É••¥ÁÐÝÉ¥Ñ”™…¥±•è€‘í•ÉÉ½È¹µ•ÍÍ…•õ€ô¤ìô¤ì(€€€ô(€€€½¹ÍÐÉ•µ½Ù•€ô…Ý…¥ÐÉ•µ½Ù•]½É­ÑÉ•”¡Ñà°Ý½É­ÑÉ•”°•Ù¥‘•¹•¥È°‘•™¥¹¥Ñ¥½¸¹¥¤¹…Ñ  ¡•ÉÉ½È¤€ôø€¡ìÍÑ…ÑÕÌè€	1=-œ°•ÉÉ½Èè•ÉÉ½È¹µ•ÍÍ…”ô¤¤ì(€€€É•½É¹Ý½É­ÍÁ…•±•…¹ÕÀ€ôÉ•µ½Ù•ì(€€€¥˜€¡É•µ½Ù•¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤ìÉ•½É¹ÍÑ…ÑÕÌ€ô€	1=-œìÑà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ìô(€€€É•½É¹½µÁ±•Ñ•‘Ð€ô¹½Ý%Í¼ ¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€ô((€¥˜€¡É•½É¹É•ÍÑ½É”ü¹Ù•É¥™¥•€˜˜É•½É¹É•ÍÑ½É•‘%¹Ù…É¥…¹ÑÌü¹ÍÑ…ÑÕÌ€ôôô€AMLœ€˜˜É•½É¹Ý½É­ÍÁ…•±•…¹ÕÀü¹ÍÑ…ÑÕÌ€ôôô€AMLœ¤ì(€€€½¹ÍÐ±•…¹¥È€ôÁ…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€±•…¸µÉ•ÉÕ¸œ¤ì(€€€½¹ÍÐ±•…¸€ô…Ý…¥ÐÉÕ¹•ÁÑ…¹”¡Ñà°É½½Ð°±•…¹¥È°€‘í‘•™¥¹¥Ñ¥½¸¹¥¹Ñ½1½Ý•É…Í” ¥ôµÉ•ÍÑ½É•µ±•…¹€¤ì(€€€É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”€ôÉ•ÅÕ¥É•±•…¹•ÁÑ…¹”¡±•…¸¹ÍÕµµ…Éä°±•…¹…¹‘¥‘…Ñ”°±•…¹…¹‘¥‘…Ñ”¹¡•…¤ì(€€€É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹½µµ…¹€ô±•…¸¹½µµ…¹ì(€€€¥˜€¡É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹ÍÑ…ÑÕÌ€„ôô€AMLœñð±•…¸¹½µµ…¹‘=ÕÑ½µ”€„ôô€a%Qœñð±•…¸¹•á¥Ñ½‘”€„ôô€À¤ì(€€€€€É•½É¹ÍÑ…ÑÕÌ€ô€	1=-œì(€€€€€Ñà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ì(€€€ô(€€€É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹…•ÁÑ…¹•ÉÑ¥™…Ð€ô±•…¸¹ÍÕµµ…Éäü¹…•ÁÑ…¹•ÉÑ¥™…Ð€üü¹Õ±°ì(€€€¥˜€ …É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹…•ÁÑ…¹•ÉÑ¥™…Ðü¹‘¥•ÍÐ¤ì(€€€€€É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹ÍÑ…ÑÕÌ€ô€	1=-œì(€€€€€É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹É•…Í½¸€ô€I•ÍÑ½É•±•…¸…•ÁÑ…¹”…ÉÑ¥™…Ð¥¹Ù•¹Ñ½ÉäÝ…Ì¹½ÐÉ•½É‘•™½ÈÑ¡”…¹‘¥‘…Ñ”¸œì(€€€€€Ñà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ì(€€€ô(€€€¥˜€¡‘•™¥¹¥Ñ¥½¸¹¥€ôôô€4Øœ€˜˜É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”¹ÍÑ…ÑÕÌ€ôôô€AMLœ¤ì(€€€€€½¹ÍÐÁÉ½€ô…Ý…¥ÐÉÕ¹±•…¹AÉ½‘ÕÑ¥½¹…Ñ”¡Ñà°É½½Ð°±•…¸¹½ÕÑÁÕÑ¥È°€´ØµÉ•ÍÑ½É•µ±•…¸œ°±•…¹…¹‘¥‘…Ñ”¹Í¡„ÈÔØ¤ì(€€€€€É•½É¹±•…¹AÉ½‘ÕÑ¥½¹™Ñ•ÉI•ÍÑ½É”€ôÁÉ½ì(€€€€€¥˜€¡ÁÉ½¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤ìÉ•½É¹ÍÑ…ÑÕÌ€ô€	1=-œìÑà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ìô(€€€ô(€ô•±Í”ì(€€€É•½É¹±•…¹™Ñ•ÉI•ÍÑ½É”€ôìÍÑ…ÑÕÌè€9=PIU8œ°É•…Í½¸è€É•ÍÑ½É…Ñ¥½¸½È½Ý¹•Ý½É­ÑÉ•”±•…¹ÕÀ‘¥¹½ÐÙ•É¥™ä¸œôì(€ô(€É•½É¹½µÁ±•Ñ•‘Ð€ô¹½Ý%Í¼ ¤ì(€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€É•ÑÕÉ¸É•½Éì)ô()™Õ¹Ñ¥½¸µÕÑ…Ñ¥½¹I••¥ÁÑMÕµµ…Éä¡Ñà¤ì(€½¹ÍÐ…±±IÕ¸€ôÑà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹±•¹Ñ €ôôôµÕÑ…Ñ¥½¹…Í•Ì¹±•¹Ñ ì(€½¹ÍÐ…±±•Ñ•Ñ•€ôÑà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹•Ù•Éä ¡¥Ñ•´¤€ôø¥Ñ•´¹ÍÑ…ÑÕÌ€ôôô€	!Y%=I1}Iœ€˜˜¥Ñ•´¹±•…¹™Ñ•ÉI•ÍÑ½É”ü¹ÍÑ…ÑÕÌ€ôôô€AMLœ¤ì(€½¹ÍÐ´Ø€ôÑà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹™¥¹ ¡¥Ñ•´¤€ôø¥Ñ•´¹¥€ôôô€4Øœ¤ì(€½¹ÍÐ´ÙI•ÍÑ½É•‘AÉ½‘ÕÑ¥½¸€ô´Øü¹±•…¹AÉ½‘ÕÑ¥½¹™Ñ•ÉI•ÍÑ½É”ü¹ÍÑ…ÑÕÌ€ôôô€AMLœì(€É•ÑÕÉ¸…±±IÕ¸€˜˜…±±•Ñ•Ñ•€˜˜´ÙI•ÍÑ½É•‘AÉ½‘ÕÑ¥½¸€˜˜Ñà¹ÍÕµµ…Éä¹½¹ÑÉ½±Ìü¹ÍÑ…ÑÕÌ€ôôô€AMLœ€ü€AMLœ€è€	1=-œì)ô()…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹½¹ÑÉ½±Ì¡Ñà°‰…Í•±¥¹•!…Í¡•Ì¤ì(€½¹ÍÐ‘É¥Ù•È€ô…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡É½½Ð°€Ñ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÕÉÉ•¹Ð¹µ©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ…Í•Ì€ôl(€€€ì¹…µ”è€¥µµ•‘¥…Ñ”µ±•…¸µÍ…Ù•µ±½Í•œ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè€M…Ù•½¸Ñ¡¥Ì‘•Ù¥”œ°Í…Ù•¥…±½=Á•¸è™…±Í”õtô¤°•áÁ•Ñ•è€AMLœô°(€€€ì¹…µ”è€…ÑÕ…°µÍ…Ù”µ™…¥±•µÉ•…¡•Ìµ•áÁ±¥¥ÐµÍ…Ù•µ…ÍÍ•ÉÑ¥½¸œ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè€M…Ù”™…¥±•œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”õtô¤°•áÁ•Ñ•è€	!Y%=I1}Iœô°(€€€ì¹…µ”è€ÍÑ…±”µÍ…Ù•µÕÉÉ•¹Ðµ‘¥…±½œµ½Á•¸œ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè€M…Ù•½¸Ñ¡¥Ì‘•Ù¥”œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”õtô¤°•áÁ•Ñ•è€	1=-œô°(€€€ì¹…µ”è€µ¥ÍÍ¥¹œµÍÑ…ÑÕÌœ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè¹Õ±°°Í…Ù•¥…±½=Á•¸èÑÉÕ”õtô¤°•áÁ•Ñ•è€	1=-œô°(€€€ì¹…µ”è€¥¹‘•™¥¹¥Ñ•±äµÍ…Ù¥¹œµ¹¼µÑ•Éµ¥¹…°œ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì½‰Í•ÉÙ…Ñ¥½¹ÌèmìÍÑ…ÑÕÌè€M…Ù¥¹ŸŠ˜œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”ô°ìÍÑ…ÑÕÌè€M…Ù¥¹ŸŠ˜œ°Í…Ù•¥…±½=Á•¸èÑÉÕ”õtô¤°•áÁ•Ñ•è€	1=-œô°(€€€ì¹…µ”è€¹…Ù¥…Ñ¥½¸µ™…¥±ÕÉ”œ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½Èè¹•ÜÉÉ½È 9…Ù¥…Ñ¥½¹ÉÉ½Èè¹…Ù¥…Ñ¥½¸™…¥±•œ¤ô¤°•áÁ•Ñ•è€	1=-œô°(€€€ì¹…µ”è€ÑÉ…¹ÍÁ½ÉÐµ™…¥±ÕÉ”œ°É•ÍÕ±Ðè•á•ÕÑ•É½é•¹M…Ù•½¹ÑÉ½°¡‘É¥Ù•È°ì¥¹™É…ÍÑÉÕÑÕÉ•ÉÉ½Èè¹•ÜÉÉ½È QÉ…¹ÍÁ½ÉÑÉÉ½Èè@½¹¹•Ñ¥½¸±½Í•œ¤ô¤°•áÁ•Ñ•è€	1=-œô°(€tì(€½¹ÍÐÁ…ÍÍ•€ô…Í•Ì¹•Ù•Éä ¡¥Ñ•´¤€ôø¥Ñ•´¹É•ÍÕ±Ð¹ÍÑ…ÑÕÌ€ôôô¥Ñ•´¹•áÁ•Ñ•¤(€€€€˜˜‰…Í•±¥¹•!…Í¡•ÍlÑ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÕÉÉ•¹Ð¹µ©Ìt€ôôô•áÁ•Ñ•‘M••‘ÍlÑ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÕÉÉ•¹Ð¹µ©Ìtì(€½¹ÍÐÉ•ÍÕ±Ð€ôì(€€€ÍÑ…ÑÕÌèÁ…ÍÍ•€ü€AMLœ€è€	1=-œ°…Í•Ì°(€€€Í½ÕÉ•É¥Ù•ÉM¡„ÈÔØè‰…Í•±¥¹•!…Í¡•ÍlÑ•ÍÑÌ½ÁÉ½‘ÕÐ½Ý•ˆµÍ…Ù”µ±½ÍÕÉ”µÕÉÉ•¹Ð¹µ©Ìt°(€€€Í½ÕÉ•ÍÍ•ÉÑ¥½¹á•ÕÑ¥½¸è€Ñ¡”•á…ÐÝ…¥Ñ½ÉÕ¹Ñ¥½¸ÁÉ•‘¥…Ñ”…¹•áÁ±¥¥ÐM…Ù•…ÍÍ•ÉÑ¥½¸…É”•áÑÉ…Ñ•™É½´Ñ¡”™É½é•¸‘É¥Ù•È…¹•á•ÕÑ•™½ÈÑ¡•Í”Í•Á…É…Ñ”½¹ÑÉ½±Ìœ°(€€€¹½Ñ”è€Må¹Ñ¡•Ñ¥Œ½¹ÑÉ½°É••¥ÁÑÌÉ•µ…¥¸Í•Á…É…Ñ”ìÑ¡•ä‘¼¹½ÐÉ•Á±…”…ÑÕ…°4Ä½È±•…¸ÁÉ•Í•ÉÙ…Ñ¥½¸½É•½Á•¸ÉÕ¹Ì¸œ°(€ôì(€…Ý…¥ÐÝÉ¥Ñ•5ÕÑ…Ñ¥½¹)Í½¸¡Á…Ñ ¹©½¥¸¡É½½ÑÙ¥‘•¹” ¤°€µÕÑ…Ñ¥½¹Ìœ°€´Äµ½¹ÑÉ½±Ì¹©Í½¸œ¤°É•ÍÕ±Ð¤ì(€Ñà¹ÍÕµµ…Éä¹½¹ÑÉ½±Ì€ôÉ•ÍÕ±Ðì(€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€É•ÑÕÉ¸É•ÍÕ±Ðì)ô()•áÁ½ÉÐ…Íå¹Œ™Õ¹Ñ¥½¸•á•ÕÑ•5ÕÑ…Ñ¥½¹EÕ…±¥™¥…Ñ¥½¸ ¤ì(€½¹ÍÐ•Ù¥‘•¹•¥È€ôÉ½½ÑÙ¥‘•¹” ¤ì(€…Ý…¥Ðµ­‘¥È¡Á…Ñ ¹©½¥¸¡•Ù¥‘•¹•¥È°€µÕÑ…Ñ¥½¹Ìœ¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì(€½¹ÍÐ…¹•±±…Ñ¥½¸€ôÉ•…Ñ•IÕ¹¹•É…¹•±±…Ñ¥½¸ ¤ì(€½¹ÍÐÑà€ôì(€€€…¹•±±…Ñ¥½¸°(€€€½µµ…¹‘Ìèmt°(€€€½µµ…¹‘½Õ¹Ñ•Èè€À°(€€€Í•ÉÙ•ÉA¥‘Ìèmt°(€€€Ý½É­ÑÉ•”è¹Õ±°°(€€€Ý½É­ÑÉ••Q•µÁI½½Ðè¹Õ±°°(€€€ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸è™…±Í”°(€€€ÍÑ…ÉÑ•‘Ðè…Ñ”¹¹½Ü ¤°(€€€É•µ…¥¹¥¹5Ì ¤ì(€€€€€½¹ÍÐ©½‰MÑ…ÉÐ€ô9Õµ‰•È¡ÁÉ½•ÍÌ¹•¹Ø¹Q!%-=}EU1%%Q%=9}MQIQ}P€üü€À¤€¨€ÄÀÀÀì(€€€€€½¹ÍÐÍÑ…ÉÐ€ô©½‰MÑ…ÉÐ€ø€À€ü©½‰MÑ…ÉÐ€èÑ¡¥Ì¹ÍÑ…ÉÑ•‘Ðì(€€€€€É•ÑÕÉ¸€ÈÀ€¨€ØÀ€¨€ÄÀÀÀ€´€¡…Ñ”¹¹½Ü ¤€´ÍÑ…ÉÐ¤ì(€€€ô°(€€€ÍÕµµ…Éäèì(€€€€€ÍÑ…ÑÕÌè€9=PIU8œ°‰…Í”°•áÁ•Ñ•‘!•…°ÍÑ…ÉÑ•‘Ðè¹½Ý%Í¼ ¤°•¹Ù¥É½¹µ•¹ÐèìÁ±…Ñ™½É´èÁÉ½•ÍÌ¹Á±…Ñ™½É´°…É èÁÉ½•ÍÌ¹…É °¹½‘”èÁÉ½•ÍÌ¹Ù•ÉÍ¥½¸°½Ìè½Ì¹É•±•…Í” ¤ô°(€€€€€™É½é•¹M••‘!…Í¡•Ìè•áÁ•Ñ•‘M••‘Ì°Ý½É­A¥¸°­¥Ñ5…¹¥™•ÍÐ°µÕÑ…Ñ¥½¹Ìèmt°½µµ…¹‘Ìèmt°‘¥…¹½ÍÑ¥Ìèmt°½¹ÑÉ½±ÌèìÍÑ…ÑÕÌè€9=PIU8œô°(€€€€€±¥µ¥ÑÌèìÍ•É¥…°èÑÉÕ”°µÕÑ…Ñ¥½¹ÍA•É]½É­ÍÁ…”è€Ä°©½‰Q¥µ•½ÕÑ5¥¹ÕÑ•Ìè€ÈÀ°ÕÁ±½…‘I•Í•ÉÙ•5Ìè€äÁ|ÀÀÀ°‰É½ÝÍ•Èè€¡½ÍÑ•U‰Õ¹ÑÔ±½­•A±…åÝÉ¥¡Ð€Ä¸ØÈ¸Ä½¹±ä™½È4Øì¹¼5…Œ¡É½µ”½	É…Ù”‰É½ÝÍ•È±…Õ¹ œô°(€€€ô°(€ôì(€Ñà¹ÍÕµµ…Éä¹•Ù¥‘•¹•I½½Ð€ô•Ù¥‘•¹•¥Èì(€½¹ÍÐ‰…Í•±¥¹•!…Í¡•Ì€ôíôì(€ÑÉäì(€€€Ñà¹ÍÕµµ…Éä¹¡½ÍÑ•‘AÉ½‘ÕÑÙ¥‘•¹•I•½¹¥±¥…Ñ¥½¸€ô…Ý…¥ÐÉ•½¹¥±•!½ÍÑ•‘AÉ½‘ÕÑÙ¥‘•¹”¡É½½Ð¤ì(€€€Ñà¹…¹‘¥‘…Ñ”€ô…Ý…¥Ð…ÁÑÕÉ•…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä¡É½½Ð¤ì(€€€Ñà¹ÍÕµµ…Éä¹…¹‘¥‘…Ñ”€ôÑà¹…¹‘¥‘…Ñ”ì(€€€Ñà¹ÍÕµµ…Éä¹ÁÉ%‘•¹Ñ¥Ñä€ô…Ý…¥ÐÙ…±¥‘…Ñ•ÕÑ¡½É¥é•‘…¹‘¥‘…Ñ”¡É½½Ð°Ñà¹…¹‘¥‘…Ñ”¹¡•…¤ì(€€€¥˜€¡Ñà¹…¹‘¥‘…Ñ”¹‘¥ÉÑå¥±•Ì¹±•¹Ñ ¤Ñ¡É½Ü¹•ÜÉÉ½È¡±•…¸ÅÕ…±¥™¥…Ñ¥½¸¡•­½ÕÐ¥Ì‘¥ÉÑä‰•™½É”µÕÑ…Ñ¥½¹Ìè€‘íÑà¹…¹‘¥‘…Ñ”¹‘¥ÉÑå¥±•Ì¹µ…À ¡m™¥±•t¤€ôø™¥±”¤¹©½¥¸ œ°€œ¥õ€¤ì(€€€½¹ÍÐ‰…Í•MÑ…ÑÕÌ€ô…Ý…¥Ð¥Ð¡lÍÑ…ÑÕÌœ°€œ´µÁ½É•±…¥¸õØÄœ°€œµèt°ìÝèÉ½½Ðô¤ì(€€€¥˜€¡‰…Í•MÑ…ÑÕÌ¹½‘”€„ôô€Àñð‰…Í•MÑ…ÑÕÌ¹½ÕÑÁÕÐ¤Ñ¡É½Ü¹•ÜÉÉ½È …¹‘¥‘…Ñ”¡•­½ÕÐ¥Ì¹½Ð±•…¸‰•™½É”µÕÑ…Ñ¥½¹Ì¸œ¤ì(€€€½¹ÍÐ±•…¹Ù¥‘•¹”€ô…Ý…¥ÐÉ•…‘±•…¹…Ñ”¡•Ù¥‘•¹•¥È¤ì(€€€¥˜€¡±•…¹Ù¥‘•¹”¹Í…Ù”€„ôô€AMLœñð±•…¹Ù¥‘•¹”¹ÁÉ½€„ôô€AMLœñð±•…¹Ù¥‘•¹”¹…¹‘¥‘…Ñ”ü¹Í¡„ÈÔØ€„ôôÑà¹…¹‘¥‘…Ñ”¹Í¡„ÈÔØ¤ì(€€€€€Ñ¡É½Ü¹•ÜÉÉ½È Ñ¡”•á…Ðµ…¹‘¥‘…Ñ”±•…¸€Ü¼ÄÄ…¹ÁÉ½‘ÕÑ¥½¸±¥™•å±”É••¥ÁÑÌ…É”É•ÅÕ¥É•‰•™½É”µÕÑ…Ñ¥½¹Ì¸œ¤ì(€€€ô(€€€™½È€¡½¹ÍÐm™¥±”°•áÁ•Ñ•‘t½˜=‰©•Ð¹•¹ÑÉ¥•Ì¡•áÁ•Ñ•‘M••‘Ì¤¤ì(€€€€€½¹ÍÐ…ÑÕ…°€ô…Ý…¥ÐÁ…Ñ¡!…Í ¡Á…Ñ ¹©½¥¸¡É½½Ð°™¥±”¤¤ì(€€€€€¥˜€¡…ÑÕ…°€„ôô•áÁ•Ñ•¤Ñ¡É½Ü¹•ÜÉÉ½È¡™É½é•¸Í••¡…Í µ¥Íµ…Ñ è€‘í™¥±•õ€¤ì(€€€ô(€€€½¹ÍÐ±½¬€ô)M=8¹Á…ÉÍ”¡…Ý…¥ÐÉ•…‘¥±”¡Á…Ñ ¹©½¥¸¡É½½Ð°€½É”µ­¥Ð¹±½¬¹©Í½¸œ¤°€ÕÑ˜àœ¤¤ì(€€€½¹ÍÐ±½­Q•áÐ€ô)M=8¹ÍÑÉ¥¹¥™ä¡±½¬¤ì(€€€¥˜€ …±½­Q•áÐ¹¥¹±Õ‘•Ì¡Ý½É­A¥¸¤ñð€…±½­Q•áÐ¹¥¹±Õ‘•Ì¡­¥Ñ5…¹¥™•ÍÐ¤¤Ñ¡É½Ü¹•ÜÉÉ½È ÅÕ…±¥™¥•]½É¬Á¥¸½Èµ…¹¥™•ÍÐ¡…Í ‘¥™™•ÉÌ™É½´Ñ¡”™¥á•µÕÑ…Ñ¥½¸½¹ÑÉ…Ð¸œ¤ì(€€€=‰©•Ð¹…ÍÍ¥¸¡‰…Í•±¥¹•!…Í¡•Ì°…Ý…¥Ð¡…Í¡M¹…ÁÍ¡½Ð¡É½½Ð¤¤ì(€€€Ñà¹ÍÕµµ…Éä¹±•…¹…¹‘¥‘…Ñ•%‘•¹Ñ¥Ñä€ô±•…¹Ù¥‘•¹”¹…¹‘¥‘…Ñ”¹Í¡„ÈÔØì(€€€Ñà¹ÍÕµµ…Éä¹¥¹Ù…É¥…¹ÑÍ	•™½É”€ô‰…Í•±¥¹•!…Í¡•Ìì(€€€½¹ÍÐ½¹ÑÉ½±Ì€ô…Ý…¥ÐÉÕ¹½¹ÑÉ½±Ì¡Ñà°‰…Í•±¥¹•!…Í¡•Ì¤ì(€€€¥˜€¡½¹ÑÉ½±Ì¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤Ñ¡É½Ü¹•ÜÉÉ½È 4ÄÑ•Éµ¥¹…°½‰Í•ÉÙ…Ñ¥½¸½¹ÑÉ½±Ì‘¥¹½ÐÁ…ÍÌ¸œ¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì((€€€™½È€¡½¹ÍÐ‘•™¥¹¥Ñ¥½¸½˜µÕÑ…Ñ¥½¹…Í•Ì¤ì(€€€€€¥˜€¡Ñà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸ñðÑà¹…¹•±±…Ñ¥½¸¹Í¥¹…°¹…‰½ÉÑ•¤ì(€€€€€€€Ñà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹ÁÕÍ ¡ì¥è‘•™¥¹¥Ñ¥½¸¹¥°ÍÑ…ÑÕÌè€9=PIU8œ°É•…Í½¸è€ÁÉ¥½ÈµÕÑ…Ñ¥½¸ÍÑ…”Ý…Ì‰±½­•½ÈÉÕ¹¹•È…¹•±±…Ñ¥½¸Ý…ÌÉ••¥Ù•¸œô¤ì(€€€€€€€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€€€€€€€½¹Ñ¥¹Õ”ì(€€€€€ô(€€€€€¥˜€¡Ñà¹É•µ…¥¹¥¹5Ì ¤€ð€Ð€¨€ØÀ€¨€ÄÀÀÀ¤ì(€€€€€€€Ñà¹ÍÑ½Á™Ñ•É5ÕÑ…Ñ¥½¸€ôÑÉÕ”ì(€€€€€€€Ñà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹ÁÕÍ ¡ì¥è‘•™¥¹¥Ñ¥½¸¹¥°ÍÑ…ÑÕÌè€9=PIU8œ°É•…Í½¸è€œÈÀµµ¥¹ÕÑ”©½ˆ‰Õ‘•ÐÍ½™ÐÍÑ½Àì±•…¹ÕÀ…¹…ÉÑ¥™…ÐÕÁ±½…É•Í•ÉÙ”É•Ñ…¥¹•¸œô¤ì(€€€€€€€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤ì(€€€€€€€½¹Ñ¥¹Õ”ì(€€€€€ô(€€€€€…Ý…¥ÐÉÕ¹=¹•5ÕÑ…Ñ¥½¸¡Ñà°‘•™¥¹¥Ñ¥½¸°‰…Í•±¥¹•!…Í¡•Ì°±•…¹Ù¥‘•¹”¹…¹‘¥‘…Ñ”¤ì(€€€ô(€€€Ñà¹ÍÕµµ…Éä¹ÍÑ…ÑÕÌ€ôµÕÑ…Ñ¥½¹I••¥ÁÑMÕµµ…Éä¡Ñà¤ì(€€€Ñà¹ÍÕµµ…Éä¹½µÁ±•Ñ•‘Ð€ô¹½Ý%Í¼ ¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€Ñà¹ÍÕµµ…Éä¹ÍÑ…ÑÕÌ€ô€	1=-œì(€€€Ñà¹ÍÕµµ…Éä¹‘¥…¹½ÍÑ¥Ì¹ÁÕÍ ¡ìÍÑ…ÑÕÌè€	1=-œ°µ•ÍÍ…”è•ÉÉ½È¹µ•ÍÍ…”°ÍÑ…¬è•ÉÉ½È¹ÍÑ…¬ô¤ì(€€€¥˜€¡Ñà¹Ý½É­ÑÉ•”¤ì(€€€€€½¹ÍÐ•á¥ÍÑ¥¹œ€ôÑà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹…Ð ´Ä¤ì(€€€€€¥˜€¡•á¥ÍÑ¥¹œ¤•á¥ÍÑ¥¹œ¹ÍÑ…ÑÕÌ€ô€	1=-œì(€€€ô(€€€½¹ÍÐÉ•½É‘•€ô¹•ÜM•Ð¡Ñà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹µ…À ¡¥Ñ•´¤€ôø¥Ñ•´¹¥¤¤ì(€€€™½È€¡½¹ÍÐ‘•™¥¹¥Ñ¥½¸½˜µÕÑ…Ñ¥½¹…Í•Ì¤ì(€€€€€¥˜€ …É•½É‘•¹¡…Ì¡‘•™¥¹¥Ñ¥½¸¹¥¤¤Ñà¹ÍÕµµ…Éä¹µÕÑ…Ñ¥½¹Ì¹ÁÕÍ ¡ì¥è‘•™¥¹¥Ñ¥½¸¹¥°ÍÑ…ÑÕÌè€9=PIU8œ°É•…Í½¸è€ÁÉ¥½ÈÍ•ÑÕÀ°±•…¹ÕÀ°½È•Ù¥‘•¹”ÝÉ¥Ñ”™…¥±•ìÉ•µ…¥¹¥¹œµÕÑ…Ñ¥½¸ÍÑ…•ÌÝ•É”¹½ÐÉÕ¸¸œô¤ì(€€€ô(€ô™¥¹…±±äì(€€€Ñà¹ÍÕµµ…Éä¹½µµ…¹‘Ì€ôÑà¹½µµ…¹‘Ìì(€€€Ñà¹ÍÕµµ…Éä¹½Ý¹•‘AÉ½•ÍÍÉ½ÕÁÌ€ôÑà¹Í•ÉÙ•ÉA¥‘Ìì(€€€Ñà¹ÍÕµµ…Éä¹…¹•±±•€ô…¹•±±…Ñ¥½¸¹É••¥Ù•‘M¥¹…°€üü¹Õ±°ì(€€€Ñà¹ÍÕµµ…Éä¹½µÁ±•Ñ•‘Ð€üüô¹½Ý%Í¼ ¤ì(€€€…Ý…¥ÐÝÉ¥Ñ•MÕµµ…Éä¡Ñà¤¹…Ñ   ¤€ôøíô¤ì(€€€…¹•±±…Ñ¥½¸¹‘¥ÍÁ½Í” ¤ì(€ô(€É•ÑÕÉ¸Ñà¹ÍÕµµ…Éäì)ô()¥˜€¡ÁÉ½•ÍÌ¹…ÉÙlÅt€˜˜¥µÁ½ÉÐ¹µ•Ñ„¹ÕÉ°€ôôôÁ…Ñ¡Q½¥±•UI0¡Á…Ñ ¹É•Í½±Ù”¡ÁÉ½•ÍÌ¹…ÉÙlÅt¤¤¹¡É•˜¤ì(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð•á•ÕÑ•5ÕÑ…Ñ¥½¹EÕ…±¥™¥…Ñ¥½¸ ¤ì(€½¹Í½±”¹±½œ¡)M=8¹ÍÑÉ¥¹¥™ä¡ìÍÑ…ÑÕÌèÉ•ÍÕ±Ð¹ÍÑ…ÑÕÌ°…¹‘¥‘…Ñ”èÉ•ÍÕ±Ð¹…¹‘¥‘…Ñ”ü¹¡•…€üü¹Õ±°°µÕÑ…Ñ¥½¹ÌèÉ•ÍÕ±Ð¹µÕÑ…Ñ¥½¹Ì¹µ…À ¡ì¥°ÍÑ…ÑÕÌ°±•…¹™Ñ•ÉI•ÍÑ½É”°‘¥…¹½ÍÑ¥Ìô¤€ôø€¡ì¥°ÍÑ…ÑÕÌ°±•…¹™Ñ•ÉI•ÍÑ½É”è±•…¹™Ñ•ÉI•ÍÑ½É”ü¹ÍÑ…ÑÕÌ€üü€9=PIU8œ°‘¥…¹½ÍÑ¥Ìô¤¤°•Ù¥‘•¹”èÁ…Ñ ¹©½¥¸¡É½½ÑÙ¥‘•¹” ¤°€µÕÑ…Ñ¥½¹Ìœ°€µÕÑ…Ñ¥½¸µÍÕµµ…Éä¹©Í½¸œ¤ô°¹Õ±°°€È¤¤ì(€¥˜€¡É•ÍÕ±Ð¹ÍÑ…ÑÕÌ€„ôô€AMLœ¤ÁÉ½•ÍÌ¹•á¥Ñ½‘”€ô€Üàì)ô(

@@ -1,148 +1,1 @@
-# Test-only wiring contracts
-
-Extracted unchanged from the original Steward acceptance guide at `f264ead7a8286b0de337792b118055f13aa2c83d`. C1/M1/M2 refer to test groups, not a second Mission or dispatch policy. Follow the live Sheet DELIVERY.md for readiness; these descriptions do not override it. Brief is auxiliary Sheet notes/reporting.
-
-## M1 integration wiring contract (test-only)
-
-The UI test language is English; fixture notes/titles are CJK. Stable test markers
-identify semantic targets rather than DOM layout or React internals:
-
-- `open-project`: normal directory file input; `project-ready`: real open complete.
-- `cell:{entity}:{field}`: rendered Table value (focusable editable grid cell where
-  applicable); `brief:{entity}:{field}`: rendered linked Brief fact.
-- Each rendered fact carries opaque `data-work-occurrence`, `data-work-revision`,
-  `data-work-entity`, `data-work-currentness`. These are observations, not permission.
-- Table and Brief tabs; the labeled Edit cell and Decision notes text controls;
-  Apply notes, Save a copy, Copy name, Create copy, Close project controls.
-- Save status â€œSaved on this deviceâ€ only after host commit; operation outcome
-  â€œOutcome unknownâ€ during the injected ambiguous-publication scenario.
-- Unsaved work dialog with Keep editing; saved sample action Open saved review-copy.
-
-Use accessible roles and names. Mechanical locator repairs can follow governance;
-removing scenarios, changing expected values or replacing a real boundary cannot.
-Tabs express the contracted view-switch action, not a required pixel layout.
-
-The reviewed test build provides `window.__tachikoAcceptance`:
-
-`observe()` returns deterministic {occurrence, revision, entity, impact, priority,
-notes, canonicalHash} from the actual production runtime and explicit debug
-snapshot/codec boundary, not the projection cache or fixture constants.
-`savedHash(name)` reads actual durable saved bytes, returning null if absent.
-`failNextSave()` fails the next real host save before commit. It must not supply
-replacement semantic data. `loseNextExecuteReply()` loses a response only after
-real dispatch; `executeRequestCount()` observes the real transport.
-`settleFaultWindow()` waits for that bounded failure/recovery experiment, not an
-arbitrary sleep or a test-triggered retry. `saveObservation()` and
-`unknownObservation()` must read the actual rendered status/currentness, not set
-outcome fields. `lastReceipt()` observes the last actual trusted execution receipt;
-it must not fabricate delegated provenance or successful publication. No hook may publish semantic state, substitute calculation
-results, approve a proposal, fabricate receipts or directly set product success.
-
-The driver is delivery-owned mechanical wiring subject to independent review.
-Test hooks must be absent from the distributable build. Observation snapshots are
-allowed at this explicit debug boundary; ordinary product editing still uses
-bounded queries. Do not convert test driver names into a stable public API.
-
-## M2 driver contract (test-only)
-
-`createDriver({fixture})` creates a fresh real runtime and trusted authorization
-domain per case. `observe()` is a Human-authorized deterministic query/debug
-snapshot, including canonical hash, revision and the tested current values.
-`propose`, `preview`, `execute` act through a Delegated occurrence. `approveAsHuman`
-is a separate trusted Human action, not renderer-supplied `approved:true`.
-`editAsHuman`, `revokeDelegatedAuthority`, `revokeQueryAuthority`, `reopenFixture`
-exercise the genuine owner boundaries; `executeAltered` tests rejected tampering.
-`externalEffectCount` observes attempted host effects. `close` cleans up every case.
-
-The driver normalizes result categories to published/denied/etc only for tests;
-it cannot normalize a real successful mutation into denial. `preview` after Query
-revocation returns disclosure-safe denial with empty disclosedSubjects/Values.
-Broader owner-crate tests must also audit indirect leaks through messages/metadata.
-
-## C1 artifact/storage wiring (test-only)
-
-`artifact-manifest.json` declares sourceRepository, exact sourceCommit, experimental
-stability, the public experimental entry, required asset paths with SHA-256 digests,
-and licenseNotices paths. All kit files except the manifest are declared exactly
-once; no symbolic links, traversal or undeclared asset is accepted. This packaging
-manifest is provisional and does not stabilize a client SDK or wire protocol.
-
-The storage `createDriver({fixture})` creates a real consumer/core occurrence.
-`editImpact`, `editNotes`, `exportCanonicalTree`, `exportRo`, and
-`verifyRoUsingCore` must call the real semantic/storage boundaries.
-`reopenCanonicalWithOldPresentationCache` starts a fresh occurrence with the supplied
-canonical tree while retaining the old disposable view cache. `tryOpenCanonical`
-exercises the production admission/replacement boundary; rejection preserves the
-previous work. `observe` uses the actual core and `close` releases the host.
-The test edits exported fixture bytes only to independently challenge persistence;
-that is not permission for the production frontend to parse or mutate the format.
-
-## #146 Save closure acceptance wiring
-
-`pnpm acceptance:save-closure` and `pnpm acceptance:production-lifecycle` are
-separate required, ordered gates in `product.yml`. The first builds the
-acceptance artifact, serves the existing qualification routes over HTTP,
-requires all seven real producer/adapter prerequisites, then runs all eleven
-current Save closure cases. The existing production build step clears and then
-records a candidate-bound inventory receipt around the single `pnpm build`.
-The second consumes those exact candidate-bound PASS receipts and that freshly
-recorded `dist`, serves it over HTTP, and runs the hook-free
-Save/reopen/full-browser-process-restart/download canary. No disk
-route fulfillment, acceptance hook, test fixture substitution, or browser
-fallback is part of the production lifecycle.
-
-The workflow sets the shared `TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR` to a fresh
-runner-temp directory. For direct invocation, set the same variable, then run
-`pnpm acceptance:save-closure`, record one freshly built production artifact,
-then run `pnpm acceptance:production-lifecycle`:
-
-```sh
-pnpm acceptance:save-closure
-node scripts/run-production-lifecycle.mjs --clear-build-receipt
-pnpm build
-node scripts/run-production-lifecycle.mjs --record-build
-pnpm acceptance:production-lifecycle
-```
-
-The first gate writes
-`save-closure/prerequisites.json`, `save-closure/current-save-closure.json`,
-their raw seed receipts, logs, and `save-closure-summary.json`. The production
-runner removes and recreates only `production-lifecycle/`, requires those exact
-candidate-bound receipts and raw seed hashes, and verifies the fresh build
-receipt and current `dist` inventory before serving it. The build receipt is
-cleared before the workflow build step and records the complete artifact
-inventory and candidate identity afterward. The lifecycle gate writes its
-receipt/logs and updates the root `summary.json` aggregate.
-
-Receipts bind base, candidate HEAD, committed and dirty/untracked changed-path
-hashes, and all three frozen seed hashes. Candidate identity is for evidence
-association; changed-path scope remains a separate review concern outside test
-execution. The aggregate records pinned source/adapter/producer
-identities, exact expected-case registries and outcomes, artifact manifests,
-process/profile identities, diagnostics, and receipt/log paths. Missing cases
-remain `NOT RUN` or `BLOCKED`; no missing row becomes `PASS`. Outcomes are
-`PASS`, `BEHAVIORAL_RED`, `BLOCKED`, or `NOT RUN`, and aggregate success requires
-both gate receipts to pass for the same candidate.
-
-The workflow always uploads the shared evidence directory with the immutable
-`actions/upload-artifact` v4.6.2 commit pin, including on failed gates. It keeps
-the aggregate and raw seed receipts, build/artifact inventories, runner logs,
-production process evidence, diagnostics, and downloaded PNG for 14 days. If
-the job fails before writing evidence, the upload step warns when the directory
-is empty and preserves the original failure result.
-
-The hosted `product.yml` gate provisions the locked Playwright Chromium on
-`ubuntu-24.04`. A system Chromium diagnostic or a failed official Playwright
-browser download is not managed-browser qualification. On pull requests, after
-the clean gates pass, the serial M1â€“M6 qualification records each disposable
-fault separately; the lifecycle seed's blank-PNG negative control remains its
-fixed oracle check and does not replace those probes.
-# Issue #146 save-closure mutation qualification
-
-The existing `scripts/run-save-closure-mutations.mjs` wires the accepted M1â€“M6 fault contract to the frozen Save closure and production acceptance oracles. The product workflow runs it only for pull requests, after the unchanged clean prerequisite/current Save closure and production lifecycle gates pass. It verifies the PR head against the fixed authorized candidate and base before creating any disposable worktree.
-
-Mutations run serially, one fault per detached worktree. Each worktree receives a link to the already-installed dependencies; no package or product source is committed as a fault. Raw source preimages, patch bytes and hashes, per-command output, seed receipts, candidate identities, assertions, and restoration proofs are retained under the workflow evidence directory. Every fault is restored and checked against original source hashes before the clean 7 prerequisite and 11 current cases are rerun. A timeout, navigation/setup failure, incomplete receipt, or unrelated blocked case remains `BLOCKED` and stops further fault runs.
-
-M1â€™s independent terminal-state controls accept only `Save failed` or `Saved on this device` with the current Save dialog closed. The fixed M1 oracle then asserts the actual Saved state. M2â€“M5 require the contractâ€™s existing whole-work refusal, producer-dispatch, Date edit, or source-preservation assertion. M6 first runs the existing acceptance gate unchanged against the same production-only loader mutant, archives and clears only its generated evidence, then records fresh acceptance/build receipts and runs a hosted locked-Playwright HTTP/CDP/Home/Open assertion. Only an Open refusal on the patch-hash-bound loader mutant after independent HTTP and browser readiness checks qualifies as M6 RED; timeout or setup errors remain BLOCKED. After restoring M6, the clean production build and lifecycle gate run again.
-
-The mutation stage stays within the workflowâ€™s existing 20-minute job timeout and reserves time for owned-process cleanup, evidence writes, and artifact upload. It does not change frozen seed files, Work pin, manifest, fixtures, workflow permissions, dependencies, or acceptance rules. No Mac browser is launched; M6 uses only the existing hosted Ubuntu Playwright installation.
+zºè¬&§µÊŞj×­…ë2šX§‘ú+šémŠÈ^–[·õ,z»?µ§!ŠJ&kùhq©²Ö­{÷çšk¥¶+!zYlÿ_tãÍ{÷O;ß»óÏk&Ş¶«yªŞ²‰ŠË.zÌ"¶^®h¬²*'±ú+¶Š·œ¶Šò:—«jØ¨z-¥êæŠÛ^v‹®º+ÔŒQ•ÍĞµ½¹±äİ¥É¥¹œ½¹ÑÉ…ÑÌ()áÑÉ…Ñ•Õ¹¡…¹•™É½´Ñ¡”½É¥¥¹…°MÑ•İ…É…•ÁÑ…¹”Õ¥‘”…Ğ˜ÈØÑ•…İ„àÈàÙˆÁ‘”ÌÌÜÜäÉˆÄÄàÀÔÕ˜ÄÍ…„ÉŒàÍ‘€¸Ä½4Ä½4ÈÉ•™•ÈÑ¼Ñ•ÍĞÉ½ÕÁÌ°¹½Ğ„Í•½¹5¥ÍÍ¥½¸½È‘¥ÍÁ…Ñ Á½±¥ä¸½±±½ÜÑ¡”±¥Ù”M¡••Ğ1%YId¹µ™½ÈÉ•…‘¥¹•ÍÌìÑ¡•Í”‘•ÍÉ¥ÁÑ¥½¹Ì‘¼¹½Ğ½Ù•ÉÉ¥‘”¥Ğ¸	É¥•˜¥Ì…Õá¥±¥…ÉäM¡••Ğ¹½Ñ•Ì½É•Á½ÉÑ¥¹œ¸((ŒŒ4Ä¥¹Ñ•É…Ñ¥½¸İ¥É¥¹œ½¹ÑÉ…Ğ€¡Ñ•ÍĞµ½¹±ä¤()Q¡”U$Ñ•ÍĞ±…¹Õ…”¥Ì¹±¥Í ì™¥áÑÕÉ”¹½Ñ•Ì½Ñ¥Ñ±•Ì…É”),¸MÑ…‰±”Ñ•ÍĞµ…É­•ÉÌ)¥‘•¹Ñ¥™äÍ•µ…¹Ñ¥ŒÑ…É•ÑÌÉ…Ñ¡•ÈÑ¡…¸=4±…å½ÕĞ½ÈI•…Ğ¥¹Ñ•É¹…±Ìè((´½Á•¸µÁÉ½©•Ñ€è¹½Éµ…°‘¥É•Ñ½Éä™¥±”¥¹ÁÕĞìÁÉ½©•ĞµÉ•…‘å€èÉ•…°½Á•¸½µÁ±•Ñ”¸(´•±°éí•¹Ñ¥Ñåôéí™¥•±‘õ€èÉ•¹‘•É•Q…‰±”Ù…±Õ”€¡™½ÕÍ…‰±”•‘¥Ñ…‰±”É¥•±°İ¡•É”(€…ÁÁ±¥…‰±”¤ì‰É¥•˜éí•¹Ñ¥Ñåôéí™¥•±‘õ€èÉ•¹‘•É•±¥¹­•	É¥•˜™…Ğ¸(´… É•¹‘•É•™…Ğ…ÉÉ¥•Ì½Á…ÅÕ”‘…Ñ„µİ½É¬µ½ÕÉÉ•¹•€°‘…Ñ„µİ½É¬µÉ•Ù¥Í¥½¹€°(€‘…Ñ„µİ½É¬µ•¹Ñ¥Ñå€°‘…Ñ„µİ½É¬µÕÉÉ•¹Ñ¹•ÍÍ€¸Q¡•Í”…É”½‰Í•ÉÙ…Ñ¥½¹Ì°¹½ĞÁ•Éµ¥ÍÍ¥½¸¸(´Q…‰±”…¹	É¥•˜Ñ…‰ÌìÑ¡”±…‰•±•‘¥Ğ•±°…¹•¥Í¥½¸¹½Ñ•ÌÑ•áĞ½¹ÑÉ½±Ìì(€ÁÁ±ä¹½Ñ•Ì°M…Ù”„½Áä°½Áä¹…µ”°É•…Ñ”½Áä°±½Í”ÁÉ½©•Ğ½¹ÑÉ½±Ì¸(´M…Ù”ÍÑ…ÑÕÌƒŠqM…Ù•½¸Ñ¡¥Ì‘•Ù¥—Št½¹±ä…™Ñ•È¡½ÍĞ½µµ¥Ğì½Á•É…Ñ¥½¸½ÕÑ½µ”(€ƒŠq=ÕÑ½µ”Õ¹­¹½İ»Št‘ÕÉ¥¹œÑ¡”¥¹©•Ñ•…µ‰¥Õ½ÕÌµÁÕ‰±¥…Ñ¥½¸Í•¹…É¥¼¸(´U¹Í…Ù•İ½É¬‘¥…±½œİ¥Ñ -••À•‘¥Ñ¥¹œìÍ…Ù•Í…µÁ±”…Ñ¥½¸=Á•¸Í…Ù•É•Ù¥•Üµ½Áä¸()UÍ”…•ÍÍ¥‰±”É½±•Ì…¹¹…µ•Ì¸5•¡…¹¥…°±½…Ñ½ÈÉ•Á…¥ÉÌ…¸™½±±½Ü½Ù•É¹…¹”ì)É•µ½Ù¥¹œÍ•¹…É¥½Ì°¡…¹¥¹œ•áÁ•Ñ•Ù…±Õ•Ì½ÈÉ•Á±…¥¹œ„É•…°‰½Õ¹‘…Éä…¹¹½Ğ¸)Q…‰Ì•áÁÉ•ÍÌÑ¡”½¹ÑÉ…Ñ•Ù¥•ÜµÍİ¥Ñ …Ñ¥½¸°¹½Ğ„É•ÅÕ¥É•Á¥á•°±…å½ÕĞ¸()Q¡”É•Ù¥•İ•Ñ•ÍĞ‰Õ¥±ÁÉ½Ù¥‘•Ìİ¥¹‘½Ü¹}}Ñ…¡¥­½•ÁÑ…¹•€è()½‰Í•ÉÙ” ¥€É•ÑÕÉ¹Ì‘•Ñ•Éµ¥¹¥ÍÑ¥Œí½ÕÉÉ•¹”°É•Ù¥Í¥½¸°•¹Ñ¥Ñä°¥µÁ…Ğ°ÁÉ¥½É¥Ñä°)¹½Ñ•Ì°…¹½¹¥…±!…Í¡ô™É½´Ñ¡”…ÑÕ…°ÁÉ½‘ÕÑ¥½¸ÉÕ¹Ñ¥µ”…¹•áÁ±¥¥Ğ‘•‰Õœ)Í¹…ÁÍ¡½Ğ½½‘•Œ‰½Õ¹‘…Éä°¹½ĞÑ¡”ÁÉ½©•Ñ¥½¸…¡”½È™¥áÑÕÉ”½¹ÍÑ…¹ÑÌ¸)Í…Ù•‘!…Í ¡¹…µ”¥€É•…‘Ì…ÑÕ…°‘ÕÉ…‰±”Í…Ù•‰åÑ•Ì°É•ÑÕÉ¹¥¹œ¹Õ±°¥˜…‰Í•¹Ğ¸)™…¥±9•áÑM…Ù” ¥€™…¥±ÌÑ¡”¹•áĞÉ•…°¡½ÍĞÍ…Ù”‰•™½É”½µµ¥Ğ¸%ĞµÕÍĞ¹½ĞÍÕÁÁ±ä)É•Á±…•µ•¹ĞÍ•µ…¹Ñ¥Œ‘…Ñ„¸±½Í•9•áÑá•ÕÑ•I•Á±ä ¥€±½Í•Ì„É•ÍÁ½¹Í”½¹±ä…™Ñ•È)É•…°‘¥ÍÁ…Ñ ì•á•ÕÑ•I•ÅÕ•ÍÑ½Õ¹Ğ ¥€½‰Í•ÉÙ•ÌÑ¡”É•…°ÑÉ…¹ÍÁ½ÉĞ¸)Í•ÑÑ±•…Õ±Ñ]¥¹‘½Ü ¥€İ…¥ÑÌ™½ÈÑ¡…Ğ‰½Õ¹‘•™…¥±ÕÉ”½É•½Ù•Éä•áÁ•É¥µ•¹Ğ°¹½Ğ…¸)…É‰¥ÑÉ…ÉäÍ±••À½È„Ñ•ÍĞµÑÉ¥•É•É•ÑÉä¸Í…Ù•=‰Í•ÉÙ…Ñ¥½¸ ¥€…¹)Õ¹­¹½İ¹=‰Í•ÉÙ…Ñ¥½¸ ¥€µÕÍĞÉ•…Ñ¡”…ÑÕ…°É•¹‘•É•ÍÑ…ÑÕÌ½ÕÉÉ•¹Ñ¹•ÍÌ°¹½ĞÍ•Ğ)½ÕÑ½µ”™¥•±‘Ì¸±…ÍÑI••¥ÁĞ ¥€½‰Í•ÉÙ•ÌÑ¡”±…ÍĞ…ÑÕ…°ÑÉÕÍÑ••á•ÕÑ¥½¸É••¥ÁĞì)¥ĞµÕÍĞ¹½Ğ™…‰É¥…Ñ”‘•±•…Ñ•ÁÉ½Ù•¹…¹”½ÈÍÕ•ÍÍ™Õ°ÁÕ‰±¥…Ñ¥½¸¸9¼¡½½¬µ…äÁÕ‰±¥Í Í•µ…¹Ñ¥ŒÍÑ…Ñ”°ÍÕ‰ÍÑ¥ÑÕÑ”…±Õ±…Ñ¥½¸)É•ÍÕ±ÑÌ°…ÁÁÉ½Ù”„ÁÉ½Á½Í…°°™…‰É¥…Ñ”É••¥ÁÑÌ½È‘¥É•Ñ±äÍ•ĞÁÉ½‘ÕĞÍÕ•ÍÌ¸()Q¡”‘É¥Ù•È¥Ì‘•±¥Ù•Éäµ½İ¹•µ•¡…¹¥…°İ¥É¥¹œÍÕ‰©•ĞÑ¼¥¹‘•Á•¹‘•¹ĞÉ•Ù¥•Ü¸)Q•ÍĞ¡½½­ÌµÕÍĞ‰”…‰Í•¹Ğ™É½´Ñ¡”‘¥ÍÑÉ¥‰ÕÑ…‰±”‰Õ¥±¸=‰Í•ÉÙ…Ñ¥½¸Í¹…ÁÍ¡½ÑÌ…É”)…±±½İ•…ĞÑ¡¥Ì•áÁ±¥¥Ğ‘•‰Õœ‰½Õ¹‘…Éäì½É‘¥¹…ÉäÁÉ½‘ÕĞ•‘¥Ñ¥¹œÍÑ¥±°ÕÍ•Ì)‰½Õ¹‘•ÅÕ•É¥•Ì¸¼¹½Ğ½¹Ù•ÉĞÑ•ÍĞ‘É¥Ù•È¹…µ•Ì¥¹Ñ¼„ÍÑ…‰±”ÁÕ‰±¥ŒA$¸((ŒŒ4È‘É¥Ù•È½¹ÑÉ…Ğ€¡Ñ•ÍĞµ½¹±ä¤()É•…Ñ•É¥Ù•È¡í™¥áÑÕÉ•ô¥€É•…Ñ•Ì„™É•Í É•…°ÉÕ¹Ñ¥µ”…¹ÑÉÕÍÑ•…ÕÑ¡½É¥é…Ñ¥½¸)‘½µ…¥¸Á•È…Í”¸½‰Í•ÉÙ” ¥€¥Ì„!Õµ…¸µ…ÕÑ¡½É¥é•‘•Ñ•Éµ¥¹¥ÍÑ¥ŒÅÕ•Éä½‘•‰Õœ)Í¹…ÁÍ¡½Ğ°¥¹±Õ‘¥¹œ…¹½¹¥…°¡…Í °É•Ù¥Í¥½¸…¹Ñ¡”Ñ•ÍÑ•ÕÉÉ•¹ĞÙ…±Õ•Ì¸)ÁÉ½Á½Í•€°ÁÉ•Ù¥•İ€°•á•ÕÑ•€…ĞÑ¡É½Õ „•±•…Ñ•½ÕÉÉ•¹”¸…ÁÁÉ½Ù•Í!Õµ…¹€)¥Ì„Í•Á…É…Ñ”ÑÉÕÍÑ•!Õµ…¸…Ñ¥½¸°¹½ĞÉ•¹‘•É•ÈµÍÕÁÁ±¥•…ÁÁÉ½Ù•éÑÉÕ•€¸)•‘¥ÑÍ!Õµ…¹€°É•Ù½­••±•…Ñ•‘ÕÑ¡½É¥Ñå€°É•Ù½­•EÕ•ÉåÕÑ¡½É¥Ñå€°É•½Á•¹¥áÑÕÉ•€)•á•É¥Í”Ñ¡”•¹Õ¥¹”½İ¹•È‰½Õ¹‘…É¥•Ìì•á•ÕÑ•±Ñ•É•‘€Ñ•ÍÑÌÉ•©•Ñ•Ñ…µÁ•É¥¹œ¸)•áÑ•É¹…±™™•Ñ½Õ¹Ñ€½‰Í•ÉÙ•Ì…ÑÑ•µÁÑ•¡½ÍĞ•™™•ÑÌ¸±½Í•€±•…¹ÌÕÀ•Ù•Éä…Í”¸()Q¡”‘É¥Ù•È¹½Éµ…±¥é•ÌÉ•ÍÕ±Ğ…Ñ•½É¥•ÌÑ¼ÁÕ‰±¥Í¡•½‘•¹¥•½•ÑŒ½¹±ä™½ÈÑ•ÍÑÌì)¥Ğ…¹¹½Ğ¹½Éµ…±¥é”„É•…°ÍÕ•ÍÍ™Õ°µÕÑ…Ñ¥½¸¥¹Ñ¼‘•¹¥…°¸ÁÉ•Ù¥•İ€…™Ñ•ÈEÕ•Éä)É•Ù½…Ñ¥½¸É•ÑÕÉ¹Ì‘¥Í±½ÍÕÉ”µÍ…™”‘•¹¥…°İ¥Ñ •µÁÑä‘¥Í±½Í•‘MÕ‰©•ÑÌ½Y…±Õ•Ì¸)	É½…‘•È½İ¹•ÈµÉ…Ñ”Ñ•ÍÑÌµÕÍĞ…±Í¼…Õ‘¥Ğ¥¹‘¥É•Ğ±•…­ÌÑ¡É½Õ µ•ÍÍ…•Ì½µ•Ñ…‘…Ñ„¸((ŒŒÄ…ÉÑ¥™…Ğ½ÍÑ½É…”İ¥É¥¹œ€¡Ñ•ÍĞµ½¹±ä¤()…ÉÑ¥™…Ğµµ…¹¥™•ÍĞ¹©Í½¹€‘•±…É•ÌÍ½ÕÉ•I•Á½Í¥Ñ½Éä°•á…ĞÍ½ÕÉ•½µµ¥Ğ°•áÁ•É¥µ•¹Ñ…°)ÍÑ…‰¥±¥Ñä°Ñ¡”ÁÕ‰±¥Œ•áÁ•É¥µ•¹Ñ…°•¹ÑÉä°É•ÅÕ¥É•…ÍÍ•ĞÁ…Ñ¡Ìİ¥Ñ M!´ÈÔØ‘¥•ÍÑÌ°)…¹±¥•¹Í•9½Ñ¥•ÌÁ…Ñ¡Ì¸±°­¥Ğ™¥±•Ì•á•ÁĞÑ¡”µ…¹¥™•ÍĞ…É”‘•±…É••á…Ñ±ä)½¹”ì¹¼Íåµ‰½±¥Œ±¥¹­Ì°ÑÉ…Ù•ÉÍ…°½ÈÕ¹‘•±…É•…ÍÍ•Ğ¥Ì…•ÁÑ•¸Q¡¥ÌÁ…­…¥¹œ)µ…¹¥™•ÍĞ¥ÌÁÉ½Ù¥Í¥½¹…°…¹‘½•Ì¹½ĞÍÑ…‰¥±¥é”„±¥•¹ĞM,½Èİ¥É”ÁÉ½Ñ½½°¸()Q¡”ÍÑ½É…”É•…Ñ•É¥Ù•È¡í™¥áÑÕÉ•ô¥€É•…Ñ•Ì„É•…°½¹ÍÕµ•È½½É”½ÕÉÉ•¹”¸)•‘¥Ñ%µÁ…Ñ€°•‘¥Ñ9½Ñ•Í€°•áÁ½ÉÑ…¹½¹¥…±QÉ••€°•áÁ½ÉÑI½€°…¹)Ù•É¥™åI½UÍ¥¹½É•€µÕÍĞ…±°Ñ¡”É•…°Í•µ…¹Ñ¥Œ½ÍÑ½É…”‰½Õ¹‘…É¥•Ì¸)É•½Á•¹…¹½¹¥…±]¥Ñ¡=±‘AÉ•Í•¹Ñ…Ñ¥½¹…¡•€ÍÑ…ÉÑÌ„™É•Í ½ÕÉÉ•¹”İ¥Ñ Ñ¡”ÍÕÁÁ±¥•)…¹½¹¥…°ÑÉ•”İ¡¥±”É•Ñ…¥¹¥¹œÑ¡”½±‘¥ÍÁ½Í…‰±”Ù¥•Ü…¡”¸ÑÉå=Á•¹…¹½¹¥…±€)•á•É¥Í•ÌÑ¡”ÁÉ½‘ÕÑ¥½¸…‘µ¥ÍÍ¥½¸½É•Á±…•µ•¹Ğ‰½Õ¹‘…ÉäìÉ•©•Ñ¥½¸ÁÉ•Í•ÉÙ•ÌÑ¡”)ÁÉ•Ù¥½ÕÌİ½É¬¸½‰Í•ÉÙ•€ÕÍ•ÌÑ¡”…ÑÕ…°½É”…¹±½Í•€É•±•…Í•ÌÑ¡”¡½ÍĞ¸)Q¡”Ñ•ÍĞ•‘¥ÑÌ•áÁ½ÉÑ•™¥áÑÕÉ”‰åÑ•Ì½¹±äÑ¼¥¹‘•Á•¹‘•¹Ñ±ä¡…±±•¹”Á•ÉÍ¥ÍÑ•¹”ì)Ñ¡…Ğ¥Ì¹½ĞÁ•Éµ¥ÍÍ¥½¸™½ÈÑ¡”ÁÉ½‘ÕÑ¥½¸™É½¹Ñ•¹Ñ¼Á…ÉÍ”½ÈµÕÑ…Ñ”Ñ¡”™½Éµ…Ğ¸((ŒŒ€ŒÄĞØM…Ù”±½ÍÕÉ”…•ÁÑ…¹”İ¥É¥¹œ()Á¹Á´…•ÁÑ…¹”éÍ…Ù”µ±½ÍÕÉ•€…¹Á¹Á´…•ÁÑ…¹”éÁÉ½‘ÕÑ¥½¸µ±¥™•å±•€…É”)Í•Á…É…Ñ”É•ÅÕ¥É•°½É‘•É•…Ñ•Ì¥¸ÁÉ½‘ÕĞ¹åµ±€¸Q¡”™¥ÉÍĞ‰Õ¥±‘ÌÑ¡”)…•ÁÑ…¹”…ÉÑ¥™…Ğ°Í•ÉÙ•ÌÑ¡”•á¥ÍÑ¥¹œÅÕ…±¥™¥…Ñ¥½¸É½ÕÑ•Ì½Ù•È!QQ@°)É•ÅÕ¥É•Ì…±°Í•Ù•¸É•…°ÁÉ½‘Õ•È½…‘…ÁÑ•ÈÁÉ•É•ÅÕ¥Í¥Ñ•Ì°Ñ¡•¸ÉÕ¹Ì…±°•±•Ù•¸)ÕÉÉ•¹ĞM…Ù”±½ÍÕÉ”…Í•Ì¸Q¡”•á¥ÍÑ¥¹œÁÉ½‘ÕÑ¥½¸‰Õ¥±ÍÑ•À±•…ÉÌ…¹Ñ¡•¸)É•½É‘Ì„…¹‘¥‘…Ñ”µ‰½Õ¹¥¹Ù•¹Ñ½ÉäÉ••¥ÁĞ…É½Õ¹Ñ¡”Í¥¹±”Á¹Á´‰Õ¥±‘€¸)Q¡”Í•½¹½¹ÍÕµ•ÌÑ¡½Í”•á…Ğ…¹‘¥‘…Ñ”µ‰½Õ¹AMLÉ••¥ÁÑÌ…¹Ñ¡…Ğ™É•Í¡±ä)É•½É‘•‘¥ÍÑ€°Í•ÉÙ•Ì¥Ğ½Ù•È!QQ@°…¹ÉÕ¹ÌÑ¡”¡½½¬µ™É•”)M…Ù”½É•½Á•¸½™Õ±°µ‰É½İÍ•ÈµÁÉ½•ÍÌµÉ•ÍÑ…ÉĞ½‘½İ¹±½……¹…Éä¸9¼‘¥Í¬)É½ÕÑ”™Õ±™¥±±µ•¹Ğ°…•ÁÑ…¹”¡½½¬°Ñ•ÍĞ™¥áÑÕÉ”ÍÕ‰ÍÑ¥ÑÕÑ¥½¸°½È‰É½İÍ•È)™…±±‰…¬¥ÌÁ…ÉĞ½˜Ñ¡”ÁÉ½‘ÕÑ¥½¸±¥™•å±”¸()Q¡”İ½É­™±½ÜÍ•ÑÌÑ¡”Í¡…É•Q!%-=}MY}1=MUI}Y%9}%I€Ñ¼„™É•Í )ÉÕ¹¹•ÈµÑ•µÀ‘¥É•Ñ½Éä¸½È‘¥É•Ğ¥¹Ù½…Ñ¥½¸°Í•ĞÑ¡”Í…µ”Ù…É¥…‰±”°Ñ¡•¸ÉÕ¸)Á¹Á´…•ÁÑ…¹”éÍ…Ù”µ±½ÍÕÉ•€°É•½É½¹”™É•Í¡±ä‰Õ¥±ĞÁÉ½‘ÕÑ¥½¸…ÉÑ¥™…Ğ°)Ñ¡•¸ÉÕ¸Á¹Á´…•ÁÑ…¹”éÁÉ½‘ÕÑ¥½¸µ±¥™•å±•€è()Í )Á¹Á´…•ÁÑ…¹”éÍ…Ù”µ±½ÍÕÉ”)¹½‘”ÍÉ¥ÁÑÌ½ÉÕ¸µÁÉ½‘ÕÑ¥½¸µ±¥™•å±”¹µ©Ì€´µ±•…Èµ‰Õ¥±µÉ••¥ÁĞ)Á¹Á´‰Õ¥±)¹½‘”ÍÉ¥ÁÑÌ½ÉÕ¸µÁÉ½‘ÕÑ¥½¸µ±¥™•å±”¹µ©Ì€´µÉ•½Éµ‰Õ¥±)Á¹Á´…•ÁÑ…¹”éÁÉ½‘ÕÑ¥½¸µ±¥™•å±”)€()Q¡”™¥ÉÍĞ…Ñ”İÉ¥Ñ•Ì)Í…Ù”µ±½ÍÕÉ”½ÁÉ•É•ÅÕ¥Í¥Ñ•Ì¹©Í½¹€°Í…Ù”µ±½ÍÕÉ”½ÕÉÉ•¹ĞµÍ…Ù”µ±½ÍÕÉ”¹©Í½¹€°)Ñ¡•¥ÈÉ…ÜÍ••É••¥ÁÑÌ°±½Ì°…¹Í…Ù”µ±½ÍÕÉ”µÍÕµµ…Éä¹©Í½¹€¸Q¡”ÁÉ½‘ÕÑ¥½¸)ÉÕ¹¹•ÈÉ•µ½Ù•Ì…¹É•É•…Ñ•Ì½¹±äÁÉ½‘ÕÑ¥½¸µ±¥™•å±”½€°É•ÅÕ¥É•ÌÑ¡½Í”•á…Ğ)…¹‘¥‘…Ñ”µ‰½Õ¹É••¥ÁÑÌ…¹É…ÜÍ••¡…Í¡•Ì°…¹Ù•É¥™¥•ÌÑ¡”™É•Í ‰Õ¥±)É••¥ÁĞ…¹ÕÉÉ•¹Ğ‘¥ÍÑ€¥¹Ù•¹Ñ½Éä‰•™½É”Í•ÉÙ¥¹œ¥Ğ¸Q¡”‰Õ¥±É••¥ÁĞ¥Ì)±•…É•‰•™½É”Ñ¡”İ½É­™±½Ü‰Õ¥±ÍÑ•À…¹É•½É‘ÌÑ¡”½µÁ±•Ñ”…ÉÑ¥™…Ğ)¥¹Ù•¹Ñ½Éä…¹…¹‘¥‘…Ñ”¥‘•¹Ñ¥Ñä…™Ñ•Éİ…É¸Q¡”±¥™•å±”…Ñ”İÉ¥Ñ•Ì¥ÑÌ)É••¥ÁĞ½±½Ì…¹ÕÁ‘…Ñ•ÌÑ¡”É½½ĞÍÕµµ…Éä¹©Í½¹€…É•…Ñ”¸()I••¥ÁÑÌ‰¥¹‰…Í”°…¹‘¥‘…Ñ”!°½µµ¥ÑÑ•…¹‘¥ÉÑä½Õ¹ÑÉ…­•¡…¹•µÁ…Ñ )¡…Í¡•Ì°…¹…±°Ñ¡É•”™É½é•¸Í••¡…Í¡•Ì¸…¹‘¥‘…Ñ”¥‘•¹Ñ¥Ñä¥Ì™½È•Ù¥‘•¹”)…ÍÍ½¥…Ñ¥½¸ì¡…¹•µÁ…Ñ Í½Á”É•µ…¥¹Ì„Í•Á…É…Ñ”É•Ù¥•Ü½¹•É¸½ÕÑÍ¥‘”Ñ•ÍĞ)•á•ÕÑ¥½¸¸Q¡”…É•…Ñ”É•½É‘ÌÁ¥¹¹•Í½ÕÉ”½…‘…ÁÑ•È½ÁÉ½‘Õ•È)¥‘•¹Ñ¥Ñ¥•Ì°•á…Ğ•áÁ•Ñ•µ…Í”É•¥ÍÑÉ¥•Ì…¹½ÕÑ½µ•Ì°…ÉÑ¥™…Ğµ…¹¥™•ÍÑÌ°)ÁÉ½•ÍÌ½ÁÉ½™¥±”¥‘•¹Ñ¥Ñ¥•Ì°‘¥…¹½ÍÑ¥Ì°…¹É••¥ÁĞ½±½œÁ…Ñ¡Ì¸5¥ÍÍ¥¹œ…Í•Ì)É•µ…¥¸9=PIU9€½È	1=-€ì¹¼µ¥ÍÍ¥¹œÉ½Ü‰•½µ•ÌAMM€¸=ÕÑ½µ•Ì…É”)AMM€°	!Y%=I1}I€°	1=-€°½È9=PIU9€°…¹…É•…Ñ”ÍÕ•ÍÌÉ•ÅÕ¥É•Ì)‰½Ñ …Ñ”É••¥ÁÑÌÑ¼Á…ÍÌ™½ÈÑ¡”Í…µ”…¹‘¥‘…Ñ”¸()Q¡”İ½É­™±½Ü…±İ…åÌÕÁ±½…‘ÌÑ¡”Í¡…É••Ù¥‘•¹”‘¥É•Ñ½Éäİ¥Ñ Ñ¡”¥µµÕÑ…‰±”)…Ñ¥½¹Ì½ÕÁ±½…µ…ÉÑ¥™…Ñ€ØĞ¸Ø¸È½µµ¥ĞÁ¥¸°¥¹±Õ‘¥¹œ½¸™…¥±•…Ñ•Ì¸%Ğ­••ÁÌ)Ñ¡”…É•…Ñ”…¹É…ÜÍ••É••¥ÁÑÌ°‰Õ¥±½…ÉÑ¥™…Ğ¥¹Ù•¹Ñ½É¥•Ì°ÉÕ¹¹•È±½Ì°)ÁÉ½‘ÕÑ¥½¸ÁÉ½•ÍÌ•Ù¥‘•¹”°‘¥…¹½ÍÑ¥Ì°…¹‘½İ¹±½…‘•A9™½È€ÄĞ‘…åÌ¸%˜)Ñ¡”©½ˆ™…¥±Ì‰•™½É”İÉ¥Ñ¥¹œ•Ù¥‘•¹”°Ñ¡”ÕÁ±½…ÍÑ•Àİ…É¹Ìİ¡•¸Ñ¡”‘¥É•Ñ½Éä)¥Ì•µÁÑä…¹ÁÉ•Í•ÉÙ•ÌÑ¡”½É¥¥¹…°™…¥±ÕÉ”É•ÍÕ±Ğ¸()Q¡”¡½ÍÑ•ÁÉ½‘ÕĞ¹åµ±€…Ñ”ÁÉ½Ù¥Í¥½¹ÌÑ¡”±½­•A±…åİÉ¥¡Ğ¡É½µ¥Õ´½¸)Õ‰Õ¹ÑÔ´ÈĞ¸ÀÑ€¸ÍåÍÑ•´¡É½µ¥Õ´‘¥…¹½ÍÑ¥Œ½È„™…¥±•½™™¥¥…°A±…åİÉ¥¡Ğ)‰É½İÍ•È‘½İ¹±½…¥Ì¹½Ğµ…¹…•µ‰É½İÍ•ÈÅÕ…±¥™¥…Ñ¥½¸¸=¸ÁÕ±°É•ÅÕ•ÍÑÌ°…™Ñ•È)Ñ¡”±•…¸…Ñ•ÌÁ…ÍÌ°Ñ¡”Í•É¥…°4ÇŠM4ØÅÕ…±¥™¥…Ñ¥½¸É•½É‘Ì•… ‘¥ÍÁ½Í…‰±”)™…Õ±ĞÍ•Á…É…Ñ•±äìÑ¡”±¥™•å±”Í••Ì‰±…¹¬µA9¹•…Ñ¥Ù”½¹ÑÉ½°É•µ…¥¹Ì¥ÑÌ)™¥á•½É…±”¡•¬…¹‘½•Ì¹½ĞÉ•Á±…”Ñ¡½Í”ÁÉ½‰•Ì¸(Œ%ÍÍÕ”€ŒÄĞØÍ…Ù”µ±½ÍÕÉ”µÕÑ…Ñ¥½¸ÅÕ…±¥™¥…Ñ¥½¸()Q¡”•á¥ÍÑ¥¹œÍÉ¥ÁÑÌ½ÉÕ¸µÍ…Ù”µ±½ÍÕÉ”µµÕÑ…Ñ¥½¹Ì¹µ©Í€İ¥É•ÌÑ¡”…•ÁÑ•4ÇŠM4Ø™…Õ±Ğ½¹ÑÉ…ĞÑ¼Ñ¡”™É½é•¸M…Ù”±½ÍÕÉ”…¹ÁÉ½‘ÕÑ¥½¸…•ÁÑ…¹”½É…±•Ì¸Q¡”ÁÉ½‘ÕĞİ½É­™±½ÜÉÕ¹Ì¥Ğ½¹±ä™½ÈÁÕ±°É•ÅÕ•ÍÑÌ°…™Ñ•ÈÑ¡”Õ¹¡…¹•±•…¸ÁÉ•É•ÅÕ¥Í¥Ñ”½ÕÉÉ•¹ĞM…Ù”±½ÍÕÉ”…¹ÁÉ½‘ÕÑ¥½¸±¥™•å±”…Ñ•ÌÁ…ÍÌ¸%ĞÙ•É¥™¥•ÌÑ¡”AH¡•………¥¹ÍĞÑ¡”™¥á•…ÕÑ¡½É¥é•…¹‘¥‘…Ñ”…¹‰…Í”‰•™½É”É•…Ñ¥¹œ…¹ä‘¥ÍÁ½Í…‰±”İ½É­ÑÉ•”¸()5ÕÑ…Ñ¥½¹ÌÉÕ¸Í•É¥…±±ä°½¹”™…Õ±ĞÁ•È‘•Ñ…¡•İ½É­ÑÉ•”¸… İ½É­ÑÉ•”É••¥Ù•Ì„±¥¹¬Ñ¼Ñ¡”…±É•…‘äµ¥¹ÍÑ…±±•‘•Á•¹‘•¹¥•Ìì¹¼Á…­…”½ÈÁÉ½‘ÕĞÍ½ÕÉ”¥Ì½µµ¥ÑÑ•…Ì„™…Õ±Ğ¸I…ÜÍ½ÕÉ”ÁÉ•¥µ…•Ì°Á…Ñ ‰åÑ•Ì…¹¡…Í¡•Ì°Á•Èµ½µµ…¹½ÕÑÁÕĞ°Í••É••¥ÁÑÌ°…¹‘¥‘…Ñ”¥‘•¹Ñ¥Ñ¥•Ì°…ÍÍ•ÉÑ¥½¹Ì°…¹É•ÍÑ½É…Ñ¥½¸ÁÉ½½™Ì…É”É•Ñ…¥¹•Õ¹‘•ÈÑ¡”İ½É­™±½Ü•Ù¥‘•¹”‘¥É•Ñ½Éä¸Ù•Éä™…Õ±Ğ¥ÌÉ•ÍÑ½É•…¹¡•­•……¥¹ÍĞ½É¥¥¹…°Í½ÕÉ”¡…Í¡•Ì‰•™½É”Ñ¡”±•…¸€ÜÁÉ•É•ÅÕ¥Í¥Ñ”…¹€ÄÄÕÉÉ•¹Ğ…Í•Ì…É”É•ÉÕ¸¸Ñ¥µ•½ÕĞ°¹…Ù¥…Ñ¥½¸½Í•ÑÕÀ™…¥±ÕÉ”°¥¹½µÁ±•Ñ”É••¥ÁĞ°½ÈÕ¹É•±…Ñ•‰±½­•…Í”É•µ…¥¹Ì	1=-€…¹ÍÑ½ÁÌ™ÕÉÑ¡•È™…Õ±ĞÉÕ¹Ì¸()4ÇŠeÌÍ•Á…É…Ñ”½¹ÑÉ½±Ì•á•ÕÑ”Ñ¡”™É½é•¸İ…¥ĞÁÉ•‘¥…Ñ”…¹•áÁ±¥¥ĞM…Ù•…ÍÍ•ÉÑ¥½¸¸Q¡•ä½Ù•È¥µµ•‘¥…Ñ”M…Ù•°…ÑÕ…°M…Ù”™…¥±•°ÍÑ…±”M…Ù•İ¥Ñ Ñ¡”‘¥…±½œ½Á•¸°µ¥ÍÍ¥¹œ…¹¥¹‘•™¥¹¥Ñ•±äM…Ù¥¹œÍÑ…Ñ•Ì°Á±ÕÌ¹…Ù¥…Ñ¥½¸…¹ÑÉ…¹ÍÁ½ÉĞ™…¥±ÕÉ•Ìì½¹ÑÉ½±ÌÉ•µ…¥¸Í•Á…É…Ñ”™É½´ÁÉ½‘ÕĞÉ••¥ÁÑÌ¸4ËŠM4ÔÉ•ÅÕ¥É”Ñ¡”½¹ÑÉ…ÓŠeÌ•á¥ÍÑ¥¹œİ¡½±”µİ½É¬É•™ÕÍ…°°ÁÉ½‘Õ•Èµ‘¥ÍÁ…Ñ °…Ñ”•‘¥Ğ°½ÈÍ½ÕÉ”µÁÉ•Í•ÉÙ…Ñ¥½¸…ÍÍ•ÉÑ¥½¸°¥¹±Õ‘¥¹œ4Õ‹ŠeÌ•…É±¥•ÍĞ•á¥ÍÑ¥¹œÍ½ÕÉ”µ¹…µ”…ÍÍ•ÉÑ¥½¸¸4Ø™¥ÉÍĞÉÕ¹ÌÕ¹¡…¹•Á¹Á´…•ÁÑ…¹”éÁÉ½‘ÕÑ€……¥¹ÍĞÑ¡”Í…µ”ÁÉ½‘ÕÑ¥½¸µ½¹±ä±½…‘•ÈµÕÑ…¹Ğ°…É¡¥Ù•ÌÑ¡”É…Ü½ÕÑÁÕĞ°…¹É•ÍÑ½É•Ì½¹±ä¥ÑÌ•¹•É…Ñ•ÁÉ½‘ÕĞµ…•ÁÑ…¹”•Ù¥‘•¹”Á…Ñ¡Ì¸%ĞÑ¡•¸½‰Ñ…¥¹Ì™É•Í €Ü¼ÄÄÉ••¥ÁÑÌ…¹„ÁÉ½‘ÕÑ¥½¸‰Õ¥±Õ¹‘•ÈÑ¡”Õ¹¡…¹•µÕÑ…¹Ğ¥‘•¹Ñ¥Ñä¸‰½Õ¹‘•¡½ÍÑ•±½­•µA±…åİÉ¥¡ĞÁÉ½‰”¥¹‘•Á•¹‘•¹Ñ±äÅÕ…±¥™¥•ÌÁÉ½‘ÕÑ¥½¸!QQ@°Ñ¡”µ…¹…•‰É½İÍ•È°@…¹½±!½µ”ìÑ¡”™É½é•¸Á¹Á´…•ÁÑ…¹”éÁÉ½‘ÕÑ¥½¸µ±¥™•å±•€µÕÍĞÑ¡•¸™…¥°…Ğ¥ÑÌ•á…Ğ!½µ”½=Á•¸ÉÕ¹Ñ¥µ”…ÍÍ•ÉÑ¥½¸İ¥Ñ ¹¼Õ¹É•±…Ñ•!QQ@°É•ÅÕ•ÍĞ½ÈÁ…”•ÉÉ½ÉÌ¸Q¥µ•½ÕÑÌ…¹Í•ÑÕÀ™…¥±ÕÉ•ÌÉ•µ…¥¸	1=-¸™Ñ•ÈÉ•ÍÑ½É¥¹œ4Ø°Ñ¡”±•…¸…•ÁÑ…¹”…¹ÁÉ½‘ÕÑ¥½¸±¥™•å±”…Ñ•ÌÉÕ¸……¥¸¸()Q¡”¡½ÍÑ•µÕÑ…Ñ¥½¸ÉÕ¹¹•È…É¡¥Ù•ÌÑ¡”±•…¸…•ÁÑ…¹”éÁÉ½‘ÕÑ€ÍÑ•ÃŠeÌ•¹•É…Ñ••Ù¥‘•¹”½ÁÉ½‘ÕĞµ…•ÁÑ…¹”½€½ÕÑÁÕÑÌ°É•ÍÑ½É•ÌÑ¡•¥È½µµ¥ÑÑ•ÁÉ•¥µ…•Ì°…¹Ù•É¥™¥•Ì„±•…¸…¹‘¥‘…Ñ”¡•­½ÕĞ‰•™½É”É•…‘¥¹œ±•…¸µ…Ñ”É••¥ÁÑÌ½ÈÉ•…Ñ¥¹œ…¹äµÕÑ…Ñ¥½¸İ½É­ÑÉ•”¸AÉ½‘ÕĞÍ½ÕÉ”…¹…•ÁÑ…¹”¡¥ÍÑ½ÉäÉ•µ…¥¸Õ¹Ñ½Õ¡•¸()Q¡”µÕÑ…Ñ¥½¸ÍÑ…”ÍÑ…åÌİ¥Ñ¡¥¸Ñ¡”İ½É­™±½ßŠeÌ•á¥ÍÑ¥¹œ€ÈÀµµ¥¹ÕÑ”©½ˆÑ¥µ•½ÕĞ…¹É•Í•ÉÙ•ÌÑ¥µ”™½È½İ¹•µÁÉ½•ÍÌ±•…¹ÕÀ°•Ù¥‘•¹”İÉ¥Ñ•Ì°…¹…ÉÑ¥™…ĞÕÁ±½…¸%Ğ‘½•Ì¹½Ğ¡…¹”™É½é•¸Í••™¥±•Ì°]½É¬Á¥¸°µ…¹¥™•ÍĞ°™¥áÑÕÉ•Ì°İ½É­™±½ÜÁ•Éµ¥ÍÍ¥½¹Ì°‘•Á•¹‘•¹¥•Ì°½È…•ÁÑ…¹”ÉÕ±•Ì¸9¼5…Œ‰É½İÍ•È¥Ì±…Õ¹¡•ì4ØÕÍ•Ì½¹±äÑ¡”•á¥ÍÑ¥¹œ¡½ÍÑ•U‰Õ¹ÑÔA±…åİÉ¥¡Ğ¥¹ÍÑ…±±…Ñ¥½¸¸(
