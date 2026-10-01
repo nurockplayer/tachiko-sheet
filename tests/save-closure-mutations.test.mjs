@@ -317,8 +317,10 @@ test('M6 clean/mutant favicon parity remains diagnostic and every observed 404 s
       url: `http://127.0.0.1:${port}/favicon.ico`, sameOrigin: true, method: 'GET', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' });
     proof.sourceIconAudit = { status: 'PASS', references: [] };
     proof.emittedHtmlAudit = { status: 'PASS', references: [], domAudit: { iconLinks: [], references: [] } };
+    const blankDom = '<html><head></head><body>blank control</body></html>';
     proof.hookFreeControl = { status: 'CONTROL_OBSERVED', browserVersion: proof.browserVersion,
-      domAudit: { scriptCount: 0, links: [] }, serverRequests: [{ method: 'GET', path: '/favicon.ico', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' }] };
+      domAudit: { outerHtml: blankDom, htmlByteCount: Buffer.byteLength(blankDom), htmlSha256: createHash('sha256').update(blankDom).digest('hex'), scriptCount: 0, links: [] },
+      serverRequests: [{ method: 'GET', path: '/favicon.ico', status: 404, bodyByteCount: 9, bodySha256: faviconHash, bodyText: 'Not found' }] };
     const files = [['index.html', '1'.repeat(64)], [entryPath.slice(1), entryHash],
       ['core-kit/experimental-client.worker.js', '2'.repeat(64)], ['core-kit/designer_runtime.wasm', '3'.repeat(64)]];
     proof.assetInventoryVerification = { status: 'PASS', recordedArtifactDigest: candidateKind, expectedFiles: files.map(([path, sha256]) => ({ path, sha256 })) };
@@ -330,6 +332,8 @@ test('M6 clean/mutant favicon parity remains diagnostic and every observed 404 s
   assert.equal(comparison.status, 'OBSERVED_PARITY');
   assert.equal(comparison.readinessRuleChanged, false);
   assert.equal(comparison.artifactParity.requiredCoreKitAssetCount, 2);
+  clean.hookFreeControl.domAudit.outerHtml = '<html><head></head><body>changed control</body></html>';
+  assert.equal(compareM6DiagnosticEvidence(mutant, clean).status, 'INCOMPLETE_OR_DIFFERENT');
   Object.assign(mutant, { httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200, cdpReady: true, coldHomeReady: true });
   mutant.diagnostics.responses.push({ url: 'http://127.0.0.1:3101/', status: 200, resourceType: 'document' });
   assert.equal(finalizeM6ReadinessProof(mutant).status, 'BLOCKED');

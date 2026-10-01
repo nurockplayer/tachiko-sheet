@@ -316,6 +316,9 @@ function m6BlankControlTuple(proof) {
   return control && {
     status: control.status,
     browserVersion: control.browserVersion,
+    outerHtml: control.domAudit?.outerHtml ?? null,
+    htmlByteCount: control.domAudit?.htmlByteCount ?? null,
+    htmlSha256: control.domAudit?.htmlSha256 ?? null,
     scriptCount: control.domAudit?.scriptCount ?? null,
     links: control.domAudit?.links ?? null,
     serverRequests: (control.serverRequests ?? []).map((row) => ({ method: row.method, path: row.path, status: row.status,
@@ -361,10 +364,7 @@ export function compareM6DiagnosticEvidence(mutant, clean) {
     && (control.serverRequests ?? []).some((row) => row.method === 'GET' && row.path === '/favicon.ico' && row.status === 404);
   const sameJson = (left, right) => JSON.stringify(left) === JSON.stringify(right);
   const faviconParity = Boolean(mutantFavicon && cleanFavicon && sameJson(mutantFavicon, cleanFavicon));
-  const controlParity = Boolean(mutantControl && cleanControl && mutantControl.browserVersion === cleanControl.browserVersion
-    && mutantControl.scriptCount === cleanControl.scriptCount && sameJson(mutantControl.links, cleanControl.links)
-    && sameJson(mutantControl.serverRequests, cleanControl.serverRequests)
-    && sameJson(mutantControl.diagnostics, cleanControl.diagnostics));
+  const controlParity = Boolean(mutantControl && cleanControl && sameJson(mutantControl, cleanControl));
   const browserParity = Boolean(mutant?.browserVersion && mutant.browserVersion === clean?.browserVersion);
   const normalizePath = (url, entryPath) => {
     if (!url) return url ?? null;
@@ -1098,8 +1098,8 @@ async function runM6HookFreeBrowserControl(browser, parentProof, timeoutMs) {
       return { url: location.href, title: document.title, outerHtml: html, htmlByteCount: new TextEncoder().encode(html).byteLength,
         htmlSha256: null, scriptCount: document.scripts.length, scripts: [...document.scripts].map((item) => item.src || item.textContent || ''), links, iconLinks };
     });
+    control.domAudit.htmlSha256 = bytesHash(Buffer.from(control.domAudit.outerHtml));
     control.domAudit.references = findM6IconReferences(control.domAudit.outerHtml, 'blank-control-dom');
-    delete control.domAudit.outerHtml;
     const waitMs = timeoutMs(2_000);
     const sawBrowserRequest = await Promise.race([
       serverBundle.faviconObserved.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), waitMs)),
