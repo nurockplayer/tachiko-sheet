@@ -103,7 +103,7 @@ if (process.argv[2] === '--record-build') {
   const aggregate = JSON.parse(await readFile(path.join(evidenceRoot, 'summary.json'), 'utf8'));
   if (aggregate.gates?.saveClosure !== 'PASS' || JSON.stringify(aggregate.candidateIdentity) !== JSON.stringify(candidate)) throw new Error('BLOCKED: a matching PASS save-closure aggregate is required before recording the production build');
   const frozenSeedHashes = {
-    'tests/product/web-save-closure-current.mjs': '9723a8163a8ac8bb336a4534e4cf92278e32604e6f98d5a87c857e0156379a36',
+    'tests/product/web-save-closure-current.mjs': 'f0da11bca23206789c1ad0d4c2db771febfd37cb8343fd7c1f07c45758cbd3a8',
     'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
     'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
   };
@@ -120,7 +120,7 @@ let server;
 try {
   summary.candidate = await candidateIdentity();
   const frozen = {
-    'tests/product/web-save-closure-current.mjs': '9723a8163a8ac8bb336a4534e4cf92278e32604e6f98d5a87c857e0156379a36',
+    'tests/product/web-save-closure-current.mjs': 'f0da11bca23206789c1ad0d4c2db771febfd37cb8343fd7c1f07c45758cbd3a8',
     'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
     'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
   };

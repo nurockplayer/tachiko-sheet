@@ -165,8 +165,13 @@ async function saveCopy(name) {
   await activePage.getByRole("button", { name: "Save a copy", exact: true }).click();
   await activePage.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
   await activePage.getByRole("button", { name: "Create copy", exact: true }).click();
-  await activePage.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
-  assert.doesNotMatch((await readView()).save ?? "", /pending|failed/i);
+  await activePage.waitForFunction(() => {
+    const save = document.querySelector('[data-testid="save-status"]')?.textContent?.trim();
+    return save === "Save failed" || (save === "Saved on this device" && !document.querySelector(".ts-modal--save"));
+  });
+  const save = (await readView()).save?.trim() ?? "";
+  assert.equal(save, "Saved on this device", "Save a copy must succeed and close the current Save dialog");
+  assert.doesNotMatch(save, /pending|failed/i);
 }
 async function openSaved(name) {
   await home();
