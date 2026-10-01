@@ -6,6 +6,7 @@ import { EventEmitter, once } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   boundedM6ProbeBudget,
   attachM6BrowserNetworkDiagnostics,
@@ -17,6 +18,7 @@ import {
   finalizeM6ReadinessProof,
   recordM6ConsoleError,
   reconcileHostedProductEvidence,
+  validateAuthorizedCandidate,
 } from '../scripts/run-save-closure-mutations.mjs';
 import { readCommittedSourceIdentities } from '../scripts/runner-source-identity.mjs';
 
@@ -74,6 +76,74 @@ test('all runner identities hash complete committed blobs and fail closed on tru
     }),
     /expected 79339 bytes, captured 65536; refusing candidate identity/,
   );
+});
+
+test('PR admission accepts the exact seven tooling paths and rejects added product or frozen-driver paths', async () => {
+  const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+  const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' }).toString().trim();
+  const requestedHead = process.env.TACHIKO_MUTATION_PR_HEAD || checkoutHead;
+  const priorRequestedHead = process.env.TACHIKO_MUTATION_PR_HEAD;
+  const expectedPaths = [
+    '.github/workflows/product.yml', 'docs/TEST-WIRING.md',
+    'scripts/run-production-lifecycle.mjs', 'scripts/run-save-closure-acceptance.mjs',
+    'scripts/run-save-closure-mutations.mjs', 'scripts/runner-source-identity.mjs',
+    'tests/save-closure-mutations.test.mjs',
+  ];
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-admission-'));
+  process.env.TACHIKO_MUTATION_PR_HEAD = requestedHead;
+  try {
+    const admission = await validateAuthorizedCandidate(repoRoot, checkoutHead);
+    assert.deepEqual(admission.implementationPaths, expectedPaths);
+
+    const mergeWorktree = path.join(temporary, 'expected-merge');
+    let mergeAdded = false;
+    try {
+      execFileSync('git', ['worktree', 'add', '--detach', mergeWorktree, '375d25ea12262bec32e2303b3c63662f0b69322f'], { cwd: repoRoot, stdio: 'pipe' });
+      mergeAdded = true;
+      execFileSync('git', ['merge', '--no-ff', '--no-commit', requestedHead], { cwd: mergeWorktree, stdio: 'pipe' });
+      execFileSync('git', [
+        '-c', 'user.name=qualification-test', '-c', 'user.email=qualification-test@example.invalid',
+        'commit', '--quiet', '-m', 'test: create expected admission merge parents',
+      ], { cwd: mergeWorktree, stdio: 'pipe' });
+      const mergeHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: mergeWorktree, stdio: 'pipe' }).toString().trim();
+      assert.deepEqual((await validateAuthorizedCandidate(mergeWorktree, mergeHead)).implementationPaths, expectedPaths);
+    } finally {
+      if (mergeAdded) execFileSync('git', ['worktree', 'remove', '--force', mergeWorktree], { cwd: repoRoot, stdio: 'pipe' });
+    }
+
+    async function rejectExtraPath(file, label) {
+      const worktree = path.join(temporary, label);
+      let added = false;
+      try {
+        execFileSync('git', ['worktree', 'add', '--detach', worktree, requestedHead], { cwd: repoRoot, stdio: 'pipe' });
+        added = true;
+        const target = path.join(worktree, file);
+        const original = await readFile(target);
+        await writeFile(target, Buffer.concat([original, Buffer.from('\n// temporary admission-test change\n')]));
+        execFileSync('git', ['add', '--', file], { cwd: worktree, stdio: 'pipe' });
+        execFileSync('git', [
+          '-c', 'user.name=qualification-test', '-c', 'user.email=qualification-test@example.invalid',
+          'commit', '--quiet', '-m', `test: reject extra ${label} admission path`,
+        ], { cwd: worktree, stdio: 'pipe' });
+        const extraHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: worktree, stdio: 'pipe' }).toString().trim();
+        process.env.TACHIKO_MUTATION_PR_HEAD = extraHead;
+        await assert.rejects(
+          validateAuthorizedCandidate(worktree, extraHead),
+          /exactly the seven admitted implementation paths/,
+        );
+      } finally {
+        process.env.TACHIKO_MUTATION_PR_HEAD = requestedHead;
+        if (added) execFileSync('git', ['worktree', 'remove', '--force', worktree], { cwd: repoRoot, stdio: 'pipe' });
+      }
+    }
+
+    await rejectExtraPath('src/App.tsx', 'product-source');
+    await rejectExtraPath('tests/product/web-save-closure-current.mjs', 'frozen-driver');
+  } finally {
+    if (priorRequestedHead === undefined) delete process.env.TACHIKO_MUTATION_PR_HEAD;
+    else process.env.TACHIKO_MUTATION_PR_HEAD = priorRequestedHead;
+    await rm(temporary, { recursive: true, force: true });
+  }
 });
 
 test('M1 controls execute the exact frozen wait predicate and Saved assertion', async () => {

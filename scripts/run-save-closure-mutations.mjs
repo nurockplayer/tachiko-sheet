@@ -16,7 +16,9 @@ const base = '375d25ea12262bec32e2303b3c63662f0b69322f';
 const expectedHead = 'f6121d5bb5990b8cb9004062642aa2937fcfab4f';
 const implementationPaths = [
   '.github/workflows/product.yml', 'docs/TEST-WIRING.md',
-  'scripts/run-save-closure-mutations.mjs', 'tests/save-closure-mutations.test.mjs',
+  'scripts/run-production-lifecycle.mjs', 'scripts/run-save-closure-acceptance.mjs',
+  'scripts/run-save-closure-mutations.mjs', 'scripts/runner-source-identity.mjs',
+  'tests/save-closure-mutations.test.mjs',
 ];
 const expectedSeeds = {
   'tests/product/web-save-closure-current.mjs': 'f0da11bca23206789c1ad0d4c2db771febfd37cb8343fd7c1f07c45758cbd3a8',
@@ -449,7 +451,7 @@ async function captureCandidateIdentity(cwd) {
   return { ...identity, sha256: jsonHash(identity) };
 }
 
-async function validateAuthorizedCandidate(cwd, head) {
+export async function validateAuthorizedCandidate(cwd, head) {
   const requested = process.env.TACHIKO_MUTATION_PR_HEAD;
   if (requested) {
     const anchor = await git(['merge-base', '--is-ancestor', expectedHead, requested], { cwd });
@@ -458,7 +460,7 @@ async function validateAuthorizedCandidate(cwd, head) {
     if (delta.code !== 0) throw new Error(`cannot enumerate the implementation delta from the authorized candidate: ${delta.output}`);
     const paths = delta.output.split(/\r?\n/).filter(Boolean).sort();
     if (JSON.stringify(paths) !== JSON.stringify(implementationPaths)) {
-      throw new Error(`PR head delta from authorized candidate must contain exactly the four admitted implementation paths; got ${paths.join(', ')}`);
+      throw new Error(`PR head delta from authorized candidate must contain exactly the seven admitted implementation paths; got ${paths.join(', ')}`);
     }
     if (head !== requested) {
       const parents = await git(['rev-list', '--parents', '-n', '1', head], { cwd });
