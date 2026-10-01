@@ -100,7 +100,10 @@ test('PR admission accepts the exact seven tooling paths and rejects added produ
     try {
       execFileSync('git', ['worktree', 'add', '--detach', mergeWorktree, '375d25ea12262bec32e2303b3c63662f0b69322f'], { cwd: repoRoot, stdio: 'pipe' });
       mergeAdded = true;
-      execFileSync('git', ['merge', '--no-ff', '--no-commit', requestedHead], { cwd: mergeWorktree, stdio: 'pipe' });
+      execFileSync('git', [
+        '-c', 'user.name=qualification-test', '-c', 'user.email=qualification-test@example.invalid',
+        'merge', '--no-ff', '--no-commit', requestedHead,
+      ], { cwd: mergeWorktree, stdio: 'pipe' });
       execFileSync('git', [
         '-c', 'user.name=qualification-test', '-c', 'user.email=qualification-test@example.invalid',
         'commit', '--quiet', '-m', 'test: create expected admission merge parents',
