@@ -76,3 +76,64 @@ exercises the production admission/replacement boundary; rejection preserves the
 previous work. `observe` uses the actual core and `close` releases the host.
 The test edits exported fixture bytes only to independently challenge persistence;
 that is not permission for the production frontend to parse or mutate the format.
+
+## #146 Save closure acceptance wiring
+
+`pnpm acceptance:save-closure` and `pnpm acceptance:production-lifecycle` are
+separate required, ordered gates in `product.yml`. The first builds the
+acceptance artifact, serves the existing qualification routes over HTTP,
+requires all seven real producer/adapter prerequisites, then runs all eleven
+current Save closure cases. The existing production build step clears and then
+records a candidate-bound inventory receipt around the single `pnpm build`.
+The second consumes those exact candidate-bound PASS receipts and that freshly
+recorded `dist`, serves it over HTTP, and runs the hook-free
+Save/reopen/full-browser-process-restart/download canary. No disk
+route fulfillment, acceptance hook, test fixture substitution, or browser
+fallback is part of the production lifecycle.
+
+The workflow sets the shared `TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR` to a fresh
+runner-temp directory. For direct invocation, set the same variable, then run
+`pnpm acceptance:save-closure`, record one freshly built production artifact,
+then run `pnpm acceptance:production-lifecycle`:
+
+```sh
+pnpm acceptance:save-closure
+node scripts/run-production-lifecycle.mjs --clear-build-receipt
+pnpm build
+node scripts/run-production-lifecycle.mjs --record-build
+pnpm acceptance:production-lifecycle
+```
+
+The first gate writes
+`save-closure/prerequisites.json`, `save-closure/current-save-closure.json`,
+their raw seed receipts, logs, and `save-closure-summary.json`. The production
+runner removes and recreates only `production-lifecycle/`, requires those exact
+candidate-bound receipts and raw seed hashes, and verifies the fresh build
+receipt and current `dist` inventory before serving it. The build receipt is
+cleared before the workflow build step and records the complete artifact
+inventory and candidate identity afterward. The lifecycle gate writes its
+receipt/logs and updates the root `summary.json` aggregate.
+
+Receipts bind base, candidate HEAD, committed and dirty/untracked changed-path
+hashes, and all three frozen seed hashes. Candidate identity is for evidence
+association; changed-path scope remains a separate review concern outside test
+execution. The aggregate records pinned source/adapter/producer
+identities, exact expected-case registries and outcomes, artifact manifests,
+process/profile identities, diagnostics, and receipt/log paths. Missing cases
+remain `NOT RUN` or `BLOCKED`; no missing row becomes `PASS`. Outcomes are
+`PASS`, `BEHAVIORAL_RED`, `BLOCKED`, or `NOT RUN`, and aggregate success requires
+both gate receipts to pass for the same candidate.
+
+The workflow always uploads the shared evidence directory with the immutable
+`actions/upload-artifact` v4.6.2 commit pin, including on failed gates. It keeps
+the aggregate and raw seed receipts, build/artifact inventories, runner logs,
+production process evidence, diagnostics, and downloaded PNG for 14 days. If
+the job fails before writing evidence, the upload step warns when the directory
+is empty and preserves the original failure result.
+
+The hosted `product.yml` gate provisions the locked Playwright Chromium on
+`ubuntu-24.04`. A system Chromium diagnostic or a failed official Playwright
+browser download is not managed-browser qualification. M1–M6 disposable fault
+probes remain `NOT RUN` until recorded separately against one-fault-at-a-time
+disposable candidates; the lifecycle seed's blank-PNG negative control is its
+fixed oracle check and does not replace those probes.
