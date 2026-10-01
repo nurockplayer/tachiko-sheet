@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createConnection } from 'node:net';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -74,6 +74,13 @@ async function anyRunnable(pids) {
 
 async function cleanupKnownGroups() {
   const errors = [];
+  for (const entry of await readdir(tempRoot)) {
+    if (!entry.endsWith('-pids.json')) continue;
+    try {
+      const pids = JSON.parse(await readFile(path.join(tempRoot, entry), 'utf8'));
+      if (Number.isInteger(pids.parent) && Number.isInteger(pids.descendant)) registerOwned(pids);
+    } catch { /* The fixture may not have written its PID receipt yet. */ }
+  }
   for (const [group, pids] of ownedGroups) {
     try {
       if (await anyRunnable(pids)) {
