@@ -1797,11 +1797,8 @@ async function probeM6LifecycleOriginFavicon(ctx, worktree, evidenceDir, label, 
     proof.error = { name: error.name, code: error.code ?? null, message: error.message, stack: error.stack ?? null };
   } finally {
     if (server) {
-      try {
-        const exit = await server.stop();
-        proof.serverExit = { observed: Boolean(exit), code: exit?.code ?? null, signal: exit?.signal ?? null };
-        if (!exit || (exit.code !== 0 && exit.signal !== 'SIGTERM')) proof.cleanupErrors.push({ phase: 'stop', message: 'owned lifecycle favicon server did not exit successfully', exit: proof.serverExit });
-      } catch (error) { proof.cleanupErrors.push({ phase: 'stop', message: error.message }); }
+      try { await server.stop(); }
+      catch (error) { proof.cleanupErrors.push({ phase: 'stop', message: error.message }); }
       try {
         const exit = await settleBefore(server.exit, 5_000, `${label} lifecycle favicon server exit`);
         proof.serverExit = { observed: Boolean(exit), code: exit?.code ?? null, signal: exit?.signal ?? null };

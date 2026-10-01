@@ -549,6 +549,11 @@ test('M6 auxiliary default-favicon disposition requires paired readiness and fro
     mutant.buildReceipt, mutantLifecycle.faviconProbe, mutant.candidateSha, mutant.proof, 'BEHAVIORAL_RED', mutantLifecycle.browserProvenance).status, 'AUXILIARY_CANDIDATE');
   assert.equal(classifyM6LifecycleFaviconDisposition(cleanLifecycle.receipt, cleanLifecycle.summary,
     clean.buildReceipt, cleanLifecycle.faviconProbe, clean.candidateSha, clean.proof, 'PASS', cleanLifecycle.browserProvenance).status, 'AUXILIARY_CANDIDATE');
+  const termStoppedServer = structuredClone(mutantLifecycle.faviconProbe);
+  termStoppedServer.serverExit = { observed: true, code: 1, signal: 'SIGTERM' };
+  assert.equal(classifyM6LifecycleFaviconDisposition(mutantLifecycle.receipt, mutantLifecycle.summary,
+    mutant.buildReceipt, termStoppedServer, mutant.candidateSha, mutant.proof, 'BEHAVIORAL_RED', mutantLifecycle.browserProvenance).status,
+  'AUXILIARY_CANDIDATE', 'the owned process helper reports expected SIGTERM shutdown as code 1 plus signal');
   const disposition = finalizeM6AuxiliaryDisposition({
     mutantReadiness: mutant.proof, cleanReadiness: clean.proof,
     mutantIdentity: { candidateSha256: mutant.candidateSha }, cleanIdentity: { candidateSha256: clean.candidateSha },
@@ -631,6 +636,7 @@ test('M6 readiness and lifecycle validators reject unsafe error, attribution, id
     ['wrong-body-identity', (l) => { l.faviconProbe.bodySha256 = 'e'.repeat(64); }],
     ['wrong-body-byte-count', (l) => { l.faviconProbe.bodyByteCount = 10; }],
     ['owned-server-kill', (l) => { l.faviconProbe.serverExit.code = 1; l.faviconProbe.serverExit.signal = 'SIGKILL'; }],
+    ['unexplained-nonzero-exit', (l) => { l.faviconProbe.serverExit.code = 1; l.faviconProbe.serverExit.signal = null; }],
     ['browser-exit-unobserved', (l) => { l.receipt.processEvidence[0].endpointReady = false; }],
   ];
   for (const [name, mutateLifecycle] of badLifecycleCases) {
