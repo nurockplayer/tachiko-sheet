@@ -121,7 +121,8 @@ async function recordRun(name, seedName, expectedIds, command, args, env = {}) {
   const runFailure = run.error ? { name: 'RunnerProcessFailure', outcome: run.outcome, message: run.error } : undefined;
   const caseOutcomes = expectedIds.map((id, index) => ({
     id,
-    status: status === 'PASS' ? 'PASS'
+    status: run.outcome !== 'EXITED' ? 'BLOCKED'
+      : status === 'PASS' ? 'PASS'
       : registryValid && name === 'currentSaveClosure' ? (receipt?.results?.[index]?.result ?? 'NOT RUN')
         : 'BLOCKED',
   }));
