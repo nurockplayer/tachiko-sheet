@@ -61,6 +61,9 @@ jobs:
       - name: Run product unit and host tests
         run: pnpm test:unit
 
+      - name: Run owned acceptance-runner lifecycle probes
+        run: pnpm test:runner-lifecycle
+
       - name: Run unchanged M1 product acceptance
         run: pnpm acceptance:product
 

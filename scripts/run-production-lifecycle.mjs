@@ -1,13 +1,15 @@
 // Build and qualify the hook-free production artifact over HTTP, including a
 // full owned Chromium process restart and downloaded PNG artifact oracle.
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { captureRunnerCommand, createRunnerCancellation, startRunnerServer } from './runner-process-lifecycle.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const cancellation = createRunnerCancellation();
+const lifecycleChildTimeoutMs = 5 * 60 * 1000;
 const base = '375d25ea12262bec32e2303b3c63662f0b69322f';
 const expectedPrerequisites = [
   'KIT-date-only-csv', 'KIT-unrelated-populated-date-xlsx', 'KIT-unrelated-empty-date-schema-xlsx',
@@ -32,14 +34,8 @@ const summary = { status: 'NOT RUN', base, evidenceRoot, expectedCaseIds: expect
 await mkdir(evidenceRoot, { recursive: true });
 await rm(lifecycleDir, { recursive: true, force: true });
 await mkdir(lifecycleDir, { recursive: true });
-function run(command, args, env = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
-    const chunks = [];
-    child.stdout.on('data', (chunk) => chunks.push(chunk)); child.stderr.on('data', (chunk) => chunks.push(chunk));
-    child.once('error', (error) => { const bytes = Buffer.concat(chunks); resolve({ code: 127, bytes, output: bytes.toString() + error.message }); });
-    child.once('exit', (code, signal) => { const bytes = Buffer.concat(chunks); resolve({ code: typeof code === 'number' ? code : 1, signal, bytes, output: bytes.toString() }); });
-  });
+function run(command, args, env = {}, options = {}) {
+  return captureRunnerCommand(command, args, { cwd: root, env, signal: cancellation.signal, ...options });
 }
 const nulPaths = (value) => value.split('\0').filter(Boolean).sort();
 async function candidateIdentity() {
@@ -83,22 +79,16 @@ async function inventory(directory) {
   return { files: sorted, digest: sha256(JSON.stringify(sorted)) };
 }
 async function startServer() {
-  const output = [];
-  const child = spawn(process.execPath, [path.join(root, 'scripts/serve-dist.mjs'), path.join(root, 'dist')], { cwd: root, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let ready = false; let exited = false;
-  const collect = (chunk) => { output.push(chunk); if (Buffer.concat(output).toString().includes(`http://127.0.0.1:${port}`)) ready = true; };
-  child.stdout.on('data', collect); child.stderr.on('data', collect);
-  const exit = new Promise((resolve) => child.once('exit', (code, signal) => { exited = true; resolve({ code, signal }); }));
-  const deadline = Date.now() + 15000;
-  while (!ready && !exited && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-  await writeFile(path.join(evidenceRoot, 'production-server-startup.log'), Buffer.concat(output));
-  if (!ready || exited) throw new Error(`BLOCKED: production HTTP server did not report http://127.0.0.1:${port}`);
-  return { child, exit, output, async stop() {
-    if (!exited) child.kill('SIGTERM');
-    const stopped = await Promise.race([exit.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 5000))]);
-    if (!stopped) { child.kill('SIGKILL'); await exit; }
-    await writeFile(path.join(evidenceRoot, 'production-server.log'), Buffer.concat(output));
-  } };
+  return startRunnerServer({
+    command: process.execPath,
+    args: [path.join(root, 'scripts/serve-dist.mjs'), path.join(root, 'dist')],
+    cwd: root,
+    env: { PORT: String(port) },
+    readyText: `http://127.0.0.1:${port}`,
+    startupLogPath: path.join(evidenceRoot, 'production-server-startup.log'),
+    serverLogPath: path.join(evidenceRoot, 'production-server.log'),
+    signal: cancellation.signal,
+  });
 }
 
 if (process.argv[2] === '--clear-build-receipt') {
@@ -197,7 +187,8 @@ try {
     SAVE_CLOSURE_DIST: path.join(root, 'dist'), SAVE_CLOSURE_ACCEPTANCE_DIST: path.join(root, 'dist-acceptance'),
     SAVE_CLOSURE_ORIGIN: `http://127.0.0.1:${port}`, SAVE_CLOSURE_RECEIPT: childReceipt,
     SAVE_CLOSURE_ARTIFACT_DIR: path.join(lifecycleDir, 'artifacts'),
-  });
+  }, { timeoutMs: lifecycleChildTimeoutMs });
+  summary.command = { outcome: result.outcome, exitCode: result.code, signal: result.signal, error: result.error };
   await writeFile(summary.log, result.output);
   let receipt;
   try { receipt = JSON.parse(await readFile(childReceipt, 'utf8')); } catch {}
@@ -213,7 +204,12 @@ try {
     }
   }
   summary.caseOutcomes = expectedProduction.map((id) => ({ id, status: summary.lifecycle === 'PASS' && receipt?.caseIds?.includes(id) && receipt?.expectedCaseIds?.includes(id) ? 'PASS' : summary.lifecycle }));
-  summary.receiptEvidence = receipt ? { status: receipt.status, caseIds: receipt.caseIds, expectedCaseIds: receipt.expectedCaseIds, caseOutcomes: summary.caseOutcomes, phase: receipt.phase, artifacts: receipt.artifacts, processEvidence: receipt.processEvidence, diagnostics: receipt.diagnostics, error: receipt.error } : { status: 'BLOCKED', reason: 'seed receipt missing or invalid JSON' };
+  summary.receiptEvidence = receipt ? { status: receipt.status, caseIds: receipt.caseIds, expectedCaseIds: receipt.expectedCaseIds, caseOutcomes: summary.caseOutcomes, phase: receipt.phase, artifacts: receipt.artifacts, processEvidence: receipt.processEvidence, diagnostics: receipt.diagnostics, error: receipt.error } : { status: 'BLOCKED', reason: result.error ?? 'seed receipt missing or invalid JSON', commandOutcome: result.outcome };
+  if (result.outcome !== 'EXITED') {
+    summary.lifecycle = 'BLOCKED';
+    summary.caseOutcomes = expectedProduction.map((id) => ({ id, status: 'BLOCKED' }));
+    summary.receiptEvidence = { ...summary.receiptEvidence, status: 'BLOCKED', reason: result.error ?? result.outcome, commandOutcome: result.outcome };
+  }
   if (result.code !== 0 && summary.lifecycle === 'PASS') summary.lifecycle = 'BLOCKED';
   if (summary.lifecycle !== summary.caseOutcomes[0]?.status) summary.caseOutcomes = expectedProduction.map((id) => ({ id, status: summary.lifecycle }));
 } catch (error) {
@@ -221,7 +217,7 @@ try {
 } finally {
   if (server) await server.stop().catch(() => {});
   if (!summary.caseOutcomes) summary.caseOutcomes = expectedProduction.map((id) => ({ id, status: summary.lifecycle === 'NOT RUN' ? 'BLOCKED' : summary.lifecycle }));
-  summary.status = summary.diagnostics?.length ? 'BLOCKED' : summary.lifecycle === 'PASS' && summary.build === 'PASS' ? 'PASS' : summary.lifecycle === 'BEHAVIORAL_RED' ? 'BEHAVIORAL_RED' : 'BLOCKED';
+  summary.status = cancellation.signal.aborted || summary.diagnostics?.length ? 'BLOCKED' : summary.lifecycle === 'PASS' && summary.build === 'PASS' ? 'PASS' : summary.lifecycle === 'BEHAVIORAL_RED' ? 'BEHAVIORAL_RED' : 'BLOCKED';
   await writeFile(path.join(lifecycleDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   let aggregate;
   try { aggregate = JSON.parse(await readFile(path.join(evidenceRoot, 'summary.json'), 'utf8')); } catch {}
@@ -248,4 +244,5 @@ try {
   await writeFile(path.join(evidenceRoot, 'summary.json'), `${JSON.stringify(aggregate, null, 2)}\n`);
   console.log(JSON.stringify(summary, null, 2));
   if (aggregate.status !== 'PASS' || summary.status !== 'PASS') process.exitCode = aggregate.status === 'BEHAVIORAL_RED' ? 1 : 78;
+  cancellation.dispose();
 }

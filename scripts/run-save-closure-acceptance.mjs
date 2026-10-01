@@ -1,13 +1,15 @@
 // Serial, fail-closed #146 acceptance wiring. This orchestrates the frozen
 // current-entry/prerequisite seeds and the separate production lifecycle seed.
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { captureRunnerCommand, createRunnerCancellation, startRunnerServer } from './runner-process-lifecycle.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const cancellation = createRunnerCancellation();
+const seedChildTimeoutMs = 5 * 60 * 1000;
 const base = '375d25ea12262bec32e2303b3c63662f0b69322f';
 const expectedPrerequisites = [
   'KIT-date-only-csv', 'KIT-unrelated-populated-date-xlsx', 'KIT-unrelated-empty-date-schema-xlsx',
@@ -55,14 +57,7 @@ async function inventory(directory) {
   return { files: sorted, digest: sha256(JSON.stringify(sorted)) };
 }
 function capture(command, args, options = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd: options.cwd ?? root, env: { ...process.env, ...options.env }, stdio: ['ignore', 'pipe', 'pipe'] });
-    const chunks = [];
-    child.stdout.on('data', (chunk) => chunks.push(chunk));
-    child.stderr.on('data', (chunk) => chunks.push(chunk));
-    child.once('error', (error) => { const bytes = Buffer.concat(chunks); resolve({ code: 127, signal: null, bytes, output: bytes.toString() + error.message }); });
-    child.once('exit', (code, signal) => { const bytes = Buffer.concat(chunks); resolve({ code: typeof code === 'number' ? code : 1, signal, bytes, output: bytes.toString() }); });
-  });
+  return captureRunnerCommand(command, args, { cwd: options.cwd ?? root, ...options, signal: cancellation.signal });
 }
 const nulPaths = (value) => value.split('\0').filter(Boolean).sort();
 async function candidateIdentity() {
@@ -100,7 +95,7 @@ const logPaths = { prerequisites: path.join(gateDir, 'prerequisites.log'), curre
 async function recordRun(name, seedName, expectedIds, command, args, env = {}) {
   const seedPath = receiptPaths[seedName];
   await rm(seedPath, { force: true });
-  const run = await capture(command, args, { env });
+  const run = await capture(command, args, { env, timeoutMs: seedChildTimeoutMs });
   await writeFile(logPaths[name], run.output);
   let receipt;
   try { receipt = JSON.parse(await readFile(seedPath, 'utf8')); } catch {}
@@ -118,10 +113,12 @@ async function recordRun(name, seedName, expectedIds, command, args, env = {}) {
   if (!registryValid) status = 'BLOCKED';
   if (receipt && receipt.base !== base) status = 'BLOCKED';
   if (status === 'PASS' && (run.code !== 0 || (name === 'currentSaveClosure' && (!Array.isArray(receipt.results) || receipt.results.some((item) => item.result !== 'PASS'))))) status = 'BLOCKED';
+  if (run.outcome !== 'EXITED') status = 'BLOCKED';
   if (name === 'prerequisites' && status === 'PASS') {
     const actual = [...(receipt.result?.kit ?? []).map((item) => item.id), ...(receipt.result?.adapter ?? []).map((item) => item.id)];
     if (JSON.stringify(actual) !== JSON.stringify(expectedIds)) status = 'BLOCKED';
   }
+  const runFailure = run.error ? { name: 'RunnerProcessFailure', outcome: run.outcome, message: run.error } : undefined;
   const caseOutcomes = expectedIds.map((id, index) => ({
     id,
     status: status === 'PASS' ? 'PASS'
@@ -129,33 +126,21 @@ async function recordRun(name, seedName, expectedIds, command, args, env = {}) {
         : 'BLOCKED',
   }));
   const seedHash = receipt ? sha256(await readFile(seedPath)) : null;
-  const envelope = { status, candidate: summary.identity.candidate, candidateIdentity: summary.identity.candidate.sha256, base, head: summary.identity.candidate.head, frozenSeedHashes: summary.identity.frozenSeedHashes, expectedCaseIds: expectedIds, caseOutcomes, seedReceipt: seedPath, seedReceiptSha256: seedHash, error: receipt?.error };
+  const envelope = { status, candidate: summary.identity.candidate, candidateIdentity: summary.identity.candidate.sha256, base, head: summary.identity.candidate.head, frozenSeedHashes: summary.identity.frozenSeedHashes, expectedCaseIds: expectedIds, caseOutcomes, seedReceipt: seedPath, seedReceiptSha256: seedHash, error: runFailure ?? receipt?.error };
   await writeFile(receiptPaths[name], `${JSON.stringify(envelope, null, 2)}\n`);
-  const entry = { name, status, exitCode: run.code, signal: run.signal, receipt: receiptPaths[name], seedReceipt: seedPath, log: logPaths[name], cases: caseOutcomes, error: receipt?.error };
+  const entry = { name, status, exitCode: run.code, signal: run.signal, outcome: run.outcome, receipt: receiptPaths[name], seedReceipt: seedPath, log: logPaths[name], cases: caseOutcomes, error: runFailure ?? receipt?.error };
   summary.suites.push(entry);
   return { ...entry, receipt, envelope };
 }
 
 let acceptanceServer;
 async function startServer(name, command, args, env, readyText) {
-  const output = [];
-  const child = spawn(command, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let exited = false;
-  let ready = false;
-  const collect = (chunk) => { output.push(chunk); if (Buffer.concat(output).toString().includes(readyText)) ready = true; };
-  child.stdout.on('data', collect);
-  child.stderr.on('data', collect);
-  const exit = new Promise((resolve) => child.once('exit', (code, signal) => { exited = true; resolve({ code, signal }); }));
-  const deadline = Date.now() + 15000;
-  while (!ready && !exited && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-  await writeFile(path.join(evidenceRoot, `${name}-startup.log`), Buffer.concat(output));
-  if (!ready || exited) throw new Error(`${name} did not report its exact ready URL; exit=${JSON.stringify(await Promise.race([exit, Promise.resolve(null)]))}`);
-  return { child, exit, output, async stop() {
-    if (!exited) child.kill('SIGTERM');
-    const stopped = await Promise.race([exit.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 5000))]);
-    if (!stopped) { child.kill('SIGKILL'); await exit; }
-    await writeFile(path.join(evidenceRoot, `${name}-server.log`), Buffer.concat(output));
-  } };
+  return startRunnerServer({
+    name, command, args, cwd: root, env, readyText,
+    startupLogPath: path.join(evidenceRoot, `${name}-startup.log`),
+    serverLogPath: path.join(evidenceRoot, `${name}-server.log`),
+    signal: cancellation.signal,
+  });
 }
 
 try {
@@ -187,7 +172,7 @@ try {
   // Build and run are explicit stages, recorded before any browser suite starts.
   const acceptanceBuild = await capture('pnpm', ['build:acceptance']);
   await writeFile(path.join(evidenceRoot, 'build-acceptance.log'), acceptanceBuild.output);
-  summary.suites.push({ name: 'build:acceptance', status: acceptanceBuild.code === 0 ? 'PASS' : 'BLOCKED', exitCode: acceptanceBuild.code, log: path.join(evidenceRoot, 'build-acceptance.log') });
+  summary.suites.push({ name: 'build:acceptance', status: acceptanceBuild.code === 0 ? 'PASS' : 'BLOCKED', exitCode: acceptanceBuild.code, outcome: acceptanceBuild.outcome, error: acceptanceBuild.error, log: path.join(evidenceRoot, 'build-acceptance.log') });
   if (acceptanceBuild.code !== 0) throw new Error('acceptance build failed; browser suites are BLOCKED and NOT RUN');
   summary.acceptanceArtifact = await inventory(path.join(root, 'dist-acceptance'));
   acceptanceServer = await startServer('acceptance', process.execPath, [path.join(root, 'acceptance/web-save-closure/serve.mjs')], {
@@ -195,7 +180,7 @@ try {
   }, `http://127.0.0.1:${port}`);
   const adapterBuild = await capture(process.execPath, [path.join(root, 'acceptance/web-save-closure/prepare-adapter.mjs')]);
   await writeFile(path.join(evidenceRoot, 'prepare-adapter.log'), adapterBuild.output);
-  summary.suites.push({ name: 'prepare-exact-source-adapter', status: adapterBuild.code === 0 ? 'PASS' : 'BLOCKED', exitCode: adapterBuild.code, log: path.join(evidenceRoot, 'prepare-adapter.log') });
+  summary.suites.push({ name: 'prepare-exact-source-adapter', status: adapterBuild.code === 0 ? 'PASS' : 'BLOCKED', exitCode: adapterBuild.code, outcome: adapterBuild.outcome, error: adapterBuild.error, log: path.join(evidenceRoot, 'prepare-adapter.log') });
   if (adapterBuild.code !== 0) throw new Error('exact-source adapter generation failed; producer prerequisites are BLOCKED and NOT RUN');
   summary.identity.adapter = {
     exactAdapterSha256: sha256(await readFile(path.join(root, 'acceptance/web-save-closure/adapter.ego.mjs'))),
@@ -225,7 +210,7 @@ try {
   if (!summary.suites.some((entry) => entry.name === 'prerequisites')) summary.suites.push({ name: 'prerequisites', status: 'NOT RUN', cases: expectedPrerequisites.map((id) => ({ id, status: 'NOT RUN' })) });
   if (!summary.suites.some((entry) => entry.name === 'currentSaveClosure')) summary.suites.push({ name: 'currentSaveClosure', status: 'NOT RUN', cases: expectedCurrent.map((id) => ({ id, status: 'NOT RUN' })) });
   const required = ['build:acceptance', 'prepare-exact-source-adapter', 'prerequisites', 'currentSaveClosure'].map((name) => summary.suites.find((entry) => entry.name === name)?.status ?? 'NOT RUN');
-  summary.gate.status = summary.diagnostics.length || required.includes('BLOCKED') ? 'BLOCKED'
+  summary.gate.status = cancellation.signal.aborted || summary.diagnostics.length || required.includes('BLOCKED') ? 'BLOCKED'
     : required.includes('BEHAVIORAL_RED') ? 'BEHAVIORAL_RED'
       : required.every((status) => status === 'PASS') ? 'PASS' : 'NOT RUN';
   summary.aggregateStatus = 'NOT RUN';
@@ -244,4 +229,5 @@ try {
   await writeFile(path.join(evidenceRoot, 'summary.json'), `${JSON.stringify(aggregate, null, 2)}\n`);
   console.log(JSON.stringify({ status: summary.status, identity: summary.identity, suites: summary.suites, caseOutcomes: summary.caseOutcomes, receipts: summary.receipts, evidenceRoot }, null, 2));
   if (summary.status !== 'PASS') process.exitCode = summary.status === 'BEHAVIORAL_RED' ? 1 : 78;
+  cancellation.dispose();
 }
