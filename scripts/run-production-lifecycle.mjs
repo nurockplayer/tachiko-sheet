@@ -5,7 +5,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { captureRunnerCommand, createRunnerCancellation, startRunnerServer } from './runner-process-lifecycle.mjs';
+import { captureRunnerCommand, createRunnerCancellation, finalizeProductionLifecycleServer, startRunnerServer } from './runner-process-lifecycle.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const cancellation = createRunnerCancellation();
@@ -215,7 +215,7 @@ try {
 } catch (error) {
   summary.diagnostics = [{ status: 'BLOCKED', message: error.message, stack: error.stack }];
 } finally {
-  if (server) await server.stop().catch(() => {});
+  await finalizeProductionLifecycleServer(server, summary, expectedProduction);
   if (!summary.caseOutcomes) summary.caseOutcomes = expectedProduction.map((id) => ({ id, status: summary.lifecycle === 'NOT RUN' ? 'BLOCKED' : summary.lifecycle }));
   summary.status = cancellation.signal.aborted || summary.diagnostics?.length ? 'BLOCKED' : summary.lifecycle === 'PASS' && summary.build === 'PASS' ? 'PASS' : summary.lifecycle === 'BEHAVIORAL_RED' ? 'BEHAVIORAL_RED' : 'BLOCKED';
   await writeFile(path.join(lifecycleDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);

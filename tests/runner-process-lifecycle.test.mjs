@@ -6,23 +6,35 @@ import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { captureRunnerCommand, startRunnerServer } from '../scripts/runner-process-lifecycle.mjs';
+import {
+  captureRunnerCommand,
+  finalizeProductionLifecycleServer,
+  startRunnerServer,
+} from '../scripts/runner-process-lifecycle.mjs';
 
 const skipProcessGroups = process.platform === 'win32';
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'sheet-runner-lifecycle-'));
 const helperUrl = pathToFileURL(path.resolve('scripts/runner-process-lifecycle.mjs')).href;
+const ownedGroups = new Map();
+const knownSentinels = new Set();
 
-function treeSource(pidFile, readyText = '') {
+function treeSource(pidFile, readyText = '', { exitCode, ignoreTerm = false } = {}) {
+  const descendantCode = `${ignoreTerm ? "process.on('SIGTERM', () => {});" : ''}setInterval(() => {}, 1000);`;
+  const parentTail = Number.isInteger(exitCode) ? `setTimeout(() => process.exit(${exitCode}), 100);` : 'setInterval(() => {}, 1000);';
   return `import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { writeFile } from 'node:fs/promises';
-const descendant = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+const descendant = spawn(process.execPath, ['-e', ${JSON.stringify(descendantCode)}], { stdio: 'ignore' });
 const server = net.createServer(() => {});
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 await writeFile(${JSON.stringify(pidFile)}, JSON.stringify({ parent: process.pid, descendant: descendant.pid, port: server.address().port }));
 console.log(${JSON.stringify(readyText)} + ' owned-process-tree-started');
 process.stdout.write('x'.repeat(12000) + 'TAIL-MARKER');
-setInterval(() => {}, 1000);`;
+${parentTail}`;
+}
+
+function registerOwned(pids) {
+  ownedGroups.set(pids.parent, new Set([pids.parent, pids.descendant]));
 }
 
 async function waitForFile(file, timeoutMs = 3000) {
@@ -34,20 +46,80 @@ async function waitForFile(file, timeoutMs = 3000) {
   throw new Error(`timed out waiting for ${file}`);
 }
 
+async function pidIsRunnable(pid) {
+  try {
+    process.kill(pid, 0);
+    if (process.platform === 'linux') {
+      const statLine = await readFile(`/proc/${pid}/stat`, 'utf8');
+      const state = statLine.slice(statLine.lastIndexOf(')') + 2).split(' ')[0];
+      return state !== 'Z' && state !== 'X';
+    }
+    return true;
+  } catch (error) { return error.code !== 'ESRCH' && error.code !== 'ENOENT'; }
+}
+
 async function waitForGone(pid, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-      if (process.platform === 'linux') {
-        const statLine = await readFile(`/proc/${pid}/stat`, 'utf8');
-        const state = statLine.slice(statLine.lastIndexOf(')') + 2).split(' ')[0];
-        if (state === 'Z') return;
-      }
-    } catch (error) { if (error.code === 'ESRCH' || error.code === 'ENOENT') return; }
+    if (!(await pidIsRunnable(pid))) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  assert.fail(`process ${pid} remained alive`);
+  assert.fail(`process ${pid} remained runnable`);
+}
+
+async function anyRunnable(pids) {
+  for (const pid of pids) if (await pidIsRunnable(pid)) return true;
+  return false;
+}
+
+async function cleanupKnownGroups() {
+  const errors = [];
+  for (const [group, pids] of ownedGroups) {
+    try {
+      if (await anyRunnable(pids)) {
+        try { process.kill(-group, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        const deadline = Date.now() + 250;
+        while (await anyRunnable(pids) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
+        if (await anyRunnable(pids)) {
+          try { process.kill(-group, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        }
+        for (const pid of pids) await waitForGone(pid);
+      }
+    } catch (error) { errors.push(error); }
+  }
+  ownedGroups.clear();
+  for (const pid of knownSentinels) {
+    if (await pidIsRunnable(pid)) {
+      try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') errors.push(error); }
+      try { await waitForGone(pid); } catch (error) { errors.push(error); }
+    }
+  }
+  knownSentinels.clear();
+  if (errors.length) throw new AggregateError(errors, 'owned process cleanup failed');
+}
+
+async function withWatchdog(timeoutMs, run) {
+  const controller = new AbortController();
+  const work = Promise.resolve().then(() => run(controller.signal));
+  let timer;
+  const watchdog = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort(new Error(`outer test watchdog expired after ${timeoutMs}ms`));
+      reject(new Error(`outer test watchdog expired after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  let result;
+  let failure;
+  try { result = await Promise.race([work, watchdog]); }
+  catch (error) { failure = error; controller.abort(error); }
+  clearTimeout(timer);
+  if (failure) await Promise.race([work.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 6000))]);
+  let cleanupFailure;
+  try { await cleanupKnownGroups(); } catch (error) { cleanupFailure = error; }
+  if (failure && cleanupFailure) throw new AggregateError([failure, cleanupFailure], 'test failed and owned process cleanup failed');
+  if (failure) throw failure;
+  if (cleanupFailure) throw cleanupFailure;
+  return result;
 }
 
 async function assertPortClosed(port) {
@@ -62,45 +134,48 @@ async function assertPortClosed(port) {
 
 function launchSentinel() {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  knownSentinels.add(child.pid);
   return child;
 }
 
-test('startup timeout retains bounded logs and reaps only its owned server tree', { skip: skipProcessGroups }, async () => {
+function guardedTest(name, timeoutMs, run) {
+  test(name, { skip: skipProcessGroups }, () => withWatchdog(timeoutMs, run));
+}
+
+guardedTest('the 15-second startup timeout retains logs and reaps only its owned server tree', 22000, async (signal) => {
   const pidFile = path.join(tempRoot, 'startup-timeout-pids.json');
   const startupLogPath = path.join(tempRoot, 'startup-timeout.log');
   const serverLogPath = path.join(tempRoot, 'startup-server.log');
   const sentinel = launchSentinel();
-  try {
-    await assert.rejects(startRunnerServer({
-      command: process.execPath,
-      args: ['--input-type=module', '-e', treeSource(pidFile)],
-      cwd: tempRoot,
-      readyText: 'NEVER-READY',
-      stopGraceMs: 100,
-      maxOutputBytes: 4096,
-      startupLogPath,
-      serverLogPath,
-    }), (error) => error.code === 'TIMEOUT' && /15000ms/.test(error.message));
-    const pids = await waitForFile(pidFile);
-    await waitForGone(pids.parent);
-    await waitForGone(pids.descendant);
-    await assertPortClosed(pids.port);
-    const startup = await readFile(startupLogPath);
-    assert.ok(startup.length <= 4096);
-    assert.ok(startup.toString().includes('TAIL-MARKER'));
-    assert.ok((await stat(serverLogPath)).size <= 4096);
-    process.kill(sentinel.pid, 0);
-  } finally {
-    sentinel.kill('SIGKILL');
-  }
+  await assert.rejects(startRunnerServer({
+    command: process.execPath,
+    args: ['--input-type=module', '-e', treeSource(pidFile)],
+    cwd: tempRoot,
+    readyText: 'NEVER-READY',
+    stopGraceMs: 100,
+    maxOutputBytes: 4096,
+    startupLogPath,
+    serverLogPath,
+    signal,
+  }), (error) => error.code === 'TIMEOUT' && /15000ms/.test(error.message));
+  const pids = await waitForFile(pidFile);
+  registerOwned(pids);
+  await waitForGone(pids.parent);
+  await waitForGone(pids.descendant);
+  await assertPortClosed(pids.port);
+  const startup = await readFile(startupLogPath);
+  assert.ok(startup.length <= 4096);
+  assert.ok(startup.toString().includes('TAIL-MARKER'));
+  assert.ok((await stat(serverLogPath)).size <= 4096);
+  process.kill(sentinel.pid, 0);
 });
 
-test('spawn failure and startup-log failure retain diagnostics and clean up', { skip: skipProcessGroups }, async () => {
+guardedTest('spawn failure and startup-log failure retain diagnostics and clean up', 8000, async (signal) => {
   const failedStartupLog = path.join(tempRoot, 'spawn-failed.log');
   await assert.rejects(startRunnerServer({
     command: path.join(tempRoot, 'missing-runner-command'), args: [], cwd: tempRoot,
     readyText: 'READY', startupTimeoutMs: 300, startupLogPath: failedStartupLog,
-    serverLogPath: path.join(tempRoot, 'spawn-failed-server.log'),
+    serverLogPath: path.join(tempRoot, 'spawn-failed-server.log'), signal,
   }), /spawn failed/);
   assert.match(await readFile(failedStartupLog, 'utf8'), /missing-runner-command/);
 
@@ -113,35 +188,39 @@ test('spawn failure and startup-log failure retain diagnostics and clean up', { 
     args: ['--input-type=module', '-e', treeSource(pidFile, 'READY')],
     cwd: tempRoot,
     readyText: 'READY', startupTimeoutMs: 1000, stopGraceMs: 100,
-    startupLogPath: startupLogDirectory,
-    serverLogPath,
+    startupLogPath: startupLogDirectory, serverLogPath, signal,
   }), /could not write startup log/);
   const pids = await waitForFile(pidFile);
+  registerOwned(pids);
   await waitForGone(pids.parent);
   await waitForGone(pids.descendant);
   await assertPortClosed(pids.port);
   assert.match(await readFile(serverLogPath, 'utf8'), /owned-process-tree-started/);
 });
 
-test('hung command deadline returns BLOCKED evidence, bounded output, and reaps its descendants', { skip: skipProcessGroups }, async () => {
+guardedTest('hung command deadline returns BLOCKED evidence, bounded output, and reaps descendants', 8000, async (signal) => {
   const pidFile = path.join(tempRoot, 'command-timeout-pids.json');
+  const sentinel = launchSentinel();
   const result = await captureRunnerCommand(process.execPath, ['--input-type=module', '-e', treeSource(pidFile)], {
-    cwd: tempRoot, timeoutMs: 300, stopGraceMs: 100, maxOutputBytes: 2048,
+    cwd: tempRoot, timeoutMs: 300, stopGraceMs: 100, maxOutputBytes: 2048, signal,
   });
+  const pids = await waitForFile(pidFile);
+  registerOwned(pids);
   assert.equal(result.outcome, 'TIMEOUT');
   assert.notEqual(result.code, 0);
   assert.match(result.error, /deadline/);
   assert.ok(Buffer.byteLength(result.output) <= 2048);
   assert.ok(result.output.includes('TAIL-MARKER'));
-  const pids = await waitForFile(pidFile);
   await waitForGone(pids.parent);
   await waitForGone(pids.descendant);
   await assertPortClosed(pids.port);
+  process.kill(sentinel.pid, 0);
 });
 
-test('delivered SIGTERM cancels a hung seed child before the runner writes a BLOCKED receipt', { skip: skipProcessGroups }, async () => {
+guardedTest('delivered SIGTERM cancels a hung seed child before the runner writes BLOCKED receipt', 8000, async () => {
   const pidFile = path.join(tempRoot, 'sigterm-pids.json');
   const receiptPath = path.join(tempRoot, 'sigterm-receipt.json');
+  const sentinel = launchSentinel();
   const source = `import { writeFile } from 'node:fs/promises';
 import { captureRunnerCommand, createRunnerCancellation } from ${JSON.stringify(helperUrl)};
 const cancellation = createRunnerCancellation();
@@ -151,11 +230,12 @@ try {
   process.exitCode = result.code === 0 ? 0 : 78;
 } finally { cancellation.dispose(); }`;
   const runner = spawn(process.execPath, ['--input-type=module', '-e', source], { stdio: 'ignore' });
-  const closed = new Promise((resolve) => runner.once('close', (code, signal) => resolve({ code, signal })));
   try {
     const pids = await waitForFile(pidFile);
+    registerOwned(pids);
     runner.kill('SIGTERM');
     let timeoutId;
+    const closed = new Promise((resolve) => runner.once('close', (code, childSignal) => resolve({ code, childSignal })));
     const result = await Promise.race([closed, new Promise((_, reject) => { timeoutId = setTimeout(() => reject(new Error('runner did not finish after SIGTERM')), 4000); })]);
     clearTimeout(timeoutId);
     const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
@@ -167,50 +247,75 @@ try {
     await waitForGone(pids.parent);
     await waitForGone(pids.descendant);
     await assertPortClosed(pids.port);
+    process.kill(sentinel.pid, 0);
   } finally {
     if (runner.exitCode === null && runner.signalCode === null) runner.kill('SIGKILL');
   }
 });
 
-test('successful and early-exit child outcomes stay unchanged', { skip: skipProcessGroups }, async () => {
-  const success = await captureRunnerCommand(process.execPath, ['-e', "process.stdout.write('ok')"], { timeoutMs: 1000 });
+guardedTest('normal parent exit reaps surviving descendants and preserves the parent status', 8000, async (signal) => {
+  const sentinel = launchSentinel();
+  for (const exitCode of [0, 9]) {
+    const pidFile = path.join(tempRoot, `normal-exit-${exitCode}-pids.json`);
+    const result = await captureRunnerCommand(process.execPath, ['--input-type=module', '-e', treeSource(pidFile, '', { exitCode, ignoreTerm: exitCode === 0 })], {
+      cwd: tempRoot, timeoutMs: 3000, stopGraceMs: 100, maxOutputBytes: 2048, signal,
+    });
+    const pids = await waitForFile(pidFile);
+    registerOwned(pids);
+    assert.equal(result.outcome, 'EXITED');
+    assert.equal(result.code, exitCode);
+    await waitForGone(pids.parent);
+    await waitForGone(pids.descendant);
+    await assertPortClosed(pids.port);
+    process.kill(sentinel.pid, 0);
+  }
+});
+
+guardedTest('successful and early-exit child outcomes stay unchanged', 8000, async (signal) => {
+  const success = await captureRunnerCommand(process.execPath, ['-e', "process.stdout.write('ok')"], { timeoutMs: 1000, signal });
   assert.equal(success.code, 0);
   assert.equal(success.outcome, 'EXITED');
   assert.equal(success.output, 'ok');
 
-  const failed = await captureRunnerCommand(process.execPath, ['-e', 'process.exit(9)'], { timeoutMs: 1000 });
+  const failed = await captureRunnerCommand(process.execPath, ['-e', 'process.exit(9)'], { timeoutMs: 1000, signal });
   assert.equal(failed.code, 9);
   assert.equal(failed.outcome, 'EXITED');
 });
 
-test('server ready and early-exit outcomes stay unchanged', { skip: skipProcessGroups }, async () => {
-  const serverLogPath = path.join(tempRoot, 'normal-server.log');
-  const startupLogPath = path.join(tempRoot, 'normal-server-startup.log');
+guardedTest('production finalizer converts cleanup and log failures to BLOCKED', 8000, async (signal) => {
+  const cleanupSummary = {
+    status: 'PASS', lifecycle: 'PASS', diagnostics: [{ status: 'BLOCKED', phase: 'primary', message: 'preserved primary failure' }],
+  };
+  await finalizeProductionLifecycleServer({ stop: async () => { throw new Error('injected cleanup failure'); } }, cleanupSummary, ['case-cleanup']);
+  assert.equal(cleanupSummary.status, 'BLOCKED');
+  assert.equal(cleanupSummary.lifecycle, 'BLOCKED');
+  assert.equal(cleanupSummary.diagnostics[0].message, 'preserved primary failure');
+  assert.match(cleanupSummary.diagnostics[1].message, /injected cleanup failure/);
+  assert.deepEqual(cleanupSummary.caseOutcomes, [{ id: 'case-cleanup', status: 'BLOCKED' }]);
+
+  const logPathDirectory = path.join(tempRoot, 'production-server-log-is-a-directory');
+  const startupLogPath = path.join(tempRoot, 'production-server-startup.log');
+  await mkdir(logPathDirectory);
   const server = await startRunnerServer({
     command: process.execPath,
-    args: ['-e', "console.log('READY-URL'); setInterval(() => {}, 1000)"],
+    args: ['-e', "console.log('READY-FINALIZER'); setInterval(() => {}, 1000)"],
     cwd: tempRoot,
-    readyText: 'READY-URL',
+    readyText: 'READY-FINALIZER',
     startupLogPath,
-    serverLogPath,
-    startupTimeoutMs: 1000,
-    stopGraceMs: 100,
+    serverLogPath: logPathDirectory,
+    signal,
   });
-  await server.stop();
-  assert.match(await readFile(startupLogPath, 'utf8'), /READY-URL/);
-  assert.match(await readFile(serverLogPath, 'utf8'), /READY-URL/);
-
-  const earlyExitLog = path.join(tempRoot, 'early-exit-startup.log');
-  await assert.rejects(startRunnerServer({
-    command: process.execPath,
-    args: ['-e', "console.log('EARLY-EXIT'); process.exit(9)"],
-    cwd: tempRoot,
-    readyText: 'NEVER-READY',
-    startupTimeoutMs: 1000,
-    startupLogPath: earlyExitLog,
-    serverLogPath: path.join(tempRoot, 'early-exit-server.log'),
-  }), /server exited before readiness/);
-  assert.match(await readFile(earlyExitLog, 'utf8'), /EARLY-EXIT/);
+  ownedGroups.set(server.child.pid, new Set([server.child.pid]));
+  const logSummary = { status: 'PASS', lifecycle: 'PASS', diagnostics: [] };
+  await finalizeProductionLifecycleServer(server, logSummary, ['case-log']);
+  assert.equal(logSummary.status, 'BLOCKED');
+  assert.equal(logSummary.lifecycle, 'BLOCKED');
+  assert.match(logSummary.diagnostics[0].message, /EISDIR|directory/);
+  assert.deepEqual(logSummary.caseOutcomes, [{ id: 'case-log', status: 'BLOCKED' }]);
+  await waitForGone(server.child.pid);
 });
 
-test.after(async () => rm(tempRoot, { recursive: true, force: true }));
+test.after(async () => {
+  await cleanupKnownGroups();
+  await rm(tempRoot, { recursive: true, force: true });
+});

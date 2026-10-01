@@ -1,6 +1,6 @@
 // Small process-lifetime helpers for the two #146 acceptance runners.
 // Keep output bounded and every spawned command/server owned by its runner.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -76,15 +76,29 @@ function ownedGroupExists(child) {
   catch (error) { return error?.code === 'EPERM'; }
 }
 
+function ownedGroupHasRunnableProcess(child) {
+  if (!child?.pid) return false;
+  if (process.platform === 'win32') return child.exitCode === null && child.signalCode === null;
+  const result = spawnSync('ps', ['-o', 'stat=', '-g', String(child.pid)], { encoding: 'utf8', timeout: 1000 });
+  if (result.error || result.status !== 0) return ownedGroupExists(child);
+  return result.stdout.split(/\r?\n/).some((state) => state.trim() && !/^[ZzXx]/.test(state.trim()));
+}
+
 async function terminateOwned(child, closed, graceMs) {
-  if (!child?.pid || !ownedGroupExists(child)) return await waitForClose(closed);
+  if (!child?.pid || !ownedGroupHasRunnableProcess(child)) return await waitForClose(closed);
   signalOwned(child, 'SIGTERM');
   const deadline = Date.now() + graceMs;
-  while (ownedGroupExists(child) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 25));
+  while (ownedGroupHasRunnableProcess(child) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  if (ownedGroupExists(child)) signalOwned(child, 'SIGKILL');
-  return await waitForClose(closed);
+  if (ownedGroupHasRunnableProcess(child)) signalOwned(child, 'SIGKILL');
+  const result = await waitForClose(closed);
+  const cleanupDeadline = Date.now() + CLEANUP_DEADLINE_MS;
+  while (ownedGroupHasRunnableProcess(child) && Date.now() < cleanupDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (ownedGroupHasRunnableProcess(child)) throw new Error('owned process group remained runnable after SIGKILL cleanup deadline');
+  return result;
 }
 
 async function waitForClose(closed) {
@@ -146,6 +160,19 @@ export async function captureRunnerCommand(command, args, options = {}) {
   if (outcome.kind === 'closed') {
     const bytes = collector.bytes();
     const error = outcome.result.error?.message;
+    if (!error && ownedGroupHasRunnableProcess(launched.child)) {
+      try { await terminateOwned(launched.child, launched.closed, options.stopGraceMs ?? DEFAULT_GRACE_MS); }
+      catch (cleanupError) {
+        return {
+          code: outcome.result.code === 0 ? 125 : outcome.result.code,
+          signal: outcome.result.signal,
+          outcome: 'CLEANUP_FAILED',
+          bytes,
+          output: bytes.toString(),
+          error: cleanupError.message,
+        };
+      }
+    }
     return { code: outcome.result.code, signal: outcome.result.signal, outcome: error ? 'SPAWN_ERROR' : 'EXITED', bytes, output: bytes.toString(), ...(error ? { error } : {}) };
   }
   const result = await terminateOwned(launched.child, launched.closed, options.stopGraceMs ?? DEFAULT_GRACE_MS);
@@ -161,6 +188,18 @@ export async function captureRunnerCommand(command, args, options = {}) {
     output: bytes.toString(),
     error,
   };
+}
+
+export async function finalizeProductionLifecycleServer(server, summary, expectedCaseIds) {
+  if (!server) return;
+  try { await server.stop(); }
+  catch (error) {
+    summary.diagnostics ??= [];
+    summary.diagnostics.push({ status: 'BLOCKED', phase: 'production-server-finalize', message: error.message });
+    summary.lifecycle = 'BLOCKED';
+    summary.caseOutcomes = expectedCaseIds.map((id) => ({ id, status: 'BLOCKED' }));
+    summary.status = 'BLOCKED';
+  }
 }
 
 export async function startRunnerServer(options) {
