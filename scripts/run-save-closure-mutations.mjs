@@ -213,8 +213,130 @@ export function createM6ReadinessProof(mutationIdentity) {
     cdpReady: false, browserVersion: null, coldHomeReady: false, browserNavigationStatus: null,
     mutantCandidateIdentity: mutationIdentity.candidateSha256, mutationPatchSha256: mutationIdentity.patchSha256,
     mutatedLoaderSha256: mutationIdentity.loaderSha256,
-    diagnostics: { pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [] },
+    diagnostics: { requests: [], pageErrors: [], consoleErrors: [], requestFailures: [], responseErrors: [], responses: [], captureErrors: [], droppedEvents: 0 },
   };
+}
+
+const MAX_M6_DIAGNOSTIC_ENTRIES = 200;
+
+function appendM6Diagnostic(proof, collection, entry) {
+  const rows = proof?.diagnostics?.[collection];
+  if (!Array.isArray(rows)) {
+    if (proof?.diagnostics) proof.diagnostics.captureErrors = [...(proof.diagnostics.captureErrors ?? []), { collection, message: 'diagnostic collection is unavailable' }];
+    return false;
+  }
+  if (rows.length >= MAX_M6_DIAGNOSTIC_ENTRIES) {
+    proof.diagnostics.droppedEvents = (proof.diagnostics.droppedEvents ?? 0) + 1;
+    return false;
+  }
+  rows.push(entry);
+  return true;
+}
+
+function callOrValue(object, key) {
+  const value = object?.[key];
+  return typeof value === 'function' ? value.call(object) : value;
+}
+
+function m6RequestDetails(request) {
+  return {
+    url: callOrValue(request, 'url') ?? null,
+    method: callOrValue(request, 'method') ?? null,
+    resourceType: callOrValue(request, 'resourceType') ?? null,
+  };
+}
+
+export function recordM6RequestDiagnostic(proof, request, { source = 'browser-context' } = {}) {
+  try {
+    const details = m6RequestDetails(request);
+    appendM6Diagnostic(proof, 'requests', { ...details, source });
+    if (!details.url || !details.method || !details.resourceType) {
+      appendM6Diagnostic(proof, 'captureErrors', { kind: 'request-attribution-incomplete', ...details });
+    }
+    return details;
+  } catch (error) {
+    appendM6Diagnostic(proof, 'captureErrors', { kind: 'request-capture-error', message: error.message });
+    return null;
+  }
+}
+
+export function recordM6RequestFailure(proof, request, { source = 'browser-context' } = {}) {
+  try {
+    const details = m6RequestDetails(request);
+    appendM6Diagnostic(proof, 'requestFailures', {
+      ...details,
+      source,
+      error: callOrValue(request, 'failure')?.errorText ?? callOrValue(request, 'failure') ?? null,
+    });
+    if (!details.url || !details.method || !details.resourceType) {
+      appendM6Diagnostic(proof, 'captureErrors', { kind: 'failed-request-attribution-incomplete', ...details });
+    }
+  } catch (error) {
+    appendM6Diagnostic(proof, 'captureErrors', { kind: 'request-failure-capture-error', message: error.message });
+  }
+}
+
+export function attachM6BrowserNetworkDiagnostics(context, proof) {
+  context.on('request', (request) => { recordM6RequestDiagnostic(proof, request); });
+  context.on('requestfailed', (request) => { recordM6RequestFailure(proof, request); });
+  context.on('response', (response) => { recordM6ResponseDiagnostic(proof, response); });
+}
+
+export function recordM6PageError(proof, error) {
+  appendM6Diagnostic(proof, 'pageErrors', {
+    message: error?.message ?? String(error),
+    stack: error?.stack ?? null,
+  });
+}
+
+export function recordM6ResponseDiagnostic(proof, response, { source = 'browser-context', resourceType = null, method = null } = {}) {
+  let entry;
+  try {
+    const request = callOrValue(response, 'request');
+    const headers = callOrValue(response, 'headers');
+    const contentType = typeof headers?.get === 'function' ? headers.get('content-type')
+      : headers?.['content-type'] ?? headers?.['Content-Type'] ?? null;
+    entry = {
+      url: callOrValue(response, 'url') ?? null,
+      status: Number(callOrValue(response, 'status')),
+      resourceType: callOrValue(request, 'resourceType') ?? resourceType,
+      method: callOrValue(request, 'method') ?? method,
+      contentType,
+      source,
+    };
+    appendM6Diagnostic(proof, 'responses', entry);
+    if (!entry.url || !Number.isInteger(entry.status) || !entry.resourceType) {
+      appendM6Diagnostic(proof, 'captureErrors', { kind: 'response-attribution-incomplete', ...entry });
+    }
+    if (Number.isInteger(entry.status) && (entry.status < 200 || entry.status >= 400)) {
+      appendM6Diagnostic(proof, 'responseErrors', { kind: 'http-status', ...entry });
+    }
+    return entry;
+  } catch (error) {
+    appendM6Diagnostic(proof, 'responseErrors', { kind: 'response-capture-error', source, message: error.message });
+    return null;
+  }
+}
+
+export function recordM6ConsoleError(proof, message) {
+  try {
+    if (callOrValue(message, 'type') !== 'error') return null;
+    const location = callOrValue(message, 'location') ?? {};
+    const entry = {
+      message: callOrValue(message, 'text') ?? '',
+      location: {
+        url: location.url ?? null,
+        lineNumber: Number.isInteger(location.lineNumber) ? location.lineNumber : null,
+        columnNumber: Number.isInteger(location.columnNumber) ? location.columnNumber : null,
+      },
+    };
+    appendM6Diagnostic(proof, 'consoleErrors', entry);
+    if (!entry.message) appendM6Diagnostic(proof, 'captureErrors', { kind: 'console-attribution-incomplete', location: entry.location });
+    return entry;
+  } catch (error) {
+    appendM6Diagnostic(proof, 'captureErrors', { kind: 'console-capture-error', message: error.message });
+    return null;
+  }
 }
 
 export function finalizeM6ReadinessProof(proof) {
@@ -223,8 +345,10 @@ export function finalizeM6ReadinessProof(proof) {
     || proof?.cdpReady !== true || !proof?.browserVersion || proof?.coldHomeReady !== true
     || (diagnostics.pageErrors?.length ?? 0) > 0 || (diagnostics.consoleErrors?.length ?? 0) > 0
     || (diagnostics.requestFailures?.length ?? 0) > 0 || (diagnostics.responseErrors?.length ?? 0) > 0
+    || (diagnostics.captureErrors?.length ?? 0) > 0 || (diagnostics.droppedEvents ?? 0) > 0
     || !(diagnostics.responses ?? []).length
-    || (diagnostics.responses ?? []).some((response) => response.status < 200 || response.status >= 400);
+    || (diagnostics.responses ?? []).some((response) => !response.url || !Number.isInteger(response.status)
+      || !response.resourceType || response.status < 200 || response.status >= 400);
   return failure
     ? { status: 'BLOCKED', reason: 'Independent cold-Home readiness contained an HTTP, request, response, console, page or CDP error.' }
     : { status: 'READINESS_PASS', reason: null };
@@ -692,8 +816,33 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     proof.cdpProtocolVersion = cdpVersion['Protocol-Version'] ?? null;
     proof.browserVersion = cdpVersion.Browser ?? null;
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${browserPort}`, { timeout: opTimeout(8_000) });
+    const context = browser.contexts()[0] ?? await browser.newContext();
+    const instrumentedPages = new WeakSet();
+    const instrumentPage = (targetPage) => {
+      if (instrumentedPages.has(targetPage)) return;
+      instrumentedPages.add(targetPage);
+      targetPage.on('pageerror', (error) => { recordM6PageError(proof, error); });
+      targetPage.on('console', (message) => { recordM6ConsoleError(proof, message); });
+    };
+    context.on('page', instrumentPage);
+    attachM6BrowserNetworkDiagnostics(context, proof);
+    const page = context.pages()[0] ?? await context.newPage();
+    for (const existingPage of context.pages()) instrumentPage(existingPage);
+    instrumentPage(page);
+    page.setDefaultTimeout(opTimeout(5_000));
+    page.setDefaultNavigationTimeout(opTimeout(8_000));
+    await page.setViewportSize({ width: 1280, height: 900 });
     const origin = `http://127.0.0.1:${serverPort}`;
-    const index = await fetch(`${origin}/`, { signal: AbortSignal.timeout(opTimeout(5_000)) });
+    const indexUrl = `${origin}/`;
+    const indexRequest = { url: indexUrl, method: 'GET', resourceType: 'document' };
+    recordM6RequestDiagnostic(proof, indexRequest, { source: 'node-preflight' });
+    let index;
+    try { index = await fetch(indexUrl, { signal: AbortSignal.timeout(opTimeout(5_000)) }); }
+    catch (error) {
+      recordM6RequestFailure(proof, { ...indexRequest, failure: () => ({ errorText: error.message }) }, { source: 'node-preflight' });
+      throw error;
+    }
+    recordM6ResponseDiagnostic(proof, index, { source: 'node-preflight', resourceType: 'document', method: 'GET' });
     proof.httpIndexStatus = index.status;
     const html = await settleBefore(index.text(), opTimeout(3_000), 'production HTTP index body');
     const entryPath = html.match(/<script[^>]+src=["']([^"']+\.js)["']/i)?.[1];
@@ -701,24 +850,17 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     if (index.status !== 200 || !entryPath) throw new Error('BLOCKED: independent production HTTP index/entry discovery did not qualify.');
     const entryUrl = new URL(entryPath, origin);
     if (entryUrl.origin !== origin) throw new Error('BLOCKED: production entry asset escaped the same-origin boundary.');
-    const assetResponse = await fetch(entryUrl, { signal: AbortSignal.timeout(opTimeout(5_000)) });
+    const assetRequest = { url: entryUrl.href, method: 'GET', resourceType: 'script' };
+    recordM6RequestDiagnostic(proof, assetRequest, { source: 'node-preflight' });
+    let assetResponse;
+    try { assetResponse = await fetch(entryUrl, { signal: AbortSignal.timeout(opTimeout(5_000)) }); }
+    catch (error) {
+      recordM6RequestFailure(proof, { ...assetRequest, failure: () => ({ errorText: error.message }) }, { source: 'node-preflight' });
+      throw error;
+    }
+    recordM6ResponseDiagnostic(proof, assetResponse, { source: 'node-preflight', resourceType: 'script', method: 'GET' });
     proof.productionAssetStatus = assetResponse.status;
     if (assetResponse.status !== 200) throw new Error(`BLOCKED: production JavaScript entry returned HTTP ${assetResponse.status}.`);
-    const context = browser.contexts()[0] ?? await browser.newContext();
-    const page = context.pages()[0] ?? await context.newPage();
-    page.setDefaultTimeout(opTimeout(5_000));
-    page.setDefaultNavigationTimeout(opTimeout(8_000));
-    await page.setViewportSize({ width: 1280, height: 900 });
-    page.on('pageerror', (error) => proof.diagnostics.pageErrors.push({ message: error.message }));
-    page.on('console', (message) => { if (message.type() === 'error') proof.diagnostics.consoleErrors.push({ message: message.text() }); });
-    page.on('requestfailed', (request) => proof.diagnostics.requestFailures.push({ url: request.url(), error: request.failure()?.errorText ?? null }));
-    page.on('response', async (response) => {
-      const url = new URL(response.url());
-      if (url.origin !== `http://127.0.0.1:${serverPort}`) return;
-      proof.diagnostics.responses.push({ path: url.pathname, status: response.status() });
-      if (url.pathname === '/index.html') proof.httpIndexStatus = response.status();
-      if (/^\/assets\/index-.*\.js$/.test(url.pathname)) proof.productionAssetStatus = response.status();
-    });
     const response = await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: opTimeout(8_000) });
     proof.browserNavigationStatus = response?.status() ?? null;
     await page.getByRole('heading', { name: 'Tachiko Sheet', exact: true }).waitFor({ state: 'visible', timeout: opTimeout(5_000) });

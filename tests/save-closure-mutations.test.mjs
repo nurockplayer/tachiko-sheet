@@ -1,17 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { EventEmitter, once } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
   boundedM6ProbeBudget,
+  attachM6BrowserNetworkDiagnostics,
   cleanGateCandidateMatches,
   classifyM6ProductionProof,
   classifyMutationReceipt,
   createM6ReadinessProof,
   executeFrozenSaveControl,
   finalizeM6ReadinessProof,
+  recordM6ConsoleError,
   reconcileHostedProductEvidence,
 } from '../scripts/run-save-closure-mutations.mjs';
 
@@ -128,6 +132,56 @@ test('M6 readiness budget leaves restoration and upload reserve untouched', () =
   assert.equal(boundedM6ProbeBudget(99_999), null);
 });
 
+test('M6 diagnostics attribute a real HTTP 404 by URL, status, resource type, and console location', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('missing test resource');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  const url = `http://127.0.0.1:${address.port}/missing.css`;
+  const readiness = createM6ReadinessProof({ candidateSha256: 'a'.repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) });
+  try {
+    const context = new EventEmitter();
+    attachM6BrowserNetworkDiagnostics(context, readiness);
+    const request = { url: () => url, method: () => 'GET', resourceType: () => 'stylesheet', failure: () => null };
+    context.emit('request', request);
+    const response = await fetch(url);
+    assert.equal(response.status, 404);
+    const responseEvent = {
+      url: () => response.url,
+      status: () => response.status,
+      request: () => request,
+      headers: () => ({ 'content-type': response.headers.get('content-type') }),
+    };
+    context.emit('response', responseEvent);
+    const attributed = readiness.diagnostics.responses[0];
+    assert.deepEqual(attributed, {
+      url, status: 404, resourceType: 'stylesheet', method: 'GET',
+      contentType: 'text/plain; charset=utf-8', source: 'browser-context',
+    });
+    assert.deepEqual(readiness.diagnostics.responseErrors, [{ kind: 'http-status', ...attributed }]);
+    assert.deepEqual(readiness.diagnostics.requests, [{ url, method: 'GET', resourceType: 'stylesheet', source: 'browser-context' }]);
+    const consoleError = recordM6ConsoleError(readiness, {
+      type: () => 'error',
+      text: () => 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+      location: () => ({ url, lineNumber: 0, columnNumber: 0 }),
+    });
+    assert.deepEqual(consoleError, {
+      message: 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+      location: { url, lineNumber: 0, columnNumber: 0 },
+    });
+    assert.equal(finalizeM6ReadinessProof({
+      ...readiness, httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200,
+      cdpReady: true, browserVersion: 'Chrome/151.0.0.0', coldHomeReady: true,
+    }).status, 'BLOCKED');
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
 test('M6 requires the frozen lifecycle Home/Open assertion plus clean independent HTTP/CDP readiness', () => {
   const identity = { candidateSha256: 'a'.repeat(64), patchSha256: 'b'.repeat(64), loaderSha256: 'c'.repeat(64) };
   const readiness = createM6ReadinessProof(identity);
@@ -135,7 +189,10 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
     httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200,
     cdpReady: true, browserVersion: 'Chrome/136.0.0.0', coldHomeReady: true,
   });
-  readiness.diagnostics.responses.push({ status: 200 }, { status: 200 });
+  readiness.diagnostics.responses.push(
+    { url: 'http://127.0.0.1:34701/', status: 200, resourceType: 'document' },
+    { url: 'http://127.0.0.1:34701/assets/index-app.js', status: 200, resourceType: 'script' },
+  );
   assert.deepEqual(readiness.diagnostics.responseErrors, []);
   Object.assign(readiness, finalizeM6ReadinessProof(readiness));
   assert.equal(readiness.status, 'READINESS_PASS');

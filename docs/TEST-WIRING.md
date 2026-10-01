@@ -149,4 +149,6 @@ The hosted mutation runner archives the clean `acceptance:product` step’s gene
 
 The unchanged M6 old gate has a 300-second per-command cap based on its measured hosted runtime. The command runner still clips that cap to the remaining fixed 20-minute job budget and retains its 90-second cleanup/evidence/upload reserve; the job timeout is unchanged. A timeout or incomplete old-gate summary remains `BLOCKED`.
 
+M6 readiness records bounded browser-context requests and responses from before navigation through cold Home, including each response's absolute URL, status, resource type, method and content type; console errors also retain their source location. The Node preflight index and entry requests are recorded separately with their known document/script types. HTTP errors, diagnostic-capture failures and overflow remain blocking; no resource is exempted based on its name or message. This lets a blocked receipt identify the failing resource without changing the RED oracle.
+
 The mutation stage stays within the workflow’s existing 20-minute job timeout and reserves time for owned-process cleanup, evidence writes, and artifact upload. It does not change frozen seed files, Work pin, manifest, fixtures, workflow permissions, dependencies, or acceptance rules. No Mac browser is launched; M6 uses only the existing hosted Ubuntu Playwright installation.
