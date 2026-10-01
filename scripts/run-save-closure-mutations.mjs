@@ -1020,7 +1020,7 @@ export async function executeMutationQualification() {
         await writeSummary(ctx);
         continue;
       }
-      await runOneMutation(ctx, definition, baselineHashes, cleanEvidence.candidate);
+      await runOneMutation(ctx, definition, baselineHashes, ctx.candidate);
     }
     ctx.summary.status = mutationReceiptSummary(ctx);
     ctx.summary.completedAt = nowIso();

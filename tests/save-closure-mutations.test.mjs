@@ -113,6 +113,7 @@ test('clean gate receipts may bind archived product evidence while committed can
   const committedFiles = [['src/App.tsx', 'a'.repeat(64)]];
   const clean = { base: 'b'.repeat(40), head: 'c'.repeat(40), committedFiles, dirtyFiles: [], sha256: 'd'.repeat(64) };
   const gate = { ...clean, dirtyFiles: [['evidence/product-acceptance/summary.json', 'e'.repeat(64)]], sha256: 'f'.repeat(64) };
+  assert.equal(cleanGateCandidateMatches(clean, clean), true);
   assert.equal(cleanGateCandidateMatches(gate, clean, [['summary.json', 'e'.repeat(64)]]), true);
   assert.equal(cleanGateCandidateMatches({ ...gate, dirtyFiles: [['src/App.tsx', 'e'.repeat(64)]] }, clean, [['summary.json', 'e'.repeat(64)]]), false);
   assert.equal(cleanGateCandidateMatches({ ...gate, committedFiles: [['src/App.tsx', '9'.repeat(64)]] }, clean, [['summary.json', 'e'.repeat(64)]]), false);
