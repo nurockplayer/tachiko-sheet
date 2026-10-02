@@ -142,7 +142,7 @@ test('PR admission accepts the exact eight tooling paths and rejects added produ
         process.env.TACHIKO_MUTATION_PR_HEAD = extraHead;
         await assert.rejects(
           validateAuthorizedCandidate(worktree, extraHead),
-          /exactly the eight admitted implementation paths/,
+          /exactly the 8 admitted implementation paths/,
         );
       } finally {
         process.env.TACHIKO_MUTATION_PR_HEAD = requestedHead;
