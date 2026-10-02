@@ -771,6 +771,21 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
     && gets.filter((row) => row.name !== 'production-favicon').every((row) => {
       try { return row.status === 200 && new URL(row.url).origin === origin; } catch { return false; }
     });
+  const productionEntry = gets.find((row) => row.name === 'production-entry');
+  const productionEntryPath = proof?.productionEntryAssetPath?.replace(/^\//, '');
+  const productionEntryRows = proof?.assetInventoryVerification?.observedRows;
+  const productionEntryInventory = Array.isArray(productionEntryRows)
+    ? productionEntryRows.find((row) => row?.path === productionEntryPath) : null;
+  const productionEntryExpected = Array.isArray(buildReceipt?.artifact?.files)
+    ? buildReceipt.artifact.files.find((row) => Array.isArray(row) && row[0] === productionEntryPath) : null;
+  const productionEntryBound = typeof productionEntryPath === 'string'
+    && Number.isSafeInteger(productionEntry?.bodyByteCount) && productionEntry.bodyByteCount > 0
+    && /^[a-f0-9]{64}$/.test(productionEntry?.bodySha256 ?? '')
+    && productionEntry?.bodySha256 === productionEntryExpected?.[1]
+    && productionEntryInventory?.status === 200 && productionEntryInventory?.method === 'GET'
+    && productionEntryInventory?.url === productionEntry?.url
+    && productionEntryInventory?.bodySha256 === productionEntry.bodySha256
+    && productionEntryInventory?.bodyByteCount === productionEntry.bodyByteCount;
   const buildBound = buildReceipt?.status === 'PASS' && buildReceipt?.candidate?.sha256 === identity?.candidateSha256
     && buildReceipt?.artifact?.digest === proof?.buildDigest
     && proof?.candidateIdentity === identity?.candidateSha256
@@ -781,7 +796,7 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
     && JSON.stringify((proof.assetInventoryVerification.expectedFiles ?? []).map((row) => [row.path, row.sha256])) === JSON.stringify(buildReceipt.artifact.files)
     && inventoryRowsMatch(buildReceipt, proof.assetInventoryVerification.observedRows, origin);
   const cleanProcess = (proof?.stopErrors ?? []).length === 0 && Array.isArray(proof?.ownedProcesses)
-    && proof.ownedProcesses.length === 2 && proof.ownedProcesses.every((item) => item.exit && (item.exit.code === 0 || item.exit.signal === 'SIGTERM'))
+    && proof.ownedProcesses.length === 2 && proof.ownedProcesses.every((item) => validM6OwnedProcessExit(item.exit))
     && proof.ownedProcesses.some((item) => item.role === 'managed-chromium' && typeof item.command === 'string' && item.command.includes('ms-playwright'));
   const frozenReadiness = finalizeM6ReadinessProof(proof);
   const valid = proof?.status === 'BLOCKED' && frozenReadiness.status === 'BLOCKED'
@@ -794,7 +809,7 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
     && proof.emittedHtmlAudit?.domAudit?.url === `${origin}/`
     && proof.browserNavigationStatus === 200 && proof.cdpReady === true && proof.coldHomeReady === true
     && proof.playwrightVersion === '1.62.1' && typeof proof.browserVersion === 'string' && proof.browserVersion.startsWith('Chrome/')
-    && getsComplete && validM6FaviconFetch(favicon, origin) && expectedConsole && requestsClean && responsesClean
+    && getsComplete && productionEntryBound && validM6FaviconFetch(favicon, origin) && expectedConsole && requestsClean && responsesClean
     && buildBound && sourceClear && emittedClear && controlValid && cleanProcess;
   return valid ? { status: 'AUXILIARY_CANDIDATE', origin, target, candidateIdentity: identity.candidateSha256,
     buildDigest: buildReceipt.artifact.digest, browserVersion: proof.browserVersion, faviconStatus: favicon.status,
@@ -809,6 +824,12 @@ function sameM6Inventory(left, right) {
 
 function browserVersionValue(value) {
   return typeof value === 'string' ? value.replace(/^Chrome\//, '') : null;
+}
+
+function validM6OwnedProcessExit(exit) {
+  return (exit?.code === 0 && exit.signal == null)
+    || (exit?.signal === 'SIGTERM'
+      && (exit.code === null || (Number.isInteger(exit.code) && exit.code !== 0)));
 }
 
 function normalizedLifecycleAssetPath(value) {
@@ -901,7 +922,7 @@ export function classifyM6LifecycleFaviconDisposition(lifecycleReceipt, lifecycl
     && Array.isArray(served) && served.every((row) => row.status === 200)
     && exactConsole && Array.isArray(faviconProbe?.cleanupErrors) && faviconProbe.cleanupErrors.length === 0
     && faviconProbe.serverExit?.observed === true
-    && (faviconProbe.serverExit.code === 0 || faviconProbe.serverExit.signal === 'SIGTERM')
+    && validM6OwnedProcessExit(faviconProbe.serverExit)
     && !readinessProof?.hookFreeControl?.closeError && !readinessProof?.hookFreeControl?.serverCloseError;
   return origin && target && readinessDisposition.status === 'AUXILIARY_CANDIDATE' && normalStatus && exactAssertion
     && browserRows && browserProvenanceBound && inventoryBound && directGetBound && noOtherErrors
@@ -1801,13 +1822,15 @@ async function probeM6LifecycleOriginFavicon(ctx, worktree, evidenceDir, label, 
       try {
         const exit = await settleBefore(server.exit, 5_000, `${label} lifecycle favicon server exit`);
         proof.serverExit = { observed: Boolean(exit), code: exit?.code ?? null, signal: exit?.signal ?? null };
-        if (!exit || (exit.code !== 0 && exit.signal !== 'SIGTERM')) proof.cleanupErrors.push({ phase: 'exit', message: 'owned lifecycle favicon server exit was unsuccessful', exit: exit ?? null });
+        if (!exit || !validM6OwnedProcessExit(exit)) {
+          proof.cleanupErrors.push({ phase: 'exit', message: 'owned lifecycle favicon server exit was unsuccessful', exit: exit ?? null });
+        }
       } catch (error) { proof.cleanupErrors.push({ phase: 'exit', message: error.message }); }
     }
   }
   proof.status = proof.statusCode === 404 && validM6FaviconFetch({ ...proof, url: proof.url }, proof.origin) && !proof.cleanupErrors.length
     && proof.serverExit?.observed === true
-    && (proof.serverExit.code === 0 || proof.serverExit.signal === 'SIGTERM') ? 'PASS' : 'BLOCKED';
+    && validM6OwnedProcessExit(proof.serverExit) ? 'PASS' : 'BLOCKED';
   proof.completedAt = nowIso();
   await writeMutationJson(path.join(evidenceDir, 'lifecycle-favicon-get.json'), proof);
   return proof;

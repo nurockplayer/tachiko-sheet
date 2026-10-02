@@ -414,6 +414,7 @@ function m6AuxiliaryFixture(kind, port) {
   const faviconBody = 'Not found';
   const faviconHash = createHash('sha256').update(faviconBody).digest('hex');
   const entry = `assets/index-${kind}.js`;
+  const entryByteCount = 12345;
   const indexHtml = `<html><head></head><body><script type="module" src="/${entry}"></script></body></html>`;
   const files = [
     ['index.html', createHash('sha256').update(indexHtml).digest('hex')], [entry, kind === 'mutant' ? '2'.repeat(64) : '3'.repeat(64)],
@@ -449,7 +450,8 @@ function m6AuxiliaryFixture(kind, port) {
     independentHttpGets: [
       { name: 'production-index', url: `${origin}/`, method: 'GET', status: 200,
         bodyByteCount: Buffer.byteLength(indexHtml), bodySha256: createHash('sha256').update(indexHtml).digest('hex'), bodyText: indexHtml },
-      { name: 'production-entry', url: `${origin}/${entry}`, method: 'GET', status: 200 },
+      { name: 'production-entry', url: `${origin}/${entry}`, method: 'GET', status: 200,
+        bodyByteCount: entryByteCount, bodySha256: files.find(([file]) => file === entry)[1] },
       { name: 'production-favicon', requestedUrl: `${origin}/favicon.ico`, url: `${origin}/favicon.ico`,
         sameOrigin: true, method: 'GET', status: 404, redirected: false, bodyByteCount: Buffer.byteLength(faviconBody),
         bodySha256: faviconHash, bodyText: faviconBody },
@@ -466,7 +468,7 @@ function m6AuxiliaryFixture(kind, port) {
     assetInventoryVerification: { status: 'PASS', recordedArtifactDigest: artifact.digest,
       expectedFileCount: files.length, expectedFiles: files.map(([path, sha256]) => ({ path, sha256 })),
       observedRows: files.map(([path, bodySha256]) => ({ path, url: new URL(`/${path.split('/').map(encodeURIComponent).join('/')}`, origin).href,
-        method: 'GET', status: 200, bodySha256 })) },
+        method: 'GET', status: 200, bodySha256, ...(path === entry ? { bodyByteCount: entryByteCount } : {}) })) },
     hookFreeControl: control, stopErrors: [], ownedProcesses: [
       { role: 'production-http', command: 'node scripts/serve-dist.mjs', exit: { code: 0 } },
       { role: 'managed-chromium', command: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', exit: { code: 0 } },
@@ -558,6 +560,8 @@ test('M6 auxiliary default-favicon disposition requires paired readiness and fro
     { candidateSha256: mutant.candidateSha }, mutant.buildReceipt).status, 'AUXILIARY_CANDIDATE');
   assert.equal(classifyM6LifecycleFaviconDisposition(mutantLifecycle.receipt, mutantLifecycle.summary,
     mutant.buildReceipt, mutantLifecycle.faviconProbe, mutant.candidateSha, mutant.proof, 'BEHAVIORAL_RED', mutantLifecycle.browserProvenance).status, 'AUXILIARY_CANDIDATE');
+  assert.equal(classifyM6ReadinessFaviconDisposition(clean.proof,
+    { candidateSha256: clean.candidateSha }, clean.buildReceipt).status, 'AUXILIARY_CANDIDATE');
   assert.equal(classifyM6LifecycleFaviconDisposition(cleanLifecycle.receipt, cleanLifecycle.summary,
     clean.buildReceipt, cleanLifecycle.faviconProbe, clean.candidateSha, clean.proof, 'PASS', cleanLifecycle.browserProvenance).status, 'AUXILIARY_CANDIDATE');
   const termStoppedServer = structuredClone(mutantLifecycle.faviconProbe);
@@ -615,6 +619,10 @@ test('M6 readiness and lifecycle validators reject unsafe error, attribution, id
     ['missing-source-audit-arrays', (p) => { delete p.sourceIconAudit.references; }],
     ['duplicate-script-replaces-worker', (p) => { p.emittedHtmlAudit.scriptAssets[1].path = p.emittedHtmlAudit.scriptAssets[0].path; }],
     ['wrong-production-index-url', (p) => { p.independentHttpGets[0].url = `${mutant.origin}/other`; }],
+    ['wrong-production-entry-body-hash', (p) => { p.independentHttpGets[1].bodySha256 = 'e'.repeat(64); }],
+    ['wrong-production-entry-byte-count', (p) => { p.independentHttpGets[1].bodyByteCount += 1; }],
+    ['wrong-production-entry-inventory-hash', (p) => { p.assetInventoryVerification.observedRows.find((row) => row.path === p.productionEntryAssetPath.slice(1)).bodySha256 = 'e'.repeat(64); }],
+    ['wrong-production-entry-inventory-byte-count', (p) => { p.assetInventoryVerification.observedRows.find((row) => row.path === p.productionEntryAssetPath.slice(1)).bodyByteCount += 1; }],
     ['wrong-emitted-html-hash', (p) => { p.emittedHtmlAudit.sha256 = 'e'.repeat(64); }],
     ['explicit-readiness-timeout', (p) => { p.reason = 'TimeoutError: readiness probe timed out'; }],
     ['control-close-error', (p) => { p.hookFreeControl.closeError = 'context close failed'; }],
@@ -627,7 +635,7 @@ test('M6 readiness and lifecycle validators reject unsafe error, attribution, id
       { candidateSha256: mutant.candidateSha }, mutant.buildReceipt);
     assert.equal(readinessResult.status, 'BLOCKED', `${name}: readiness`);
     const lifecycleResult = classifyM6LifecycleFaviconDisposition(lifecycle.receipt, lifecycle.summary,
-      mutant.buildReceipt, lifecycle.faviconProbe, mutant.candidateSha, bad);
+      mutant.buildReceipt, lifecycle.faviconProbe, mutant.candidateSha, bad, 'BEHAVIORAL_RED', lifecycle.browserProvenance);
     assert.equal(lifecycleResult.status, 'BLOCKED', `${name}: lifecycle`);
   }
   const badLifecycleCases = [
@@ -647,6 +655,8 @@ test('M6 readiness and lifecycle validators reject unsafe error, attribution, id
     ['wrong-body-identity', (l) => { l.faviconProbe.bodySha256 = 'e'.repeat(64); }],
     ['wrong-body-byte-count', (l) => { l.faviconProbe.bodyByteCount = 10; }],
     ['owned-server-kill', (l) => { l.faviconProbe.serverExit.code = 1; l.faviconProbe.serverExit.signal = 'SIGKILL'; }],
+    ['contradictory-server-exit', (l) => { l.faviconProbe.serverExit.code = 0; l.faviconProbe.serverExit.signal = 'SIGKILL'; }],
+    ['missing-server-exit-code', (l) => { delete l.faviconProbe.serverExit.code; }],
     ['unexplained-nonzero-exit', (l) => { l.faviconProbe.serverExit.code = 1; l.faviconProbe.serverExit.signal = null; }],
     ['browser-exit-unobserved', (l) => { l.receipt.processEvidence[0].endpointReady = false; }],
   ];
