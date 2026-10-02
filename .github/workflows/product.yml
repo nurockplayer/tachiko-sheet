@@ -18,11 +18,18 @@ jobs:
     name: Web product and M1 acceptance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: /tmp/tachiko-sheet-146-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+      TACHIKO_MUTATION_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Start qualification budget clock
+        run: printf 'TACHIKO_QUALIFICATION_STARTED_AT=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -58,8 +65,38 @@ jobs:
       - name: Run product unit and host tests
         run: pnpm test:unit
 
-      - name: Build production artifact
-        run: pnpm build
+      - name: Run owned acceptance-runner lifecycle probes
+        run: pnpm test:runner-lifecycle
 
       - name: Run unchanged M1 product acceptance
         run: pnpm acceptance:product
+
+      - name: "Run Sheet #146 Save closure acceptance"
+        run: pnpm acceptance:save-closure
+
+      - name: Build production artifact for Sheet #146
+        run: |
+          node scripts/run-production-lifecycle.mjs --clear-build-receipt
+          pnpm build
+          node scripts/run-production-lifecycle.mjs --record-build
+
+      - name: "Run Sheet #146 production lifecycle acceptance"
+        run: pnpm acceptance:production-lifecycle
+
+      - name: "Check Sheet #146 mutation workflow scope"
+        run: node --test tests/save-closure-workflow-scope.test.mjs
+
+      - name: "Run serial Sheet #146 save-closure mutation qualification"
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 147
+        run: |
+          node --test tests/save-closure-mutations.test.mjs
+          node scripts/run-save-closure-mutations.mjs
+
+      - name: Retain Sheet #146 acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-146-acceptance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14

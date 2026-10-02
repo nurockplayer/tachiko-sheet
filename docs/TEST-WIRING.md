@@ -76,3 +76,100 @@ exercises the production admission/replacement boundary; rejection preserves the
 previous work. `observe` uses the actual core and `close` releases the host.
 The test edits exported fixture bytes only to independently challenge persistence;
 that is not permission for the production frontend to parse or mutate the format.
+
+## #146 Save closure acceptance wiring
+
+`pnpm acceptance:save-closure` and `pnpm acceptance:production-lifecycle` are
+separate required, ordered gates in `product.yml`. The first builds the
+acceptance artifact, serves the existing qualification routes over HTTP,
+requires all seven real producer/adapter prerequisites, then runs all eleven
+current Save closure cases. The existing production build step clears and then
+records a candidate-bound inventory receipt around the single `pnpm build`.
+The second consumes those exact candidate-bound PASS receipts and that freshly
+recorded `dist`, serves it over HTTP, and runs the hook-free
+Save/reopen/full-browser-process-restart/download canary. No disk
+route fulfillment, acceptance hook, test fixture substitution, or browser
+fallback is part of the production lifecycle.
+
+The workflow sets the shared `TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR` to a fresh
+runner-temp directory. For direct invocation, set the same variable, then run
+`pnpm acceptance:save-closure`, record one freshly built production artifact,
+then run `pnpm acceptance:production-lifecycle`:
+
+```sh
+pnpm acceptance:save-closure
+node scripts/run-production-lifecycle.mjs --clear-build-receipt
+pnpm build
+node scripts/run-production-lifecycle.mjs --record-build
+pnpm acceptance:production-lifecycle
+```
+
+The first gate writes
+`save-closure/prerequisites.json`, `save-closure/current-save-closure.json`,
+their raw seed receipts, logs, and `save-closure-summary.json`. The production
+runner removes and recreates only `production-lifecycle/`, requires those exact
+candidate-bound receipts and raw seed hashes, and verifies the fresh build
+receipt and current `dist` inventory before serving it. The build receipt is
+cleared before the workflow build step and records the complete artifact
+inventory and candidate identity afterward. The lifecycle gate writes its
+receipt/logs and updates the root `summary.json` aggregate.
+
+Receipts bind base, candidate HEAD, committed and dirty/untracked changed-path
+hashes, and all three frozen seed hashes. Committed source blobs are read using
+Git's exact object byte count and a bounded `git show` capture sized one byte
+larger; each receipt records expected and captured counts alongside the full
+SHA-256. A nonzero/unfinished read, unsafe count, or count mismatch blocks
+candidate identity instead of hashing a retained output tail. The shared
+`scripts/runner-source-identity.mjs` path is used by the save-closure,
+production-lifecycle, and mutation runners so their serialized committed-file
+identities match. Regression coverage changes only a prefix in a blob larger
+than 64 KiB and checks that a short capture is rejected. The helper and its
+tests are tooling only. The bounded file scope is `scripts/runner-source-identity.mjs`,
+`scripts/run-save-closure-acceptance.mjs`,
+`scripts/run-production-lifecycle.mjs`,
+`scripts/run-save-closure-mutations.mjs`, `tests/save-closure-mutations.test.mjs`,
+and this wiring note. The three frozen acceptance drivers remain byte-for-byte
+unchanged. Candidate identity is for evidence association; changed-path scope
+remains a separate review concern outside test execution. The aggregate records pinned source/adapter/producer
+identities, exact expected-case registries and outcomes, artifact manifests,
+process/profile identities, diagnostics, and receipt/log paths. Missing cases
+remain `NOT RUN` or `BLOCKED`; no missing row becomes `PASS`. Outcomes are
+`PASS`, `BEHAVIORAL_RED`, `BLOCKED`, or `NOT RUN`, and aggregate success requires
+both gate receipts to pass for the same candidate.
+
+The workflow always uploads the shared evidence directory with the immutable
+`actions/upload-artifact` v4.6.2 commit pin, including on failed gates. It keeps
+the aggregate and raw seed receipts, build/artifact inventories, runner logs,
+production process evidence, diagnostics, and downloaded PNG for 14 days. If
+the job fails before writing evidence, the upload step warns when the directory
+is empty and preserves the original failure result.
+
+The hosted `product.yml` gate provisions the locked Playwright Chromium on
+`ubuntu-24.04`. A system Chromium diagnostic or a failed official Playwright
+browser download is not managed-browser qualification. The general clean
+acceptance gates run on pull requests and pushes to `main`. The serial M1–M6
+mutation qualification is restricted to the one authorized implementation PR
+147 because its candidate validator binds the fixed qualification base and
+admitted source-path set. A small Node-only workflow-scope regression runs on
+both routes: it keeps PR 147 eligible while excluding ordinary PRs and `main`
+from this candidate-only stage. The lifecycle seed's blank-PNG negative control
+remains its fixed oracle check and does not replace those probes.
+# Issue #146 save-closure mutation qualification
+
+The existing `scripts/run-save-closure-mutations.mjs` wires the accepted M1–M6 fault contract to the frozen Save closure and production acceptance oracles. The product workflow runs it only for pull requests, after the unchanged clean prerequisite/current Save closure and production lifecycle gates pass. It verifies the PR head against the fixed authorized candidate and base before creating any disposable worktree.
+
+Mutations run serially, one fault per detached worktree. Each worktree receives a link to the already-installed dependencies; no package or product source is committed as a fault. Raw source preimages, patch bytes and hashes, per-command output, seed receipts, candidate identities, assertions, and restoration proofs are retained under the workflow evidence directory. Every fault is restored and checked against original source hashes before the clean 7 prerequisite and 11 current cases are rerun. A timeout, navigation/setup failure, incomplete receipt, or unrelated blocked case remains `BLOCKED` and stops further fault runs.
+
+M1’s separate controls execute the frozen wait predicate and explicit Saved assertion. They cover immediate Saved, actual Save failed, stale Saved with the dialog open, missing and indefinitely Saving states, plus navigation and transport failures; controls remain separate from product receipts. M2–M5 require the contract’s existing whole-work refusal, producer-dispatch, Date edit, or source-preservation assertion, including M5b’s earliest existing source-name assertion. M6 first runs unchanged `pnpm acceptance:product` against the same production-only loader mutant, archives the raw output, and restores only its generated product-acceptance evidence paths. It then obtains fresh 7/11 receipts and a production build under the unchanged mutant identity. A bounded hosted locked-Playwright probe independently qualifies production HTTP, the managed browser, CDP and cold Home; the frozen `pnpm acceptance:production-lifecycle` must then fail at its exact Home/Open runtime assertion with no unrelated HTTP, request or page errors. Timeouts and setup failures remain BLOCKED. After restoring M6, the clean acceptance and production lifecycle gates run again.
+
+The hosted mutation runner archives the clean `acceptance:product` step’s generated `evidence/product-acceptance/` outputs, restores their committed preimages, and verifies a clean candidate checkout before reading clean-gate receipts or creating any mutation worktree. Its clean-gate comparison requires identical base, HEAD, and committed source hashes; receipt-only dirty paths are accepted only when each path and hash matches the archived output. Mutation worktrees and post-restore reruns bind to the reconciled clean candidate identity. Product source and acceptance history remain untouched.
+
+The unchanged M6 old gate has a 300-second per-command cap based on its measured hosted runtime. The command runner still clips that cap to the remaining fixed 20-minute job budget and retains its 90-second cleanup/evidence/upload reserve; the job timeout is unchanged. A timeout or incomplete old-gate summary remains `BLOCKED`.
+
+M6 readiness records bounded browser-context requests and responses from before navigation through cold Home, including each response's absolute URL, status, resource type, method and content type; console errors also retain their source location. The Node preflight index and entry requests are recorded separately with their known document/script types. HTTP errors, diagnostic-capture failures and overflow remain blocking; no resource is exempted based on its name or message. This lets a blocked receipt identify the failing resource without changing the RED oracle.
+
+The M6 diagnostic makes a separate exact same-origin `GET /favicon.ico` against each mutant and restored-clean production build, retaining request/response URL, method, redirect state, status, body text, byte count, body SHA-256 and content type. It fetches every file in that build's recorded artifact inventory and compares full response hashes/statuses to the receipt, including each emitted JS/CSS chunk and the core-kit Worker/WASM files. Tracked `index.html`/`src`/`public` text, served HTML, emitted JS, and the rendered Home DOM are audited for explicit favicon, `.ico`, icon-link or literal icon-fetch references. The raw production index body is byte/hash-bound to its own recorded inventory. Mutant/clean index comparison allows only the single recorded candidate-specific script `src` path to differ; every other byte must match after that exact path is normalized. A hook-free blank HTML page is served from a temporary local control origin in a separate context of the same managed Chromium process; its complete HTML/DOM, browser network/console events and server-observed requests/responses are retained.
+
+The readiness and frozen lifecycle validators each bind their own exact origin, candidate/build inventory and locked browser evidence. Frozen lifecycle receipt fields are status-specific: an intended Home/Open `BEHAVIORAL_RED` is serialized before the driver's `finally` cleanup and therefore has top-level origin/inventory/network evidence, one ready browser launch, and no exit field; a clean `PASS` has environment/artifact fields and both launches with observed exits. Separate wrapper provenance binds the RED receipt to its candidate, build, frozen seed and locked executable without editing the raw receipt. The old `acceptance:product` command must PASS on the exact same M6 mutant before the fresh 7/11 Save closure, production build, and frozen lifecycle sequence. The default browser favicon 404 may receive the separate `AUXILIARY_DEFAULT_FAVICON_404` disposition only when mutant and restored-clean readiness/lifecycle evidence both independently prove the same-origin default request, exact 404 body/hash, no explicit or shipped icon use, the same hook-free blank-control behavior, complete matching required asset inventory, and no other errors, capture loss, timeout, setup or cleanup issue. Runtime asset requests may differ when the mutated loader prevents the kit from loading; that raw diagnostic difference is retained, while the full per-candidate inventory and the specific expected entry-path exception remain bound. Its raw errors remain unchanged and are referenced by hashes in a separate disposition receipt. Required negative controls cover missing JS/CSS/Worker/WASM/chunk/Home assets, explicit or shipped icons, query/redirect/cross-origin requests, favicon 500 or non-GET requests, generic or second console errors, missing attribution, capture overflow/exception, timeout/cleanup failures, and wrong candidate/build/body identity. These controls exercise both readiness and lifecycle classifiers. Every other observed HTTP, network or console error remains `BLOCKED`; parity alone never turns M6 `RED` or `PASS`.
+
+The mutation stage stays within the workflow’s existing 20-minute job timeout and reserves time for owned-process cleanup, evidence writes, and artifact upload. It does not change frozen seed files, Work pin, manifest, fixtures, workflow permissions, dependencies, or acceptance rules. No Mac browser is launched; M6 uses only the existing hosted Ubuntu Playwright installation.

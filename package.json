@@ -29,9 +29,12 @@
     "preview:acceptance": "vite preview --mode acceptance",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:unit": "vitest run src/runtime src/ui src/application src/host/appearance-preference.test.ts src/host/interface-profile-files.test.ts src/App.test.ts tests/product && node --test src/host/local-copies.test.mjs tests/product/example-copy.node.mjs tests/verify-core-kit-provenance.test.mjs",
+    "test:runner-lifecycle": "node --test tests/runner-process-lifecycle.test.mjs",
     "verify:core-kit": "node scripts/verify-core-kit.mjs",
     "qualification:core-kit": "node scripts/qualify-core-kit.mjs",
     "acceptance:product": "node scripts/run-product-acceptance.mjs",
+    "acceptance:save-closure": "node scripts/run-save-closure-acceptance.mjs",
+    "acceptance:production-lifecycle": "node scripts/run-production-lifecycle.mjs",
     "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs",
     "test:visual-foundation": "node tests/product/visual-foundation-regression.mjs"
   },
