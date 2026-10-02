@@ -88,7 +88,7 @@ test('all runner identities hash complete committed blobs and fail closed on tru
   );
 });
 
-test('PR admission accepts the exact seven tooling paths and rejects added product or frozen-driver paths', async () => {
+test('PR admission accepts the exact eight tooling paths and rejects added product or frozen-driver paths', async () => {
   const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
   const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' }).toString().trim();
   const requestedHead = process.env.TACHIKO_MUTATION_PR_HEAD || checkoutHead;
@@ -97,7 +97,7 @@ test('PR admission accepts the exact seven tooling paths and rejects added produ
     '.github/workflows/product.yml', 'docs/TEST-WIRING.md',
     'scripts/run-production-lifecycle.mjs', 'scripts/run-save-closure-acceptance.mjs',
     'scripts/run-save-closure-mutations.mjs', 'scripts/runner-source-identity.mjs',
-    'tests/save-closure-mutations.test.mjs',
+    'tests/save-closure-mutations.test.mjs', 'tests/save-closure-workflow-scope.test.mjs',
   ];
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'tachiko-sheet-146-admission-'));
   process.env.TACHIKO_MUTATION_PR_HEAD = requestedHead;
@@ -142,7 +142,7 @@ test('PR admission accepts the exact seven tooling paths and rejects added produ
         process.env.TACHIKO_MUTATION_PR_HEAD = extraHead;
         await assert.rejects(
           validateAuthorizedCandidate(worktree, extraHead),
-          /exactly the seven admitted implementation paths/,
+          /exactly the eight admitted implementation paths/,
         );
       } finally {
         process.env.TACHIKO_MUTATION_PR_HEAD = requestedHead;

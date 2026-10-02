@@ -83,8 +83,11 @@ jobs:
       - name: "Run Sheet #146 production lifecycle acceptance"
         run: pnpm acceptance:production-lifecycle
 
+      - name: "Check Sheet #146 mutation workflow scope"
+        run: node --test tests/save-closure-workflow-scope.test.mjs
+
       - name: "Run serial Sheet #146 save-closure mutation qualification"
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 147
         run: |
           node --test tests/save-closure-mutations.test.mjs
           node scripts/run-save-closure-mutations.mjs

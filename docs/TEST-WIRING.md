@@ -146,10 +146,14 @@ is empty and preserves the original failure result.
 
 The hosted `product.yml` gate provisions the locked Playwright Chromium on
 `ubuntu-24.04`. A system Chromium diagnostic or a failed official Playwright
-browser download is not managed-browser qualification. On pull requests, after
-the clean gates pass, the serial M1–M6 qualification records each disposable
-fault separately; the lifecycle seed's blank-PNG negative control remains its
-fixed oracle check and does not replace those probes.
+browser download is not managed-browser qualification. The general clean
+acceptance gates run on pull requests and pushes to `main`. The serial M1–M6
+mutation qualification is restricted to the one authorized implementation PR
+147 because its candidate validator binds the fixed qualification base and
+admitted source-path set. A small Node-only workflow-scope regression runs on
+both routes: it keeps PR 147 eligible while excluding ordinary PRs and `main`
+from this candidate-only stage. The lifecycle seed's blank-PNG negative control
+remains its fixed oracle check and does not replace those probes.
 # Issue #146 save-closure mutation qualification
 
 The existing `scripts/run-save-closure-mutations.mjs` wires the accepted M1–M6 fault contract to the frozen Save closure and production acceptance oracles. The product workflow runs it only for pull requests, after the unchanged clean prerequisite/current Save closure and production lifecycle gates pass. It verifies the PR head against the fixed authorized candidate and base before creating any disposable worktree.

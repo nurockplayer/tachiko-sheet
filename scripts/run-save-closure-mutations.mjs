@@ -20,7 +20,7 @@ const implementationPaths = [
   '.github/workflows/product.yml', 'docs/TEST-WIRING.md',
   'scripts/run-production-lifecycle.mjs', 'scripts/run-save-closure-acceptance.mjs',
   'scripts/run-save-closure-mutations.mjs', 'scripts/runner-source-identity.mjs',
-  'tests/save-closure-mutations.test.mjs',
+  'tests/save-closure-mutations.test.mjs', 'tests/save-closure-workflow-scope.test.mjs',
 ];
 const expectedSeeds = {
   'tests/product/web-save-closure-current.mjs': 'f0da11bca23206789c1ad0d4c2db771febfd37cb8343fd7c1f07c45758cbd3a8',
@@ -1087,7 +1087,7 @@ export async function validateAuthorizedCandidate(cwd, head) {
     if (delta.code !== 0) throw new Error(`cannot enumerate the implementation delta from the authorized candidate: ${delta.output}`);
     const paths = delta.output.split(/\r?\n/).filter(Boolean).sort();
     if (JSON.stringify(paths) !== JSON.stringify(implementationPaths)) {
-      throw new Error(`PR head delta from authorized candidate must contain exactly the seven admitted implementation paths; got ${paths.join(', ')}`);
+      throw new Error(`PR head delta from authorized candidate must contain exactly the ${implementationPaths.length} admitted implementation paths; got ${paths.join(', ')}`);
     }
     if (head !== requested) {
       const parents = await git(['rev-list', '--parents', '-n', '1', head], { cwd });
