@@ -19,6 +19,13 @@ export function assertObservationIntegrity(actual,{root='open'}={}) {
   }
   requireObservation(actual.selectedRowCount===0,'row is not exposed as selected');
 }
+export function assertPendingContext(actual) {
+  assertObservationIntegrity(actual,{root:'open'});
+  requireObservation(actual.context?.currentness==='pending','pending context currentness is pending');
+  requireObservation(actual.source===null,'pending withholds source');
+  requireObservation(actual.allContextText.includes('Awaiting confirmation'),'pending exposes Awaiting confirmation status');
+  requireObservation(actual.value===null||actual.value==='Awaiting confirmation','pending withholds the previously confirmed value');
+}
 export function assertNeutralContext(actual,scenario) {
   assertObservationIntegrity(actual,scenario);
   requireObservation(actual.selected.length===0,'neutral has no selected cell');

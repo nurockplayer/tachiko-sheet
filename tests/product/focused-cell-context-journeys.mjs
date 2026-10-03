@@ -6,6 +6,7 @@ import { RELEASE_FIELDS, RELEASE_ROWS, assertSelectedContext, assertWithheldCont
 
 export const cell = (entity, field) => `[data-testid="cell:${entity}:${field}"]`;
 import {observeCellContext,contextSnapshotFromObservation} from './focused-cell-dom-observation.mjs';
+import {assertPendingContext} from './focused-cell-observation-oracles.mjs';
 const contextSelector = '[data-testid="cell-context"]';
 const editorSelector = '[data-testid="cell-editor"]';
 export async function contextSnapshot(page) {
@@ -77,10 +78,7 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
       await page.click('button.ts-history-command:has-text("Undo")');
       await page.waitForFunction(()=>document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness')==='pending',undefined,{timeout:10000});
       const pending=await contextSnapshot(page);
-      assert.equal(pending.context.currentness,'pending');
-      assert.equal(pending.source,null);
-      assert.ok(pending.allContextText.includes('Awaiting confirmation'));
-      assert.ok(pending.value===null||pending.value==='Awaiting confirmation');
+      assertPendingContext(pending);
       record('real pending history publication withholds the previously confirmed value/source');
     } finally { await page.evaluate(()=>window.__tachikoAcceptance.releaseTrackerReply()); }
     await waitCurrent(page);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {assertSelectedContext,assertNeutralContext,assertWithheldContext,assertStableGrid,RELEASE_ROWS,RELEASE_FIELDS} from './focused-cell-context-oracles.mjs';
 import {contextSnapshotFromObservation} from './focused-cell-dom-observation.mjs';
+import {assertPendingContext} from './focused-cell-observation-oracles.mjs';
 
 // Assertion controls only. These are not workbook or component PASS evidence.
 export function runContextOracleFalsifiers() {
@@ -34,5 +35,42 @@ export function runContextOracleFalsifiers() {
   }
   const home={...observation,rootCount:0,context:null,connected:false,exposed:false,name:'',role:'',selected:[],fields:empty(),allVisibleText:''};
   assertNeutralContext(contextSnapshotFromObservation(home),{root:'home'});
-  return {status:'PASS',cases,scope:'raw-observation assertion falsifiers only; no product/component acceptance'};
+  const pending={...observation,context:{...observation.context,currentness:'pending'},fields:empty(),allVisibleText:'Awaiting confirmation'};
+  pending.fields.value={count:1,exposed:true,text:'Awaiting confirmation'};
+  const pendingPositiveControls=[];
+  for(const valuePresent of [true,false]) {
+    const raw=structuredClone(pending);if(!valuePresent)raw.fields.value=empty().value;
+    assertPendingContext(contextSnapshotFromObservation(raw));
+    pendingPositiveControls.push({name:valuePresent?'exposed pending placeholder':'absent value with visible pending status',accepted:true});
+  }
+  const pendingCases=[];
+  for(const [name,change,message] of [
+    ['duplicate stale source',a=>{a.fields.source={count:2,exposed:false,text:null};a.allVisibleText+=' '+row.source;},'raw observation errors cannot be absence'],
+    ['duplicate stale value',a=>{a.fields.value={count:2,exposed:false,text:null};a.allVisibleText+=' 10';},'raw observation errors cannot be absence'],
+    ['duplicate context roots',a=>{a.rootCount=2;},'context root count must match scenario'],
+    ['unexposed stale source',a=>{a.fields.source={count:1,exposed:false,text:''};},'raw observation errors cannot be absence'],
+    ['unexposed stale value',a=>{a.fields.value={count:1,exposed:false,text:''};},'raw observation errors cannot be absence'],
+    ['unique exposed stale source',a=>{a.fields.source={count:1,exposed:true,text:row.source};a.allVisibleText+=' '+row.source;},'pending withholds source'],
+    ['unique exposed stale value',a=>{a.fields.value.text='10';a.allVisibleText+=' 10';},'pending withholds the previously confirmed value'],
+    ['missing context root',a=>{a.rootCount=0;},'context root count must match scenario'],
+    ['unexposed context root',a=>{a.exposed=false;},'unique context root is connected, exposed and named'],
+    ['wrong currentness',a=>{a.context.currentness='current';},'pending context currentness is pending'],
+    ['missing pending status',a=>{a.allVisibleText='Unavailable';},'pending exposes Awaiting confirmation status'],
+    ['wrong exposed pending value',a=>{a.fields.value.text='Unavailable';},'pending withholds the previously confirmed value'],
+  ]) {
+    const unchanged=structuredClone(pending);assertPendingContext(contextSnapshotFromObservation(unchanged));
+    const changed=structuredClone(unchanged);change(changed);
+    assert.throws(()=>assertPendingContext(contextSnapshotFromObservation(changed)),error=>error.message===message);
+    pendingCases.push({name,rejected:true,message});
+  }
+  for(const [name,change,message] of [
+    ['raw errors with apparently absent source',a=>{a.observationErrors=['source'];},'raw observation errors cannot be absence'],
+    ['normalized source contradicts raw absence',a=>{a.source=row.source;},'normalized observation must retain raw evidence: source'],
+  ]) {
+    const unchanged=contextSnapshotFromObservation(structuredClone(pending));assertPendingContext(unchanged);
+    const changed=structuredClone(unchanged);change(changed);
+    assert.throws(()=>assertPendingContext(changed),error=>error.message===message);
+    pendingCases.push({name,rejected:true,message});
+  }
+  return {status:'PASS',cases,pendingPositiveControls,pendingCases,scope:'raw-observation assertion falsifiers only; no product/component acceptance'};
 }
