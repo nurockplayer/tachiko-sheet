@@ -1,17 +1,9 @@
 import assert from 'node:assert/strict';
 import {contextSnapshot,waitCurrent,fillCopyName} from './focused-cell-context-journeys.mjs';
 
+import {assertSelectedContext,assertNeutralContext} from './focused-cell-context-oracles.mjs';
 function assertSalesContext(actual,{entity,field,row,value}) {
-  assert.ok(actual.context&&/cell/i.test(actual.name));
-  assert.equal(actual.selected.length,1);
-  assert.equal(actual.selected[0].entity,entity);assert.equal(actual.selected[0].field,field);
-  assert.equal(actual.context.occurrence,actual.selected[0].occurrence);
-  assert.equal(actual.context.revision,actual.selected[0].revision);
-  assert.equal(actual.context.currentness,'current');
-  assert.ok(actual.location.includes('catalog')&&actual.location.includes('price'));
-  assert.match(actual.location,new RegExp(`Row\\s+${row}(?:\\D|$)`));
-  assert.match(actual.type,/number/i);assert.equal(actual.value,value);assert.equal(actual.source,null);
-  assert.doesNotMatch(actual.valueHeading,/Calculated value/);
+  assertSelectedContext(actual,{entity,field,row,value,table:'catalog',column:'price',source:null});
 }
 async function penTarget(page) {
   return page.evaluate(()=>{
@@ -45,18 +37,17 @@ export async function runSalesContextJourneys(page,{url,setViewport,capture}) {
   const responsive=setViewport?await assertResponsiveContext(page,{setViewport,capture}):null;
   await page.selectOption('#ts-active-table','sales');await waitCurrent(page);
   const changedTable=await contextSnapshot(page);
-  assert.equal(changedTable.source,null);
-  assert.ok(!changedTable.location.includes('catalog')&&!changedTable.location.includes('price'),'confirmed table switch clears old orientation');
-  assert.notEqual(changedTable.value,'250','confirmed table switch does not retain old selected price');
+  assertNeutralContext(changedTable);
   await page.selectOption('#ts-active-table','catalog');await waitCurrent(page);
   await page.click(target.selector);assertSalesContext(await contextSnapshot(page),{...target,value:'250'});
   await page.click('button:has-text("Save a copy")');await fillCopyName(page,'cell-context-sales');
   await page.click('button:has-text("Create copy")');await waitCurrent(page);
   const oldOccurrence=(await contextSnapshot(page)).context.occurrence;
   await page.click('button:has-text("Close project")');await page.waitForSelector('button[aria-label="Open saved cell-context-sales"]');
-  assert.equal((await contextSnapshot(page)).source,null);
+  assertNeutralContext(await contextSnapshot(page));
   await page.click('button[aria-label="Open saved cell-context-sales"]');await waitCurrent(page);
   await page.selectOption('#ts-active-table','catalog');await waitCurrent(page);
+  assertNeutralContext(await contextSnapshot(page));
   const freshTarget=await penTarget(page);assert.equal(freshTarget.entity,target.entity);assert.equal(freshTarget.field,target.field);
   await page.click(freshTarget.selector);const reopened=await contextSnapshot(page);
   assertSalesContext(reopened,{...freshTarget,value:'250'});assert.notEqual(reopened.context.occurrence,oldOccurrence);

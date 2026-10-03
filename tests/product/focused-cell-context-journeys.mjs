@@ -2,29 +2,21 @@
 // DOM evaluation observes public rendered state. Existing acceptance-only faults
 // model lost replies, never a fabricated success or injected semantic projection.
 import assert from 'node:assert/strict';
-import { RELEASE_FIELDS, RELEASE_ROWS, assertSelectedContext, assertWithheldContext } from './focused-cell-context-oracles.mjs';
+import { RELEASE_FIELDS, RELEASE_ROWS, assertSelectedContext, assertWithheldContext, assertNeutralContext, assertStableGrid } from './focused-cell-context-oracles.mjs';
 
 export const cell = (entity, field) => `[data-testid="cell:${entity}:${field}"]`;
+import {observeCellContext} from './focused-cell-dom-observation.mjs';
 const contextSelector = '[data-testid="cell-context"]';
 const editorSelector = '[data-testid="cell-editor"]';
 export async function contextSnapshot(page) {
-  return page.evaluate(() => {
-    const el = document.querySelector('[data-testid="cell-context"]');
-    const text = name => document.querySelector(`[data-testid="cell-context-${name}"]`)?.textContent ?? null;
-    const selected = [...document.querySelectorAll('[data-testid^="cell:"][aria-selected="true"]')].map(e => {
-      const [, entity, field] = e.dataset.testid.split(':');
-      const r = e.getBoundingClientRect();
-      return {entity,field,occurrence:e.dataset.workOccurrence,revision:e.dataset.workRevision,focused:e===document.activeElement,rect:{x:r.x,y:r.y,width:r.width,height:r.height}};
-    });
-    const grid = document.querySelector('.ts-grid'); const g = grid?.getBoundingClientRect();
-    return {context:el ? {occurrence:el.dataset.workOccurrence,revision:el.dataset.workRevision,currentness:el.dataset.workCurrentness}:null,
-      name:el?.getAttribute('aria-label') ?? '',location:text('location')??'',type:text('type')??'',value:text('value'),
-      valueHeading:text('value-heading')??'',source:text('source'),diagnostic:text('diagnostic'),
-      allContextText:el?.textContent??'',selected,
-      editableSourceCount:el?.querySelectorAll('[contenteditable="true"],textarea,[data-testid="cell-context-source"] input').length??0,
-      activeElement:{tag:document.activeElement?.tagName,text:document.activeElement?.textContent?.trim()},
-      grid:g ? {x:g.x,y:g.y,width:g.width,height:g.height}:null};
-  });
+  const observed=await page.evaluate(observeCellContext);
+  const text=key=>observed.fields[key].count===1&&observed.fields[key].exposed?observed.fields[key].text:null;
+  const normalization=key=>text(key)?.replace(/\s+/g,' ').trim()??'';
+  const required=observed.context?.entity?['location','table','column','row','type','value','value-heading']:[];
+  const observationErrors=required.filter(key=>observed.fields[key].count!==1||!observed.fields[key].exposed);
+  for(const key of ['source','diagnostic'])if(observed.fields[key].count>1||observed.fields[key].count===1&&!observed.fields[key].exposed)observationErrors.push(key);
+  return {...observed,location:normalization('location'),table:normalization('table'),column:normalization('column'),row:normalization('row'),type:normalization('type'),
+    value:text('value'),valueHeading:normalization('value-heading'),source:text('source'),diagnostic:text('diagnostic'),allContextText:observed.allVisibleText,observationErrors};
 }
 export async function waitCurrent(page) {
   await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute('aria-busy')==='false' && document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness')==='current',undefined,{timeout:30000});
@@ -51,12 +43,6 @@ export async function fillCopyName(page,name) {
   assert.ok(id,'normal Save dialog exposes Copy name');
   await page.fill(`input[id="${id}"]`,name);
 }
-function assertStableGrid(a,b) {
-  assert.ok(a.grid&&b.grid);
-  assert.ok(Math.abs(a.grid.y-b.grid.y)<=1,'changing cell context preserves the grid origin');
-  assert.ok(Math.abs(a.grid.width-b.grid.width)<=1,'changing context preserves grid width');
-}
-
 export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false}) {
   const cases=[]; const record=(name,details={})=>cases.push({name,status:'PASS',...details});
   await openReleaseExample(page,url);
@@ -119,10 +105,10 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     const oldOccurrence=(await contextSnapshot(page)).context.occurrence;
     await page.click('button:has-text("Close project")');
     await page.waitForSelector('button[aria-label="Open release plan example"]');
-    assert.equal((await contextSnapshot(page)).source,null,'Close clears context');
+    assertNeutralContext(await contextSnapshot(page));
     await page.click('button[aria-label="Open saved cell-context-copy"]'); await waitCurrent(page);
     const beforeSelect=await contextSnapshot(page);
-    assert.equal(beforeSelect.source,null,'reopening reused entity/field IDs cannot expose the old target');
+    assertNeutralContext(beforeSelect);
     const reopened=await select(page,row,RELEASE_FIELDS.priority,'priority','10',row.source);
     assert.notEqual(reopened.context.occurrence,oldOccurrence);
     record('same-document reopen creates a new occurrence and clears the old selected target');
@@ -151,11 +137,7 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     await page.evaluate(()=>window.__tachikoAcceptance.settleFaultWindow());
     await page.click('button.ts-refresh-command'); await waitCurrent(page);
     // Recovery may keep the unconfirmed draft; this test never deletes/replays it.
-    await page.click(cell(row.entity,RELEASE_FIELDS.priority));
-    const recovered=await contextSnapshot(page);
-    assert.equal(recovered.context.currentness,'current');
-    assert.equal(recovered.source,row.source);
-    assert.equal(recovered.context.revision,recovered.selected[0].revision);
+    await select(page,row,RELEASE_FIELDS.priority,'priority','8',row.source);
     record('Refresh resolves context from the recovered current projection');
   }
   return {status:'PASS',cases,scope:'real release-plan UI; no folder-entry/physical-device or full-process-restart claim'};

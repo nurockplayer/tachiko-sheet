@@ -12,7 +12,7 @@ Oracle exact-head review and actual browser evidence remain required before merg
 | 1 Scalar context | Normal Home release-plan impact row1: release_items/impact/Row1/Number/5, no source or Calculated value; Sales PEN price200 then250. | Actual browser driver PASS. |
 | 2 Exact instance formula | release-plan row1 priority10, exact `([release_scope.impact] + [release_scope.friction])`, Calculated value, read-only source. | Actual browser driver PASS. |
 | 3 Same-column distinction | Rows1/2/3 priority10/9/8 show their three frozen literal per-instance sources. No inferred shared rule. | Actual unchanged fixture/real Worker/browser PASS. |
-| 4 Truthful failure/unavailable | Nine disclosed projection cases in focused-cell-projection-oracles.mjs must render the actual component, including failure/unavailable with stored123, source without result, missing projection, scalar0/empty. Failure says Calculation failed; unavailable/missing result says No confirmed result; no123 fallback. | Actual rendered component contract PASS, not called core/browser failure evidence. |
+| 4 Truthful failure/unavailable | Nine disclosed projection cases in focused-cell-projection-oracles.mjs must mount and inspect the actual component in the isolated browser qualification surface, including failure/unavailable with stored123, source without result, missing projection, scalar0/empty. Failure says Calculation failed; unavailable/missing result says No confirmed result; no123 fallback. | Actual-browser connected component contract PASS, not called core/browser failure evidence. |
 | 5 Exact new field | Every native cell selection is verified against actual selected cell entity/field/occurrence/revision; location/type/value/source match that target. | Actual browser PASS plus resolver uniqueness/replacement units. |
 | 6 Command focus | Native focus to Refresh leaves one selected priority cell and its context, while actual focus is on command. Selection is distinct from :focus-visible. | Actual browser PASS and visual focus comparison. |
 | 7 Cell-first accessibility | Exactly one selected grid cell, never all cells in a row; row cue remains quiet secondary. Context has an accessible cell name. | Actual browser PASS; accessibility DOM readback and screenshot. |
@@ -62,10 +62,42 @@ Before Ready: verify actual fixture/kit/ordinary entry; parse/load these fixed
 tests; independent concrete adequacy; record exact owned paths/baseline/risk and
 required gates. The UI is absent/unverified until implemented.
 
-Before Final Candidate/merge: focused units/rendered-contract tests, typecheck,
+Before Final Candidate/merge: focused units/actual-browser component contract, typecheck,
 kit/seed integrity, affected application/currentness/host tests, normal production
 build/hook exclusion, exact candidate normal Ego journeys and native comparison,
 actual component layout/input evidence above, complete required hosted Preparation
 and Product gates including the new failing product step, fresh independent full
 Oracle Latest/ExtraHigh and normal GitHub protection/reconciliation. Canonical M1,
 host lifecycle/restart and existing acceptance source remain unchanged.
+
+## Fixed semantic DOM contract and admission repair batch1
+
+The displayed context is a region/group with computed accessible name exactly
+`Cell context` (aria-label or aria-labelledby). Unique scoped displayed test IDs
+`cell-context-table`, `-column`, `-row`, `-type`, `-value`, `-value-heading`,
+`-source`, `-diagnostic` expose actual visible text, not mirrored metadata. Table
+and column keys are exact, row is `Row N`, type is `Number` for the fixed numeric
+journeys, headings are `Value` or `Calculated value`, and formula source is
+byte-exact. The context target exposes entity/field and admitted occurrence/revision
+for correlation to the one selected cell. Native/explicit selected rows are forbidden;
+the visual secondary row cue remains allowed. Neutral replacement/Close/reopen has
+no target/location/type/source/prior successful value. Both grid x/y must stay within1px.
+
+Sol owns fixed oracle/scaffold/runner assertions. Luna owns only the narrow
+`tests/qualification/focused-cell-context-adapter.tsx`, importing and mounting the
+actual production component after Ready; it may not recreate equivalent markup.
+The connected-root oracle executes inside the browser realm with computed ancestor
+visibility/accessibility, exact displayed value/status/source, visible diagnostics,
+read-only inherited source, and no stored123 fallback. The ordinary product runner
+requires its nine-case receipt and hidden-content falsifiers; failure fails the
+existing aggregate step. Local execution uses supported Ego; hosted uses existing
+browser infrastructure. Production excludes the entire qualification surface.
+Static/pure unit tests are separate, never substitutes for this gate.
+
+The `?falsifiers` mode uses explicitly manufactured assertion-control DOM to reject
+hidden/aria-hidden/display:none/visibility:hidden/collapse expected strings behind
+wrong visible text. It earns oracle-falsification evidence only, never component or
+product PASS. Node assertion controls likewise reject misleading identity/name/type,
+wrong row, stale recovered10, stale neutral details, selected row and x movement.
+These controls do not modify the ordinary app/runtime or fabricate successful core
+publication. All four-region layout/input/native comparison gates above remain required.
