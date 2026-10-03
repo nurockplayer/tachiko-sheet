@@ -220,6 +220,12 @@ try {
     [path.join(root, 'tests', 'product', 'j3-normal-ui-local.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const focusedCellContext = await runStep(
+    'focused-cell-context-regression',
+    [path.join(root, 'tests', 'product', 'focused-cell-context-regression.mjs')],
+    { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : { WORK_DIST: acceptanceDir }), ...singleProcessEnv,
+      ...(chromiumSupport.executablePath ? { WORK_CHROMIUM: chromiumSupport.executablePath } : {}) },
+  );
   if (!serving.ready) {
     console.error(`BLOCKED: the canonical acceptance server did not start.\n${Buffer.concat(serving.output).toString()}`);
     // Supporting evidence only: the same six product outcomes over a disk-routed
@@ -239,7 +245,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
+    const localOk = focusedCellContext === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -279,7 +285,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    exitCode = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
+    exitCode = focusedCellContext === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
