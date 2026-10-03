@@ -19,11 +19,11 @@ function assertionControl(c,mount) {
 function stateFalsifiers(mount) {
   const cases=[];const snapshot=()=>contextSnapshotFromObservation(observeCellContext());
   const prior={source:'([release_scope.impact] + [release_scope.friction])'};
-  mount.replaceChildren();const homeSurface=snapshot().surfaceVisibleText;assertNeutralContext(snapshot(),{root:'home',surface:homeSurface});
+  mount.replaceChildren();assertNeutralContext(snapshot(),{root:'home'});
   for(const kind of ['hidden root on Home','duplicate roots on Home']) {
     const root=assertionControl(PROJECTION_CASES[8],mount);
     if(kind.startsWith('hidden'))root.hidden=true;else mount.append(root.cloneNode(true));
-    let message=null;try{assertNeutralContext(snapshot(),{root:'home',surface:homeSurface});}catch(e){message=e.message;}
+    let message=null;try{assertNeutralContext(snapshot(),{root:'home'});}catch(e){message=e.message;}
     requireTest(message?.includes('root count'),kind+': intended root assertion failed');
     cases.push({name:kind,rejected:true,message});mount.replaceChildren();
   }

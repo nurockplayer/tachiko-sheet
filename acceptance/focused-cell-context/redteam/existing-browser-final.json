@@ -1,0 +1,342 @@
+{
+  "status": "PASS",
+  "positiveControls": [
+    "successful calculation",
+    "calculation failure",
+    "explicit unavailable",
+    "source without current result",
+    "failure cannot fall back to stored success",
+    "unavailable cannot fall back to stored success",
+    "ordinary scalar zero",
+    "empty scalar",
+    "missing field projection"
+  ],
+  "hiddenFalsifiers": [
+    {
+      "mechanism": "hidden",
+      "rejected": true,
+      "message": "successful calculation: value exact displayed text"
+    },
+    {
+      "mechanism": "aria-hidden",
+      "rejected": true,
+      "message": "successful calculation: value exact displayed text"
+    },
+    {
+      "mechanism": "display:none",
+      "rejected": true,
+      "message": "successful calculation: value exact displayed text"
+    },
+    {
+      "mechanism": "visibility:hidden",
+      "rejected": true,
+      "message": "successful calculation: value exact displayed text"
+    },
+    {
+      "mechanism": "visibility:collapse",
+      "rejected": true,
+      "message": "successful calculation: value exact displayed text"
+    }
+  ],
+  "diagnosticFalsifiers": [
+    {
+      "case": "successful calculation",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "successful calculation: no unexpected projected diagnostic"
+    },
+    {
+      "case": "calculation failure",
+      "mutation": "missing diagnostic",
+      "rejected": true,
+      "message": "calculation failure: unique visible diagnostic"
+    },
+    {
+      "case": "calculation failure",
+      "mutation": "wrong diagnostic",
+      "rejected": true,
+      "message": "calculation failure: exact diagnostic text"
+    },
+    {
+      "case": "calculation failure",
+      "mutation": "negated diagnostic",
+      "rejected": true,
+      "message": "calculation failure: exact diagnostic text"
+    },
+    {
+      "case": "explicit unavailable",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "explicit unavailable: no unexpected projected diagnostic"
+    },
+    {
+      "case": "source without current result",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "source without current result: no unexpected projected diagnostic"
+    },
+    {
+      "case": "failure cannot fall back to stored success",
+      "mutation": "missing diagnostic",
+      "rejected": true,
+      "message": "failure cannot fall back to stored success: unique visible diagnostic"
+    },
+    {
+      "case": "failure cannot fall back to stored success",
+      "mutation": "wrong diagnostic",
+      "rejected": true,
+      "message": "failure cannot fall back to stored success: exact diagnostic text"
+    },
+    {
+      "case": "failure cannot fall back to stored success",
+      "mutation": "negated diagnostic",
+      "rejected": true,
+      "message": "failure cannot fall back to stored success: exact diagnostic text"
+    },
+    {
+      "case": "unavailable cannot fall back to stored success",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "unavailable cannot fall back to stored success: no unexpected projected diagnostic"
+    },
+    {
+      "case": "ordinary scalar zero",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "ordinary scalar zero: no unexpected projected diagnostic"
+    },
+    {
+      "case": "empty scalar",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "empty scalar: no unexpected projected diagnostic"
+    },
+    {
+      "case": "missing field projection",
+      "mutation": "unexpected diagnostic",
+      "rejected": true,
+      "message": "missing field projection: no unexpected projected diagnostic"
+    }
+  ],
+  "stateFalsifiers": [
+    {
+      "name": "hidden root on Home",
+      "rejected": true,
+      "message": "context root count must match scenario"
+    },
+    {
+      "name": "duplicate roots on Home",
+      "rejected": true,
+      "message": "context root count must match scenario"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "location",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "table",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "column",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "row",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "type",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "value",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate",
+      "key": "source",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "location",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "table",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "column",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "row",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "type",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "value",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "unexposed",
+      "key": "source",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "neutral",
+      "mutation": "duplicate roots",
+      "rejected": true,
+      "message": "context root count must match scenario"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "location",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "table",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "column",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "row",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "type",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "value",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate",
+      "key": "source",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "location",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "table",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "column",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "row",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "type",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "value",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "unexposed",
+      "key": "source",
+      "rejected": true,
+      "message": "raw observation errors cannot be absence"
+    },
+    {
+      "state": "unknown",
+      "mutation": "duplicate roots",
+      "rejected": true,
+      "message": "context root count must match scenario"
+    }
+  ],
+  "scope": "synthetic assertion controls only; production component ABSENT_UNVERIFIED"
+}

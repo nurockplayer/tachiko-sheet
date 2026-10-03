@@ -1,0 +1,61 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "path": "tests/product/focused-cell-context-falsification.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-context-journeys.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-context-oracles.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-context-regression.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-dom-observation.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-observation-oracles.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-projection-oracles.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-controls.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-freshness.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-geometry.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-regression.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "tests/product/focused-cell-sales-journeys.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "acceptance/focused-cell-context/redteam/run-ego.mjs",
+      "exitCode": 0
+    },
+    {
+      "path": "acceptance/focused-cell-context/redteam/run.ego.mjs",
+      "exitCode": 0
+    }
+  ]
+}

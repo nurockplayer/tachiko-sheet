@@ -3,7 +3,7 @@
 import {runReleaseContextJourneys} from './focused-cell-context-journeys.mjs';
 import {runSalesContextJourneys} from './focused-cell-sales-journeys.mjs';
 import {installDistRoutes,LOCAL_ORIGIN} from './dist-routes.mjs';
-import {runFocusedCellRedteamRegression} from './focused-cell-redteam-regression.mjs';
+import {runContextOracleFalsifiers} from './focused-cell-context-falsification.mjs';
 import {createServer} from 'vite';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
@@ -15,9 +15,7 @@ const browser=await chromium.launch({headless:true,
   ...(process.env.TACHIKO_TEST_SINGLE_PROCESS==='1'?{args:['--single-process']}:{})});
 let componentServer;
 try {
-  const controlsContext=await browser.newContext();
-  try {const controlsPage=await controlsContext.newPage();console.log(JSON.stringify(await runFocusedCellRedteamRegression(controlsPage,{setViewport:(width,height)=>controlsPage.setViewportSize({width,height})})));}
-  finally {await controlsContext.close();}
+  console.log(JSON.stringify(runContextOracleFalsifiers()));
   const context=await browser.newContext();
   if(process.env.WORK_DIST)await installDistRoutes(context,process.env.WORK_DIST);
   const page=await context.newPage();await page.setViewportSize({width:1440,height:900});

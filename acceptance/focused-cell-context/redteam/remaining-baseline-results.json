@@ -1,0 +1,54 @@
+{
+  "tree": "63b133400ec168c5afbda60ac9bf43e3d4f87ed6",
+  "outcomes": [
+    {
+      "name": "calculation failure retains Last result6",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "explicit unavailable retains Last result6",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "failure cannot fall back to stored success retains Last result6",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "unavailable cannot fall back to stored success retains Last result6",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "overlaps grid and Results",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "below fold",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "zero clipped height",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "ellipsis unreachable source",
+      "control": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    }
+  ],
+  "scope": "synthetic assertion controls only"
+}

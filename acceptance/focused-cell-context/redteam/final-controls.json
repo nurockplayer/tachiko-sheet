@@ -1,0 +1,457 @@
+{
+  "status": "PASS",
+  "oldTree": "63b133400ec168c5afbda60ac9bf43e3d4f87ed6",
+  "verifiedOldSources": 9,
+  "nodeCounts": [
+    17,
+    2,
+    14
+  ],
+  "receipts": [
+    {
+      "baseline": true,
+      "rendered": {
+        "status": "PASS",
+        "baseline": true,
+        "sourceSHA256": "dd8d3536473aaaea7a0f56c74ac43254f4de85d95cfbaf8ac340e1bdfd2d9954",
+        "cases": [
+          {
+            "id": "visual.stale-aria-hidden",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.stale-source-aria-hidden",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.zero-height",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.offscreen",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.opacity",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.clip-path",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.scale",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.font",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.transparent",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "visual.cover",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "location.composition",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "pending.untagged",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "neutral.untagged",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "unknown.untagged",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "recovery.untagged",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "home.untagged",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "projection.residual-1",
+            "reason": null,
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false
+          },
+          {
+            "id": "projection.residual-2",
+            "reason": null,
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false
+          },
+          {
+            "id": "projection.residual-4",
+            "reason": null,
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false
+          },
+          {
+            "id": "projection.residual-5",
+            "reason": null,
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false
+          },
+          {
+            "id": "projection.hidden-fallback",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          }
+        ],
+        "positiveControls": [
+          "each unchanged case",
+          "old content outside context",
+          "numeric saved-copy name",
+          "long scroll viewport (input reachability not credited)"
+        ],
+        "scope": "synthetic oracle controls only"
+      },
+      "freshness": {
+        "status": "PASS",
+        "baseline": true,
+        "cases": [
+          {
+            "id": "freshness.reclick",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "freshness.delayed",
+            "validControl": "PASS",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          }
+        ],
+        "oldHistorySlice": "  await page.click('button.ts-history-command:has-text(\"Undo\")'); await waitCurrent(page);\n  await select(page,row,RELEASE_FIELDS.priority,'priority','10',row.source);\n",
+        "oldHistorySliceSHA256": "6831271280fa6b17f0fe33d6546163c3610aaf54ff19522c28aa94137235f3ec",
+        "scope": "actual frozen journey sequence on manufactured DOM; no product PASS"
+      },
+      "geometry": {
+        "status": "PASS",
+        "baseline": true,
+        "cases": [
+          {
+            "id": "geometry.overlap",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "geometry.offscreen",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "geometry.zero-height",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          },
+          {
+            "id": "geometry.unmarked-ellipsis",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": true,
+            "rejected": false,
+            "reason": null
+          }
+        ],
+        "scope": "synthetic geometry oracle controls; no product/native/input PASS"
+      }
+    },
+    {
+      "baseline": false,
+      "rendered": {
+        "status": "PASS",
+        "baseline": false,
+        "sourceSHA256": "5ab128e92f66f4fc3dac3c9ccc8d52ec8c60678015c6afa05983bc43bd6fe0e0",
+        "cases": [
+          {
+            "id": "visual.stale-aria-hidden",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: value"
+          },
+          {
+            "id": "visual.stale-source-aria-hidden",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: source"
+          },
+          {
+            "id": "visual.zero-height",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: location"
+          },
+          {
+            "id": "visual.offscreen",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: location"
+          },
+          {
+            "id": "visual.opacity",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "context root has visible rendered text"
+          },
+          {
+            "id": "visual.clip-path",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: location"
+          },
+          {
+            "id": "visual.scale",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: location"
+          },
+          {
+            "id": "visual.font",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "context root has visible rendered text"
+          },
+          {
+            "id": "visual.transparent",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "context root has visible rendered text"
+          },
+          {
+            "id": "visual.cover",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unexposed/invalid semantic node: location"
+          },
+          {
+            "id": "location.composition",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "exact composed location\n+ actual - expected\n\n+ 'release_items › impact · Row 3'\n- 'release_items › priority · Row 1'\n                   ^\n"
+          },
+          {
+            "id": "pending.untagged",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "pending composition has unexplained rendered text"
+          },
+          {
+            "id": "neutral.untagged",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "neutral composition has unexplained rendered text"
+          },
+          {
+            "id": "unknown.untagged",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "unknown composition has unexplained rendered text"
+          },
+          {
+            "id": "recovery.untagged",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "surface composition matches independent baseline"
+          },
+          {
+            "id": "home.untagged",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "surface composition matches independent baseline"
+          },
+          {
+            "id": "projection.residual-1",
+            "reason": "calculation failure composition has unexplained rendered text",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true
+          },
+          {
+            "id": "projection.residual-2",
+            "reason": "explicit unavailable composition has unexplained rendered text",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true
+          },
+          {
+            "id": "projection.residual-4",
+            "reason": "failure cannot fall back to stored success composition has unexplained rendered text",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true
+          },
+          {
+            "id": "projection.residual-5",
+            "reason": "unavailable cannot fall back to stored success composition has unexplained rendered text",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true
+          },
+          {
+            "id": "projection.hidden-fallback",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "failure cannot fall back to stored success: value is unique, visible and accessibility-exposed"
+          }
+        ],
+        "positiveControls": [
+          "each unchanged case",
+          "old content outside context",
+          "numeric saved-copy name",
+          "long scroll viewport (input reachability not credited)"
+        ],
+        "scope": "synthetic oracle controls only"
+      },
+      "freshness": {
+        "status": "PASS",
+        "baseline": false,
+        "cases": [
+          {
+            "id": "freshness.reclick",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "exact rendered value\n\n'8' !== '10'\n"
+          },
+          {
+            "id": "freshness.delayed",
+            "validControl": "PASS",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "exact rendered value\n\n'8' !== '10'\n"
+          }
+        ],
+        "oldHistorySlice": "  await page.click('button.ts-history-command:has-text(\"Undo\")'); await waitCurrent(page);\n  await select(page,row,RELEASE_FIELDS.priority,'priority','10',row.source);\n",
+        "oldHistorySliceSHA256": "6831271280fa6b17f0fe33d6546163c3610aaf54ff19522c28aa94137235f3ec",
+        "scope": "actual frozen journey sequence on manufactured DOM; no product PASS"
+      },
+      "geometry": {
+        "status": "PASS",
+        "baseline": false,
+        "cases": [
+          {
+            "id": "geometry.overlap",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "context does not overlap grid viewport or Results"
+          },
+          {
+            "id": "geometry.offscreen",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "context is fully inside viewport"
+          },
+          {
+            "id": "geometry.zero-height",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "context height matches approved unchanged text scale"
+          },
+          {
+            "id": "geometry.unmarked-ellipsis",
+            "validControl": "PASS (140px desktop / 190px compact)",
+            "oldPass": false,
+            "rejected": true,
+            "reason": "clipped text needs a reachable scroll viewport, Tab stop and visible cue"
+          }
+        ],
+        "scope": "synthetic geometry oracle controls; no product/native/input PASS"
+      }
+    }
+  ],
+  "scope": "27 old-PASS / new-rejection synthetic controls, not component or product acceptance"
+}

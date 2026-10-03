@@ -1,0 +1,73 @@
+{
+  "baselineCommit": "955cb83b87b8b4be95958bce7d6b6f0ddc7e932c",
+  "baselineTree": "63b133400ec168c5afbda60ac9bf43e3d4f87ed6",
+  "files": [
+    {
+      "path": "tests/product/focused-cell-context-falsification.mjs",
+      "gitBlob": "127899e4b5815da6f5123010049e03eeb4bc4684",
+      "bytes": 7302,
+      "sha256": "492442a09b0101afddc7ab0582add83795ee930637bc63f818ee9ce804bd4127"
+    },
+    {
+      "path": "tests/product/focused-cell-context-journeys.mjs",
+      "gitBlob": "206bb202cbba37c6ad26e7b7d0a9750468eda31e",
+      "bytes": 9914,
+      "sha256": "02694f5a2cf05ac2ffc37f3ea697d1ec6c88adacf05ced1473ef3a8d2e92df06"
+    },
+    {
+      "path": "tests/product/focused-cell-context-oracles.mjs",
+      "gitBlob": "f0c33f4e73359a6fd0151eff3a567aa310478bec",
+      "bytes": 3533,
+      "sha256": "ae3a73c0c7b1443c46d403b304872b6e274a74911aaffa0b3e5f789d33408b76"
+    },
+    {
+      "path": "tests/product/focused-cell-context-regression.mjs",
+      "gitBlob": "8e8dfda5a63ebeeaf8abb02818052dfcc09e2ced",
+      "bytes": 3023,
+      "sha256": "e4cf613e69c76c875f594bb2ea85dc538b859ec0a9396b013706b49c4aa19ec6"
+    },
+    {
+      "path": "tests/product/focused-cell-dom-observation.mjs",
+      "gitBlob": "1f925a95d154b61c1f6620a562981073270c27ca",
+      "bytes": 4627,
+      "sha256": "dd8d3536473aaaea7a0f56c74ac43254f4de85d95cfbaf8ac340e1bdfd2d9954"
+    },
+    {
+      "path": "tests/product/focused-cell-observation-oracles.mjs",
+      "gitBlob": "64464fbf8b94fc81abe83d554ed5f3f17affe20e",
+      "bytes": 4062,
+      "sha256": "d4581b8835b38b99eb1a5e756fc9920b0925fdde55a9634f70d13715b9ab9a2a"
+    },
+    {
+      "path": "tests/product/focused-cell-projection-oracles.mjs",
+      "gitBlob": "595d07ee3dbf78ffd255293be08f1222d06b8850",
+      "bytes": 7194,
+      "sha256": "d185e6fa205d4661ad2fe070ae96854898551bc847c1ebe4fc035d13dc98deaf"
+    },
+    {
+      "path": "tests/product/focused-cell-sales-journeys.mjs",
+      "gitBlob": "2f2786abe84137567e540b8b896d60ba5403522d",
+      "bytes": 7274,
+      "sha256": "dc362b10aba877c908bdb6bc488a344c1d3a6e3be94facc7806b925d1f522a28"
+    },
+    {
+      "path": "tests/qualification/focused-cell-context.html",
+      "gitBlob": "6ceba4d8ac55e3218cb42e420db830856020a8f0",
+      "bytes": 6546,
+      "sha256": "59372e85df7f06e1edd4ad38ad96418b2ce9441f224925da09249fb2a1d00829"
+    }
+  ],
+  "scope": "exact pre-repair acceptance observer/oracles/journeys/qualification sources",
+  "replayFiles": [
+    {
+      "path": "tests/product/focused-cell-redteam-controls.mjs",
+      "bytes": 11443,
+      "sha256": "b82768e282844c69c5c86b946f624500b1f73860940dc77d6daa9ce581aafdcf"
+    },
+    {
+      "path": "tests/qualification/redteam.html",
+      "bytes": 535,
+      "sha256": "139de908348ecfc21e2a089e540202ec039b597ee182bfca2ee4f0760bb82071"
+    }
+  ]
+}

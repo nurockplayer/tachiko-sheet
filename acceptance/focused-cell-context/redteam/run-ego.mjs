@@ -1,0 +1,10 @@
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+const [space,receipt]=process.argv.slice(2);
+if(space&&!/^\d+$/.test(space))throw new Error('Space must be an existing numeric task-space ID');
+const config={root:fileURLToPath(new URL('../../../',import.meta.url)),space,receipt};
+const input='const redteamConfig='+JSON.stringify(config)+';\n'+readFileSync(new URL('./run.ego.mjs',import.meta.url),'utf8');
+const result=spawnSync('ego-browser',['nodejs'],{input,encoding:'utf8',stdio:['pipe','inherit','inherit']});
+if(result.error)throw result.error;
+process.exitCode=result.status??1;

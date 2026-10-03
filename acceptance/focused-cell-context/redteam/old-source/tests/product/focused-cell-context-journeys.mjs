@@ -12,39 +12,13 @@ const editorSelector = '[data-testid="cell-editor"]';
 export async function contextSnapshot(page) {
   return contextSnapshotFromObservation(await page.evaluate(observeCellContext));
 }
-// Samples immediately, after known reply settlement, and across a bounded window.
-// No click/focus action can heal stale context between these observations.
-export async function assertFreshSelectedContext(page,expected,{settle}={}) {
-  assertSelectedContext(await contextSnapshot(page),expected);
-  if(settle)await settle();
-  for(let i=0;i<4;i++){
-    await new Promise(resolve=>setTimeout(resolve,50));
-    assertSelectedContext(await contextSnapshot(page),expected);
-  }
-}
-export function homeAfterSavedCopy(surface,name) {
-  const empty='No saved copies yetWhen you save a copy of your work, it appears here.';
-  const entry=name+'[saved-time]';
-  if(surface.includes(empty))return surface.replace(empty,entry);
-  const heading='Saved copiesSaved in this browser on this device.';
-  assert.ok(surface.includes(heading),'independent Home baseline includes saved-copy section');
-  return surface.replace(heading,heading+entry);
-}
-export function recoverySurface(home) {
-  const message='Refresh requiredThe open work could not be confirmed. Refresh to read it again.Needs refreshOutcome needs reviewRefreshClose and abandon recoveryOther ways to start are paused until the work is refreshed or closed.';
-  const intro='Change a value, and the summaries and charts that use it update.';
-  assert.ok(home.includes(intro),'independent Home baseline includes purpose');
-  return home.replace(intro,message+intro).replace('Opens as new work. Nothing is saved until you choose Save a copy.','');
-}
 export async function waitCurrent(page) {
   await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute('aria-busy')==='false' && document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness')==='current',undefined,{timeout:30000});
 }
 export async function openReleaseExample(page,url) {
   await page.goto(url);
   await page.waitForFunction(() => !document.querySelector('button[aria-label="Open release plan example"]')?.disabled && !!document.querySelector('button[aria-label="Open release plan example"]'),undefined,{timeout:30000});
-  const home=(await contextSnapshot(page)).surfaceVisibleText;
   await page.click('button[aria-label="Open release plan example"]'); await waitCurrent(page);
-  return home;
 }
 async function select(page,row,field,column,value,source=null) {
   await page.click(cell(row.entity,field));
@@ -65,7 +39,7 @@ export async function fillCopyName(page,name) {
 }
 export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false}) {
   const cases=[]; const record=(name,details={})=>cases.push({name,status:'PASS',...details});
-  const initialHome=await openReleaseExample(page,url);
+  await openReleaseExample(page,url);
   const row=RELEASE_ROWS[0];
   const scalar=await select(page,row,RELEASE_FIELDS.impact,'impact','5');
   record('scalar exact table/column/human row/type/value and no formula');
@@ -87,9 +61,9 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
   await edit(page,row.entity,RELEASE_FIELDS.impact,'3');
   await select(page,row,RELEASE_FIELDS.priority,'priority','8',row.source);
   await page.click('button.ts-history-command:has-text("Undo")'); await waitCurrent(page);
-  await assertFreshSelectedContext(page,{entity:row.entity,field:RELEASE_FIELDS.priority,column:'priority',row:1,value:'10',source:row.source});
+  await select(page,row,RELEASE_FIELDS.priority,'priority','10',row.source);
   await page.click('button.ts-history-command:has-text("Redo")'); await waitCurrent(page);
-  await assertFreshSelectedContext(page,{entity:row.entity,field:RELEASE_FIELDS.priority,column:'priority',row:1,value:'8',source:row.source});
+  await select(page,row,RELEASE_FIELDS.priority,'priority','8',row.source);
   record('commit/Undo/Redo expose only the admitted revision of exact field');
   const beforeView=await contextSnapshot(page);
   await page.click('[role="tab"]:has-text("Brief")');
@@ -108,7 +82,7 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
       record('real pending history publication withholds the previously confirmed value/source');
     } finally { await page.evaluate(()=>window.__tachikoAcceptance.releaseTrackerReply()); }
     await waitCurrent(page);
-    await assertFreshSelectedContext(page,{entity:row.entity,field:RELEASE_FIELDS.priority,column:'priority',row:1,value:'10',source:row.source},{settle:()=>page.evaluate(()=>window.__tachikoAcceptance.settleFaultWindow())});
+    await select(page,row,RELEASE_FIELDS.priority,'priority','10',row.source);
     await page.evaluate(()=>window.__tachikoAcceptance.deferNextCopyWrite());
     try {
       await page.click('button:has-text("Save a copy")');
@@ -122,7 +96,7 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     const oldOccurrence=(await contextSnapshot(page)).context.occurrence;
     await page.click('button:has-text("Close project")');
     await page.waitForSelector('button[aria-label="Open release plan example"]');
-    assertNeutralContext(await contextSnapshot(page),{root:'home',surface:homeAfterSavedCopy(initialHome,'cell-context-copy')});
+    assertNeutralContext(await contextSnapshot(page),{root:'home'});
     await page.click('button[aria-label="Open saved cell-context-copy"]'); await waitCurrent(page);
     const beforeSelect=await contextSnapshot(page);
     assertNeutralContext(beforeSelect);
@@ -134,10 +108,10 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     await page.evaluate(()=>window.__tachikoAcceptance.loseNextOpenReply());
     await page.click('button[aria-label="Open saved cell-context-copy"]');
     await page.waitForFunction(()=>!document.querySelector('[data-testid="project-ready"]')&&document.body.innerText.includes('Refresh required'),undefined,{timeout:30000});
-    assertWithheldContext(await contextSnapshot(page),row,{root:'home',surface:recoverySurface(homeAfterSavedCopy(initialHome,'cell-context-copy'))});
+    assertWithheldContext(await contextSnapshot(page),row,{root:'home'});
     await page.evaluate(()=>window.__tachikoAcceptance.settleFaultWindow());
     await page.click('button:has-text("Refresh")');
-    assertWithheldContext(await contextSnapshot(page),row,{root:'home',surface:recoverySurface(homeAfterSavedCopy(initialHome,'cell-context-copy'))});
+    assertWithheldContext(await contextSnapshot(page),row,{root:'home'});
     assert.equal(await page.evaluate(()=>document.querySelectorAll('[data-testid^="cell:"]').length),0);
     await page.click('button:has-text("Close and abandon recovery")');
     await page.click('[role="dialog"] button:has-text("Close without saving")');
@@ -147,17 +121,13 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     record('no-current-view unknown Open withholds stale details; explicit abandonment and fresh open recover truthfully');
     await page.evaluate(()=>window.__tachikoAcceptance.loseNextExecuteReply());
     await page.click(cell(row.entity,RELEASE_FIELDS.impact),{clickCount:2});
-    const priorImpact=await contextSnapshot(page);
     await page.fill(editorSelector,'3'); await page.press(editorSelector,'Enter');
     await page.waitForFunction(()=>document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness')==='unknown',undefined,{timeout:30000});
-    assertWithheldContext(await contextSnapshot(page),priorImpact);
+    assertWithheldContext(await contextSnapshot(page),row);
     record('lost real Execute reply withholds prior identity/value/source');
     await page.evaluate(()=>window.__tachikoAcceptance.settleFaultWindow());
-    assertWithheldContext(await contextSnapshot(page),priorImpact);
     await page.click('button.ts-refresh-command'); await waitCurrent(page);
     // Recovery may keep the unconfirmed draft; this test never deletes/replays it.
-    const recovered=await contextSnapshot(page);
-    if(recovered.selected.length)await assertFreshSelectedContext(page,{entity:row.entity,field:RELEASE_FIELDS.impact,column:'impact',row:1,value:'3'});else assertNeutralContext(recovered);
     await select(page,row,RELEASE_FIELDS.priority,'priority','8',row.source);
     record('Refresh resolves context from the recovered current projection');
   }

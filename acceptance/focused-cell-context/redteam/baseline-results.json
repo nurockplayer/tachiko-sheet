@@ -1,0 +1,95 @@
+{
+  "tree": "63b133400ec168c5afbda60ac9bf43e3d4f87ed6",
+  "controls": [
+    17,
+    2,
+    14
+  ],
+  "cases": [
+    {
+      "name": "visible aria-hidden stale + offscreen correct",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "height:0;overflow:hidden",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "position:fixed;top:1200px",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "opacity:0.02",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "clip-path:inset(100%)",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "transform:scale(0)",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "font-size:0",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "color:transparent",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "opaque overlay",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "wrong location only",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "pending untagged stale",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "neutral untagged stale",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "unknown untagged scalar stale",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    },
+    {
+      "name": "home untagged stale panel",
+      "validControl": "PASS",
+      "badState": "FALSE_PASS",
+      "error": null
+    }
+  ],
+  "scope": "manufactured DOM assertion controls only"
+}

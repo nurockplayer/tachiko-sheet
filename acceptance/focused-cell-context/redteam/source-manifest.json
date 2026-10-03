@@ -1,0 +1,80 @@
+{
+  "scope": "repaired tooling and replay entry source; receipts are synthetic controls only",
+  "files": [
+    {
+      "path": "tests/product/focused-cell-context-falsification.mjs",
+      "bytes": 7432,
+      "sha256": "9c3cad15cb43b91c83e62f8d9027733f0e29493e666d2b08f053a4de1f984648"
+    },
+    {
+      "path": "tests/product/focused-cell-context-journeys.mjs",
+      "bytes": 12370,
+      "sha256": "c2daf86020428d88a2c30c37e55b40ef58d35ea1803705497aa25f4af0e2de63"
+    },
+    {
+      "path": "tests/product/focused-cell-context-oracles.mjs",
+      "bytes": 3982,
+      "sha256": "04467a034bd721b7259fc78fa4b24069704ada317d86caae88cd3e2b0ef4a01b"
+    },
+    {
+      "path": "tests/product/focused-cell-context-regression.mjs",
+      "bytes": 3275,
+      "sha256": "bc5704eb5dd13da5b3abc3bc1d362c30e0e19c47782f21f89276d822223fcd3e"
+    },
+    {
+      "path": "tests/product/focused-cell-dom-observation.mjs",
+      "bytes": 8638,
+      "sha256": "5ab128e92f66f4fc3dac3c9ccc8d52ec8c60678015c6afa05983bc43bd6fe0e0"
+    },
+    {
+      "path": "tests/product/focused-cell-observation-oracles.mjs",
+      "bytes": 5671,
+      "sha256": "bb09c9337175a9d37ba5709ffea61b07e6ac498b1acacea2489bae4d35de6401"
+    },
+    {
+      "path": "tests/product/focused-cell-projection-oracles.mjs",
+      "bytes": 7447,
+      "sha256": "e751492131f19c8f94ebb448a4feb23582534e59ccc2348249ffec71e26f520e"
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-controls.mjs",
+      "bytes": 10076,
+      "sha256": "d7b48ef108c98c236981710f29dd1d680e57ec6b98ac15f1f6538689fcfafb22"
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-freshness.mjs",
+      "bytes": 4399,
+      "sha256": "86c3e384bc60dbccf3507a8dfee61b934103e90b8025154dedbf5f2c19913eda"
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-geometry.mjs",
+      "bytes": 2910,
+      "sha256": "27f87252258eff4fff92d8f75ca66c68fc6903a7632147bedeeb4c8a21c7b3ce"
+    },
+    {
+      "path": "tests/product/focused-cell-redteam-regression.mjs",
+      "bytes": 2379,
+      "sha256": "754f671e7da3fda9545e7538da8328a2e45fefe24d5e85c455c652d03ae3c43e"
+    },
+    {
+      "path": "tests/product/focused-cell-sales-journeys.mjs",
+      "bytes": 9332,
+      "sha256": "8e80a75863932bc7f33fc6a69ca499394d119207df4aee365d17ff070e172ab1"
+    },
+    {
+      "path": "tests/qualification/focused-cell-context.html",
+      "bytes": 6634,
+      "sha256": "4618a5a856def7409a5aff0fb07579f30228dfacc42b8446867fc0744b05f59a"
+    },
+    {
+      "path": "acceptance/focused-cell-context/redteam/run-ego.mjs",
+      "bytes": 662,
+      "sha256": "ab021097fd71c4ef5a99c813941dd83aeb2d706b5f12b3d743359adc3a42e343"
+    },
+    {
+      "path": "acceptance/focused-cell-context/redteam/run.ego.mjs",
+      "bytes": 1540,
+      "sha256": "aff020381527a4c17f9caaed3ac3649646188d2bc7009ae83666d090c7da6ec1"
+    }
+  ]
+}

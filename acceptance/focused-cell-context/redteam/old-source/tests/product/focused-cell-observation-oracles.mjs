@@ -11,28 +11,13 @@ export function assertObservationIntegrity(actual,{root='open'}={}) {
   for(const key of keys) {
     const node=actual.fields?.[key];
     requireObservation(node&&(node.count===0||node.count===1),'ambiguous semantic node: '+key);
-    requireObservation(node.count===0?node.text===null&&!node.exposed:node.exposed&&node.visual===true&&typeof node.text==='string','unexposed/invalid semantic node: '+key);
+    requireObservation(node.count===0?node.text===null&&!node.exposed:node.exposed&&typeof node.text==='string','unexposed/invalid semantic node: '+key);
     const prop=key==='value-heading'?'valueHeading':key;
     const raw=node.count===1?node.text:null;
     const expected=['location','table','column','row','type','value-heading'].includes(key)?raw?.replace(/\s+/g,' ').trim()??'':raw;
     requireObservation(actual[prop]===expected,'normalized observation must retain raw evidence: '+key);
   }
-  if(root==='open')requireObservation(actual.visual===true,'context root has visible rendered text');
   requireObservation(actual.selectedRowCount===0,'row is not exposed as selected');
-}
-const norm=text=>(text??'').replace(/\s+/g,' ').trim();
-export function assertContextComposition(actual,state,{extra=[]}={}) {
-  // Semantic fields have their own exact assertions. Everything outside them
-  // must be independently permitted chrome/status, never arbitrary leftovers.
-  requireObservation(typeof actual.unclaimedText==='string',state+' composition requires complete rendered observation');
-  const allowed=['','Cell context','Source','Formula','Type','Scroll to read',...extra];
-  let rest=norm(actual.unclaimedText);
-  for(const label of allowed.filter(Boolean).sort((a,b)=>b.length-a.length))rest=rest.split(label).join('');
-  requireObservation(norm(rest)==='',state+' composition has unexplained rendered text');
-}
-export function assertSurfaceComposition(actual,expected) {
-  requireObservation(typeof expected==='string','no-root rendered surface expectation is required');
-  requireObservation(norm(actual.surfaceVisibleText)===norm(expected),'surface composition matches independent baseline');
 }
 export function assertPendingContext(actual) {
   assertObservationIntegrity(actual,{root:'open'});
@@ -40,9 +25,8 @@ export function assertPendingContext(actual) {
   requireObservation(actual.source===null,'pending withholds source');
   requireObservation(actual.allContextText.includes('Awaiting confirmation'),'pending exposes Awaiting confirmation status');
   requireObservation(actual.value===null||actual.value==='Awaiting confirmation','pending withholds the previously confirmed value');
-  assertContextComposition(actual,'pending',{extra:['Awaiting confirmation']});
 }
-export function assertNeutralContext(actual,scenario={}) {
+export function assertNeutralContext(actual,scenario) {
   assertObservationIntegrity(actual,scenario);
   requireObservation(actual.selected.length===0,'neutral has no selected cell');
   if(actual.rootCount===1)requireObservation(actual.fields.value.count===1,'neutral reserved strip has visible value/placeholder');
@@ -50,10 +34,8 @@ export function assertNeutralContext(actual,scenario={}) {
   for(const key of ['location','table','column','row','type'])requireObservation(actual[key]==='','neutral withholds prior '+key);
   requireObservation([null,'','No field selected'].includes(actual.value),'neutral has no successful prior value');
   requireObservation(!actual.context?.entity&&!actual.context?.field,'neutral has no prior target identity');
-  assertContextComposition(actual,'neutral',{extra:['No field selected']});
-  if(scenario.root==='home')assertSurfaceComposition(actual,scenario.surface);
 }
-export function assertWithheldContext(actual,prior,scenario={}) {
+export function assertWithheldContext(actual,prior,scenario) {
   assertObservationIntegrity(actual,scenario);
   if(actual.rootCount===1)requireObservation(actual.fields.value.count===1,'unknown reserved strip has visible status');
   requireObservation(actual.fields.source.count===0&&actual.source===null,'unknown withholds source');
@@ -61,7 +43,5 @@ export function assertWithheldContext(actual,prior,scenario={}) {
   for(const key of ['location','table','column','row','type'])requireObservation(actual[key]==='','unknown withholds prior '+key);
   requireObservation(!actual.context?.entity&&!actual.context?.field,'unknown withholds prior target identity');
   requireObservation(!actual.context||actual.context.currentness!=='current','unknown cannot look current');
-  requireObservation(!prior?.source||!actual.allContextText.includes(prior.source),'unknown cannot show prior source');
-  assertContextComposition(actual,'unknown',{extra:['Awaiting confirmation','Unavailable','Refresh to confirm current values']});
-  if(scenario.root==='home')assertSurfaceComposition(actual,scenario.surface);
+  requireObservation(!actual.allContextText.includes(prior.source),'unknown cannot show prior source');
 }

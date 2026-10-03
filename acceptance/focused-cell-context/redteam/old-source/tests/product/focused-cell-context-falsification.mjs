@@ -8,8 +8,8 @@ export function runContextOracleFalsifiers() {
   const row=RELEASE_ROWS[0];
   const expected={entity:row.entity,field:RELEASE_FIELDS.priority,column:'priority',row:1,value:'8',source:row.source};
   const empty=()=>Object.fromEntries(['location','table','column','row','type','value','value-heading','source','diagnostic'].map(key=>[key,{count:0,exposed:false,text:null}]));
-  const fields=empty();for(const [key,text] of Object.entries({location:'release_items › priority · Row 1',table:'release_items',column:'priority',row:'Row 1',type:'Number',value:'8','value-heading':'Calculated value',source:row.source}))fields[key]={count:1,exposed:true,visual:true,text,accessibleText:text};
-  const observation={rootCount:1,connected:true,name:'Cell context',role:'region',exposed:true,visual:true,unclaimedText:'',surfaceVisibleText:'',
+  const fields=empty();for(const [key,text] of Object.entries({location:'release_items › priority · Row 1',table:'release_items',column:'priority',row:'Row 1',type:'Number',value:'8','value-heading':'Calculated value',source:row.source}))fields[key]={count:1,exposed:true,text};
+  const observation={rootCount:1,connected:true,name:'Cell context',role:'region',exposed:true,
     context:{occurrence:'occ-current',revision:'rev-current',currentness:'current',entity:row.entity,field:RELEASE_FIELDS.priority},
     selected:[{entity:row.entity,field:RELEASE_FIELDS.priority,occurrence:'occ-current',revision:'rev-current'}],selectedRowCount:0,
     fields,allVisibleText:'release_items › priority · Row 1 8 '+row.source,editableSourceCount:0};
@@ -23,7 +23,7 @@ export function runContextOracleFalsifiers() {
   const grid={x:10,y:10,width:200};assertStableGrid({grid},{grid});assert.throws(()=>assertStableGrid({grid},{grid:{...grid,x:12}}));cases.push({name:'horizontal grid origin shift',rejected:true});
   for(const state of ['neutral','unknown']) {
     const raw={...observation,context:{currentness:state==='neutral'?'current':'unknown'},selected:[],fields:empty(),allVisibleText:state==='neutral'?'No field selected':'Refresh to confirm current values'};
-    raw.fields.value={count:1,exposed:true,visual:true,text:raw.allVisibleText};
+    raw.fields.value={count:1,exposed:true,text:raw.allVisibleText};
     const check=state==='neutral'?assertNeutralContext:a=>assertWithheldContext(a,row);
     const good=contextSnapshotFromObservation(raw);check(good);
     for(const [name,change] of [
@@ -34,9 +34,9 @@ export function runContextOracleFalsifiers() {
     assert.throws(()=>check({...good,observationErrors:['source']}));cases.push({name:state+' raw errors despite absent entity metadata',rejected:true});
   }
   const home={...observation,rootCount:0,context:null,connected:false,exposed:false,name:'',role:'',selected:[],fields:empty(),allVisibleText:''};
-  assertNeutralContext(contextSnapshotFromObservation(home),{root:'home',surface:''});
+  assertNeutralContext(contextSnapshotFromObservation(home),{root:'home'});
   const pending={...observation,context:{...observation.context,currentness:'pending'},fields:empty(),allVisibleText:'Awaiting confirmation'};
-  pending.fields.value={count:1,exposed:true,visual:true,text:'Awaiting confirmation'};
+  pending.fields.value={count:1,exposed:true,text:'Awaiting confirmation'};
   const pendingPositiveControls=[];
   for(const valuePresent of [true,false]) {
     const raw=structuredClone(pending);if(!valuePresent)raw.fields.value=empty().value;
@@ -50,7 +50,7 @@ export function runContextOracleFalsifiers() {
     ['duplicate context roots',a=>{a.rootCount=2;},'context root count must match scenario'],
     ['unexposed stale source',a=>{a.fields.source={count:1,exposed:false,text:''};},'raw observation errors cannot be absence'],
     ['unexposed stale value',a=>{a.fields.value={count:1,exposed:false,text:''};},'raw observation errors cannot be absence'],
-    ['unique exposed stale source',a=>{a.fields.source={count:1,exposed:true,visual:true,text:row.source};a.allVisibleText+=' '+row.source;},'pending withholds source'],
+    ['unique exposed stale source',a=>{a.fields.source={count:1,exposed:true,text:row.source};a.allVisibleText+=' '+row.source;},'pending withholds source'],
     ['unique exposed stale value',a=>{a.fields.value.text='10';a.allVisibleText+=' 10';},'pending withholds the previously confirmed value'],
     ['missing context root',a=>{a.rootCount=0;},'context root count must match scenario'],
     ['unexposed context root',a=>{a.exposed=false;},'unique context root is connected, exposed and named'],
