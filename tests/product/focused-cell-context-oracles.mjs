@@ -1,6 +1,8 @@
 // Fixed user oracles from accepted #129 comment5913767841 and unchanged fixture.
 // No expected source is read from the implementation or reconstructed by tests.
 import assert from 'node:assert/strict';
+import {assertObservationIntegrity} from './focused-cell-observation-oracles.mjs';
+export {assertNeutralContext,assertWithheldContext} from './focused-cell-observation-oracles.mjs';
 
 export const RELEASE_FIELDS = Object.freeze({
   impact: '52a0f7e9-4d6b-4628-ad7d-6b649f8c8a77',
@@ -13,6 +15,8 @@ export const RELEASE_ROWS = Object.freeze([
 ]);
 
 export function assertSelectedContext(actual, expected) {
+  assertObservationIntegrity(actual);
+  for(const key of ['location','table','column','row','type','value','value-heading'])assert.equal(actual.fields[key].count,1,'selected context exposes '+key);
   assert.ok(actual.context, 'active cell exposes a context region');
   assert.equal(actual.name,'Cell context','exact accessible context name');
   assert.ok(['region','group'].includes(actual.role),'context has admitted region/group semantics');
@@ -37,24 +41,6 @@ export function assertSelectedContext(actual, expected) {
   assert.equal(actual.valueHeading,expected.source!=null?'Calculated value':'Value');
   assert.equal(actual.editableSourceCount, 0, 'source is read-only');
   assert.deepEqual(actual.observationErrors,[],'unique exposed displayed semantic fields');
-}
-
-export function assertNeutralContext(actual) {
-  assert.equal(actual.selected.length,0,'neutral state has no prior selected cell');
-  assert.equal(actual.selectedRowCount,0);
-  assert.equal(actual.source,null,'neutral state has no prior source');
-  for(const key of ['location','table','column','row','type'])assert.equal(actual[key]??'','',`neutral state withholds prior ${key}`);
-  assert.ok([null,'','No field selected'].includes(actual.value),'neutral state has no prior successful value');
-  assert.ok(!actual.context?.entity&&!actual.context?.field,'neutral state has no target identity');
-}
-
-export function assertWithheldContext(actual, prior) {
-  assert.equal(actual.source, null, 'unconfirmed context withholds prior exact source');
-  assert.ok([null,'','Awaiting confirmation','Unavailable','Refresh to confirm current values'].includes(actual.value), 'no stale successful value');
-  for(const key of ['location','table','column','row','type'])assert.equal(actual[key]??'','',`unknown context withholds old ${key}`);
-  assert.ok(!actual.context?.entity&&!actual.context?.field,'unknown context withholds prior target identity');
-  assert.ok(!actual.context || actual.context.currentness !== 'current');
-  assert.ok(!actual.allContextText.includes(prior.source));
 }
 
 export function assertStableGrid(a,b) {

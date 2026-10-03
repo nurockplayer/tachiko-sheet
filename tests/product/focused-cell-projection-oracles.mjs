@@ -5,15 +5,15 @@ import {observeCellContext} from './focused-cell-dom-observation.mjs';
 const source='[playtest_notes.impact] + 1';
 const base={target:{entity:'entity-a',field:'c-priority'},address:'tables/release_items/entity-a/c-priority',stored:null,formula:{source},calculated:null,diagnostics:[],editable_scalar:null};
 export const PROJECTION_CASES=Object.freeze([
-  {name:'successful calculation',field:{...base,calculated:{status:'value',value:6}},value:'6',source},
-  {name:'calculation failure',field:{...base,calculated:{status:'failure',code:'div0',message:'division by zero'},diagnostics:[{code:'div0',message:'division by zero',path:'c-priority'}]},value:'Calculation failed',source,diagnostic:'division by zero'},
-  {name:'explicit unavailable',field:{...base,calculated:{status:'unavailable'}},value:'No confirmed result',source},
-  {name:'source without current result',field:{...base},value:'No confirmed result',source},
-  {name:'failure cannot fall back to stored success',field:{...base,stored:{kind:'number',value:123},calculated:{status:'failure',code:'div0',message:'division by zero'}},value:'Calculation failed',source,forbidden:'123'},
-  {name:'unavailable cannot fall back to stored success',field:{...base,stored:{kind:'number',value:123},calculated:{status:'unavailable'}},value:'No confirmed result',source,forbidden:'123'},
-  {name:'ordinary scalar zero',field:{...base,stored:{kind:'number',value:0},formula:null},value:'0',source:null},
-  {name:'empty scalar',field:{...base,stored:{kind:'text',value:''},formula:null,editable_scalar:'text'},value:'Empty',source:null},
-  {name:'missing field projection',field:null,value:'No field selected',source:null},
+  {name:'successful calculation',field:{...base,calculated:{status:'value',value:6}},value:'6',source,diagnostic:null},
+  {name:'calculation failure',field:{...base,calculated:{status:'failure',code:'div0',message:'division by zero'},diagnostics:[{code:'div0',message:'division by zero',path:'c-priority'}]},value:'Calculation failed',source,diagnostic:'division by zero',diagnosticCode:'div0'},
+  {name:'explicit unavailable',field:{...base,calculated:{status:'unavailable'}},value:'No confirmed result',source,diagnostic:null},
+  {name:'source without current result',field:{...base},value:'No confirmed result',source,diagnostic:null},
+  {name:'failure cannot fall back to stored success',field:{...base,stored:{kind:'number',value:123},calculated:{status:'failure',code:'div0',message:'division by zero'}},value:'Calculation failed',source,diagnostic:'division by zero',diagnosticCode:'div0',forbidden:'123'},
+  {name:'unavailable cannot fall back to stored success',field:{...base,stored:{kind:'number',value:123},calculated:{status:'unavailable'}},value:'No confirmed result',source,diagnostic:null,forbidden:'123'},
+  {name:'ordinary scalar zero',field:{...base,stored:{kind:'number',value:0},formula:null},value:'0',source:null,diagnostic:null},
+  {name:'empty scalar',field:{...base,stored:{kind:'text',value:''},formula:null,editable_scalar:'text'},value:'Empty',source:null,diagnostic:null},
+  {name:'missing field projection',field:null,value:'No field selected',source:null,diagnostic:null},
 ]);
 
 function requireContract(condition,message) {
@@ -22,7 +22,7 @@ function requireContract(condition,message) {
 export function assertProjectionRoot(root,c) {
   const actual=observeCellContext(root);
   const label=`${c.name}: `;
-  requireContract(actual.connected&&actual.exposed,label+'connected visible actual component root');
+  requireContract(actual.rootCount===1&&actual.connected&&actual.exposed,label+'unique connected visible actual component root');
   requireContract(actual.name==='Cell context'&&['region','group'].includes(actual.role),label+'accessible Cell context region/group');
   const exact=(key,expected)=>{
     const node=actual.fields[key];
@@ -38,10 +38,13 @@ export function assertProjectionRoot(root,c) {
     if(c.field)exact('value-heading','Value');
     else requireContract(actual.fields['value-heading'].count===0||actual.fields['value-heading'].text!=='Calculated value',label+'neutral value is not calculated');
   }
-  if(c.diagnostic) {
+  requireContract(Object.hasOwn(c,'diagnostic'),label+'explicit diagnostic expectation');
+  if(c.diagnostic!==null) {
     const node=actual.fields.diagnostic;
-    requireContract(node.count===1&&node.exposed&&node.text.includes(c.diagnostic),label+'visible diagnostic');
-  }
+    requireContract(node.count===1&&node.exposed,label+'unique visible diagnostic');
+    const permitted=[c.diagnostic,`${c.diagnosticCode}: ${c.diagnostic}`];
+    requireContract(permitted.includes(node.text.replace(/\s+/g,' ').trim()),label+'exact diagnostic text');
+  } else requireContract(actual.fields.diagnostic.count===0,label+'no unexpected projected diagnostic');
   requireContract(actual.editableSourceCount===0,label+'source is read-only, including inherited editing');
   if(c.forbidden)requireContract(!actual.allVisibleText.includes(c.forbidden),label+'no successful stored fallback');
   return actual;
@@ -62,7 +65,9 @@ export function falsifyHiddenProjectionContent(root,c) {
   const mechanisms=['hidden','aria-hidden','display:none','visibility:hidden','visibility:collapse'];
   const results=[];
   for(const mechanism of mechanisms) {
-    const clone=root.cloneNode(true);root.parentElement.append(clone);
+    assertProjectionRoot(root,c);
+    const clone=root.cloneNode(true);root.replaceWith(clone);
+    assertProjectionRoot(clone,c); // unchanged isolated control must pass
     const value=clone.querySelector('[data-testid="cell-context-value"]');
     requireContract(value,'falsifier requires the actual rendered value node');
     value.textContent='WRONG VISIBLE CONTENT';
@@ -71,9 +76,26 @@ export function falsifyHiddenProjectionContent(root,c) {
     else if(mechanism==='aria-hidden')hidden.setAttribute('aria-hidden','true');
     else {const [key,value]=mechanism.split(':');hidden.style.setProperty(key,value);}
     value.append(hidden);
-    let rejected=false;try{assertProjectionRoot(clone,c);}catch{rejected=true;}finally{clone.remove();}
-    requireContract(rejected,mechanism+' expected hidden text must not earn PASS');
-    results.push({mechanism,rejected});
+    let message=null;try{assertProjectionRoot(clone,c);}catch(error){message=error.message;}finally{clone.replaceWith(root);}
+    requireContract(message?.endsWith('value exact displayed text'),mechanism+' hidden text must fail the intended value assertion');
+    results.push({mechanism,rejected:true,message});
+  }
+  return results;
+}
+
+export function falsifyProjectionDiagnostics(root,c) {
+  assertProjectionRoot(root,c);const results=[];
+  for(const mutation of c.diagnostic===null?['unexpected diagnostic']:['missing diagnostic','wrong diagnostic','negated diagnostic']) {
+    const clone=root.cloneNode(true);root.replaceWith(clone);assertProjectionRoot(clone,c);
+    const diagnostic=clone.querySelector('[data-testid="cell-context-diagnostic"]');
+    if(mutation==='missing diagnostic')diagnostic.remove();
+    else if(mutation==='wrong diagnostic')diagnostic.textContent='WRONG ERROR';
+    else if(mutation==='negated diagnostic')diagnostic.textContent='Not '+c.diagnostic;
+    else {const node=clone.ownerDocument.createElement('div');node.dataset.testid='cell-context-diagnostic';node.textContent='Calculation failed';clone.append(node);}
+    let message=null;try{assertProjectionRoot(clone,c);}catch(error){message=String(error.message);}finally{clone.replaceWith(root);}
+    requireContract(message&&/diagnostic/.test(message),c.name+': intended diagnostic assertion must fail');
+    if(['wrong diagnostic','negated diagnostic'].includes(mutation))requireContract(message.endsWith('exact diagnostic text'),c.name+': intended exact message assertion must fail');
+    results.push({case:c.name,mutation,rejected:true,message});
   }
   return results;
 }

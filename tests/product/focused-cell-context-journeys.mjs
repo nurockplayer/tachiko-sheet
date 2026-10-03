@@ -5,18 +5,11 @@ import assert from 'node:assert/strict';
 import { RELEASE_FIELDS, RELEASE_ROWS, assertSelectedContext, assertWithheldContext, assertNeutralContext, assertStableGrid } from './focused-cell-context-oracles.mjs';
 
 export const cell = (entity, field) => `[data-testid="cell:${entity}:${field}"]`;
-import {observeCellContext} from './focused-cell-dom-observation.mjs';
+import {observeCellContext,contextSnapshotFromObservation} from './focused-cell-dom-observation.mjs';
 const contextSelector = '[data-testid="cell-context"]';
 const editorSelector = '[data-testid="cell-editor"]';
 export async function contextSnapshot(page) {
-  const observed=await page.evaluate(observeCellContext);
-  const text=key=>observed.fields[key].count===1&&observed.fields[key].exposed?observed.fields[key].text:null;
-  const normalization=key=>text(key)?.replace(/\s+/g,' ').trim()??'';
-  const required=observed.context?.entity?['location','table','column','row','type','value','value-heading']:[];
-  const observationErrors=required.filter(key=>observed.fields[key].count!==1||!observed.fields[key].exposed);
-  for(const key of ['source','diagnostic'])if(observed.fields[key].count>1||observed.fields[key].count===1&&!observed.fields[key].exposed)observationErrors.push(key);
-  return {...observed,location:normalization('location'),table:normalization('table'),column:normalization('column'),row:normalization('row'),type:normalization('type'),
-    value:text('value'),valueHeading:normalization('value-heading'),source:text('source'),diagnostic:text('diagnostic'),allContextText:observed.allVisibleText,observationErrors};
+  return contextSnapshotFromObservation(await page.evaluate(observeCellContext));
 }
 export async function waitCurrent(page) {
   await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute('aria-busy')==='false' && document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness')==='current',undefined,{timeout:30000});
@@ -105,7 +98,7 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     const oldOccurrence=(await contextSnapshot(page)).context.occurrence;
     await page.click('button:has-text("Close project")');
     await page.waitForSelector('button[aria-label="Open release plan example"]');
-    assertNeutralContext(await contextSnapshot(page));
+    assertNeutralContext(await contextSnapshot(page),{root:'home'});
     await page.click('button[aria-label="Open saved cell-context-copy"]'); await waitCurrent(page);
     const beforeSelect=await contextSnapshot(page);
     assertNeutralContext(beforeSelect);
@@ -117,10 +110,10 @@ export async function runReleaseContextJourneys(page,{url,acceptanceFaults=false
     await page.evaluate(()=>window.__tachikoAcceptance.loseNextOpenReply());
     await page.click('button[aria-label="Open saved cell-context-copy"]');
     await page.waitForFunction(()=>!document.querySelector('[data-testid="project-ready"]')&&document.body.innerText.includes('Refresh required'),undefined,{timeout:30000});
-    assertWithheldContext(await contextSnapshot(page),row);
+    assertWithheldContext(await contextSnapshot(page),row,{root:'home'});
     await page.evaluate(()=>window.__tachikoAcceptance.settleFaultWindow());
     await page.click('button:has-text("Refresh")');
-    assertWithheldContext(await contextSnapshot(page),row);
+    assertWithheldContext(await contextSnapshot(page),row,{root:'home'});
     assert.equal(await page.evaluate(()=>document.querySelectorAll('[data-testid^="cell:"]').length),0);
     await page.click('button:has-text("Close and abandon recovery")');
     await page.click('[role="dialog"] button:has-text("Close without saving")');

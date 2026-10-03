@@ -101,3 +101,28 @@ product PASS. Node assertion controls likewise reject misleading identity/name/t
 wrong row, stale recovered10, stale neutral details, selected row and x movement.
 These controls do not modify the ordinary app/runtime or fabricate successful core
 publication. All four-region layout/input/native comparison gates above remain required.
+
+## Admission repair batch2: preserve raw evidence before interpretation
+
+Every state assertion checks raw root count, connected/exposed/name/role evidence,
+all per-field count/exposure/text and normalized consistency before interpreting
+absence. Home after Close and no-current-view Open Recovery have no context root;
+an open workbook neutral/unknown strip must be uniquely present and exposed.
+Hidden/duplicate root or semantic nodes cannot earn absence credit, even with no
+entity metadata. Open strips have a visible value/neutral/status placeholder.
+
+All nine cases declare diagnostics explicitly. Both failures expect their known
+division-by-zero explanation, including calculated.failure with diagnostics=[];
+other cases have no projected diagnostic-content marker. Empty reserved rails and
+generic unavailable status remain separate. The fixed gate requires thirteen
+missing/wrong/negated/false diagnostic negatives, thirty-two neutral/unknown/Home raw-DOM
+negatives and seventeen Node raw-evidence controls. Unchanged positive controls
+pass before isolated one-property mutation; hidden falsifiers replace the root,
+so duplicate-root rejection cannot falsely validate visibility rejection. These
+are assertion controls, never actual feature proof. Actual component nine-case
+and all normal/product/layout gates remain required after qualified admission.
+
+Both failure explanations permit exactly whitespace-normalized `division by zero`
+or `div0: division by zero`. Negated diagnostics must fail the exact-text assertion;
+hidden expected content must fail the intended value assertion, not root ambiguity.
+This testing interpretation preserves the approved Value/Calculated status composition.

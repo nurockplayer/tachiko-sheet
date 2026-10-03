@@ -52,9 +52,19 @@ export function observeCellContext(root) {
   });
   const selectedRowCount=doc.querySelectorAll('.ts-grid tr[aria-selected="true"],.ts-grid [role="row"][aria-selected="true"]').length;
   const g=doc.querySelector('.ts-grid')?.getBoundingClientRect();
-  return {connected:!!root?.isConnected, exposed:exposed(root), name:norm(name), role:root?.getAttribute('role') ?? '',
+  return {rootCount:doc.querySelectorAll('[data-testid="cell-context"]').length,
+    connected:!!root?.isConnected, exposed:exposed(root), name:norm(name), role:root?.getAttribute('role') ?? '',
     context:root ? {occurrence:root.dataset.workOccurrence,revision:root.dataset.workRevision,currentness:root.dataset.workCurrentness,entity:root.dataset.workEntity,field:root.dataset.workField}:null,
     fields, allVisibleText:visibleText(root), editableSourceCount,selected,selectedRowCount,
     activeElement:{tag:doc.activeElement?.tagName,text:doc.activeElement?.textContent?.trim()},
     grid:g?{x:g.x,y:g.y,width:g.width,height:g.height}:null};
+}
+
+export function contextSnapshotFromObservation(observed) {
+  const text=key=>observed.fields[key].count===1&&observed.fields[key].exposed?observed.fields[key].text:null;
+  const normalization=key=>text(key)?.replace(/\s+/g,' ').trim()??'';
+  // Preserve raw fields and all ambiguity, regardless of target metadata.
+  const observationErrors=Object.entries(observed.fields).filter(([,node])=>node.count>1||node.count===1&&!node.exposed).map(([key])=>key);
+  return {...observed,location:normalization('location'),table:normalization('table'),column:normalization('column'),row:normalization('row'),type:normalization('type'),
+    value:text('value'),valueHeading:normalization('value-heading'),source:text('source'),diagnostic:text('diagnostic'),allContextText:observed.allVisibleText,observationErrors};
 }

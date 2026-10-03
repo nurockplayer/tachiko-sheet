@@ -2,30 +2,79 @@
 <html lang="en"><head><meta charset="utf-8"><title>Disclosed focused-cell component contract</title></head>
 <body><p>Isolated component contract. Synthetic projections; no workbook or runtime success evidence.</p><div id="mount"></div>
 <script type="module">
-import {PROJECTION_CASES,assertProjectionRoot,assertRenderedProjectionCases,falsifyHiddenProjectionContent} from '../product/focused-cell-projection-oracles.mjs';
+import {PROJECTION_CASES,assertProjectionRoot,assertRenderedProjectionCases,falsifyHiddenProjectionContent,falsifyProjectionDiagnostics} from '../product/focused-cell-projection-oracles.mjs';
+import {observeCellContext,contextSnapshotFromObservation} from '../product/focused-cell-dom-observation.mjs';
+import {assertNeutralContext,assertWithheldContext} from '../product/focused-cell-observation-oracles.mjs';
+const requireTest=(condition,message)=>{if(!condition)throw new Error(message);};
+function assertionControl(c,mount) {
+  // Minimal manufactured assertion-control DOM, never production component proof.
+  mount.replaceChildren();const root=document.createElement('section');root.setAttribute('role','region');root.setAttribute('aria-label','Cell context');root.dataset.testid='cell-context';
+  const values=[['value',c.value]];
+  if(c.source!==null)values.push(['value-heading','Calculated value'],['source',c.source]);
+  else if(c.field)values.push(['value-heading','Value']);
+  if(c.diagnostic!==null)values.push(['diagnostic',c.diagnostic]);
+  for(const [key,text] of values){const node=document.createElement('div');node.dataset.testid=`cell-context-${key}`;node.textContent=text;root.append(node);}
+  mount.append(root);return root;
+}
+function stateFalsifiers(mount) {
+  const cases=[];const snapshot=()=>contextSnapshotFromObservation(observeCellContext());
+  const prior={source:'([release_scope.impact] + [release_scope.friction])'};
+  mount.replaceChildren();assertNeutralContext(snapshot(),{root:'home'});
+  for(const kind of ['hidden root on Home','duplicate roots on Home']) {
+    const root=assertionControl(PROJECTION_CASES[8],mount);
+    if(kind.startsWith('hidden'))root.hidden=true;else mount.append(root.cloneNode(true));
+    let message=null;try{assertNeutralContext(snapshot(),{root:'home'});}catch(e){message=e.message;}
+    requireTest(message?.includes('root count'),kind+': intended root assertion failed');
+    cases.push({name:kind,rejected:true,message});mount.replaceChildren();
+  }
+  for(const state of ['neutral','unknown']) {
+    const root=assertionControl(PROJECTION_CASES[8],mount);root.dataset.workCurrentness=state==='neutral'?'current':'unknown';
+    if(state==='unknown')root.querySelector('[data-testid="cell-context-value"]').textContent='Refresh to confirm current values';
+    const check=state==='neutral'?assertNeutralContext:a=>assertWithheldContext(a,prior);
+    check(snapshot()); // unique, exposed positive control with absent entity metadata
+    for(const mutation of ['duplicate','unexposed'])for(const [i,key] of ['location','table','column','row','type','value','source'].entries()) {
+      const clone=root.cloneNode(true);root.replaceWith(clone);check(snapshot());
+      const node=document.createElement('div');node.dataset.testid=`cell-context-${key}`;node.textContent=key==='source'?prior.source:'STALE 10 release_items priority Row 1 Number';
+      if(mutation==='duplicate') {
+        if(!clone.querySelector(`[data-testid="cell-context-${key}"]`))clone.append(node.cloneNode(true));
+      } else {
+        clone.querySelector(`[data-testid="cell-context-${key}"]`)?.remove();
+        const mechanism=['hidden','aria-hidden','display:none','visibility:hidden','visibility:collapse'][i%5];
+        if(mechanism==='hidden')node.hidden=true;else if(mechanism==='aria-hidden')node.setAttribute('aria-hidden','true');else {const [property,value]=mechanism.split(':');node.style.setProperty(property,value);}
+      }
+      clone.append(node);let message=null;
+      try{check(snapshot());}catch(e){message=e.message;}finally{clone.replaceWith(root);}
+      requireTest(message&&/raw observation errors|ambiguous|unexposed/.test(message),state+' '+mutation+' '+key+': intended raw evidence assertion failed');
+      cases.push({state,mutation,key,rejected:true,message});
+    }
+    const duplicate=root.cloneNode(true);mount.append(duplicate);let message=null;
+    try{check(snapshot());}catch(e){message=e.message;}finally{duplicate.remove();}
+    requireTest(message?.includes('root count'),'duplicated root cannot masquerade as absence');cases.push({state,mutation:'duplicate roots',rejected:true,message});
+    root.remove();
+  }
+  return cases;
+}
 window.__focusedCellContextContract={status:'RUNNING'};
 try {
   const mount=document.querySelector('#mount');
   if(new URL(location.href).searchParams.has('falsifiers')) {
-    // Manufactured assertion-control DOM, never called actual component proof.
-    const root=document.createElement('section');root.setAttribute('role','region');root.setAttribute('aria-label','Cell context');root.dataset.testid='cell-context';
-    for(const [key,text] of [['value','6'],['value-heading','Calculated value'],['source',PROJECTION_CASES[0].source]]) {
-      const node=document.createElement('div');node.dataset.testid=`cell-context-${key}`;node.textContent=text;root.append(node);
-    }
-    mount.append(root);assertProjectionRoot(root,PROJECTION_CASES[0]);
-    window.__focusedCellContextContract={status:'PASS',cases:falsifyHiddenProjectionContent(root,PROJECTION_CASES[0]),scope:'synthetic assertion controls only; actual production component ABSENT_UNVERIFIED'};
+    const positiveControls=[];const diagnosticFalsifiers=[];
+    for(const c of PROJECTION_CASES){const root=assertionControl(c,mount);assertProjectionRoot(root,c);positiveControls.push(c.name);diagnosticFalsifiers.push(...falsifyProjectionDiagnostics(root,c));}
+    const root=assertionControl(PROJECTION_CASES[0],mount);const hiddenFalsifiers=falsifyHiddenProjectionContent(root,PROJECTION_CASES[0]);
+    const states=stateFalsifiers(mount);
+    window.__focusedCellContextContract={status:'PASS',positiveControls,hiddenFalsifiers,diagnosticFalsifiers,stateFalsifiers:states,scope:'synthetic assertion controls only; production component ABSENT_UNVERIFIED'};
   } else {
-    // The narrow future Luna adapter must import/render the real component.
-    // No equivalent component markup or behavior is authored by this scaffold.
+    // Narrow future Luna adapter imports/mounts the real production component.
     const adapterUrl=new URL('./focused-cell-context-adapter.tsx',location.href).href;
     const {renderActualContext}=await import(/* @vite-ignore */ adapterUrl);
     const render=field=>renderActualContext(field,mount);
-    const receipt=await assertRenderedProjectionCases(render);
-    const root=await render(PROJECTION_CASES[0].field);
-    const falsifiers=falsifyHiddenProjectionContent(root,PROJECTION_CASES[0]);
-    window.__focusedCellContextContract={...receipt,falsifiers};
+    const receipt=await assertRenderedProjectionCases(render);const diagnosticFalsifiers=[];
+    for(const c of PROJECTION_CASES){const root=await render(c.field);diagnosticFalsifiers.push(...falsifyProjectionDiagnostics(root,c));}
+    const root=await render(PROJECTION_CASES[0].field);const falsifiers=falsifyHiddenProjectionContent(root,PROJECTION_CASES[0]);
+    // Isolate manufactured state assertion controls from the mounted component.
+    const parent=mount.parentElement;mount.remove();const controls=document.createElement('div');parent.append(controls);
+    let states;try{states=stateFalsifiers(controls);}finally{controls.remove();parent.append(mount);}
+    window.__focusedCellContextContract={...receipt,falsifiers,diagnosticFalsifiers,stateFalsifiers:states};
   }
-} catch(error) {
-  window.__focusedCellContextContract={status:'FAIL',message:String(error?.stack??error)};
-}
+} catch(error) {window.__focusedCellContextContract={status:'FAIL',message:String(error?.stack??error)};}
 </script></body></html>

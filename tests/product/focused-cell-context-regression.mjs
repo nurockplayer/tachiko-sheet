@@ -34,5 +34,6 @@ try {
   const receipt=await componentPage.evaluate(()=>window.__focusedCellContextContract);
   assert.equal(receipt.status,'PASS',receipt.message??'actual connected component contract');
   assert.equal(receipt.projectionContractCases,9);assert.equal(receipt.falsifiers.length,5);
+  assert.equal(receipt.diagnosticFalsifiers.length,13);assert.equal(receipt.stateFalsifiers.length,32);
   console.log(JSON.stringify(receipt));
 } finally {try{await browser.close();}finally{await componentServer?.close();}}

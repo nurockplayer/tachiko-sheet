@@ -44,7 +44,7 @@ export async function runSalesContextJourneys(page,{url,setViewport,capture}) {
   await page.click('button:has-text("Create copy")');await waitCurrent(page);
   const oldOccurrence=(await contextSnapshot(page)).context.occurrence;
   await page.click('button:has-text("Close project")');await page.waitForSelector('button[aria-label="Open saved cell-context-sales"]');
-  assertNeutralContext(await contextSnapshot(page));
+  assertNeutralContext(await contextSnapshot(page),{root:'home'});
   await page.click('button[aria-label="Open saved cell-context-sales"]');await waitCurrent(page);
   await page.selectOption('#ts-active-table','catalog');await waitCurrent(page);
   assertNeutralContext(await contextSnapshot(page));
