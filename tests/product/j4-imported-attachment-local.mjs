@@ -177,6 +177,14 @@ async function verifySelectedDownload(page, format, selectedTable, salesQuantity
   await prepare.click();
   const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await consent.waitFor();
+  if (format === "csv") {
+    const csvLossMessage = "CSV exports selected-sheet scalar values only. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.";
+    const csvLossRows = consent.getByRole("list", { name: "Export fidelity ledger", exact: true })
+      .getByRole("listitem").filter({ hasText: csvLossMessage });
+    assert.deepEqual(await csvLossRows.allTextContents(), [
+      `lossy_on_export: ${selectedTable}: ${csvLossMessage}`,
+    ], `${name}: consent identifies the actual selected worksheet before download`);
+  }
   const downloaded = page.waitForEvent("download");
   await consent.getByRole("button", { name: "Download", exact: true }).click();
   const destination = path.join(fixtureDirectory, `${name}.${format}`);
