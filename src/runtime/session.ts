@@ -839,19 +839,37 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   }
 
   function exportSpreadsheet(witness: ViewWitness, metadata: InteropMetadata, format: SpreadsheetFormat) {
+    const requestedCollection = active?.collection;
     return enqueue(async () => {
       const live = requireWitness(witness);
+      if (format === "csv" && live.collection !== requestedCollection) {
+        throw new SheetSessionError("stale-witness", "The selected table changed before CSV export. Prepare it again.");
+      }
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       const exportSheet = capability(client.exportSpreadsheet, "spreadsheet export");
       // Interop metadata carries the producer-issued collection/schema
       // identity. The display/query key is not an export substitute.
-      const collection = metadata.sheets[0]?.schema_id;
+      // XLSX remains a whole-workbook export. CSV must resolve the selected
+      // query key against a current authoritative catalog, never sheet order.
+      let collection = metadata.sheets[0]?.schema_id;
+      if (format === "csv") {
+        const bootstrap = await afterUsable(expected, dispatch(kit, () => client.bootstrap()));
+        requireCurrentProjectionRevision(live.revision, bootstrap.revision, "export table catalog");
+        const selected = bootstrap.collections.filter((candidate) => candidate.key === live.collection);
+        if (selected.length !== 1 || !selected[0].id ||
+            metadata.sheets.filter((sheet) => sheet.schema_id === selected[0].id).length !== 1) {
+          throw new SheetSessionError("incoherent-reply", "The selected table has no unique imported-source export identity.");
+        }
+        collection = selected[0].id;
+      }
       if (!collection) throw new Error("Imported-source metadata has no exportable sheet identity.");
-      return afterUsable(
+      const exported = await afterUsable(
         expected,
         dispatch(kit, () => exportSheet.call(client, live.revision, metadata, format, collection)),
       );
+      requireCurrentProjectionRevision(live.revision, exported.revision, "prepared export");
+      return exported;
     });
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
+import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
 import {
   UnknownOperationOutcomeError,
   bindingCatalogContainsDate,
@@ -368,7 +369,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const importBytesRef = useRef<ArrayBuffer | null>(null);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
   // An ephemeral, user-consented delivery candidate; never canonical state.
-  const preparedDownloadRef = useRef<{ format: "csv" | "xlsx"; revision: string; bytes: ArrayBuffer } | null>(null);
+  const preparedDownloadRef = useRef<PreparedDownload | null>(null);
 
   const viewRef = useRef<WorkbookView | null>(null);
   const localHistoryRef = useRef<LocalHistorySnapshot>(emptyLocalHistory());
@@ -421,7 +422,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     importedSource: ImportedSourceAttachment | null;
     interop: InteropState | null;
     importBytes: ArrayBuffer | null;
-    preparedDownload: { format: "csv" | "xlsx"; revision: string; bytes: ArrayBuffer } | null;
+    preparedDownload: PreparedDownload | null;
     pendingDirty: boolean;
     draftDirty: boolean;
     presentationDirty: boolean;
@@ -1450,7 +1451,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
     try {
       const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
-      preparedDownloadRef.current = { format, revision: exported.revision, bytes: exported.bytes.slice(0) };
+      preparedDownloadRef.current = {
+        format, occurrence: live.occurrence, revision: exported.revision,
+        collectionId: live.table.collection.id, bytes: exported.bytes.slice(0),
+      };
       setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent", downloadError: null } : current);
       setOutcome("idle");
       return true;
@@ -1467,7 +1471,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (blockUnknownOpenRecovery()) return false;
     const live = viewRef.current;
     const prepared = preparedDownloadRef.current;
-    if (!live || !prepared || prepared.format !== format || prepared.revision !== live.revision || !begin()) return false;
+    if (!live || !prepared || !preparedDownloadIsCurrent(prepared, live, format) || !begin()) return false;
     setMessage(null);
     setInterop((current) => current ? { ...current, downloadError: null } : current);
     try {
@@ -1996,7 +2000,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           ? checkpoint.cleanupPreviewContext
           : null;
         importBytesRef.current = checkpoint.importBytes?.slice(0) ?? null;
-        preparedDownloadRef.current = checkpoint.preparedDownload && checkpoint.preparedDownload.revision === next.revision
+        preparedDownloadRef.current = checkpoint.preparedDownload && preparedDownloadIsCurrent(checkpoint.preparedDownload, next, checkpoint.preparedDownload.format)
           ? { ...checkpoint.preparedDownload, bytes: checkpoint.preparedDownload.bytes.slice(0) }
           : null;
         pendingDirtyRef.current = checkpoint.pendingDirty;

@@ -148,6 +148,7 @@ async function savedAttachment(page, name) {
 }
 
 async function visibleTable(page, collection) {
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
   const picker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
   await picker.selectOption(collection);
   await page.waitForFunction(
@@ -167,6 +168,32 @@ async function visibleTable(page, collection) {
       Array.from(row.querySelectorAll("td"), (cell) => cell.textContent),
     ),
   }));
+}
+
+async function verifySelectedDownload(page, format, selectedTable, salesQuantity, name) {
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  const prepare = page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true });
+  assert.equal(await prepare.isEnabled(), true, `${name}: current imported context permits export`);
+  await prepare.click();
+  const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+  await consent.waitFor();
+  if (format === "csv") {
+    const csvLossMessage = "CSV exports selected-sheet scalar values only. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.";
+    const csvLossRows = consent.getByRole("list", { name: "Export fidelity ledger", exact: true })
+      .getByRole("listitem").filter({ hasText: csvLossMessage });
+    assert.deepEqual(await csvLossRows.allTextContents(), [
+      `lossy_on_export: ${selectedTable}: ${csvLossMessage}`,
+    ], `${name}: consent identifies the actual selected worksheet before download`);
+  }
+  const downloaded = page.waitForEvent("download");
+  await consent.getByRole("button", { name: "Download", exact: true }).click();
+  const destination = path.join(fixtureDirectory, `${name}.${format}`);
+  await (await downloaded).saveAs(destination);
+  await consent.waitFor({ state: "detached" });
+  execFileSync("python3", [
+    path.join(root, "acceptance/j3-interop/check-selected-export.py"), destination,
+    "--selected-table", selectedTable, "--sales-quantity", String(salesQuantity),
+  ], { stdio: "inherit" });
 }
 
 try {
@@ -455,6 +482,49 @@ try {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.equal(await page.getByLabel("Cross-table groups", { exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: /Refresh cross-table summary/ }).count(), 0);
+
+  // #154: use the normal selector and download consent, then independently
+  // parse every exported cell. Reimport through the same producer alone could
+  // reproduce the same wrong-table bug and is not the oracle for this arm.
+  await visibleTable(page, "sheet_2");
+  await verifySelectedDownload(page, "csv", "Sales", 4, "selected-sales-before-edit");
+  await visibleTable(page, "sheet_1");
+  await verifySelectedDownload(page, "csv", "Catalog", 4, "selected-catalog-control");
+  await visibleTable(page, "sheet_2");
+  const quantityCell = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr").first().locator("td").nth(1);
+  const revisionBeforeEdit = await quantityCell.getAttribute("data-work-revision");
+  assert.ok(revisionBeforeEdit, "the edited cell must carry its resident revision witness");
+  await quantityCell.dblclick();
+  const edit = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await edit.fill("7");
+  await edit.press("Enter");
+  await page.waitForFunction((previous) => {
+    const cell = document.querySelector('[role="grid"] tbody tr td:nth-of-type(2)');
+    return cell?.textContent?.trim() === "7" &&
+      Boolean(cell.dataset.workRevision) && cell.dataset.workRevision !== previous &&
+      document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current";
+  }, revisionBeforeEdit);
+  await verifySelectedDownload(page, "csv", "Sales", 7, "selected-sales-after-edit");
+  // XLSX remains a complete workbook even while the second table is selected.
+  await verifySelectedDownload(page, "xlsx", "workbook", 7, "selected-sales-full-workbook");
+
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j4-selected-export-restart");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await context.close();
+  context = undefined;
+  page = await start();
+  await page.getByRole("button", { name: "Open saved j4-selected-export-restart", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  assert.deepEqual(await visibleTable(page, "sheet_2"), {
+    headers: ["Row", "column_1", "column_2"],
+    rows: [["PEN ", "7"], ["NOTE", "2"]],
+  });
+  await verifySelectedDownload(page, "csv", "Sales", 7, "selected-sales-reopened");
+  await visibleTable(page, "sheet_1");
+  await verifySelectedDownload(page, "csv", "Catalog", 7, "selected-catalog-reopened");
+  await verifySelectedDownload(page, "xlsx", "workbook", 7, "selected-full-workbook-reopened");
 } finally {
   if (context) await context.close().catch(() => {});
   await rm(profile, { recursive: true, force: true });
