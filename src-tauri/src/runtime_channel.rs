@@ -10,7 +10,7 @@
 //! - reply: `[u32 reply][reply JSON][payload]`
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 use serde::Deserialize;
 use tachiko_designer_runtime::host_bridge::{
@@ -28,7 +28,7 @@ pub enum ChannelError {
     StaleGeneration,
     /// The runtime panicked; its resident occurrence was discarded.
     RuntimeStopped,
-    /// The app is closing; no further operation may change the work.
+    /// The window is closing or reloading; no further operation may change the work.
     Sealed,
 }
 
@@ -54,13 +54,31 @@ struct FrameHeader {
 
 struct ChannelState {
     generation: u64,
-    sealed: bool,
     host: DesignerHost,
+}
+
+/// Whether new operations may reach the runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Phase {
+    Open,
+    /// Leaving is being decided: operations wait, so none can slip in after
+    /// the page reported its unsaved state.
+    Held,
+    /// Leaving is decided: operations are refused.
+    Sealed,
+}
+
+struct Gate {
+    phase: Phase,
+    /// Operations that arrived while held and are waiting for the decision.
+    waiting: usize,
 }
 
 /// One native runtime shared by the app's single Sheet window.
 pub struct RuntimeChannel {
     state: Mutex<ChannelState>,
+    gate: Mutex<Gate>,
+    gate_changed: Condvar,
 }
 
 impl Default for RuntimeChannel {
@@ -68,36 +86,83 @@ impl Default for RuntimeChannel {
         Self {
             state: Mutex::new(ChannelState {
                 generation: 0,
-                sealed: false,
                 host: DesignerHost::new(),
             }),
+            gate: Mutex::new(Gate {
+                phase: Phase::Open,
+                waiting: 0,
+            }),
+            gate_changed: Condvar::new(),
         }
     }
 }
 
 impl RuntimeChannel {
     /// Start a new generation with an empty runtime. Any resident occurrence
-    /// and every frame from an earlier generation become unreachable.
+    /// and every frame from an earlier generation become unreachable. A new
+    /// page starts with the gate open.
     pub fn attach(&self) -> u64 {
         let mut state = self.lock();
         state.generation += 1;
         state.host = DesignerHost::new();
+        self.set_phase(Phase::Open);
         state.generation
     }
 
-    /// Refuse every later operation. Called once closing is confirmed, so
-    /// nothing can change the work between that decision and process exit.
+    /// Hold new operations while closing or reloading is being decided.
+    pub fn hold(&self) {
+        self.set_phase(Phase::Held);
+    }
+
+    /// The person kept the work open: let held operations run.
+    pub fn release(&self) {
+        self.set_phase(Phase::Open);
+    }
+
+    /// Seal only if no operation is waiting at the gate. An operation that
+    /// arrived after the page reported "clean" makes that report stale.
+    pub fn seal_if_idle(&self) -> bool {
+        let mut gate = lock_gate(&self.gate);
+        if gate.waiting > 0 {
+            return false;
+        }
+        gate.phase = Phase::Sealed;
+        self.gate_changed.notify_all();
+        true
+    }
+
+    /// Refuse every later operation; leaving is decided.
     pub fn seal(&self) {
-        self.lock().sealed = true;
+        self.set_phase(Phase::Sealed);
+    }
+
+    fn set_phase(&self, phase: Phase) {
+        lock_gate(&self.gate).phase = phase;
+        self.gate_changed.notify_all();
+    }
+
+    /// Wait while held; refuse once sealed.
+    fn admit(&self) -> Result<(), ChannelError> {
+        let mut gate = lock_gate(&self.gate);
+        gate.waiting += 1;
+        while gate.phase == Phase::Held {
+            gate = self
+                .gate_changed
+                .wait(gate)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        gate.waiting -= 1;
+        if gate.phase == Phase::Sealed {
+            return Err(ChannelError::Sealed);
+        }
+        Ok(())
     }
 
     /// Run one framed operation for the current generation.
     pub fn dispatch(&self, frame: &[u8]) -> Result<Vec<u8>, ChannelError> {
         let (header, request, payload) = parse_frame(frame)?;
+        self.admit()?;
         let mut state = self.lock();
-        if state.sealed {
-            return Err(ChannelError::Sealed);
-        }
         if header.generation != state.generation {
             return Err(ChannelError::StaleGeneration);
         }
@@ -124,6 +189,11 @@ impl RuntimeChannel {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+}
+
+fn lock_gate(gate: &Mutex<Gate>) -> MutexGuard<'_, Gate> {
+    gate.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn route(host: &mut DesignerHost, kind: &str, request: &[u8], payload: &[u8]) -> Option<HostReply> {
@@ -305,6 +375,46 @@ mod tests {
         assert_eq!(
             channel.dispatch(&frame("command", generation, tracker, &[])),
             Err(ChannelError::Sealed)
+        );
+    }
+
+    #[test]
+    fn a_held_operation_waits_and_makes_a_clean_report_stale() {
+        use std::sync::Arc;
+        let channel = Arc::new(RuntimeChannel::default());
+        let generation = channel.attach();
+        channel.hold();
+        let waiting = {
+            let channel = Arc::clone(&channel);
+            std::thread::spawn(move || {
+                channel.dispatch(&frame("observe_occurrence", generation, &[], &[]))
+            })
+        };
+        while lock_gate(&channel.gate).waiting == 0 {
+            std::thread::yield_now();
+        }
+        assert!(
+            !channel.seal_if_idle(),
+            "an operation arrived after the check"
+        );
+        channel.release();
+        let (observed, _) = reply(&waiting.join().unwrap().unwrap());
+        assert_eq!(observed["error"]["code"], "no_project_open");
+        channel.hold();
+        assert!(channel.seal_if_idle(), "nothing is waiting now");
+        assert_eq!(
+            channel.dispatch(&frame("observe_occurrence", generation, &[], &[])),
+            Err(ChannelError::Sealed)
+        );
+        assert_eq!(
+            channel.attach(),
+            generation + 1,
+            "a reloaded page reopens the gate"
+        );
+        assert!(
+            channel
+                .dispatch(&frame("observe_occurrence", generation + 1, &[], &[]))
+                .is_ok()
         );
     }
 

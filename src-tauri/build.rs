@@ -5,6 +5,7 @@ const E2E_COMMANDS: &[&str] = &[
     "window_close_check",
     "e2e_result",
     "e2e_request_close",
+    "e2e_request_quit",
 ];
 
 fn main() {

@@ -6,6 +6,7 @@
   ],
   "permissions": [
     "allow-e2e-result",
-    "allow-e2e-request-close"
+    "allow-e2e-request-close",
+    "allow-e2e-request-quit"
   ]
 }

@@ -27,9 +27,14 @@ Sheet UI / application (unchanged)
   WASM build is byte-identical to its baseline. Re-pin only together with a
   qualified kit.
 - Downloads (CSV/XLSX/PNG/profile) open the native Save panel, are written to a
-  hidden temporary file and moved into place only on success.
-- Closing the window or quitting (⌘Q) with unsaved work asks first, using the
-  Sheet's own unsaved-work guard.
+  hidden temporary file and moved into place only on success; one export per
+  destination at a time; a failed export says so and leaves any existing file.
+- Closing the window, ⌘W, the menu's Quit (⌘Q) and reloading all ask first when
+  work is unsaved, a change is still in progress, or an export is still being
+  saved (the Sheet's own unsaved-work guard). While that is decided, new runtime
+  operations are held, so nothing can change the work after the check.
+- The Sheet document is never replaced by a link: bundled license notices open
+  in their own window, web links open in the default browser.
 - Saved copies live in the app's own WebKit storage (`dev.tachiko.sheet`), not
   shared with a browser or with the e2e build (`dev.tachiko.sheet.e2e`).
 
@@ -48,7 +53,8 @@ The lifecycle test launches the packaged app through LaunchServices, runs the
 Sales example (price edit → summary/chart) and the 8,406 × 3 CSV/XLSX journey
 (import, first/middle/last edits, Undo/Redo, Save a copy, full quit and
 relaunch, reopen, CSV/XLSX export checked cell-by-cell by an independent oracle,
-replace of an existing export, malformed-file refusal).
+replace of an existing export, malformed-file refusal), plus the close, ⌘Q,
+reload and link guards with a scripted dialog answer.
 
 ## Current limits
 
@@ -56,6 +62,8 @@ replace of an existing export, malformed-file refusal).
   Gatekeeper blocks a downloaded copy until it is allowed in System Settings →
   Privacy & Security. Developer ID signing and notarization need the owner's
   Apple Developer credentials.
+- Quitting from the **Dock menu** or logging out does not ask about unsaved
+  work yet (that path terminates the app directly).
 - Apple Silicon only. No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.

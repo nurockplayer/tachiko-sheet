@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager};
 
 const SCRIPT_POLL: Duration = Duration::from_millis(40);
 
@@ -55,8 +55,19 @@ pub fn e2e_request_close(window: tauri::WebviewWindow) -> Result<(), String> {
     window.close().map_err(|error| error.to_string())
 }
 
+static QUIT: std::sync::OnceLock<fn(&AppHandle)> = std::sync::OnceLock::new();
+
+/// Request quitting exactly as the menu's Quit (⌘Q) does.
+#[tauri::command]
+pub fn e2e_request_quit(app: AppHandle) {
+    if let Some(quit) = QUIT.get() {
+        quit(&app);
+    }
+}
+
 /// Start polling the script folder for the main window.
-pub fn start<R: Runtime>(app: &AppHandle<R>) {
+pub fn start(app: &AppHandle, quit: fn(&AppHandle)) {
+    let _ = QUIT.set(quit);
     let Some(dir) = script_dir() else { return };
     let app = app.clone();
     std::thread::spawn(move || {
@@ -90,7 +101,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
                 };
                 let script = format!(
                     "(async () => {{ let r; try {{ r = {{ ok: true, value: await (async () => {{\n{body}\n}})() }}; }} \
-                     catch (e) {{ r = {{ ok: false, error: String((e && e.stack) || e) }}; }} \
+                     catch (e) {{ r = {{ ok: false, error: String(e) + '\\n' + String((e && e.stack) || '') }}; }} \
                      window.__TAURI_INTERNALS__.invoke('e2e_result', {{ id: {id:?}, result: JSON.stringify(r) }}); }})();"
                 );
                 let _ = window.eval(&script);

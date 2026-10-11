@@ -83,21 +83,31 @@ async function requestClose() {
   await evaluate("setTimeout(() => window.__TAURI_INTERNALS__.invoke('e2e_request_close'), 100); return true;");
 }
 
-async function quit(pid) {
-  await requestClose();
+/** Quit exactly like the menu's Quit (⌘Q), through the host's unsaved-work guard. */
+async function requestQuit() {
+  await evaluate("setTimeout(() => window.__TAURI_INTERNALS__.invoke('e2e_request_quit'), 100); return true;");
+}
+
+async function quit(pid, { via = "quit" } = {}) {
+  await (via === "close" ? requestClose() : requestQuit());
   for (let attempt = 0; attempt < 150 && appPids().includes(pid); attempt++) await sleep(100);
   assert.ok(!appPids().includes(pid), `the app process exited; host log: ${await hostLog()}`);
 }
 
-async function closeRefusedWhileUnsaved(pid) {
-  const before = (await hostLog()).split("close dialog:").length;
-  await requestClose();
-  for (let attempt = 0; attempt < 100 && (await hostLog()).split("close dialog:").length === before; attempt++) await sleep(50);
-  assert.ok((await hostLog()).split("close dialog:").length > before, "closing with unsaved work asks first");
+const dialogs = async () => (await hostLog()).split("leave dialog").length;
+
+async function leaveRefusedWhileUnsaved(pid, request) {
+  const before = await dialogs();
+  await request();
+  for (let attempt = 0; attempt < 100 && (await dialogs()) === before; attempt++) await sleep(50);
+  assert.ok((await dialogs()) > before, `leaving with unsaved work asks first; host: ${await hostLog()}`);
   await sleep(500);
   assert.ok(appPids().includes(pid), "answering Cancel keeps the app and its work open");
   assert.equal(await evaluate("return Boolean(document.querySelector('[data-testid=\"project-ready\"]'));"), true, "the work is still open");
 }
+
+const closeRefusedWhileUnsaved = (pid) => leaveRefusedWhileUnsaved(pid, requestClose);
+const quitRefusedWhileUnsaved = (pid) => leaveRefusedWhileUnsaved(pid, requestQuit);
 
 // ---- script channel ----------------------------------------------------------
 
@@ -212,7 +222,7 @@ async function importSource(file) {
     return true;
   `);
   await timed("import", () => evaluate(`
-    click(button("Import candidate", dialog("Review import candidate")));
+    click(await waitFor(() => button("Import candidate", dialog("Review import candidate")), "enabled Import candidate"));
     await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "imported grid");
     return true;
   `));
@@ -267,7 +277,7 @@ async function saveCopy(name) {
     return true;
   `);
   await timed("save", () => evaluate(`
-    click(button("Create copy"));
+    click(await waitFor(() => button("Create copy"), "enabled Create copy"));
     await waitFor(() => document.querySelector('[data-testid="save-status"]')?.textContent.includes("Saved on this device"), "saved status");
     return true;
   `));
@@ -294,7 +304,7 @@ async function download(format, { replace = false } = {}) {
     return true;
   `));
   await evaluate(`
-    click(button("Download", dialog("Confirm download")));
+    click(await waitFor(() => button("Download", dialog("Confirm download")), "enabled Download"));
     await waitFor(() => !dialog("Confirm download"), "consent closed");
     return true;
   `);
@@ -406,8 +416,26 @@ async function salesJourney() {
   assert.deepEqual((await readdir(downloads)).filter((n) => n.startsWith(".")), [], "no temporary PNG remains");
   assert.doesNotMatch(await hostLog(), /export failure/, "no export was reported as failed");
   await closeRefusedWhileUnsaved(pid);
+  await quitRefusedWhileUnsaved(pid);
+  // A bundled license link must not replace the Sheet document.
+  await evaluate(`window.__sheetDocument = "kept"; click([...document.querySelectorAll(".ts-notices a")].find((a) => a.textContent === "MIT")); await sleep(500); return true;`);
+  assert.equal(await evaluate(`return window.__sheetDocument ?? "replaced";`), "kept", "the Sheet document stays after a notices link");
+  assert.match(await hostLog(), /navigation held: tauri:\/\/localhost\/core-kit\/notices\/LICENSE-MIT/);
+  // A reload with unsaved work asks first; Cancel keeps the document.
+  await leaveRefusedWhileUnsaved(pid, () => evaluate(`setTimeout(() => location.reload(), 50); return true;`));
+  assert.equal(await evaluate(`return window.__sheetDocument ?? "replaced";`), "kept", "a refused reload keeps the Sheet document");
+  assert.match(await hostLog(), /leave dialog \(Reload\)/);
   await saveCopy(name);
-  await quit(pid);
+  // With nothing unsaved, a reload goes through and starts fresh at Home.
+  await evaluate(`setTimeout(() => location.reload(), 50); return true;`);
+  let marker = "kept";
+  for (let attempt = 0; attempt < 100 && marker !== "replaced"; attempt++) {
+    await sleep(100);
+    marker = await evaluate(`return window.__sheetDocument ?? "replaced";`, 5_000).catch(() => "pending");
+  }
+  assert.equal(marker, "replaced", "a clean reload reloads");
+  await coldHome();
+  await quit(pid, { via: "close" });
 
   pid = await timed("launch", launch);
   await coldHome();
@@ -470,7 +498,7 @@ try {
     assert.match(await cellText(0, 0), /^invented_00000,雪"quote"/, "readable first imported cell");
     assert.equal(await cellText(ROWS - 1, 1), "https://example.invalid/account/08405");
     assert.equal(await unsavedCheck(), true, "imported work counts as unsaved for the close guard");
-    await closeRefusedWhileUnsaved(pid);
+    await quitRefusedWhileUnsaved(pid);
 
     for (const [row, column, value] of EDITS) await edit(row, column, value);
     const original = (row, column) => [
