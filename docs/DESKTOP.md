@@ -26,18 +26,22 @@ Sheet UI / application (unchanged)
   producer source `40d01a45` plus only the additive native bridge, whose release
   WASM build is byte-identical to its baseline. Re-pin only together with a
   qualified kit.
-- Downloads (CSV/XLSX/PNG/profile): WebKit writes each export to a private
-  staging file; once complete, the native Save panel opens (one at a time, in request
-  order) and the export is written to a new, exclusively created file beside
-  the chosen one and renamed into place. A failed
-  or cancelled export never leaves a partial file or replaces an existing one,
-  and says so when it fails. No panel ever opens inside a WebKit callback; all
-  host dialogs are sheets on the Sheet window.
+- Exports (CSV/XLSX/PNG/profile) do not use WebKit downloads. The page hands
+  the bytes to the host through the `HostFiles` port (`src/host/host-files.ts`;
+  the Web keeps an ordinary download), in request order; the host asks with a
+  Save sheet and writes a new, exclusively created file beside the chosen one,
+  then renames it into place (`src-tauri/src/saves.rs`). The page learns
+  whether the file was saved or cancelled, and a failure says so in the page;
+  it never leaves a partial file or replaces an existing one. A save from an
+  earlier page (before a reload) is refused. All host dialogs are sheets on
+  the Sheet window, and none opens inside a WebKit callback.
 - Closing the window, ⌘W, Quit (menu ⌘Q, Dock, logout) and reloading all ask
   first when work is unsaved, a change is still in progress, or an export is
   still being saved (the Sheet's own unsaved-work guard). While that is decided,
-  new runtime operations are held, so nothing can change the work after the
-  check, and the page is frozen (`inert`) so no typing can slip in either.
+  new runtime operations and saves are held, so nothing can change the work
+  after the check, and the page is frozen (`inert`) so no typing can slip in
+  either. Once leaving is decided, a save still being written finishes first
+  and any other save is not written.
   Termination is routed through `applicationShouldTerminate:`.
 - The Sheet document is never replaced by a link: bundled license notices open
   in their own window, web links open in the default browser.

@@ -15,6 +15,7 @@ import { resolveBuiltInInterfaceProfile } from "./interface-profile/profile.js";
 import { placeAppearancePopover, type AppearancePopoverContext } from "./appearance-placement.js";
 import "./appearance-selector.css";
 import { useHostCopy } from "./host-copy.js";
+import { anchorDownloadHost, useHostFiles } from "../host/host-files.js";
 
 export type AppearanceSelectorProps = Readonly<{
   context: AppearancePopoverContext;
@@ -44,6 +45,7 @@ export function AppearanceSelector({
   onSelectImported,
 }: AppearanceSelectorProps) {
   const hostCopy = useHostCopy();
+  const hostFiles = useHostFiles();
   const [open, setOpen] = useState(false);
   const [pendingPresentation, setPendingPresentation] = useState<AppearanceChoice | null>(null);
   const [stagedProfile, setStagedProfile] = useState<InterfaceProfileV1 | null>(null);
@@ -416,7 +418,7 @@ export function AppearanceSelector({
       setExportMessage(encoded.errors[0]?.message ?? "The selected profile could not be prepared for export.");
       return;
     }
-    const request = requestInterfaceProfileDownload(encoded);
+    const request = requestInterfaceProfileDownload(encoded, anchorDownloadHost(hostFiles, setExportMessage));
     setExportMessage(request.ok
       ? `Download requested: ${request.filename}. Browser save completion is not reported.`
       : request.message);

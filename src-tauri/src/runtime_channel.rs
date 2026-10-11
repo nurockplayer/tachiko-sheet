@@ -72,6 +72,8 @@ struct Gate {
     phase: Phase,
     /// Operations that arrived while held and are waiting for the decision.
     waiting: usize,
+    /// Operations admitted and not yet finished.
+    running: usize,
 }
 
 /// One native runtime shared by the app's single Sheet window.
@@ -91,6 +93,7 @@ impl Default for RuntimeChannel {
             gate: Mutex::new(Gate {
                 phase: Phase::Open,
                 waiting: 0,
+                running: 0,
             }),
             gate_changed: Condvar::new(),
         }
@@ -123,7 +126,7 @@ impl RuntimeChannel {
     /// arrived after the page reported "clean" makes that report stale.
     pub fn seal_if_idle(&self) -> bool {
         let mut gate = lock_gate(&self.gate);
-        if gate.waiting > 0 {
+        if gate.waiting > 0 || gate.running > 0 {
             return false;
         }
         gate.phase = Phase::Sealed;
@@ -141,8 +144,9 @@ impl RuntimeChannel {
         self.gate_changed.notify_all();
     }
 
-    /// Wait while held; refuse once sealed.
-    fn admit(&self) -> Result<(), ChannelError> {
+    /// Wait while held; refuse once sealed. An admitted operation counts as
+    /// running, under the same lock, until its guard is dropped.
+    fn admit(&self) -> Result<Running<'_>, ChannelError> {
         let mut gate = lock_gate(&self.gate);
         gate.waiting += 1;
         while gate.phase == Phase::Held {
@@ -155,13 +159,14 @@ impl RuntimeChannel {
         if gate.phase == Phase::Sealed {
             return Err(ChannelError::Sealed);
         }
-        Ok(())
+        gate.running += 1;
+        Ok(Running(self))
     }
 
     /// Run one framed operation for the current generation.
     pub fn dispatch(&self, frame: &[u8]) -> Result<Vec<u8>, ChannelError> {
         let (header, request, payload) = parse_frame(frame)?;
-        self.admit()?;
+        let _running = self.admit()?;
         let mut state = self.lock();
         if header.generation != state.generation {
             return Err(ChannelError::StaleGeneration);
@@ -188,6 +193,15 @@ impl RuntimeChannel {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// Marks one admitted operation as running until dropped (also on panic).
+struct Running<'channel>(&'channel RuntimeChannel);
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        lock_gate(&self.0.gate).running -= 1;
     }
 }
 
@@ -416,6 +430,20 @@ mod tests {
                 .dispatch(&frame("observe_occurrence", generation + 1, &[], &[]))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn a_running_operation_prevents_sealing_until_it_finishes() {
+        let channel = RuntimeChannel::default();
+        channel.attach();
+        let running = channel.admit().unwrap();
+        channel.hold();
+        assert!(
+            !channel.seal_if_idle(),
+            "an admitted operation is still running"
+        );
+        drop(running);
+        assert!(channel.seal_if_idle());
     }
 
     #[test]

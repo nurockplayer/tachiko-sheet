@@ -442,37 +442,27 @@ async function salesJourney() {
   assert.match(report, /NOTE\s*1000/);
   assert.match(report, /PEN\s*1000/);
   await screenshot("sales-report");
-  // Two PNG exports of the same unchanged chart: each is its own download.
+  // PNG exports are saved by the host, in the order requested. A save still
+  // encoding already counts as unsaved work.
   for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
-  const finishedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.includes("Ok(true)")).slice(startedBefore);
-  const finishedPngsCount = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.includes("Ok(true)")).length;
-  // A double click starts overlapping exports; WebKit's callbacks no longer
-  // open any panel, so both are recorded and placed one after another.
-  await evaluate(`const exportPng = await waitFor(() => button("Export current PNG"), "PNG export"); click(exportPng); click(exportPng); return true;`);
-  const logLines = async (prefix) => (await hostLog()).split("\n").filter((line) => line.startsWith(prefix));
-  for (let attempt = 0; attempt < 300 && (await logLines("placed tachiko-sheet-report")).length < 1; attempt++) await sleep(50);
-  await sleep(3500);
-  const requestedPngs = (await logLines("requested blob:")).length;
-  const placed = (await logLines("placed tachiko-sheet-report")).filter((line) => line.includes("Ok(true)")).length;
-  const refused = (await logLines("export failure: Another export is still being prepared")).length;
-  assert.ok(placed >= 1, `an overlapping PNG export was placed; host: ${await hostLog()}`);
-  assert.equal(placed + refused, requestedPngs, `every requested export was placed or visibly refused; host: ${await hostLog()}`);
-  for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
-  const startedBefore = (await finishedPngsCount());
-  for (let round = 1; round <= 2; round++) {
-    await evaluate(`click(await waitFor(() => button("Export current PNG"), "PNG export")); return true;`);
-    for (let attempt = 0; attempt < 300 && (await finishedPngs()).length < round; attempt++) await sleep(50);
-    assert.equal((await finishedPngs()).length, round, `PNG export ${round} finished; host: ${await hostLog()}`);
-  }
-  const urls = (await hostLog()).split("\n").filter((line) => line.startsWith("finished blob:") && / true @[0-9]+$/.test(line)).slice(-2).map((line) => line.split(" ")[1]);
-  assert.notEqual(urls[0], urls[1], "each PNG export has its own download identity");
-  const pngs = (await readdir(downloads)).filter((name) => name.startsWith("tachiko-sheet-report") && name.endsWith(".png"));
-  assert.ok(pngs.length >= 1, `report PNG saved; folder: ${JSON.stringify(await readdir(downloads))}`);
-  for (const name of pngs) {
-    assert.deepEqual([...(await readFile(path.join(downloads, name))).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${name} is a PNG`);
-  }
-  assert.deepEqual((await readdir(downloads)).filter((n) => n.startsWith(".")), [], "no temporary PNG remains");
-  assert.doesNotMatch(await hostLog(), /export failure/, "no export was reported as failed");
+  const savedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("saved tachiko-sheet-report.png: Ok(Saved)"));
+  const before = (await savedPngs()).length;
+  const encoding = await evaluate(`
+    const exportPng = await waitFor(() => button("Export current PNG"), "PNG export");
+    click(exportPng);
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    click(exportPng);
+    return event.defaultPrevented;
+  `);
+  assert.equal(encoding, true, "a PNG export in progress blocks leaving");
+  for (let attempt = 0; attempt < 400 && (await savedPngs()).length < before + 2; attempt++) await sleep(50);
+  assert.equal((await savedPngs()).length, before + 2, `both overlapping PNG exports were saved; host: ${await hostLog()}`);
+  assert.equal(await unsavedCheck(), true, "the edited Sales work itself is still unsaved");
+  const png = path.join(downloads, "tachiko-sheet-report.png");
+  assert.deepEqual([...(await readFile(png)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], "the saved report is a PNG");
+  assert.deepEqual((await readdir(downloads)).filter((n) => n.startsWith(".")), [], "no temporary file remains");
+  assert.doesNotMatch(await hostLog(), /download refused|: Err\(/, "no export went through WebKit or failed");
   await closeRefusedWhileUnsaved(pid);
   await quitRefusedWhileUnsaved(pid);
   await terminateRefusedWhileUnsaved(pid);

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-attach"
+description = "Enables the save_attach command without any pre-configured scope."
+commands.allow = ["save_attach"]
+
+[[permission]]
+identifier = "deny-save-attach"
+description = "Denies the save_attach command without any pre-configured scope."
+commands.deny = ["save_attach"]

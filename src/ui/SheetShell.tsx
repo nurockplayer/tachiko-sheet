@@ -52,11 +52,12 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
-import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
+import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { useHostCopy } from "./host-copy.js";
+import { useHostFiles } from "../host/host-files.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
@@ -383,6 +384,7 @@ function clearHeldSharedButtons(ownerRef: { current: SharedButtonPointerOwner | 
 
 export function SheetShell(props: SheetShellProps) {
   const hostCopy = useHostCopy();
+  const hostFiles = useHostFiles();
   const {
     view,
     busy,
@@ -556,11 +558,12 @@ export function SheetShell(props: SheetShellProps) {
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
-  const [importTypes, setImportTypes] = useState<string[][]>([]);
-  const importSuggestions = useMemo(
+  const [importChoice, setImportChoice] = useState<ImportTypeChoice | null>(null);
+  const importSuggestions = useMemo<string[][]>(
     () => interop?.importInspection?.source.sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column))) ?? [],
     [interop?.importInspection],
   );
+  const importTypes = chosenImportTypes(importChoice, importSuggestions);
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const [j4Pending, setJ4Pending] = useState(false);
@@ -716,10 +719,6 @@ export function SheetShell(props: SheetShellProps) {
     const entities = view.table.rows.map(rowEntity);
     setSelectedEntity((previous) => (previous && entities.includes(previous) ? previous : entities[0] ?? null));
   }, [view]);
-
-  useEffect(() => {
-    setImportTypes(importSuggestions);
-  }, [importSuggestions]);
 
   const table = view?.table ?? null;
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
@@ -2375,24 +2374,22 @@ export function SheetShell(props: SheetShellProps) {
         setLocalError("The current report image could not be rendered, so no PNG was downloaded.");
         return;
       }
-      const encodingFailed = () => setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
-      try {
-        // A fresh blob URL gives every export its own identity, so two exports
-        // of an unchanged chart are never confused while being saved.
-        canvas.toBlob((blob) => {
-          if (!blob || blob.type !== "image/png" || blob.size === 0) { encodingFailed(); return; }
-          const href = URL.createObjectURL(blob);
-          const anchor = document.createElement("a");
-          anchor.href = href;
-          anchor.download = "tachiko-sheet-report.png";
-          document.body.append(anchor);
-          anchor.click();
-          anchor.remove();
-          window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
-        }, "image/png");
-      } catch {
-        encodingFailed();
-      }
+      const encodingFailed = "The current report image could not be encoded, so no PNG was downloaded.";
+      // The save is requested before encoding finishes, so it already counts
+      // as work in progress while the PNG is being produced.
+      const png = new Promise<Blob>((resolve, reject) => {
+        try {
+          canvas.toBlob((blob) => {
+            if (!blob || blob.type !== "image/png" || blob.size === 0) reject(new Error(encodingFailed));
+            else resolve(blob);
+          }, "image/png");
+        } catch {
+          reject(new Error(encodingFailed));
+        }
+      });
+      hostFiles.saveFile("tachiko-sheet-report.png", png).catch((error: unknown) => {
+        setLocalError(error instanceof Error && error.message ? error.message : encodingFailed);
+      });
     };
     const removeReport = () => {
       if (!onRemoveReport()) return;
@@ -2703,7 +2700,7 @@ export function SheetShell(props: SheetShellProps) {
                 {attention.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
               </>;
             })()}
-            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
+            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportChoice((current) => chooseImportType(current, importSuggestions, sheetIndex, columnIndex, nextType)); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {(() => {
               const notes = interop.importInspection.source.ledger.filter((finding) => !finding.blocking && INFORMATIONAL_FINDINGS.has(finding.category));
               return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul></details> : null;

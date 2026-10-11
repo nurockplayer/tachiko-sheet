@@ -57,3 +57,32 @@ export function importRefusalMessage(error: unknown): string {
       : "The spreadsheet could not be inspected.";
   return detail ? `${lead} Nothing was imported. (Details: ${detail})` : `${lead} Nothing was imported.`;
 }
+
+/**
+ * The person's column types for one import inspection. A choice belongs to
+ * the exact suggestions it was made from, so a newer inspection never shows
+ * or submits types chosen for an earlier one, and the first render already
+ * uses the current suggestions.
+ */
+export interface ImportTypeChoice {
+  readonly basis: readonly (readonly string[])[];
+  readonly types: string[][];
+}
+
+export function chosenImportTypes(choice: ImportTypeChoice | null, suggestions: string[][]): string[][] {
+  return choice !== null && choice.basis === suggestions ? choice.types : suggestions;
+}
+
+export function chooseImportType(
+  choice: ImportTypeChoice | null,
+  suggestions: string[][],
+  sheet: number,
+  column: number,
+  type: string,
+): ImportTypeChoice {
+  const current = chosenImportTypes(choice, suggestions);
+  return {
+    basis: suggestions,
+    types: current.map((types, index) => index !== sheet ? types : types.map((value, index2) => index2 === column ? type : value)),
+  };
+}

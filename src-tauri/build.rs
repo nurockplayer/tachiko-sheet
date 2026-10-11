@@ -1,8 +1,16 @@
-const COMMANDS: &[&str] = &["runtime_attach", "runtime_dispatch", "window_close_check"];
+const COMMANDS: &[&str] = &[
+    "runtime_attach",
+    "runtime_dispatch",
+    "window_close_check",
+    "save_attach",
+    "save_export",
+];
 const E2E_COMMANDS: &[&str] = &[
     "runtime_attach",
     "runtime_dispatch",
     "window_close_check",
+    "save_attach",
+    "save_export",
     "e2e_result",
     "e2e_request_close",
     "e2e_request_quit",

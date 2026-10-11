@@ -8,19 +8,19 @@
 //! handler: none runs a nested modal event loop inside a WebKit or Tauri
 //! callback.
 
-mod downloads;
 #[cfg(feature = "e2e")]
 mod e2e;
 mod runtime_channel;
+mod saves;
 #[cfg(target_os = "macos")]
 mod termination;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use downloads::ExportLedger;
 use rfd::{AsyncFileDialog, AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
+use saves::{Published, Saves};
 use tauri::menu::{Menu, MenuItem, MenuItemKind};
 use tauri::webview::DownloadEvent;
 use tauri::{
@@ -112,8 +112,6 @@ impl Default for LeaveGuard {
 }
 
 const UNSAVED: &str = "You have changes that are not saved, or a change still in progress. If you continue, they will be lost.";
-const EXPORTING: &str =
-    "An export is still being saved. If you continue, that file will not be saved.";
 const NOT_RESPONDING: &str = "Tachiko Sheet is not responding, so it cannot tell whether your work is saved. Unsaved changes will be lost.";
 const CANNOT_TELL: &str =
     "Tachiko Sheet cannot tell whether your work is saved. Unsaved changes will be lost.";
@@ -161,6 +159,7 @@ fn request_leave(window: &WebviewWindow, leave: Leave) {
             Deciding::Idle => {}
         }
         window.state::<RuntimeChannel>().hold();
+        window.state::<Saves>().hold();
         let check = guard.checks.fetch_add(1, Ordering::SeqCst) + 1;
         *deciding = Deciding::Checking(check, leave);
         check
@@ -185,11 +184,8 @@ fn window_close_check(
     if current != check {
         return;
     }
-    let exporting = !lock(&window.state::<Exports>().ledger).is_empty();
     let reason = if unsaved {
         Some(UNSAVED)
-    } else if exporting {
-        Some(EXPORTING)
     } else if window.state::<RuntimeChannel>().seal_if_idle() {
         None
     } else {
@@ -221,6 +217,7 @@ fn ask_then_leave(window: &WebviewWindow, leave: Leave, reason: &'static str) {
             proceed(&target, leave);
         } else {
             channel.release();
+            target.state::<Saves>().release();
             let _ = target.eval(UNFREEZE_SCRIPT);
         }
     });
@@ -254,14 +251,13 @@ async fn confirm_discard(window: &WebviewWindow, leave: Leave, reason: &str) -> 
         || matches!(choice, MessageDialogResult::Ok)
 }
 
-/// Leaving is decided and the runtime is sealed.
+/// Leaving is decided and the runtime is sealed. A save still being written
+/// finishes first; any other save is not published.
 fn proceed(window: &WebviewWindow, leave: Leave) {
+    window.state::<Saves>().seal();
     let guard = window.state::<LeaveGuard>();
     match leave {
         Leave::Close => {
-            for staged in lock(&window.state::<Exports>().ledger).abandon_staged() {
-                let _ = std::fs::remove_file(staged);
-            }
             guard.closing.store(true, Ordering::SeqCst);
             let _ = window.close();
         }
@@ -355,115 +351,70 @@ fn open_bundled_page(app: &AppHandle, url: &Url) {
     });
 }
 
-// ---- downloads ----------------------------------------------------------------
+// ---- saving exports -----------------------------------------------------------
 
-struct Exports {
-    ledger: Mutex<ExportLedger>,
-    /// The placement turn now allowed to ask for its destination; exports are
-    /// placed one at a time, in the order they were requested.
-    turn: Mutex<u64>,
-    turn_changed: tokio::sync::Notify,
+/// Largest export the page may hand over.
+const MAX_SAVE_BYTES: usize = 256 * 1024 * 1024;
+
+/// A page starts saving; its epoch fences saves from earlier pages.
+#[tauri::command]
+async fn save_attach(saves: State<'_, Saves>) -> Result<u64, String> {
+    Ok(saves.attach())
 }
 
-fn staging_folder(app: &AppHandle) -> Option<PathBuf> {
-    let folder = app.path().app_cache_dir().ok()?.join("exports");
-    std::fs::create_dir_all(&folder).ok()?;
-    Some(folder)
-}
-
-/// WebKit download callbacks only record and redirect the download; no
-/// panel opens inside them.
-fn on_download(webview: &tauri::Webview, event: DownloadEvent<'_>) -> bool {
-    let app = webview.app_handle();
-    let exports = webview.state::<Exports>();
-    match event {
-        DownloadEvent::Requested { url, destination } => {
-            #[cfg(feature = "e2e")]
-            e2e::log(&format!("requested {url}"));
-            let name = destination.file_name().map_or_else(
-                || "Tachiko Sheet export".to_owned(),
-                |name| name.to_string_lossy().into_owned(),
-            );
-            let Some(folder) = staging_folder(app) else {
-                report_export_failure(
-                    app,
-                    "Tachiko Sheet could not prepare the export. Nothing was saved.".to_owned(),
-                );
-                return false;
-            };
-            let staged = lock(&exports.ledger).stage(url.as_str(), &folder, &name);
-            match staged {
-                Ok(staged) => {
-                    *destination = staged;
-                    true
-                }
-                Err(downloads::Refusal::Duplicate) => false,
-                Err(downloads::Refusal::Busy) => {
-                    report_export_failure(
-                        app,
-                        "Another export is still being prepared. Nothing was saved; export again in a moment."
-                            .to_owned(),
-                    );
-                    false
-                }
-            }
-        }
-        DownloadEvent::Finished { url, success, .. } => {
-            #[cfg(feature = "e2e")]
-            e2e::log(&format!("finished {url} {success}"));
-            let Some((staged, turn)) = lock(&exports.ledger).take(url.as_str(), success) else {
-                return true;
-            };
-            if let Some(turn) = turn {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move { place_export(app, staged, turn).await });
-            } else {
-                let _ = std::fs::remove_file(&staged);
-                report_export_failure(
-                    app,
-                    "The export could not be written. Nothing was saved; export it again."
-                        .to_owned(),
-                );
-            }
-            true
-        }
-        _ => true,
-    }
-}
-
-/// Ask where to save a completed export, then move it into place.
-async fn place_export(app: AppHandle, staged: PathBuf, turn: u64) {
-    let exports = app.state::<Exports>();
-    // Wait for every earlier export to be placed (or given up) first.
-    loop {
-        let changed = exports.turn_changed.notified();
-        if *lock(&exports.turn) == turn {
-            break;
-        }
-        changed.await;
-    }
-    let name = downloads::suggested_name(&staged);
-    let destination = choose_destination(&app, &name).await;
-    let outcome = match &destination {
-        Some(destination) => downloads::place(&staged, destination).map(|()| true),
-        None => {
-            let _ = std::fs::remove_file(&staged);
-            Ok(false)
-        }
+/// Ask where to save one export and write it there. "saved" or "cancelled";
+/// an error means nothing was saved.
+#[tauri::command]
+async fn save_export(
+    app: AppHandle,
+    saves: State<'_, Saves>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(frame) = request.body() else {
+        return Err("The export could not be read. Nothing was saved.".to_owned());
     };
-    lock(&exports.ledger).placed();
-    *lock(&exports.turn) += 1;
-    exports.turn_changed.notify_waiters();
+    let Some((epoch, name, bytes)) = parse_save_frame(frame) else {
+        return Err("The export could not be read. Nothing was saved.".to_owned());
+    };
+    // One Save sheet at a time; the leave decision never waits on this.
+    let _turn = saves.turn.lock().await;
+    let Some(destination) = choose_destination(&app, &name).await else {
+        return Ok("cancelled".to_owned());
+    };
+    let published = saves.publish(epoch, bytes, &destination).await;
     #[cfg(feature = "e2e")]
-    e2e::log(&format!("placed {name} turn {turn}: {outcome:?}"));
-    if outcome.is_err() {
-        report_export_failure(
-            &app,
-            format!(
-                "“{name}” was not saved. Any file already there is unchanged. Your work is still open; export it again."
-            ),
-        );
+    e2e::log(&format!("saved {name}: {published:?}"));
+    match published {
+        Ok(Published::Saved) => Ok("saved".to_owned()),
+        Ok(Published::Cancelled) => Ok("cancelled".to_owned()),
+        Err(error) => Err(format!(
+            "“{name}” was not saved ({error}). Any file already there is unchanged."
+        )),
     }
+}
+
+/// `[u64 epoch][u32 name length][name][bytes]`, little-endian. Only the
+/// name's final path component is used.
+fn parse_save_frame(frame: &[u8]) -> Option<(u64, String, &[u8])> {
+    let epoch = u64::from_le_bytes(frame.get(..8)?.try_into().ok()?);
+    let length = u32::from_le_bytes(frame.get(8..12)?.try_into().ok()?) as usize;
+    if length == 0 || length > 1024 {
+        return None;
+    }
+    let name = std::str::from_utf8(frame.get(12..12 + length)?).ok()?;
+    let name = Path::new(name).file_name()?.to_string_lossy().into_owned();
+    let bytes = frame.get(12 + length..)?;
+    (bytes.len() <= MAX_SAVE_BYTES).then_some((epoch, name, bytes))
+}
+
+/// Exports are saved by `save_export`; WebKit downloads are refused.
+fn on_download(event: &DownloadEvent<'_>) -> bool {
+    #[cfg(feature = "e2e")]
+    if let DownloadEvent::Requested { url, .. } = event {
+        e2e::log(&format!("download refused {url}"));
+    }
+    let _ = event;
+    false
 }
 
 /// Nothing is written unless the person picks a destination in the Save panel.
@@ -496,27 +447,6 @@ async fn tokio_sleep(duration: std::time::Duration) {
         let _ = sender.send(());
     });
     let _ = tauri::async_runtime::spawn_blocking(move || receiver.recv()).await;
-}
-
-/// Tell the person an export did not reach its file; the page cannot observe it.
-fn report_export_failure(app: &AppHandle, message: String) {
-    #[cfg(feature = "e2e")]
-    if e2e::close_answer().is_some() {
-        e2e::log(&format!("export failure: {message}"));
-        return;
-    }
-    let window = app.get_webview_window(MAIN_WINDOW);
-    tauri::async_runtime::spawn(async move {
-        let mut dialog = AsyncMessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Export not saved")
-            .set_description(message)
-            .set_buttons(MessageButtons::Ok);
-        if let Some(window) = &window {
-            dialog = dialog.set_parent(window);
-        }
-        dialog.show().await;
-    });
 }
 
 // ---- menu ---------------------------------------------------------------------
@@ -552,11 +482,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(RuntimeChannel::default())
         .manage(LeaveGuard::default())
-        .manage(Exports {
-            ledger: Mutex::new(ExportLedger::default()),
-            turn: Mutex::new(0),
-            turn_changed: tokio::sync::Notify::new(),
-        })
+        .manage(Saves::default())
         .menu(app_menu)
         .on_menu_event(|app, event| {
             if event.id() == QUIT_MENU_ITEM {
@@ -567,13 +493,17 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         runtime_attach,
         runtime_dispatch,
-        window_close_check
+        window_close_check,
+        save_attach,
+        save_export
     ]);
     #[cfg(feature = "e2e")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         runtime_attach,
         runtime_dispatch,
         window_close_check,
+        save_attach,
+        save_export,
         e2e::e2e_result,
         e2e::e2e_request_close,
         e2e::e2e_request_quit,
@@ -588,7 +518,7 @@ pub fn run() {
                     .inner_size(1280.0, 820.0)
                     .min_inner_size(880.0, 600.0)
                     .on_navigation(move |url| on_navigation(&handle, url))
-                    .on_download(|webview, event| on_download(&webview, event));
+                    .on_download(|_webview, event| on_download(&event));
             // The packaged e2e run must not stall when its window is covered.
             #[cfg(feature = "e2e")]
             let window = window
