@@ -536,7 +536,20 @@ export function SheetShell(props: SheetShellProps) {
   const [gridRowHeight, setGridRowHeight] = useState(32);
   const gridHeaderHeightRef = useRef(32);
   const gridScrollFrameRef = useRef<number | null>(null);
-  const pendingCellFocusRef = useRef<{ entity: string; field: string } | null>(null);
+  // A focus target waiting for its windowed row to mount, with the user-intent
+  // generation at request time; any newer input cancels it.
+  const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
+  // Bumped by any pointer or key input outside the cell editor. A late
+  // completion may move focus only if the user has not acted since.
+  const focusIntentRef = useRef(0);
+  const liveOccurrenceRef = useRef<string | null>(null);
+  const appFocusingRef = useRef(false);
+  // Declared before the windowing effects so a replacement occurrence never
+  // consumes a focus request queued for the previous one.
+  useLayoutEffect(() => {
+    liveOccurrenceRef.current = view?.occurrence ?? null;
+    pendingCellFocusRef.current = null;
+  }, [view?.occurrence]);
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
@@ -569,7 +582,9 @@ export function SheetShell(props: SheetShellProps) {
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | null>(null);
   const selectEditorValueOnFocusRef = useRef(true);
-  const focusRejectedEditorRef = useRef(false);
+  // Intent captured when a rejected commit asked to refocus its retained
+  // editor; rechecked when the refocus is finally applied.
+  const focusRejectedEditorRef = useRef<{ generation: number; occurrence: string | null } | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const resultsHideButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultsShowButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -682,12 +697,13 @@ export function SheetShell(props: SheetShellProps) {
     if (commitPending || !focusRejectedEditorRef.current) return;
     const input = editorInputRef.current;
     if (!editor || !input) {
-      focusRejectedEditorRef.current = false;
+      focusRejectedEditorRef.current = null;
       return;
     }
     if (props.busy || currentness === "unknown" || input.disabled) return;
-    focusRejectedEditorRef.current = false;
-    input.focus();
+    const intent = focusRejectedEditorRef.current;
+    focusRejectedEditorRef.current = null;
+    if (completionMayMoveFocus(intent)) withAppFocus(() => input.focus());
   }, [commitPending, currentness, editor, props.busy]);
 
   useEffect(() => {
@@ -744,15 +760,35 @@ export function SheetShell(props: SheetShellProps) {
       pendingCellFocusRef.current = null;
     }
     const pending = pendingCellFocusRef.current;
+    if (pending && pending.generation !== focusIntentRef.current) {
+      pendingCellFocusRef.current = null;
+      return;
+    }
     const node = pending ? cellRefs.current.get(cellKey(pending.entity, pending.field)) : null;
     if (node) {
       pendingCellFocusRef.current = null;
-      node.focus();
+      withAppFocus(() => node.focus());
     }
   });
 
   useEffect(() => () => {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
+  }, []);
+
+  useEffect(() => {
+    const onUserIntent = (event: Event) => {
+      // Typing in the live editor is not a new choice; a click on the
+      // disabled editor while its commit is pending is.
+      const editorInput = editorInputRef.current;
+      if (appFocusingRef.current || (event.target === editorInput && editorInput && !editorInput.disabled)) return;
+      focusIntentRef.current += 1;
+    };
+    // focusin also covers focus moved by assistive technology or script.
+    const events = ["pointerdown", "keydown", "focusin"] as const;
+    for (const type of events) document.addEventListener(type, onUserIntent, true);
+    return () => {
+      for (const type of events) document.removeEventListener(type, onUserIntent, true);
+    };
   }, []);
 
   // The scrollport's height follows the window and panel layout; a taller
@@ -833,7 +869,7 @@ export function SheetShell(props: SheetShellProps) {
       if (!cell && matches.length === 1 && gridWindowed && tab === "table" && index !== undefined) {
         // The published cell is outside the rendered window: reveal it and
         // let the pending-focus pass focus it once it is mounted.
-        pendingCellFocusRef.current = { entity: target.entity, field: target.field };
+        pendingCellFocusRef.current = { entity: target.entity, field: target.field, generation: focusIntentRef.current };
         revealGridRow(index);
         historyFocusRequestRef.current = null;
         setHistoryFocusRequest(null);
@@ -1082,7 +1118,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     const original = seedTextOf(field);
     selectEditorValueOnFocusRef.current = seed === undefined;
-    focusRejectedEditorRef.current = false;
+    focusRejectedEditorRef.current = null;
     setLocalError(null);
     setSelectedEntity(entity);
     setEditor({
@@ -1110,7 +1146,7 @@ export function SheetShell(props: SheetShellProps) {
     // A windowed row outside the rendered range: render it, then focus it.
     const index = rowIndexByEntity.get(entity);
     if (!gridWindowed || tab !== "table" || index === undefined) return;
-    pendingCellFocusRef.current = { entity, field };
+    pendingCellFocusRef.current = { entity, field, generation: focusIntentRef.current };
     revealGridRow(index);
   }
 
@@ -1199,15 +1235,36 @@ export function SheetShell(props: SheetShellProps) {
     } else {
       edit = scalarEditOf(editor.kind, editor.value);
     }
+    const intent = completionIntent();
     const accepted = await runCommit(field.target, edit, () => {
-      focusRejectedEditorRef.current = true;
+      focusRejectedEditorRef.current = intent;
     });
     if (accepted) {
       setEditor(null);
       setLocalError(null);
-      focusCell(editor.entity, editor.field);
+      // The publication may settle after the user has already chosen another
+      // cell or control; never pull focus back from that newer choice.
+      if (completionMayMoveFocus(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
     }
     return accepted;
+  }
+
+  /** Focus moved by a completion itself is not a new user choice. */
+  function withAppFocus(move: () => void): void {
+    appFocusingRef.current = true;
+    try {
+      move();
+    } finally {
+      appFocusingRef.current = false;
+    }
+  }
+
+  function completionIntent(): { generation: number; occurrence: string | null } {
+    return { generation: focusIntentRef.current, occurrence: liveOccurrenceRef.current };
+  }
+
+  function completionMayMoveFocus(intent: { generation: number; occurrence: string | null }): boolean {
+    return focusIntentRef.current === intent.generation && liveOccurrenceRef.current === intent.occurrence && intent.occurrence !== null;
   }
 
   function onCellKeyDown(
@@ -1267,8 +1324,9 @@ export function SheetShell(props: SheetShellProps) {
       event.preventDefault();
       const position = { entity: editor.entity, field: editor.field };
       const step = event.shiftKey ? -1 : 1;
+      const intent = completionIntent();
       void commitEditor().then((accepted) => {
-        if (accepted) moveFocus(event, position, step);
+        if (accepted && completionMayMoveFocus(intent)) withAppFocus(() => moveFocus(event, position, step));
       });
     }
   }

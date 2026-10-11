@@ -183,6 +183,59 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), "https://example.invalid/account/00120");
     for (let step = 0; step < 120; step++) await page.keyboard.press("ArrowUp");
     await page.waitForFunction(() => document.activeElement?.closest("tr")?.getAttribute("aria-rowindex") === "2");
+    // #152: a slow publication must not pull focus back from a newer choice.
+    const focusedCell = () => page.evaluate(() => {
+      const cell = document.activeElement;
+      return `${cell?.closest("tr")?.getAttribute("aria-rowindex")}:${cell?.cellIndex}`;
+    });
+    const pending = () => page.locator('[data-testid="project-ready"][aria-busy="true"]').waitFor({ timeout: 2_000 });
+    // The probe input must land while the publication is still pending, or
+    // the leg proves nothing; slow the CPU to widen that window and check it.
+    const stillPending = async (label) => assert.equal(
+      await page.locator('[data-testid="project-ready"]').getAttribute("aria-busy"), "true", `${label}: probe input landed while publishing`);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    // Enter, then another cell chosen while the edit is still publishing.
+    await reveal(page, 100);
+    await cellAt(page, 100, 1).dblclick();
+    await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("focus-intent");
+    await page.keyboard.press("Enter");
+    await pending();
+    await cellAt(page, 105, 0).click();
+    await stillPending("Enter");
+    await current(page);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "focus-intent", cellSelector(100, 1));
+    await page.waitForTimeout(200);
+    assert.equal(await focusedCell(), "107:1", "focus stays on the cell chosen while the edit was publishing");
+    await history(page, "undo", 100, 1, "https://example.invalid/account/00100");
+    // Tab, then away and deliberately back to the origin: no Tab advance.
+    await cellAt(page, 110, 1).dblclick();
+    await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("tab-intent");
+    await page.keyboard.press("Tab");
+    await pending();
+    await cellAt(page, 115, 0).click();
+    await cellAt(page, 110, 1).click();
+    await stillPending("Tab");
+    await current(page);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "tab-intent", cellSelector(110, 1));
+    await page.waitForTimeout(200);
+    assert.equal(await focusedCell(), "112:2", "a deliberate return to the origin is not overridden by the Tab move");
+    await history(page, "undo", 110, 1, "https://example.invalid/account/00110");
+    // Tab, then a click straight on the origin (still covered by the pending
+    // editor): the click wins over the Tab move.
+    await cellAt(page, 120, 1).dblclick();
+    await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("origin-click");
+    await page.keyboard.press("Tab");
+    await pending();
+    await cellAt(page, 120, 1).click({ force: true });
+    await stillPending("Tab + origin click");
+    await current(page);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "origin-click", cellSelector(120, 1));
+    await page.waitForTimeout(200);
+    assert.equal(await focusedCell(), "122:2", "a click on the origin during a pending Tab keeps focus there");
+    await history(page, "undo", 120, 1, "https://example.invalid/account/00120");
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    await cdp.detach();
     for (const [row, column, value] of EDITS) await edit(page, row, column, value);
     const [lastRow, lastColumn] = EDITS[2];
     const [middleRow, middleColumn] = EDITS[1];
