@@ -9,6 +9,15 @@ export async function readCommittedSourceIdentities({ head, files, cwd, runGit }
   for (const file of [...new Set(files)].sort()) {
     const sizeRun = await runGit(['cat-file', '-s', `${head}:${file}`], { cwd, maxOutputBytes: 1024 });
     const sizeText = sizeRun.output.trim();
+    if (sizeRun.outcome === 'EXITED' && sizeRun.code !== 0) {
+      // A path the candidate deleted has no blob at HEAD; record the deletion
+      // explicitly. Any other read failure still refuses the identity.
+      const listed = await runGit(['ls-tree', '--name-only', head, '--', file], { cwd, maxOutputBytes: 4096 });
+      if (listed.outcome === 'EXITED' && listed.code === 0 && listed.output.trim() === '') {
+        identities.push({ path: file, deleted: true });
+        continue;
+      }
+    }
     if (sizeRun.outcome !== 'EXITED' || sizeRun.code !== 0 || !/^(0|[1-9]\d*)$/.test(sizeText)) {
       throw new Error(`cannot determine complete committed source byte count for ${file}: ${sizeRun.output}`);
     }
