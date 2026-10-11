@@ -49,17 +49,33 @@ async function start(profile) {
 }
 
 const grid = (page) => page.getByRole("grid", { name: "Table", exact: true });
-const cellAt = (page, row, column) => grid(page).locator("tbody tr").nth(row).locator("td").nth(column);
+// Large tables are row-windowed: scroll like a user, then address rows by
+// their ARIA index (header is row 1).
+const rowAt = (page, row) => grid(page).locator(`tbody tr[aria-rowindex="${row + 2}"]`);
+const cellAt = (page, row, column) => rowAt(page, row).locator("td").nth(column);
+async function reveal(page, row) {
+  await page.evaluate((index) => {
+    const scroller = document.querySelector(".ts-grid-scroll");
+    const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row')?.offsetHeight || 32;
+    scroller.scrollTop = Math.max(0, index * pitch - scroller.clientHeight / 2);
+  }, row);
+  await rowAt(page, row).waitFor();
+}
+const cellSelector = (row, column) => `table[aria-label="Table"] tbody tr[aria-rowindex="${row + 2}"] td:nth-of-type(${column + 1})`;
 const ready = (page) => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const current = (page) => page.waitForFunction(() =>
   document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current" &&
   document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
 
 async function rowCount(page) {
-  return grid(page).locator("tbody tr").count();
+  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1;
+  const rendered = await grid(page).locator("tbody tr.ts-row").count();
+  assert.ok(rendered < 400, `large table renders a window, not ${rendered} rows`);
+  return declared;
 }
 
 async function cellText(page, row, column) {
+  await reveal(page, row);
   return (await cellAt(page, row, column).textContent()) ?? "";
 }
 
@@ -74,23 +90,21 @@ async function importSource(page, file) {
   await timed("import", async () => {
     await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await ready(page);
-    await grid(page).locator("tbody tr").nth(ROWS - 1).waitFor({ state: "attached" });
+    await grid(page).locator("tbody tr.ts-row").first().waitFor();
   });
 }
 
 async function edit(page, row, column, value) {
-  const target = cellAt(page, row, column);
-  await target.scrollIntoViewIfNeeded();
-  await target.dblclick();
+  await reveal(page, row);
+  await cellAt(page, row, column).dblclick();
   const input = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await input.fill(value);
   await timed("edit", async () => {
     await input.press("Enter");
     await input.waitFor({ state: "hidden" });
     await current(page);
-    await page.waitForFunction(([r, c, v]) =>
-      document.querySelector('table[aria-label="Table"]')?.querySelectorAll("tbody tr")[r]?.querySelectorAll("td")[c]?.textContent === v,
-    [row, column, value]);
+    await page.waitForFunction(([selector, expected]) =>
+      document.querySelector(selector)?.textContent === expected, [cellSelector(row, column), value]);
   });
 }
 
@@ -98,9 +112,8 @@ async function history(page, direction, row, column, value) {
   await timed(direction, async () => {
     await page.getByRole("button", { name: direction === "undo" ? "Undo" : "Redo", exact: true }).click();
     await current(page);
-    await page.waitForFunction(([r, c, v]) =>
-      document.querySelector('table[aria-label="Table"]')?.querySelectorAll("tbody tr")[r]?.querySelectorAll("td")[c]?.textContent === v,
-    [row, column, value]);
+    await page.waitForFunction(([selector, expected]) =>
+      document.querySelector(selector)?.textContent === expected, [cellSelector(row, column), value]);
   });
 }
 
@@ -162,6 +175,14 @@ try {
     assert.equal(await rowCount(page), ROWS, "imported row count");
     assert.match(await cellText(page, 0, 0), /^invented_00000,雪"quote"/, "readable first imported cell");
     assert.equal(await cellText(page, ROWS - 1, 1), "https://example.invalid/account/08405");
+    // Keyboard navigation crosses the rendered window without losing focus.
+    await reveal(page, 0);
+    await cellAt(page, 0, 1).click();
+    for (let step = 0; step < 120; step++) await page.keyboard.press("ArrowDown");
+    await page.waitForFunction(() => document.activeElement?.closest("tr")?.getAttribute("aria-rowindex") === "122");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), "https://example.invalid/account/00120");
+    for (let step = 0; step < 120; step++) await page.keyboard.press("ArrowUp");
+    await page.waitForFunction(() => document.activeElement?.closest("tr")?.getAttribute("aria-rowindex") === "2");
     for (const [row, column, value] of EDITS) await edit(page, row, column, value);
     const [lastRow, lastColumn] = EDITS[2];
     const [middleRow, middleColumn] = EDITS[1];
@@ -190,7 +211,7 @@ try {
     await timed("reopen", async () => {
       await page.getByRole("button", { name: `Open saved ${name}`, exact: true }).click();
       await ready(page);
-      await grid(page).locator("tbody tr").nth(ROWS - 1).waitFor({ state: "attached" });
+      await grid(page).locator("tbody tr.ts-row").first().waitFor();
     });
     await assertEdited(page, "after restart");
     for (const exportFormat of ["csv", "xlsx"]) {
