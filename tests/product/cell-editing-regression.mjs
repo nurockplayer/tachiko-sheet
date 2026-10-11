@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
-import { openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
+import { homeImportInput, openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
 const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : null);
 if (!url) { console.error("BLOCKED: WORK_CLIENT_URL or WORK_DIST is required."); process.exit(78); }
@@ -15,6 +15,7 @@ const schemas = JSON.parse(await readFile(new URL("../fixtures/release-plan.ropr
 const fields = Object.fromEntries(schemas[0].fields.map((field) => [field.key, field.id]));
 const fixture = fileURLToPath(new URL("../fixtures/release-plan.roproj", import.meta.url));
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const messyCsv = path.join(root, "acceptance", "j3-interop", "fixtures", "messy.csv");
 const j4CanaryFolder = path.join(process.env.WORK_DIST ?? path.join(root, "dist-acceptance"), "examples", "j4-catalog-sales");
 const cell = (page, key) => page.getByTestId(`cell:${expected.entity}:${fields[key]}`);
 const editor = (page) => page.getByRole("textbox", { name: "Edit cell", exact: true });
@@ -220,6 +221,45 @@ const cases = [
     await page.keyboard.press("Enter"); await page.keyboard.press("Tab");
     assert.equal(await dispatches(page), count + 1, "unknown outcome has no automatic replay");
     assert.equal((await page.evaluate(() => window.__tachikoAcceptance.unknownObservation())).staleValuesPresentedAsCurrent, false);
+  }],
+  ["#151 unapplied cell draft survives notes, cleanup and Refresh requests", async (page) => {
+    let before = await state(page); let count = await dispatches(page); let draft = "12345";
+    const refused = async (action) => {
+      await page.getByText(`Apply or cancel the value you are editing before ${action}.`, { exact: true }).waitFor();
+      assert.equal(await page.getByRole("tab", { name: "Table", exact: true }).getAttribute("aria-selected"), "true");
+      assert.equal(await editor(page).inputValue(), draft, `${action} keeps the unapplied draft`);
+      assert.equal(await dispatches(page), count, `${action} publishes nothing`);
+      assert.deepEqual(await state(page), before);
+    };
+    await replace(await entry(page, "impact"), draft);
+    await page.getByRole("tab", { name: "Brief", exact: true }).click();
+    await replace(page.getByRole("textbox", { name: "Decision notes", exact: true }), "Other notes");
+    await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+    await refused("applying notes");
+    await page.locator(".ts-refresh-command").click();
+    await refused("refreshing");
+    await editor(page).press("Enter");
+    await editor(page).waitFor({ state: "hidden" });
+    assert.equal(await dispatches(page), count + 1, "the retained draft still publishes exactly once");
+    // Issue reproduction: imported CSV, unapplied Number 3 -> 4, then a trim
+    // preview with real whitespace changes is committed from another tab.
+    await page.getByRole("button", { name: "Close project", exact: true }).click();
+    await page.getByRole("button", { name: "Close without saving", exact: true }).click();
+    const input = await homeImportInput(page);
+    await input.setInputFiles(messyCsv);
+    const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+    await dialog.locator("select").nth(1).selectOption("number");
+    await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+    await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+    before = await state(page); count = await dispatches(page); draft = "4";
+    await page.locator("[role=grid] tbody tr").first().locator("td").nth(1).dblclick();
+    await editor(page).fill(draft);
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+    await page.getByTestId("cleanup-preview").waitFor();
+    count = await dispatches(page);
+    await page.getByRole("button", { name: "Commit preview", exact: true }).click();
+    await refused("committing a cleanup preview");
   }],
   ["copy name, notes and report text accept real keys without the grid defect", async (page) => {
     await page.getByRole("button", { name: "Save a copy", exact: true }).click();
