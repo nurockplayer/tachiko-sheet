@@ -206,6 +206,11 @@ try {
     await page.getByRole("button", { name: `Open saved ${name}`, exact: true }).click();
     await ready(page);
     await assertEdited(page, "after refusals");
+    // Full-data check, not a spot check: the refused imports must not have
+    // touched any saved cell.
+    for (const exportFormat of ["csv", "xlsx"]) {
+      await download(page, exportFormat, path.join(work, `${name}-after-refusals.${exportFormat}`));
+    }
     await context.close();
     context = undefined;
     results.push({ format, status: "PASS", refusals });
