@@ -536,7 +536,9 @@ export function SheetShell(props: SheetShellProps) {
   const [gridRowHeight, setGridRowHeight] = useState(32);
   const gridHeaderHeightRef = useRef(32);
   const gridScrollFrameRef = useRef<number | null>(null);
-  const pendingCellFocusRef = useRef<{ entity: string; field: string } | null>(null);
+  // A focus target waiting for its windowed row to mount, with the user-intent
+  // generation at request time; any newer input cancels it.
+  const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
   // Bumped by any pointer or key input outside the cell editor. A late
   // completion may move focus only if the user has not acted since.
   const focusIntentRef = useRef(0);
@@ -758,10 +760,14 @@ export function SheetShell(props: SheetShellProps) {
       pendingCellFocusRef.current = null;
     }
     const pending = pendingCellFocusRef.current;
+    if (pending && pending.generation !== focusIntentRef.current) {
+      pendingCellFocusRef.current = null;
+      return;
+    }
     const node = pending ? cellRefs.current.get(cellKey(pending.entity, pending.field)) : null;
     if (node) {
       pendingCellFocusRef.current = null;
-      node.focus();
+      withAppFocus(() => node.focus());
     }
   });
 
@@ -860,7 +866,7 @@ export function SheetShell(props: SheetShellProps) {
       if (!cell && matches.length === 1 && gridWindowed && tab === "table" && index !== undefined) {
         // The published cell is outside the rendered window: reveal it and
         // let the pending-focus pass focus it once it is mounted.
-        pendingCellFocusRef.current = { entity: target.entity, field: target.field };
+        pendingCellFocusRef.current = { entity: target.entity, field: target.field, generation: focusIntentRef.current };
         revealGridRow(index);
         historyFocusRequestRef.current = null;
         setHistoryFocusRequest(null);
@@ -1137,7 +1143,7 @@ export function SheetShell(props: SheetShellProps) {
     // A windowed row outside the rendered range: render it, then focus it.
     const index = rowIndexByEntity.get(entity);
     if (!gridWindowed || tab !== "table" || index === undefined) return;
-    pendingCellFocusRef.current = { entity, field };
+    pendingCellFocusRef.current = { entity, field, generation: focusIntentRef.current };
     revealGridRow(index);
   }
 
