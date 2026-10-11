@@ -51,6 +51,7 @@ import {
   type TableRow,
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
+import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import "./sheet-shell.css";
@@ -526,6 +527,13 @@ export function SheetShell(props: SheetShellProps) {
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
+  const gridRowHeightRef = useRef(32);
+  // Mirrors the ref so a measured pitch change re-renders spacer heights.
+  const [gridRowHeight, setGridRowHeight] = useState(32);
+  const gridHeaderHeightRef = useRef(32);
+  const gridScrollFrameRef = useRef<number | null>(null);
+  const pendingCellFocusRef = useRef<{ entity: string; field: string } | null>(null);
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
@@ -702,6 +710,54 @@ export function SheetShell(props: SheetShellProps) {
       }));
     });
   }, [table]);
+  const gridWindowed = (table?.rows.length ?? 0) > GRID_WINDOW_THRESHOLD;
+  const rowIndexByEntity = useMemo(() => {
+    const indices = new Map<string, number>();
+    table?.rows.forEach((row, index) => indices.set(rowEntity(row), index));
+    return indices;
+  }, [table]);
+
+  useLayoutEffect(() => {
+    if (gridWindowed) syncGridWindow();
+  }, [gridWindowed, collectionIdentity, tab, table?.rows.length]);
+
+  useLayoutEffect(() => {
+    if (!gridWindowed) return;
+    const scroller = gridScrollRef.current;
+    const row = scroller?.querySelector<HTMLElement>("tbody tr.ts-row");
+    const head = scroller?.querySelector<HTMLElement>("thead");
+    if (head && head.offsetHeight > 0) gridHeaderHeightRef.current = head.offsetHeight;
+    if (row && row.offsetHeight > 0 && Math.abs(row.offsetHeight - gridRowHeightRef.current) > 0.5) {
+      gridRowHeightRef.current = row.offsetHeight;
+      setGridRowHeight(row.offsetHeight);
+      syncGridWindow();
+    }
+    // A pending focus target only lives while the Table panel shows its row.
+    if (pendingCellFocusRef.current && (tab !== "table" || !rowIndexByEntity.has(pendingCellFocusRef.current.entity))) {
+      pendingCellFocusRef.current = null;
+    }
+    const pending = pendingCellFocusRef.current;
+    const node = pending ? cellRefs.current.get(cellKey(pending.entity, pending.field)) : null;
+    if (node) {
+      pendingCellFocusRef.current = null;
+      node.focus();
+    }
+  });
+
+  useEffect(() => () => {
+    if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
+  }, []);
+
+  // The scrollport's height follows the window and panel layout; a taller
+  // viewport must render more rows, not reveal blank spacer.
+  useEffect(() => {
+    const scroller = gridScrollRef.current;
+    if (!gridWindowed || !scroller || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => onGridScroll());
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [gridWindowed, tab, collectionIdentity]);
+
   const selectedRow = useMemo(() => {
     if (!table) return null;
     const rows = table.rows;
@@ -766,6 +822,16 @@ export function SheetShell(props: SheetShellProps) {
       const matches = gridOrder.filter((entry) => entry.entity === target.entity && entry.field === target.field);
       const cell = matches.length === 1 ? cellRefs.current.get(cellKey(target.entity, target.field)) ?? null : null;
       if (historyFocusDestinationIsUsable(cell, shell)) destination = cell;
+      const index = rowIndexByEntity.get(target.entity);
+      if (!cell && matches.length === 1 && gridWindowed && tab === "table" && index !== undefined) {
+        // The published cell is outside the rendered window: reveal it and
+        // let the pending-focus pass focus it once it is mounted.
+        pendingCellFocusRef.current = { entity: target.entity, field: target.field };
+        revealGridRow(index);
+        historyFocusRequestRef.current = null;
+        setHistoryFocusRequest(null);
+        return;
+      }
     }
     if (!destination && historyFocusDestinationIsUsable(request.initiator, shell)) {
       destination = request.initiator;
@@ -783,7 +849,7 @@ export function SheetShell(props: SheetShellProps) {
     if (destination && document.activeElement !== destination) destination.focus();
     historyFocusRequestRef.current = null;
     setHistoryFocusRequest(null);
-  }, [busy, commitPending, currentness, gridOrder, historyFocusRequest, view]);
+  }, [busy, commitPending, currentness, gridOrder, gridWindowed, historyFocusRequest, rowIndexByEntity, view]);
 
   useLayoutEffect(() => {
     const occurrence = view?.occurrence ?? null;
@@ -1030,7 +1096,40 @@ export function SheetShell(props: SheetShellProps) {
 
   function focusCell(entity: string, field: string): void {
     const node = cellRefs.current.get(cellKey(entity, field));
-    node?.focus();
+    if (node) {
+      node.focus();
+      return;
+    }
+    // A windowed row outside the rendered range: render it, then focus it.
+    const index = rowIndexByEntity.get(entity);
+    if (!gridWindowed || tab !== "table" || index === undefined) return;
+    pendingCellFocusRef.current = { entity, field };
+    revealGridRow(index);
+  }
+
+  function syncGridWindow(): void {
+    const scroller = gridScrollRef.current;
+    if (!scroller || !table) return;
+    const next = gridWindowRange(scroller.scrollTop, scroller.clientHeight, gridRowHeightRef.current, table.rows.length);
+    setGridRange((current) => current.start === next.start && current.end === next.end ? current : next);
+  }
+
+  function onGridScroll(): void {
+    if (!gridWindowed || gridScrollFrameRef.current !== null) return;
+    gridScrollFrameRef.current = window.requestAnimationFrame(() => {
+      gridScrollFrameRef.current = null;
+      syncGridWindow();
+    });
+  }
+
+  function revealGridRow(index: number): void {
+    const scroller = gridScrollRef.current;
+    if (scroller) {
+      const top = scrollTopToReveal(index, gridRowHeightRef.current, gridHeaderHeightRef.current, scroller.scrollTop, scroller.clientHeight);
+      if (top !== null) scroller.scrollTop = top;
+    }
+    const rowCount = table?.rows.length ?? 0;
+    setGridRange((current) => gridWindowAround(index, current, rowCount));
   }
 
   async function requestHistory(direction: "undo" | "redo", initiator: HTMLElement | null): Promise<void> {
@@ -1753,23 +1852,19 @@ export function SheetShell(props: SheetShellProps) {
               hasAttention={resultsNeedAttention}
               dismiss={dismissSalesTip}
             /> : null}
-            <div className="ts-grid-scroll" ref={gridScrollRef}>
-              <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
+              <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 : undefined}>
                 <thead>
-                  <tr>
+                  <tr aria-rowindex={gridWindowed ? 1 : undefined}>
                     <th scope="col" className="ts-gutter-head">Row</th>
                     {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{column.key}</th>)}
                   </tr>
                 </thead>
                 <tbody>
-                  {table.rows.map((row, index) => {
-                    const entity = rowEntity(row);
-                    const isSelectedRow = entity === selectedEntity;
-                    return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"}>
-                      <th scope="row" className="ts-row-head">{index + 1}</th>
-                      {columns.map((column) => renderCell(row, entity, column))}
-                    </tr>;
-                  })}
+                  {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
+                    ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
+                    : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
+                    : table.rows.map((row, index) => renderRow(row, index))}
                 </tbody>
               </table>
             </div>
@@ -1804,6 +1899,26 @@ export function SheetShell(props: SheetShellProps) {
 
   function salesTipVisibleForCurrentOccurrence(): boolean {
     return Boolean(view && j4DefinitionIds.length > 0 && !resultsHidden && salesEntryTip?.occurrence === view.occurrence);
+  }
+
+  function renderRow(row: TableRow, index: number): ReactNode {
+    const entity = rowEntity(row);
+    const isSelectedRow = entity === selectedEntity;
+    return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
+      <th scope="row" className="ts-row-head">{index + 1}</th>
+      {columns.map((column) => renderCell(row, entity, column))}
+    </tr>;
+  }
+
+  /** Rows kept mounted outside the window: editor, selection/focus and the default tab stop. */
+  function pinnedGridRows(): number[] {
+    const pinned: number[] = [];
+    for (const entity of [editor?.entity, selectedEntity, pendingCellFocusRef.current?.entity]) {
+      const index = entity ? rowIndexByEntity.get(entity) : undefined;
+      if (index !== undefined) pinned.push(index);
+    }
+    if (!focusedKey) pinned.push(0);
+    return pinned;
   }
 
   function renderCell(row: TableRow, entity: string, column: TableColumn): ReactNode {
