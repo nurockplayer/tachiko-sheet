@@ -37,6 +37,20 @@ try {
   assert.deepEqual(await types.evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"],
     "plain numeric columns are suggested as Number; other text stays Text");
   assert.equal(await dialog.getByText("Number suggested from its values").count(), 2);
+  // Notes that only confirm faithful reading are tucked away, not shown as warnings.
+  assert.equal(await dialog.getByText(/locale-sensitive inference/).isVisible(), false);
+  assert.equal(await dialog.getByText("Nothing in this file needs your attention before import.").isVisible(), true);
+  const details = dialog.locator("summary", { hasText: /^Import details \(\d+\)$/ });
+  await details.click();
+  assert.equal(await dialog.getByText(/locale-sensitive inference/).isVisible(), true);
+  // The disclosure is part of the modal focus trap in both directions.
+  for (const key of ["Tab", "Shift+Tab"]) {
+    await details.focus();
+    for (let step = 0; step < 12; step++) {
+      await page.keyboard.press(key);
+      assert.equal(await dialog.evaluate((root) => root.contains(document.activeElement)), true, `${key} stays inside the import review`);
+    }
+  }
 
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();

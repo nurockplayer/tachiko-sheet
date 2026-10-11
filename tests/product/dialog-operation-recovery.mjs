@@ -117,7 +117,7 @@ try {
   assert.equal(await failedImportHeading.evaluate((heading) => heading === document.activeElement), true, "Tab from visible retry wraps to the failed dialog's first focus target");
   await page.keyboard.press("Shift+Tab");
   assert.equal(await failedImportDialog.evaluate((dialog) => {
-    const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+    const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary, [tabindex]:not([tabindex='-1'])"));
     return focusable.at(-1) === document.activeElement;
   }), true, "Shift+Tab from the failed dialog's first focus target wraps to the visible retry action");
   await failedImportDialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -148,7 +148,7 @@ try {
   assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Shift+Tab returns to the first pending dialog focus target");
   await page.keyboard.press("Shift+Tab");
   assert.equal(await importDialog.evaluate((dialog) => {
-    const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+    const focusable = Array.from(dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary, [tabindex]:not([tabindex='-1'])"));
     return focusable.at(-1) === document.activeElement;
   }), true, "Shift+Tab from the pending heading wraps to the last enabled modal target");
   await page.keyboard.press("Tab");
