@@ -147,7 +147,8 @@ try {
   assert.equal(shortImportScroll.contentOverflowY, "visible", "short Import exposes content to parent scrolling");
   const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
   await dialog.locator("select").first().focus();
-  for (let index = 0; index < 13; index += 1) await page.keyboard.press("Tab");
+  // Column choices, then the "Import details" disclosure, then the actions.
+  for (let index = 0; index < 14; index += 1) await page.keyboard.press("Tab");
   assert.equal(await importAction.evaluate((element) => element === document.activeElement), true, "keyboard navigation reaches the Import action after the long candidate");
   const [shortErrorBox, shortActionBox] = await Promise.all([importAlert.boundingBox(), importAction.boundingBox()]);
   const scrolledImport = await dialog.boundingBox();

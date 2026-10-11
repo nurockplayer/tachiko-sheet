@@ -37,6 +37,11 @@ try {
   assert.deepEqual(await types.evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"],
     "plain numeric columns are suggested as Number; other text stays Text");
   assert.equal(await dialog.getByText("Number suggested from its values").count(), 2);
+  // Notes that only confirm faithful reading are tucked away, not shown as warnings.
+  assert.equal(await dialog.getByText(/locale-sensitive inference/).isVisible(), false);
+  assert.equal(await dialog.getByText("Nothing in this file needs your attention before import.").isVisible(), true);
+  await dialog.locator("summary", { hasText: /^Import details \(\d+\)$/ }).click();
+  assert.equal(await dialog.getByText(/locale-sensitive inference/).isVisible(), true);
 
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
