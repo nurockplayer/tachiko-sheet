@@ -221,6 +221,19 @@ try {
     await page.waitForTimeout(200);
     assert.equal(await focusedCell(), "112:2", "a deliberate return to the origin is not overridden by the Tab move");
     await history(page, "undo", 110, 1, "https://example.invalid/account/00110");
+    // Tab, then a click straight on the origin (still covered by the pending
+    // editor): the click wins over the Tab move.
+    await cellAt(page, 120, 1).dblclick();
+    await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("origin-click");
+    await page.keyboard.press("Tab");
+    await pending();
+    await cellAt(page, 120, 1).click({ force: true });
+    await stillPending("Tab + origin click");
+    await current(page);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "origin-click", cellSelector(120, 1));
+    await page.waitForTimeout(200);
+    assert.equal(await focusedCell(), "122:2", "a click on the origin during a pending Tab keeps focus there");
+    await history(page, "undo", 120, 1, "https://example.invalid/account/00120");
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
     await cdp.detach();
     for (const [row, column, value] of EDITS) await edit(page, row, column, value);

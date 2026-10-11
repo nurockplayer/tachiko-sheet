@@ -777,7 +777,10 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => {
     const onUserIntent = (event: Event) => {
-      if (appFocusingRef.current || event.target === editorInputRef.current) return;
+      // Typing in the live editor is not a new choice; a click on the
+      // disabled editor while its commit is pending is.
+      const editorInput = editorInputRef.current;
+      if (appFocusingRef.current || (event.target === editorInput && editorInput && !editorInput.disabled)) return;
       focusIntentRef.current += 1;
     };
     // focusin also covers focus moved by assistive technology or script.
