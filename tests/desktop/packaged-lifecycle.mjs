@@ -139,7 +139,16 @@ let sequence = 0;
 async function evaluate(body, timeout = 120_000, windowLabel = null) {
   const id = `s${String(++sequence).padStart(5, "0")}`;
   const result = path.join(scripts, `${id}.result.json`);
-  await writeFile(path.join(scripts, `${id}.partial`), `${HELPERS}\n${body}`);
+  // Keep diagnostics in the script result so they survive both a failed reveal
+  // and a later process quit, without adding hooks to the product frontend.
+  await writeFile(path.join(scripts, `${id}.partial`), `${HELPERS}\n
+    try {
+      const value = await (async () => { ${body}\n })();
+      return { value, gridTraces };
+    } catch (error) {
+      throw new Error(String(error) + "\\nGrid reveal traces: " + JSON.stringify(gridTraces));
+    }
+  `);
   await rename(path.join(scripts, `${id}.partial`), path.join(scripts, windowLabel ? `${id}@${windowLabel}.js` : `${id}.js`));
   const deadline = Date.now() + timeout;
   while (!existsSync(result)) {
@@ -151,11 +160,13 @@ async function evaluate(body, timeout = 120_000, windowLabel = null) {
   }
   const outcome = JSON.parse(await readFile(result, "utf8"));
   if (!outcome.ok) throw new Error(`script ${id} failed: ${outcome.error}\n${body.slice(0, 400)}`);
-  return outcome.value;
+  if (outcome.value.gridTraces.length) console.log(JSON.stringify({ script: id, gridTraces: outcome.value.gridTraces }));
+  return outcome.value.value;
 }
 
 // In-page helpers: accessible-name lookup and DOM events like a pointer/keyboard user.
 const HELPERS = String.raw`
+const gridTraces = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(check, label, timeout = 60000) {
   const deadline = Date.now() + timeout;
@@ -228,25 +239,81 @@ async function reveal(row) {
     const port = scroller.getBoundingClientRect();
     const header = grid().querySelector("thead")?.getBoundingClientRect().height ?? 0;
     const box = target.getBoundingClientRect();
-    return box.top >= port.top + header - 1 && box.bottom <= port.bottom + 1 ? target : null;
+    const portTop = port.top + scroller.clientTop;
+    return box.top >= portTop + header - 1 && box.bottom <= portTop + scroller.clientHeight + 1 ? target : null;
   };
-  for (let attempt = 0; attempt < 50 && !visible(); attempt++) {
-    const pitch = scroller.scrollHeight / (rows + 1);
-    scroller.scrollTop = row >= rows - 10
-      ? scroller.scrollHeight
-      : Math.max(0, (row + 1) * pitch - scroller.clientHeight / 2);
-    scroller.dispatchEvent(new Event("scroll"));
-    await sleep(100);
+  const samples = [];
+  let sampleCount = 0;
+  let attempt = -1;
+  const sample = (phase, extra = {}) => {
+    const rendered = [...grid().querySelectorAll("tbody tr.ts-row")];
+    sampleCount++;
+    // Retain the initial jump and the final attempts without unbounded logs.
+    if (samples.length === 80) samples.splice(20, 1);
+    samples.push({ phase, attempt, top: scroller.scrollTop, height: scroller.scrollHeight,
+      client: scroller.clientHeight, tableHeight: grid().offsetHeight,
+      extent: scroller.querySelector(".ts-grid-extent")?.style.minHeight,
+      first: rendered[0]?.getAttribute("aria-rowindex"), last: rendered[rendered.length - 1]?.getAttribute("aria-rowindex"),
+      activeRow: document.activeElement?.closest("tr")?.getAttribute("aria-rowindex"), ...extra });
+  };
+  // A native setter wrapper sees both this test's requests and product writes.
+  // A changed position with no intervening write implicates browser clamping
+  // or native focus scrolling instead. Restore everything after this reveal.
+  let prototype = scroller;
+  let nativeScrollTop;
+  while (prototype && !nativeScrollTop) {
+    nativeScrollTop = Object.getOwnPropertyDescriptor(prototype, "scrollTop");
+    prototype = Object.getPrototypeOf(prototype);
   }
-  const renderedRows = [...grid().querySelectorAll("tbody tr.ts-row")];
-  const rendered = renderedRows.map((r) => r.getAttribute("aria-rowindex"));
-  const heights = renderedRows.map((r) => r.offsetHeight).sort((a, b) => a - b);
-  const spacers = [...grid().querySelectorAll("tr.ts-grid-spacer td")].map((td) => td.style.height).join("+");
-  return waitFor(visible, "row " + row + " in view (rendered " + rendered[0] + ".." + rendered[rendered.length - 1] +
-    ", scrollTop " + scroller.scrollTop + "/" + scroller.scrollHeight + ", client " + scroller.clientHeight +
-    ", visibility " + document.visibilityState + ", focus " + document.hasFocus() +
-    ", row heights " + heights[0] + "/" + heights[Math.floor(heights.length / 2)] + "/" + heights[heights.length - 1] +
-    ", first row height " + renderedRows[0]?.offsetHeight + ", spacers " + spacers + ")");
+  const ownScrollTop = Object.getOwnPropertyDescriptor(scroller, "scrollTop");
+  const observer = new MutationObserver((records) => sample("after-dom-commit", {
+    mutations: records.length,
+    removed: records.reduce((sum, record) => sum + record.removedNodes.length, 0),
+    added: records.reduce((sum, record) => sum + record.addedNodes.length, 0),
+  }));
+  const onScroll = () => sample("scroll-event");
+  const onFocus = () => sample("focus-event");
+  try {
+    if (!nativeScrollTop?.get || !nativeScrollTop?.set) throw new Error("native scrollTop accessor unavailable");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get() { return nativeScrollTop.get.call(this); },
+      set(value) {
+        sample("before-scrollTop-write", { requested: value, caller: new Error().stack?.split("\n").slice(1, 4).join("\n") });
+        nativeScrollTop.set.call(this, value);
+        sample("after-scrollTop-write", { requested: value });
+      },
+    });
+    observer.observe(grid(), { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+    scroller.addEventListener("scroll", onScroll);
+    document.addEventListener("focusin", onFocus);
+    sample("start");
+    for (attempt = 0; attempt < 50 && !visible(); attempt++) {
+      const pitch = scroller.scrollHeight / (rows + 1);
+      scroller.scrollTop = row >= rows - 10
+        ? scroller.scrollHeight
+        : Math.max(0, (row + 1) * pitch - scroller.clientHeight / 2);
+      scroller.dispatchEvent(new Event("scroll"));
+      await sleep(100);
+      sample("after-settle");
+    }
+    const renderedRows = [...grid().querySelectorAll("tbody tr.ts-row")];
+    const rendered = renderedRows.map((r) => r.getAttribute("aria-rowindex"));
+    const heights = renderedRows.map((r) => r.offsetHeight).sort((a, b) => a - b);
+    const spacers = [...grid().querySelectorAll("tr.ts-grid-spacer td")].map((td) => td.style.height).join("+");
+    return await waitFor(visible, "row " + row + " in view (rendered " + rendered[0] + ".." + rendered[rendered.length - 1] +
+      ", scrollTop " + scroller.scrollTop + "/" + scroller.scrollHeight + ", client " + scroller.clientHeight +
+      ", visibility " + document.visibilityState + ", focus " + document.hasFocus() +
+      ", row heights " + heights[0] + "/" + heights[Math.floor(heights.length / 2)] + "/" + heights[heights.length - 1] +
+      ", first row height " + renderedRows[0]?.offsetHeight + ", spacers " + spacers + ")");
+  } finally {
+    observer.disconnect();
+    scroller.removeEventListener("scroll", onScroll);
+    document.removeEventListener("focusin", onFocus);
+    if (ownScrollTop) Object.defineProperty(scroller, "scrollTop", ownScrollTop);
+    else delete scroller.scrollTop;
+    gridTraces.push({ row, userAgent: navigator.userAgent, sampleCount, samples });
+  }
 }
 `;
 
