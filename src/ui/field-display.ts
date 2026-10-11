@@ -12,16 +12,17 @@ export interface FieldDisplay {
   title: string | null;
 }
 
-export const NOT_LOADED_TEXT = "Not loaded";
 export const EMPTY_TEXT = "Empty";
 export const UNAVAILABLE_TEXT = "Unavailable";
 export const CALCULATION_FAILED_TEXT = "Calculation failed";
 export const REFERENCE_TEXT = "→ reference";
 
+// Plain blanks read as blank, like any spreadsheet; the distinction between a
+// missing value and stored empty text stays available in the tooltip.
 const NOT_LOADED: FieldDisplay = {
-  text: NOT_LOADED_TEXT,
+  text: "",
   tone: "muted",
-  title: "This field has not been read from the open work.",
+  title: "No value",
 };
 
 /**
@@ -76,13 +77,9 @@ function baseDisplay(field: FieldProjection): FieldDisplay {
 function storedDisplay(field: FieldProjection): FieldDisplay {
   const stored = field.stored;
   if (!stored) {
-    return {
-      text: EMPTY_TEXT,
-      tone: "muted",
-      title: field.formula
-        ? "Calculated value without a current result"
-        : "The open work reports no value for this field.",
-    };
+    return field.formula
+      ? { text: EMPTY_TEXT, tone: "muted", title: "Calculated value without a current result" }
+      : { text: "", tone: "muted", title: "No value" };
   }
   switch (stored.kind) {
     case "number":
@@ -96,7 +93,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
       };
     case "text":
       return stored.value === ""
-        ? { text: EMPTY_TEXT, tone: "muted", title: "The stored text is empty." }
+        ? { text: "", tone: "muted", title: "Empty text" }
         : {
             text: stored.value,
             tone: field.formula ? "computed" : "plain",
