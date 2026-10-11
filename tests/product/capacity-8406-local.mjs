@@ -15,6 +15,7 @@ import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
+const hostedOrigin = process.env.CAPACITY_ORIGIN ?? null;
 const oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const ROWS = 8406;
@@ -38,11 +39,12 @@ let context;
 
 async function start(profile) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
-  await installDistRoutes(context, dist);
+  // CAPACITY_ORIGIN runs the same journey against a hosted candidate.
+  if (!hostedOrigin) await installDistRoutes(context, dist);
   const page = await context.newPage();
   page.setDefaultTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(LOCAL_ORIGIN);
+  await page.goto(hostedOrigin ?? LOCAL_ORIGIN);
   await waitForColdHome(page);
   await page.getByRole("region", { name: "Recovery", exact: true }).waitFor({ state: "detached" });
   return page;
