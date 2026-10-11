@@ -51,6 +51,8 @@ import {
   type TableRow,
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
+import { sourceNames } from "./source-names.js";
+import { sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
@@ -401,6 +403,7 @@ export function SheetShell(props: SheetShellProps) {
     onClose,
     onRefresh,
     interop = null,
+    importedSourceName = null,
     onInspectImport = async () => { throw new Error("Spreadsheet import is unavailable."); },
     onImportCandidate = async () => false,
     onCancelImport = () => undefined,
@@ -539,6 +542,10 @@ export function SheetShell(props: SheetShellProps) {
   const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
   const [importTypes, setImportTypes] = useState<string[][]>([]);
+  const importSuggestions = useMemo(
+    () => interop?.importInspection?.source.sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column))) ?? [],
+    [interop?.importInspection],
+  );
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const [j4Pending, setJ4Pending] = useState(false);
@@ -693,9 +700,8 @@ export function SheetShell(props: SheetShellProps) {
   }, [view]);
 
   useEffect(() => {
-    const inspection = interop?.importInspection;
-    setImportTypes(inspection ? inspection.source.sheets.map((sheet) => sheet.columns.map(() => "text")) : []);
-  }, [interop?.importInspection]);
+    setImportTypes(importSuggestions);
+  }, [importSuggestions]);
 
   const table = view?.table ?? null;
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
@@ -711,6 +717,7 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [table]);
   const gridWindowed = (table?.rows.length ?? 0) > GRID_WINDOW_THRESHOLD;
+  const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName), [interop?.metadata, importedSourceName]);
   const rowIndexByEntity = useMemo(() => {
     const indices = new Map<string, number>();
     table?.rows.forEach((row, index) => indices.set(rowEntity(row), index));
@@ -1715,7 +1722,7 @@ export function SheetShell(props: SheetShellProps) {
           <img className="ts-document-mark" src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" />
           <div className="ts-title-block">
             <span className="ts-wordmark">Tachiko Sheet</span>
-            <h1 className="ts-title">{view ? view.title : ""}</h1>
+            <h1 className="ts-title">{view ? names.title ?? view.title : ""}</h1>
           </div>
         </div>
         {renderAppearanceSelector("workbook")}
@@ -1857,7 +1864,7 @@ export function SheetShell(props: SheetShellProps) {
                 <thead>
                   <tr aria-rowindex={gridWindowed ? 1 : undefined}>
                     <th scope="col" className="ts-gutter-head">Row</th>
-                    {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{column.key}</th>)}
+                    {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.key}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -2389,7 +2396,7 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
             <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
-              {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{collection.key}</option>)}
+              {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.key}</option>)}
             </select>
           </div>
         </nav>
@@ -2618,11 +2625,11 @@ export function SheetShell(props: SheetShellProps) {
               tabIndex={interop.importInspection.source.ledger.length || importPending || Boolean(importError) ? 0 : -1}
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
             >Review import candidate</h2>
-            <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Each column is imported as Text; recognition is advisory and does not change stored values.</p>
+            <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Check each column's type before importing. Number is suggested only where every value is a plain number; everything else stays Text.</p>
           </div>
           <div className="ts-dialog-scroll">
             {interop.importInspection.source.ledger.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{interop.importInspection.source.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No source-fidelity findings were reported for this candidate.</p>}
-            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
+            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
