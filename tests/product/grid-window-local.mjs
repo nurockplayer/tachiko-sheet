@@ -78,21 +78,35 @@ try {
     });
   }
 
+  // A taller viewport renders more rows instead of exposing blank spacer.
+  await scrollTo(page, 150);
+  await rowAt(page, 150).waitFor();
+  await page.waitForTimeout(100);
+  await page.setViewportSize({ width: 1280, height: 2600 });
+  await page.waitForFunction(() => {
+    const scroller = document.querySelector(".ts-grid-scroll");
+    const rendered = [...scroller.querySelectorAll("tbody tr.ts-row")];
+    const last = rendered[rendered.length - 1];
+    return last && last.getBoundingClientRect().bottom >= scroller.getBoundingClientRect().bottom - 1;
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   // Undo while the Table panel is hidden falls back to the initiating control
   // and never later steals focus when Table returns.
-  await scrollTo(page, UNIQUE - 10);
-  const far = rowAt(page, UNIQUE - 10).locator("td").nth(1);
-  await far.dblclick();
-  await editor.fill("undo me");
-  await editor.press("Enter");
-  await editor.waitFor({ state: "hidden" });
+  for (const [offset, value] of [[20, "first change"], [10, "undo me"]]) {
+    await scrollTo(page, UNIQUE - offset);
+    await rowAt(page, UNIQUE - offset).locator("td").nth(1).dblclick();
+    await editor.fill(value);
+    await editor.press("Enter");
+    await editor.waitFor({ state: "hidden" });
+  }
   await scrollTo(page, 0);
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   const undo = page.getByRole("button", { name: "Undo", exact: true });
   await undo.click();
   await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
   await page.waitForTimeout(300);
-  assert.equal(await undo.evaluate((node) => node === document.activeElement || node.disabled), true, "hidden-table Undo keeps focus on its own control");
+  assert.equal(await undo.evaluate((node) => !node.disabled && node === document.activeElement), true, "hidden-table Undo keeps focus on its own (still enabled) control");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await page.waitForTimeout(300);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role") === "tab"), true, "returning to Table does not replay an old focus request");

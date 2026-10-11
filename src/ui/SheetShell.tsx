@@ -748,6 +748,16 @@ export function SheetShell(props: SheetShellProps) {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
   }, []);
 
+  // The scrollport's height follows the window and panel layout; a taller
+  // viewport must render more rows, not reveal blank spacer.
+  useEffect(() => {
+    const scroller = gridScrollRef.current;
+    if (!gridWindowed || !scroller || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => onGridScroll());
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [gridWindowed, tab, collectionIdentity]);
+
   const selectedRow = useMemo(() => {
     if (!table) return null;
     const rows = table.rows;
