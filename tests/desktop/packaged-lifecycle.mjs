@@ -496,6 +496,21 @@ async function salesJourney() {
   assert.equal(await evaluate(`return window.__sheetDocument ?? "replaced";`), "kept", "a refused reload keeps the Sheet document");
   assert.match(await hostLog(), /leave dialog \(Reload\)/);
   await saveCopy(name);
+  // On clean work, an export still in progress (here: waiting in the Save
+  // panel) blocks leaving on its own; once it settles, leaving is allowed.
+  assert.equal(await unsavedCheck(), false, "the saved work is clean");
+  const settledBefore = (await hostLog()).split("\n").filter((line) => line.startsWith("saved tachiko-sheet-report.png")).length;
+  const exportBlocksLeaving = await evaluate(`
+    click(await waitFor(() => tab("Report"), "Report tab"));
+    click(await waitFor(() => button("Export current PNG"), "PNG export"));
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  `);
+  assert.equal(exportBlocksLeaving, true, "on clean work, an export in progress blocks leaving");
+  for (let attempt = 0; attempt < 200 && (await hostLog()).split("\n").filter((line) => line.startsWith("saved tachiko-sheet-report.png")).length === settledBefore; attempt++) await sleep(50);
+  await sleep(200);
+  assert.equal(await unsavedCheck(), false, "once the export settles, clean work can be left");
   // With nothing unsaved, a reload goes through and starts fresh at Home.
   await evaluate(`setTimeout(() => location.reload(), 50); return true;`);
   let marker = "kept";

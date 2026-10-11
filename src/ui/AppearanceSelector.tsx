@@ -420,7 +420,7 @@ export function AppearanceSelector({
     }
     const request = requestInterfaceProfileDownload(encoded, anchorDownloadHost(hostFiles, (settled) => {
       if ("error" in settled) setExportMessage(settled.error);
-      else if (settled.outcome === "saved") setExportMessage(`Saved ${settled.filename}.`);
+      else if (settled.outcome === "saved") setExportMessage("Profile saved.");
       else if (settled.outcome === "cancelled") setExportMessage("Export cancelled. Nothing was saved.");
     }));
     setExportMessage(request.ok
