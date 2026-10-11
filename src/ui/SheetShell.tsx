@@ -1174,6 +1174,8 @@ export function SheetShell(props: SheetShellProps) {
     if (!cellDraftActive) return false;
     setLocalError(`Apply or cancel the value you are editing before ${action}.`);
     setTab("table");
+    // Already on Table, the editor does not remount; return focus explicitly.
+    window.requestAnimationFrame(() => editorInputRef.current?.focus());
     return true;
   }
 

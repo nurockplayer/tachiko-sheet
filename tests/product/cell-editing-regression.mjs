@@ -228,6 +228,7 @@ const cases = [
       await page.getByText(`Apply or cancel the value you are editing before ${action}.`, { exact: true }).waitFor();
       assert.equal(await page.getByRole("tab", { name: "Table", exact: true }).getAttribute("aria-selected"), "true");
       assert.equal(await editor(page).inputValue(), draft, `${action} keeps the unapplied draft`);
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Edit cell");
       assert.equal(await dispatches(page), count, `${action} publishes nothing`);
       assert.deepEqual(await state(page), before);
     };
@@ -238,7 +239,7 @@ const cases = [
     await refused("applying notes");
     await page.locator(".ts-refresh-command").click();
     await refused("refreshing");
-    await editor(page).press("Enter");
+    await page.keyboard.press("Enter");
     await editor(page).waitFor({ state: "hidden" });
     assert.equal(await dispatches(page), count + 1, "the retained draft still publishes exactly once");
     // Issue reproduction: imported CSV, unapplied Number 3 -> 4, then a trim
