@@ -214,19 +214,19 @@ async function resultRows() {
   const table = await waitFor(() => document.querySelector('table[aria-label="Cross-table groups"]') && current() && document.querySelector('table[aria-label="Cross-table groups"]'), "summary table");
   return [...table.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
 }
-// Scroll like a person until the row is in the rendered window, measuring the
-// row pitch from the rows actually rendered (multi-line rows are taller).
+// Scroll until the row is in the rendered window. The pitch comes from the
+// scroller's own geometry (the header counts as one row); rows near the end
+// scroll to the bottom. A scroll event is dispatched each time so the grid's
+// animation-frame window update always runs.
 async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
-  for (let attempt = 0; attempt < 40 && !rowAt(row); attempt++) {
-    const rendered = [...grid().querySelectorAll("tbody tr.ts-row")];
-    const first = rendered[0];
-    const last = rendered[rendered.length - 1];
-    const span = last && first ? Number(last.getAttribute("aria-rowindex")) - Number(first.getAttribute("aria-rowindex")) : 0;
-    const pitch = span > 0 ? (last.offsetTop - first.offsetTop) / span : (first?.offsetHeight || 32);
-    const firstRow = first ? Number(first.getAttribute("aria-rowindex")) - 2 : 0;
-    const target = first ? first.offsetTop + (row - firstRow) * pitch : row * pitch;
-    scroller.scrollTop = Math.max(0, target - scroller.clientHeight / 2);
+  const rows = Number(grid().getAttribute("aria-rowcount")) - 1;
+  for (let attempt = 0; attempt < 50 && !rowAt(row); attempt++) {
+    const pitch = scroller.scrollHeight / (rows + 1);
+    scroller.scrollTop = row >= rows - 10
+      ? scroller.scrollHeight
+      : Math.max(0, (row + 1) * pitch - scroller.clientHeight / 2);
+    scroller.dispatchEvent(new Event("scroll"));
     await sleep(100);
   }
   const rendered = [...grid().querySelectorAll("tbody tr.ts-row")].map((r) => r.getAttribute("aria-rowindex"));

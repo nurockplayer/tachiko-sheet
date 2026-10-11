@@ -5,17 +5,21 @@
 //! used, so one owner sees an export from request to file.
 //!
 //! - The page orders its saves; the host serves one Save sheet at a time.
-//! - Each page attaches and receives an epoch; a save from an earlier page
-//!   (before a reload or a decided close) is refused.
-//! - Publishing (final check plus write and rename) and the leave decision use
-//!   one lock: a file is either saved before leaving was decided, or not at all.
-//! - While leaving is being decided, publishing waits; Cancel lets it continue.
+//! - Each page load the host allows starts a new epoch; a page learns its
+//!   epoch when it starts, and a save from an earlier page is refused.
+//! - Only the leave decision and an allowed page load change the phase:
+//!   while leaving is being decided, no write starts; once decided, none will.
+//!   A write already started is completed, and leaving waits for it without
+//!   blocking the main thread.
 //! - The file is written to an exclusively created temporary file beside the
 //!   destination and renamed into place, so a failed save never leaves a
 //!   partial file or replaces an existing one, and no symlink is followed.
+//!   Replacing a file keeps its permission bits, and its new contents are
+//!   never readable by others while being written.
 
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, Permissions};
 use std::io::{self, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -23,9 +27,9 @@ use std::sync::{Mutex, MutexGuard};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Open,
-    /// Leaving is being decided; publishing waits.
+    /// Leaving is being decided; no write starts.
     Held,
-    /// Leaving is decided; nothing more is published.
+    /// Leaving is decided; no write will start.
     Sealed,
 }
 
@@ -33,6 +37,8 @@ enum Phase {
 struct State {
     epoch: u64,
     phase: Phase,
+    /// Writes started and not yet finished.
+    writing: usize,
 }
 
 /// What became of one save.
@@ -56,6 +62,7 @@ impl Default for Saves {
             state: Mutex::new(State {
                 epoch: 0,
                 phase: Phase::Open,
+                writing: 0,
             }),
             changed: tokio::sync::Notify::new(),
             turn: tokio::sync::Mutex::new(()),
@@ -64,6 +71,7 @@ impl Default for Saves {
 }
 
 impl Saves {
+    /// The lock is only ever held briefly: never across file I/O.
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state
             .lock()
@@ -75,15 +83,18 @@ impl Saves {
         self.changed.notify_waiters();
     }
 
-    /// A page starts: earlier pages' saves are refused from now on.
-    pub fn attach(&self) -> u64 {
-        let mut epoch = 0;
+    /// The host allowed a new page to load (first load or a decided reload):
+    /// earlier pages' saves are refused from now on, and saving is open.
+    pub fn new_page(&self) {
         self.set(|state| {
             state.epoch += 1;
             state.phase = Phase::Open;
-            epoch = state.epoch;
         });
-        epoch
+    }
+
+    /// A starting page learns its epoch. This never changes the phase.
+    pub fn attach(&self) -> u64 {
+        self.lock().epoch
     }
 
     pub fn hold(&self) {
@@ -102,34 +113,50 @@ impl Saves {
         });
     }
 
-    /// Leaving is decided. Waits for a publish in progress to finish.
+    /// Leaving is decided: no further write starts.
     pub fn seal(&self) {
         self.set(|state| state.phase = Phase::Sealed);
     }
 
-    /// Publish `bytes` at `destination` for the page of `epoch`, unless leaving
+    /// Resolves once no write is in progress.
+    pub async fn writes_finished(&self) {
+        loop {
+            let changed = self.changed.notified();
+            if self.lock().writing == 0 {
+                return;
+            }
+            changed.await;
+        }
+    }
+
+    /// Write `bytes` to `destination` for the page of `epoch`, unless leaving
     /// was decided or the page is gone. Waits while leaving is being decided.
     pub async fn publish(
         &self,
         epoch: u64,
-        bytes: &[u8],
-        destination: &Path,
+        bytes: Vec<u8>,
+        destination: PathBuf,
     ) -> io::Result<Published> {
         loop {
             let changed = self.changed.notified();
             {
-                let state = self.lock();
+                let mut state = self.lock();
                 if state.epoch != epoch || state.phase == Phase::Sealed {
                     return Ok(Published::Cancelled);
                 }
                 if state.phase == Phase::Open {
-                    // Writing under the lock: sealing waits for it to finish.
-                    write_replacing(bytes, destination)?;
-                    return Ok(Published::Saved);
+                    state.writing += 1;
+                    break;
                 }
             }
             changed.await;
         }
+        let written =
+            tauri::async_runtime::spawn_blocking(move || write_replacing(&bytes, &destination))
+                .await
+                .unwrap_or_else(|_| Err(io::Error::other("the save stopped unexpectedly")));
+        self.set(|state| state.writing -= 1);
+        written.map(|()| Published::Saved)
     }
 }
 
@@ -141,6 +168,12 @@ pub fn write_replacing(bytes: &[u8], destination: &Path) -> io::Result<()> {
     let name = destination.file_name().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
     })?;
+    // A file being replaced keeps its permission bits; its new contents stay
+    // private until then. A new file gets the usual umask-based permissions.
+    let replaced = std::fs::symlink_metadata(destination)
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .map(|metadata| metadata.permissions().mode() & 0o7777);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
@@ -155,10 +188,15 @@ pub fn write_replacing(bytes: &[u8], destination: &Path) -> io::Result<()> {
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(if replaced.is_some() { 0o600 } else { 0o666 })
         .open(&temporary)?;
     let written = output
         .write_all(bytes)
         .and_then(|()| output.sync_all())
+        .and_then(|()| match replaced {
+            Some(mode) => std::fs::set_permissions(&temporary, Permissions::from_mode(mode)),
+            None => Ok(()),
+        })
         .and_then(|()| std::fs::rename(&temporary, destination));
     if written.is_err() {
         drop(output);
@@ -179,14 +217,12 @@ mod tests {
         dir
     }
 
-    fn read_all(path: &Path) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        io::Read::read_to_end(&mut std::fs::File::open(path).unwrap(), &mut bytes).unwrap();
-        bytes
-    }
-
     fn block_on<F: std::future::Future>(future: F) -> F::Output {
         tauri::async_runtime::block_on(future)
+    }
+
+    fn publish(saves: &Saves, epoch: u64, bytes: &[u8], destination: &Path) -> Published {
+        block_on(saves.publish(epoch, bytes.to_vec(), destination.to_path_buf())).unwrap()
     }
 
     #[test]
@@ -216,6 +252,23 @@ mod tests {
     }
 
     #[test]
+    fn a_replaced_private_file_stays_private() {
+        let dir = scratch("private");
+        let destination = dir.join("Private.csv");
+        std::fs::write(&destination, "old").unwrap();
+        std::fs::set_permissions(&destination, Permissions::from_mode(0o600)).unwrap();
+        write_replacing(b"new", &destination).unwrap();
+        let mode = std::fs::metadata(&destination)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn a_symlinked_destination_is_replaced_without_touching_its_target() {
         let dir = scratch("symlink");
         let target = dir.join("elsewhere.txt");
@@ -230,53 +283,56 @@ mod tests {
                 .file_type()
                 .is_symlink()
         );
-        assert_eq!(read_all(&destination), b"new");
+        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn leaving_and_reloading_fence_publication() {
+    fn only_an_allowed_page_load_reopens_saving() {
         let dir = scratch("fence");
         let destination = dir.join("Export.csv");
         let saves = Saves::default();
+        saves.new_page();
         let first = saves.attach();
+        assert_eq!(publish(&saves, first, b"a", &destination), Published::Saved);
+
+        // Attaching never reopens a held or sealed phase.
+        saves.seal();
+        assert_eq!(saves.attach(), first);
         assert_eq!(
-            block_on(saves.publish(first, b"a", &destination)).unwrap(),
+            publish(&saves, first, b"late", &destination),
+            Published::Cancelled
+        );
+
+        // A decided reload: the new page saves; the earlier page cannot.
+        saves.new_page();
+        let second = saves.attach();
+        assert_ne!(first, second);
+        assert_eq!(
+            publish(&saves, first, b"stale", &destination),
+            Published::Cancelled
+        );
+        assert_eq!(
+            publish(&saves, second, b"b", &destination),
             Published::Saved
         );
-
-        // A reload: the earlier page's late save is refused.
-        let second = saves.attach();
-        assert_eq!(
-            block_on(saves.publish(first, b"stale", &destination)).unwrap(),
-            Published::Cancelled
-        );
-        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "a");
-
-        // Leaving decided: nothing more is published.
-        saves.seal();
-        assert_eq!(
-            block_on(saves.publish(second, b"late", &destination)).unwrap(),
-            Published::Cancelled
-        );
-        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "a");
+        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "b");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn publishing_waits_while_leaving_is_decided() {
+    fn no_write_starts_while_leaving_is_decided() {
         use std::sync::Arc;
         let dir = scratch("held");
         let destination = dir.join("Export.csv");
         let saves = Arc::new(Saves::default());
+        saves.new_page();
         let epoch = saves.attach();
         saves.hold();
         let waiting = {
             let saves = Arc::clone(&saves);
             let destination = destination.clone();
-            std::thread::spawn(move || {
-                block_on(saves.publish(epoch, b"kept", &destination)).unwrap()
-            })
+            std::thread::spawn(move || publish(&saves, epoch, b"kept", &destination))
         };
         std::thread::sleep(std::time::Duration::from_millis(100));
         assert!(
@@ -286,14 +342,13 @@ mod tests {
         saves.release();
         assert_eq!(waiting.join().unwrap(), Published::Saved);
         assert_eq!(std::fs::read_to_string(&destination).unwrap(), "kept");
+        block_on(saves.writes_finished());
 
         saves.hold();
         let refused = {
             let saves = Arc::clone(&saves);
             let destination = destination.clone();
-            std::thread::spawn(move || {
-                block_on(saves.publish(epoch, b"lost", &destination)).unwrap()
-            })
+            std::thread::spawn(move || publish(&saves, epoch, b"lost", &destination))
         };
         std::thread::sleep(std::time::Duration::from_millis(100));
         saves.seal();

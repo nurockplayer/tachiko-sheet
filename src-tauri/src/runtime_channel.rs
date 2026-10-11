@@ -102,14 +102,18 @@ impl Default for RuntimeChannel {
 
 impl RuntimeChannel {
     /// Start a new generation with an empty runtime. Any resident occurrence
-    /// and every frame from an earlier generation become unreachable. A new
-    /// page starts with the gate open.
+    /// and every frame from an earlier generation become unreachable. This
+    /// never reopens a held or sealed gate.
     pub fn attach(&self) -> u64 {
         let mut state = self.lock();
         state.generation += 1;
         state.host = DesignerHost::new();
-        self.set_phase(Phase::Open);
         state.generation
+    }
+
+    /// The host allowed a new page to load (first load or a decided reload).
+    pub fn new_page(&self) {
+        self.set_phase(Phase::Open);
     }
 
     /// Hold new operations while closing or reloading is being decided.
@@ -420,11 +424,13 @@ mod tests {
             channel.dispatch(&frame("observe_occurrence", generation, &[], &[])),
             Err(ChannelError::Sealed)
         );
+        assert_eq!(channel.attach(), generation + 1);
         assert_eq!(
-            channel.attach(),
-            generation + 1,
-            "a reloaded page reopens the gate"
+            channel.dispatch(&frame("observe_occurrence", generation + 1, &[], &[])),
+            Err(ChannelError::Sealed),
+            "attaching never reopens the gate"
         );
+        channel.new_page();
         assert!(
             channel
                 .dispatch(&frame("observe_occurrence", generation + 1, &[], &[]))

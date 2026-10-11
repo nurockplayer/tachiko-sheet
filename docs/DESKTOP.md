@@ -74,6 +74,8 @@ Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
   Apple Developer credentials.
 - Logging out or shutting down while Tachiko Sheet is open is cancelled once
   so the app can ask about unsaved work; afterwards, log out or shut down again.
+- Replacing an existing export keeps its permission bits, but not extended
+  ACLs or other extended attributes of the replaced file.
 - Apple Silicon only. No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.

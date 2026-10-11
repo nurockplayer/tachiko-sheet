@@ -251,21 +251,25 @@ async fn confirm_discard(window: &WebviewWindow, leave: Leave, reason: &str) -> 
         || matches!(choice, MessageDialogResult::Ok)
 }
 
-/// Leaving is decided and the runtime is sealed. A save still being written
-/// finishes first; any other save is not published.
+/// Leaving is decided and the runtime is sealed. No further save starts; a
+/// save already being written finishes first, without blocking this thread.
 fn proceed(window: &WebviewWindow, leave: Leave) {
     window.state::<Saves>().seal();
-    let guard = window.state::<LeaveGuard>();
-    match leave {
-        Leave::Close => {
-            guard.closing.store(true, Ordering::SeqCst);
-            let _ = window.close();
+    let window = window.clone();
+    tauri::async_runtime::spawn(async move {
+        window.state::<Saves>().writes_finished().await;
+        let guard = window.state::<LeaveGuard>();
+        match leave {
+            Leave::Close => {
+                guard.closing.store(true, Ordering::SeqCst);
+                let _ = window.close();
+            }
+            Leave::Reload => {
+                guard.reload_allowed.store(true, Ordering::SeqCst);
+                let _ = window.eval("location.reload()");
+            }
         }
-        Leave::Reload => {
-            guard.reload_allowed.store(true, Ordering::SeqCst);
-            let _ = window.eval("location.reload()");
-        }
-    }
+    });
 }
 
 /// Quit (menu ⌘Q, Dock, logout) asks like closing the window; the app exits
@@ -305,10 +309,13 @@ fn on_navigation(app: &AppHandle, url: &Url) -> bool {
     let app_url = is_app_url(url);
     // `tauri://localhost` has an empty path.
     let index = app_url && matches!(url.path(), "" | "/" | "/index.html");
-    if index && !guard.loaded.swap(true, Ordering::SeqCst) {
-        return true;
-    }
-    if index && guard.reload_allowed.swap(false, Ordering::SeqCst) {
+    if index
+        && (!guard.loaded.swap(true, Ordering::SeqCst)
+            || guard.reload_allowed.swap(false, Ordering::SeqCst))
+    {
+        // A page the host allowed: it starts with saving and the runtime open.
+        app.state::<Saves>().new_page();
+        app.state::<RuntimeChannel>().new_page();
         return true;
     }
     #[cfg(feature = "e2e")]
@@ -381,7 +388,7 @@ async fn save_export(
     let Some(destination) = choose_destination(&app, &name).await else {
         return Ok("cancelled".to_owned());
     };
-    let published = saves.publish(epoch, bytes, &destination).await;
+    let published = saves.publish(epoch, bytes.to_vec(), destination).await;
     #[cfg(feature = "e2e")]
     e2e::log(&format!("saved {name}: {published:?}"));
     match published {

@@ -7,8 +7,12 @@ const encoder = new TextEncoder();
 let pending = 0;
 /** Saves run one after another, in the order they were requested. */
 let queue: Promise<unknown> = Promise.resolve();
-/** This page's save epoch: saves from an earlier page are refused by the host. */
-let epoch: Promise<number> | null = null;
+/**
+ * This page's save epoch, learned when the page starts: saves from an earlier
+ * page are refused by the host, and a late first save cannot borrow a newer
+ * page's epoch.
+ */
+const epoch: Promise<number> = invoke<number>("save_attach");
 
 /**
  * A save in progress is work the person asked for: leaving now would lose
@@ -35,7 +39,6 @@ export function encodeSaveFrame(saveEpoch: number, name: string, bytes: Uint8Arr
 
 async function save(suggestedName: string, content: Blob | Promise<Blob>): Promise<SaveOutcome> {
   const bytes = new Uint8Array(await (await content).arrayBuffer());
-  epoch ??= invoke<number>("save_attach");
   const frame = encodeSaveFrame(await epoch, suggestedName, bytes);
   let outcome: string;
   try {
