@@ -67,7 +67,9 @@ async function launch() {
     // A person takes time in the Save panel; exports must survive that wait.
     "--env", "TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS=2500",
     // The unsaved-work dialog is answered "Cancel": closing must then not happen.
-    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER=cancel"]);
+    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER=cancel",
+    // The answer takes a moment, so the frozen page can be observed meanwhile.
+    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=1200"]);
   for (let attempt = 0; attempt < 100 && appPids().length === 0; attempt++) await sleep(100);
   const pids = appPids();
   assert.equal(pids.length, 1, "exactly one app process launched");
@@ -96,12 +98,27 @@ async function quit(pid, { via = "quit" } = {}) {
 
 const dialogs = async () => (await hostLog()).split("leave dialog").length;
 
+/** Wait until no leave decision is open: the host takes one decision at a time. */
+async function leaveSettled() {
+  let last = await hostLog();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    await sleep(300);
+    const now = await hostLog();
+    if (now === last && !(await evaluate("return document.body.inert;"))) return;
+    last = now;
+  }
+  throw new Error(`a leave decision stayed open; host: ${last}`);
+}
+
 async function leaveRefusedWhileUnsaved(pid, request) {
+  await leaveSettled();
   const before = await dialogs();
   await request();
   for (let attempt = 0; attempt < 100 && (await dialogs()) === before; attempt++) await sleep(50);
   assert.ok((await dialogs()) > before, `leaving with unsaved work asks first; host: ${await hostLog()}`);
-  await sleep(500);
+  assert.equal(await evaluate("return document.body.inert;"), true, "the page is frozen while leaving is decided");
+  for (let attempt = 0; attempt < 60 && await evaluate("return document.body.inert;"); attempt++) await sleep(50);
+  assert.equal(await evaluate("return document.body.inert;"), false, "Cancel makes the page usable again");
   assert.ok(appPids().includes(pid), "answering Cancel keeps the app and its work open");
   assert.equal(await evaluate("return Boolean(document.querySelector('[data-testid=\"project-ready\"]'));"), true, "the work is still open");
 }
@@ -125,7 +142,10 @@ async function evaluate(body, timeout = 120_000, windowLabel = null) {
   await rename(path.join(scripts, `${id}.partial`), path.join(scripts, windowLabel ? `${id}@${windowLabel}.js` : `${id}.js`));
   const deadline = Date.now() + timeout;
   while (!existsSync(result)) {
-    if (Date.now() > deadline) throw new Error(`script ${id} timed out:\n${body.slice(0, 400)}`);
+    if (Date.now() > deadline) {
+      const tail = (await hostLog()).trim().split("\n").slice(-15).join("\n");
+      throw new Error(`script ${id} timed out:\n${body.slice(0, 400)}\nhost log tail:\n${tail}`);
+    }
     await sleep(25);
   }
   const outcome = JSON.parse(await readFile(result, "utf8"));
@@ -194,11 +214,25 @@ async function resultRows() {
   const table = await waitFor(() => document.querySelector('table[aria-label="Cross-table groups"]') && current() && document.querySelector('table[aria-label="Cross-table groups"]'), "summary table");
   return [...table.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
 }
+// Scroll like a person until the row is in the rendered window, measuring the
+// row pitch from the rows actually rendered (multi-line rows are taller).
 async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
-  const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row')?.offsetHeight || 32;
-  scroller.scrollTop = Math.max(0, row * pitch - scroller.clientHeight / 2);
-  return waitFor(() => rowAt(row), "row " + row);
+  for (let attempt = 0; attempt < 40 && !rowAt(row); attempt++) {
+    const rendered = [...grid().querySelectorAll("tbody tr.ts-row")];
+    const first = rendered[0];
+    const last = rendered[rendered.length - 1];
+    const span = last && first ? Number(last.getAttribute("aria-rowindex")) - Number(first.getAttribute("aria-rowindex")) : 0;
+    const pitch = span > 0 ? (last.offsetTop - first.offsetTop) / span : (first?.offsetHeight || 32);
+    const firstRow = first ? Number(first.getAttribute("aria-rowindex")) - 2 : 0;
+    const target = first ? first.offsetTop + (row - firstRow) * pitch : row * pitch;
+    scroller.scrollTop = Math.max(0, target - scroller.clientHeight / 2);
+    await sleep(100);
+  }
+  const rendered = [...grid().querySelectorAll("tbody tr.ts-row")].map((r) => r.getAttribute("aria-rowindex"));
+  return waitFor(() => rowAt(row), "row " + row + " (rendered " + rendered[0] + ".." + rendered[rendered.length - 1] +
+    ", scrollTop " + scroller.scrollTop + "/" + scroller.scrollHeight + ", client " + scroller.clientHeight +
+    ", visibility " + document.visibilityState + ", focus " + document.hasFocus() + ")");
 }
 `;
 
@@ -210,7 +244,7 @@ async function coldHome() {
     await waitFor(() => !document.querySelector('[aria-label="Recovery"]'), "no recovery region");
     return {
       protocol: location.protocol,
-      wasm: performance.getEntriesByType("resource").filter((r) => /\\.wasm$|worker/.test(r.name)).map((r) => r.name),
+      wasm: performance.getEntriesByType("resource").map((r) => r.name).filter((name) => name.split("?")[0].endsWith(".wasm") || name.includes("worker")),
       workbook: Boolean(document.querySelector('[data-testid="project-ready"]')),
     };
   `);
@@ -235,7 +269,7 @@ async function importSource(file) {
     click(await waitFor(() => button("Import candidate", dialog("Review import candidate")), "enabled Import candidate"));
     await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "imported grid", 240000);
     return true;
-  `));
+  `, 300_000));
 }
 
 const rowCount = () => evaluate(`
@@ -410,15 +444,19 @@ async function salesJourney() {
   await screenshot("sales-report");
   // Two PNG exports of the same unchanged chart: each is its own download.
   for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
-  const finishedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.endsWith("Ok(true)")).slice(startedBefore);
-  const finishedPngsCount = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.endsWith("Ok(true)")).length;
+  const finishedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.includes("Ok(true)")).slice(startedBefore);
+  const finishedPngsCount = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.includes("Ok(true)")).length;
   // A double click starts overlapping exports; WebKit's callbacks no longer
   // open any panel, so both are recorded and placed one after another.
   await evaluate(`const exportPng = await waitFor(() => button("Export current PNG"), "PNG export"); click(exportPng); click(exportPng); return true;`);
-  const placedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.endsWith("Ok(true)"));
-  for (let attempt = 0; attempt < 300 && (await placedPngs()).length < 1; attempt++) await sleep(50);
+  const logLines = async (prefix) => (await hostLog()).split("\n").filter((line) => line.startsWith(prefix));
+  for (let attempt = 0; attempt < 300 && (await logLines("placed tachiko-sheet-report")).length < 1; attempt++) await sleep(50);
   await sleep(3500);
-  assert.ok((await placedPngs()).length >= 1, `an overlapping PNG export was placed; host: ${await hostLog()}`);
+  const requestedPngs = (await logLines("requested blob:")).length;
+  const placed = (await logLines("placed tachiko-sheet-report")).filter((line) => line.includes("Ok(true)")).length;
+  const refused = (await logLines("export failure: Another export is still being prepared")).length;
+  assert.ok(placed >= 1, `an overlapping PNG export was placed; host: ${await hostLog()}`);
+  assert.equal(placed + refused, requestedPngs, `every requested export was placed or visibly refused; host: ${await hostLog()}`);
   for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
   const startedBefore = (await finishedPngsCount());
   for (let round = 1; round <= 2; round++) {
@@ -426,7 +464,7 @@ async function salesJourney() {
     for (let attempt = 0; attempt < 300 && (await finishedPngs()).length < round; attempt++) await sleep(50);
     assert.equal((await finishedPngs()).length, round, `PNG export ${round} finished; host: ${await hostLog()}`);
   }
-  const urls = (await hostLog()).split("\n").filter((line) => line.startsWith("finished blob:") && line.endsWith(" true")).slice(-2).map((line) => line.split(" ")[1]);
+  const urls = (await hostLog()).split("\n").filter((line) => line.startsWith("finished blob:") && / true @[0-9]+$/.test(line)).slice(-2).map((line) => line.split(" ")[1]);
   assert.notEqual(urls[0], urls[1], "each PNG export has its own download identity");
   const pngs = (await readdir(downloads)).filter((name) => name.startsWith("tachiko-sheet-report") && name.endsWith(".png"));
   assert.ok(pngs.length >= 1, `report PNG saved; folder: ${JSON.stringify(await readdir(downloads))}`);
@@ -574,5 +612,6 @@ try {
   }, null, 2));
 } finally {
   if (pid && appPids().includes(pid)) execFileSync("kill", [pid]);
+  if (process.env.DESKTOP_KEEP_LOG) await writeFile(process.env.DESKTOP_KEEP_LOG, await hostLog());
   await rm(work, { recursive: true, force: true });
 }

@@ -63,7 +63,7 @@ jobs:
         run: pnpm desktop:build:e2e
 
       - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
-        run: node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
+        run: caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
 
       - name: Record artifact identity
         run: |

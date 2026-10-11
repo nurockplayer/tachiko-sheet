@@ -48,6 +48,15 @@ pub fn close_answer() -> Option<String> {
     std::env::var("TACHIKO_SHEET_E2E_CLOSE_ANSWER").ok()
 }
 
+/// How long the "person" takes to answer the unsaved-work dialog
+/// (`TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS`).
+pub fn answer_delay() -> Option<Duration> {
+    std::env::var("TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .map(Duration::from_millis)
+}
+
 /// Request closing the window exactly as the close button or ⌘W does.
 #[tauri::command]
 pub fn e2e_request_close(window: tauri::WebviewWindow) -> Result<(), String> {
@@ -157,6 +166,9 @@ pub fn log(line: &str) {
         .append(true)
         .open(dir.join("host.log"))
     {
-        let _ = writeln!(file, "{line}");
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis() % 100_000);
+        let _ = writeln!(file, "{line} @{millis}");
     }
 }

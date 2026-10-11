@@ -3474,6 +3474,7 @@ dependencies = [
  "tachiko-designer-runtime",
  "tauri",
  "tauri-build",
+ "tokio",
 ]
 
 [[package]]

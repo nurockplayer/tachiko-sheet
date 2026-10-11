@@ -1,43 +1,65 @@
 //! Exports the Sheet offers for download, from WebKit to a user-chosen file.
 //!
 //! WebKit first writes each export to a private staging file, without any
-//! panel open inside its download callback. Once complete, the person picks a
-//! destination (one Save panel at a time) and the export is copied beside it
-//! and renamed into place, so a failed export never leaves a partial file or
-//! replaces an existing one, and an older export can never overwrite a newer
-//! one at the same destination.
+//! panel open inside its download callback, and only one export is written at
+//! a time, so exports complete in the order they were requested. Completed
+//! exports are placed strictly in that order: the person picks a destination
+//! (one Save panel at a time), the export is written to a new, exclusively
+//! created file beside it and renamed into place. A failed export never leaves
+//! a partial file or replaces an existing one, and an older export can never
+//! overwrite a newer one.
 
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Refusal {
+    /// The same download is already in flight.
+    Duplicate,
+    /// Another export is still being written.
+    Busy,
+}
 
 #[derive(Default)]
 pub struct ExportLedger {
-    /// Download URL → staging file WebKit is writing.
+    /// Download URL → staging file WebKit is writing (at most one).
     staged: HashMap<String, PathBuf>,
     /// Completed exports waiting for, or being moved to, their destination.
     placing: usize,
     serial: u64,
+    /// The placement turn handed to the next completed export.
+    next_turn: u64,
 }
 
 impl ExportLedger {
-    /// Where WebKit should write this download, or `None` if the same
-    /// download is already in flight.
-    pub fn stage(&mut self, url: &str, folder: &Path, name: &str) -> Option<PathBuf> {
+    /// Where WebKit should write this download.
+    pub fn stage(&mut self, url: &str, folder: &Path, name: &str) -> Result<PathBuf, Refusal> {
         if self.staged.contains_key(url) {
-            return None;
+            return Err(Refusal::Duplicate);
+        }
+        if !self.staged.is_empty() {
+            return Err(Refusal::Busy);
         }
         self.serial += 1;
         let file = folder.join(format!("{}-{}", self.serial, sanitize(name)));
         self.staged.insert(url.to_owned(), file.clone());
-        Some(file)
+        Ok(file)
     }
 
-    /// The download finished writing; it now waits to be placed.
-    pub fn take(&mut self, url: &str) -> Option<PathBuf> {
+    /// The download finished writing. A successful one gets its placement
+    /// turn; turns are consecutive, so every turn is eventually taken.
+    pub fn take(&mut self, url: &str, success: bool) -> Option<(PathBuf, Option<u64>)> {
         let file = self.staged.remove(url)?;
+        if !success {
+            return Some((file, None));
+        }
         self.placing += 1;
-        Some(file)
+        let turn = self.next_turn;
+        self.next_turn += 1;
+        Some((file, Some(turn)))
     }
 
     pub fn placed(&mut self) {
@@ -85,21 +107,35 @@ pub fn suggested_name(staged: &Path) -> String {
     }
 }
 
-/// Copy a completed export beside `destination` and rename it into place.
-/// On failure any existing destination file is unchanged. The staging file
-/// is removed either way.
-pub fn place(staged: &Path, destination: &Path, process: u32) -> io::Result<()> {
+/// Write a completed export beside `destination` and rename it into place.
+/// The temporary file is created exclusively (an existing file or symlink of
+/// that name is never opened), so nothing outside it is written. On failure
+/// any existing destination file is unchanged. The staging file is removed
+/// either way.
+pub fn place(staged: &Path, destination: &Path) -> io::Result<()> {
+    static UNIQUE: AtomicU64 = AtomicU64::new(0);
     let result = (|| {
         let name = destination.file_name().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
         })?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos());
         let temporary = destination.with_file_name(format!(
-            ".{}.tachiko-export-{process}",
-            name.to_string_lossy()
+            ".{}.tachiko-export-{}-{nanos}-{}",
+            name.to_string_lossy(),
+            std::process::id(),
+            UNIQUE.fetch_add(1, Ordering::SeqCst)
         ));
-        if let Err(error) =
-            std::fs::copy(staged, &temporary).and_then(|_| std::fs::rename(&temporary, destination))
-        {
+        let written = (|| {
+            let mut output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)?;
+            io::copy(&mut File::open(staged)?, &mut output)?;
+            output.sync_all()
+        })();
+        if let Err(error) = written.and_then(|()| std::fs::rename(&temporary, destination)) {
             let _ = std::fs::remove_file(&temporary);
             return Err(error);
         }
@@ -122,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn exports_are_tracked_until_placed() {
+    fn one_export_is_written_at_a_time_and_placed_in_order() {
         let folder = PathBuf::from("/staging");
         let mut ledger = ExportLedger::default();
         assert!(ledger.is_empty());
@@ -130,25 +166,43 @@ mod tests {
         assert_eq!(first, folder.join("1-Report.csv"));
         assert_eq!(
             ledger.stage("blob:a", &folder, "Report.csv"),
-            None,
-            "the same download is in flight"
+            Err(Refusal::Duplicate)
         );
-        let second = ledger
-            .stage("blob:b", &folder, "../../etc/Report.csv")
-            .unwrap();
         assert_eq!(
-            second,
-            folder.join("2-Report.csv"),
-            "only the final path component is used"
+            ledger.stage("blob:b", &folder, "Report.csv"),
+            Err(Refusal::Busy),
+            "one export is written at a time"
         );
-        assert_eq!(suggested_name(&second), "Report.csv");
-        assert_eq!(ledger.take("blob:a"), Some(first));
+        assert_eq!(ledger.take("blob:a", true), Some((first, Some(0))));
         assert!(
             !ledger.is_empty(),
             "a completed export still waits for its destination"
         );
+
+        let failed = ledger
+            .stage("blob:b", &folder, "../../etc/Report.csv")
+            .unwrap();
+        assert_eq!(
+            failed,
+            folder.join("2-Report.csv"),
+            "only the final path component is used"
+        );
+        assert_eq!(suggested_name(&failed), "Report.csv");
+        assert_eq!(
+            ledger.take("blob:b", false),
+            Some((failed, None)),
+            "a failed export takes no turn"
+        );
+        let third = ledger.stage("blob:c", &folder, "Report.csv").unwrap();
+        assert_eq!(
+            ledger.take("blob:c", true),
+            Some((third, Some(1))),
+            "turns stay consecutive"
+        );
         ledger.placed();
-        assert_eq!(ledger.abandon_staged(), vec![second]);
+        ledger.placed();
+        let fourth = ledger.stage("blob:d", &folder, "Report.csv").unwrap();
+        assert_eq!(ledger.abandon_staged(), vec![fourth]);
         assert!(ledger.is_empty());
     }
 
@@ -160,7 +214,7 @@ mod tests {
 
         let staged = dir.join("1-Export.csv");
         std::fs::write(&staged, "new").unwrap();
-        place(&staged, &destination, 1).unwrap();
+        place(&staged, &destination).unwrap();
         assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
         assert!(!staged.exists());
 
@@ -170,7 +224,7 @@ mod tests {
         std::fs::write(blocked.join("inside"), "kept").unwrap();
         let staged = dir.join("2-Folder.csv");
         std::fs::write(&staged, "new").unwrap();
-        assert!(place(&staged, &blocked, 1).is_err());
+        assert!(place(&staged, &blocked).is_err());
         assert_eq!(
             std::fs::read_to_string(blocked.join("inside")).unwrap(),
             "kept"
@@ -182,6 +236,27 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
             .collect();
         assert!(leftovers.is_empty(), "no temporary file remains");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_symlinked_destination_is_replaced_without_touching_its_target() {
+        let dir = scratch("symlink");
+        let target = dir.join("elsewhere.txt");
+        std::fs::write(&target, "precious").unwrap();
+        let destination = dir.join("Export.csv");
+        std::os::unix::fs::symlink(&target, &destination).unwrap();
+        let staged = dir.join("1-Export.csv");
+        std::fs::write(&staged, "new").unwrap();
+        place(&staged, &destination).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "precious");
+        assert!(
+            !std::fs::symlink_metadata(&destination)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

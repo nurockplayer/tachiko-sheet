@@ -53,8 +53,19 @@ async fn runtime_dispatch(
     let tauri::ipc::InvokeBody::Raw(frame) = request.body() else {
         return Err("the runtime channel accepts only binary frames".to_owned());
     };
-    channel
-        .dispatch(frame)
+    #[cfg(feature = "e2e")]
+    let started = std::time::Instant::now();
+    let reply = channel.dispatch(frame);
+    #[cfg(feature = "e2e")]
+    e2e::log(&format!(
+        "dispatch {} B -> {} in {} ms",
+        frame.len(),
+        reply
+            .as_ref()
+            .map_or_else(ToString::to_string, |reply| format!("{} B", reply.len())),
+        started.elapsed().as_millis()
+    ));
+    reply
         .map(tauri::ipc::Response::new)
         .map_err(|error| error.to_string())
 }
@@ -107,20 +118,32 @@ const NOT_RESPONDING: &str = "Tachiko Sheet is not responding, so it cannot tell
 const CANNOT_TELL: &str =
     "Tachiko Sheet cannot tell whether your work is saved. Unsaved changes will be lost.";
 
-/// Asks the page whether it holds unsaved or in-flight work, using the
-/// Sheet's own `beforeunload` guard, and reports the answer for one check.
+/// Freezes the page (no input can change it after this point) and asks
+/// whether it holds unsaved or in-flight work, using the Sheet's own
+/// `beforeunload` guard; reports the answer for one check.
 fn leave_check_script(check: u64) -> String {
     format!(
         "(() => {{ let unsaved = false; try {{ \
+         window.__tachikoLeaveFocus = document.activeElement; document.body.inert = true; \
          const event = new Event('beforeunload', {{ cancelable: true }}); \
          window.dispatchEvent(event); unsaved = event.defaultPrevented; }} catch {{ unsaved = true; }} \
          window.__TAURI_INTERNALS__.invoke('window_close_check', {{ check: {check}, unsaved }}); }})();"
     )
 }
 
+/// The person kept the work open: make the page usable again where it was.
+const UNFREEZE_SCRIPT: &str = "(() => { document.body.inert = false; \
+    const focus = window.__tachikoLeaveFocus; window.__tachikoLeaveFocus = null; \
+    if (focus && focus.isConnected && typeof focus.focus === 'function') focus.focus(); })();";
+
 /// Start deciding whether to leave. New runtime operations are held until the
 /// decision, so nothing can change the work after the page answers.
 fn request_leave(window: &WebviewWindow, leave: Leave) {
+    #[cfg(feature = "e2e")]
+    e2e::log(&format!(
+        "leave requested ({leave:?}): {:?}",
+        lock(&window.state::<LeaveGuard>().deciding)
+    ));
     let guard = window.state::<LeaveGuard>();
     let check = {
         let mut deciding = lock(&guard.deciding);
@@ -198,6 +221,7 @@ fn ask_then_leave(window: &WebviewWindow, leave: Leave, reason: &'static str) {
             proceed(&target, leave);
         } else {
             channel.release();
+            let _ = target.eval(UNFREEZE_SCRIPT);
         }
     });
 }
@@ -206,6 +230,9 @@ async fn confirm_discard(window: &WebviewWindow, leave: Leave, reason: &str) -> 
     #[cfg(feature = "e2e")]
     if let Some(answer) = e2e::close_answer() {
         e2e::log(&format!("leave dialog ({leave:?}): {reason} -> {answer}"));
+        if let Some(delay) = e2e::answer_delay() {
+            tokio_sleep(delay).await;
+        }
         return answer == "discard";
     }
     let (title, action) = match leave {
@@ -332,8 +359,10 @@ fn open_bundled_page(app: &AppHandle, url: &Url) {
 
 struct Exports {
     ledger: Mutex<ExportLedger>,
-    /// One Save panel at a time, so exports are placed in the order chosen.
-    placing: tauri::async_runtime::Mutex<()>,
+    /// The placement turn now allowed to ask for its destination; exports are
+    /// placed one at a time, in the order they were requested.
+    turn: Mutex<u64>,
+    turn_changed: tokio::sync::Notify,
 }
 
 fn staging_folder(app: &AppHandle) -> Option<PathBuf> {
@@ -362,24 +391,34 @@ fn on_download(webview: &tauri::Webview, event: DownloadEvent<'_>) -> bool {
                 );
                 return false;
             };
-            let Some(staged) = lock(&exports.ledger).stage(url.as_str(), &folder, &name) else {
-                return false;
-            };
-            *destination = staged;
-            true
+            let staged = lock(&exports.ledger).stage(url.as_str(), &folder, &name);
+            match staged {
+                Ok(staged) => {
+                    *destination = staged;
+                    true
+                }
+                Err(downloads::Refusal::Duplicate) => false,
+                Err(downloads::Refusal::Busy) => {
+                    report_export_failure(
+                        app,
+                        "Another export is still being prepared. Nothing was saved; export again in a moment."
+                            .to_owned(),
+                    );
+                    false
+                }
+            }
         }
         DownloadEvent::Finished { url, success, .. } => {
             #[cfg(feature = "e2e")]
             e2e::log(&format!("finished {url} {success}"));
-            let Some(staged) = lock(&exports.ledger).take(url.as_str()) else {
+            let Some((staged, turn)) = lock(&exports.ledger).take(url.as_str(), success) else {
                 return true;
             };
-            if success {
+            if let Some(turn) = turn {
                 let app = app.clone();
-                tauri::async_runtime::spawn(async move { place_export(app, staged).await });
+                tauri::async_runtime::spawn(async move { place_export(app, staged, turn).await });
             } else {
                 let _ = std::fs::remove_file(&staged);
-                lock(&exports.ledger).placed();
                 report_export_failure(
                     app,
                     "The export could not be written. Nothing was saved; export it again."
@@ -393,23 +432,30 @@ fn on_download(webview: &tauri::Webview, event: DownloadEvent<'_>) -> bool {
 }
 
 /// Ask where to save a completed export, then move it into place.
-async fn place_export(app: AppHandle, staged: PathBuf) {
+async fn place_export(app: AppHandle, staged: PathBuf, turn: u64) {
     let exports = app.state::<Exports>();
-    let _turn = exports.placing.lock().await;
+    // Wait for every earlier export to be placed (or given up) first.
+    loop {
+        let changed = exports.turn_changed.notified();
+        if *lock(&exports.turn) == turn {
+            break;
+        }
+        changed.await;
+    }
     let name = downloads::suggested_name(&staged);
     let destination = choose_destination(&app, &name).await;
     let outcome = match &destination {
-        Some(destination) => {
-            downloads::place(&staged, destination, std::process::id()).map(|()| true)
-        }
+        Some(destination) => downloads::place(&staged, destination).map(|()| true),
         None => {
             let _ = std::fs::remove_file(&staged);
             Ok(false)
         }
     };
     lock(&exports.ledger).placed();
+    *lock(&exports.turn) += 1;
+    exports.turn_changed.notify_waiters();
     #[cfg(feature = "e2e")]
-    e2e::log(&format!("placed {name}: {outcome:?}"));
+    e2e::log(&format!("placed {name} turn {turn}: {outcome:?}"));
     if outcome.is_err() {
         report_export_failure(
             &app,
@@ -508,7 +554,8 @@ pub fn run() {
         .manage(LeaveGuard::default())
         .manage(Exports {
             ledger: Mutex::new(ExportLedger::default()),
-            placing: tauri::async_runtime::Mutex::new(()),
+            turn: Mutex::new(0),
+            turn_changed: tokio::sync::Notify::new(),
         })
         .menu(app_menu)
         .on_menu_event(|app, event| {
@@ -563,6 +610,9 @@ pub fn run() {
             termination::install(app.handle(), quit_decided, request_quit);
             #[cfg(feature = "e2e")]
             {
+                // Keep the test window visible: an occluded WebKit view pauses
+                // animation frames, which the grid's row window waits on.
+                window.set_always_on_top(true)?;
                 app.add_capability(include_str!("../capabilities/e2e.json"))?;
                 e2e::start(
                     app.handle(),
