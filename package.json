@@ -36,10 +36,18 @@
     "acceptance:save-closure": "node scripts/run-save-closure-acceptance.mjs",
     "acceptance:production-lifecycle": "node scripts/run-production-lifecycle.mjs",
     "acceptance:product:local": "WORK_DIST=dist-acceptance node tests/product/m1-local.mjs",
-    "test:visual-foundation": "node tests/product/visual-foundation-regression.mjs"
+    "test:visual-foundation": "node tests/product/visual-foundation-regression.mjs",
+    "dev:desktop": "node scripts/copy-example-fixture.mjs && vite --mode desktop",
+    "build:desktop": "node scripts/copy-example-fixture.mjs && vite build --mode desktop && node scripts/finish-desktop-dist.mjs dist-desktop && node scripts/check-dist.mjs dist-desktop",
+    "desktop:build": "tauri build --target aarch64-apple-darwin",
+    "desktop:dev": "tauri dev",
+    "test:desktop-host": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "desktop:build:e2e": "tauri build --target aarch64-apple-darwin --bundles app --features e2e --config src-tauri/tauri.e2e.conf.json",
+    "acceptance:desktop": "node tests/desktop/packaged-lifecycle.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@tauri-apps/cli": "2.12.0",
     "@types/node": "^22.20.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -51,6 +59,7 @@
     "vitest": "5.0.0"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.12.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   }

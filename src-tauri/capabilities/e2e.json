@@ -1,0 +1,10 @@
+{
+  "identifier": "e2e",
+  "description": "Packaged e2e driver results (e2e builds only; added at runtime).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-e2e-result"
+  ]
+}

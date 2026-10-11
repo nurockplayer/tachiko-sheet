@@ -1,0 +1,40 @@
+[package]
+name = "tachiko-sheet-desktop"
+version = "0.1.0"
+description = "Tachiko Sheet desktop host"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "tachiko_sheet_desktop"
+crate-type = ["rlib"]
+
+[features]
+# Packaged end-to-end test driver. Never enabled for the shipped app.
+e2e = []
+
+[build-dependencies]
+tauri-build = { version = "=2.7.0", features = [] }
+
+[dependencies]
+# The Tachiko Work runtime at an exact, immutable source revision: the Web
+# kit's pinned producer source (40d01a45) plus only the additive native host
+# bridge (tachiko-work PR #511). Re-pin only together with a qualified kit.
+tachiko-designer-runtime = { git = "https://github.com/nurockplayer/tachiko-work", rev = "3b3853e5cbfa13a093b792f88a0492f7bb55755c" }
+tauri = { version = "=2.12.0", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "=0.16.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+# Rust 1.97 on macOS fails to load proc-macro dylibs when LTO is combined with
+# the release default `strip = "debuginfo"` (E0463). Release carries no debug
+# info, so disabling strip costs nothing.
+strip = false
+# Unwinding lets the host contain a runtime panic: the resident occurrence is
+# discarded and the renderer's in-flight operation becomes an unknown outcome.
+panic = "unwind"

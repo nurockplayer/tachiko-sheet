@@ -45,6 +45,13 @@ async function boot(): Promise<void> {
     return;
   }
 
+  if (import.meta.env.MODE === "desktop") {
+    // The desktop app binds the same kit client to the native Rust runtime.
+    const { createNativeKitLoader } = await import("./host/native-runtime.js");
+    const { tauriRuntimeTransport } = await import("./host/tauri-runtime-transport.js");
+    kitLoader = createNativeKitLoader(tauriRuntimeTransport);
+  }
+
   const runtime = createSheetRuntime(kitLoader);
   const copies = createLocalCopies();
   createRoot(root).render(<App runtime={runtime} copies={copies} appearancePreference={appearancePreference} />);
