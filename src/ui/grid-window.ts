@@ -47,7 +47,8 @@ export function gridWindowSegments(
   rowCount: number,
 ): GridWindowSegment[] {
   const indices = new Set<number>();
-  for (let index = range.start; index < range.end; index++) indices.add(index);
+  // The range may be stale for one render after the table shrinks or switches.
+  for (let index = Math.max(0, range.start); index < Math.min(range.end, rowCount); index++) indices.add(index);
   for (const index of pinned) if (Number.isInteger(index) && index >= 0 && index < rowCount) indices.add(index);
   const ordered = [...indices].sort((a, b) => a - b);
   const segments: GridWindowSegment[] = [];

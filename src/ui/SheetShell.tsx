@@ -529,6 +529,8 @@ export function SheetShell(props: SheetShellProps) {
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
   const gridRowHeightRef = useRef(32);
+  // Mirrors the ref so a measured pitch change re-renders spacer heights.
+  const [gridRowHeight, setGridRowHeight] = useState(32);
   const gridHeaderHeightRef = useRef(32);
   const gridScrollFrameRef = useRef<number | null>(null);
   const pendingCellFocusRef = useRef<{ entity: string; field: string } | null>(null);
@@ -717,7 +719,7 @@ export function SheetShell(props: SheetShellProps) {
 
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
-  }, [gridWindowed, collectionIdentity, tab]);
+  }, [gridWindowed, collectionIdentity, tab, table?.rows.length]);
 
   useLayoutEffect(() => {
     if (!gridWindowed) return;
@@ -727,7 +729,12 @@ export function SheetShell(props: SheetShellProps) {
     if (head && head.offsetHeight > 0) gridHeaderHeightRef.current = head.offsetHeight;
     if (row && row.offsetHeight > 0 && Math.abs(row.offsetHeight - gridRowHeightRef.current) > 0.5) {
       gridRowHeightRef.current = row.offsetHeight;
+      setGridRowHeight(row.offsetHeight);
       syncGridWindow();
+    }
+    // A pending focus target only lives while the Table panel shows its row.
+    if (pendingCellFocusRef.current && (tab !== "table" || !rowIndexByEntity.has(pendingCellFocusRef.current.entity))) {
+      pendingCellFocusRef.current = null;
     }
     const pending = pendingCellFocusRef.current;
     const node = pending ? cellRefs.current.get(cellKey(pending.entity, pending.field)) : null;
@@ -806,7 +813,7 @@ export function SheetShell(props: SheetShellProps) {
       const cell = matches.length === 1 ? cellRefs.current.get(cellKey(target.entity, target.field)) ?? null : null;
       if (historyFocusDestinationIsUsable(cell, shell)) destination = cell;
       const index = rowIndexByEntity.get(target.entity);
-      if (!cell && matches.length === 1 && gridWindowed && index !== undefined) {
+      if (!cell && matches.length === 1 && gridWindowed && tab === "table" && index !== undefined) {
         // The published cell is outside the rendered window: reveal it and
         // let the pending-focus pass focus it once it is mounted.
         pendingCellFocusRef.current = { entity: target.entity, field: target.field };
@@ -1085,7 +1092,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     // A windowed row outside the rendered range: render it, then focus it.
     const index = rowIndexByEntity.get(entity);
-    if (!gridWindowed || index === undefined) return;
+    if (!gridWindowed || tab !== "table" || index === undefined) return;
     pendingCellFocusRef.current = { entity, field };
     revealGridRow(index);
   }
@@ -1845,8 +1852,8 @@ export function SheetShell(props: SheetShellProps) {
                 </thead>
                 <tbody>
                   {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
-                    ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeightRef.current, padding: 0, border: 0 }} /></tr>
-                    : renderRow(table.rows[segment.index]!, segment.index))
+                    ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
+                    : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
                     : table.rows.map((row, index) => renderRow(row, index))}
                 </tbody>
               </table>

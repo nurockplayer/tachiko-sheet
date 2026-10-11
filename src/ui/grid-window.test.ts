@@ -31,6 +31,11 @@ describe("grid window", () => {
     expect(accounted).toBe(1000);
   });
 
+  it("clamps a stale window after the table shrinks", () => {
+    expect(gridWindowSegments({ start: 8370, end: 8406 }, [8405], 500)).toEqual([{ kind: "spacer", key: "spacer-0", rows: 500 }]);
+    expect(gridWindowSegments({ start: 8370, end: 8406 }, [], 8405).filter((segment) => segment.kind === "row").every((segment) => segment.kind === "row" && segment.index < 8405)).toBe(true);
+  });
+
   it("scrolls only when a row is outside the area below the sticky header", () => {
     expect(scrollTopToReveal(5, 32, 32, 0, 352)).toBeNull();
     expect(scrollTopToReveal(4000, 32, 32, 0, 352)).toBe(32 * 4001 - 320);
