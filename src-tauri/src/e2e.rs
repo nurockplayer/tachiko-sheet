@@ -42,6 +42,14 @@ pub fn download_delay() -> Option<Duration> {
         .map(Duration::from_millis)
 }
 
+/// A window size that fits a small test display (`TACHIKO_SHEET_E2E_WINDOW_SIZE`,
+/// e.g. `1000x680`).
+pub fn window_size() -> Option<(f64, f64)> {
+    let value = std::env::var("TACHIKO_SHEET_E2E_WINDOW_SIZE").ok()?;
+    let (width, height) = value.split_once('x')?;
+    Some((width.trim().parse().ok()?, height.trim().parse().ok()?))
+}
+
 /// The scripted answer to the unsaved-work dialog (`discard` or `cancel`), so
 /// the real close decision can be tested without clicking a native dialog.
 pub fn close_answer() -> Option<String> {

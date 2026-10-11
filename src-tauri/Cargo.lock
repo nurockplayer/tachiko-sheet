@@ -3466,6 +3466,7 @@ dependencies = [
 name = "tachiko-sheet-desktop"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "objc2",
  "objc2-app-kit",
  "rfd",

@@ -69,7 +69,8 @@ async function launch() {
     // The unsaved-work dialog is answered "Cancel": closing must then not happen.
     "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER=cancel",
     // The answer takes a moment, so the frozen page can be observed meanwhile.
-    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=1200"]);
+    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=1200",
+    ...(process.env.TACHIKO_SHEET_E2E_WINDOW_SIZE ? ["--env", `TACHIKO_SHEET_E2E_WINDOW_SIZE=${process.env.TACHIKO_SHEET_E2E_WINDOW_SIZE}`] : [])]);
   for (let attempt = 0; attempt < 100 && appPids().length === 0; attempt++) await sleep(100);
   const pids = appPids();
   assert.equal(pids.length, 1, "exactly one app process launched");

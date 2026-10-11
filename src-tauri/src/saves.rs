@@ -14,12 +14,13 @@
 //! - The file is written to an exclusively created temporary file beside the
 //!   destination and renamed into place, so a failed save never leaves a
 //!   partial file or replaces an existing one, and no symlink is followed.
-//!   Replacing a file keeps its permission bits, and its new contents are
-//!   never readable by others while being written.
+//!   Replacing a file keeps its permission bits, ACL and extended attributes,
+//!   and its new contents are never readable by others while being written.
 
-use std::fs::{OpenOptions, Permissions};
+use std::fs::{File, OpenOptions, Permissions};
 use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -136,7 +137,7 @@ impl Saves {
         epoch: u64,
         bytes: Vec<u8>,
         destination: PathBuf,
-    ) -> io::Result<Published> {
+    ) -> Result<Published, WriteError> {
         loop {
             let changed = self.changed.notified();
             {
@@ -154,55 +155,146 @@ impl Saves {
         let written =
             tauri::async_runtime::spawn_blocking(move || write_replacing(&bytes, &destination))
                 .await
-                .unwrap_or_else(|_| Err(io::Error::other("the save stopped unexpectedly")));
+                .unwrap_or_else(|_| {
+                    Err(WriteError::Unconfirmed(io::Error::other(
+                        "the save stopped unexpectedly",
+                    )))
+                });
         self.set(|state| state.writing -= 1);
         written.map(|()| Published::Saved)
     }
 }
 
+/// Why a save did not complete as expected.
+#[derive(Debug)]
+pub enum WriteError {
+    /// Nothing was published: any file already at the destination is unchanged.
+    NotSaved(io::Error),
+    /// The new file was put in place, but it could not be confirmed (another
+    /// program changed it, or the directory could not be flushed).
+    Unconfirmed(io::Error),
+}
+
+impl std::fmt::Display for WriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotSaved(error) | Self::Unconfirmed(error) => error.fmt(formatter),
+        }
+    }
+}
+
+fn identity(metadata: &std::fs::Metadata) -> (u64, u64) {
+    (metadata.dev(), metadata.ino())
+}
+
 /// Write `bytes` to a new, exclusively created file beside `destination`, then
-/// rename it into place. On failure the destination is unchanged and the
-/// temporary file, if this call created it, is removed.
-pub fn write_replacing(bytes: &[u8], destination: &Path) -> io::Result<()> {
+/// rename it into place.
+///
+/// - The temporary file has a short name, is created exclusively (an existing
+///   file or symlink is never opened) and is only removed if it is still ours.
+/// - Replacing a file keeps its permission bits, ACL and extended attributes,
+///   copied descriptor to descriptor; if they cannot be read, the file is not
+///   replaced. The new contents stay private (0600) until then.
+/// - Before and after the rename, the name must still refer to the file that
+///   was written; afterwards the directory is flushed.
+pub fn write_replacing(bytes: &[u8], destination: &Path) -> Result<(), WriteError> {
     static UNIQUE: AtomicU64 = AtomicU64::new(0);
-    let name = destination.file_name().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
-    })?;
-    // A file being replaced keeps its permission bits; its new contents stay
-    // private until then. A new file gets the usual umask-based permissions.
-    let replaced = std::fs::symlink_metadata(destination)
-        .ok()
-        .filter(std::fs::Metadata::is_file)
-        .map(|metadata| metadata.permissions().mode() & 0o7777);
+    let not_saved = WriteError::NotSaved;
+    let directory = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| {
+            not_saved(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no folder",
+            ))
+        })?;
+    if destination.file_name().is_none() {
+        return Err(not_saved(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "destination has no file name",
+        )));
+    }
+    // The file being replaced, opened without following a symlink.
+    let replaced = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(destination)
+    {
+        Ok(file) if file.metadata().map_err(not_saved)?.is_file() => Some(file),
+        Ok(_) => None,
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ELOOP) =>
+        {
+            None
+        }
+        Err(error) => return Err(not_saved(error)),
+    };
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_nanos());
-    let temporary: PathBuf = destination.with_file_name(format!(
-        ".{}.tachiko-save-{}-{nanos}-{}",
-        name.to_string_lossy(),
+        .map_or(0, |elapsed| elapsed.subsec_nanos());
+    let temporary = directory.join(format!(
+        ".tachiko-save-{}-{nanos}-{}.tmp",
         std::process::id(),
         UNIQUE.fetch_add(1, Ordering::SeqCst)
     ));
-    // `create_new` refuses an existing file or symlink: on that error there is
-    // nothing of ours to remove.
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(if replaced.is_some() { 0o600 } else { 0o666 })
-        .open(&temporary)?;
-    let written = output
-        .write_all(bytes)
-        .and_then(|()| output.sync_all())
-        .and_then(|()| match replaced {
-            Some(mode) => std::fs::set_permissions(&temporary, Permissions::from_mode(mode)),
-            None => Ok(()),
-        })
-        .and_then(|()| std::fs::rename(&temporary, destination));
-    if written.is_err() {
-        drop(output);
-        let _ = std::fs::remove_file(&temporary);
+        .open(&temporary)
+        .map_err(not_saved)?;
+    let ours = output.metadata().map_err(not_saved)?;
+    let still_ours = |path: &Path| {
+        std::fs::symlink_metadata(path).is_ok_and(|named| identity(&named) == identity(&ours))
+    };
+    let prepared = (|| {
+        output.write_all(bytes)?;
+        if let Some(replaced) = &replaced {
+            // SAFETY: both descriptors are open for the duration of the call;
+            // a null state is allowed by copyfile(3).
+            let copied = unsafe {
+                libc::fcopyfile(
+                    replaced.as_raw_fd(),
+                    output.as_raw_fd(),
+                    std::ptr::null_mut(),
+                    libc::COPYFILE_ACL | libc::COPYFILE_XATTR,
+                )
+            };
+            if copied != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mode = replaced.metadata()?.permissions().mode() & 0o7777;
+            output.set_permissions(Permissions::from_mode(mode))?;
+        }
+        output.sync_all()?;
+        if still_ours(&temporary) {
+            Ok(())
+        } else {
+            Err(io::Error::other(
+                "the temporary file was replaced by another program",
+            ))
+        }
+    })();
+    if let Err(error) = prepared.and_then(|()| std::fs::rename(&temporary, destination)) {
+        if still_ours(&temporary) {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        return Err(not_saved(error));
     }
-    written
+    let unconfirmed = WriteError::Unconfirmed;
+    if !still_ours(destination) {
+        return Err(unconfirmed(io::Error::other(
+            "another program changed the file while it was being saved",
+        )));
+    }
+    let folder = File::open(directory).map_err(unconfirmed)?;
+    // F_FULLFSYNC where the volume supports it on a directory, else fsync.
+    if folder.sync_all().is_err() && unsafe { libc::fsync(folder.as_raw_fd()) } != 0 {
+        return Err(unconfirmed(io::Error::last_os_error()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -264,6 +356,37 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o600);
+        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_replaced_file_keeps_its_acl() {
+        let dir = scratch("acl");
+        let destination = dir.join("Shared.csv");
+        std::fs::write(&destination, "old").unwrap();
+        let added = std::process::Command::new("/bin/chmod")
+            .args(["+a", "everyone deny write"])
+            .arg(&destination)
+            .status()
+            .unwrap();
+        assert!(added.success());
+        write_replacing(b"new", &destination).unwrap();
+        let listing = std::process::Command::new("/bin/ls")
+            .arg("-le")
+            .arg(&destination)
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&listing.stdout).contains("everyone deny write"));
+        assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_long_valid_name_can_be_saved() {
+        let dir = scratch("long");
+        let destination = dir.join(format!("{}.csv", "n".repeat(240)));
+        write_replacing(b"new", &destination).unwrap();
         assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
         std::fs::remove_dir_all(dir).unwrap();
     }

@@ -418,7 +418,11 @@ export function AppearanceSelector({
       setExportMessage(encoded.errors[0]?.message ?? "The selected profile could not be prepared for export.");
       return;
     }
-    const request = requestInterfaceProfileDownload(encoded, anchorDownloadHost(hostFiles, setExportMessage));
+    const request = requestInterfaceProfileDownload(encoded, anchorDownloadHost(hostFiles, (settled) => {
+      if ("error" in settled) setExportMessage(settled.error);
+      else if (settled.outcome === "saved") setExportMessage(`Saved ${settled.filename}.`);
+      else if (settled.outcome === "cancelled") setExportMessage("Export cancelled. Nothing was saved.");
+    }));
     setExportMessage(request.ok
       ? `Download requested: ${request.filename}. Browser save completion is not reported.`
       : request.message);

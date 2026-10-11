@@ -63,7 +63,12 @@ jobs:
         run: pnpm desktop:build:e2e
 
       - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
-        run: caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
+        # The runner's display is small; keep the whole window on screen.
+        env:
+          TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
+        run: |
+          system_profiler SPDisplaysDataType | grep -i resolution || true
+          caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
 
       - name: Record artifact identity
         run: |

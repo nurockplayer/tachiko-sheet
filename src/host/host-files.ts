@@ -52,12 +52,15 @@ interface AnchorDownloadHost {
   appendAnchor(anchor: { href: string; download: string; click(): void; remove(): void }): void;
 }
 
+/** How a save requested through an anchor-style surface ended. */
+export type AnchorSaveSettled = Readonly<{ outcome: SaveOutcome; filename: string }> | Readonly<{ error: string }>;
+
 /**
  * Present `hostFiles` through an anchor-style download surface, for callers
- * written against one. A click hands the blob to the host; a failure is
- * reported through `onFailure`, since such callers cannot await it.
+ * written against one. A click hands the blob to the host; how the save ended
+ * is reported through `onSettled`, since such callers cannot await it.
  */
-export function anchorDownloadHost(hostFiles: HostFiles, onFailure: (message: string) => void): AnchorDownloadHost {
+export function anchorDownloadHost(hostFiles: HostFiles, onSettled: (settled: AnchorSaveSettled) => void): AnchorDownloadHost {
   const blobs = new Map<string, Blob>();
   let next = 0;
   return {
@@ -76,9 +79,11 @@ export function anchorDownloadHost(hostFiles: HostFiles, onFailure: (message: st
         click() {
           const blob = blobs.get(anchor.href);
           if (!blob) throw new Error("The file to save is no longer available.");
-          hostFiles.saveFile(anchor.download, blob).catch((error: unknown) => {
-            onFailure(error instanceof Error && error.message ? error.message : "The file was not saved.");
-          });
+          const filename = anchor.download;
+          hostFiles.saveFile(filename, blob).then(
+            (outcome) => onSettled({ outcome, filename }),
+            (error: unknown) => onSettled({ error: error instanceof Error && error.message ? error.message : "The file was not saved." }),
+          );
         },
         remove() {},
       };

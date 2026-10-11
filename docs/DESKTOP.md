@@ -30,7 +30,10 @@ Sheet UI / application (unchanged)
   the bytes to the host through the `HostFiles` port (`src/host/host-files.ts`;
   the Web keeps an ordinary download), in request order; the host asks with a
   Save sheet and writes a new, exclusively created file beside the chosen one,
-  then renames it into place (`src-tauri/src/saves.rs`). The page learns
+  then renames it into place (`src-tauri/src/saves.rs`). Replacing a file
+  keeps its permission bits, ACL and extended attributes; the name is checked
+  to still be the written file before and after the rename, and the folder is
+  flushed afterwards. The page learns
   whether the file was saved or cancelled, and a failure says so in the page;
   it never leaves a partial file or replaces an existing one. A save from an
   earlier page (before a reload) is refused. All host dialogs are sheets on
@@ -74,8 +77,6 @@ Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
   Apple Developer credentials.
 - Logging out or shutting down while Tachiko Sheet is open is cancelled once
   so the app can ask about unsaved work; afterwards, log out or shut down again.
-- Replacing an existing export keeps its permission bits, but not extended
-  ACLs or other extended attributes of the replaced file.
 - Apple Silicon only. No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.

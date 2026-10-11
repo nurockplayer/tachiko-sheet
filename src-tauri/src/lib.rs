@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use rfd::{AsyncFileDialog, AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
-use saves::{Published, Saves};
+use saves::{Published, Saves, WriteError};
 use tauri::menu::{Menu, MenuItem, MenuItemKind};
 use tauri::webview::DownloadEvent;
 use tauri::{
@@ -85,6 +85,8 @@ enum Deciding {
     Checking(u64, Leave),
     /// The person is answering a confirmation sheet.
     Asking,
+    /// Leaving is decided and under way; nothing can undo it for this page.
+    Leaving,
 }
 
 /// One decision at a time about leaving the current work.
@@ -147,7 +149,7 @@ fn request_leave(window: &WebviewWindow, leave: Leave) {
         let mut deciding = lock(&guard.deciding);
         match *deciding {
             // A confirmation is already showing; it decides.
-            Deciding::Asking => return,
+            Deciding::Asking | Deciding::Leaving => return,
             Deciding::Checking(_, earlier) => {
                 // The page did not answer the earlier check; abandon it (a late
                 // answer is then ignored) and let the person decide.
@@ -199,7 +201,7 @@ fn window_close_check(
             ask_then_leave(&window, leave, reason);
         }
         None => {
-            *deciding = Deciding::Idle;
+            *deciding = Deciding::Leaving;
             drop(deciding);
             proceed(&window, leave);
         }
@@ -210,12 +212,21 @@ fn ask_then_leave(window: &WebviewWindow, leave: Leave, reason: &'static str) {
     let target = window.clone();
     tauri::async_runtime::spawn(async move {
         let discard = confirm_discard(&target, leave, reason).await;
-        *lock(&target.state::<LeaveGuard>().deciding) = Deciding::Idle;
         let channel = target.state::<RuntimeChannel>();
+        let guard = target.state::<LeaveGuard>();
+        let mut deciding = lock(&guard.deciding);
+        // Only the open confirmation decides; a committed leave stays committed.
+        if *deciding != Deciding::Asking {
+            return;
+        }
         if discard {
+            *deciding = Deciding::Leaving;
+            drop(deciding);
             channel.seal();
             proceed(&target, leave);
         } else {
+            *deciding = Deciding::Idle;
+            drop(deciding);
             channel.release();
             target.state::<Saves>().release();
             let _ = target.eval(UNFREEZE_SCRIPT);
@@ -314,6 +325,7 @@ fn on_navigation(app: &AppHandle, url: &Url) -> bool {
             || guard.reload_allowed.swap(false, Ordering::SeqCst))
     {
         // A page the host allowed: it starts with saving and the runtime open.
+        *lock(&guard.deciding) = Deciding::Idle;
         app.state::<Saves>().new_page();
         app.state::<RuntimeChannel>().new_page();
         return true;
@@ -394,8 +406,11 @@ async fn save_export(
     match published {
         Ok(Published::Saved) => Ok("saved".to_owned()),
         Ok(Published::Cancelled) => Ok("cancelled".to_owned()),
-        Err(error) => Err(format!(
+        Err(WriteError::NotSaved(error)) => Err(format!(
             "“{name}” was not saved ({error}). Any file already there is unchanged."
+        )),
+        Err(WriteError::Unconfirmed(error)) => Err(format!(
+            "“{name}” was written, but Tachiko Sheet could not confirm it ({error}). Check the file before relying on it."
         )),
     }
 }
@@ -550,6 +565,9 @@ pub fn run() {
                 // Keep the test window visible: an occluded WebKit view pauses
                 // animation frames, which the grid's row window waits on.
                 window.set_always_on_top(true)?;
+                if let Some((width, height)) = e2e::window_size() {
+                    window.set_size(tauri::LogicalSize::new(width, height))?;
+                }
                 app.add_capability(include_str!("../capabilities/e2e.json"))?;
                 e2e::start(
                     app.handle(),

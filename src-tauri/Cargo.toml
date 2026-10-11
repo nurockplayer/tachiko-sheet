@@ -34,6 +34,8 @@ tokio = { version = "1", default-features = false, features = ["sync"] }
 # Already in the graph through tao/wry; used only to route application
 # termination (Dock Quit, logout) through the unsaved-work check.
 objc2 = "=0.6.5"
+# Already in the graph; `fcopyfile` keeps a replaced export's ACL and xattrs.
+libc = "=0.2.190"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
 
 [profile.release]
