@@ -580,7 +580,9 @@ export function SheetShell(props: SheetShellProps) {
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | null>(null);
   const selectEditorValueOnFocusRef = useRef(true);
-  const focusRejectedEditorRef = useRef(false);
+  // Intent captured when a rejected commit asked to refocus its retained
+  // editor; rechecked when the refocus is finally applied.
+  const focusRejectedEditorRef = useRef<{ generation: number; occurrence: string | null } | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const resultsHideButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultsShowButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -693,12 +695,13 @@ export function SheetShell(props: SheetShellProps) {
     if (commitPending || !focusRejectedEditorRef.current) return;
     const input = editorInputRef.current;
     if (!editor || !input) {
-      focusRejectedEditorRef.current = false;
+      focusRejectedEditorRef.current = null;
       return;
     }
     if (props.busy || currentness === "unknown" || input.disabled) return;
-    focusRejectedEditorRef.current = false;
-    input.focus();
+    const intent = focusRejectedEditorRef.current;
+    focusRejectedEditorRef.current = null;
+    if (completionMayMoveFocus(intent)) withAppFocus(() => input.focus());
   }, [commitPending, currentness, editor, props.busy]);
 
   useEffect(() => {
@@ -1106,7 +1109,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     const original = seedTextOf(field);
     selectEditorValueOnFocusRef.current = seed === undefined;
-    focusRejectedEditorRef.current = false;
+    focusRejectedEditorRef.current = null;
     setLocalError(null);
     setSelectedEntity(entity);
     setEditor({
@@ -1225,7 +1228,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     const intent = completionIntent();
     const accepted = await runCommit(field.target, edit, () => {
-      if (completionMayMoveFocus(intent)) focusRejectedEditorRef.current = true;
+      focusRejectedEditorRef.current = intent;
     });
     if (accepted) {
       setEditor(null);
