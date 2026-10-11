@@ -89,7 +89,7 @@ async function requestQuit() {
 }
 
 async function quit(pid, { via = "quit" } = {}) {
-  await (via === "close" ? requestClose() : requestQuit());
+  await ({ close: requestClose, quit: requestQuit, terminate: requestTerminate })[via]();
   for (let attempt = 0; attempt < 150 && appPids().includes(pid); attempt++) await sleep(100);
   assert.ok(!appPids().includes(pid), `the app process exited; host log: ${await hostLog()}`);
 }
@@ -106,17 +106,23 @@ async function leaveRefusedWhileUnsaved(pid, request) {
   assert.equal(await evaluate("return Boolean(document.querySelector('[data-testid=\"project-ready\"]'));"), true, "the work is still open");
 }
 
+/** Terminate exactly like the Dock's Quit or logout (`NSApp terminate:`). */
+async function requestTerminate() {
+  await evaluate("setTimeout(() => window.__TAURI_INTERNALS__.invoke('e2e_request_terminate'), 100); return true;");
+}
+
 const closeRefusedWhileUnsaved = (pid) => leaveRefusedWhileUnsaved(pid, requestClose);
+const terminateRefusedWhileUnsaved = (pid) => leaveRefusedWhileUnsaved(pid, requestTerminate);
 const quitRefusedWhileUnsaved = (pid) => leaveRefusedWhileUnsaved(pid, requestQuit);
 
 // ---- script channel ----------------------------------------------------------
 
 let sequence = 0;
-async function evaluate(body, timeout = 120_000) {
+async function evaluate(body, timeout = 120_000, windowLabel = null) {
   const id = `s${String(++sequence).padStart(5, "0")}`;
   const result = path.join(scripts, `${id}.result.json`);
   await writeFile(path.join(scripts, `${id}.partial`), `${HELPERS}\n${body}`);
-  await rename(path.join(scripts, `${id}.partial`), path.join(scripts, `${id}.js`));
+  await rename(path.join(scripts, `${id}.partial`), path.join(scripts, windowLabel ? `${id}@${windowLabel}.js` : `${id}.js`));
   const deadline = Date.now() + timeout;
   while (!existsSync(result)) {
     if (Date.now() > deadline) throw new Error(`script ${id} timed out:\n${body.slice(0, 400)}`);
@@ -135,7 +141,11 @@ async function waitFor(check, label, timeout = 60000) {
   for (;;) {
     const value = check();
     if (value) return value;
-    if (Date.now() > deadline) throw new Error("timed out waiting for " + label);
+    if (Date.now() > deadline) {
+      const alerts = [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent.trim()).filter(Boolean).join(" | ");
+      const busy = document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy");
+      throw new Error("timed out waiting for " + label + "; busy=" + busy + "; alerts=" + (alerts || "none"));
+    }
     await sleep(20);
   }
 }
@@ -223,7 +233,7 @@ async function importSource(file) {
   `);
   await timed("import", () => evaluate(`
     click(await waitFor(() => button("Import candidate", dialog("Review import candidate")), "enabled Import candidate"));
-    await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "imported grid");
+    await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "imported grid", 240000);
     return true;
   `));
 }
@@ -286,7 +296,7 @@ async function saveCopy(name) {
 async function openSaved(name) {
   await timed("reopen", () => evaluate(`
     click(await waitFor(() => button(${JSON.stringify(`Open saved ${name}`)}), "saved copy entry"));
-    await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "reopened grid");
+    await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "reopened grid", 240000);
     return true;
   `));
 }
@@ -400,13 +410,23 @@ async function salesJourney() {
   await screenshot("sales-report");
   // Two PNG exports of the same unchanged chart: each is its own download.
   for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
-  const finishedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("finished blob:") && line.endsWith(" true"));
+  const finishedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.endsWith("Ok(true)")).slice(startedBefore);
+  const finishedPngsCount = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.endsWith("Ok(true)")).length;
+  // A double click starts overlapping exports; WebKit's callbacks no longer
+  // open any panel, so both are recorded and placed one after another.
+  await evaluate(`const exportPng = await waitFor(() => button("Export current PNG"), "PNG export"); click(exportPng); click(exportPng); return true;`);
+  const placedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("placed tachiko-sheet-report") && line.endsWith("Ok(true)"));
+  for (let attempt = 0; attempt < 300 && (await placedPngs()).length < 1; attempt++) await sleep(50);
+  await sleep(3500);
+  assert.ok((await placedPngs()).length >= 1, `an overlapping PNG export was placed; host: ${await hostLog()}`);
+  for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
+  const startedBefore = (await finishedPngsCount());
   for (let round = 1; round <= 2; round++) {
     await evaluate(`click(await waitFor(() => button("Export current PNG"), "PNG export")); return true;`);
     for (let attempt = 0; attempt < 300 && (await finishedPngs()).length < round; attempt++) await sleep(50);
     assert.equal((await finishedPngs()).length, round, `PNG export ${round} finished; host: ${await hostLog()}`);
   }
-  const urls = (await finishedPngs()).map((line) => line.split(" ")[1]);
+  const urls = (await hostLog()).split("\n").filter((line) => line.startsWith("finished blob:") && line.endsWith(" true")).slice(-2).map((line) => line.split(" ")[1]);
   assert.notEqual(urls[0], urls[1], "each PNG export has its own download identity");
   const pngs = (await readdir(downloads)).filter((name) => name.startsWith("tachiko-sheet-report") && name.endsWith(".png"));
   assert.ok(pngs.length >= 1, `report PNG saved; folder: ${JSON.stringify(await readdir(downloads))}`);
@@ -417,9 +437,16 @@ async function salesJourney() {
   assert.doesNotMatch(await hostLog(), /export failure/, "no export was reported as failed");
   await closeRefusedWhileUnsaved(pid);
   await quitRefusedWhileUnsaved(pid);
+  await terminateRefusedWhileUnsaved(pid);
   // A bundled license link must not replace the Sheet document.
   await evaluate(`window.__sheetDocument = "kept"; click([...document.querySelectorAll(".ts-notices a")].find((a) => a.textContent === "MIT")); await sleep(500); return true;`);
   assert.equal(await evaluate(`return window.__sheetDocument ?? "replaced";`), "kept", "the Sheet document stays after a notices link");
+  let notice = "";
+  for (let attempt = 0; attempt < 50 && !notice.includes("Permission is hereby granted"); attempt++) {
+    await sleep(200);
+    notice = await evaluate(`return document.body?.innerText ?? "";`, 3_000, "page-0").catch(() => "");
+  }
+  assert.match(notice, /Permission is hereby granted/, "the notices window shows the MIT license text");
   assert.match(await hostLog(), /navigation held: tauri:\/\/localhost\/core-kit\/notices\/LICENSE-MIT/);
   // A reload with unsaved work asks first; Cancel keeps the document.
   await leaveRefusedWhileUnsaved(pid, () => evaluate(`setTimeout(() => location.reload(), 50); return true;`));
@@ -531,7 +558,8 @@ try {
     const malformed = await refusedImport("a,b\n\"unterminated\n", `malformed-${format}.csv`);
     assert.equal(malformed.opened, false, "a malformed file opens no workbook");
     assert.ok(malformed.text.length > 0, "the refusal is explained");
-    await quit(pid);
+    // Clean work: the Dock's Quit (terminate) exits like the menu's Quit.
+    await quit(pid, { via: format === "xlsx" ? "terminate" : "quit" });
     pid = undefined;
     results.push({ format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
   }

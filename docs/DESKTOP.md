@@ -26,13 +26,17 @@ Sheet UI / application (unchanged)
   producer source `40d01a45` plus only the additive native bridge, whose release
   WASM build is byte-identical to its baseline. Re-pin only together with a
   qualified kit.
-- Downloads (CSV/XLSX/PNG/profile) open the native Save panel, are written to a
-  hidden temporary file and moved into place only on success; one export per
-  destination at a time; a failed export says so and leaves any existing file.
-- Closing the window, ⌘W, the menu's Quit (⌘Q) and reloading all ask first when
-  work is unsaved, a change is still in progress, or an export is still being
-  saved (the Sheet's own unsaved-work guard). While that is decided, new runtime
-  operations are held, so nothing can change the work after the check.
+- Downloads (CSV/XLSX/PNG/profile): WebKit writes each export to a private
+  staging file; once complete, the native Save panel opens (one at a time) and
+  the export is copied beside the chosen file and renamed into place. A failed
+  or cancelled export never leaves a partial file or replaces an existing one,
+  and says so when it fails. No panel ever opens inside a WebKit callback; all
+  host dialogs are sheets on the Sheet window.
+- Closing the window, ⌘W, Quit (menu ⌘Q, Dock, logout) and reloading all ask
+  first when work is unsaved, a change is still in progress, or an export is
+  still being saved (the Sheet's own unsaved-work guard). While that is decided,
+  new runtime operations are held, so nothing can change the work after the
+  check. Termination is routed through `applicationShouldTerminate:`.
 - The Sheet document is never replaced by a link: bundled license notices open
   in their own window, web links open in the default browser.
 - Saved copies live in the app's own WebKit storage (`dev.tachiko.sheet`), not
@@ -54,7 +58,7 @@ Sales example (price edit → summary/chart) and the 8,406 × 3 CSV/XLSX journey
 (import, first/middle/last edits, Undo/Redo, Save a copy, full quit and
 relaunch, reopen, CSV/XLSX export checked cell-by-cell by an independent oracle,
 replace of an existing export, malformed-file refusal), plus the close, ⌘Q,
-reload and link guards with a scripted dialog answer.
+Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 
 ## Current limits
 
@@ -62,8 +66,6 @@ reload and link guards with a scripted dialog answer.
   Gatekeeper blocks a downloaded copy until it is allowed in System Settings →
   Privacy & Security. Developer ID signing and notarization need the owner's
   Apple Developer credentials.
-- Quitting from the **Dock menu** or logging out does not ask about unsaved
-  work yet (that path terminates the app directly).
 - Apple Silicon only. No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.

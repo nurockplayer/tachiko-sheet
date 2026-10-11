@@ -10,7 +10,7 @@
 //! is set, downloads are saved there instead of asking with a Save panel, and
 //! `TACHIKO_SHEET_E2E_CLOSE_ANSWER` answers the unsaved-work dialog.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
@@ -29,18 +29,17 @@ fn valid_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
-/// Where an e2e download is written, if the e2e download folder is configured.
-/// `TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS` holds the main thread first, like a
-/// person taking time in the Save panel.
-pub fn download_destination(suggested: &Path) -> Option<PathBuf> {
-    let folder = PathBuf::from(std::env::var_os("TACHIKO_SHEET_E2E_DOWNLOADS")?);
-    if let Some(delay) = std::env::var("TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS")
+/// Where e2e exports are placed instead of asking with a Save panel.
+pub fn download_folder() -> Option<PathBuf> {
+    std::env::var_os("TACHIKO_SHEET_E2E_DOWNLOADS").map(PathBuf::from)
+}
+
+/// How long the "person" takes in the Save panel (`TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS`).
+pub fn download_delay() -> Option<Duration> {
+    std::env::var("TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS")
         .ok()
         .and_then(|value| value.parse().ok())
-    {
-        std::thread::sleep(Duration::from_millis(delay));
-    }
-    Some(folder.join(suggested.file_name()?))
+        .map(Duration::from_millis)
 }
 
 /// The scripted answer to the unsaved-work dialog (`discard` or `cancel`), so
@@ -55,19 +54,37 @@ pub fn e2e_request_close(window: tauri::WebviewWindow) -> Result<(), String> {
     window.close().map_err(|error| error.to_string())
 }
 
-static QUIT: std::sync::OnceLock<fn(&AppHandle)> = std::sync::OnceLock::new();
+/// Host entry points the driver exercises exactly as the OS would.
+pub struct Hooks {
+    /// The menu's Quit (⌘Q).
+    pub quit: fn(&AppHandle),
+    /// `NSApp terminate:` — Dock Quit, logout.
+    pub terminate: fn(&AppHandle),
+}
+
+static HOOKS: std::sync::OnceLock<Hooks> = std::sync::OnceLock::new();
 
 /// Request quitting exactly as the menu's Quit (⌘Q) does.
 #[tauri::command]
 pub fn e2e_request_quit(app: AppHandle) {
-    if let Some(quit) = QUIT.get() {
-        quit(&app);
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.quit)(&app);
+    }
+}
+
+/// Request application termination exactly as the Dock's Quit or logout does.
+#[tauri::command]
+pub fn e2e_request_terminate(app: AppHandle) {
+    if let Some(hooks) = HOOKS.get() {
+        let terminate = hooks.terminate;
+        let target = app.clone();
+        let _ = app.run_on_main_thread(move || terminate(&target));
     }
 }
 
 /// Start polling the script folder for the main window.
-pub fn start(app: &AppHandle, quit: fn(&AppHandle)) {
-    let _ = QUIT.set(quit);
+pub fn start(app: &AppHandle, hooks: Hooks) {
+    let _ = HOOKS.set(hooks);
     let Some(dir) = script_dir() else { return };
     let app = app.clone();
     std::thread::spawn(move || {
@@ -83,20 +100,29 @@ pub fn start(app: &AppHandle, quit: fn(&AppHandle)) {
                 .collect();
             scripts.sort();
             for path in scripts {
-                let Some(id) = path
+                // `<id>.js` runs in the Sheet window; `<id>@<label>.js` in that window.
+                let Some(stem) = path
                     .file_stem()
                     .and_then(|stem| stem.to_str())
                     .map(str::to_owned)
                 else {
                     continue;
                 };
+                let (id, label) = stem.split_once('@').map_or_else(
+                    || (stem.clone(), "main".to_owned()),
+                    |(id, label)| (id.to_owned(), label.to_owned()),
+                );
                 let Ok(body) = std::fs::read_to_string(&path) else {
                     continue;
                 };
-                if std::fs::rename(&path, path.with_extension("sent")).is_err() || !valid_id(&id) {
+                if std::fs::rename(&path, path.with_extension("sent")).is_err()
+                    || !valid_id(&id)
+                    || !valid_id(&label)
+                {
                     continue;
                 }
-                let Some(window) = app.get_webview_window("main") else {
+                let Some(window) = app.get_webview_window(&label) else {
+                    log(&format!("no window {label} for script {id}"));
                     continue;
                 };
                 let script = format!(
