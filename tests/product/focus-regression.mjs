@@ -379,7 +379,9 @@ const cases = [
       const aRevision = await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).getAttribute("data-work-revision");
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
-      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      // #158: row A's notes did not change when B published, so A's draft is
+      // rebound to the new revision and can be applied as written.
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), false);
       await notes.fill("rebased-A-notes");
       await page.getByRole("button", { name: "Apply notes", exact: true }).click();
       await page.waitForFunction(
@@ -387,6 +389,23 @@ const cases = [
         { entity: expected.entity, revision: aRevision },
       );
       assert.equal(await notes.inputValue(), "rebased-A-notes");
+      // When the notes themselves change underneath a draft, it is never
+      // applied silently: Apply stays disabled until the user keeps it.
+      await notes.fill("brief-draft");
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      const notesCell = page.getByTestId(`cell:${expected.entity}:${expected.notes}`);
+      await notesCell.dblclick();
+      await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("grid-change");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "grid-change", `[data-testid="cell:${expected.entity}:${expected.notes}"]`);
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      assert.equal(await notes.inputValue(), "brief-draft");
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      await page.getByRole("button", { name: "Keep my draft", exact: true }).click();
+      await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "brief-draft", `[data-testid="cell:${expected.entity}:${expected.notes}"]`);
     },
   ],
   [
@@ -413,7 +432,8 @@ const cases = [
       await page.getByTestId(`cell:${expected.entity}:${expected.notes}`).click();
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "draft-authored-for-row-A");
-      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      // #158: A's notes were untouched by B's recovered publication.
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), false);
     },
   ],
   [

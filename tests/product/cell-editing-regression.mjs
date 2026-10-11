@@ -242,6 +242,14 @@ const cases = [
     await page.keyboard.press("Enter");
     await editor(page).waitFor({ state: "hidden" });
     assert.equal(await dispatches(page), count + 1, "the retained draft still publishes exactly once");
+    // #158: the notes draft kept through that refusal is rebound to the new
+    // revision (its notes did not change) and applies.
+    await page.getByRole("tab", { name: "Brief", exact: true }).click();
+    assert.equal(await page.getByRole("textbox", { name: "Decision notes", exact: true }).inputValue(), "Other notes");
+    await page.getByRole("button", { name: "Apply notes", exact: true }).click();
+    await page.waitForFunction(() => window.__tachikoAcceptance.observe().then((s) => s.notes === "Other notes"));
+    assert.equal(await dispatches(page), count + 2, "the notes draft publishes once after the cell edit");
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
     // Issue reproduction: imported CSV, unapplied Number 3 -> 4, then a trim
     // preview with real whitespace changes is committed from another tab.
     await page.getByRole("button", { name: "Close project", exact: true }).click();

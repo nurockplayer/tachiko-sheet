@@ -52,6 +52,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
+import { rebindNotesDrafts, type NotesDraft } from "./notes-drafts.js";
 import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
@@ -67,13 +68,6 @@ interface EditorState {
   kind: EditableKind;
   value: string;
   original: string;
-}
-
-interface NotesDraft {
-  occurrence: string;
-  revision: string;
-  entity: string;
-  value: string;
 }
 
 interface GridPosition {
@@ -826,6 +820,17 @@ export function SheetShell(props: SheetShellProps) {
   const notesDirty = activeNotesDraft !== undefined && activeNotesDraft.value !== notesCommitted;
   const anyNotesDraft = notesDrafts.length > 0;
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
+  const notesStale = notesDirty && !notesDraftBound;
+
+  useEffect(() => {
+    setNotesDrafts((drafts) => rebindNotesDrafts(drafts, view));
+  }, [view]);
+
+  function keepNotesDraft(): void {
+    if (!view || !activeNotesDraft) return;
+    const kept = { ...activeNotesDraft, revision: view.revision, base: notesCommitted };
+    setNotesDrafts((drafts) => drafts.map((draft) => (draft === activeNotesDraft ? kept : draft)));
+  }
 
   useEffect(() => {
     if (captureCopyParentFailure) {
@@ -2094,11 +2099,12 @@ export function SheetShell(props: SheetShellProps) {
               onChange={(event) => {
                 setLocalError(null);
                 if (view && selectedRow) {
-                  const draft = {
+                  const draft: NotesDraft = {
                     occurrence: view.occurrence,
                     revision: view.revision,
                     entity: rowEntity(selectedRow),
                     value: event.currentTarget.value,
+                    base: notesCommitted,
                   };
                   setNotesDrafts((drafts) => {
                     const remaining = drafts.filter(
@@ -2128,7 +2134,12 @@ export function SheetShell(props: SheetShellProps) {
               >
                 Apply notes
               </button>
-              <span className="ts-hint">{notesDirty ? "Unapplied notes draft" : "No unapplied notes"}</span>
+              {notesStale ? (
+                <>
+                  <span className="ts-hint" role="status">These notes were changed after you started editing. Check them, then keep your draft to apply it.</span>
+                  <button type="button" className="ts-button" onClick={keepNotesDraft} disabled={controlsLocked}>Keep my draft</button>
+                </>
+              ) : <span className="ts-hint">{notesDirty ? "Unapplied notes draft" : "No unapplied notes"}</span>}
             </div>
           </section>
         </div>
