@@ -183,6 +183,20 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), "https://example.invalid/account/00120");
     for (let step = 0; step < 120; step++) await page.keyboard.press("ArrowUp");
     await page.waitForFunction(() => document.activeElement?.closest("tr")?.getAttribute("aria-rowindex") === "2");
+    // #152: a slow publication must not pull focus back from a newer choice.
+    await reveal(page, 100);
+    await cellAt(page, 100, 1).dblclick();
+    await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("focus-intent");
+    await page.keyboard.press("Enter");
+    await cellAt(page, 105, 0).click();
+    await current(page);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "focus-intent", cellSelector(100, 1));
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => {
+      const cell = document.activeElement;
+      return `${cell?.closest("tr")?.getAttribute("aria-rowindex")}:${cell?.cellIndex}`;
+    }), "107:1", "focus stays on the cell chosen while the edit was publishing");
+    await history(page, "undo", 100, 1, "https://example.invalid/account/00100");
     for (const [row, column, value] of EDITS) await edit(page, row, column, value);
     const [lastRow, lastColumn] = EDITS[2];
     const [middleRow, middleColumn] = EDITS[1];

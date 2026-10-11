@@ -1205,9 +1205,17 @@ export function SheetShell(props: SheetShellProps) {
     if (accepted) {
       setEditor(null);
       setLocalError(null);
-      focusCell(editor.entity, editor.field);
+      // The publication may settle after the user has already chosen another
+      // cell or control; never pull focus back from that newer choice.
+      if (completionOwnsFocus(editor.entity, editor.field)) focusCell(editor.entity, editor.field);
     }
     return accepted;
+  }
+
+  function completionOwnsFocus(entity: string, field: string): boolean {
+    const active = document.activeElement;
+    if (!active || active === document.body || active === document.documentElement || !active.isConnected) return true;
+    return active === editorInputRef.current || active === cellRefs.current.get(cellKey(entity, field));
   }
 
   function onCellKeyDown(
@@ -1268,7 +1276,7 @@ export function SheetShell(props: SheetShellProps) {
       const position = { entity: editor.entity, field: editor.field };
       const step = event.shiftKey ? -1 : 1;
       void commitEditor().then((accepted) => {
-        if (accepted) moveFocus(event, position, step);
+        if (accepted && completionOwnsFocus(position.entity, position.field)) moveFocus(event, position, step);
       });
     }
   }
