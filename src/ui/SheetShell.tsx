@@ -537,6 +537,10 @@ export function SheetShell(props: SheetShellProps) {
   const gridHeaderHeightRef = useRef(32);
   const gridScrollFrameRef = useRef<number | null>(null);
   const pendingCellFocusRef = useRef<{ entity: string; field: string } | null>(null);
+  // Bumped by any pointer or key input outside the cell editor. A late
+  // completion may move focus only if the user has not acted since.
+  const focusIntentRef = useRef(0);
+  const liveOccurrenceRef = useRef<string | null>(null);
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
@@ -753,6 +757,23 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => () => {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
+  }, []);
+
+  useLayoutEffect(() => {
+    liveOccurrenceRef.current = view?.occurrence ?? null;
+    pendingCellFocusRef.current = null;
+  }, [view?.occurrence]);
+
+  useEffect(() => {
+    const onUserIntent = (event: Event) => {
+      if (event.target !== editorInputRef.current) focusIntentRef.current += 1;
+    };
+    document.addEventListener("pointerdown", onUserIntent, true);
+    document.addEventListener("keydown", onUserIntent, true);
+    return () => {
+      document.removeEventListener("pointerdown", onUserIntent, true);
+      document.removeEventListener("keydown", onUserIntent, true);
+    };
   }, []);
 
   // The scrollport's height follows the window and panel layout; a taller
@@ -1199,23 +1220,26 @@ export function SheetShell(props: SheetShellProps) {
     } else {
       edit = scalarEditOf(editor.kind, editor.value);
     }
+    const intent = completionIntent();
     const accepted = await runCommit(field.target, edit, () => {
-      focusRejectedEditorRef.current = true;
+      if (completionMayMoveFocus(intent)) focusRejectedEditorRef.current = true;
     });
     if (accepted) {
       setEditor(null);
       setLocalError(null);
       // The publication may settle after the user has already chosen another
       // cell or control; never pull focus back from that newer choice.
-      if (completionOwnsFocus(editor.entity, editor.field)) focusCell(editor.entity, editor.field);
+      if (completionMayMoveFocus(intent)) focusCell(editor.entity, editor.field);
     }
     return accepted;
   }
 
-  function completionOwnsFocus(entity: string, field: string): boolean {
-    const active = document.activeElement;
-    if (!active || active === document.body || active === document.documentElement || !active.isConnected) return true;
-    return active === editorInputRef.current || active === cellRefs.current.get(cellKey(entity, field));
+  function completionIntent(): { generation: number; occurrence: string | null } {
+    return { generation: focusIntentRef.current, occurrence: liveOccurrenceRef.current };
+  }
+
+  function completionMayMoveFocus(intent: { generation: number; occurrence: string | null }): boolean {
+    return focusIntentRef.current === intent.generation && liveOccurrenceRef.current === intent.occurrence && intent.occurrence !== null;
   }
 
   function onCellKeyDown(
@@ -1275,8 +1299,9 @@ export function SheetShell(props: SheetShellProps) {
       event.preventDefault();
       const position = { entity: editor.entity, field: editor.field };
       const step = event.shiftKey ? -1 : 1;
+      const intent = completionIntent();
       void commitEditor().then((accepted) => {
-        if (accepted && completionOwnsFocus(position.entity, position.field)) moveFocus(event, position, step);
+        if (accepted && completionMayMoveFocus(intent)) moveFocus(event, position, step);
       });
     }
   }
