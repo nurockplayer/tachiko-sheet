@@ -25,6 +25,13 @@ const fixtures = [
     review: 'https://github.com/nurockplayer/tachiko-work/pull/496#issuecomment-6083244797',
     handback: 'https://github.com/nurockplayer/tachiko-work/issues/495#issuecomment-6083365325',
   },
+  {
+    name: 'Sheet #150 rebuilt 40d01a45 artifact',
+    sourceCommit: '40d01a45e4b24ff4652dad18662d29c9cbab86a8',
+    artifactManifestSha256: 'c5aa4b672f53a62de98f748f449602a62f26a6b1efdc2e66e5ec1adddc0bb035',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/150#issuecomment-6104794113',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/150#issuecomment-6104780673',
+  },
 ];
 
 function lockFor(fixture) {
@@ -50,7 +57,7 @@ for (const [index, fixture] of fixtures.entries()) {
     assert.doesNotThrow(() => validateCoreKitProvenance(lockFor(fixture)));
   });
 
-  const other = fixtures[1 - index];
+  const other = fixtures.find((candidate) => candidate.sourceCommit !== fixture.sourceCommit);
   const cases = [
     ['unknown schema', (lock) => { lock.schema += '-unknown'; }, /schema/],
     ['other repository', (lock) => { lock.sourceRepository = 'untrusted/tachiko-work'; }, /repository/],
@@ -79,6 +86,21 @@ for (const [index, fixture] of fixtures.entries()) {
     });
   }
 }
+
+test('same-source rebuilt and cloud-tested kits never share receipts', () => {
+  const [tested, rebuilt] = [fixtures[1], fixtures[2]];
+  for (const [bytes, receipts] of [[rebuilt, tested], [tested, rebuilt]]) {
+    const review = lockFor(bytes);
+    review.qualificationArtifactReview.url = receipts.review;
+    assert.throws(() => validateCoreKitProvenance(review), /canonical review URL/);
+    const handback = lockFor(bytes);
+    handback.qualificationHandback = receipts.handback;
+    assert.throws(() => validateCoreKitProvenance(handback), /handback source/);
+    const manifest = lockFor(receipts);
+    manifest.artifactManifestSha256 = manifest.qualificationArtifactReview.artifactManifestSha256 = bytes.artifactManifestSha256;
+    assert.throws(() => validateCoreKitProvenance(manifest), /canonical review URL/);
+  }
+});
 
 test('reject merge SHA substituted for the tested kit source even when its tree matches', () => {
   const lock = lockFor(fixtures[1]);

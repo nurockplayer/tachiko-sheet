@@ -1,5 +1,6 @@
 import { projectTransferToEntries } from "../host/project-transfer.js";
 const MAX_WIRE_REQUEST_BYTES = 65_536;
+const MAX_METADATA_REQUEST_BYTES = 4 * 1024 * 1024;
 const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
 export async function createDesignerWasmBridge(wasmUrl) {
     const response = await fetch(wasmUrl);
@@ -10,8 +11,8 @@ export async function createDesignerWasmBridge(wasmUrl) {
     const exports = result.instance.exports;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
-    const writeRequest = (input) => {
-        if (input.length > MAX_WIRE_REQUEST_BYTES)
+    const writeRequest = (input, maximum = MAX_WIRE_REQUEST_BYTES) => {
+        if (input.length > maximum)
             return false;
         const requestPointer = exports.tachiko_designer_request_reserve(input.length);
         new Uint8Array(exports.memory.buffer, requestPointer, input.length).set(input);
@@ -34,7 +35,9 @@ export async function createDesignerWasmBridge(wasmUrl) {
     });
     return {
         spreadsheet: (operation, bytes) => {
-            if (bytes.byteLength > MAX_PROJECT_TRANSFER_BYTES || !writeRequest(encoder.encode(JSON.stringify(operation)))) {
+            const maximum = operation.type === "export" || operation.type === "inspect_project" || operation.type === "open_project"
+                ? MAX_METADATA_REQUEST_BYTES : MAX_WIRE_REQUEST_BYTES;
+            if (bytes.byteLength > MAX_PROJECT_TRANSFER_BYTES || !writeRequest(encoder.encode(JSON.stringify(operation)), maximum)) {
                 return tooLargeReply("The spreadsheet request exceeds the private bridge limits.");
             }
             const pointer = exports.tachiko_designer_project_reserve(bytes.byteLength);
@@ -106,6 +109,37 @@ export async function createDesignerWasmBridge(wasmUrl) {
                 return tooLargeReply("The expected revision exceeds the bridge limit.");
             }
             exports.tachiko_designer_project_export();
+            try {
+                const reply = readReply();
+                if (reply.status === "error")
+                    return reply;
+                if (reply.response.type !== "project_exported") {
+                    throw new Error(`Expected 'project_exported' response, received '${reply.response.type}'.`);
+                }
+                const pointer = exports.tachiko_designer_project_ptr();
+                const length = exports.tachiko_designer_project_len();
+                if (length !== reply.response.payload.byte_length) {
+                    throw new Error("Designer project export length did not match its receipt.");
+                }
+                const projectBytes = new Uint8Array(exports.memory.buffer, pointer, length).slice();
+                return {
+                    status: "ok",
+                    export: {
+                        revision: reply.response.payload.revision,
+                        bytes: projectBytes.buffer,
+                    },
+                };
+            }
+            finally {
+                exports.tachiko_designer_project_release();
+            }
+        },
+        exportProjectV3: (expectedRevision) => {
+            const revision = encoder.encode(expectedRevision);
+            if (!writeRequest(revision)) {
+                return tooLargeReply("The expected revision exceeds the bridge limit.");
+            }
+            exports.tachiko_designer_project_export_v3();
             try {
                 const reply = readReply();
                 if (reply.status === "error")

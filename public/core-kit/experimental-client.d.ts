@@ -11,6 +11,7 @@ export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v
  * and the vendored kit makes that stronger contract explicit for consumers.
  */
 export interface ExperimentalDesignerClient extends DesignerClient {
+    exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
     openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection>;
     exportCanonicalTree(expectedRevision: string): Promise<CanonicalTreeExport>;
     exportPortableRo(expectedRevision: string): Promise<ProjectExport>;

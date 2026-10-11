@@ -1,6 +1,6 @@
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, ProjectExport, TableProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -9,12 +9,15 @@ export declare class WorkerDesignerClient implements DesignerClient {
     inspectSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions): Promise<SourceWorkbook>;
     importSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
     inspectImportedProject(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
+    openImportedProject(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
     exportSpreadsheet(expectedRevision: string, metadata: InteropMetadata, format: SpreadsheetFormat, collection: string): Promise<SpreadsheetExport>;
     exportNativeTrackerSpreadsheet(expectedRevision: string, presentation: NativeTrackerExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeBudgetSpreadsheet(expectedRevision: string, presentation: NativeBudgetExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     previewCleanup(expectedRevision: string, operation: CleanupOperation): Promise<CleanupPreview>;
     commitCleanup(expectedRevision: string, previewId: string): Promise<PublicationProjection>;
     newBudget(): Promise<OpenedProjection>;
+    newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
+    duplicateCollection(expectedRevision: string, collection: string, name: string): Promise<DuplicateCollectionProjection>;
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
     inspectProject(bytes: ArrayBuffer): Promise<OpenedProjection>;
@@ -22,6 +25,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection>;
     openLocalDocument(bytes: ArrayBuffer): Promise<OpenedProjection>;
     exportProject(expectedRevision: string): Promise<ProjectExport>;
+    exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
     exportCanonicalTree(expectedRevision: string): Promise<CanonicalTreeExport>;
     exportPortableRo(expectedRevision: string): Promise<ProjectExport>;
     verifyPortableRo(bytes: ArrayBuffer): Promise<void>;

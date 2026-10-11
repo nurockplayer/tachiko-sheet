@@ -24,6 +24,15 @@ const qualifiedArtifacts = [
     review: 'https://github.com/nurockplayer/tachiko-work/pull/496#issuecomment-6083244797',
     handback: 'https://github.com/nurockplayer/tachiko-work/issues/495#issuecomment-6083365325',
   },
+  {
+    // Same source, rebuilt by Work's exporter on macOS (different toolchain,
+    // different WASM bytes). Qualified on its own evidence; this is the
+    // artifact Sheet ships.
+    sourceCommit: '40d01a45e4b24ff4652dad18662d29c9cbab86a8',
+    artifactManifestSha256: 'c5aa4b672f53a62de98f748f449602a62f26a6b1efdc2e66e5ec1adddc0bb035',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/150#issuecomment-6104794113',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/150#issuecomment-6104780673',
+  },
 ];
 
 export function validateCoreKitProvenance(lock) {
