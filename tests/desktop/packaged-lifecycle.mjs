@@ -139,8 +139,8 @@ let sequence = 0;
 async function evaluate(body, timeout = 120_000, windowLabel = null) {
   const id = `s${String(++sequence).padStart(5, "0")}`;
   const result = path.join(scripts, `${id}.result.json`);
-  // Keep diagnostics in the script result so they survive both a failed reveal
-  // and a later process quit, without adding hooks to the product frontend.
+  // Keep diagnostics in the script result, but emit them only on failure.
+  // This needs no hooks in the product frontend and stays quiet on success.
   await writeFile(path.join(scripts, `${id}.partial`), `${HELPERS}\n
     try {
       const value = await (async () => { ${body}\n })();
@@ -160,7 +160,6 @@ async function evaluate(body, timeout = 120_000, windowLabel = null) {
   }
   const outcome = JSON.parse(await readFile(result, "utf8"));
   if (!outcome.ok) throw new Error(`script ${id} failed: ${outcome.error}\n${body.slice(0, 400)}`);
-  if (outcome.value.gridTraces.length) console.log(JSON.stringify({ script: id, gridTraces: outcome.value.gridTraces }));
   return outcome.value.value;
 }
 
@@ -279,7 +278,7 @@ async function reveal(row) {
       configurable: true,
       get() { return nativeScrollTop.get.call(this); },
       set(value) {
-        sample("before-scrollTop-write", { requested: value, caller: new Error().stack?.split("\n").slice(1, 4).join("\n") });
+        sample("before-scrollTop-write", { requested: value, caller: new Error().stack?.split("\n").slice(1, 4).join("\n").slice(0, 600) });
         nativeScrollTop.set.call(this, value);
         sample("after-scrollTop-write", { requested: value });
       },
