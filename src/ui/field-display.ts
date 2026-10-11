@@ -38,6 +38,8 @@ export function fieldDisplay(field: FieldProjection | null | undefined): FieldDi
     const canonicalText = !field.formula && field.stored?.kind === "text" ? field.stored.value : null;
     return {
       ...base,
+      // A blank cell would hide the warning; keep a visible marker.
+      text: base.text === "" ? EMPTY_TEXT : base.text,
       tone: "warning",
       title:
         canonicalText === null
