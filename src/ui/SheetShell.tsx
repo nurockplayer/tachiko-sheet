@@ -541,6 +541,13 @@ export function SheetShell(props: SheetShellProps) {
   // completion may move focus only if the user has not acted since.
   const focusIntentRef = useRef(0);
   const liveOccurrenceRef = useRef<string | null>(null);
+  const appFocusingRef = useRef(false);
+  // Declared before the windowing effects so a replacement occurrence never
+  // consumes a focus request queued for the previous one.
+  useLayoutEffect(() => {
+    liveOccurrenceRef.current = view?.occurrence ?? null;
+    pendingCellFocusRef.current = null;
+  }, [view?.occurrence]);
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
@@ -759,20 +766,16 @@ export function SheetShell(props: SheetShellProps) {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
   }, []);
 
-  useLayoutEffect(() => {
-    liveOccurrenceRef.current = view?.occurrence ?? null;
-    pendingCellFocusRef.current = null;
-  }, [view?.occurrence]);
-
   useEffect(() => {
     const onUserIntent = (event: Event) => {
-      if (event.target !== editorInputRef.current) focusIntentRef.current += 1;
+      if (appFocusingRef.current || event.target === editorInputRef.current) return;
+      focusIntentRef.current += 1;
     };
-    document.addEventListener("pointerdown", onUserIntent, true);
-    document.addEventListener("keydown", onUserIntent, true);
+    // focusin also covers focus moved by assistive technology or script.
+    const events = ["pointerdown", "keydown", "focusin"] as const;
+    for (const type of events) document.addEventListener(type, onUserIntent, true);
     return () => {
-      document.removeEventListener("pointerdown", onUserIntent, true);
-      document.removeEventListener("keydown", onUserIntent, true);
+      for (const type of events) document.removeEventListener(type, onUserIntent, true);
     };
   }, []);
 
@@ -1229,9 +1232,19 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       // The publication may settle after the user has already chosen another
       // cell or control; never pull focus back from that newer choice.
-      if (completionMayMoveFocus(intent)) focusCell(editor.entity, editor.field);
+      if (completionMayMoveFocus(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
     }
     return accepted;
+  }
+
+  /** Focus moved by a completion itself is not a new user choice. */
+  function withAppFocus(move: () => void): void {
+    appFocusingRef.current = true;
+    try {
+      move();
+    } finally {
+      appFocusingRef.current = false;
+    }
   }
 
   function completionIntent(): { generation: number; occurrence: string | null } {
@@ -1301,7 +1314,7 @@ export function SheetShell(props: SheetShellProps) {
       const step = event.shiftKey ? -1 : 1;
       const intent = completionIntent();
       void commitEditor().then((accepted) => {
-        if (accepted && completionMayMoveFocus(intent)) moveFocus(event, position, step);
+        if (accepted && completionMayMoveFocus(intent)) withAppFocus(() => moveFocus(event, position, step));
       });
     }
   }

@@ -189,6 +189,12 @@ try {
       return `${cell?.closest("tr")?.getAttribute("aria-rowindex")}:${cell?.cellIndex}`;
     });
     const pending = () => page.locator('[data-testid="project-ready"][aria-busy="true"]').waitFor({ timeout: 2_000 });
+    // The probe input must land while the publication is still pending, or
+    // the leg proves nothing; slow the CPU to widen that window and check it.
+    const stillPending = async (label) => assert.equal(
+      await page.locator('[data-testid="project-ready"]').getAttribute("aria-busy"), "true", `${label}: probe input landed while publishing`);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
     // Enter, then another cell chosen while the edit is still publishing.
     await reveal(page, 100);
     await cellAt(page, 100, 1).dblclick();
@@ -196,6 +202,7 @@ try {
     await page.keyboard.press("Enter");
     await pending();
     await cellAt(page, 105, 0).click();
+    await stillPending("Enter");
     await current(page);
     await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "focus-intent", cellSelector(100, 1));
     await page.waitForTimeout(200);
@@ -208,11 +215,14 @@ try {
     await pending();
     await cellAt(page, 115, 0).click();
     await cellAt(page, 110, 1).click();
+    await stillPending("Tab");
     await current(page);
     await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "tab-intent", cellSelector(110, 1));
     await page.waitForTimeout(200);
     assert.equal(await focusedCell(), "112:2", "a deliberate return to the origin is not overridden by the Tab move");
     await history(page, "undo", 110, 1, "https://example.invalid/account/00110");
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    await cdp.detach();
     for (const [row, column, value] of EDITS) await edit(page, row, column, value);
     const [lastRow, lastColumn] = EDITS[2];
     const [middleRow, middleColumn] = EDITS[1];
