@@ -2375,17 +2375,23 @@ export function SheetShell(props: SheetShellProps) {
         setLocalError("The current report image could not be rendered, so no PNG was downloaded.");
         return;
       }
+      const encodingFailed = () => setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
       try {
-        const href = canvas.toDataURL("image/png");
-        if (href === "data:," || !href.startsWith("data:image/png;base64,")) throw new Error("PNG encoding failed.");
-        const anchor = document.createElement("a");
-        anchor.href = href;
-        anchor.download = "tachiko-sheet-report.png";
-        document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
+        // A fresh blob URL gives every export its own identity, so two exports
+        // of an unchanged chart are never confused while being saved.
+        canvas.toBlob((blob) => {
+          if (!blob || blob.type !== "image/png" || blob.size === 0) { encodingFailed(); return; }
+          const href = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = href;
+          anchor.download = "tachiko-sheet-report.png";
+          document.body.append(anchor);
+          anchor.click();
+          anchor.remove();
+          window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
+        }, "image/png");
       } catch {
-        setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
+        encodingFailed();
       }
     };
     const removeReport = () => {

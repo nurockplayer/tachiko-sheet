@@ -5,6 +5,7 @@
     "main"
   ],
   "permissions": [
-    "allow-e2e-result"
+    "allow-e2e-result",
+    "allow-e2e-request-close"
   ]
 }

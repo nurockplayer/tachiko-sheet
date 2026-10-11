@@ -484,7 +484,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent): void {
-      if (!dirtyRef.current && !unknownOpenRecoveryRef.current && !provenanceUnconfirmedRef.current) return;
+      // An operation still in flight (an edit, Undo/Redo, open or save) may
+      // change the work after this check, so leaving now could lose it.
+      if (!dirtyRef.current && !inflightRef.current && !unknownOpenRecoveryRef.current && !provenanceUnconfirmedRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     }

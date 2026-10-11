@@ -28,6 +28,8 @@ pub enum ChannelError {
     StaleGeneration,
     /// The runtime panicked; its resident occurrence was discarded.
     RuntimeStopped,
+    /// The app is closing; no further operation may change the work.
+    Sealed,
 }
 
 impl std::fmt::Display for ChannelError {
@@ -35,7 +37,10 @@ impl std::fmt::Display for ChannelError {
         match self {
             Self::Frame(reason) => write!(formatter, "invalid runtime frame: {reason}"),
             Self::StaleGeneration => formatter.write_str("the runtime channel was replaced"),
-            Self::RuntimeStopped => formatter.write_str("the runtime stopped and its work was discarded"),
+            Self::RuntimeStopped => {
+                formatter.write_str("the runtime stopped and its work was discarded")
+            }
+            Self::Sealed => formatter.write_str("Tachiko Sheet is closing"),
         }
     }
 }
@@ -49,6 +54,7 @@ struct FrameHeader {
 
 struct ChannelState {
     generation: u64,
+    sealed: bool,
     host: DesignerHost,
 }
 
@@ -62,6 +68,7 @@ impl Default for RuntimeChannel {
         Self {
             state: Mutex::new(ChannelState {
                 generation: 0,
+                sealed: false,
                 host: DesignerHost::new(),
             }),
         }
@@ -78,15 +85,26 @@ impl RuntimeChannel {
         state.generation
     }
 
+    /// Refuse every later operation. Called once closing is confirmed, so
+    /// nothing can change the work between that decision and process exit.
+    pub fn seal(&self) {
+        self.lock().sealed = true;
+    }
+
     /// Run one framed operation for the current generation.
     pub fn dispatch(&self, frame: &[u8]) -> Result<Vec<u8>, ChannelError> {
         let (header, request, payload) = parse_frame(frame)?;
         let mut state = self.lock();
+        if state.sealed {
+            return Err(ChannelError::Sealed);
+        }
         if header.generation != state.generation {
             return Err(ChannelError::StaleGeneration);
         }
         let host = &mut state.host;
-        match catch_unwind(AssertUnwindSafe(|| route(host, &header.kind, request, payload))) {
+        match catch_unwind(AssertUnwindSafe(|| {
+            route(host, &header.kind, request, payload)
+        })) {
             Ok(Some(reply)) => Ok(encode_reply(reply)),
             Ok(None) => Err(ChannelError::Frame("unknown operation kind")),
             Err(_) => {
@@ -102,7 +120,9 @@ impl RuntimeChannel {
     fn lock(&self) -> MutexGuard<'_, ChannelState> {
         // Panics are caught inside the lock, so poisoning can only come from a
         // bug in this module; recover the state rather than wedging the app.
-        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -129,8 +149,14 @@ fn route(host: &mut DesignerHost, kind: &str, request: &[u8], payload: &[u8]) ->
     })
 }
 
-fn read_section<'frame>(frame: &'frame [u8], offset: &mut usize, maximum: usize) -> Result<&'frame [u8], ChannelError> {
-    let length_end = offset.checked_add(4).ok_or(ChannelError::Frame("truncated"))?;
+fn read_section<'frame>(
+    frame: &'frame [u8],
+    offset: &mut usize,
+    maximum: usize,
+) -> Result<&'frame [u8], ChannelError> {
+    let length_end = offset
+        .checked_add(4)
+        .ok_or(ChannelError::Frame("truncated"))?;
     let length = frame
         .get(*offset..length_end)
         .ok_or(ChannelError::Frame("truncated"))?;
@@ -138,8 +164,12 @@ fn read_section<'frame>(frame: &'frame [u8], offset: &mut usize, maximum: usize)
     if length > maximum {
         return Err(ChannelError::Frame("section exceeds its limit"));
     }
-    let end = length_end.checked_add(length).ok_or(ChannelError::Frame("truncated"))?;
-    let section = frame.get(length_end..end).ok_or(ChannelError::Frame("truncated"))?;
+    let end = length_end
+        .checked_add(length)
+        .ok_or(ChannelError::Frame("truncated"))?;
+    let section = frame
+        .get(length_end..end)
+        .ok_or(ChannelError::Frame("truncated"))?;
     *offset = end;
     Ok(section)
 }
@@ -173,7 +203,8 @@ mod tests {
     use serde_json::{Value, json};
 
     fn frame(kind: &str, generation: u64, request: &[u8], payload: &[u8]) -> Vec<u8> {
-        let header = serde_json::to_vec(&json!({ "kind": kind, "generation": generation })).unwrap();
+        let header =
+            serde_json::to_vec(&json!({ "kind": kind, "generation": generation })).unwrap();
         let mut frame = Vec::new();
         frame.extend_from_slice(&u32::try_from(header.len()).unwrap().to_le_bytes());
         frame.extend_from_slice(&header);
@@ -197,8 +228,13 @@ mod tests {
     fn a_new_generation_fences_older_frames_and_destroys_resident_work() {
         let channel = RuntimeChannel::default();
         let first = channel.attach();
-        let tracker = br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
-        let (opened, _) = reply(&channel.dispatch(&frame("command", first, tracker, &[])).unwrap());
+        let tracker =
+            br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
+        let (opened, _) = reply(
+            &channel
+                .dispatch(&frame("command", first, tracker, &[]))
+                .unwrap(),
+        );
         assert_eq!(opened["status"], "ok");
 
         let second = channel.attach();
@@ -207,7 +243,11 @@ mod tests {
             channel.dispatch(&frame("observe_occurrence", first, &[], &[])),
             Err(ChannelError::StaleGeneration)
         );
-        let (observed, _) = reply(&channel.dispatch(&frame("observe_occurrence", second, &[], &[])).unwrap());
+        let (observed, _) = reply(
+            &channel
+                .dispatch(&frame("observe_occurrence", second, &[], &[]))
+                .unwrap(),
+        );
         assert_eq!(observed["error"]["code"], "no_project_open");
     }
 
@@ -215,18 +255,37 @@ mod tests {
     fn exports_return_their_bytes_after_the_reply() {
         let channel = RuntimeChannel::default();
         let generation = channel.attach();
-        let tracker = br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
-        let (opened, _) = reply(&channel.dispatch(&frame("command", generation, tracker, &[])).unwrap());
-        let revision = opened["response"]["payload"]["bootstrap"]["revision"].as_str().unwrap();
+        let tracker =
+            br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
+        let (opened, _) = reply(
+            &channel
+                .dispatch(&frame("command", generation, tracker, &[]))
+                .unwrap(),
+        );
+        let revision = opened["response"]["payload"]["bootstrap"]["revision"]
+            .as_str()
+            .unwrap();
         let (receipt, bytes) = reply(
             &channel
-                .dispatch(&frame("export_project", generation, revision.as_bytes(), &[]))
+                .dispatch(&frame(
+                    "export_project",
+                    generation,
+                    revision.as_bytes(),
+                    &[],
+                ))
                 .unwrap(),
         );
         assert_eq!(receipt["response"]["type"], "project_exported");
-        assert_eq!(receipt["response"]["payload"]["byte_length"], json!(bytes.len()));
+        assert_eq!(
+            receipt["response"]["payload"]["byte_length"],
+            json!(bytes.len())
+        );
 
-        let (closed, _) = reply(&channel.dispatch(&frame("close_project", generation, &[], &[])).unwrap());
+        let (closed, _) = reply(
+            &channel
+                .dispatch(&frame("close_project", generation, &[], &[]))
+                .unwrap(),
+        );
         assert_eq!(closed, json!({ "status": "closed" }));
         let (reopened, _) = reply(
             &channel
@@ -237,10 +296,26 @@ mod tests {
     }
 
     #[test]
+    fn a_sealed_channel_runs_nothing() {
+        let channel = RuntimeChannel::default();
+        let generation = channel.attach();
+        channel.seal();
+        let tracker =
+            br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
+        assert_eq!(
+            channel.dispatch(&frame("command", generation, tracker, &[])),
+            Err(ChannelError::Sealed)
+        );
+    }
+
+    #[test]
     fn malformed_frames_run_nothing() {
         let channel = RuntimeChannel::default();
         let generation = channel.attach();
-        assert_eq!(channel.dispatch(&[1, 0]), Err(ChannelError::Frame("truncated")));
+        assert_eq!(
+            channel.dispatch(&[1, 0]),
+            Err(ChannelError::Frame("truncated"))
+        );
         assert_eq!(
             channel.dispatch(&frame("teleport", generation, &[], &[])),
             Err(ChannelError::Frame("unknown operation kind"))
@@ -256,8 +331,15 @@ mod tests {
         unknown_field.extend_from_slice(&u32::try_from(extra.len()).unwrap().to_le_bytes());
         unknown_field.extend_from_slice(extra);
         unknown_field.extend_from_slice(&0_u32.to_le_bytes());
-        assert_eq!(channel.dispatch(&unknown_field), Err(ChannelError::Frame("invalid header")));
-        let (observed, _) = reply(&channel.dispatch(&frame("observe_occurrence", generation, &[], &[])).unwrap());
+        assert_eq!(
+            channel.dispatch(&unknown_field),
+            Err(ChannelError::Frame("invalid header"))
+        );
+        let (observed, _) = reply(
+            &channel
+                .dispatch(&frame("observe_occurrence", generation, &[], &[]))
+                .unwrap(),
+        );
         assert_eq!(observed["error"]["code"], "no_project_open");
     }
 }

@@ -127,6 +127,50 @@ describe("native runtime channel", () => {
     expect(errors).toEqual(["The Designer runtime was closed."]);
   });
 
+  it("fences termination during attach and during dispatch", async () => {
+    let releaseAttach!: (generation: number) => void;
+    let dispatched = 0;
+    const attaching = new NativeRuntimeChannel({
+      attach: () => new Promise((resolve) => { releaseAttach = resolve; }),
+      dispatch: async () => { dispatched++; return replyFrame(ok); },
+    }, () => []);
+    const first = collect(attaching);
+    attaching.postMessage({ id: 1, kind: "command", request: { type: "edit_scalar" } });
+    await settle();
+    attaching.terminate();
+    releaseAttach(1);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(dispatched).toBe(0);
+    expect(first.messages).toEqual([]);
+
+    let releaseDispatch!: (frame: ArrayBuffer) => void;
+    const running = new NativeRuntimeChannel({
+      attach: async () => 1,
+      dispatch: () => new Promise((resolve) => { releaseDispatch = resolve; }),
+    }, () => []);
+    const second = collect(running);
+    running.postMessage({ id: 1, kind: "command", request: { type: "edit_scalar" } });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    running.terminate();
+    releaseDispatch(replyFrame(ok));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(second.messages).toEqual([]);
+  });
+
+  it("routes by the kind captured when the message was posted", async () => {
+    const kinds: string[] = [];
+    const channel = new NativeRuntimeChannel({
+      attach: async () => 1,
+      dispatch: async (frame) => { kinds.push(parseRequest(frame).header.kind); return replyFrame(ok); },
+    }, () => []);
+    collect(channel);
+    const message = { id: 1, kind: "observe_occurrence" };
+    channel.postMessage(message);
+    message.kind = "close_project";
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(kinds).toEqual(["observe_occurrence"]);
+  });
+
   it("frames round-trip", () => {
     const frame = encodeFrame("spreadsheet", 3, encoder.encode('{"type":"inspect"}'), new Uint8Array([1, 2]));
     expect(parseRequest(frame)).toMatchObject({ header: { kind: "spreadsheet", generation: 3 }, request: '{"type":"inspect"}' });

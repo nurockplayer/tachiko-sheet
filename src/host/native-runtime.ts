@@ -261,9 +261,9 @@ export class NativeRuntimeChannel extends EventTarget {
     // A Worker postMessage detaches transferred buffers; keep that contract.
     if (transfer.length > 0) structuredClone(transfer, { transfer });
     if (prepared === null) return;
-    const id = message.id;
+    const { id, kind } = message;
     const step = prepared;
-    this.#tail = this.#tail.then(() => this.#run(id, message.kind, step));
+    this.#tail = this.#tail.then(() => this.#run(id, kind, step));
   }
 
   terminate(): void {
@@ -283,9 +283,17 @@ export class NativeRuntimeChannel extends EventTarget {
     try {
       this.#generation ??= this.#transport.attach();
       const generation = await this.#generation;
+      // Terminated while attaching: nothing may be dispatched any more.
+      if (this.#failure !== null) {
+        this.dispatchEvent(errorEvent(this.#failure));
+        return;
+      }
       const frame = encodeFrame(kind, generation, prepared.request, prepared.payload);
       decoded = decodeFrame(await this.#transport.dispatch(frame));
+      // Terminated while the host ran it: the client already rejected the call.
+      if (this.#failure !== null) return;
     } catch (error) {
+      if (this.#failure !== null) return;
       this.#failure = error instanceof Error && error.message
         ? `The native Designer runtime stopped unexpectedly: ${error.message}`
         : "The native Designer runtime stopped unexpectedly.";

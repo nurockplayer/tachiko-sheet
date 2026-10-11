@@ -27,7 +27,11 @@ fn main() -> std::io::Result<()> {
             },
         };
         output.write_all(&[status])?;
-        output.write_all(&u32::try_from(reply.len()).expect("bounded reply").to_le_bytes())?;
+        output.write_all(
+            &u32::try_from(reply.len())
+                .expect("bounded reply")
+                .to_le_bytes(),
+        )?;
         output.write_all(&reply)?;
         output.flush()?;
     }

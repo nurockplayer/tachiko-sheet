@@ -61,7 +61,13 @@ function appPids() {
 
 async function launch() {
   assert.deepEqual(appPids(), [], "no earlier app process is running");
-  execFileSync("open", ["-n", "-a", app, "--env", `TACHIKO_SHEET_E2E_DIR=${scripts}`, "--env", `TACHIKO_SHEET_E2E_DOWNLOADS=${downloads}`]);
+  execFileSync("open", ["-n", "-a", app,
+    "--env", `TACHIKO_SHEET_E2E_DIR=${scripts}`,
+    "--env", `TACHIKO_SHEET_E2E_DOWNLOADS=${downloads}`,
+    // A person takes time in the Save panel; exports must survive that wait.
+    "--env", "TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS=2500",
+    // The unsaved-work dialog is answered "Cancel": closing must then not happen.
+    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER=cancel"]);
   for (let attempt = 0; attempt < 100 && appPids().length === 0; attempt++) await sleep(100);
   const pids = appPids();
   assert.equal(pids.length, 1, "exactly one app process launched");
@@ -69,11 +75,28 @@ async function launch() {
   return pids[0];
 }
 
+const hostLog = async () => existsSync(path.join(scripts, "host.log")) ? readFile(path.join(scripts, "host.log"), "utf8") : "";
+
+/** Close the window exactly like the close button or ⌘W, through the host's unsaved-work guard. */
+async function requestClose() {
+  // Report this script's result first; the window may be gone right after.
+  await evaluate("setTimeout(() => window.__TAURI_INTERNALS__.invoke('e2e_request_close'), 100); return true;");
+}
+
 async function quit(pid) {
-  // The same host path as closing the window with nothing unsaved.
-  await evaluate("window.__TAURI_INTERNALS__.invoke('window_close_check', { unsaved: false }); return true;");
+  await requestClose();
   for (let attempt = 0; attempt < 150 && appPids().includes(pid); attempt++) await sleep(100);
-  assert.ok(!appPids().includes(pid), "the app process exited");
+  assert.ok(!appPids().includes(pid), `the app process exited; host log: ${await hostLog()}`);
+}
+
+async function closeRefusedWhileUnsaved(pid) {
+  const before = (await hostLog()).split("close dialog:").length;
+  await requestClose();
+  for (let attempt = 0; attempt < 100 && (await hostLog()).split("close dialog:").length === before; attempt++) await sleep(50);
+  assert.ok((await hostLog()).split("close dialog:").length > before, "closing with unsaved work asks first");
+  await sleep(500);
+  assert.ok(appPids().includes(pid), "answering Cancel keeps the app and its work open");
+  assert.equal(await evaluate("return Boolean(document.querySelector('[data-testid=\"project-ready\"]'));"), true, "the work is still open");
 }
 
 // ---- script channel ----------------------------------------------------------
@@ -260,8 +283,9 @@ async function openSaved(name) {
 
 async function download(format, { replace = false } = {}) {
   // A fresh export starts from an empty folder so a stale file cannot pass; a
-  // replacing export keeps the earlier file and must atomically supersede it.
-  if (!replace) for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
+  // replacing export must atomically supersede an invalid sentinel file.
+  for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
+  if (replace) await writeFile(path.join(downloads, `Imported workbook.${format}`), "sentinel: not an export\n");
   const started = Date.now();
   await timed(`prepare_${format}`, () => evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find((t) => nameOf(t) === "Import & export"), "export tab"));
@@ -275,9 +299,11 @@ async function download(format, { replace = false } = {}) {
     return true;
   `);
   let file;
-  for (let attempt = 0; attempt < 300 && !file; attempt++) {
+  for (let attempt = 0; attempt < 600 && !file; attempt++) {
     for (const name of await readdir(downloads)) {
-      if (!name.startsWith(".") && name.endsWith(`.${format}`) && (await stat(path.join(downloads, name))).mtimeMs >= started - 1000) file = name;
+      if (name.startsWith(".") || !name.endsWith(`.${format}`)) continue;
+      const content = await readFile(path.join(downloads, name));
+      if ((await stat(path.join(downloads, name))).mtimeMs >= started - 1000 && !content.toString("latin1").startsWith("sentinel:")) file = name;
     }
     if (!file) await sleep(100);
   }
@@ -362,6 +388,24 @@ async function salesJourney() {
   assert.match(report, /NOTE\s*1000/);
   assert.match(report, /PEN\s*1000/);
   await screenshot("sales-report");
+  // Two PNG exports of the same unchanged chart: each is its own download.
+  for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
+  const finishedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("finished blob:") && line.endsWith(" true"));
+  for (let round = 1; round <= 2; round++) {
+    await evaluate(`click(await waitFor(() => button("Export current PNG"), "PNG export")); return true;`);
+    for (let attempt = 0; attempt < 300 && (await finishedPngs()).length < round; attempt++) await sleep(50);
+    assert.equal((await finishedPngs()).length, round, `PNG export ${round} finished; host: ${await hostLog()}`);
+  }
+  const urls = (await finishedPngs()).map((line) => line.split(" ")[1]);
+  assert.notEqual(urls[0], urls[1], "each PNG export has its own download identity");
+  const pngs = (await readdir(downloads)).filter((name) => name.startsWith("tachiko-sheet-report") && name.endsWith(".png"));
+  assert.ok(pngs.length >= 1, `report PNG saved; folder: ${JSON.stringify(await readdir(downloads))}`);
+  for (const name of pngs) {
+    assert.deepEqual([...(await readFile(path.join(downloads, name))).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${name} is a PNG`);
+  }
+  assert.deepEqual((await readdir(downloads)).filter((n) => n.startsWith(".")), [], "no temporary PNG remains");
+  assert.doesNotMatch(await hostLog(), /export failure/, "no export was reported as failed");
+  await closeRefusedWhileUnsaved(pid);
   await saveCopy(name);
   await quit(pid);
 
@@ -370,6 +414,22 @@ async function salesJourney() {
   await openSaved(name);
   assert.deepEqual(await evaluate(`return visibleTable("catalog");`), [["PEN", "PEN", "250"], ["NOTE", "NOTE", "500"]], "reopened Catalog");
   assert.deepEqual(await evaluate(`return resultRows();`), [["NOTE", "1000"], ["PEN", "1000"]], "reopened summary recomputed");
+  assert.equal(await unsavedCheck(), false, "a reopened saved copy is clean");
+  // An edit still being published counts as unsaved work, even on clean work.
+  const inFlight = await evaluate(`
+    await visibleTable("catalog");
+    const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
+    const row = [...grid().querySelectorAll("tbody tr")].find((r) => r.textContent.includes("PEN"));
+    dblclick(row.querySelectorAll("td")[headers.indexOf("price")]);
+    fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "300");
+    press(textbox("Edit cell"), "Enter");
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    const busy = document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy");
+    await waitFor(() => current(), "edit settled");
+    return { unsaved: event.defaultPrevented, busy };
+  `);
+  assert.equal(inFlight.unsaved, true, `an in-flight edit blocks closing (busy=${inFlight.busy})`);
   await closeToHome();
   await quit(pid);
 }
@@ -410,6 +470,7 @@ try {
     assert.match(await cellText(0, 0), /^invented_00000,雪"quote"/, "readable first imported cell");
     assert.equal(await cellText(ROWS - 1, 1), "https://example.invalid/account/08405");
     assert.equal(await unsavedCheck(), true, "imported work counts as unsaved for the close guard");
+    await closeRefusedWhileUnsaved(pid);
 
     for (const [row, column, value] of EDITS) await edit(row, column, value);
     const original = (row, column) => [

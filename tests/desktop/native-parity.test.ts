@@ -215,13 +215,14 @@ async function run(createWorker: () => Worker, inputs: Inputs): Promise<Log> {
   }
 }
 
-const runnable = existsSync(harness);
-describe.skipIf(!runnable)("native desktop runtime parity with the Web Worker/WASM runtime", () => {
+describe("native desktop runtime parity with the Web Worker/WASM runtime", () => {
   let work: string;
   let inputs: Inputs;
   let wasmUrl: string;
 
   beforeAll(async () => {
+    // A missing harness is a failed gate, never a skipped comparison.
+    if (!existsSync(harness)) throw new Error(`native frame harness not built: ${harness}`);
     work = await mkdtemp(path.join(tmpdir(), "tachiko-native-parity-"));
     execFileSync("python3", ["-I", path.join(root, "acceptance", "capacity-8406", "oracle.py"), "generate", path.join(work, "fixtures")], { stdio: "ignore" });
     const csv = await readFile(path.join(work, "fixtures", "source-8406.csv"));

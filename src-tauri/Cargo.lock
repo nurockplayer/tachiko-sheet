@@ -675,7 +675,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.7",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -810,7 +810,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -996,7 +996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1321,19 +1321,8 @@ checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
  "libc",
- "r-efi 5.3.0",
+ "r-efi",
  "wasip2",
-]
-
-[[package]]
-name = "getrandom"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
-dependencies = [
- "cfg-if",
- "libc",
- "r-efi 6.0.0",
 ]
 
 [[package]]
@@ -2093,7 +2082,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2717,12 +2706,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
-name = "r-efi"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
 name = "rand"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2918,7 +2901,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3266,7 +3249,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3432,7 +3415,7 @@ dependencies = [
 [[package]]
 name = "tachiko-designer-runtime"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "quick-xml 0.37.5",
  "serde",
@@ -3446,7 +3429,7 @@ dependencies = [
 [[package]]
 name = "tachiko-diff-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "tachiko-formula-engine",
  "tachiko-semantic-core",
@@ -3456,7 +3439,7 @@ dependencies = [
 [[package]]
 name = "tachiko-formula-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "tachiko-semantic-core",
  "thiserror 2.0.21",
@@ -3465,7 +3448,7 @@ dependencies = [
 [[package]]
 name = "tachiko-merge-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "tachiko-formula-engine",
  "tachiko-semantic-core",
@@ -3474,7 +3457,7 @@ dependencies = [
 [[package]]
 name = "tachiko-semantic-core"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "serde",
 ]
@@ -3494,7 +3477,7 @@ dependencies = [
 [[package]]
 name = "tachiko-storage"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "renamore",
  "ryu-js",
@@ -3509,7 +3492,7 @@ dependencies = [
 [[package]]
 name = "tachiko-workspace-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=3b3853e5cbfa13a093b792f88a0492f7bb55755c#3b3853e5cbfa13a093b792f88a0492f7bb55755c"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=8f2eab93df816d185202fc7af3becbe1f85ca1b0#8f2eab93df816d185202fc7af3becbe1f85ca1b0"
 dependencies = [
  "serde",
  "tachiko-diff-engine",
@@ -3796,10 +3779,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4110,7 +4093,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4139,7 +4122,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4529,7 +4512,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4550,7 +4533,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-quartz-core",
  "raw-window-handle",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
  "windows-version",
 ]
 
@@ -4856,7 +4839,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
