@@ -298,6 +298,8 @@ export interface SheetShellProps {
   onExportReportPng?(witness: ViewWitness, report: ReportConfiguration): boolean;
   onRemoveReport?(): boolean;
   interop?: InteropState | null;
+  /** The user's file name for imported work; display only. */
+  importedSourceName?: string | null;
   onInspectImport?(file: File): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;
   onCancelImport?(): void;

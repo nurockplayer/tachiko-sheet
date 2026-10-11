@@ -2159,6 +2159,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onExportReportPng={exportReportPng}
           onRemoveReport={removeReport}
           interop={interop}
+          importedSourceName={importedSourceRef.current?.name ?? null}
           onInspectImport={inspectImport}
           onImportCandidate={importCandidate}
           onCancelImport={cancelImport}
