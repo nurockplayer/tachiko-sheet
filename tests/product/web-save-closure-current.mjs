@@ -48,7 +48,7 @@ const fixturePins = {
   "date-only-private.json": "1312dabec0cfb6b8cbf38f6239478198b6e94bdf55b0c09c9e90e04490ee89b0",
   "rows-64.csv": "494c650dc55391a804b5479c64236bc7e05f9fb13c39cc0bd5c835ce66672c07",
   "fields-16.csv": "77424cc5b9161699a2557bf8c099e0c5541e5a8bb7dfc9d6fee3dd9d709bc8cb",
-  "rows-65.csv": "7fc5607116678d087679941cfc43693c2b4c90060eca030cde5817ffc5c6ee75",
+  "rows-8407.csv": "084ea2c83af94b61aab2117ca26f42c573269b7ef11b1f4a581631e228f68001",
   "fields-17.csv": "4139cce2a9cdc211b4035a727ef125742fcd1459bae2ab3232616561831397e4",
 };
 for (const [file, expected] of Object.entries(sourcePins)) assert.equal(sha256(await readFile(path.join(root, file))), expected, `immutable source drift: ${file}`);
@@ -65,7 +65,7 @@ const expectedCases = [
   "D-canonical-opaque-complete-copy-controls",
   "E-CSV64-row-control",
   "E-CSV16-column-control",
-  "E-profile-refusal-rows-65.csv",
+  "E-profile-refusal-rows-8407.csv",
   "E-profile-refusal-fields-17.csv",
   "F-existing-read-fault-no-publication-recovery",
   "R-unchanged-private-reader-Date-fixture",
@@ -511,7 +511,7 @@ try {
     return { before, after };
   });
 
-  for (const [caseIndex, file] of [[7, "rows-65.csv"], [8, "fields-17.csv"]]) await runCase(expectedCases[caseIndex], async () => {
+  for (const [caseIndex, file] of [[7, "rows-8407.csv"], [8, "fields-17.csv"]]) await runCase(expectedCases[caseIndex], async () => {
     await launchExampleThenClose();
     const before = await counts();
     await activePage.locator('input[type="file"][accept*=".csv"]').setInputFiles(path.join(prep, "fixtures", file));

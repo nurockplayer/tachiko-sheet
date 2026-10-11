@@ -57,6 +57,12 @@ export class WorkerDesignerClient {
             throw new Error("Expected imported project inspection.");
         return expectResponse("opened", reply.response);
     }
+    async openImportedProject(bytes, metadata) {
+        const reply = await this.#spreadsheet({ type: "open_project", occurrence_id: freshOccurrenceId(), metadata }, bytes);
+        if (reply.status !== "ok")
+            throw new Error("Expected imported project open.");
+        return expectResponse("opened", reply.response);
+    }
     async exportSpreadsheet(expectedRevision, metadata, format, collection) {
         const reply = await this.#spreadsheet({ type: "export", expected_revision: expectedRevision, metadata, format, collection });
         if (reply.status !== "spreadsheet_exported")
@@ -83,6 +89,12 @@ export class WorkerDesignerClient {
     }
     async newBudget() {
         return expectResponse("opened", await this.#command({ type: "new_budget", occurrence_id: freshOccurrenceId() }));
+    }
+    async newTable(name, columns) {
+        return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
+    }
+    async duplicateCollection(expectedRevision, collection, name) {
+        return expectResponse("duplicated", await this.#command({ type: "duplicate_collection", expected_revision: expectedRevision, collection, name }));
     }
     async trackerCommand(request) {
         return expectResponse("published", await this.#command(request));
@@ -133,6 +145,17 @@ export class WorkerDesignerClient {
         const reply = await this.#send({
             id: this.#claimId(),
             kind: "export_project",
+            expected_revision: expectedRevision,
+        });
+        if (reply.status !== "project_exported") {
+            throw new Error(`Expected project export, received '${reply.status}'.`);
+        }
+        return reply.export;
+    }
+    async exportProjectV3(expectedRevision) {
+        const reply = await this.#send({
+            id: this.#claimId(),
+            kind: "export_project_v3",
             expected_revision: expectedRevision,
         });
         if (reply.status !== "project_exported") {

@@ -15,6 +15,12 @@ export type DesignerWasmBridge = {
     } | Extract<DesignerWireReply, {
         status: "error";
     }>;
+    exportProjectV3(expectedRevision: string): {
+        status: "ok";
+        export: ProjectExport;
+    } | Extract<DesignerWireReply, {
+        status: "error";
+    }>;
     exportCanonicalTree(expectedRevision: string): {
         status: "ok";
         export: CanonicalTreeExport;

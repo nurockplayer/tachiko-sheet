@@ -123,6 +123,10 @@ export type SpreadsheetOperation = {
     type: "inspect_project";
     metadata: InteropMetadata;
 } | {
+    type: "open_project";
+    occurrence_id: string;
+    metadata: InteropMetadata;
+} | {
     type: "export";
     expected_revision: string;
     metadata: InteropMetadata;

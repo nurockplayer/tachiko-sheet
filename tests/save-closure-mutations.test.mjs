@@ -36,7 +36,7 @@ const currentCases = [
   'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
   'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
   'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV16-column-control',
-  'E-profile-refusal-rows-65.csv', 'E-profile-refusal-fields-17.csv',
+  'E-profile-refusal-rows-8407.csv', 'E-profile-refusal-fields-17.csv',
   'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
 ];
 

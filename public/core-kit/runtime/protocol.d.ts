@@ -63,6 +63,7 @@ export type FieldProjection = {
 };
 export type TableProjection = {
     tracker_profile?: boolean;
+    native_table_profile?: boolean;
     revision: string;
     collection: CollectionSummary;
     columns: Array<{
@@ -138,6 +139,10 @@ export type KeyedGroupedSumPublishedProjection = {
     publication: PublicationProjection;
     result: KeyedGroupedSumProjection;
 };
+export type DuplicateCollectionProjection = {
+    publication: PublicationProjection;
+    collection: CollectionSummary;
+};
 export type FailureProjection = {
     code: string;
     message: string;
@@ -160,8 +165,59 @@ export type TrackerCommand = {
     expected_revision: string;
     entities: string[];
 } | {
+    type: "insert_row";
+    expected_revision: string;
+    collection: string;
+    initializers: Array<{
+        field: string;
+        input: ScalarEditInput;
+    }>;
+} | {
+    type: "remove_table_rows";
+    expected_revision: string;
+    collection: string;
+    entities: string[];
+} | {
+    type: "add_column";
+    expected_revision: string;
+    collection: string;
+    name: string;
+    field_type: string;
+    initializers: Array<{
+        entity: string;
+        input: ScalarEditInput;
+    }>;
+} | {
+    type: "rename_column";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    name: string;
+} | {
+    type: "remove_column";
+    expected_revision: string;
+    collection: string;
+    field: string;
+} | {
     type: "undo" | "redo";
     expected_revision: string;
+};
+export type ScalarEditInput = {
+    kind: "number";
+    input: string;
+} | {
+    kind: "text";
+    value: string;
+} | {
+    kind: "boolean";
+    value: boolean;
+} | {
+    kind: "date";
+    value: string;
+};
+export type NewTableColumnInput = {
+    name: string;
+    field_type: string;
 };
 export type FormulaCopy = {
     source: FieldTarget;
@@ -188,6 +244,16 @@ export type DesignerRequest = {
     type: "new_budget";
     occurrence_id: string;
 } | {
+    type: "new_table";
+    occurrence_id: string;
+    name: string;
+    columns: NewTableColumnInput[];
+} | {
+    type: "duplicate_collection";
+    expected_revision: string;
+    collection: string;
+    name: string;
+} | {
     type: "bootstrap";
     occurrence_id: string;
 } | {
@@ -201,19 +267,7 @@ export type DesignerRequest = {
     type: "edit_scalar";
     expected_revision: string;
     target: FieldTarget;
-    input: {
-        kind: "number";
-        input: string;
-    } | {
-        kind: "text";
-        value: string;
-    } | {
-        kind: "boolean";
-        value: boolean;
-    } | {
-        kind: "date";
-        value: string;
-    };
+    input: ScalarEditInput;
 } | {
     type: "formula_update";
     expected_revision: string;
@@ -258,6 +312,9 @@ export type DesignerResponse = {
 } | {
     type: "published";
     payload: PublicationProjection;
+} | {
+    type: "duplicated";
+    payload: DuplicateCollectionProjection;
 } | {
     type: "project_exported";
     payload: ProjectExportProjection;
@@ -315,6 +372,10 @@ export type WorkerRequest = {
 } | {
     id: number;
     kind: "export_project";
+    expected_revision: string;
+} | {
+    id: number;
+    kind: "export_project_v3";
     expected_revision: string;
 } | {
     id: number;
