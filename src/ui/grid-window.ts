@@ -78,3 +78,13 @@ export function scrollTopToReveal(
   if (bottom > visibleBottom) return bottom - Math.max(rowHeight, viewportHeight - headerHeight);
   return null;
 }
+
+/**
+ * Row pitch for spacer heights: the median rendered row height, so a few
+ * rows that differ (a focused or edited row kept rendered) cannot skew the
+ * geometry of thousands of rows. Returns null when nothing is measurable.
+ */
+export function measuredRowPitch(heights: readonly number[]): number | null {
+  const valid = heights.filter((height) => Number.isFinite(height) && height > 0).sort((a, b) => a - b);
+  return valid.length === 0 ? null : valid[Math.floor(valid.length / 2)]!;
+}

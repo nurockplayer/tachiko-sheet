@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal } from "./grid-window.js";
+import { gridWindowAround, gridWindowRange, gridWindowSegments, measuredRowPitch, scrollTopToReveal } from "./grid-window.js";
 
 describe("grid window", () => {
   it("covers the visible rows plus overscan, clamped to the table", () => {
@@ -40,5 +40,14 @@ describe("grid window", () => {
     expect(scrollTopToReveal(5, 32, 32, 0, 352)).toBeNull();
     expect(scrollTopToReveal(4000, 32, 32, 0, 352)).toBe(32 * 4001 - 320);
     expect(scrollTopToReveal(2, 32, 32, 320, 352)).toBe(64);
+  });
+});
+
+describe("measured row pitch", () => {
+  it("uses the median rendered row so a few differing rows cannot skew it", () => {
+    expect(measuredRowPitch([44, 28, 28, 28, 28])).toBe(28);
+    expect(measuredRowPitch([28, 28, 30])).toBe(28);
+    expect(measuredRowPitch([0, Number.NaN, 32])).toBe(32);
+    expect(measuredRowPitch([])).toBeNull();
   });
 });

@@ -62,25 +62,13 @@ jobs:
       - name: Build the packaged e2e variant
         run: pnpm desktop:build:e2e
 
-      - name: Packaged app lifecycle — Sales journey, leave guards, saves, full quit and relaunch
+      - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
         # The runner's display is small; keep the whole window on screen.
         env:
           TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
-          DESKTOP_JOURNEYS: sales
         run: |
           system_profiler SPDisplaysDataType | grep -i resolution || true
           caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
-
-      # Informational on hosted runners: their virtualized WKWebView stops
-      # scrolling the 8,406-row grid about 1,000 px short of the last rows
-      # (not reproducible on a real Mac, in Chromium or in Playwright WebKit).
-      # The full journey is required on a real Mac before each desktop release.
-      - name: Packaged app lifecycle — 8,406 x 3 CSV/XLSX (informational on hosted runners)
-        continue-on-error: true
-        env:
-          TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
-          DESKTOP_JOURNEYS: capacity
-        run: caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
 
       - name: Record artifact identity
         run: |
