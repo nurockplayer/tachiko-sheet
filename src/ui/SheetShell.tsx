@@ -1167,8 +1167,21 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  // An unapplied cell value is never published implicitly. Anything else that
+  // installs a new revision (or may clear the view) would drop it, so refuse
+  // and return to the Table panel, whose editor autofocus retains the draft.
+  function refuseWhileCellDraft(action: string): boolean {
+    if (!cellDraftActive) return false;
+    setLocalError(`Apply or cancel the value you are editing before ${action}.`);
+    setTab("table");
+    // Already on Table, the editor does not remount; return focus explicitly.
+    window.requestAnimationFrame(() => editorInputRef.current?.focus());
+    return true;
+  }
+
   async function applyNotes(): Promise<void> {
     if (!notesField || !notesEditable || !notesDirty || !notesDraftBound || controlsLocked) return;
+    if (refuseWhileCellDraft("applying notes")) return;
     const accepted = await runCommit(notesField.target, { kind: "text", value: notesValue });
     if (accepted) {
       setNotesDrafts((drafts) => drafts.filter((draft) => draft !== activeNotesDraft));
@@ -1294,6 +1307,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function refresh(): Promise<void> {
     setSalesEntryOutcome(null);
+    if (currentness !== "unknown" && refuseWhileCellDraft("refreshing")) return;
     setLocalError(null);
     try {
       await onRefresh();
@@ -1978,7 +1992,7 @@ export function SheetShell(props: SheetShellProps) {
             ) : null}
             <div className="ts-row-actions">
               <button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button>
-              <button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button>
+              <button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && !refuseWhileCellDraft("committing a cleanup preview") && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button>
             </div>
           </div>
         ) : null}
