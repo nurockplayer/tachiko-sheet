@@ -546,7 +546,7 @@ body { margin: 0; }
   padding: 3px 8px;
   border-bottom: 1px solid var(--ts-line);
   text-align: left;
-  white-space: nowrap;
+  white-space: pre;
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
