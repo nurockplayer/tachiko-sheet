@@ -29,15 +29,14 @@ Sheet UI / application (unchanged)
 - Exports (CSV/XLSX/PNG/profile) do not use WebKit downloads. The page hands
   the bytes to the host through the `HostFiles` port (`src/host/host-files.ts`;
   the Web keeps an ordinary download), in request order; the host asks with a
-  Save sheet and writes a new, exclusively created file beside the chosen one,
-  then renames it into place (`src-tauri/src/saves.rs`). Replacing a file
-  keeps its permission bits, ACL and extended attributes; the name is checked
-  to still be the written file before and after the rename, and the folder is
-  flushed afterwards. The page learns
-  whether the file was saved or cancelled, and a failure says so in the page;
-  it never leaves a partial file or replaces an existing one. A save from an
-  earlier page (before a reload) is refused. All host dialogs are sheets on
-  the Sheet window, and none opens inside a WebKit callback.
+  Save sheet and **creates a new file** — "Save a copy", never replacing
+  anything (`src-tauri/src/saves.rs`). An existing name (file, folder, symlink,
+  pipe) is refused with a clear message and left untouched; the bytes go to an
+  exclusive temporary file moved into place with `RENAME_EXCL`, the name is
+  checked to be that file, and the folder is flushed. The page learns whether
+  the file was saved or cancelled; failures say so in the page. Saves from an
+  earlier page are refused, and a transport retry of a save returns its
+  original receipt. All host dialogs are sheets on the Sheet window.
 - Closing the window, ⌘W, Quit (menu ⌘Q, Dock, logout) and reloading all ask
   first when work is unsaved, a change is still in progress, or an export is
   still being saved (the Sheet's own unsaved-work guard). While that is decided,

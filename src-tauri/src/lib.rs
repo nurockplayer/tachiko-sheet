@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use rfd::{AsyncFileDialog, AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
-use saves::{Published, Saves, WriteError};
+use saves::{Claim, Published, Saves, WriteError};
 use tauri::menu::{Menu, MenuItem, MenuItemKind};
 use tauri::webview::DownloadEvent;
 use tauri::{
@@ -40,9 +40,17 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 // ---- runtime commands ---------------------------------------------------------
 
+/// Attach a page's runtime channel; see [`RuntimeChannel::attach_for`].
 #[tauri::command]
-async fn runtime_attach(channel: State<'_, RuntimeChannel>) -> Result<u64, String> {
-    Ok(channel.attach())
+async fn runtime_attach(
+    runtime: State<'_, RuntimeChannel>,
+    saves: State<'_, Saves>,
+    page: u64,
+    channel: u64,
+) -> Result<u64, String> {
+    runtime
+        .attach_for(page, channel, saves.page())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -375,10 +383,11 @@ fn open_bundled_page(app: &AppHandle, url: &Url) {
 /// Largest export the page may hand over.
 const MAX_SAVE_BYTES: usize = 256 * 1024 * 1024;
 
-/// A page starts saving; its epoch fences saves from earlier pages.
+/// A starting page learns its identity; it fences its saves and runtime
+/// attaches from those of earlier pages.
 #[tauri::command]
-async fn save_attach(saves: State<'_, Saves>) -> Result<u64, String> {
-    Ok(saves.attach())
+async fn page_identity(saves: State<'_, Saves>) -> Result<u64, String> {
+    Ok(saves.page())
 }
 
 /// Ask where to save one export and write it there. "saved" or "cancelled";
@@ -389,15 +398,41 @@ async fn save_export(
     saves: State<'_, Saves>,
     request: tauri::ipc::Request<'_>,
 ) -> Result<String, String> {
-    let tauri::ipc::InvokeBody::Raw(frame) = request.body() else {
+    // Every save has an id: a transport retry of it gets the original receipt.
+    let Some(id) = request
+        .headers()
+        .get(SAVE_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .filter(|id| !id.is_empty() && id.len() <= 64)
+        .map(str::to_owned)
+    else {
         return Err("The export could not be read. Nothing was saved.".to_owned());
     };
+    match saves.claim(&id).await {
+        Claim::Receipt(outcome) => return outcome,
+        Claim::Run => {}
+    }
+    let outcome = match request.body() {
+        tauri::ipc::InvokeBody::Raw(frame) => save_frame(&app, &saves, frame).await,
+        // Not a frame this page sent: the save's real outcome is unknown here.
+        tauri::ipc::InvokeBody::Json(_) => Err(
+            "The export may not have been saved. Check the destination before relying on it."
+                .to_owned(),
+        ),
+    };
+    saves.receipt(&id, outcome.clone());
+    outcome
+}
+
+const SAVE_ID_HEADER: &str = "tachiko-save-id";
+
+async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8]) -> Result<String, String> {
     let Some((epoch, name, bytes)) = parse_save_frame(frame) else {
         return Err("The export could not be read. Nothing was saved.".to_owned());
     };
     // One Save sheet at a time; the leave decision never waits on this.
     let _turn = saves.turn.lock().await;
-    let Some(destination) = choose_destination(&app, &name).await else {
+    let Some(destination) = choose_destination(app, &name).await else {
         return Ok("cancelled".to_owned());
     };
     let published = saves.publish(epoch, bytes.to_vec(), destination).await;
@@ -406,8 +441,11 @@ async fn save_export(
     match published {
         Ok(Published::Saved) => Ok("saved".to_owned()),
         Ok(Published::Cancelled) => Ok("cancelled".to_owned()),
+        Err(WriteError::Exists) => Err(format!(
+            "“{name}” already exists. Exports are saved as new files and never replace one; choose another name."
+        )),
         Err(WriteError::NotSaved(error)) => Err(format!(
-            "“{name}” was not saved ({error}). Any file already there is unchanged."
+            "“{name}” was not saved ({error}). Nothing at the destination changed."
         )),
         Err(WriteError::Unconfirmed(error)) => Err(format!(
             "“{name}” was written, but Tachiko Sheet could not confirm it ({error}). Check the file before relying on it."
@@ -516,7 +554,7 @@ pub fn run() {
         runtime_attach,
         runtime_dispatch,
         window_close_check,
-        save_attach,
+        page_identity,
         save_export
     ]);
     #[cfg(feature = "e2e")]
@@ -524,7 +562,7 @@ pub fn run() {
         runtime_attach,
         runtime_dispatch,
         window_close_check,
-        save_attach,
+        page_identity,
         save_export,
         e2e::e2e_result,
         e2e::e2e_request_close,

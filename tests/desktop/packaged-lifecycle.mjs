@@ -336,11 +336,13 @@ async function openSaved(name) {
   `));
 }
 
-async function download(format, { replace = false } = {}) {
-  // A fresh export starts from an empty folder so a stale file cannot pass; a
-  // replacing export must atomically supersede an invalid sentinel file.
+async function download(format, { existing = false } = {}) {
+  // A fresh export starts from an empty folder so a stale file cannot pass.
+  // Exports are saved as new files only: onto an existing name (a sentinel
+  // here) the export is refused, the page says so and the file is untouched.
   for (const name of await readdir(downloads)) await rm(path.join(downloads, name), { force: true });
-  if (replace) await writeFile(path.join(downloads, `Imported workbook.${format}`), "sentinel: not an export\n");
+  const sentinel = path.join(downloads, `Imported workbook.${format}`);
+  if (existing) await writeFile(sentinel, "sentinel: not an export\n");
   const started = Date.now();
   await timed(`prepare_${format}`, () => evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find((t) => nameOf(t) === "Import & export"), "export tab"));
@@ -348,11 +350,19 @@ async function download(format, { replace = false } = {}) {
     await waitFor(() => dialog("Confirm download"), "download consent");
     return true;
   `));
-  await evaluate(`
+  const shown = await evaluate(`
     click(await waitFor(() => button("Download", dialog("Confirm download")), "enabled Download"));
     await waitFor(() => !dialog("Confirm download"), "consent closed");
-    return true;
+    ${existing ? 'await waitFor(() => document.body.innerText.includes("already exists"), "existing-name refusal");' : ""}
+    return document.body.innerText.includes("already exists");
   `);
+  if (existing) {
+    assert.equal(shown, true, "the page explains that the name already exists");
+    assert.equal(await readFile(sentinel, "utf8"), "sentinel: not an export\n", "the existing file is untouched");
+    assert.deepEqual((await readdir(downloads)).filter((name) => name.startsWith(".")), [], "no temporary file remains");
+    assert.match(await hostLog(), /Err\(Exists\)/);
+    return sentinel;
+  }
   let file;
   for (let attempt = 0; attempt < 600 && !file; attempt++) {
     for (const name of await readdir(downloads)) {
@@ -457,13 +467,17 @@ async function salesJourney() {
     return event.defaultPrevented;
   `);
   assert.equal(encoding, true, "a PNG export in progress blocks leaving");
-  for (let attempt = 0; attempt < 400 && (await savedPngs()).length < before + 2; attempt++) await sleep(50);
-  assert.equal((await savedPngs()).length, before + 2, `both overlapping PNG exports were saved; host: ${await hostLog()}`);
+  // Both are handled in order: the first is saved, the second finds the name
+  // taken and is refused (exports never replace a file).
+  const refusedPngs = async () => (await hostLog()).split("\n").filter((line) => line.startsWith("saved tachiko-sheet-report.png: Err(Exists)"));
+  for (let attempt = 0; attempt < 400 && ((await savedPngs()).length < before + 1 || (await refusedPngs()).length < 1); attempt++) await sleep(50);
+  assert.equal((await savedPngs()).length, before + 1, `the first PNG export was saved; host: ${await hostLog()}`);
+  assert.equal((await refusedPngs()).length, 1, `the second PNG export was refused, not written over the first; host: ${await hostLog()}`);
   assert.equal(await unsavedCheck(), true, "the edited Sales work itself is still unsaved");
   const png = path.join(downloads, "tachiko-sheet-report.png");
   assert.deepEqual([...(await readFile(png)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], "the saved report is a PNG");
   assert.deepEqual((await readdir(downloads)).filter((n) => n.startsWith(".")), [], "no temporary file remains");
-  assert.doesNotMatch(await hostLog(), /download refused|: Err\(/, "no export went through WebKit or failed");
+  assert.doesNotMatch(await hostLog(), /download refused|Err\((NotSaved|Unconfirmed)/, "no export went through WebKit or failed");
   await closeRefusedWhileUnsaved(pid);
   await quitRefusedWhileUnsaved(pid);
   await terminateRefusedWhileUnsaved(pid);
@@ -580,7 +594,7 @@ try {
     await openSaved(name);
     await assertEdited("after full restart");
     const csv = await download("csv");
-    await download("csv", { replace: true });
+    await download("csv", { existing: true });
     const xlsx = await download("xlsx");
 
     await closeToHome();

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { HostFiles, SaveOutcome } from "./host-files.js";
+import { pageIdentity } from "./tauri-page.js";
 
 const encoder = new TextEncoder();
 
@@ -7,12 +8,6 @@ const encoder = new TextEncoder();
 let pending = 0;
 /** Saves run one after another, in the order they were requested. */
 let queue: Promise<unknown> = Promise.resolve();
-/**
- * This page's save epoch, learned when the page starts: saves from an earlier
- * page are refused by the host, and a late first save cannot borrow a newer
- * page's epoch.
- */
-const epoch: Promise<number> = invoke<number>("save_attach");
 
 /**
  * A save in progress is work the person asked for: leaving now would lose
@@ -39,10 +34,11 @@ export function encodeSaveFrame(saveEpoch: number, name: string, bytes: Uint8Arr
 
 async function save(suggestedName: string, content: Blob | Promise<Blob>): Promise<SaveOutcome> {
   const bytes = new Uint8Array(await (await content).arrayBuffer());
-  const frame = encodeSaveFrame(await epoch, suggestedName, bytes);
+  const frame = encodeSaveFrame(await pageIdentity, suggestedName, bytes);
   let outcome: string;
   try {
-    outcome = await invoke<string>("save_export", frame);
+    // The id lets a transport retry of this save return its original receipt.
+    outcome = await invoke<string>("save_export", frame, { headers: { "tachiko-save-id": crypto.randomUUID() } });
   } catch (error) {
     // The host answers a failure with its own message; anything else means
     // the reply was lost and the file may or may not have been written.

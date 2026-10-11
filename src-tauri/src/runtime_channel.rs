@@ -55,6 +55,8 @@ struct FrameHeader {
 struct ChannelState {
     generation: u64,
     host: DesignerHost,
+    /// The (page, channel) that attached last; older ones are refused.
+    attached: (u64, u64),
 }
 
 /// Whether new operations may reach the runtime.
@@ -89,6 +91,7 @@ impl Default for RuntimeChannel {
             state: Mutex::new(ChannelState {
                 generation: 0,
                 host: DesignerHost::new(),
+                attached: (0, 0),
             }),
             gate: Mutex::new(Gate {
                 phase: Phase::Open,
@@ -109,6 +112,29 @@ impl RuntimeChannel {
         state.generation += 1;
         state.host = DesignerHost::new();
         state.generation
+    }
+
+    /// Attach channel `channel` of page `page` (both host/page issued, rising).
+    /// A channel of an earlier page, or an earlier channel of this page, is
+    /// refused, so a late attach can never reset newer work; a retry of the
+    /// same attach returns the same generation without resetting anything.
+    pub fn attach_for(
+        &self,
+        page: u64,
+        channel: u64,
+        current_page: u64,
+    ) -> Result<u64, ChannelError> {
+        let mut state = self.lock();
+        if page != current_page || (page, channel) < state.attached {
+            return Err(ChannelError::StaleGeneration);
+        }
+        if (page, channel) == state.attached {
+            return Ok(state.generation);
+        }
+        state.attached = (page, channel);
+        state.generation += 1;
+        state.host = DesignerHost::new();
+        Ok(state.generation)
     }
 
     /// The host allowed a new page to load (first load or a decided reload).
@@ -435,6 +461,49 @@ mod tests {
             channel
                 .dispatch(&frame("observe_occurrence", generation + 1, &[], &[]))
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_late_or_foreign_attach_never_resets_newer_work() {
+        let channel = RuntimeChannel::default();
+        let first = channel.attach_for(1, 1, 1).unwrap();
+        assert_eq!(
+            channel.attach_for(1, 1, 1),
+            Ok(first),
+            "a retried attach is idempotent"
+        );
+        let second = channel.attach_for(1, 2, 1).unwrap();
+        let tracker =
+            br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
+        let (opened, _) = reply(
+            &channel
+                .dispatch(&frame("command", second, tracker, &[]))
+                .unwrap(),
+        );
+        assert_eq!(opened["status"], "ok");
+        assert_eq!(
+            channel.attach_for(1, 1, 1),
+            Err(ChannelError::StaleGeneration),
+            "an older channel"
+        );
+        assert_eq!(
+            channel.attach_for(0, 9, 1),
+            Err(ChannelError::StaleGeneration),
+            "an earlier page"
+        );
+        let (observed, _) = reply(
+            &channel
+                .dispatch(&frame("observe_occurrence", second, &[], &[]))
+                .unwrap(),
+        );
+        assert_eq!(
+            observed["status"], "ok",
+            "the newer work is still resident: {observed}"
+        );
+        assert!(
+            channel.attach_for(2, 1, 2).unwrap() > second,
+            "a new page attaches"
         );
     }
 
