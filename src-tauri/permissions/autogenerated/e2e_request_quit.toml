@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-e2e-request-quit"
+description = "Enables the e2e_request_quit command without any pre-configured scope."
+commands.allow = ["e2e_request_quit"]
+
+[[permission]]
+identifier = "deny-e2e-request-quit"
+description = "Denies the e2e_request_quit command without any pre-configured scope."
+commands.deny = ["e2e_request_quit"]

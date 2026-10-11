@@ -1,0 +1,76 @@
+name: Sheet desktop (macOS)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheet-desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: macOS desktop app
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.25.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target aarch64-apple-darwin
+          rustup default 1.97.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Desktop host unit tests
+        run: pnpm test:desktop-host
+
+      - name: Native runtime parity with the Web Worker/WASM runtime
+        run: pnpm test:desktop-parity
+
+      - name: Build the packaged app and DMG
+        run: pnpm desktop:build
+
+      - name: Build the packaged e2e variant
+        run: pnpm desktop:build:e2e
+
+      - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
+        # The runner's display is small; keep the whole window on screen.
+        env:
+          TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
+        run: |
+          system_profiler SPDisplaysDataType | grep -i resolution || true
+          caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
+
+      - name: Record artifact identity
+        run: |
+          shasum -a 256 "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/"*.dmg "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet.app/Contents/MacOS/tachiko-sheet-desktop"
+          codesign -dv "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet.app" 2>&1 | grep -E "Identifier|Signature"

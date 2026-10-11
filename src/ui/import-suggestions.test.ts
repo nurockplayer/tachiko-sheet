@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
-import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
+import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 
 const cell = (value: SourceValue): SourceCell => ({ value, formula: null, style: {} as SourceCell["style"] });
 const text = (value: string) => cell({ kind: "text", value });
@@ -40,5 +40,19 @@ describe("import refusal message", () => {
     expect(importRefusalMessage(new Error("project transfer is invalid: Missing ZIP end directory"))).toMatch(/^This file could not be read\./);
     expect(importRefusalMessage(new Error("something else"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: something else)");
     expect(importRefusalMessage(null)).toBe("The spreadsheet could not be inspected. Nothing was imported.");
+  });
+});
+
+describe("import type choices", () => {
+  it("uses the current suggestions until the person chooses, and never an earlier inspection's choice", () => {
+    const first = [["text", "number"]];
+    expect(chosenImportTypes(null, first)).toBe(first);
+    const chosen = chooseImportType(null, first, 0, 1, "text");
+    expect(chosenImportTypes(chosen, first)).toEqual([["text", "text"]]);
+    expect(first).toEqual([["text", "number"]]);
+    // A new inspection (new suggestions) starts from its own suggestions.
+    const second = [["number", "number"]];
+    expect(chosenImportTypes(chosen, second)).toBe(second);
+    expect(chosenImportTypes(chooseImportType(chosen, second, 0, 0, "date"), second)).toEqual([["date", "number"]]);
   });
 });
