@@ -13,6 +13,11 @@ export type GridWindowSegment =
   | { kind: "row"; index: number }
   | { kind: "spacer"; key: string; rows: number };
 
+/** A scroll extent independent of the rows/spacers React is replacing. */
+export function gridWindowScrollHeight(rowCount: number, rowHeight: number, headerHeight: number): number {
+  return rowCount * rowHeight + headerHeight;
+}
+
 export function gridWindowRange(
   scrollTop: number,
   viewportHeight: number,

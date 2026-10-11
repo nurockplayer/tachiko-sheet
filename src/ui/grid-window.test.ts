@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gridWindowAround, gridWindowRange, gridWindowSegments, measuredRowPitch, scrollTopToReveal } from "./grid-window.js";
+import { gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal } from "./grid-window.js";
 
 describe("grid window", () => {
   it("covers the visible rows plus overscan, clamped to the table", () => {
@@ -34,6 +34,46 @@ describe("grid window", () => {
   it("clamps a stale window after the table shrinks", () => {
     expect(gridWindowSegments({ start: 8370, end: 8406 }, [8405], 500)).toEqual([{ kind: "spacer", key: "spacer-0", rows: 500 }]);
     expect(gridWindowSegments({ start: 8370, end: 8406 }, [], 8405).filter((segment) => segment.kind === "row").every((segment) => segment.kind === "row" && segment.index < 8405)).toBe(true);
+  });
+
+  it("reserves the full scroll extent across distant windows and changing pinned rows", () => {
+    const rowCount = 8406;
+    for (const pitch of [28, 32]) {
+      const header = 36;
+      const height = gridWindowScrollHeight(rowCount, pitch, header);
+      for (const top of [0, 4203 * pitch, height - 288]) {
+        for (const pinned of [[0], [4203], [0, 4203, 8405]]) {
+          const segments = gridWindowSegments(gridWindowRange(top, 288, pitch, rowCount), pinned, rowCount);
+          const rows = segments.reduce((sum, part) => sum + (part.kind === "row" ? 1 : part.rows), 0);
+          expect(rows * pitch + header).toBe(height);
+        }
+      }
+      // The reserve ends exactly where the last row's reveal expects it;
+      // overscan and pinned rows add no permanent blank tail.
+      expect(scrollTopToReveal(rowCount - 1, pitch, header, 0, 288)).toBe(height - 288);
+    }
+    expect(gridWindowScrollHeight(0, 28, 36)).toBe(36);
+    expect(gridWindowScrollHeight(500, 28, 36)).toBe(14036);
+  });
+
+  it("keeps the hosted stalled-to-bottom transition within the same independent extent", () => {
+    const height = gridWindowScrollHeight(8406, 28, 28);
+    expect(height).toBe(235396);
+    const stalled = gridWindowRange(234128, 288, 28, 8406);
+    const bottom = gridWindowRange(height - 288, 288, 28, 8406);
+    expect(stalled).toEqual({ start: 8331, end: 8403 });
+    expect(bottom).toEqual({ start: 8366, end: 8406 });
+    const before = gridWindowSegments(stalled, [4203], 8406);
+    expect(before.filter((part) => part.kind === "spacer").map((part) => part.rows * 28))
+      .toEqual([117684, 115556, 84]);
+    // Removing the old window's 35 leading rows can momentarily lose exactly
+    // the reported 980px before the middle spacer grows to replace them.
+    expect((bottom.start - stalled.start) * 28).toBe(980);
+    expect(height - 288 - 980).toBe(234128);
+    const after = gridWindowSegments(bottom, [4203], 8406);
+    for (const parts of [before, after]) {
+      expect(parts.reduce((sum, part) => sum + (part.kind === "row" ? 1 : part.rows), 0) * 28 + 28).toBe(height);
+    }
   });
 
   it("scrolls only when a row is outside the area below the sticky header", () => {

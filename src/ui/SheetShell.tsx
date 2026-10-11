@@ -53,7 +53,7 @@ import {
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
 import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
-import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
+import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { useHostCopy } from "./host-copy.js";
@@ -539,6 +539,7 @@ export function SheetShell(props: SheetShellProps) {
   // Mirrors the ref so a measured pitch change re-renders spacer heights.
   const [gridRowHeight, setGridRowHeight] = useState(32);
   const gridHeaderHeightRef = useRef(32);
+  const [gridHeaderHeight, setGridHeaderHeight] = useState(32);
   const gridScrollFrameRef = useRef<number | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
@@ -752,7 +753,10 @@ export function SheetShell(props: SheetShellProps) {
       [...(scroller?.querySelectorAll<HTMLElement>("tbody tr.ts-row") ?? [])].map((row) => row.offsetHeight),
     );
     const head = scroller?.querySelector<HTMLElement>("thead");
-    if (head && head.offsetHeight > 0) gridHeaderHeightRef.current = head.offsetHeight;
+    if (head && head.offsetHeight > 0 && head.offsetHeight !== gridHeaderHeightRef.current) {
+      gridHeaderHeightRef.current = head.offsetHeight;
+      setGridHeaderHeight(head.offsetHeight);
+    }
     if (pitch !== null && Math.abs(pitch - gridRowHeightRef.current) > 0.5) {
       gridRowHeightRef.current = pitch;
       setGridRowHeight(pitch);
@@ -1907,6 +1911,22 @@ export function SheetShell(props: SheetShellProps) {
       const result = j4Results.find((candidate) => candidate.definitionId === id);
       return !result || result.diagnostics.length > 0;
     });
+    const gridTable = (
+      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 : undefined}>
+        <thead>
+          <tr aria-rowindex={gridWindowed ? 1 : undefined}>
+            <th scope="col" className="ts-gutter-head">Row</th>
+            {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.key}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
+            ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
+            : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
+            : table.rows.map((row, index) => renderRow(row, index))}
+        </tbody>
+      </table>
+    );
     return (
       <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className={`ts-panel ts-table-panel${hasResults ? " ts-table-panel--results" : ""}`}>
         {currentness === "current" || visibleSalesTip ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
@@ -1921,20 +1941,13 @@ export function SheetShell(props: SheetShellProps) {
               dismiss={dismissSalesTip}
             /> : null}
             <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
-              <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 : undefined}>
-                <thead>
-                  <tr aria-rowindex={gridWindowed ? 1 : undefined}>
-                    <th scope="col" className="ts-gutter-head">Row</th>
-                    {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.key}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
-                    ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
-                    : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
-                    : table.rows.map((row, index) => renderRow(row, index))}
-                </tbody>
-              </table>
+              {/* React removes old keyed rows/spacers before adding their replacements.
+                  Reserve the full extent outside the table so WebKit cannot clamp
+                  scrollTop against a temporarily shorter table during that commit.
+                  A table min-height would instead stretch the rendered row heights. */}
+              {gridWindowed
+                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
+                : gridTable}
             </div>
           </div>
           {hasResults ? resultsHidden ? <button ref={resultsShowButtonRef} type="button" className="ts-button ts-results-show" onClick={() => setResultsHidden(false)}>Show results</button> : <>
