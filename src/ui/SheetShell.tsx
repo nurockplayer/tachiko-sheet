@@ -56,6 +56,7 @@ import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./im
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
+import { useHostCopy } from "./host-copy.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
@@ -381,6 +382,7 @@ function clearHeldSharedButtons(ownerRef: { current: SharedButtonPointerOwner | 
 }
 
 export function SheetShell(props: SheetShellProps) {
+  const hostCopy = useHostCopy();
   const {
     view,
     busy,
@@ -1599,7 +1601,7 @@ export function SheetShell(props: SheetShellProps) {
       <section className="ts-home-panel ts-home-saved" aria-label="Saved copies">
         <div className="ts-home-panel-heading">
           <h2 className="ts-home-panel-title">Saved copies</h2>
-          <p className="ts-home-panel-subtitle">Saved in this browser on this device.</p>
+          <p className="ts-home-panel-subtitle">{hostCopy.savedCopiesLocation}</p>
         </div>
         {copiesStatus === "checking" ? <p className="ts-home-copy-state" role="status">Checking saved copies…</p> : null}
         {copiesStatus === "unavailable" ? (
@@ -1608,7 +1610,7 @@ export function SheetShell(props: SheetShellProps) {
               <span className="ts-home-copy-unavailable-icon" aria-hidden="true">!</span>
               <div>
                 <strong>Saved copies couldn’t be read.</strong>
-                <span>They may still be in this browser. Try again, or reload the page.</span>
+                <span>{hostCopy.savedCopiesRetry}</span>
               </div>
             </div>
             <button type="button" className="ts-button" onClick={() => void onRetryCopies()} disabled={busy || startupLocked || recoveryLocked}>Try again</button>
@@ -1724,7 +1726,7 @@ export function SheetShell(props: SheetShellProps) {
           {startupLocked ? (
             <section className="ts-home-startup-alert" aria-label="Startup unavailable" role="alert">
               <span className="ts-home-alert-icon" aria-hidden="true">!</span>
-              <div className="ts-home-alert-copy"><strong>Tachiko couldn’t start in this browser</strong><span>Examples, files and saved copies can’t be opened until it starts. Reload the page to try again.</span></div>
+              <div className="ts-home-alert-copy"><strong>{hostCopy.startupFailedTitle}</strong><span>Examples, files and saved copies can’t be opened until it starts. {hostCopy.startupFailedRetry}</span></div>
               <button type="button" className="ts-button" onClick={() => window.location.reload()}>Reload page</button>
             </section>
           ) : null}
@@ -1837,7 +1839,7 @@ export function SheetShell(props: SheetShellProps) {
           <span className={`ts-save-indicator ts-chip--${saveStatus}`} data-testid="save-status">
             {saveLabel(saveStatus)}
           </span>
-          <span className="ts-save-scope">Copies: this browser on this device</span>
+          <span className="ts-save-scope">{hostCopy.copiesScope}</span>
         </div>
         <button
           type="button"
@@ -2624,7 +2626,7 @@ export function SheetShell(props: SheetShellProps) {
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Save a copy</h2>
-            <p className="ts-subtle">Creates a new copy in this browser profile.<br />It does not update an existing one.</p>
+            <p className="ts-subtle">{hostCopy.createCopyScope}<br />It does not update an existing one.</p>
           </div>
           <div className="ts-dialog-field">
             <label className="ts-field-label" htmlFor={copyNameId}>Copy name</label>
@@ -2705,7 +2707,7 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.location ? `${finding.location}: ` : ""}{finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.location ? `${finding.location}: ` : ""}{finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">

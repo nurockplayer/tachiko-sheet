@@ -14,6 +14,7 @@ import type {
 import { resolveBuiltInInterfaceProfile } from "./interface-profile/profile.js";
 import { placeAppearancePopover, type AppearancePopoverContext } from "./appearance-placement.js";
 import "./appearance-selector.css";
+import { useHostCopy } from "./host-copy.js";
 
 export type AppearanceSelectorProps = Readonly<{
   context: AppearancePopoverContext;
@@ -42,6 +43,7 @@ export function AppearanceSelector({
   onSelectDensity,
   onSelectImported,
 }: AppearanceSelectorProps) {
+  const hostCopy = useHostCopy();
   const [open, setOpen] = useState(false);
   const [pendingPresentation, setPendingPresentation] = useState<AppearanceChoice | null>(null);
   const [stagedProfile, setStagedProfile] = useState<InterfaceProfileV1 | null>(null);
@@ -519,7 +521,7 @@ export function AppearanceSelector({
 
         <div className="ts-appearance-content">
           <p className="ts-appearance-description">
-            For this browser on this device.<br />
+            {hostCopy.appearanceScope}<br />
             Your work and saved copies stay unchanged.
           </p>
 
@@ -609,7 +611,7 @@ export function AppearanceSelector({
           {preference.notSaved && activeChoice.kind === "imported" && (
             <div className="ts-appearance-notice ts-appearance-notice--failure" role="status" aria-live="polite">
               <strong>Appearance could not be saved</strong>
-              <span><bdi dir="auto">“{activeChoice.profile.name}”</bdi> is active for this session. It may reset when this browser is reopened.</span>
+              <span><bdi dir="auto">“{activeChoice.profile.name}”</bdi> is active for this session. {hostCopy.appearanceSessionReset}</span>
             </div>
           )}
           {exportMessage && <p className="ts-appearance-export-status" role="status" aria-live="polite">{exportMessage}</p>}

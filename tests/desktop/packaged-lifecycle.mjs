@@ -137,6 +137,20 @@ const current = () => ready() && document.querySelector('[data-testid="currentne
 const grid = () => document.querySelector('table[aria-label="Table"]');
 const rowAt = (row) => grid()?.querySelector('tbody tr[aria-rowindex="' + (row + 2) + '"]');
 const cellAt = (row, column) => rowAt(row)?.querySelectorAll("td")[column];
+const tab = (name) => [...document.querySelectorAll('[role="tab"]')].find((t) => nameOf(t) === name);
+async function visibleTable(name) {
+  click(await waitFor(() => tab("Table"), "Table tab"));
+  const select = await waitFor(() => document.querySelector("#ts-active-table"), "table selector");
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, name);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await waitFor(() => select.value === name && current() && grid()?.querySelector("tbody tr"), "table " + name);
+  return [...grid().querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
+}
+async function resultRows() {
+  click(await waitFor(() => tab("Cross-table summary"), "summary tab"));
+  const table = await waitFor(() => document.querySelector('table[aria-label="Cross-table groups"]') && current() && document.querySelector('table[aria-label="Cross-table groups"]'), "summary table");
+  return [...table.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
+}
 async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
   const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row')?.offsetHeight || 32;
@@ -312,6 +326,65 @@ const unsavedCheck = () => evaluate(`
   return event.defaultPrevented;
 `);
 
+
+// ---- Sales example: the "30 seconds to value" path ---------------------------
+
+async function salesJourney() {
+  const name = "desktop-sales";
+  let pid = await timed("launch", launch);
+  await coldHome();
+  await timed("open_sales", () => evaluate(`
+    click(await waitFor(() => button("Open sales example"), "Open sales example"));
+    await waitFor(() => ready() && document.querySelector(".ts-title")?.textContent === "Sales and catalog", "Sales example");
+    return true;
+  `));
+  assert.deepEqual(await evaluate(`return visibleTable("sales");`), [["PEN", "3"], ["NOTE", "2"], ["PEN", "1"]], "Sales input rows");
+  assert.deepEqual(await evaluate(`return visibleTable("catalog");`), [["PEN", "PEN", "200"], ["NOTE", "NOTE", "500"]], "Catalog input rows");
+  assert.deepEqual(await evaluate(`return resultRows();`), [["NOTE", "1000"], ["PEN", "800"]], "initial summary");
+  await screenshot("sales-summary");
+  await timed("edit_price", () => evaluate(`
+    await visibleTable("catalog");
+    const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
+    const price = headers.indexOf("price");
+    const row = [...grid().querySelectorAll("tbody tr")].find((r) => r.textContent.includes("PEN"));
+    dblclick(row.querySelectorAll("td")[price]);
+    fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "250");
+    press(textbox("Edit cell"), "Enter");
+    await waitFor(() => !textbox("Edit cell") && current() && row.querySelectorAll("td")[price].textContent.trim() === "250", "published price");
+    return true;
+  `));
+  assert.deepEqual(await evaluate(`return resultRows();`), [["NOTE", "1000"], ["PEN", "1000"]], "summary recalculated by the native runtime");
+  const report = await evaluate(`
+    click(await waitFor(() => tab("Report"), "Report tab"));
+    await waitFor(() => document.querySelector('canvas[data-report-ready="true"]'), "report canvas");
+    return document.querySelector('[aria-label="Current report data"]')?.innerText ?? "";
+  `);
+  assert.match(report, /NOTE\s*1000/);
+  assert.match(report, /PEN\s*1000/);
+  await screenshot("sales-report");
+  await saveCopy(name);
+  await quit(pid);
+
+  pid = await timed("launch", launch);
+  await coldHome();
+  await openSaved(name);
+  assert.deepEqual(await evaluate(`return visibleTable("catalog");`), [["PEN", "PEN", "250"], ["NOTE", "NOTE", "500"]], "reopened Catalog");
+  assert.deepEqual(await evaluate(`return resultRows();`), [["NOTE", "1000"], ["PEN", "1000"]], "reopened summary recomputed");
+  await closeToHome();
+  await quit(pid);
+}
+
+async function screenshot(label) {
+  const folder = process.env.DESKTOP_SCREENSHOTS;
+  if (!folder) return;
+  await mkdir(folder, { recursive: true });
+  // The window is looked up by owner name; screencapture needs only Screen Recording.
+  const id = execFileSync("swift", ["-e", `import CoreGraphics
+let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as! [[String: Any]]
+for w in list where (w[kCGWindowOwnerName as String] as? String) == "Tachiko Sheet E2E" { print(w[kCGWindowNumber as String]!); break }`], { encoding: "utf8" }).trim();
+  if (id) execFileSync("screencapture", ["-x", "-o", `-l${id}`, path.join(folder, `${label}.png`)]);
+}
+
 // ---- run ---------------------------------------------------------------------
 
 const webkitData = [
@@ -323,7 +396,8 @@ for (const folder of webkitData) await rm(folder, { recursive: true, force: true
 const results = [];
 let pid;
 try {
-  for (const format of formats) {
+  if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
+  for (const format of process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats) {
     const name = `capacity-8406-${format}`;
     pid = await timed("launch", launch);
     const home = await coldHome();
