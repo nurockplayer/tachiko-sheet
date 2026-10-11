@@ -222,7 +222,15 @@ async function resultRows() {
 async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
   const rows = Number(grid().getAttribute("aria-rowcount")) - 1;
-  for (let attempt = 0; attempt < 50 && !rowAt(row); attempt++) {
+  const visible = () => {
+    const target = rowAt(row);
+    if (!target) return null;
+    const port = scroller.getBoundingClientRect();
+    const header = grid().querySelector("thead")?.getBoundingClientRect().height ?? 0;
+    const box = target.getBoundingClientRect();
+    return box.top >= port.top + header - 1 && box.bottom <= port.bottom + 1 ? target : null;
+  };
+  for (let attempt = 0; attempt < 50 && !visible(); attempt++) {
     const pitch = scroller.scrollHeight / (rows + 1);
     scroller.scrollTop = row >= rows - 10
       ? scroller.scrollHeight
@@ -234,7 +242,7 @@ async function reveal(row) {
   const rendered = renderedRows.map((r) => r.getAttribute("aria-rowindex"));
   const heights = renderedRows.map((r) => r.offsetHeight).sort((a, b) => a - b);
   const spacers = [...grid().querySelectorAll("tr.ts-grid-spacer td")].map((td) => td.style.height).join("+");
-  return waitFor(() => rowAt(row), "row " + row + " (rendered " + rendered[0] + ".." + rendered[rendered.length - 1] +
+  return waitFor(visible, "row " + row + " in view (rendered " + rendered[0] + ".." + rendered[rendered.length - 1] +
     ", scrollTop " + scroller.scrollTop + "/" + scroller.scrollHeight + ", client " + scroller.clientHeight +
     ", visibility " + document.visibilityState + ", focus " + document.hasFocus() +
     ", row heights " + heights[0] + "/" + heights[Math.floor(heights.length / 2)] + "/" + heights[heights.length - 1] +
@@ -631,7 +639,8 @@ try {
     results.push({ format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
   }
   console.log(JSON.stringify({
-    case: "desktop packaged 8,406 x 3 lifecycle (native runtime)",
+    case: "desktop packaged lifecycle (native runtime)",
+    journeys: { sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),

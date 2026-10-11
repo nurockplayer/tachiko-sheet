@@ -1035,6 +1035,9 @@ body { margin: 0; }
 
 .ts-grid-scroll {
   overflow: auto;
+  /* Rows are windowed with spacer rows: browser scroll anchoring would pull
+     the scroll position back to a row that is being replaced. */
+  overflow-anchor: none;
   min-height: min(168px, var(--ts-grid-available-height, 100vh));
   max-height: var(--ts-grid-available-height, 100vh);
   border: 0;
