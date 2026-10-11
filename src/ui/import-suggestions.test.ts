@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
-import { sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
+import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 
 const cell = (value: SourceValue): SourceCell => ({ value, formula: null, style: {} as SourceCell["style"] });
 const text = (value: string) => cell({ kind: "text", value });
@@ -25,5 +25,16 @@ describe("import type suggestions", () => {
     expect(sourcePreviewText({ kind: "empty" })).toBe("");
     expect(sourcePreviewText({ kind: "boolean", value: false })).toBe("FALSE");
     expect(sourcePreviewText({ kind: "text", value: " PEN " })).toBe(" PEN ");
+  });
+});
+
+describe("import refusal message", () => {
+  it("explains beta size limits and damaged files in plain language, keeping the detail", () => {
+    const limit = importRefusalMessage(new Error("project transfer is invalid: Text capacity requires one headered, default-style 8,406-row three-Text table"));
+    expect(limit).toMatch(/^This file is larger than this beta can open\. .*exactly 3 text columns.*Nothing was imported\. \(Details: project transfer is invalid: Text capacity/);
+    expect(importRefusalMessage(new Error("project transfer is invalid: CSV exceeds 8,406 row or column bounds"))).toMatch(/larger than this beta.*CSV exceeds/);
+    expect(importRefusalMessage(new Error("project transfer is invalid: Missing ZIP end directory"))).toMatch(/^This file could not be read\./);
+    expect(importRefusalMessage(new Error("something else"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: something else)");
+    expect(importRefusalMessage(null)).toBe("The spreadsheet could not be inspected. Nothing was imported.");
   });
 });

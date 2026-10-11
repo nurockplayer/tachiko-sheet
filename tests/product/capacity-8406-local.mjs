@@ -224,6 +224,8 @@ try {
     for (const file of [`source-${ROWS + 1}.${format}`, `malformed.${format}`]) {
       refusals[file] = await refusedImport(page, path.join(fixtures, file), file);
     }
+    assert.match(refusals[`source-${ROWS + 1}.${format}`], /^This file is larger than this beta can open\./, "plain-language size refusal");
+    assert.match(refusals[`malformed.${format}`], /^This file could not be read\./, "plain-language damaged-file refusal");
     await page.getByRole("button", { name: `Open saved ${name}`, exact: true }).click();
     await ready(page);
     await assertEdited(page, "after refusals");

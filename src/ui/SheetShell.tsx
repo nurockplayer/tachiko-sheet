@@ -52,7 +52,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
-import { sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
+import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
@@ -1366,7 +1366,7 @@ export function SheetShell(props: SheetShellProps) {
     setLocalError(null);
     setImportError(null);
     try { await onInspectImport(file); }
-    catch (error) { setImportError(explain(error, "The spreadsheet could not be inspected.")); }
+    catch (error) { setImportError(importRefusalMessage(error)); }
   }
 
   async function importCandidate(): Promise<void> {
