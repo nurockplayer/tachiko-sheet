@@ -536,6 +536,8 @@ body { margin: 0; }
 }
 
 .ts-import-columns { display: grid; gap: 10px; }
+.ts-import-notes { margin: 4px 0 8px; font-size: 12px; color: var(--ts-ink-soft); }
+.ts-import-notes summary { cursor: pointer; }
 .ts-import-column { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
 .ts-import-column select { font: inherit; min-width: 100px; }
 .ts-import-suggested { color: var(--ts-ink-soft); font-weight: 400; font-size: 12px; }
