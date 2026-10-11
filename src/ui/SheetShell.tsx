@@ -53,7 +53,7 @@ import {
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
 import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
-import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
+import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { useHostCopy } from "./host-copy.js";
@@ -748,12 +748,14 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (!gridWindowed) return;
     const scroller = gridScrollRef.current;
-    const row = scroller?.querySelector<HTMLElement>("tbody tr.ts-row");
+    const pitch = measuredRowPitch(
+      [...(scroller?.querySelectorAll<HTMLElement>("tbody tr.ts-row") ?? [])].map((row) => row.offsetHeight),
+    );
     const head = scroller?.querySelector<HTMLElement>("thead");
     if (head && head.offsetHeight > 0) gridHeaderHeightRef.current = head.offsetHeight;
-    if (row && row.offsetHeight > 0 && Math.abs(row.offsetHeight - gridRowHeightRef.current) > 0.5) {
-      gridRowHeightRef.current = row.offsetHeight;
-      setGridRowHeight(row.offsetHeight);
+    if (pitch !== null && Math.abs(pitch - gridRowHeightRef.current) > 0.5) {
+      gridRowHeightRef.current = pitch;
+      setGridRowHeight(pitch);
       syncGridWindow();
     }
     // A pending focus target only lives while the Table panel shows its row.

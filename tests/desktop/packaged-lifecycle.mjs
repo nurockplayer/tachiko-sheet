@@ -230,10 +230,15 @@ async function reveal(row) {
     scroller.dispatchEvent(new Event("scroll"));
     await sleep(100);
   }
-  const rendered = [...grid().querySelectorAll("tbody tr.ts-row")].map((r) => r.getAttribute("aria-rowindex"));
+  const renderedRows = [...grid().querySelectorAll("tbody tr.ts-row")];
+  const rendered = renderedRows.map((r) => r.getAttribute("aria-rowindex"));
+  const heights = renderedRows.map((r) => r.offsetHeight).sort((a, b) => a - b);
+  const spacers = [...grid().querySelectorAll("tr.ts-grid-spacer td")].map((td) => td.style.height).join("+");
   return waitFor(() => rowAt(row), "row " + row + " (rendered " + rendered[0] + ".." + rendered[rendered.length - 1] +
     ", scrollTop " + scroller.scrollTop + "/" + scroller.scrollHeight + ", client " + scroller.clientHeight +
-    ", visibility " + document.visibilityState + ", focus " + document.hasFocus() + ")");
+    ", visibility " + document.visibilityState + ", focus " + document.hasFocus() +
+    ", row heights " + heights[0] + "/" + heights[Math.floor(heights.length / 2)] + "/" + heights[heights.length - 1] +
+    ", first row height " + renderedRows[0]?.offsetHeight + ", spacers " + spacers + ")");
 }
 `;
 
@@ -496,6 +501,25 @@ async function salesJourney() {
   assert.equal(await evaluate(`return window.__sheetDocument ?? "replaced";`), "kept", "a refused reload keeps the Sheet document");
   assert.match(await hostLog(), /leave dialog \(Reload\)/);
   await saveCopy(name);
+  // On clean work, an export still in progress (here: waiting in the Save
+  // panel) blocks leaving on its own; once its receipt arrives, leaving is
+  // allowed again.
+  assert.equal(await unsavedCheck(), false, "the saved work is clean");
+  const lines = async (prefix) => (await hostLog()).split("\n").filter((line) => line.startsWith(prefix)).length;
+  const [requestedBefore, settledBefore] = [await lines("save requested tachiko-sheet-report.png"), await lines("saved tachiko-sheet-report.png")];
+  await evaluate(`
+    click(await waitFor(() => tab("Report"), "Report tab"));
+    click(await waitFor(() => button("Export current PNG"), "PNG export"));
+    return true;
+  `);
+  for (let attempt = 0; attempt < 200 && (await lines("save requested tachiko-sheet-report.png")) === requestedBefore; attempt++) await sleep(25);
+  assert.equal(await lines("save requested tachiko-sheet-report.png"), requestedBefore + 1, "the save reached the host");
+  assert.equal(await lines("saved tachiko-sheet-report.png"), settledBefore, "and is still pending in the Save panel");
+  assert.equal(await unsavedCheck(), true, "on clean work, an export in progress blocks leaving");
+  for (let attempt = 0; attempt < 300 && (await lines("saved tachiko-sheet-report.png")) === settledBefore; attempt++) await sleep(50);
+  assert.equal(await lines("saved tachiko-sheet-report.png"), settledBefore + 1, "the save's receipt arrived");
+  for (let attempt = 0; attempt < 40 && await unsavedCheck(); attempt++) await sleep(50);
+  assert.equal(await unsavedCheck(), false, "once the export settles, clean work can be left");
   // With nothing unsaved, a reload goes through and starts fresh at Home.
   await evaluate(`setTimeout(() => location.reload(), 50); return true;`);
   let marker = "kept";

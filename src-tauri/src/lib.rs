@@ -430,6 +430,8 @@ async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8]) -> Result<Stri
     let Some((epoch, name, bytes)) = parse_save_frame(frame) else {
         return Err("The export could not be read. Nothing was saved.".to_owned());
     };
+    #[cfg(feature = "e2e")]
+    e2e::log(&format!("save requested {name}"));
     // One Save sheet at a time; the leave decision never waits on this.
     let _turn = saves.turn.lock().await;
     let Some(destination) = choose_destination(app, &name).await else {
