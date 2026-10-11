@@ -242,8 +242,14 @@ describe("fieldDisplay", () => {
   });
 
   it("marks missing projections, empty values and diagnostics explicitly", () => {
-    expect(fieldDisplay(null).text).toBe("Not loaded");
-    expect(fieldDisplay(projected(entityA, "c-title", { kind: "text", value: "" })).text).toBe("Empty");
+    expect(fieldDisplay(null)).toMatchObject({ text: "", title: "No value" });
+    expect(fieldDisplay(projected(entityA, "c-title", { kind: "text", value: "" }))).toMatchObject({ text: "", title: "Empty text" });
+    expect(fieldDisplay(projected(entityA, "c-title", null)).text).toBe("");
+    expect(fieldDisplay(projected(entityA, "c-priority", null, { formula: "=1" } as never)).text).toBe("Empty");
+    const emptyWithDiagnostic = fieldDisplay(projected(entityA, "c-title", { kind: "text", value: "" }, {
+      diagnostics: [{ code: "stale", message: "revision too old", path: "title" }],
+    }));
+    expect(emptyWithDiagnostic).toMatchObject({ text: "Empty", tone: "warning" });
     const withDiagnostic = fieldDisplay(
       projected(entityA, "c-impact", { kind: "number", value: 5 }, {
         diagnostics: [{ code: "stale", message: "revision too old", path: "impact" }],
