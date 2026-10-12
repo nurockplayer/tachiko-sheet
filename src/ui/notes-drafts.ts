@@ -1,33 +1,50 @@
-import type { WorkbookView } from "../contracts.js";
-import { seedTextOf } from "./field-display.js";
-import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
-
-/** An unapplied Brief notes edit, bound to the revision it was written against. */
+/**
+ * An unapplied Brief notes edit. It is applicable only while the committed
+ * notes are still exactly `base`, the text the user started from (or last
+ * explicitly kept). It never silently applies over notes that changed.
+ */
 export interface NotesDraft {
   occurrence: string;
-  revision: string;
   entity: string;
   value: string;
-  /** Committed notes text the draft started from. */
+  /** Committed notes text the draft is written against. */
   base: string;
 }
 
+export function isNotesDraftBound(draft: NotesDraft | undefined, committed: string): boolean {
+  return draft !== undefined && draft.base === committed;
+}
+
+function sameTarget(a: NotesDraft, b: Pick<NotesDraft, "occurrence" | "entity">): boolean {
+  return a.occurrence === b.occurrence && a.entity === b.entity;
+}
+
 /**
- * After a publication in the same work, a draft whose notes are still exactly
- * the text it started from is rebound to the new revision. A draft whose notes
- * changed underneath stays unbound until the user explicitly keeps it.
+ * Records typing into the notes field. An existing draft keeps its base, so a
+ * draft whose notes changed underneath stays stale until the user keeps it;
+ * typing the committed text back removes the draft.
  */
-export function rebindNotesDrafts(drafts: NotesDraft[], view: WorkbookView | null): NotesDraft[] {
-  if (!view) return drafts;
-  const columns = tableColumns(view.table);
-  let changed = false;
-  const next = drafts.map((draft) => {
-    if (draft.occurrence !== view.occurrence || draft.revision === view.revision) return draft;
-    const row = view.table.rows.find((candidate) => rowEntity(candidate) === draft.entity);
-    const field = row ? notesFieldFor(row, columns) : null;
-    if (!field || seedTextOf(field) !== draft.base) return draft;
-    changed = true;
-    return { ...draft, revision: view.revision };
+export function upsertNotesDraft(
+  drafts: NotesDraft[],
+  target: Pick<NotesDraft, "occurrence" | "entity">,
+  value: string,
+  committed: string,
+): NotesDraft[] {
+  const existing = drafts.find((draft) => sameTarget(draft, target));
+  const remaining = drafts.filter((draft) => !sameTarget(draft, target));
+  if (value === committed) return remaining;
+  return [...remaining, { ...target, value, base: existing?.base ?? committed }];
+}
+
+/**
+ * After `applied` (the draft that was submitted) is accepted as `value`, drop
+ * it. If the user kept typing while the apply was pending, that newer draft is
+ * now written against the applied text.
+ */
+export function notesDraftAfterApply(drafts: NotesDraft[], applied: NotesDraft, value: string): NotesDraft[] {
+  return drafts.flatMap((draft) => {
+    if (draft === applied) return [];
+    if (!sameTarget(draft, applied) || draft.base !== applied.base) return [draft];
+    return draft.value === value ? [] : [{ ...draft, base: value }];
   });
-  return changed ? next : drafts;
 }

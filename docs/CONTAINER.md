@@ -10,7 +10,7 @@ browser tests, platform qualification, or final acceptance.
 - Docker Engine with Compose v2
 - Linux/arm64 or Linux/amd64; the image is pinned by the multi-platform digest
   `node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df`
-- `packageManager` pins pnpm 11.25.0; the image install uses the existing
+- `packageManager` pins pnpm 12.11.2; the image install uses the existing
   `pnpm-lock.yaml` with `pnpm install --frozen-lockfile`
 - Registry access is needed the first time to pull the official Node image and
   install the lockfile dependencies during image build

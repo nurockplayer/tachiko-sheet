@@ -39,6 +39,7 @@ import {
   SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
+import { useHostFiles } from "./host/host-files.js";
 
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
 const EXAMPLE_BASE = "/examples/release-plan/";
@@ -347,6 +348,7 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
  * status, draft presence and the save receipt keyed to the exported revision.
  */
 export function App({ runtime, copies, appearancePreference }: AppProps) {
+  const hostFiles = useHostFiles();
   const [view, setView] = useState<WorkbookView | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -484,7 +486,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent): void {
-      if (!dirtyRef.current && !unknownOpenRecoveryRef.current && !provenanceUnconfirmedRef.current) return;
+      // An operation still in flight (an edit, Undo/Redo, open or save) may
+      // change the work after this check, so leaving now could lose it.
+      if (!dirtyRef.current && !inflightRef.current && !unknownOpenRecoveryRef.current && !provenanceUnconfirmedRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     }
@@ -1476,11 +1480,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setInterop((current) => current ? { ...current, downloadError: null } : current);
     try {
       const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url; anchor.download = `${live.title}.${format}`; anchor.hidden = true;
-      document.body.append(anchor); anchor.click(); anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      // The host saves it: a browser download, or the desktop Save panel.
+      await hostFiles.saveFile(`${live.title}.${format}`, blob);
       preparedDownloadRef.current = null;
       setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
       setOutcome("idle");

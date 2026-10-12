@@ -1,28 +1,41 @@
 import { describe, expect, it } from "vitest";
-import type { WorkbookView } from "../contracts.js";
-import { rebindNotesDrafts, type NotesDraft } from "./notes-drafts.js";
+import { isNotesDraftBound, notesDraftAfterApply, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 
-const view = (revision: string, notes: string) => ({
-  occurrence: "o1",
-  revision,
-  table: {
-    columns: [{ id: "f-notes", key: "notes" }],
-    rows: [{ id: "e1", fields: [{ target: { entity: "e1", field: "f-notes" }, key: "notes", stored: { kind: "text", value: notes }, editable_scalar: "text" }] }],
-  },
-}) as unknown as WorkbookView;
-const draft = (overrides: Partial<NotesDraft> = {}): NotesDraft => ({ occurrence: "o1", revision: "r1", entity: "e1", value: "mine", base: "old", ...overrides });
+const target = { occurrence: "o1", entity: "e1" };
+const draft = (overrides: Partial<NotesDraft> = {}): NotesDraft => ({ ...target, value: "mine", base: "old", ...overrides });
 
-describe("notes draft rebinding", () => {
-  it("rebinds when the notes are unchanged by the publication", () => {
-    expect(rebindNotesDrafts([draft()], view("r2", "old"))[0]!.revision).toBe("r2");
+describe("notes drafts", () => {
+  it("is applicable only while the committed notes equal its base", () => {
+    expect(isNotesDraftBound(draft(), "old")).toBe(true);
+    expect(isNotesDraftBound(draft(), "someone else")).toBe(false);
+    expect(isNotesDraftBound(undefined, "old")).toBe(false);
   });
-  it("keeps the draft unbound when the notes changed underneath", () => {
-    const drafts = [draft()];
-    expect(rebindNotesDrafts(drafts, view("r2", "someone else"))).toBe(drafts);
+
+  it("starts a draft against the committed notes", () => {
+    expect(upsertNotesDraft([], target, "mine", "old")).toEqual([draft()]);
   });
-  it("ignores other occurrences and already-bound drafts", () => {
-    const drafts = [draft({ occurrence: "o2" }), draft({ revision: "r2" })];
-    expect(rebindNotesDrafts(drafts, view("r2", "old"))).toBe(drafts);
-    expect(rebindNotesDrafts(drafts, null)).toBe(drafts);
+
+  it("keeps a stale draft's base while typing (#158 P1)", () => {
+    const next = upsertNotesDraft([draft()], target, "mine, more", "changed underneath");
+    expect(next).toEqual([draft({ value: "mine, more" })]);
+    expect(isNotesDraftBound(next[0], "changed underneath")).toBe(false);
+  });
+
+  it("drops the draft when it matches the committed notes and leaves other targets alone", () => {
+    const other = draft({ entity: "e2" });
+    expect(upsertNotesDraft([other, draft()], target, "old", "old")).toEqual([other]);
+  });
+
+  it("rebases typing made while an apply was pending onto the applied text", () => {
+    const applied = draft();
+    const newer = draft({ value: "mine, typed while pending" });
+    expect(notesDraftAfterApply([applied], applied, "mine")).toEqual([]);
+    expect(notesDraftAfterApply([newer], applied, "mine")).toEqual([draft({ value: "mine, typed while pending", base: "mine" })]);
+    expect(notesDraftAfterApply([draft({ value: "mine" })], applied, "mine")).toEqual([]);
+  });
+
+  it("does not rebase a draft that was explicitly kept against other notes", () => {
+    const kept = draft({ value: "kept", base: "newer" });
+    expect(notesDraftAfterApply([kept], draft(), "mine")).toEqual([kept]);
   });
 });
