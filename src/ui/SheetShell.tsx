@@ -52,10 +52,12 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
-import { importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
-import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowSegments, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
+import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
+import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
+import { useHostCopy } from "./host-copy.js";
+import { useHostFiles } from "../host/host-files.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
@@ -381,6 +383,8 @@ function clearHeldSharedButtons(ownerRef: { current: SharedButtonPointerOwner | 
 }
 
 export function SheetShell(props: SheetShellProps) {
+  const hostCopy = useHostCopy();
+  const hostFiles = useHostFiles();
   const {
     view,
     busy,
@@ -535,6 +539,7 @@ export function SheetShell(props: SheetShellProps) {
   // Mirrors the ref so a measured pitch change re-renders spacer heights.
   const [gridRowHeight, setGridRowHeight] = useState(32);
   const gridHeaderHeightRef = useRef(32);
+  const [gridHeaderHeight, setGridHeaderHeight] = useState(32);
   const gridScrollFrameRef = useRef<number | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
@@ -554,11 +559,12 @@ export function SheetShell(props: SheetShellProps) {
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
-  const [importTypes, setImportTypes] = useState<string[][]>([]);
-  const importSuggestions = useMemo(
+  const [importChoice, setImportChoice] = useState<ImportTypeChoice | null>(null);
+  const importSuggestions = useMemo<string[][]>(
     () => interop?.importInspection?.source.sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column))) ?? [],
     [interop?.importInspection],
   );
+  const importTypes = chosenImportTypes(importChoice, importSuggestions);
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const [j4Pending, setJ4Pending] = useState(false);
@@ -715,10 +721,6 @@ export function SheetShell(props: SheetShellProps) {
     setSelectedEntity((previous) => (previous && entities.includes(previous) ? previous : entities[0] ?? null));
   }, [view]);
 
-  useEffect(() => {
-    setImportTypes(importSuggestions);
-  }, [importSuggestions]);
-
   const table = view?.table ?? null;
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
   const gridOrder = useMemo(() => {
@@ -747,12 +749,17 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (!gridWindowed) return;
     const scroller = gridScrollRef.current;
-    const row = scroller?.querySelector<HTMLElement>("tbody tr.ts-row");
+    const pitch = measuredRowPitch(
+      [...(scroller?.querySelectorAll<HTMLElement>("tbody tr.ts-row") ?? [])].map((row) => row.offsetHeight),
+    );
     const head = scroller?.querySelector<HTMLElement>("thead");
-    if (head && head.offsetHeight > 0) gridHeaderHeightRef.current = head.offsetHeight;
-    if (row && row.offsetHeight > 0 && Math.abs(row.offsetHeight - gridRowHeightRef.current) > 0.5) {
-      gridRowHeightRef.current = row.offsetHeight;
-      setGridRowHeight(row.offsetHeight);
+    if (head && head.offsetHeight > 0 && head.offsetHeight !== gridHeaderHeightRef.current) {
+      gridHeaderHeightRef.current = head.offsetHeight;
+      setGridHeaderHeight(head.offsetHeight);
+    }
+    if (pitch !== null && Math.abs(pitch - gridRowHeightRef.current) > 0.5) {
+      gridRowHeightRef.current = pitch;
+      setGridRowHeight(pitch);
       syncGridWindow();
     }
     // A pending focus target only lives while the Table panel shows its row.
@@ -1599,7 +1606,7 @@ export function SheetShell(props: SheetShellProps) {
       <section className="ts-home-panel ts-home-saved" aria-label="Saved copies">
         <div className="ts-home-panel-heading">
           <h2 className="ts-home-panel-title">Saved copies</h2>
-          <p className="ts-home-panel-subtitle">Saved in this browser on this device.</p>
+          <p className="ts-home-panel-subtitle">{hostCopy.savedCopiesLocation}</p>
         </div>
         {copiesStatus === "checking" ? <p className="ts-home-copy-state" role="status">Checking saved copies…</p> : null}
         {copiesStatus === "unavailable" ? (
@@ -1608,7 +1615,7 @@ export function SheetShell(props: SheetShellProps) {
               <span className="ts-home-copy-unavailable-icon" aria-hidden="true">!</span>
               <div>
                 <strong>Saved copies couldn’t be read.</strong>
-                <span>They may still be in this browser. Try again, or reload the page.</span>
+                <span>{hostCopy.savedCopiesRetry}</span>
               </div>
             </div>
             <button type="button" className="ts-button" onClick={() => void onRetryCopies()} disabled={busy || startupLocked || recoveryLocked}>Try again</button>
@@ -1724,7 +1731,7 @@ export function SheetShell(props: SheetShellProps) {
           {startupLocked ? (
             <section className="ts-home-startup-alert" aria-label="Startup unavailable" role="alert">
               <span className="ts-home-alert-icon" aria-hidden="true">!</span>
-              <div className="ts-home-alert-copy"><strong>Tachiko couldn’t start in this browser</strong><span>Examples, files and saved copies can’t be opened until it starts. Reload the page to try again.</span></div>
+              <div className="ts-home-alert-copy"><strong>{hostCopy.startupFailedTitle}</strong><span>Examples, files and saved copies can’t be opened until it starts. {hostCopy.startupFailedRetry}</span></div>
               <button type="button" className="ts-button" onClick={() => window.location.reload()}>Reload page</button>
             </section>
           ) : null}
@@ -1837,7 +1844,7 @@ export function SheetShell(props: SheetShellProps) {
           <span className={`ts-save-indicator ts-chip--${saveStatus}`} data-testid="save-status">
             {saveLabel(saveStatus)}
           </span>
-          <span className="ts-save-scope">Copies: this browser on this device</span>
+          <span className="ts-save-scope">{hostCopy.copiesScope}</span>
         </div>
         <button
           type="button"
@@ -1904,6 +1911,22 @@ export function SheetShell(props: SheetShellProps) {
       const result = j4Results.find((candidate) => candidate.definitionId === id);
       return !result || result.diagnostics.length > 0;
     });
+    const gridTable = (
+      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 : undefined}>
+        <thead>
+          <tr aria-rowindex={gridWindowed ? 1 : undefined}>
+            <th scope="col" className="ts-gutter-head">Row</th>
+            {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.key}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
+            ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
+            : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
+            : table.rows.map((row, index) => renderRow(row, index))}
+        </tbody>
+      </table>
+    );
     return (
       <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className={`ts-panel ts-table-panel${hasResults ? " ts-table-panel--results" : ""}`}>
         {currentness === "current" || visibleSalesTip ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
@@ -1918,20 +1941,13 @@ export function SheetShell(props: SheetShellProps) {
               dismiss={dismissSalesTip}
             /> : null}
             <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
-              <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 : undefined}>
-                <thead>
-                  <tr aria-rowindex={gridWindowed ? 1 : undefined}>
-                    <th scope="col" className="ts-gutter-head">Row</th>
-                    {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.key}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
-                    ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
-                    : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
-                    : table.rows.map((row, index) => renderRow(row, index))}
-                </tbody>
-              </table>
+              {/* React removes old keyed rows/spacers before adding their replacements.
+                  Reserve the full extent outside the table so WebKit cannot clamp
+                  scrollTop against a temporarily shorter table during that commit.
+                  A table min-height would instead stretch the rendered row heights. */}
+              {gridWindowed
+                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
+                : gridTable}
             </div>
           </div>
           {hasResults ? resultsHidden ? <button ref={resultsShowButtonRef} type="button" className="ts-button ts-results-show" onClick={() => setResultsHidden(false)}>Show results</button> : <>
@@ -2373,18 +2389,22 @@ export function SheetShell(props: SheetShellProps) {
         setLocalError("The current report image could not be rendered, so no PNG was downloaded.");
         return;
       }
-      try {
-        const href = canvas.toDataURL("image/png");
-        if (href === "data:," || !href.startsWith("data:image/png;base64,")) throw new Error("PNG encoding failed.");
-        const anchor = document.createElement("a");
-        anchor.href = href;
-        anchor.download = "tachiko-sheet-report.png";
-        document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-      } catch {
-        setLocalError("The current report image could not be encoded, so no PNG was downloaded.");
-      }
+      const encodingFailed = "The current report image could not be encoded, so no PNG was downloaded.";
+      // The save is requested before encoding finishes, so it already counts
+      // as work in progress while the PNG is being produced.
+      const png = new Promise<Blob>((resolve, reject) => {
+        try {
+          canvas.toBlob((blob) => {
+            if (!blob || blob.type !== "image/png" || blob.size === 0) reject(new Error(encodingFailed));
+            else resolve(blob);
+          }, "image/png");
+        } catch {
+          reject(new Error(encodingFailed));
+        }
+      });
+      hostFiles.saveFile("tachiko-sheet-report.png", png).catch((error: unknown) => {
+        setLocalError(error instanceof Error && error.message ? error.message : encodingFailed);
+      });
     };
     const removeReport = () => {
       if (!onRemoveReport()) return;
@@ -2624,7 +2644,7 @@ export function SheetShell(props: SheetShellProps) {
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Save a copy</h2>
-            <p className="ts-subtle">Creates a new copy in this browser profile.<br />It does not update an existing one.</p>
+            <p className="ts-subtle">{hostCopy.createCopyScope}<br />It does not update an existing one.</p>
           </div>
           <div className="ts-dialog-field">
             <label className="ts-field-label" htmlFor={copyNameId}>Copy name</label>
@@ -2695,7 +2715,7 @@ export function SheetShell(props: SheetShellProps) {
                 {attention.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
               </>;
             })()}
-            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportTypes((current) => current.map((types, index) => index !== sheetIndex ? types : types.map((type, index2) => index2 === columnIndex ? nextType : type))); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
+            <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportChoice((current) => chooseImportType(current, importSuggestions, sheetIndex, columnIndex, nextType)); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {(() => {
               const notes = interop.importInspection.source.ledger.filter((finding) => !finding.blocking && INFORMATIONAL_FINDINGS.has(finding.category));
               return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul></details> : null;
@@ -2705,7 +2725,7 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. Review its source-fidelity ledger before consenting to the browser download.</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.location ? `${finding.location}: ` : ""}{finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.location ? `${finding.location}: ` : ""}{finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">

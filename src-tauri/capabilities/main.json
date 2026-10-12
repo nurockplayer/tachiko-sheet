@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The Sheet window may reach only the private native runtime channel, the close check and export saving.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-runtime-attach",
+    "allow-runtime-dispatch",
+    "allow-window-close-check",
+    "allow-page-identity",
+    "allow-save-export"
+  ]
+}

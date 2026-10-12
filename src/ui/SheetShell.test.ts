@@ -419,6 +419,20 @@ describe("projection access", () => {
 });
 
 describe("SheetShell static rendering", () => {
+  it("reserves windowed scroll height outside the table and leaves small tables intrinsic", () => {
+    const view = makeView();
+    const seed = view.table.rows[0]!;
+    view.table.rows = Array.from({ length: 8406 }, (_, index) => ({ ...seed, id: `row-${index}`, key: `row-${index}` }));
+    view.table.collection.entity_count = view.table.rows.length;
+    const markup = render({ view });
+    expect(markup).toContain('<div class="ts-grid-extent" style="min-height:269024px"><table');
+    expect(markup).toContain('aria-rowcount="8407"');
+    expect((markup.match(/class="ts-row(?: ts-row--selected)?"/g) ?? []).length).toBe(80);
+    const small = render({ view: makeView() });
+    expect(small).not.toContain('class="ts-grid-extent"');
+    expect(small).toContain('<div class="ts-grid-scroll"><table');
+  });
+
   it("publishes only the completed queued appearance after composition ends", () => {
     const queued = { kind: "built-in", profileId: "minimal-focus", density: "comfortable" } as const;
     expect(shouldPublishAppearanceCompositionEnd(queued, {

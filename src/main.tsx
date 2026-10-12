@@ -11,6 +11,8 @@ import {
   resolveInterfaceProfile,
 } from "./ui/interface-profile/index.js";
 import type { KitLoader } from "./contracts.js";
+import { BROWSER_HOST_COPY, DESKTOP_HOST_COPY, HostCopyContext } from "./ui/host-copy.js";
+import { BROWSER_HOST_FILES, HostFilesContext } from "./host/host-files.js";
 
 /**
  * Boots the production composition. In the acceptance build only, the test
@@ -45,9 +47,26 @@ async function boot(): Promise<void> {
     return;
   }
 
+  let hostCopy = BROWSER_HOST_COPY;
+  let hostFiles = BROWSER_HOST_FILES;
+  if (import.meta.env.MODE === "desktop") {
+    // The desktop app binds the same kit client to the native Rust runtime.
+    const { createNativeKitLoader } = await import("./host/native-runtime.js");
+    const { tauriRuntimeTransport } = await import("./host/tauri-runtime-transport.js");
+    kitLoader = createNativeKitLoader(tauriRuntimeTransport);
+    hostCopy = DESKTOP_HOST_COPY;
+    hostFiles = (await import("./host/tauri-host-files.js")).tauriHostFiles;
+  }
+
   const runtime = createSheetRuntime(kitLoader);
   const copies = createLocalCopies();
-  createRoot(root).render(<App runtime={runtime} copies={copies} appearancePreference={appearancePreference} />);
+  createRoot(root).render(
+    <HostCopyContext.Provider value={hostCopy}>
+      <HostFilesContext.Provider value={hostFiles}>
+        <App runtime={runtime} copies={copies} appearancePreference={appearancePreference} />
+      </HostFilesContext.Provider>
+    </HostCopyContext.Provider>,
+  );
 }
 
 void boot();
