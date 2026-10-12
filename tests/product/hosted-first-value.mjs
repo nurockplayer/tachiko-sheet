@@ -5,12 +5,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, devices } from "playwright-core";
 import { waitForColdHome } from "./home-entry.mjs";
-import { assertHostedCandidate, assertOnOrigin } from "./hosted-identity.mjs";
+import { assertHostedCandidate, expectedIndexSha256, gotoCandidate } from "./hosted-identity.mjs";
 
 const origin = process.env.HOSTED_ORIGIN;
 const shots = process.env.HOSTED_SHOTS ?? null;
 if (!origin) { console.error("BLOCKED: HOSTED_ORIGIN is required."); process.exit(78); }
-const candidate = await assertHostedCandidate(origin);
+const expectedIndex = await expectedIndexSha256();
+const candidate = await assertHostedCandidate(origin, expectedIndex);
 const errors = [];
 const profile = await mkdtemp(path.join(tmpdir(), "tachiko-hosted-"));
 let context;
@@ -26,8 +27,7 @@ async function start(options = {}) {
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   page.setDefaultTimeout(30_000);
-  await page.goto(origin);
-  assertOnOrigin(page, origin);
+  await gotoCandidate(page, origin, expectedIndex);
   await waitForColdHome(page);
   return page;
 }
@@ -73,7 +73,7 @@ try {
   assert.ok(overflowHome <= 0, `phone Home has no horizontal page scroll (${overflowHome}px)`);
   assert.ok(overflowWork <= 0, `phone workbook has no horizontal page scroll (${overflowWork}px)`);
   assert.deepEqual(errors, [], "no page or console errors");
-  console.log(JSON.stringify({ case: "hosted first value + restart + phone layout", status: "PASS", origin, indexSha256: candidate.indexHash, candidateBound: candidate.candidateBound, openMs, resultsBefore: before.slice(0, 80), resultsAfter: after.slice(0, 80), resultsReopened: reopened.slice(0, 80), consoleOrPageErrors: errors.length }));
+  console.log(JSON.stringify({ case: "hosted first value + restart + phone layout", status: "PASS", origin, indexSha256: candidate.indexSha256, openMs, resultsBefore: before.slice(0, 80), resultsAfter: after.slice(0, 80), resultsReopened: reopened.slice(0, 80), consoleOrPageErrors: errors.length }));
 } finally {
   await context?.close().catch(() => undefined);
   await rm(profile, { recursive: true, force: true });

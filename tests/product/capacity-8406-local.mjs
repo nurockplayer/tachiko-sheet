@@ -12,12 +12,13 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
-import { assertHostedCandidate, assertOnOrigin } from "./hosted-identity.mjs";
+import { assertHostedCandidate, expectedIndexSha256, gotoCandidate } from "./hosted-identity.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const hostedOrigin = process.env.CAPACITY_ORIGIN ?? null;
-const hostedCandidate = hostedOrigin ? await assertHostedCandidate(hostedOrigin) : null;
+const expectedIndex = hostedOrigin ? await expectedIndexSha256() : null;
+const hostedCandidate = hostedOrigin ? await assertHostedCandidate(hostedOrigin, expectedIndex) : null;
 const oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const ROWS = 8406;
@@ -46,8 +47,8 @@ async function start(profile) {
   const page = await context.newPage();
   page.setDefaultTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(hostedOrigin ?? LOCAL_ORIGIN);
-  if (hostedOrigin) assertOnOrigin(page, hostedOrigin);
+  if (hostedOrigin) await gotoCandidate(page, hostedOrigin, expectedIndex);
+  else await page.goto(LOCAL_ORIGIN);
   await waitForColdHome(page);
   await page.getByRole("region", { name: "Recovery", exact: true }).waitFor({ state: "detached" });
   return page;
