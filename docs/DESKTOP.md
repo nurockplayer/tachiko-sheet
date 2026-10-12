@@ -22,9 +22,9 @@ Sheet UI / application (unchanged)
 - Each channel attaches a fresh host **generation**; older frames are refused.
   A transport failure or runtime panic is terminal: the resident work is
   discarded and the in-flight operation is an unknown outcome, never replayed.
-- The Rust dependency is pinned to an immutable Work revision: the Web kit's
-  producer source `40d01a45` plus only the additive native bridge, whose release
-  WASM build is byte-identical to its baseline. Re-pin only together with a
+- The Rust dependency is pinned to an immutable Work revision: the same `b1560ab4331847557f04dfd6833fbffcabfc1169` source as the
+  Web kit. Acquisition/reproducibility and hashes are recorded in
+  [the #160 handback](160-kit-handback.md). Re-pin only together with a
   qualified kit.
 - Exports (CSV/XLSX/PNG/profile) do not use WebKit downloads. The page hands
   the bytes to the host through the `HostFiles` port (`src/host/host-files.ts`;
@@ -62,10 +62,11 @@ caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "<path>/Tachiko Sheet
 ```
 
 The lifecycle test launches the packaged app through LaunchServices, runs the
-Sales example (price edit → summary/chart) and the 8,406 × 3 CSV/XLSX journey
+Sales example (price edit → summary/chart), the 8,406 × 3 Text regression,
+and the 320 × 2 / 1,000 × 16 mixed Text/Number CSV/XLSX journeys
 (import, first/middle/last edits, Undo/Redo, Save a copy, full quit and
 relaunch, reopen, CSV/XLSX export checked cell-by-cell by an independent oracle,
-replace of an existing export, malformed-file refusal), plus the close, ⌘Q,
+existing-export refusal, malformed and dimension-limit refusals), plus the close, ⌘Q,
 Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 
 ## Current limits
@@ -79,3 +80,9 @@ Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 - Apple Silicon only. No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.
+
+Large imports support one headered, default-style table with 1–16 Text/finite
+Number columns, at most 8,406 data rows and 25,218 logical cells (including
+missing cells). Byte/XML/ZIP limits and unsupported-feature checks also apply.
+Capacity formulas, Date/Boolean columns, constraints, saved definitions and
+Dedup are excluded from the enlarged profile. Work still owns admission.

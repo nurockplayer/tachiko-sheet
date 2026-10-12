@@ -32,6 +32,13 @@ const fixtures = [
     review: 'https://github.com/nurockplayer/tachiko-sheet/issues/150#issuecomment-6104794113',
     handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/150#issuecomment-6104780673',
   },
+  {
+    name: 'Sheet #160 reproducible b1560ab4 artifact',
+    sourceCommit: 'b1560ab4331847557f04dfd6833fbffcabfc1169',
+    artifactManifestSha256: '94396e8fcd8cea32a4d120ca9087e0dde5bdd4adf2389f370eb1d6b96a2ff28a',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/160#issuecomment-6128045548',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/160#issuecomment-6128045548',
+  },
 ];
 
 function lockFor(fixture) {

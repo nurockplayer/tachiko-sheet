@@ -60,8 +60,7 @@ try {
   assert.deepEqual(await grid.locator("thead th").allTextContents(), ["Row", "item", "quantity", "price"], "the grid uses source headers");
   await context.close();
 
-  // Above 64 rows the pinned kit admits only an all-Text table, so numeric
-  // columns are not pre-set to Number and the file still imports.
+  // Large lossless numeric columns still suggest Number; the user confirms.
   const work = await mkdtemp(path.join(tmpdir(), "tachiko-recognizable-"));
   try {
     const large = path.join(work, "orders-65.csv");
@@ -75,7 +74,7 @@ try {
     await (await homeImportInput(largePage)).setInputFiles(large);
     const largeDialog = largePage.getByRole("dialog", { name: "Review import candidate", exact: true });
     await largeDialog.waitFor();
-    assert.deepEqual(await largeDialog.locator("select").evaluateAll((selects) => selects.map((select) => select.value)), ["text", "text", "text"]);
+    assert.deepEqual(await largeDialog.locator("select").evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"]);
     assert.equal(await largeDialog.getByText("First 5 of 65 rows").count(), 1);
     await largeDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await largePage.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
@@ -84,7 +83,7 @@ try {
   } finally {
     await rm(work, { recursive: true, force: true });
   }
-  console.log(JSON.stringify({ case: "#133 recognizable CSV import: preview, suggestions, names, 65-row Text default", status: "PASS" }));
+  console.log(JSON.stringify({ case: "#133 recognizable CSV import: preview, suggestions, names, 65-row mixed types", status: "PASS" }));
 } finally {
   await browser.close();
 }
