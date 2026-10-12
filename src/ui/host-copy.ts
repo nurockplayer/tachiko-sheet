@@ -23,7 +23,7 @@ export const BROWSER_HOST_COPY: HostCopy = {
   startupFailedRetry: "Reload the page to try again.",
   copiesScope: "Copies: this browser on this device",
   createCopyScope: "Creates a new copy in this browser profile.",
-  exportConsent: "Review its source-fidelity ledger before consenting to the browser download.",
+  exportConsent: "Review changes and warnings before downloading the file.",
   appearanceScope: "For this browser on this device.",
   appearanceSessionReset: "It may reset when this browser is reopened.",
 };
@@ -35,7 +35,7 @@ export const DESKTOP_HOST_COPY: HostCopy = {
   startupFailedRetry: "Quit and reopen Tachiko Sheet to try again.",
   copiesScope: "Copies: Tachiko Sheet on this Mac",
   createCopyScope: "Creates a new copy in Tachiko Sheet on this Mac.",
-  exportConsent: "Review its source-fidelity ledger, then choose where to save the file.",
+  exportConsent: "Review changes and warnings, then choose where to save the file.",
   appearanceScope: "For Tachiko Sheet on this Mac.",
   appearanceSessionReset: "It may reset when Tachiko Sheet is reopened.",
 };

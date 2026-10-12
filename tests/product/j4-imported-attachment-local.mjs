@@ -58,7 +58,7 @@ async function waitForHomeOpen(page) {
 async function importFixture(page) {
   await page.setViewportSize({ width: 1512, height: 982 });
   await (await homeImportInput(page)).setInputFiles(fixture);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
   const approvedPanel = await dialog.boundingBox();
   assert.equal(Math.round(approvedPanel.width), 600, "import review uses the approved desktop panel width");
@@ -90,14 +90,14 @@ async function importFixture(page) {
   assert.equal(Math.round(compactPanel.x), 16, "long import review stays inset on a phone");
   assert.equal(Math.round(compactPanel.width), 288, "long import review fits a 320px viewport");
   assert.ok(compactPanel.y >= 0 && compactPanel.y + compactPanel.height <= 640, "import panel stays within phone height");
-  const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
+  const importAction = dialog.getByRole("button", { name: "Import file", exact: true });
   await importAction.focus();
   const compactAction = await importAction.boundingBox();
   assert.ok(compactAction.y >= 0 && compactAction.y + compactAction.height <= 640, `keyboard focus scrolls the import action into view: ${JSON.stringify({ compactPanel, compactAction, scrollTop: await dialog.evaluate((node) => node.scrollTop) })}`);
   await page.setViewportSize({ width: 1280, height: 720 });
   await columns.nth(2).selectOption("number");
   await columns.nth(4).selectOption("number");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 }
 
@@ -178,11 +178,11 @@ async function verifySelectedDownload(page, format, selectedTable, salesQuantity
   const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await consent.waitFor();
   if (format === "csv") {
-    const csvLossMessage = "CSV exports selected-sheet scalar values only. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.";
-    const csvLossRows = consent.getByRole("list", { name: "Export fidelity ledger", exact: true })
+    const csvLossMessage = "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.";
+    const csvLossRows = consent.getByRole("list", { name: "Export changes and warnings", exact: true })
       .getByRole("listitem").filter({ hasText: csvLossMessage });
     assert.deepEqual(await csvLossRows.allTextContents(), [
-      `lossy_on_export: ${selectedTable}: ${csvLossMessage}`,
+      `Export limitations: ${selectedTable}: ${csvLossMessage}`,
     ], `${name}: consent identifies the actual selected worksheet before download`);
   }
   const downloaded = page.waitForEvent("download");
@@ -202,8 +202,8 @@ try {
   let page = await start();
   await importFixture(page);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByLabel("Source fidelity ledger", { exact: true }).waitFor();
-  const initialLedger = page.locator("[aria-label='Source fidelity ledger'] .ts-ledger");
+  await page.getByLabel("Import changes and warnings", { exact: true }).waitFor();
+  const initialLedger = page.locator("[aria-label='Import changes and warnings'] .ts-ledger");
   await assert.doesNotReject(async () => initialLedger.waitFor());
   const initialLedgerText = (await initialLedger.textContent()).trim();
   assert.notEqual(initialLedgerText, "", "the imported source must carry a visible producer ledger entry");
@@ -213,13 +213,13 @@ try {
   assert.match(await groups(page), /PEN\s*: 800/);
 
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+  await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
   await page.getByTestId("cleanup-preview").waitFor();
-  await page.getByRole("button", { name: "Commit preview", exact: true }).click();
+  await page.getByRole("button", { name: "Apply preview", exact: true }).click();
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.equal(await page.getByLabel("Cross-table groups", { exact: true }).count(), 0, "cleanup publication must not leave the old group result visible");
   await page.getByRole("button", { name: "Refresh cross-table summary 1", exact: true }).click();
-  const diagnostics = page.getByLabel("Cross-table diagnostics", { exact: true });
+  const diagnostics = page.getByLabel("Summary problems", { exact: true });
   await diagnostics.waitFor();
   assert.match(await diagnostics.textContent(), /lookup\.missing_key: PEN/);
 
@@ -238,8 +238,8 @@ try {
   await page.getByRole("button", { name: "Open saved j4-imported-restart", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByLabel("Source fidelity ledger", { exact: true }).waitFor();
-  const retainedLedger = page.locator("[aria-label='Source fidelity ledger'] .ts-ledger");
+  await page.getByLabel("Import changes and warnings", { exact: true }).waitFor();
+  const retainedLedger = page.locator("[aria-label='Import changes and warnings'] .ts-ledger");
   assert.deepEqual(await retainedLedger.locator("li").allTextContents(), initialLedgerEntries);
   const savedAfterRestart = await savedAttachment(page, "j4-imported-restart");
   assert.deepEqual(savedAfterRestart, savedBeforeRestart);
@@ -259,11 +259,11 @@ try {
   const importBeforeNoResident = await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount());
   await page.evaluate(() => window.__tachikoAcceptance.loseNextImportBeforeDispatch());
   await (await homeImportInput(page)).setInputFiles(fixture);
-  const unknownImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const unknownImport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await unknownImport.waitFor();
   await unknownImport.locator("select").nth(2).selectOption("number");
   await unknownImport.locator("select").nth(4).selectOption("number");
-  await unknownImport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await unknownImport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("project-ready").count(), 0);
   assert.equal(
@@ -296,11 +296,11 @@ try {
   const copiesBeforeImportReplyLoss = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
   await page.evaluate(() => window.__tachikoAcceptance.loseNextImportReplyAfterDispatch());
   await (await homeImportInput(page)).setInputFiles(fixture);
-  const replyLossImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const replyLossImport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await replyLossImport.waitFor();
   await replyLossImport.locator("select").nth(2).selectOption("number");
   await replyLossImport.locator("select").nth(4).selectOption("number");
-  await replyLossImport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await replyLossImport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("operation-outcome").filter({ hasText: "Outcome needs review" }).waitFor();
   assert.equal(
     await page.evaluate(() => window.__tachikoAcceptance.importSpreadsheetRequestCount()) - importBeforeReplyLoss,
@@ -339,11 +339,11 @@ try {
   const copiesBeforeImportProjectionLoss = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
   await page.evaluate(() => window.__tachikoAcceptance.failNextImportProjection());
   await (await homeImportInput(page)).setInputFiles(fixture);
-  const projectionLossImport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const projectionLossImport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await projectionLossImport.waitFor();
   await projectionLossImport.locator("select").nth(2).selectOption("number");
   await projectionLossImport.locator("select").nth(4).selectOption("number");
-  await projectionLossImport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await projectionLossImport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("operation-outcome").count(), 0, "known import publication recovery keeps outcome idle");
   assert.equal(await page.getByTestId("project-ready").count(), 0);
@@ -360,8 +360,8 @@ try {
   await page.getByTestId("project-ready").waitFor();
 
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.getByLabel("Cross-table diagnostics", { exact: true }).waitFor();
-  assert.match(await page.getByLabel("Cross-table diagnostics", { exact: true }).textContent(), /lookup\.missing_key: PEN/);
+  await page.getByLabel("Summary problems", { exact: true }).waitFor();
+  assert.match(await page.getByLabel("Summary problems", { exact: true }).textContent(), /lookup\.missing_key: PEN/);
 
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   await page.setViewportSize({ width: 1512, height: 982 });
@@ -465,11 +465,11 @@ try {
   }
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await (await homeImportInput(page)).setInputFiles(exported);
-  const reimport = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const reimport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await reimport.waitFor();
   await reimport.locator("select").nth(2).selectOption("number");
   await reimport.locator("select").nth(4).selectOption("number");
-  await reimport.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await reimport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   assert.deepEqual(await visibleTable(page, "sheet_1"), {
     headers: ["Row", "code", "category", "price"],

@@ -57,6 +57,7 @@ import { chooseImportType, chosenImportTypes, importConfirmationMessage, importR
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
+import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
 import { useHostFiles } from "../host/host-files.js";
 import "./sheet-shell.css";
@@ -2162,16 +2163,16 @@ export function SheetShell(props: SheetShellProps) {
     const preview = interop?.cleanupPreview ?? null;
     return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-interop">
       <h2 className="ts-content-heading">Import &amp; export</h2>
-      <section className="ts-interop-section" aria-label="Source fidelity ledger">
-        <h3 className="ts-content-heading">Source fidelity ledger</h3>
-        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.message}</li>)}</ul> : <p className="ts-empty">No imported-source ledger is available for this work.</p>}
+      <section className="ts-interop-section" aria-label="Import changes and warnings">
+        <h3 className="ts-content-heading">Import changes and warnings</h3>
+        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-empty">No import details are available for this work.</p>}
       </section>
       <section className="ts-interop-section" aria-label="Cleanup preview">
         <h3 className="ts-content-heading">Cleanup</h3>
-        <p className="ts-subtle">Previews are produced by the core kit. Nothing changes until you commit this exact preview.</p>
+        <p className="ts-subtle">Review the proposed cleanup. Nothing changes until you apply this preview.</p>
         <div className="ts-row-actions">
-          <button type="button" className="ts-button" disabled={controlsLocked || allFields.length === 0} onClick={() => witness && void onPreviewTrim(witness, allFields)}>Preview trim</button>
-          <button type="button" className="ts-button" disabled={controlsLocked || entities.length < 2 || keyFields.length === 0} onClick={() => witness && void onPreviewDeduplicate(witness, entities, keyFields)}>Preview whole-row deduplication</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || allFields.length === 0} onClick={() => witness && void onPreviewTrim(witness, allFields)}>Preview trimming spaces</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || entities.length < 2 || keyFields.length === 0} onClick={() => witness && void onPreviewDeduplicate(witness, entities, keyFields)}>Preview removing duplicate rows</button>
         </div>
         {preview ? (
           <div className="ts-preview" data-testid="cleanup-preview">
@@ -2190,14 +2191,14 @@ export function SheetShell(props: SheetShellProps) {
             ) : null}
             <div className="ts-row-actions">
               <button type="button" className="ts-button" onClick={onCancelCleanup}>Cancel preview</button>
-              <button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && !refuseWhileCellDraft("committing a cleanup preview") && void onCommitCleanup(witness, preview.preview_id)}>Commit preview</button>
+              <button type="button" className="ts-button ts-button--primary" disabled={controlsLocked || !witness} onClick={() => witness && !refuseWhileCellDraft("applying a cleanup preview") && void onCommitCleanup(witness, preview.preview_id)}>Apply preview</button>
             </div>
           </div>
         ) : null}
       </section>
       <section className="ts-interop-section" aria-label="Download spreadsheet">
         <h3 className="ts-content-heading">Download</h3>
-        <p className="ts-subtle">Exports use the imported source metadata and the current core revision. Review the ledger before downloading.</p>
+        <p className="ts-subtle">The file is prepared from your current work and the imported file’s information. Review changes and warnings before downloading.</p>
         <div className="ts-row-actions">
           <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
           <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
@@ -2278,9 +2279,9 @@ export function SheetShell(props: SheetShellProps) {
     const missingDefinitionIds = missingJ4DefinitionIds;
     const hasConfiguredSummary = Boolean(j4Catalog || j4Results.length > 0 || j4DefinitionIds.length > 0);
     return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className={`ts-panel ${hasConfiguredSummary ? "ts-summary-panel" : "ts-brief"}`}>
-      <section className={hasConfiguredSummary ? "ts-summary-binding" : "ts-card"} aria-label="Cross-table summary binding">
+      <section className={hasConfiguredSummary ? "ts-summary-binding" : "ts-card"} aria-label="Cross-table summary setup">
         <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>Cross-table summary</h2>
-        <p className="ts-subtle">Choose visible table and field names. The core binds their stable identities and remains the only calculator.</p>
+        <p className="ts-subtle">Choose the tables and columns to calculate your summary.</p>
         {!j4Catalog ? <button type="button" className="ts-button" onClick={() => void prepare()} disabled={controlsLocked || j4Pending}>{j4Pending ? "Loading names…" : "Choose tables and fields"}</button> : <>
           <div className="ts-summary-fields">
             {selector("Orders table", "ordersCollection", j4Catalog.collections)}
@@ -2291,26 +2292,26 @@ export function SheetShell(props: SheetShellProps) {
             {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
             {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
           </div>
-          <p className="ts-hint">Creating this summary uses the core’s format-2 project representation. Canonical and portable v1 exits remain unsupported for definition-bearing work.</p>
+          <p className="ts-hint">Work with summaries cannot be exported as a project folder or .ro file. Save a copy to keep it on this device.</p>
           <button type="button" className="ts-button ts-button--primary" onClick={() => void create()} disabled={controlsLocked || j4Pending || !bindingReady}>{j4Pending ? "Creating…" : "Create cross-table summary"}</button>
         </>}
       </section>
       <section className={hasConfiguredSummary ? "ts-summary-result" : "ts-card"} aria-label="Cross-table summary result">
         <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>{hasConfiguredSummary
           ? currentness === "pending" ? "Previous grouped result" : resultsNeedAttention ? "Grouped results need attention" : "Current grouped result"
-          : "Authoritative result"}</h2>
+          : "Calculated result"}</h2>
         {resultsNeedAttention && currentness === "current" ? <p className="ts-notice" role="status">Some results need attention. Check the affected summaries.</p> : null}
         {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
-          {result.diagnostics.length > 0 ? <><p role="status">{currentness === "pending" ? "This previous result has source issues. Its values are hidden while results update." : "The core reported diagnostics; no group values are shown."}</p><ul className="ts-ledger" aria-label="Cross-table diagnostics">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
+          {result.diagnostics.length > 0 ? <><p role="status">{currentness === "pending" ? "This previous result has source issues. Its values are hidden while results update." : "The source data has problems. Group values are hidden until those problems are corrected."}</p><ul className="ts-ledger" aria-label="Summary problems">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
             <p className="ts-content-meta">{currentness === "pending" ? "Previous result" : resultsNeedAttention ? "Current result" : "Complete result"} · {result.groups.length} groups{resultsNeedAttention || currentness === "pending" ? "" : ` · ${currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}`}</p>
             <table className="ts-summary-groups" aria-label="Cross-table groups">
               <thead><tr><th scope="col">Product</th><th scope="col">Value</th></tr></thead>
               <tbody>{result.groups.map((group) => <tr key={group.category}><td>{group.category}</td><td>{group.value}</td></tr>)}</tbody>
             </table>
-            <div className="ts-row-actions ts-summary-actions"><button type="button" className="ts-button ts-button--primary" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button><button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button></div>
+            <div className="ts-row-actions ts-summary-actions"><button type="button" className="ts-button ts-button--primary" onClick={() => createReportFromSummary(result.definitionId, "bar")} disabled={controlsLocked}>Create bar report</button><button type="button" className="ts-button" onClick={() => createReportFromSummary(result.definitionId, "line")} disabled={controlsLocked}>Create line report</button><button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh summary</button></div>
           </>}
-          {result.diagnostics.length > 0 ? <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh core result</button> : null}
+          {result.diagnostics.length > 0 ? <button type="button" className="ts-button" onClick={() => void onRefreshJ4(liveWitness, result.definitionId)} disabled={controlsLocked || j4Pending}>Refresh summary</button> : null}
         </div>)}
         {missingDefinitionIds.length > 0 ? <div className="ts-preview">
           <p className="ts-empty">This summary has no confirmed current result. Refresh it to try again.</p>
@@ -2448,9 +2449,9 @@ export function SheetShell(props: SheetShellProps) {
             <h2 className="ts-report-document-heading">Complete current group result</h2>
             <dl className="ts-report-data" aria-label="Current report data">
               {result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}
-              <div className="ts-report-currentness"><dt>Currentness</dt><dd>{currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}</dd></div>
+              <div className="ts-report-currentness"><dt>Results</dt><dd>{currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}</dd></div>
             </dl>
-            <p className="ts-subtle ts-report-output-note">This {report.type} report renders the complete current core group result. It does not calculate or persist group values.</p>
+            <p className="ts-subtle ts-report-output-note">This {report.type} report shows the complete current summary. It does not store a separate copy of the values.</p>
             {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
             <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
             {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
@@ -2697,14 +2698,14 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
       ) : null}
       {interop?.importInspection ? (
-        <Modal variant="import" label="Review import candidate" onCancel={cancelImport} dismissDisabled={importPending}>
+        <Modal variant="import" label="Review import preview" onCancel={cancelImport} dismissDisabled={importPending}>
           <div className="ts-dialog-intro">
             <h2
               ref={importPendingFocusRef}
               className="ts-h2"
               tabIndex={interop.importInspection.source.ledger.length || importPending || Boolean(importError) ? 0 : -1}
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
-            >Review import candidate</h2>
+            >Review import preview</h2>
             <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Check each column's type before importing. Number is suggested only where every value is a plain number; everything else stays Text.</p>
           </div>
           <div className="ts-dialog-scroll">
@@ -2714,20 +2715,20 @@ export function SheetShell(props: SheetShellProps) {
               const ledger = interop.importInspection.source.ledger;
               const attention = ledger.filter((finding) => finding.blocking || !INFORMATIONAL_FINDINGS.has(finding.category));
               return <>
-                {attention.length ? <ul className="ts-ledger" aria-label="Candidate source fidelity ledger">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
+                {attention.length ? <ul className="ts-ledger" aria-label="Import preview changes and warnings">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
               </>;
             })()}
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportChoice((current) => chooseImportType(current, importSuggestions, sheetIndex, columnIndex, nextType)); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {(() => {
               const notes = interop.importInspection.source.ledger.filter((finding) => !finding.blocking && INFORMATIONAL_FINDINGS.has(finding.category));
-              return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {finding.message}</li>)}</ul></details> : null;
+              return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message)}</li>)}</ul></details> : null;
             })()}
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
-          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import file</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The actual exporter produced this revision. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export fidelity ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{finding.category}</strong>: {finding.location ? `${finding.location}: ` : ""}{finding.message}</li>)}</ul> : <p className="ts-hint ts-dialog-success">The exporter reported no fidelity findings for this output.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The file has been prepared. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
       {closeOpen ? (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
@@ -2855,6 +2856,6 @@ function outcomeLabel(outcome: SheetShellProps["outcome"]): string {
 const INFORMATIONAL_FINDINGS = new Set<string>(["native_equivalent", "preserved_readable"]);
 
 function explain(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
+  if (error instanceof Error && error.message.length > 0) return `${fallback} (Details: ${error.message})`;
   return fallback;
 }

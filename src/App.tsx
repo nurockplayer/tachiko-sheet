@@ -91,7 +91,7 @@ export function noResidentRecoveryState(): {
     dirty: false,
     currentness: "current",
     outcome: "idle",
-    message: "No resident work is available. Open a project to continue.",
+    message: "No work is open. Open a project to continue.",
     recoveryDraft: null,
   };
 }
@@ -308,12 +308,12 @@ export function recoverPresentationAfterAcknowledgedOpen(
 }
 
 function describe(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.length > 0) return `${fallback} (${error.message})`;
+  if (error instanceof Error && error.message.length > 0) return `${fallback} (Details: ${error.message})`;
   return fallback;
 }
 
 async function opaqueSnapshotDigest(bytes: ArrayBuffer): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error("This host cannot verify the opaque project snapshot.");
+  if (!globalThis.crypto?.subtle) throw new Error("This device cannot verify the project copy.");
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -602,7 +602,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     expectedOccurrence: string,
   ): Promise<void> {
     if (next.occurrence !== expectedOccurrence) {
-      throw new Error("The published work occurrence changed before its derived results could be confirmed.");
+      throw new Error("The open work changed before its summaries could be confirmed.");
     }
     installView(next);
     clearCleanupPreview();
@@ -617,10 +617,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const uniqueIds = new Set(ids);
     if (results.some((result) => result.revision !== next.revision) || uniqueIds.size !== ids.length ||
       (priorJ4 && priorJ4.definitionIds.some((id) => !uniqueIds.has(id)))) {
-      throw new Error("The complete grouped-summary result set did not match the published work revision.");
+      throw new Error("The complete summary results did not match the changed work.");
     }
     if (viewRef.current?.occurrence !== next.occurrence || viewRef.current.revision !== next.revision) {
-      throw new Error("The published work changed before its grouped summaries could be installed.");
+      throw new Error("The changed work could not be matched to its summaries.");
     }
     installJ4Results(results);
     setCurrentness("current");
@@ -665,7 +665,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function guardReplacement(): void {
     if (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) {
-      throw new Error("Recovery is pending. Refresh or close the resident work before opening another project.");
+      throw new Error("Recovery is pending. Refresh or close the open work before opening another project.");
     }
     if (dirtyRef.current || draftDirtyRef.current) {
       throw new Error(
@@ -714,7 +714,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current,
       () => false,
       () => {
-        setMessage("Recovery is pending. Refresh to confirm the resident work, or close it before continuing.");
+        setMessage("Recovery is pending. Refresh to confirm the open work, or close it before continuing.");
         return true;
       },
     );
@@ -778,8 +778,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setOutcome(error.operationOutcome === "unknown" ? "unknown" : "idle");
     setMessage(
       error.operationOutcome === "unknown"
-        ? "The open request outcome is unknown; its current projection could not be confirmed. Refresh to re-read the resident work."
-        : "The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.",
+        ? "We could not confirm whether the file opened or read its values. Refresh to check the open work."
+        : "The new work opened, but its values could not be confirmed. Refresh to read the work again.",
     );
   }
 
@@ -872,7 +872,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // Open was acknowledged; a later J4 discovery/projection failure
         // leaves freshness unknown, not the Open operation outcome.
         setOutcome("idle");
-        setMessage("The new work opened, but its current projection could not be confirmed. Refresh to re-read the work.");
+        setMessage("The new work opened, but its values could not be confirmed. Refresh to read the work again.");
         return { kind: "acknowledged-recovery" };
       }
       // A known refusal happened before replacement; the old resident and
@@ -910,7 +910,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     // The old preview targeted the projection we just discarded.
     setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
     cleanupPreviewContextRef.current = null;
-    setMessage("The change was published, but the current work could not be confirmed. Refresh to re-read the work.");
+    setMessage("The change was applied, but the current values could not be confirmed. Refresh to read the work again.");
   }
 
   function failClosedAfterUnknownCleanup(): void {
@@ -989,7 +989,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
         setCurrentness("unknown");
         setOutcome("unknown");
-        setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
+        setMessage("Recovery is pending. Refresh to re-read the open work before opening another project.");
         return;
       } else {
         setCurrentness("current");
@@ -1019,7 +1019,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
         setCurrentness("unknown");
         setOutcome("unknown");
-        setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
+        setMessage("Recovery is pending. Refresh to re-read the open work before opening another project.");
         return;
       } else {
         setCurrentness("current");
@@ -1108,7 +1108,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   async function openJ4Canary(): Promise<SalesEntryOutcome> {
     if (startupUnavailableRef.current) return { kind: "startup-unavailable" };
     if (terminalReloadRequiredRef.current) {
-      return { kind: "reload-required", message: "The local runtime was invalidated. Reload this page before continuing." };
+      return { kind: "reload-required", message: "The open work can no longer be used. Reload this page before continuing." };
     }
     if (blockUnknownOpenRecovery()) return { kind: "refused", message: "Recovery must be resolved before entering the Sales example." };
     if (!begin()) return { kind: "refused", message: "Another operation is in progress." };
@@ -1129,7 +1129,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         return { kind: "refused", message: "The Sales example opened, but its current view could not be confirmed." };
       }
       if (j4DefinitionIdsRef.current.length !== 0 || j4ResultsRef.current.length !== 0) {
-        return await refuseSalesEntry(opened, new Error("The new Sales occurrence already contains a cross-table summary."));
+        return await refuseSalesEntry(opened, new Error("The new Sales example already contains a cross-table summary."));
       }
       const witness = witnessOf(opened);
       const catalog = await runtime.listKeyedGroupedSumBindings(witness);
@@ -1143,14 +1143,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       published = true;
       const next = await runtime.read();
       if (next.occurrence !== opened.occurrence || next.revision !== created.revision) {
-        throw new Error("The generated Sales summary could not be matched to the current work revision.");
+        throw new Error("The Sales summary could not be matched to the current work.");
       }
       const results = await readJ4Results(next);
       const source = confirmedReportSource(next, results, created.definitionId);
       const ids = results.map((result) => result.definitionId);
       if (!source || ids.length !== 1 || new Set(ids).size !== 1 || ids[0] !== created.definitionId ||
         created.revision !== next.revision || created.diagnostics.length !== 0) {
-        throw new Error("The generated Sales summary was not uniquely confirmed at the current revision.");
+        throw new Error("The current Sales summary could not be uniquely confirmed.");
       }
       const catalogCollection = catalog.collections.find((collection) => collection.key === "catalog");
       if (!catalogCollection) throw new Error("The Catalog table could not be resolved from the current schema.");
@@ -1220,7 +1220,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         ? (() => {
             if (copy.presentation!.snapshotRevision !== copy.revision ||
               copy.presentation!.snapshotDigest !== presentationDigest) {
-              throw new Error("The saved report configuration does not match its opaque snapshot.");
+              throw new Error("The saved report settings do not match this project copy.");
             }
             return copy.presentation!;
           })()
@@ -1238,7 +1238,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
         setCurrentness("unknown");
         setOutcome("unknown");
-        setMessage("Recovery is pending. Refresh to re-read the resident work before opening another project.");
+        setMessage("Recovery is pending. Refresh to re-read the open work before opening another project.");
         return;
       } else {
         setCurrentness("current");
@@ -1276,7 +1276,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function inspectImport(file: File): Promise<ImportInspection> {
-    if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the resident work first.");
+    if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the open work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
     try {
       setMessage(null);
@@ -1669,7 +1669,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function prepareJ4Bindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog> {
-    if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the resident work first.");
+    if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the open work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
     try {
       setMessage(null);
@@ -1763,7 +1763,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (!current || current.occurrence !== admitted.occurrence || current.revision !== admitted.revision ||
         current.occurrence !== witness.occurrence || current.revision !== witness.revision) return false;
       if (result.definitionId !== definitionId || result.revision !== admitted.revision) {
-        throw new Error("The summary refresh returned a result for a different definition or revision.");
+        throw new Error("The refreshed result did not match this summary and the current work.");
       }
       // A targeted refresh must not discard sibling summaries. Replace the
       // requested result in place, or append it only when it was not already
@@ -1796,7 +1796,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function createReport(definitionId: string, type: ReportConfiguration["type"]): void {
     const live = viewRef.current;
     if (currentness !== "current" || inflightRef.current) {
-      setMessage("Wait for the published work and all grouped summaries to be confirmed before creating a report.");
+      setMessage("Wait for the changed values and all summaries to be confirmed before creating a report.");
       return;
     }
     const source = confirmedReportSource(live, j4ResultsRef.current, definitionId);
@@ -1859,7 +1859,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     try {
       await runtime.close();
     } catch (error) {
-      setMessage(describe(error, "The work could not be released cleanly."));
+      setMessage(describe(error, "The work could not be closed."));
       throw new Error(describe(error, "The work could not be closed."));
     } finally {
       viewRef.current = null;
@@ -1927,7 +1927,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         syncDirty();
         setCurrentness("unknown");
         setOutcome(unknownOpenRecoveryRef.current ? "unknown" : "idle");
-        setMessage("The resident work's source identity could not be confirmed. Refresh again or close it before continuing.");
+        setMessage("We could not confirm which file the open work came from. Refresh again or close it before continuing.");
         return;
       }
       if (pendingReplacement) {
@@ -2172,7 +2172,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onDownload={download}
         />
       {reloadRequired || startupUnavailable ? null : <footer className="ts-notices">
-        <span>Tachiko Sheet · experimental core kit notices: </span>
+        <span>Tachiko Sheet · software licenses: </span>
         <a href="/core-kit/notices/THIRD_PARTY_LICENSES.md">third-party licenses</a>
         <span aria-hidden="true"> · </span>
         <a href="/core-kit/notices/LICENSE-MIT">MIT</a>

@@ -60,7 +60,7 @@ describe("AppearanceSelector semantic rendering", () => {
     expect((html.match(/type="radio"/g) ?? [])).toHaveLength(6);
     expect(html).toMatch(/<input[^>]*checked=""[^>]*value="imported"/);
     expect(html).toContain('<bdi dir="auto">Imported Tachiko</bdi>');
-    expect(html).toContain("Export requests normalized v1 JSON for the active profile.");
+    expect(html).toContain("Export the appearance currently in use as a .tachiko-profile.json file.");
     expect(html).not.toContain('value="tachiko" checked=""');
   });
 

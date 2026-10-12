@@ -30,7 +30,7 @@ const launch = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS ===
 async function choose(page, file) {
   const input = await homeImportInput(page);
   await input.setInputFiles(file);
-  return page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  return page.getByRole("dialog", { name: "Review import preview", exact: true });
 }
 
 async function importWithTypes(page, file, { numbers = true } = {}) {
@@ -45,7 +45,7 @@ async function importWithTypes(page, file, { numbers = true } = {}) {
     await selectors.nth(count - 1).selectOption("number");
     await dialog.locator("select").nth(count - 2).selectOption("number");
   }
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 }
 
@@ -62,7 +62,7 @@ async function download(page, format, destination) {
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
-  assert.match(await dialog.textContent(), /actual exporter|exporter produced/i);
+  assert.match(await dialog.textContent(), /file has been prepared/i);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
   const triggerHandle = await trigger.elementHandle();
@@ -119,7 +119,7 @@ try {
   assert.equal(longCandidateMetrics.columns, 12, "long real candidate exposes all 12 column choices");
   assert.ok(longCandidateMetrics.scrollHeight > longCandidateMetrics.clientHeight, `long candidate overflows its review scroller: ${JSON.stringify(longCandidateMetrics)}`);
   await dialog.locator("select").first().selectOption("number");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   const importAlert = dialog.getByRole("alert");
   await importAlert.waitFor();
   assert.match(await importAlert.textContent(), /import was not applied/i);
@@ -145,7 +145,7 @@ try {
   assert.ok(shortImportScroll.scrollHeight > shortImportScroll.clientHeight, `short Import uses parent scrolling: ${JSON.stringify(shortImportScroll)}`);
   assert.equal(shortImportScroll.overflowY, "auto");
   assert.equal(shortImportScroll.contentOverflowY, "visible", "short Import exposes content to parent scrolling");
-  const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
+  const importAction = dialog.getByRole("button", { name: "Import file", exact: true });
   await dialog.locator("select").first().focus();
   // Column choices, then the "Import details" disclosure, then the actions.
   for (let index = 0; index < 14; index += 1) await page.keyboard.press("Tab");
@@ -179,7 +179,7 @@ try {
   await writeFile(correctedNumberCsv, "value\nnot-a-number\n", "utf8");
   dialog = await choose(page, correctedNumberCsv);
   await dialog.locator("select").first().selectOption("number");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   const correctedImportAlert = dialog.getByRole("alert");
   await correctedImportAlert.waitFor();
   assert.equal(await page.getByRole("alert").count(), 1, "failed Import exposes one accessible alert");
@@ -188,7 +188,7 @@ try {
   assert.ok(specificImportFailure.length > 0, "failed Import retains a recovery explanation");
   assert.notEqual(specificImportFailure, "The import was not applied. Your source selection is still available.", "candidate shows the specific parent recovery detail in place of the generic Shell fallback");
   await dialog.locator("select").first().selectOption("text");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
   await page.getByTestId("project-ready").waitFor();
   assert.equal(await page.getByRole("alert").count(), 0, "successful corrected Import clears the stale failure alert");
@@ -203,7 +203,7 @@ try {
   console.log("J3 normal UI: imported CSV");
   assert.match(await page.locator("[role=grid]").textContent(), /001?PEN|PEN/);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  assert.match(await page.locator("body").textContent(), /Source fidelity ledger/);
+  assert.match(await page.locator("body").textContent(), /Import changes and warnings/);
   // The imported workbook is dirty until saved; replacement/close asks rather than discarding it.
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const dirtyDialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });
@@ -211,9 +211,9 @@ try {
   await dirtyDialog.getByRole("button", { name: "Keep editing", exact: true }).click();
 
   // I03/I04: cancelling is inert; an old preview cannot be committed after a real edit.
-  await preview(page, "Preview trim");
+  await preview(page, "Preview trimming spaces");
   await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
-  await preview(page, "Preview trim");
+  await preview(page, "Preview trimming spaces");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   const first = page.locator("[role=grid] tbody tr").first().locator("td").first();
   await first.dblclick();
@@ -222,21 +222,21 @@ try {
   await edit.press("Enter");
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "an intervening publication must clear the stale preview");
-  assert.equal(await page.getByRole("button", { name: "Commit preview", exact: true }).count(), 0, "a stale preview must not remain dispatchable");
+  assert.equal(await page.getByRole("button", { name: "Apply preview", exact: true }).count(), 0, "a stale preview must not remain dispatchable");
   // The intervening edit is retained; explicitly correct it before making a
   // new preview, rather than treating a stale preview as a retry.
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await first.dblclick();
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill(" PEN ");
   await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Enter");
-  await preview(page, "Preview trim");
+  await preview(page, "Preview trimming spaces");
   assert.ok(await page.getByLabel("Cleanup targets", { exact: true }).locator("tbody tr").count() > 0, "preview must identify concrete row/column targets");
   // This declared acceptance transport fault reaches the actual cleanup
   // commit once, then loses its reply. It must not be mistaken for a failed
   // cleanup or retried by the UI.
   const cleanupDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
   await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
-  await page.getByRole("button", { name: "Commit preview", exact: true }).click();
+  await page.getByRole("button", { name: "Apply preview", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true");
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
@@ -249,10 +249,10 @@ try {
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "published recovery retained a stale cleanup preview");
-  assert.ok(await page.getByRole("button", { name: "Preview whole-row deduplication", exact: true }).isEnabled(), "re-observe did not restore an eligible cleanup action");
+  assert.ok(await page.getByRole("button", { name: "Preview removing duplicate rows", exact: true }).isEnabled(), "re-observe did not restore an eligible cleanup action");
   // Continue from the re-observed revision with a new, explicit preview.
-  await preview(page, "Preview whole-row deduplication");
-  await page.getByRole("button", { name: "Commit preview", exact: true }).click();
+  await preview(page, "Preview removing duplicate rows");
+  await page.getByRole("button", { name: "Apply preview", exact: true }).click();
 
   // The trim/dedup commit produces the fixed corpus values for independent checks.
   const csvOut = path.join(output, "normal-ui.csv");
@@ -320,11 +320,11 @@ try {
   await page.getByRole("heading", { name: "Tachiko Sheet", exact: true }).waitFor();
   await page.setViewportSize({ width: 320, height: 350 });
   dialog = await choose(page, mergedXlsx);
-  const producerLedger = dialog.getByLabel("Candidate source fidelity ledger", { exact: true });
+  const producerLedger = dialog.getByLabel("Import preview changes and warnings", { exact: true });
   const importColumns = dialog.locator(".ts-import-columns");
   assert.match(await producerLedger.textContent(), /merged/i);
   assert.equal(await producerLedger.isVisible(), true, "real merged-cell fidelity warning is visible during candidate review");
-  const importHeading = dialog.getByRole("heading", { name: "Review import candidate", exact: true });
+  const importHeading = dialog.getByRole("heading", { name: "Review import preview", exact: true });
   assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "warning-bearing short Import enters on its heading");
   const [producerLedgerBox, importColumnsBox] = await Promise.all([producerLedger.boundingBox(), importColumns.boundingBox()]);
   assert.ok(producerLedgerBox && importColumnsBox && producerLedgerBox.y + producerLedgerBox.height <= importColumnsBox.y, `real producer warning appears before long column choices: ${JSON.stringify({ producerLedgerBox, importColumnsBox })}`);

@@ -83,7 +83,7 @@ async function cellText(page, row, column) {
 
 async function importSource(page, file) {
   await (await homeImportInput(page)).setInputFiles(file);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
   const types = dialog.locator("select");
   assert.equal(await types.count(), COLS);
@@ -93,7 +93,7 @@ async function importSource(page, file) {
     // Explicit confirmation through the ordinary type controls.
     await types.nth(c).selectOption(type);
   }
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await ready(page);
 }
 
@@ -165,11 +165,11 @@ async function closeToHome(page) {
 
 async function refusedImport(page, file, label) {
   await (await homeImportInput(page)).setInputFiles(file);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   const refusal = page.getByRole("alert");
   await dialog.or(refusal).first().waitFor();
   if (await dialog.count()) {
-    await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
     await refusal.first().waitFor();
     const text = (await refusal.allTextContents()).join(" ");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -220,11 +220,11 @@ try {
       }
       // CSV keeps nonfinite-looking source Text; explicit Number must fail.
       await (await homeImportInput(page)).setInputFiles(path.join(fixtures, `nonfinite.${format}`));
-      const review = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+      const review = page.getByRole("dialog", { name: "Review import preview", exact: true });
       await review.or(page.getByRole("alert")).first().waitFor();
       if (await review.count()) {
         await review.locator("select").nth(1).selectOption("number");
-        await review.getByRole("button", { name: "Import candidate", exact: true }).click();
+        await review.getByRole("button", { name: "Import file", exact: true }).click();
         await review.getByRole("alert").waitFor();
         assert.match(await review.getByRole("alert").textContent(), /column could not be converted to Number/);
         await review.getByRole("button", { name: "Cancel", exact: true }).click();

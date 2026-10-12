@@ -174,22 +174,22 @@ try {
   await page.getByLabel("Title", { exact: true }).fill("Primary button probe");
   results.push(...await sample(page.getByRole("button", { name: "Export current PNG", exact: true }), "Export current PNG"));
 
-  // Import candidate uses the actual CSV chooser and parser, then enables cleanup.
+  // Import file uses the actual CSV chooser and parser, then enables cleanup.
   const csv = path.join(root, "acceptance/j3-interop/fixtures/messy.csv");
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const closeDialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });
   if (await closeDialog.count()) await closeDialog.getByRole("button", { name: "Close without saving", exact: true }).click();
   await (await homeImportInput(page)).setInputFiles(csv);
-  const importDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await importDialog.waitFor();
-  const importButton = importDialog.getByRole("button", { name: "Import candidate", exact: true });
-  results.push(...await sample(importButton, "Import candidate"));
+  const importButton = importDialog.getByRole("button", { name: "Import file", exact: true });
+  results.push(...await sample(importButton, "Import file"));
   await importButton.click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Preview trim", exact: true }).click();
-  const commit = page.getByRole("button", { name: "Commit preview", exact: true });
-  results.push(...await sample(commit, "Commit preview"));
+  await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
+  const commit = page.getByRole("button", { name: "Apply preview", exact: true });
+  results.push(...await sample(commit, "Apply preview"));
   await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
 
   // Download confirmation is reached through the actual exporter and safely cancelled.
@@ -199,7 +199,7 @@ try {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   assert.equal(results.length, 8 * 4, "all eight actual primary consumers must be checked in both profiles/palettes");
-  console.log(JSON.stringify({ case: "enabled primary forced-colors rendered consumers", status: "PASS", inventory: ["Save a copy", "Apply Notes", "Commit preview", "Create cross-table summary", "Export current PNG", "Create copy", "Import candidate", "Download"], samples: results, interactionResults }));
+  console.log(JSON.stringify({ case: "enabled primary forced-colors rendered consumers", status: "PASS", inventory: ["Save a copy", "Apply Notes", "Apply preview", "Create cross-table summary", "Export current PNG", "Create copy", "Import file", "Download"], samples: results, interactionResults }));
 } finally {
   await context.close();
   await rm(profileDir, { recursive: true, force: true });

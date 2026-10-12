@@ -266,7 +266,7 @@ try {
   await editor.evaluate((input) => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
   await page.locator(".ts-appearance-profile-option").filter({ hasText: "Familiar Spreadsheet" }).click();
   await page.getByRole("button", { name: "Export active profile…" }).waitFor();
-  await page.getByText("The queued choice applies after editing; export uses the active profile.", { exact: true }).waitFor();
+  await page.getByText("Your choice takes effect after editing; export uses the appearance currently in use.", { exact: true }).waitFor();
   const pendingExport = await (async () => {
     const pending = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export active profile…" }).click();

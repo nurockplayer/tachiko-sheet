@@ -130,7 +130,7 @@ async function importFile(file, types = []) {
   await input.setInputFiles(path.join(prep, "fixtures", file));
   await activePage.locator(".ts-modal--import").waitFor();
   for (let i = 0; i < types.length; i++) await activePage.locator(".ts-import-column select").nth(i).selectOption(types[i]);
-  await activePage.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await activePage.getByRole("button", { name: "Import file", exact: true }).click();
   await activePage.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 }
 async function readView() {
@@ -155,7 +155,7 @@ async function editDate(value) {
 }
 async function visibleSourceLedger() {
   await activePage.getByRole("tab", { name: "Import & export", exact: true }).click();
-  const ledger = activePage.getByRole("region", { name: "Source fidelity ledger", exact: true });
+  const ledger = activePage.getByRole("region", { name: "Import changes and warnings", exact: true });
   await ledger.waitFor();
   const text = await ledger.innerText();
   await activePage.getByRole("tab", { name: "Table", exact: true }).click();
@@ -288,11 +288,11 @@ async function assertReopenedCore(name, saved, file, expectedInventory, firstDat
 async function summaryBinding(unrelatedDate = false) {
   await activePage.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await activePage.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
-  await activePage.locator('[aria-label="Cross-table summary binding"] select').first().waitFor();
+  await activePage.locator('[aria-label="Cross-table summary setup"] select').first().waitFor();
   const values = unrelatedDate
     ? ["sheet_1", "column_1", "column_2", "sheet_2", "column_1", "column_2", "column_3"]
     : ["sheet_1", "column_1", "column_3", "sheet_1", "column_1", "column_2", "column_4"];
-  const selects = activePage.locator('[aria-label="Cross-table summary binding"] select');
+  const selects = activePage.locator('[aria-label="Cross-table summary setup"] select');
   for (let index = 0; index < values.length; index++) await selects.nth(index).selectOption(values[index]);
 }
 async function createSummary() {
@@ -362,7 +362,7 @@ try {
     assert.deepEqual({ ...reopenedRecord, bytes: undefined }, savedEvidence.record, "the same saved record, IDs, source metadata, ledger and bytes remain unchanged after reopen");
     const reopenedCore = await assertReopenedCore(name, savedEvidence.record, "date-only.csv", savedEvidence.core.inventory, "2026-09-28");
     await activePage.getByRole("tab", { name: "Import & export", exact: true }).click();
-    assert.match((await readView()).body, /original source remains available/i);
+    assert.match((await readView()).body, /original source is still available/i);
     assert.equal(await visibleSourceLedger(), sourceBefore, "the visible source ledger survives Save and fresh reopen unchanged");
     await activePage.getByRole("tab", { name: "Table", exact: true }).click();
     await editDate("2026-09-29");
@@ -479,7 +479,7 @@ try {
     assert.deepEqual(after.cells, savedView.cells);
     assert.notEqual(after.witness.occurrence, savedView.witness.occurrence);
     await activePage.getByRole("tab", { name: "Report", exact: true }).click();
-    assert.match(await activePage.locator("body").innerText(), /This bar report renders/, "applied bar report type survives saved-copy reopen");
+    assert.match(await activePage.locator("body").innerText(), /This bar report shows/, "applied bar report type survives saved-copy reopen");
     const report = { labels: await Promise.all(fields.map((field) => field.inputValue())), legend: await activePage.getByRole("checkbox").isChecked(), text: await activePage.getByLabel("Current report data", { exact: true }).innerText() };
     assert.deepEqual(report.labels, boundary);
     assert.equal(report.legend, false);
@@ -573,7 +573,7 @@ try {
     await activePage.getByRole("tab", { name: "Table", exact: true }).click();
     await editDate("2026-09-29");
     await activePage.getByRole("tab", { name: "Import & export", exact: true }).click();
-    assert.match((await readView()).body, /original source remains available/i);
+    assert.match((await readView()).body, /original source is still available/i);
     return { reopened, inspected: inspected.core, readerOnlyFixtureSetup: true };
   });
 

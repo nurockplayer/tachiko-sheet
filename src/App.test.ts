@@ -155,7 +155,7 @@ describe("recovery draft lifecycle", () => {
       dirty: false,
       currentness: "current",
       outcome: "idle",
-      message: "No resident work is available. Open a project to continue.",
+      message: "No work is open. Open a project to continue.",
       recoveryDraft: null,
     });
   });
