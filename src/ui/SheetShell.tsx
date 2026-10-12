@@ -983,7 +983,7 @@ export function SheetShell(props: SheetShellProps) {
   );
   const importErrorIsInline = Boolean(
     importError && localError === null && copyError === null &&
-      errorMessage !== null && (errorMessage === importErrorMessage || errorMessage === message),
+      errorMessage !== null && (errorMessage === importErrorMessage || Boolean(interop?.importInspection) && errorMessage === message),
   );
   const downloadErrorIsInline = Boolean(
     tab === "interop" && interop?.downloadStatus === "failed" &&
