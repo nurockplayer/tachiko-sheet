@@ -716,3 +716,19 @@ test('M6 requires the frozen lifecycle Home/Open assertion plus clean independen
   assert.equal(classifyM6ProductionProof(readiness, { ...lifecycle, networkEvidence: [{ path: '/index.html', status: 404 }] }, identity).status, 'BLOCKED');
   assert.equal(classifyM6ProductionProof(readiness, lifecycle, { ...identity, loaderSha256: null }).status, 'BLOCKED');
 });
+
+test('committed source identity records a deleted path and still refuses unreadable ones', async () => {
+  const runGit = (present, listed) => async (args) => {
+    if (args[0] === 'cat-file') return { outcome: 'EXITED', code: 128, output: 'fatal: path does not exist', bytes: Buffer.alloc(0) };
+    if (args[0] === 'ls-tree') return { outcome: 'EXITED', code: 0, output: listed, bytes: Buffer.from(listed) };
+    throw new Error(`unexpected git ${args.join(' ')}`);
+  };
+  assert.deepEqual(
+    await readCommittedSourceIdentities({ head: 'candidate', files: ['public/_redirects'], cwd: '/repo', runGit: runGit(false, '') }),
+    [{ path: 'public/_redirects', deleted: true }],
+  );
+  await assert.rejects(
+    readCommittedSourceIdentities({ head: 'candidate', files: ['public/_redirects'], cwd: '/repo', runGit: runGit(true, 'public/_redirects\n') }),
+    /cannot determine complete committed source byte count/,
+  );
+});
