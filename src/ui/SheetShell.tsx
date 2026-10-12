@@ -52,7 +52,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
-import { isNotesDraftBound, notesDraftAfterApply, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
+import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
@@ -827,9 +827,13 @@ export function SheetShell(props: SheetShellProps) {
   const notesEditable = Boolean(notesField && notesField.editable_scalar === "text");
   const notesStale = notesDirty && !notesDraftBound;
 
+  useEffect(() => {
+    setNotesDrafts((drafts) => markNotesConflicts(drafts, view));
+  }, [view]);
+
   function keepNotesDraft(): void {
     if (!activeNotesDraft) return;
-    const kept = { ...activeNotesDraft, base: notesCommitted };
+    const kept = keptNotesDraft(activeNotesDraft, notesCommitted);
     setNotesDrafts((drafts) => drafts.map((draft) => (draft === activeNotesDraft ? kept : draft)));
   }
 
@@ -1353,10 +1357,9 @@ export function SheetShell(props: SheetShellProps) {
     if (!notesField || !notesEditable || !notesDirty || !notesDraftBound || controlsLocked) return;
     if (refuseWhileCellDraft("applying notes")) return;
     const applied = activeNotesDraft;
-    const value = notesValue;
-    const accepted = await runCommit(notesField.target, { kind: "text", value });
+    const accepted = await runCommit(notesField.target, { kind: "text", value: notesValue });
     if (accepted && applied) {
-      setNotesDrafts((drafts) => notesDraftAfterApply(drafts, applied, value));
+      setNotesDrafts((drafts) => dropAppliedNotesDraft(drafts, applied));
       setLocalError(null);
     }
   }
@@ -2107,6 +2110,9 @@ export function SheetShell(props: SheetShellProps) {
               rows={5}
               value={notesValue}
               disabled={!notesEditable}
+              // Read-only while a commit is pending, so an Apply's outcome
+              // never races newer typing.
+              readOnly={commitPending}
               aria-describedby={notesEditable ? undefined : `${notesId}-hint`}
               onChange={(event) => {
                 setLocalError(null);

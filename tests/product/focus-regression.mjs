@@ -409,6 +409,17 @@ const cases = [
       assert.equal(await page.getByRole("button", { name: "Keep my draft", exact: true }).isVisible(), true);
       await notes.press("Control+Enter");
       assert.equal(await page.getByRole("button", { name: "Keep my draft", exact: true }).isVisible(), true, "Ctrl+Enter does not apply a stale draft");
+      // Changing the notes back to the draft's base keeps the observed
+      // conflict: recovery stays explicit.
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      await notesCell.dblclick();
+      await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("rebased-A-notes");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "rebased-A-notes", `[data-testid="cell:${expected.entity}:${expected.notes}"]`);
+      await page.getByRole("tab", { name: "Brief", exact: true }).click();
+      assert.equal(await notes.inputValue(), "brief-draft more");
+      assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
+      assert.equal(await page.getByRole("button", { name: "Keep my draft", exact: true }).isVisible(), true);
       await page.getByRole("button", { name: "Keep my draft", exact: true }).click();
       await page.getByRole("button", { name: "Apply notes", exact: true }).click();
       await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
