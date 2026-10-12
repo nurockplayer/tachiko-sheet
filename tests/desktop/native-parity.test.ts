@@ -336,6 +336,7 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
             const target = canEdit ? { entity: metadata.sheets[0]!.rows[Math.floor(rows! / 2)]!.entity_id, field: metadata.sheets[0]!.columns[1]!.field_id } : null;
             if (target) {
               revision = (await client.editNumber(revision, target, "424242")).resulting_revision;
+              assertCells(await client.queryTable(key), true);
               revision = (await client.trackerCommand({ type: "undo", expected_revision: revision })).resulting_revision;
               assertCells(await client.queryTable(key), false);
               revision = (await client.trackerCommand({ type: "redo", expected_revision: revision })).resulting_revision;

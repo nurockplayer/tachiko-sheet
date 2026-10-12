@@ -190,6 +190,10 @@ try {
       await importSource(page, path.join(fixtures, `source-${rows}x${cols}.${format}`));
       const identities = await allCells(page, false);
       await edit(page, rows >> 1, 1, "424242");
+      assert.deepEqual(await allCells(page, true), identities, "Edit retains every cell identity");
+      await download(page, "xlsx", path.join(work, `${name}-edited.xlsx`));
+      await page.getByRole("tab", { name: "Table", exact: true }).click();
+      await reveal(page, rows >> 1);
       await history(page, "undo", rows >> 1, 1, expected[`${rows}x${cols}`][(rows >> 1) + 1][1]);
       assert.deepEqual(await allCells(page, false), identities, "Undo retains every cell identity");
       await reveal(page, rows >> 1);

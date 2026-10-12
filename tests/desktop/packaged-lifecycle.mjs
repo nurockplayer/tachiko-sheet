@@ -720,6 +720,9 @@ try {
 
     for (const [row, column, value] of EDITS) await edit(row, column, value);
     if (mixed) {
+      await mixedCells(true);
+      await download("xlsx");
+      await evaluate(`click(await waitFor(() => tab("Table"), "Table tab")); return true;`);
       await history("undo", ROWS >> 1, 1, expectedMixed[`${ROWS}x${COLS}`][(ROWS >> 1) + 1][1]);
       await mixedCells(false);
       await history("redo", ROWS >> 1, 1, "424242");
