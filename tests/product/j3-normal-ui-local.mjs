@@ -63,8 +63,18 @@ async function download(page, format, destination) {
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
   assert.match(await dialog.textContent(), /file has been prepared/i);
+  const ledgerPanel = page.getByRole("region", { name: "Import & export changes and warnings", exact: true, includeHidden: true });
+  assert.equal(await ledgerPanel.getByRole("heading", { name: "Changes and warnings", exact: true, includeHidden: true }).count(), 1,
+    "prepared export findings use a neutral heading and an export-inclusive accessible label");
+  const exportedFindings = await ledgerPanel.locator(".ts-ledger li").allTextContents();
+  assert.ok(exportedFindings.length > 0, "prepared export publishes its findings in the panel");
+  if (format === "csv") assert.match(exportedFindings.join(" "), /Formulas, formatting, and other sheets are not kept/,
+    "CSV export losses appear under the neutral panel label");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
+  assert.equal(await ledgerPanel.isVisible(), true, "the export-inclusive label remains after cancellation");
+  assert.deepEqual(await ledgerPanel.locator(".ts-ledger li").allTextContents(), exportedFindings,
+    "cancelling consent retains the prepared export ledger");
   const triggerHandle = await trigger.elementHandle();
   assert.ok(triggerHandle, `Prepare ${format.toUpperCase()} trigger must remain mounted after cancellation`);
   await page.waitForFunction((element) => element === document.activeElement, triggerHandle);
@@ -77,6 +87,10 @@ async function download(page, format, destination) {
   await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
   await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();
   await (await downloaded).saveAs(destination);
+  await dialog.waitFor({ state: "detached" });
+  assert.equal(await ledgerPanel.isVisible(), true, "the export-inclusive label remains after download");
+  assert.deepEqual(await ledgerPanel.locator(".ts-ledger li").allTextContents(), exportedFindings,
+    "downloading retains the prepared export ledger");
 }
 
 const profile = await mkdtemp(path.join(tmpdir(), "tachiko-sheet-j3-profile-"));
@@ -203,7 +217,7 @@ try {
   console.log("J3 normal UI: imported CSV");
   assert.match(await page.locator("[role=grid]").textContent(), /001?PEN|PEN/);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  assert.match(await page.locator("body").textContent(), /Import changes and warnings/);
+  assert.match(await page.locator("body").textContent(), /Changes and warnings/);
   // The imported workbook is dirty until saved; replacement/close asks rather than discarding it.
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const dirtyDialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });

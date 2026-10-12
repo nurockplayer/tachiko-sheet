@@ -2163,9 +2163,9 @@ export function SheetShell(props: SheetShellProps) {
     const preview = interop?.cleanupPreview ?? null;
     return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-interop">
       <h2 className="ts-content-heading">Import &amp; export</h2>
-      <section className="ts-interop-section" aria-label="Import changes and warnings">
-        <h3 className="ts-content-heading">Import changes and warnings</h3>
-        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-empty">No import details are available for this work.</p>}
+      <section className="ts-interop-section" aria-label="Import & export changes and warnings">
+        <h3 className="ts-content-heading">Changes and warnings</h3>
+        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}
       </section>
       <section className="ts-interop-section" aria-label="Cleanup preview">
         <h3 className="ts-content-heading">Cleanup</h3>

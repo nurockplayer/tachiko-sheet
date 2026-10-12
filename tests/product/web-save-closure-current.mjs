@@ -155,7 +155,7 @@ async function editDate(value) {
 }
 async function visibleSourceLedger() {
   await activePage.getByRole("tab", { name: "Import & export", exact: true }).click();
-  const ledger = activePage.getByRole("region", { name: "Import changes and warnings", exact: true });
+  const ledger = activePage.getByRole("region", { name: "Import & export changes and warnings", exact: true });
   await ledger.waitFor();
   const text = await ledger.innerText();
   await activePage.getByRole("tab", { name: "Table", exact: true }).click();

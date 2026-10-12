@@ -202,8 +202,8 @@ try {
   let page = await start();
   await importFixture(page);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByLabel("Import changes and warnings", { exact: true }).waitFor();
-  const initialLedger = page.locator("[aria-label='Import changes and warnings'] .ts-ledger");
+  await page.getByLabel("Import & export changes and warnings", { exact: true }).waitFor();
+  const initialLedger = page.locator("[aria-label='Import & export changes and warnings'] .ts-ledger");
   await assert.doesNotReject(async () => initialLedger.waitFor());
   const initialLedgerText = (await initialLedger.textContent()).trim();
   assert.notEqual(initialLedgerText, "", "the imported source must carry a visible producer ledger entry");
@@ -238,8 +238,8 @@ try {
   await page.getByRole("button", { name: "Open saved j4-imported-restart", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByLabel("Import changes and warnings", { exact: true }).waitFor();
-  const retainedLedger = page.locator("[aria-label='Import changes and warnings'] .ts-ledger");
+  await page.getByLabel("Import & export changes and warnings", { exact: true }).waitFor();
+  const retainedLedger = page.locator("[aria-label='Import & export changes and warnings'] .ts-ledger");
   assert.deepEqual(await retainedLedger.locator("li").allTextContents(), initialLedgerEntries);
   const savedAfterRestart = await savedAttachment(page, "j4-imported-restart");
   assert.deepEqual(savedAfterRestart, savedBeforeRestart);
