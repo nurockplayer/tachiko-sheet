@@ -12,11 +12,15 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
+import { collectWindowedRows } from "./windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const oracle = path.join(root, "acceptance", "mixed-import", "oracle.py");
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+// Opt-in slow-rendering regression: apply on every page, including reopen.
+const cpuRate = Number(process.env.MIXED_CPU_THROTTLE ?? 1);
+assert.ok(Number.isFinite(cpuRate) && cpuRate >= 1, "MIXED_CPU_THROTTLE must be a finite rate >= 1");
 let ROWS, COLS;
 const work = await mkdtemp(path.join(tmpdir(), "tachiko-mixed-import-"));
 const fixtures = path.join(work, "fixtures");
@@ -34,6 +38,10 @@ async function start(profile) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   const page = await context.newPage();
+  if (cpuRate > 1) {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpuRate });
+  }
   page.setDefaultTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(LOCAL_ORIGIN);
@@ -132,15 +140,7 @@ async function allCells(page, edited) {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   assert.equal(await rowCount(page), ROWS);
   assert.deepEqual((await grid(page).locator("thead th").allTextContents()).slice(1), expected[`${ROWS}x${COLS}`][0]);
-  const records = new Map();
-  for (let row = 0; row < ROWS; row += 20) {
-    await reveal(page, row);
-    const visible = await grid(page).locator("tbody tr.ts-row").evaluateAll(rows => rows.map(row => ({
-      index: Number(row.getAttribute("aria-rowindex")) - 2,
-      cells: [...row.querySelectorAll("td")].map(cell => ({ text: cell.textContent, target: cell.getAttribute("data-testid") })),
-    })));
-    for (const value of visible) records.set(value.index, value.cells);
-  }
+  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS }));
   assert.equal(records.size, ROWS, "all rows independently read");
   const ids = [];
   for (let r = 0; r < ROWS; r++) {

@@ -17,6 +17,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const app = path.resolve(process.argv[2] ?? "");
@@ -396,14 +397,8 @@ async function history(direction, row, column, value) {
 async function mixedCells(edited) {
   const actual = await evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
-    const records = new Map();
-    for (let r = 0; r < ${ROWS}; r += 20) {
-      await reveal(r);
-      for (const row of grid().querySelectorAll("tbody tr.ts-row")) {
-        records.set(Number(row.getAttribute("aria-rowindex")) - 2, [...row.querySelectorAll("td")].map(cell => ({ text: cell.textContent, target: cell.getAttribute("data-testid") })));
-      }
-    }
-    return { headers: [...grid().querySelectorAll("thead th")].slice(1).map(c => c.textContent), records: [...records] };
+    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS} });
+    return { headers: [...grid().querySelectorAll("thead th")].slice(1).map(c => c.textContent), records };
   `, 240_000);
   const data = expectedMixed[`${ROWS}x${COLS}`];
   assert.deepEqual(actual.headers, data[0]);
