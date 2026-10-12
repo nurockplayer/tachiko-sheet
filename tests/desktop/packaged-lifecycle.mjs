@@ -23,9 +23,12 @@ const app = path.resolve(process.argv[2] ?? "");
 const bundleId = "dev.tachiko.sheet.e2e";
 assert.ok(existsSync(path.join(app, "Contents", "Info.plist")), `packaged app not found: ${app}`);
 const executable = path.join(app, "Contents", "MacOS");
-const oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
-const ROWS = 8406;
-const EDITS = [
+let oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
+let ROWS = 8406;
+let COLS = 3;
+let mixed = false;
+let identities;
+let EDITS = [
   [0, 0, '000-edited-雪,"first"'],
   [ROWS >> 1, 1, "https://example.invalid/edited-middle?x=0007"],
   [ROWS - 1, 2, "0001700008405999"],
@@ -34,11 +37,15 @@ const formats = (process.env.CAPACITY_FORMATS ?? "csv,xlsx").split(",");
 
 const work = await mkdtemp(path.join(tmpdir(), "tachiko-desktop-lifecycle-"));
 const fixtures = path.join(work, "fixtures");
+const mixedFixtures = path.join(work, "mixed-fixtures");
+const mixedOracle = path.join(root, "acceptance/mixed-import/oracle.py");
 const downloads = path.join(work, "downloads");
 const scripts = path.join(work, "scripts");
 await mkdir(downloads);
 await mkdir(scripts);
 execFileSync("python3", ["-I", oracle, "generate", fixtures], { stdio: "inherit" });
+execFileSync("python3", ["-I", mixedOracle, "generate", mixedFixtures], { stdio: "inherit" });
+const expectedMixed = JSON.parse(await readFile(path.join(mixedFixtures, "expected.json"), "utf8"));
 
 const timings = {};
 const timed = async (label, action) => {
@@ -342,7 +349,8 @@ async function importSource(file) {
     input.dispatchEvent(new Event("change", { bubbles: true }));
     const review = await waitFor(() => dialog("Review import candidate"), "import review");
     const types = [...review.querySelectorAll("select")].map((s) => s.value);
-    if (types.length !== 3 || types.some((t) => t !== "text")) throw new Error("columns are not all Text: " + types);
+    const expectedTypes = ${JSON.stringify(Array.from({ length: COLS }, (_, c) => mixed && c % 2 ? "number" : "text"))};
+    if (JSON.stringify(types) !== JSON.stringify(expectedTypes)) throw new Error("unexpected confirmed types: " + types);
     return true;
   `);
   await timed("import", () => evaluate(`
@@ -385,7 +393,38 @@ async function history(direction, row, column, value) {
   `));
 }
 
+async function mixedCells(edited) {
+  const actual = await evaluate(`
+    click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
+    const records = new Map();
+    for (let r = 0; r < ${ROWS}; r += 20) {
+      await reveal(r);
+      for (const row of grid().querySelectorAll("tbody tr.ts-row")) {
+        records.set(Number(row.getAttribute("aria-rowindex")) - 2, [...row.querySelectorAll("td")].map(cell => ({ text: cell.textContent, target: cell.getAttribute("data-testid") })));
+      }
+    }
+    return { headers: [...grid().querySelectorAll("thead th")].slice(1).map(c => c.textContent), records: [...records] };
+  `, 240_000);
+  const data = expectedMixed[`${ROWS}x${COLS}`];
+  assert.deepEqual(actual.headers, data[0]);
+  const records = new Map(actual.records);
+  assert.equal(records.size, ROWS);
+  const ids = [];
+  for (let r = 0; r < ROWS; r++) {
+    const cells = records.get(r);
+    assert.equal(cells.length, COLS);
+    for (let c = 0; c < COLS; c++) {
+      assert.equal(cells[c].text, edited && r === (ROWS >> 1) && c === 1 ? "424242" : data[r + 1][c], `row ${r} column ${c}`);
+      ids.push(cells[c].target);
+    }
+  }
+  assert.equal(new Set(ids).size, ROWS * COLS);
+  if (identities) assert.deepEqual(ids, identities, "all stable cell identities retained");
+  else identities = ids;
+}
+
 async function assertEdited(label) {
+  if (mixed) { await mixedCells(true); return; }
   assert.equal(await rowCount(), ROWS, `${label}: all rows present`);
   for (const [row, column, value] of EDITS) {
     assert.equal(await cellText(row, column), value, `${label}: edit at ${row},${column}`);
@@ -455,7 +494,7 @@ async function download(format, { existing = false } = {}) {
   for (let attempt = 0; attempt < 100 && (await readdir(downloads)).some((name) => name.startsWith(".")); attempt++) await sleep(50);
   assert.deepEqual((await readdir(downloads)).filter((name) => name.startsWith(".")), [], "no temporary download file remains");
   const destination = path.join(downloads, file);
-  execFileSync("python3", ["-I", oracle, "verify", destination], { stdio: "inherit" });
+  execFileSync("python3", ["-I", oracle, "verify", destination, ...(mixed ? [String(ROWS), String(COLS), "edited"] : [])], { stdio: "inherit" });
   return destination;
 }
 
@@ -653,22 +692,38 @@ const results = [];
 let pid;
 try {
   if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
-  for (const format of process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats) {
-    const name = `capacity-8406-${format}`;
+  const cases = process.env.DESKTOP_JOURNEYS === "sales" ? [] : [
+    ...formats.map(format => ({ format, rows: 8406, cols: 3, mixed: false })),
+    ...[[320, 2], [1000, 16]].flatMap(([rows, cols]) => formats.map(format => ({ format, rows, cols, mixed: true }))),
+  ];
+  for (const journey of cases) {
+    const { format } = journey;
+    ROWS = journey.rows; COLS = journey.cols; mixed = journey.mixed; identities = undefined;
+    oracle = mixed ? mixedOracle : path.join(root, "acceptance/capacity-8406/oracle.py");
+    EDITS = mixed ? [[ROWS >> 1, 1, "424242"]] : [[0, 0, '000-edited-雪,"first"'], [ROWS >> 1, 1, "https://example.invalid/edited-middle?x=0007"], [ROWS - 1, 2, "0001700008405999"]];
+    const name = mixed ? `mixed-${ROWS}x${COLS}-${format}` : `capacity-8406-${format}`;
     pid = await timed("launch", launch);
     const home = await coldHome();
     assert.equal(home.protocol, "tauri:", "the packaged frontend is served by the app");
     assert.deepEqual(home.wasm, [], "no Worker or WASM runtime is loaded");
     assert.equal(home.workbook, false, "fresh launch opens Home without a workbook");
 
-    await importSource(path.join(fixtures, `source-${ROWS}.${format}`));
+    await importSource(path.join(mixed ? mixedFixtures : fixtures, mixed ? `source-${ROWS}x${COLS}.${format}` : `source-${ROWS}.${format}`));
     assert.equal(await rowCount(), ROWS, "imported row count");
-    assert.match(await cellText(0, 0), /^invented_00000,雪"quote"/, "readable first imported cell");
-    assert.equal(await cellText(ROWS - 1, 1), "https://example.invalid/account/08405");
+    if (mixed) await mixedCells(false);
+    else {
+      assert.match(await cellText(0, 0), /^invented_00000,雪"quote"/, "readable first imported cell");
+      assert.equal(await cellText(ROWS - 1, 1), "https://example.invalid/account/08405");
+    }
     assert.equal(await unsavedCheck(), true, "imported work counts as unsaved for the close guard");
     await quitRefusedWhileUnsaved(pid);
 
     for (const [row, column, value] of EDITS) await edit(row, column, value);
+    if (mixed) {
+      await history("undo", ROWS >> 1, 1, expectedMixed[`${ROWS}x${COLS}`][(ROWS >> 1) + 1][1]);
+      await mixedCells(false);
+      await history("redo", ROWS >> 1, 1, "424242");
+    } else {
     const original = (row, column) => [
       `invented_${String(row).padStart(5, "0")}`,
       `https://example.invalid/account/${String(row).padStart(5, "0")}`,
@@ -679,6 +734,7 @@ try {
     await history("undo", middleRow, middleColumn, original(middleRow, middleColumn));
     await history("redo", middleRow, middleColumn, middleValue);
     await history("redo", lastRow, lastColumn, lastValue);
+    }
     await assertEdited("after history");
 
     await saveCopy(name);
@@ -699,14 +755,26 @@ try {
     const malformed = await refusedImport("a,b\n\"unterminated\n", `malformed-${format}.csv`);
     assert.equal(malformed.opened, false, "a malformed file opens no workbook");
     assert.ok(malformed.text.length > 0, "the refusal is explained");
+    if (mixed) {
+      for (const file of [`source-320x17.${format}`, `source-8407x2.${format}`, `source-1577x16.${format}`, `malformed.${format}`]) {
+        const refused = await refusedImport(await readFile(path.join(mixedFixtures, file)), file);
+        assert.equal(refused.opened, false, file);
+        assert.match(refused.text, file.startsWith("malformed") ? /file could not be read/ : /outside what this beta can open/);
+      }
+      await openSaved(name);
+      await assertEdited("after refusals");
+      await download("csv");
+      await download("xlsx");
+      await closeToHome();
+    }
     // Clean work: the Dock's Quit (terminate) exits like the menu's Quit.
     await quit(pid, { via: format === "xlsx" ? "terminate" : "quit" });
     pid = undefined;
-    results.push({ format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
+    results.push({ name, format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
   }
   console.log(JSON.stringify({
     case: "desktop packaged lifecycle (native runtime)",
-    journeys: { sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    journeys: { sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),

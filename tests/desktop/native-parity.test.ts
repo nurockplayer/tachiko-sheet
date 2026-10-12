@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NativeRuntimeChannel, type NativeRuntimeTransport } from "../../src/host/native-runtime.js";
 import { openCanonicalTreeFromEntries } from "../../public/core-kit/experimental-client.js";
 import { projectTransferToEntries, type CanonicalProjectTransferEntry } from "../../public/core-kit/host/project-transfer.js";
+import type { TableProjection } from "../../public/core-kit/runtime/protocol.js";
 import { WorkerDesignerClient } from "../../public/core-kit/runtime/worker-client.js";
 import { startDesignerWorker } from "../../public/core-kit/runtime/worker-runtime.js";
 
@@ -219,12 +220,15 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
   let work: string;
   let inputs: Inputs;
   let wasmUrl: string;
+  let mixedFixtures: string;
 
   beforeAll(async () => {
     // A missing harness is a failed gate, never a skipped comparison.
     if (!existsSync(harness)) throw new Error(`native frame harness not built: ${harness}`);
     work = await mkdtemp(path.join(tmpdir(), "tachiko-native-parity-"));
     execFileSync("python3", ["-I", path.join(root, "acceptance", "capacity-8406", "oracle.py"), "generate", path.join(work, "fixtures")], { stdio: "ignore" });
+    mixedFixtures = path.join(work, "mixed");
+    execFileSync("python3", ["-I", path.join(root, "acceptance/mixed-import/oracle.py"), "generate", mixedFixtures], { stdio: "ignore" });
     const csv = await readFile(path.join(work, "fixtures", "source-8406.csv"));
     execFileSync("node", [path.join(root, "scripts", "copy-example-fixture.mjs")], { cwd: root, stdio: "ignore" });
     inputs = {
@@ -278,4 +282,104 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
       "xlsx import of the csv bytes refused",
     ]);
   }, 300_000);
+
+  it("preserves every mixed cell/type/identity, history and resident state across refusals on both hosts", async () => {
+    const bytesOf = async (file: string) => {
+      const bytes = await readFile(path.join(mixedFixtures, file));
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    };
+    const options = { delimiter: ",", header: true };
+    const expected = JSON.parse(await readFile(path.join(mixedFixtures, "expected.json"), "utf8")) as Record<string, string[][]>;
+    for (const [rows, cols] of [[320, 2], [1000, 16], [1576, 16], [8406, 1]]) {
+      for (const format of ["csv", "xlsx"] as const) {
+        const logs: Log[] = [];
+        for (const host of ["web", "native"]) {
+          identity = 0;
+          const native = host === "native" ? startHarness() : null;
+          const client = new WorkerDesignerClient(native
+            ? () => new NativeRuntimeChannel(native.transport, projectTransferToEntries) as unknown as Worker
+            : wasmWorker(wasmUrl));
+          const log: Log = [];
+          try {
+            const source = await bytesOf(`source-${rows}x${cols}.${format}`);
+            const types = Array.from({ length: cols! }, (_, c) => c % 2 === 0 ? "text" : "number");
+            const selection = { column_types: [types], extra_columns: [[]] } as never;
+            const inspection = await client.inspectSpreadsheet(source.slice(0), format, options);
+            expect(inspection.sheets[0]!.rows).toHaveLength(rows!);
+            const imported = await client.importSpreadsheet(source.slice(0), format, options, selection);
+            let revision = imported.opened.bootstrap.revision;
+            const key = imported.opened.table.collection.key;
+            const metadata = imported.metadata;
+            const originals = imported.opened.table;
+            const assertCells = (table: TableProjection, edited: boolean) => {
+              expect(metadata.sheets[0]!.columns.map(c => c.name)).toEqual(expected[`${rows}x${cols}`]![0]);
+              expect(table.columns).toEqual(originals.columns);
+              expect(table.rows).toHaveLength(rows!);
+              expect(table.rows.map(r => r.id)).toEqual(originals.rows.map(r => r.id));
+              expect(new Set(table.rows.map(r => r.id)).size).toBe(rows);
+              for (let r = 0; r < rows!; r++) {
+                expect(table.rows[r]!.fields).toHaveLength(cols!);
+                for (let c = 0; c < cols!; c++) {
+                  const sourceRow = metadata.sheets[0]!.rows[r]!;
+                  const row = table.rows.find(row => row.id === sourceRow.entity_id)!;
+                  const field = metadata.sheets[0]!.columns[c]!.field_id;
+                  const cell = row.fields.find(cell => cell.target.field === field)!;
+                  const value = edited && r === Math.floor(rows! / 2) && c === 1 ? "424242" : expected[`${rows}x${cols}`]![r + 1]![c]!;
+                  expect(cell.target).toEqual({ entity: sourceRow.entity_id, field });
+                  expect(cell.stored).toEqual(c % 2 === 0 ? { kind: "text", value } : { kind: "number", value: Number(value) });
+                  expect(cell.editable_scalar).toBe(types[c]);
+                }
+              }
+            };
+            assertCells(await client.queryTable(key), false);
+            const canEdit = cols! > 1;
+            const target = canEdit ? { entity: metadata.sheets[0]!.rows[Math.floor(rows! / 2)]!.entity_id, field: metadata.sheets[0]!.columns[1]!.field_id } : null;
+            if (target) {
+              revision = (await client.editNumber(revision, target, "424242")).resulting_revision;
+              revision = (await client.trackerCommand({ type: "undo", expected_revision: revision })).resulting_revision;
+              assertCells(await client.queryTable(key), false);
+              revision = (await client.trackerCommand({ type: "redo", expected_revision: revision })).resulting_revision;
+              assertCells(await client.queryTable(key), true);
+            }
+            // Failed inspection and candidate confirmation preserve the entire
+            // resident table, exact save/export bytes and both history directions.
+            if (rows === 320) {
+              for (const file of [`source-320x17.${format}`, `source-8407x2.${format}`, `source-1577x16.${format}`, `malformed.${format}`, `nonfinite.${format}`]) {
+                const before = await client.queryTable(key);
+                const savedBefore = normalize((await client.exportProject(revision)).bytes);
+                const csvBefore = normalize((await client.exportSpreadsheet(revision, metadata, "csv", metadata.sheets[0]!.schema_id)).bytes);
+                if (file.startsWith("nonfinite")) {
+                  await expect(client.importSpreadsheet(await bytesOf(file), format, options, selection)).rejects.toThrow();
+                } else {
+                  await expect(client.inspectSpreadsheet(await bytesOf(file), format, options)).rejects.toThrow();
+                }
+                expect(await client.queryTable(key)).toEqual(before);
+                expect(normalize((await client.exportProject(revision)).bytes)).toEqual(savedBefore);
+                expect(normalize((await client.exportSpreadsheet(revision, metadata, "csv", metadata.sheets[0]!.schema_id)).bytes)).toEqual(csvBefore);
+                revision = (await client.trackerCommand({ type: "undo", expected_revision: revision })).resulting_revision;
+                assertCells(await client.queryTable(key), false);
+                revision = (await client.trackerCommand({ type: "redo", expected_revision: revision })).resulting_revision;
+                assertCells(await client.queryTable(key), true);
+              }
+            }
+            for (const exportFormat of ["csv", "xlsx"] as const) {
+              const exported = await client.exportSpreadsheet(revision, metadata, exportFormat, metadata.sheets[0]!.schema_id);
+              const destination = path.join(work, `${host}-${rows}x${cols}-${format}.${exportFormat}`);
+              await (await import("node:fs/promises")).writeFile(destination, new Uint8Array(exported.bytes));
+              execFileSync("python3", ["-I", path.join(root, "acceptance/mixed-import/oracle.py"), "verify", destination, String(rows), String(cols), canEdit ? "edited" : "original"], { stdio: "ignore" });
+              log.push([exportFormat, normalize(exported)]);
+            }
+            const saved = await client.exportProject(revision);
+            await client.closeProject();
+            const reopened = await client.openImportedProject(saved.bytes.slice(0), metadata);
+            assertCells(await client.queryTable(reopened.table.collection.key), canEdit);
+            log.push(["reopened", normalize(reopened)]);
+            logs.push(log);
+          } finally { client.close(); native?.close(); }
+        }
+        expect(logs[1], `${rows}x${cols} ${format} Web/native parity`).toEqual(logs[0]);
+      }
+    }
+  }, 600_000);
+
 });

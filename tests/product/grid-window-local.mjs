@@ -18,7 +18,7 @@ const UNIQUE = 260;
 const DUPLICATES = 60;
 const work = await mkdtemp(path.join(tmpdir(), "tachiko-grid-window-"));
 const csv = path.join(work, "dupes.csv");
-// Above 64 rows the pinned kit admits one headered three-Text-column table.
+// A headered Text rectangle exercises the enlarged import profile.
 const rows = Array.from({ length: UNIQUE }, (_, index) => `item-${String(index).padStart(3, "0")},note ${index},code-${index}`);
 await writeFile(csv, ["name,note,code", ...rows, ...rows.slice(0, DUPLICATES)].join("\r\n") + "\r\n");
 

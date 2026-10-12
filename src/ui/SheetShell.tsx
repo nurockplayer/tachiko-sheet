@@ -52,7 +52,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
-import { chooseImportType, chosenImportTypes, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
+import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
@@ -976,14 +976,14 @@ export function SheetShell(props: SheetShellProps) {
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
-    ? (importError && message && message.length > 0 ? message : importError)
+    ? (importError && message && message.length > 0 ? importConfirmationMessage(message) : importError)
     : importError;
   const copyErrorIsInline = copyOpen && localError === null && (
     copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
   );
   const importErrorIsInline = Boolean(
     importError && localError === null && copyError === null &&
-      errorMessage !== null && errorMessage === importErrorMessage,
+      errorMessage !== null && (errorMessage === importErrorMessage || errorMessage === message),
   );
   const downloadErrorIsInline = Boolean(
     tab === "interop" && interop?.downloadStatus === "failed" &&
@@ -1450,7 +1450,7 @@ export function SheetShell(props: SheetShellProps) {
       const accepted = await onImportCandidate(selection);
       if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
     } catch (error) {
-      setImportError(explain(error, "The import was not applied. Your source selection is still available."));
+      setImportError(importConfirmationMessage(explain(error, "The import was not applied. Your source selection is still available.")));
     } finally {
       setImportPending(false);
     }
@@ -1697,7 +1697,7 @@ export function SheetShell(props: SheetShellProps) {
         <div className="ts-home-other-list">
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
-            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added.</span></span>
+            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text or finite Number columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
               <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />

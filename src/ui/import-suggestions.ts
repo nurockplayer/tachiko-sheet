@@ -8,9 +8,6 @@ export type ImportColumnType = "text" | "number" | "boolean" | "date";
 // separators stay Text so no identifier is silently reinterpreted.
 const PLAIN_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 const MAX_SIGNIFICANT_DIGITS = 15;
-// The pinned kit admits more than this many data rows only as an all-Text
-// capacity table, so larger sources are never pre-set to Number.
-export const MAX_TYPED_IMPORT_ROWS = 64;
 
 function losslessNumberText(text: string): boolean {
   if (!PLAIN_NUMBER.test(text)) return false;
@@ -23,7 +20,6 @@ function losslessNumberText(text: string): boolean {
  * user still confirms it, and the core remains the parser and validator.
  */
 export function suggestColumnType(rows: readonly SourceCell[][], column: number): ImportColumnType {
-  if (rows.length > MAX_TYPED_IMPORT_ROWS) return "text";
   let seen = 0;
   for (const row of rows) {
     const value = row[column]?.value;
@@ -44,18 +40,28 @@ export function sourcePreviewText(value: SourceValue | undefined): string {
   return String(value.value);
 }
 
-const BEYOND_LIMITS = /Text capacity requires|capacity requires|exceeds 8,406|row exceeds 8,406|CSV exceeds|exceeds .*(row|column) bounds/i;
+const BEYOND_LIMITS = /Text capacity requires|capacity requires|exceeds 8,406|row exceeds 8,406|CSV exceeds|exceeds .*(row|column|cell) bounds|25,218|25218|logical cells|(?:cell column|worksheet row).*exceeds profile|bounded Text\/Number capacity rectangle/i;
 const DAMAGED = /unclosed quoted field|Missing ZIP|invalid ZIP|not a valid|malformed|truncated/i;
 
 /** Plain-language inspection refusal; the producer's detail stays visible. */
 export function importRefusalMessage(error: unknown): string {
   const detail = error instanceof Error && error.message.length > 0 ? error.message : "";
   const lead = BEYOND_LIMITS.test(detail)
-    ? "This file is outside what this beta can open: up to 64 rows and 16 columns, or up to 8,406 rows when it is one sheet with exactly 3 plain text columns."
+    ? "This file is outside what this beta can open: one headered sheet with 1–16 plain Text or finite Number columns, up to 8,406 rows and 25,218 cells (including missing cells). Other file-size, style and feature limits also apply."
     : DAMAGED.test(detail)
       ? "This file could not be read. It may be damaged, or not a valid CSV or Excel (.xlsx) file."
       : "The spreadsheet could not be inspected.";
   return detail ? `${lead} Nothing was imported. (Details: ${detail})` : `${lead} Nothing was imported.`;
+}
+
+/** Format known confirmation refusals; retain recovery/unknown outcome wording. */
+export function importConfirmationMessage(message: string): string {
+  if (/unknown|refresh|recovery|could not be confirmed|stopped unexpectedly/i.test(message)) return message;
+  if (BEYOND_LIMITS.test(message) || DAMAGED.test(message)) return importRefusalMessage(new Error(message));
+  if (/conversion requires.*finite.*Number|source Number is not finite/i.test(message)) {
+    return `A column could not be converted to Number. Check its values or choose Text. Nothing was imported. (Details: ${message})`;
+  }
+  return message;
 }
 
 /**

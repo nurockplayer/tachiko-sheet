@@ -50,3 +50,20 @@ all remaining files; none were edited after export.
 | `runtime/worker-client.js` | `92acdbeead22c6b3ce275bc5c3151c24d981614c4e6a63debe510483bfbb1a89` |
 | `runtime/worker-runtime.d.ts` | `657179a14c93df62c7a8d2e0718076082c3d53ed30b94f3f23b21cc8608587c3` |
 | `runtime/worker-runtime.js` | `b2c0ed8e317ded0c38e1775418f8ca597b19d52062f2d131751e5b5476915bce` |
+
+## Consumer coordination and rollback
+
+The immutable Web kit and all seven native Work packages are pinned together.
+All exported JavaScript/declarations/notices match the previous kit; only the
+producer manifest and WASM differ. No native transport adaptation was required.
+The exact local artifact received the independent read-only [provenance review
+and handback](https://github.com/nurockplayer/tachiko-sheet/issues/160#issuecomment-6128045548).
+J3/J4 guards change only the source/manifest tuple; fixture bytes, hashes and
+expected outcomes remain unchanged.
+
+A pin rollback must retain a compatible b1560ab4 reader for newly saved mixed
+capacity work: the older three-Text-only reader is not qualified to reopen it.
+This change introduces no storage-format migration or frontend semantic owner.
+Consumer Web/native/macOS validation and candidate review are separate receipts
+on the Draft PR; signing, notarization and human native-dialog/IME qualification
+remain with their existing owners.

@@ -236,6 +236,12 @@ try {
     [path.join(root, 'tests', 'product', 'capacity-8406-local.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  // #160: mixed Text/Number import, history, restart and full-cell export.
+  const mixedImport = await runStep(
+    'mixed-import-local',
+    [path.join(root, 'tests', 'product', 'mixed-import-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
   if (!serving.ready) {
     console.error(`BLOCKED: the canonical acceptance server did not start.\n${Buffer.concat(serving.output).toString()}`);
     // Supporting evidence only: the same six product outcomes over a disk-routed
@@ -255,7 +261,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
+    const localOk = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -295,7 +301,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    exitCode = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
+    exitCode = cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
