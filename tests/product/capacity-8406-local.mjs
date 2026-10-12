@@ -12,10 +12,12 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
+import { assertHostedCandidate, assertOnOrigin } from "./hosted-identity.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const hostedOrigin = process.env.CAPACITY_ORIGIN ?? null;
+const hostedCandidate = hostedOrigin ? await assertHostedCandidate(hostedOrigin) : null;
 const oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
 const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const ROWS = 8406;
@@ -45,6 +47,7 @@ async function start(profile) {
   page.setDefaultTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(hostedOrigin ?? LOCAL_ORIGIN);
+  if (hostedOrigin) assertOnOrigin(page, hostedOrigin);
   await waitForColdHome(page);
   await page.getByRole("region", { name: "Recovery", exact: true }).waitFor({ state: "detached" });
   return page;
@@ -296,7 +299,7 @@ try {
   }
 } finally {
   if (context) await context.close().catch(() => undefined);
-  console.log(JSON.stringify({ suite: "capacity-8406", timingsMs: timings }));
+  console.log(JSON.stringify({ suite: "capacity-8406", hostedCandidate, timingsMs: timings }));
   if (!process.env.CAPACITY_KEEP) await rm(work, { recursive: true, force: true });
   else console.log(JSON.stringify({ kept: work }));
 }
