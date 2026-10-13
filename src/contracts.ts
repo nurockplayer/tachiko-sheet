@@ -36,6 +36,17 @@ export type { CanonicalProjectFile, CanonicalTreeExport, FieldTarget };
 export type CoreKit = typeof import("../public/core-kit/experimental-client.js");
 export type KitLoader = () => Promise<CoreKit>;
 
+// Work d60fc65b: crates/storage/src/portable_package/v1.rs:41
+// PORTABLE_PACKAGE_V1_MAX_ARCHIVE_BYTES (also enforced at :1028).
+// The pinned browser kit does not export this constant.
+export const WORK_FILE_MAX_BYTES = 64 * 1024 * 1024;
+
+export function requireWorkFileSize(size: number): void {
+  if (size > WORK_FILE_MAX_BYTES) {
+    throw new Error(`portable_package.resource_limit: archive bytes limit is ${WORK_FILE_MAX_BYTES}, found ${size}`);
+  }
+}
+
 /** Disposable, coherent projections from one actual core occurrence/revision. */
 export interface WorkbookView {
   title: string;

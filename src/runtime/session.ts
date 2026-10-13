@@ -22,6 +22,7 @@ import type {
 } from "../../public/core-kit/runtime/interop-protocol.js";
 import {
   UnknownOperationOutcomeError,
+  requireWorkFileSize,
   bindingCatalogContainsDate,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CoreKit,
@@ -449,7 +450,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView> {
+  async function openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView> {
+    requireWorkFileSize(bytes.byteLength);
     const requestedAt = epoch;
     const transfer = bytes.slice(0);
     return enqueue(async () => {

@@ -1,7 +1,7 @@
 // #131: real downloaded bytes, fresh profiles, independent Work-client/oracles,
 // loss disclosure, strict refusals and truthful Save/Close behavior.
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open as openFileHandle, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright-core";
@@ -208,22 +208,43 @@ try {
   // Refusals start with clean admitted work: the file reader, rather than the
   // dirty-work replacement guard, must refuse and preserve the occurrence.
   const before = await page.evaluate(() => window.__tachikoAcceptance.workFileSnapshot());
+  // Observe the actual browser File read, including positive controls below.
+  // This instrumentation belongs only to this acceptance page.
+  await page.evaluate(() => {
+    window.workFileReads = [];
+    const read = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function (...args) {
+      if (this instanceof File) window.workFileReads.push(this.name);
+      return read.apply(this, args);
+    };
+  });
   const constrained = Buffer.from((await readFile(new URL("../fixtures/work-file/constrained-v3.hex", import.meta.url), "utf8")).replace(/\s/g, ""), "hex");
   for (const [name, buffer, reason] of [
     ["corrupt.ro", Buffer.from("corrupt bytes"), /portable|package|archive|container/i],
     ["csv-renamed.ro", Buffer.from("Name,Amount\nA,1\n"), /portable|package|archive|container/i],
     ["developmental.ro", developmentalArchive(second.bytes), /payload|representation|version/i],
-    ["over-limit.ro", Buffer.alloc(64 * 1024 * 1024 + 1), /limit|64|capacity|size/i],
+    ["over-limit.ro", null, /limit|64|capacity|size/i],
     ["constrained.ro", constrained, /unconstrained|unsupported/i],
     ["wrong-extension.csv", second.bytes, /ending in .ro/i],
   ]) {
     const refusalFile = path.join(profileRoot, name);
-    await writeFile(refusalFile, buffer);
+    if (name === "over-limit.ro") {
+      // A real file of the original 64 MiB + 1 size, without filling RAM.
+      const handle = await openFileHandle(refusalFile, "w");
+      try { await handle.truncate(64 * 1024 * 1024 + 1); }
+      finally { await handle.close(); }
+    } else await writeFile(refusalFile, buffer);
     await page.getByTestId("open-work-file").setInputFiles(refusalFile);
     await page.getByRole("alert").filter({ hasText: /work file|Choose a Tachiko/ }).waitFor();
     assert.match(await page.getByRole("alert").last().textContent(), reason, `${name}: actual Work refusal reason remains visible`);
     assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.workFileSnapshot()), before, `${name}: resident occurrence, revision and exact core bytes preserved`);
     await assertSaveUnavailable(page);
+    const reads = await page.evaluate(() => window.workFileReads);
+    if (name === "over-limit.ro" || name === "wrong-extension.csv") {
+      assert.equal(reads.includes(name), false, `${name}: refusal happens before File.arrayBuffer()`);
+    } else {
+      assert.equal(reads.filter(read => read === name).length, 1, `${name}: read counter observes a real File read`);
+    }
     results.push(`refused-${name}-without-replacement`);
   }
 

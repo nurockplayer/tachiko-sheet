@@ -3,6 +3,7 @@
  * injected public-client fake. This is not acceptance or real-WASM proof.
  */
 import { describe, expect, it, vi } from "vitest";
+import { WORK_FILE_MAX_BYTES } from "../contracts.js";
 import type {
   BootstrapProjection,
   CanonicalProjectFile,
@@ -1262,6 +1263,34 @@ describe("createSheetRuntime", () => {
 });
 
 describe("Work file adapter admission and export", () => {
+  it("refuses oversized buffers before cloning or dispatch and preserves open work", async () => {
+    const { runtime, client, view } = await opened();
+    const verify = vi.fn(async () => {});
+    const open = vi.fn(async (bytes: ArrayBuffer) => client.openProject(bytes));
+    Object.assign(client, { verifyPortableRo: verify, openPortableRo: open });
+    const bytes = new ArrayBuffer(WORK_FILE_MAX_BYTES + 1);
+    const clone = vi.spyOn(bytes, "slice");
+    await expect(runtime.openWorkFile(bytes)).rejects.toThrow(/resource_limit/);
+    expect(clone).not.toHaveBeenCalled();
+    expect(verify).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("allows exact-limit buffers to reach Work verification and admission", async () => {
+    const { runtime, client } = await opened();
+    const verify = vi.fn(async (_bytes: ArrayBuffer) => {});
+    const open = vi.fn(async (bytes: ArrayBuffer) => client.openProject(bytes));
+    Object.assign(client, { verifyPortableRo: verify, openPortableRo: open });
+    const bytes = new ArrayBuffer(WORK_FILE_MAX_BYTES);
+    const admitted = await runtime.openWorkFile(bytes);
+    expect(admitted.openedFromWorkFile).toBe(true);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(verify.mock.calls[0]?.[0].byteLength).toBe(WORK_FILE_MAX_BYTES);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]?.[0].byteLength).toBe(WORK_FILE_MAX_BYTES);
+  });
+
   it("verifies before replacement and keeps session origin through reads and edits", async () => {
     const client = new FakeClient();
     const order: string[] = [];

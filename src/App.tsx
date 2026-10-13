@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
-import { requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
+import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
 import {
   UnknownOperationOutcomeError,
@@ -1010,7 +1010,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       guardReplacement();
       setMessage(null);
       setCurrentness("pending");
-      const bytes = await file.arrayBuffer();
+      const bytes = await readWorkFile(file);
       if ((await replaceWork(() => runtime.openWorkFile(bytes))).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
