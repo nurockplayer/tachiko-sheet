@@ -61,3 +61,8 @@ describe("Save a copy unavailable reason", () => {
     expect(closeSaveUnavailableReason({ ...ready, busy: true }, false)).toMatch(/still finishing/);
   });
 });
+
+it("makes local Save visibly unavailable for portable-file origin even when all other gates are ready", () => {
+  expect(closeSaveUnavailableReason({ saveStatus: "not-saved", currentness: "current", busy: false, openedFromWorkFile: true }, false))
+    .toBe("Download the work file to keep these changes.");
+});

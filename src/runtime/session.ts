@@ -128,6 +128,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let active: ActiveWork | null = null;
   let residentCollection: string | null = null;
   let residentAvailable = false;
+  // Host session evidence from an acknowledged Work admission; never document state.
+  let openedFromWorkFile = false;
   let closed = false;
   let epoch = 0;
 
@@ -281,6 +283,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         collection: key,
         view: {
           title: bootstrap.title,
+          ...(openedFromWorkFile ? { openedFromWorkFile: true } : {}),
           occurrence: occurrence.scope,
           revision: occurrence.revision,
           collections: bootstrap.collections,
@@ -380,6 +383,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     client: PublicClient,
     expected: number,
     dispatchOpen: () => Promise<OpenedProjection>,
+    fromWorkFile = false,
   ): Promise<WorkbookView> {
     try {
       await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
@@ -395,6 +399,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       throw error;
     }
+    openedFromWorkFile = fromWorkFile;
     // The successful open replaced the resident occurrence even before its
     // projection is coherent; invalidate every old witness immediately.
     active = null;
@@ -441,6 +446,19 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       kit.preflightCanonicalProjectEntries(files);
       const transfer = kit.projectTransferFromEntries(files);
       return openSession(kit, client, requestedAt, () => client.openProject(transfer));
+    });
+  }
+
+  function openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView> {
+    const requestedAt = epoch;
+    const transfer = bytes.slice(0);
+    return enqueue(async () => {
+      assertNotReplaced(requestedAt);
+      const { kit, client } = await loadKitOnce();
+      assertNotReplaced(requestedAt);
+      // Verify is read-only. Refused packages cannot replace the current work.
+      await afterNotReplaced(requestedAt, dispatch(kit, () => client.verifyPortableRo(transfer.slice(0))));
+      return openSession(kit, client, requestedAt, () => client.openPortableRo(transfer), true);
     });
   }
 
@@ -656,6 +674,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function exportWorkFile(witness: ViewWitness): Promise<OpaqueProjectExport> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const project = await afterUsable(expected, dispatch(kit, () => client.exportPortableRo(live.revision)));
+      requireCurrentProjectionRevision(live.revision, project.revision, "work file export");
+      return { revision: project.revision, bytes: project.bytes.slice(0) };
+    });
+  }
+
   function listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog> {
     return enqueue(async () => {
       const live = requireWitness(witness);
@@ -781,6 +811,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         }
         throw error;
       }
+      openedFromWorkFile = false;
       active = null;
       residentCollection = null;
       residentAvailable = true;
@@ -917,7 +948,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    openFiles, openCanonical, openOpaque, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };

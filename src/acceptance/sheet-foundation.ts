@@ -115,6 +115,7 @@ export interface AcceptanceCoreFailureProbe {
 
 export interface AcceptanceApi {
   runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
+  workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null>;
   workMethodCounts(): Record<string, number>;
   applyInterfaceProfile(input: unknown): boolean;
@@ -1524,6 +1525,14 @@ export async function runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot> {
   return { occurrence: view.occurrence, revision: view.revision, title: view.title, opaqueBytesHash: await hashBytes(snapshot.bytes) };
 }
 
+/** Portable-file observation uses Work's explicit v3 entry; old probes stay unchanged. */
+export async function workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot> {
+  const { runtime } = requireWiring();
+  const view = await runtime.read();
+  const snapshot = await runtime.exportWorkFile({ occurrence: view.occurrence, revision: view.revision });
+  return { occurrence: view.occurrence, revision: view.revision, title: view.title, opaqueBytesHash: await hashBytes(snapshot.bytes) };
+}
+
 /** Readonly host observation; opaque bytes and their attachment are never decoded or rewritten. */
 export async function savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null> {
   const copy = await requireWiring().copies.readAny(name);
@@ -2252,6 +2261,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
   installRuntimeInvocationTracking(next.runtime);
   window.__tachikoAcceptance = {
     runtimeSnapshot,
+    workFileSnapshot,
     savedSnapshot,
     workMethodCounts,
     applyInterfaceProfile,

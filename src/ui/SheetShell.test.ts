@@ -964,3 +964,26 @@ describe("SheetShell static rendering", () => {
     )).toEqual(["definition-1", "definition-2"]);
   });
 });
+
+describe("work-file entry and Save availability", () => {
+  it("associates the visible portable-origin reason with the disabled local Save action", () => {
+    const markup = render({ view: { ...makeView(), openedFromWorkFile: true } });
+    const save = markup.match(/<button[^>]*aria-describedby="([^"]+)"[^>]*>Save a copy<\/button>/);
+    expect(save).not.toBeNull();
+    expect(save![0]).toContain("disabled");
+    expect(markup).toContain(`id="${save![1]}"`);
+    expect(markup).toContain("Download the work file to keep these changes.");
+  });
+
+  it("keeps desktop Open visibly unavailable with an associated explanation", () => {
+    const reason = "Opening and downloading work files is available in the browser version only.";
+    const markup = render({ view: null, workFileUnavailableReason: reason });
+    const input = markup.match(/<input[^>]*data-testid="open-work-file"[^>]*>/);
+    expect(input).not.toBeNull();
+    expect(input![0]).toContain("disabled");
+    const description = input![0].match(/aria-describedby="([^"]+)"/);
+    expect(description).not.toBeNull();
+    expect(markup).toContain(`id="${description![1]}"`);
+    expect(markup).toContain(reason);
+  });
+});
