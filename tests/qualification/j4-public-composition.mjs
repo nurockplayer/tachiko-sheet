@@ -19,8 +19,8 @@ const fixtureText = j4CanaryText;
 const fixture = Object.entries(fixtureText).sort(([a], [b]) => a.localeCompare(b)).map(([path, body]) => ({path, bytes: text(body)}));
 const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(fixtureText).sort())).digest('hex');
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
-const expectedCoreSourceCommit = 'b1560ab4331847557f04dfd6833fbffcabfc1169';
-const expectedCoreManifestSha256 = '94396e8fcd8cea32a4d120ca9087e0dde5bdd4adf2389f370eb1d6b96a2ff28a';
+const expectedCoreSourceCommit = 'd60fc65bc0e6b78ceab5ddeff9afbc241f42fc1e';
+const expectedCoreManifestSha256 = 'a374ba5d043b3e534f90ab1c34c5076bc8c05822eac3deddb737448d6af605b1';
 const expectedPersistedDefinition = [{
   id: definitionId,
   orders: {schema: salesSchema, lookup_key_field: fields.salesCode, quantity_field: fields.quantity},
@@ -30,7 +30,7 @@ const expectedFormat2Paths = ['manifest.json', 'schemas.json', 'definitions.json
 const assertPersistedDefinition = definitions => assert.deepEqual(definitions, expectedPersistedDefinition, 'Persisted J4 definition bindings changed.');
 // Qualification-only inspection of the core-produced private transfer envelope.
 // This is not a product codec and never rewrites the bytes passed to openProject.
-const inspectOpaqueFormat2Transfer = input => {
+const inspectOpaqueFormat2Transfer = (input, formatVersion = 2) => {
   const bytes = new Uint8Array(input);
   assert.ok(bytes.byteLength >= 12, 'Format-2 transfer is truncated before its header.');
   const decoder = new TextDecoder('utf-8', {fatal: true});
@@ -61,7 +61,7 @@ const inspectOpaqueFormat2Transfer = input => {
     magic: 'TWDPROJ1',
     count: 19,
     paths: expectedFormat2Paths,
-    manifest: {format: 'tachiko.roproj', format_version: 2, document: {id: '50000000-0000-4000-8000-000000000001', title: 'Sheet J4 Catalog Sales'}},
+    manifest: {format: 'tachiko.roproj', format_version: formatVersion, document: {id: '50000000-0000-4000-8000-000000000001', title: 'Sheet J4 Catalog Sales'}},
   }, 'Persisted J4 format-2 envelope changed.');
   assertPersistedDefinition(JSON.parse(definitions.text));
 };
@@ -127,7 +127,19 @@ try {
         catch (error) { return {code: error?.failure?.code ?? null, message: String(error?.message ?? error)}; }
       };
       const canonicalRefusal = await captureRefusal(() => client.exportCanonicalTree(current.revision));
-      const portableRefusal = await captureRefusal(() => client.exportPortableRo(current.revision));
+      const portable = await client.exportPortableRo(current.revision);
+      await client.verifyPortableRo(portable.bytes.slice(0));
+      const portableFresh = kit.createExperimentalDesignerClient();
+      let portableReopened, portableGroups, portableCatalog, portableSales, portableReopenedExport;
+      try {
+        portableReopened = await portableFresh.openPortableRo(portable.bytes.slice(0));
+        portableGroups = await portableFresh.queryKeyedGroupedSum(definitionId);
+        portableCatalog = rows(await portableFresh.queryTable('catalog'));
+        portableSales = rows(await portableFresh.queryTable('sales'));
+        portableReopenedExport = await portableFresh.exportProjectV3(portableGroups.revision);
+      } finally { await portableFresh.close(); }
+      const currentCatalog = rows(await client.queryTable('catalog'));
+      const currentSales = rows(await client.queryTable('sales'));
       const exported = await client.exportProject(current.revision);
       const fresh = kit.createExperimentalDesignerClient();
       const reopened = await fresh.openProject(exported.bytes.slice(0));
@@ -144,7 +156,7 @@ try {
       await client.editText(restored.resulting_revision, missingCode, 'MISSING');
       const missing = await client.queryKeyedGroupedSum(definitionId);
       await client.closeProject(); await client.close();
-      return {beforeDefinition, initial: projection(initial), current: projection(current), canonicalRefusal, portableRefusal, reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], reopenedExportBytes: [...new Uint8Array(reopenedExport.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
+      return {beforeDefinition, initial: projection(initial), current: projection(current), canonicalRefusal, portable: {revision: portable.revision, byteLength: portable.bytes.byteLength, reopened: projection(portableGroups), bootstrapRevision: portableReopened.bootstrap.revision, definitionIds: portableReopened.bootstrap.keyed_grouped_sum_definition_ids, catalog: portableCatalog, sales: portableSales, exportBytes: [...new Uint8Array(portableReopenedExport.bytes)]}, currentCatalog, currentSales, reopened: projection(reopenedGroups), reopenedBootstrapRevision: reopened.bootstrap.revision, duplicate: projection(duplicate), missing: projection(missing), exportBytes: [...new Uint8Array(exported.bytes)], reopenedExportBytes: [...new Uint8Array(reopenedExport.bytes)], publicationRevision: published.publication.resulting_revision, editRevision: edit.resulting_revision};
     } catch (error) { try { await client.close(); } catch {} throw error; }
   }, {entries: fixture.map(file => ({path: file.path, bytes: [...new Uint8Array(file.bytes)]})), fields, catalogSchema, salesSchema, definitionId, expectedBefore: expectedBeforeDefinition});
   assert.deepEqual(result.beforeDefinition, expectedBeforeDefinition);
@@ -156,7 +168,16 @@ try {
   assert.equal(result.current.revision, result.editRevision); assert.notEqual(result.current.revision, result.initial.revision);
   const expectedV1Refusal = {code: 'invalid_project', message: 'canonical project admission failed: invalid .roproj representation: saved keyed grouped-sum definitions require .roproj/v2'};
   assert.deepEqual(result.canonicalRefusal, expectedV1Refusal);
-  assert.deepEqual(result.portableRefusal, expectedV1Refusal);
+  assert.equal(result.portable.revision, result.current.revision);
+  assert.ok(result.portable.byteLength > 0);
+  assert.deepEqual(result.portable.definitionIds, [definitionId]);
+  assert.deepEqual(result.portable.reopened.groups, result.current.groups);
+  assert.deepEqual(result.portable.reopened.diagnostics, []);
+  assert.equal(result.portable.reopened.revision, result.portable.bootstrapRevision);
+  assert.notEqual(result.portable.bootstrapRevision, result.current.revision, 'Portable reopen must establish a fresh occurrence.');
+  assert.deepEqual(result.portable.catalog, result.currentCatalog);
+  assert.deepEqual(result.portable.sales, result.currentSales);
+  inspectOpaqueFormat2Transfer(result.portable.exportBytes, 3);
   assert.deepEqual(result.reopened.groups, [{category: 'NOTE', value: 1000}, {category: 'PEN', value: 1000}]);
   assert.deepEqual(result.reopened.diagnostics, []); assert.equal(result.reopened.revision, result.reopenedBootstrapRevision);
   assert.deepEqual(result.duplicate.groups, []);
@@ -170,7 +191,7 @@ try {
   inspectOpaqueFormat2Transfer(result.exportBytes);
   inspectOpaqueFormat2Transfer(result.reopenedExportBytes);
   assert.throws(() => assertPersistedDefinition([{...expectedPersistedDefinition[0], products: {...expectedPersistedDefinition[0].products, category_field: fields.code}}]), /Persisted J4 definition bindings changed/);
-  console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, refusals: {canonical: result.canonicalRefusal, portable: result.portableRefusal}, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
+  console.log(JSON.stringify({status: 'PASS_PREPARATION_CORE_BOUNDARY_ONLY', fixtureSha256, sourceCommit: lock.sourceCommit, manifest: lock.artifactManifestSha256, refusals: {canonical: result.canonicalRefusal}, portable: {verified: true, byteLength: result.portable.byteLength, freshOccurrence: true, definitionsAndValuesIdentical: true}, staticCheckerFacts: {lineTotals: [600, 1000, 200], total: 1800, afterPrice250: {lineTotals: [750, 1000, 250], total: 2000}}, normalUI: 'NOT_TESTED', hostDurability: 'NOT_TESTED', realImeAccessibility: 'NOT_TESTED'}));
 } catch (error) {
   console.error(JSON.stringify({status: error.blocked ? 'BLOCKED' : 'FAIL_OR_UNQUALIFIED', message: String(error.stack ?? error)})); process.exitCode = error.blocked ? 78 : 1;
 } finally { if (browser) await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }

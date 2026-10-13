@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "b1560ab4331847557f04dfd6833fbffcabfc1169",
+  "sourceCommit": "d60fc65bc0e6b78ceab5ddeff9afbc241f42fc1e",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "94396e8fcd8cea32a4d120ca9087e0dde5bdd4adf2389f370eb1d6b96a2ff28a",
+  "artifactManifestSha256": "a374ba5d043b3e534f90ab1c34c5076bc8c05822eac3deddb737448d6af605b1",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/160#issuecomment-6128045548",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/131#issuecomment-6149346076",
   "qualificationArtifactReview": {
-    "sourceCommit": "b1560ab4331847557f04dfd6833fbffcabfc1169",
-    "artifactManifestSha256": "94396e8fcd8cea32a4d120ca9087e0dde5bdd4adf2389f370eb1d6b96a2ff28a",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/160#issuecomment-6128045548"
+    "sourceCommit": "d60fc65bc0e6b78ceab5ddeff9afbc241f42fc1e",
+    "artifactManifestSha256": "a374ba5d043b3e534f90ab1c34c5076bc8c05822eac3deddb737448d6af605b1",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/131#issuecomment-6149346076"
   },
   "notes": "The intact exported kit supplies all runtime JavaScript, declarations, notices, and WASM. This lock pins the qualified producer artifact and records its canonical qualification/review provenance. It does not establish Sheet product acceptance: the Sheet product, host and platform gates remain separate and unverified."
 }
