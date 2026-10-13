@@ -1993,6 +1993,7 @@ body { margin: 0; }
     align-items: stretch;
   }
   .ts-modal--close .ts-dialog-actions > .ts-button { width: 100%; }
+  .ts-modal--close .ts-close-save-action > .ts-button { width: 100%; }
   .ts-modal--import .ts-dialog-actions { gap: 8px; }
   .ts-modal--import .ts-dialog-actions > .ts-button {
     flex: 0 1 auto;

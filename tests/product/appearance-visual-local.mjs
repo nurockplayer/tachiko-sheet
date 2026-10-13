@@ -3641,6 +3641,9 @@ async function auditAppearanceVariantKeyboard(page) {
   await page.keyboard.up("Enter");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  // #131 pre-fills the name. Retain this empty-name disabled-control audit by
+  // explicitly clearing the editable suggestion; all state assertions stand.
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("");
   const createCopy = page.getByRole("button", { name: "Create copy", exact: true });
   const disabledCopy = await createCopy.evaluate((element) => ({
     disabled: element.disabled,
