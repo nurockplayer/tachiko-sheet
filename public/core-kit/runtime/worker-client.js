@@ -227,6 +227,13 @@ export class WorkerDesignerClient {
             fields,
         }));
     }
+    async explainField(expectedRevision, target) {
+        return expectResponse("field_explanation", await this.#command({
+            type: "explain_field",
+            expected_revision: expectedRevision,
+            target,
+        }));
+    }
     async createKeyedGroupedSum(expectedRevision, definition) {
         return expectResponse("keyed_grouped_sum_published", await this.#command({ type: "create_keyed_grouped_sum", expected_revision: expectedRevision, definition }));
     }

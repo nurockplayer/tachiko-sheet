@@ -53,6 +53,7 @@ for (const [name, args, env] of [
     WORK_PLAYWRIGHT_MODULE: 'playwright-core',
   }],
   ['browser-canary', [path.join(root, 'scripts', 'run-core-kit-canary.mjs')], {}],
+  ['worker-explain-field', [path.join(root, 'tests', 'qualification', 'real-kit-explain-field.mjs')], {}],
 ]) {
   const exitCode = await runStep(name, args, env);
   if (exitCode !== 0) process.exit(exitCode);

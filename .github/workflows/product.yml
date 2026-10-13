@@ -60,6 +60,9 @@ jobs:
       - name: Run J4 public composition qualification
         run: pnpm qualification:j4-public-composition
 
+      - name: Qualify ExplainField through the real kit Worker
+        run: pnpm qualification:real-kit-explain-field
+
       - name: Run preserved seed harness
         run: pnpm test
 
