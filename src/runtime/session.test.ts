@@ -3,6 +3,7 @@
  * injected public-client fake. This is not acceptance or real-WASM proof.
  */
 import { describe, expect, it, vi } from "vitest";
+import { WORK_FILE_MAX_BYTES } from "../contracts.js";
 import type {
   BootstrapProjection,
   CanonicalProjectFile,
@@ -1259,4 +1260,97 @@ describe("createSheetRuntime", () => {
     const closedRead = await failure(runtime.read());
     expect((closedRead as SheetSessionError).code).toBe("closed");
   });
+});
+
+describe("Work file adapter admission and export", () => {
+  it("refuses oversized buffers before cloning or dispatch and preserves open work", async () => {
+    const { runtime, client, view } = await opened();
+    const verify = vi.fn(async () => {});
+    const open = vi.fn(async (bytes: ArrayBuffer) => client.openProject(bytes));
+    Object.assign(client, { verifyPortableRo: verify, openPortableRo: open });
+    const bytes = new ArrayBuffer(WORK_FILE_MAX_BYTES + 1);
+    const clone = vi.spyOn(bytes, "slice");
+    await expect(runtime.openWorkFile(bytes)).rejects.toThrow(/resource_limit/);
+    expect(clone).not.toHaveBeenCalled();
+    expect(verify).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("allows exact-limit buffers to reach Work verification and admission", async () => {
+    const { runtime, client } = await opened();
+    const verify = vi.fn(async (_bytes: ArrayBuffer) => {});
+    const open = vi.fn(async (bytes: ArrayBuffer) => client.openProject(bytes));
+    Object.assign(client, { verifyPortableRo: verify, openPortableRo: open });
+    const bytes = new ArrayBuffer(WORK_FILE_MAX_BYTES);
+    const admitted = await runtime.openWorkFile(bytes);
+    expect(admitted.openedFromWorkFile).toBe(true);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(verify.mock.calls[0]?.[0].byteLength).toBe(WORK_FILE_MAX_BYTES);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]?.[0].byteLength).toBe(WORK_FILE_MAX_BYTES);
+  });
+
+  it("verifies before replacement and keeps session origin through reads and edits", async () => {
+    const client = new FakeClient();
+    const order: string[] = [];
+    const verify = vi.fn(async (_bytes: ArrayBuffer) => { order.push("verify"); });
+    const open = vi.fn(async (bytes: ArrayBuffer) => { order.push("open"); return client.openProject(bytes); });
+    const exportFile = vi.fn(async (revision: string) => ({ revision, bytes: new Uint8Array([80, 75, 3, 4]).buffer }));
+    Object.assign(client, { verifyPortableRo: verify, openPortableRo: open, exportPortableRo: exportFile });
+    const { kit } = makeKit(client);
+    const runtime = createSheetRuntime(async () => kit);
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    const admitted = await runtime.openWorkFile(bytes);
+    expect(order).toEqual(["verify", "open"]);
+    expect(admitted.openedFromWorkFile).toBe(true);
+    expect(verify.mock.calls[0]?.[0]).not.toBe(bytes);
+    const edited = await runtime.edit(admitted, IMPACT, { kind: "number", input: "4" });
+    expect(edited.openedFromWorkFile).toBe(true);
+    const snapshot = await runtime.exportWorkFile(edited);
+    expect(exportFile).toHaveBeenCalledWith(edited.revision);
+    expect(new Uint8Array(snapshot.bytes)).toEqual(new Uint8Array([80, 75, 3, 4]));
+    expect((await runtime.read()).openedFromWorkFile).toBe(true);
+    await expect(runtime.exportWorkFile(admitted)).rejects.toMatchObject({ code: "stale-witness" });
+    expect(exportFile).toHaveBeenCalledTimes(1);
+    expect((await runtime.openCanonical(CANONICAL_FILES)).openedFromWorkFile).toBeUndefined();
+  });
+
+  it("keeps open work and its origin on known verification/open refusals", async () => {
+    const { runtime, client, view } = await opened();
+    const open = vi.fn(async () => { throw new FakeDesignerRuntimeError("constrained work is unavailable", client.currentRevision); });
+    const verify = vi.fn(async (): Promise<void> => { throw new FakeDesignerRuntimeError("over the capacity limit", client.currentRevision); });
+    Object.assign(client, { verifyPortableRo: verify, openPortableRo: open });
+    await expect(runtime.openWorkFile(new ArrayBuffer(4))).rejects.toThrow(/capacity limit/);
+    expect(open).not.toHaveBeenCalled();
+    expect(await runtime.read()).toEqual(view);
+    verify.mockImplementation(async () => {});
+    await expect(runtime.openWorkFile(new ArrayBuffer(4))).rejects.toThrow(/constrained/);
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("rejects a mismatched export revision and retains the resident work", async () => {
+    const { runtime, client, view } = await opened();
+    Object.assign(client, { exportPortableRo: vi.fn(async () => ({ revision: "other", bytes: new ArrayBuffer(1) })) });
+    await expect(runtime.exportWorkFile(view)).rejects.toMatchObject({ code: "incoherent-reply" });
+    expect(await runtime.read()).toEqual(view);
+  });
+});
+
+it("does not verify or open a work file after Close invalidates pending kit startup", async () => {
+  const client = new FakeClient();
+  const verify = vi.fn(async () => {});
+  const open = vi.fn(async (bytes: ArrayBuffer) => client.openProject(bytes));
+  Object.assign(client, { verifyPortableRo: verify, openPortableRo: open });
+  const gate = deferred<CoreKit>();
+  const runtime = createSheetRuntime(() => gate.promise);
+  const opening = runtime.openWorkFile(new ArrayBuffer(4));
+  const refused = expect(opening).rejects.toMatchObject({ code: "session-replaced" });
+  await Promise.resolve();
+  const closing = runtime.close();
+  gate.resolve(makeKit(client).kit);
+  await refused;
+  await closing;
+  expect(verify).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
 });

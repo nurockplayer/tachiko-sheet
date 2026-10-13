@@ -53,6 +53,7 @@ import {
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
 import { suggestedCopyName } from "./copy-name.js";
+import { workFileOpenRefusal } from "./work-file-copy.js";
 import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
@@ -394,6 +395,9 @@ export function SheetShell(props: SheetShellProps) {
     copiesStatus = "ready",
     onRetryCopies = async () => {},
     onOpenFiles,
+    onOpenWorkFile = async () => { throw new Error("Opening work files is unavailable."); },
+    workFileUnavailableReason = null,
+    workFileOmissions = [],
     onOpenExample,
     onOpenSaved,
     onSelectCollection = async () => {},
@@ -558,7 +562,7 @@ export function SheetShell(props: SheetShellProps) {
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | null>(null);
+  const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | "ro" | null>(null);
   const [importChoice, setImportChoice] = useState<ImportTypeChoice | null>(null);
   const importSuggestions = useMemo<string[][]>(
     () => interop?.importInspection?.source.sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column))) ?? [],
@@ -572,6 +576,9 @@ export function SheetShell(props: SheetShellProps) {
   const [reportRenderReadyKey, setReportRenderReadyKey] = useState("unavailable");
   const [reportTextDraft, setReportTextDraft] = useState<ReportTextDraft | null>(null);
 
+  const workFileReasonId = useId();
+  const saveUnavailableId = useId();
+  const [downloadOmissions, setDownloadOmissions] = useState<string[]>([]);
   const fileInputId = useId();
   const spreadsheetInputId = useId();
   const copyNameId = useId();
@@ -862,6 +869,7 @@ export function SheetShell(props: SheetShellProps) {
   }, [captureCopyParentFailure, copyParentFailureMessage, message]);
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
+  const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, openedFromWorkFile: view?.openedFromWorkFile }, false);
   const modalInteractionOpen = copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
@@ -983,6 +991,7 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
   }, [controlsLocked, currentness, historyInteractionLocked, localHistory, onHistory, props.appearancePreference, view]);
   const cellDraftActive = editor !== null && editor.value !== editor.original;
+  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   const draftActive =
     cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
@@ -1458,6 +1467,34 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  async function openWorkFile(file: File | null): Promise<void> {
+    if (!file) return;
+    setLocalError(null);
+    try { await onOpenWorkFile(file); }
+    catch (error) { setLocalError(workFileOpenRefusal(error)); }
+  }
+
+  useEffect(() => {
+    if (import.meta.env.MODE !== "acceptance") return;
+    // Acceptance exercises resident-work refusals through the same handler
+    // as Home's picker, without exposing a second product Open control.
+    const attempt = (event: Event) => {
+      const detail = (event as CustomEvent<{ file: File; handled: boolean; complete: () => void }>).detail;
+      detail.handled = true;
+      void openWorkFile(detail.file).finally(detail.complete);
+    };
+    window.addEventListener("tachiko-acceptance-open-work-file", attempt);
+    return () => window.removeEventListener("tachiko-acceptance-open-work-file", attempt);
+  });
+
+  function workFileInput(locked: boolean): ReactNode {
+    const unavailable = workFileUnavailableReason !== null;
+    return <label className={`ts-button ts-home-file-action${locked || unavailable ? " ts-home-file-action--disabled" : ""}`} aria-disabled={locked || unavailable}>
+      <span>Open work file…</span>
+      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked || unavailable} aria-describedby={unavailable ? workFileReasonId : undefined} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+    </label>;
+  }
+
   async function inspectSpreadsheet(file: File | null): Promise<void> {
     if (!file) return;
     setLocalError(null);
@@ -1497,15 +1534,21 @@ export function SheetShell(props: SheetShellProps) {
     window.setTimeout(() => spreadsheetInputRef.current?.focus(), 0);
   }
 
-  async function prepareDownload(format: "csv" | "xlsx", trigger: HTMLButtonElement): Promise<void> {
+  async function prepareDownload(format: "csv" | "xlsx" | "ro", trigger: HTMLButtonElement): Promise<void> {
     downloadTriggerRef.current = trigger;
     setLocalError(null);
-    if (await onPrepareDownload(format)) setDownloadFormat(format);
+    if (await onPrepareDownload(format)) {
+      setDownloadOmissions(format === "ro" ? [...workFileOmissions] : []);
+      setDownloadFormat(format);
+    }
   }
 
   function cancelDownload(): void {
     setDownloadFormat(null);
-    window.requestAnimationFrame(() => downloadTriggerRef.current?.focus());
+    window.requestAnimationFrame(() => {
+      if (downloadTriggerRef.current?.isConnected) downloadTriggerRef.current.focus();
+      else desktopRefreshRef.current?.focus();
+    });
   }
 
   async function refresh(): Promise<void> {
@@ -1520,6 +1563,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function openCopyDialog(forClose = false): void {
+    if (view?.openedFromWorkFile) return;
     setCopyError(null);
     setLocalError(null);
     setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copies.map((copy) => copy.name), savedCopyNamesInSessionRef.current));
@@ -1738,6 +1782,12 @@ export function SheetShell(props: SheetShellProps) {
         <div className="ts-home-other-list">
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
+            <span className="ts-home-other-copy"><strong>Open a Tachiko work file</strong><span>Open tables, values, formulas and summaries from a .ro file. The file stays unchanged.</span></span>
+            {workFileInput(fileActionsLocked)}
+          </div>
+          {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
+          <div className="ts-home-other-row">
+            <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
             <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text or finite Number columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
@@ -1892,11 +1942,12 @@ export function SheetShell(props: SheetShellProps) {
           className="ts-button ts-button--primary"
           ref={saveCopyButtonRef}
           onClick={() => openCopyDialog()}
-          disabled={controlsLocked || saveStatus === "saving"}
-          aria-describedby={controlsLocked ? lockNoteId : undefined}
+          disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile)}
+          aria-describedby={view?.openedFromWorkFile ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
         >
           Save a copy
         </button>
+        {view?.openedFromWorkFile ? <span className="ts-hint" id={saveUnavailableId}>{saveUnavailableReason}</span> : null}
         {closeButton("ts-button ts-close-project-desktop")}
         <details className="ts-command-overflow">
           <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
@@ -2234,12 +2285,14 @@ export function SheetShell(props: SheetShellProps) {
       </section>
       <section className="ts-interop-section" aria-label="Download spreadsheet">
         <h3 className="ts-content-heading">Download</h3>
-        <p className="ts-subtle">The file is prepared from your current work and the imported file’s information. Review changes and warnings before downloading.</p>
+        <p className="ts-subtle">Prepare a file from your current work. Review what it includes and any changes or warnings before downloading.</p>
         <div className="ts-row-actions">
+          <button type="button" className="ts-button" disabled={workFileDownloadLocked} aria-describedby={workFileUnavailableReason ? workFileReasonId : undefined} onClick={(event) => void prepareDownload("ro", event.currentTarget)}>Download work file (.ro)</button>
           <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
           <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
         </div>
-        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. Save a copy to keep your work on this device.</p> : null}
+        {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
+        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. {view.openedFromWorkFile ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
@@ -2329,7 +2382,7 @@ export function SheetShell(props: SheetShellProps) {
             {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
             {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
           </div>
-          <p className="ts-hint">Work with summaries cannot be exported as a project folder or .ro file. Save a copy to keep it on this device.</p>
+          <p className="ts-hint">{workFileUnavailableReason ?? "Download a work file from Import & export to keep your tables and summaries."}</p>
           <button type="button" className="ts-button ts-button--primary" onClick={() => void create()} disabled={controlsLocked || j4Pending || !bindingReady}>{j4Pending ? "Creating…" : "Create cross-table summary"}</button>
         </>}
       </section>
@@ -2765,9 +2818,25 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
         </Modal>
       ) : null}
-      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The file has been prepared. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
+      {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload} dismissDisabled={busy}>
+        <div className="ts-dialog-intro">
+          <h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat === "ro" ? "work file (.ro)" : downloadFormat.toUpperCase()}</h2>
+          <p>The file has been prepared. {hostCopy.exportConsent}</p>
+          {downloadFormat === "ro" ? <p>Includes tables, values, formulas and summaries. Downloading does not save a copy on this device or allow unsaved work to close.</p> : null}
+        </div>
+        <div className="ts-dialog-scroll">
+          {downloadFormat === "ro" ? downloadOmissions.length > 0 ? <>
+            <h3 className="ts-content-heading">Not included in this file</h3>
+            <ul className="ts-ledger" aria-label="Not included in this file">{downloadOmissions.map((omission) => <li key={omission} data-loss-category="lossy_on_export">{omission}</li>)}</ul>
+          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
+        </div>
+        <div className="ts-dialog-actions">
+          <button type="button" className="ts-button" disabled={busy} onClick={cancelDownload}>Cancel</button>
+          <button type="button" className="ts-button ts-button--primary" disabled={busy} onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button>
+        </div>
+      </Modal> : null}
       {closeOpen && !copyOpen && !savedClose ? (() => {
-        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
+        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, openedFromWorkFile: view?.openedFromWorkFile }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
         return (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
@@ -2779,6 +2848,7 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
               Keep editing
             </button>
+            {view?.openedFromWorkFile ? <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => { setCloseOpen(false); void prepareDownload("ro", event.currentTarget); }}>Download work file (.ro)</button> : null}
             <span className="ts-close-save-action">
               <button type="button" className="ts-button ts-button--primary" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
                 Save a copy…

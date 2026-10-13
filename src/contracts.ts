@@ -36,9 +36,22 @@ export type { CanonicalProjectFile, CanonicalTreeExport, FieldTarget };
 export type CoreKit = typeof import("../public/core-kit/experimental-client.js");
 export type KitLoader = () => Promise<CoreKit>;
 
+// Work d60fc65b: crates/storage/src/portable_package/v1.rs:41
+// PORTABLE_PACKAGE_V1_MAX_ARCHIVE_BYTES (also enforced at :1028).
+// The pinned browser kit does not export this constant.
+export const WORK_FILE_MAX_BYTES = 64 * 1024 * 1024;
+
+export function requireWorkFileSize(size: number): void {
+  if (size > WORK_FILE_MAX_BYTES) {
+    throw new Error(`portable_package.resource_limit: archive bytes limit is ${WORK_FILE_MAX_BYTES}, found ${size}`);
+  }
+}
+
 /** Disposable, coherent projections from one actual core occurrence/revision. */
 export interface WorkbookView {
   title: string;
+  /** Ephemeral admission evidence, set only by the Work portable-file entry. */
+  openedFromWorkFile?: boolean;
   occurrence: string;
   revision: string;
   collections: CollectionSummary[];
@@ -62,6 +75,8 @@ export interface SheetRuntime {
    * metadata; no client codec is involved.
    */
   openOpaque(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
+  openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView>;
+  exportWorkFile(witness: ViewWitness): Promise<OpaqueProjectExport>;
   read(): Promise<WorkbookView>;
   selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView>;
   readFields(witness: ViewWitness, targets: FieldTarget[]): Promise<FieldBatchProjection>;
@@ -266,6 +281,9 @@ export interface SheetShellProps {
   copiesStatus?: "checking" | "ready" | "unavailable";
   onRetryCopies?(): Promise<void>;
   onOpenFiles(files: FileList): Promise<void>;
+  onOpenWorkFile?(file: File): Promise<void>;
+  workFileUnavailableReason?: string | null;
+  workFileOmissions?: string[];
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
@@ -308,8 +326,8 @@ export interface SheetShellProps {
   onCommitCleanup?(witness: ViewWitness, previewId: string): Promise<boolean>;
   onCancelCleanup?(): void;
   /** Produces the actual core export and ledger; this never downloads it. */
-  onPrepareDownload?(format: SpreadsheetFormat): Promise<boolean>;
-  onDownload?(format: SpreadsheetFormat): Promise<boolean>;
+  onPrepareDownload?(format: SpreadsheetFormat | "ro"): Promise<boolean>;
+  onDownload?(format: SpreadsheetFormat | "ro"): Promise<boolean>;
 }
 
 export interface ImportInspection {

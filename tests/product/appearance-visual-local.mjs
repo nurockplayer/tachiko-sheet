@@ -416,6 +416,58 @@ async function auditContrast(page, targetList, tag) {
   return samples;
 }
 
+async function auditHomeWorkFileInput(page, tag) {
+  const input = page.getByLabel("Open work file", { exact: true });
+  const selector = '.ts-home-other-row label:has(input[aria-label="Open work file"])';
+  assert.equal(await input.count(), 1, `${tag} has exactly one accessible work-file input`);
+  assert.deepEqual(await input.evaluate((element) => ({ type: element.type, accept: element.accept, multiple: element.multiple })),
+    { type: "file", accept: ".ro", multiple: false }, `${tag} opens one real .ro file`);
+  await page.locator('.ts-home-other-row input[accept*=".csv"]').focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.locator(selector).evaluate((element) => element.scrollIntoView({ block: "center", inline: "nearest" }));
+  const focus = await input.evaluate((element) => {
+    const label = element.closest("label");
+    const rect = label.getBoundingClientRect();
+    const style = getComputedStyle(label);
+    const extent = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset);
+    return {
+      active: element === document.activeElement,
+      focusVisible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineOffset: style.outlineOffset,
+      rect: { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom },
+      painted: { x: rect.x - extent, y: rect.y - extent, right: rect.right + extent, bottom: rect.bottom + extent },
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  });
+  assert.equal(focus.active && focus.focusVisible, true, `${tag} native Shift+Tab reaches the work-file input`);
+  assert.deepEqual([focus.outlineStyle, focus.outlineWidth, focus.outlineOffset], ["solid", "3px", "2px"],
+    `${tag} work-file action keeps the shared keyboard focus geometry`);
+  assert.ok(focus.painted.x >= 0 && focus.painted.right <= focus.viewport.width &&
+    focus.painted.y >= 0 && focus.painted.bottom <= focus.viewport.height,
+  `${tag} work-file action and focus paint remain inside the viewport`, focus);
+  const centerX = (focus.rect.x + focus.rect.right) / 2;
+  const paintedOutline = await screenshotPixel(page, centerX, focus.rect.y - 3.5);
+  const outerBackground = await screenshotPixel(page, centerX, focus.rect.y - 6);
+  const innerBackground = await screenshotPixel(page, centerX, focus.rect.y - 1);
+  const focusContrast = {
+    paintedOutline, outerBackground, innerBackground,
+    outerRatio: contrast(rgb(paintedOutline), rgb(outerBackground)),
+    innerRatio: contrast(rgb(paintedOutline), rgb(innerBackground)),
+  };
+  evidence(focusContrast.outerRatio !== null && focusContrast.outerRatio >= 3 &&
+    focusContrast.innerRatio !== null && focusContrast.innerRatio >= 3,
+  `${tag} work-file focus paint contrasts at least 3:1 against both adjacent surfaces`, focusContrast);
+  const textContrast = await auditContrast(page, [
+    ["work-file action", `${selector} > span`],
+    ["work-file title", '.ts-home-other-row:has(input[aria-label="Open work file"]) .ts-home-other-copy > strong'],
+    ["work-file description", '.ts-home-other-row:has(input[aria-label="Open work file"]) .ts-home-other-copy > span'],
+  ], tag);
+  observations.push({ homeWorkFileInput: tag, focus, focusContrast, textContrast });
+  await input.evaluate((element) => element.blur());
+}
+
 async function menuViewportAndOpen(page, tag) {
   const trigger = page.getByRole("button", { name: "Appearance", exact: true });
   if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
@@ -1656,8 +1708,10 @@ async function auditHomeViewportBounds(page, browser) {
               },
               actions: actionBoxes,
               rows: otherRows.length,
-              imports: document.querySelectorAll('.ts-home-other-row input[type="file"][accept]').length,
+              imports: document.querySelectorAll('.ts-home-other-row input[type="file"][accept*=".csv"][accept*=".xlsx"]:not([multiple])').length,
               folders: document.querySelectorAll('.ts-home-other-row input[type="file"][multiple]').length,
+              workFiles: document.querySelectorAll('.ts-home-other-row input[type="file"][accept=".ro"][aria-label="Open work file"]:not([multiple])').length,
+              actionNames: otherRows.map((row) => row.querySelector(".ts-home-other-copy strong")?.textContent?.trim()),
               appearance: document.querySelectorAll(".ts-home-head .ts-appearance-trigger").length,
             };
           });
@@ -1700,9 +1754,11 @@ async function auditHomeViewportBounds(page, browser) {
               await emptyPage.evaluate(() => document.activeElement?.blur());
             }
           }
-          assert.equal(layout.rows, 3, "Other ways retains import, folder, and release-plan example actions");
+          assert.equal(layout.rows, 4, "Other ways retains work-file, import, folder, and release-plan example actions");
+          assert.deepEqual(layout.actionNames, ["Open a Tachiko work file", "Import a CSV or Excel file", "Open a project folder", "Release plan example"]);
           assert.equal(layout.imports, 1, "Home retains one real single-file import input");
           assert.equal(layout.folders, 1, "Home retains one real directory input");
+          assert.equal(layout.workFiles, 1, "Home retains one real single-file .ro input named Open work file");
           assert.equal(layout.appearance, 1, "empty Home keeps Appearance available");
           assert.ok(layout.actions.every((action) => action.x >= 0 && action.right <= width + 1),
             `${width}px ${profile.id}/${density.id} Home start actions remain inside the viewport`, layout);
@@ -1723,6 +1779,7 @@ async function auditHomeViewportBounds(page, browser) {
               `320px ${profile.id}/${density.id} Home Appearance content remains usable within its panel`, appearancePopover);
             await emptyPage.keyboard.press("Escape");
           }
+          await auditHomeWorkFileInput(emptyPage, `${width}x${height} empty Home ${profile.id}/${density.id}`);
           observations.push({ homeEmptyViewport: `${width}x${height} ${profile.id}/${density.id}`, ...layout, ...(appearancePopover ? { appearancePopover } : {}) });
         }
       }
@@ -2007,7 +2064,7 @@ async function auditHomeViewportBounds(page, browser) {
     })),
     actions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
       const rect = action.getBoundingClientRect();
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right };
+      return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right };
     }),
     savedRows: [...document.querySelectorAll(".ts-home-copy-row")].map((row) => ({
       action: (() => { const rect = row.querySelector(".ts-home-copy-action").getBoundingClientRect(); return { x: rect.x, right: rect.right, width: rect.width }; })(),
@@ -2017,7 +2074,8 @@ async function auditHomeViewportBounds(page, browser) {
   assert.equal(ordinaryHomeGeometry.surface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
   assert.deepEqual(ordinaryHomeGeometry.sections.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
   assert.equal(ordinaryHomeGeometry.sections.length, 3, "Home keeps its three approved content regions");
-  assert.equal(ordinaryHomeGeometry.actions.length, 3, "the Other ways region contains import, folder, and release-plan actions");
+  assert.equal(ordinaryHomeGeometry.actions.length, 4, "the Other ways region contains work-file, import, folder, and release-plan actions");
+  assert.deepEqual(ordinaryHomeGeometry.actions.map(({ label }) => label), ["Open work file…", "Choose file…", "Choose folder…", "Open"]);
   assert.ok(ordinaryHomeGeometry.actions.every(({ x, right }) => x >= 0 && right <= 1513), "Other ways actions remain within the desktop viewport");
   assert.equal(ordinaryHomeGeometry.savedRows.length, 1, "the saved copy appears in the Saved copies region");
   assert.ok(ordinaryHomeGeometry.savedRows[0].action.x >= 0 && ordinaryHomeGeometry.savedRows[0].timestamp.right <= 1512,
@@ -2027,7 +2085,7 @@ async function auditHomeViewportBounds(page, browser) {
     homeCards: document.querySelectorAll(".ts-home-grid > .ts-card").length,
     appearance: document.querySelectorAll(".ts-home-head .ts-appearance-selector").length,
     openLabel: document.querySelector(".ts-home-example-action > button")?.textContent?.trim(),
-    importLabel: document.querySelector(".ts-home-other-row .ts-home-file-action span")?.textContent?.trim(),
+    importLabel: document.querySelector('.ts-home-other-row label:has(input[accept*=".csv"]) span')?.textContent?.trim(),
     savedTimestamp: document.querySelector(".ts-home-copy-time")?.textContent?.trim(),
   }));
   assert.deepEqual(homePresentation.sections, ["Sales and catalog example", "Saved copies", "Other ways to start"]);
@@ -2043,6 +2101,9 @@ async function auditHomeViewportBounds(page, browser) {
     "Tab from Appearance follows the approved primary Sales action order");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
+  assert.equal(await page.getByLabel("Open work file", { exact: true }).evaluate((input) => document.activeElement === input), true,
+    "Tab reaches the real work-file input before import and folder Open");
+  await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   const folderFocus = await folderInput.evaluate((input) => ({
     active: document.activeElement === input,
@@ -2055,13 +2116,17 @@ async function auditHomeViewportBounds(page, browser) {
   assert.equal(folderFocus.outlineStyle, "solid", "the visible folder action shows keyboard focus");
   assert.equal(folderFocus.outlineWidth, "3px");
   const folderChooserReady = page.waitForEvent("filechooser");
-  await page.locator(".ts-home-other-row").nth(1).locator("label.ts-home-file-action").click();
+  await page.locator('.ts-home-other-row label:has(input[data-testid="open-project"])').click();
   const folderChooser = await folderChooserReady;
   assert.equal(folderChooser.isMultiple(), true, "the visible folder action opens the existing directory picker");
   const importChooserReady = page.waitForEvent("filechooser");
-  await page.locator(".ts-home-other-row").nth(0).locator("label.ts-home-file-action").click();
+  await page.locator('.ts-home-other-row label:has(input[accept*=".csv"])').click();
   const importChooser = await importChooserReady;
   assert.equal(importChooser.isMultiple(), false, "the visible import action opens the existing single-file picker");
+  const workFileChooserReady = page.waitForEvent("filechooser");
+  await page.locator('.ts-home-other-row label:has(input[aria-label="Open work file"])').click();
+  const workFileChooser = await workFileChooserReady;
+  assert.equal(workFileChooser.isMultiple(), false, "the visible work-file action opens a real single-file picker");
   const disabledReference = await page.evaluate(() => {
     const home = document.querySelector(".ts-home");
     const reference = document.createElement("button");
@@ -2078,7 +2143,7 @@ async function auditHomeViewportBounds(page, browser) {
     }
     return paint;
   });
-  for (const selector of [".ts-home-other-row:nth-child(2) .ts-home-file-action", ".ts-home-other-row:nth-child(1) .ts-home-file-action"]) {
+  for (const selector of ['.ts-home-other-row label:has(input[data-testid="open-project"])', '.ts-home-other-row label:has(input[accept*=".csv"])', '.ts-home-other-row label:has(input[aria-label="Open work file"])']) {
     const label = page.locator(selector);
     const rect = await label.boundingBox();
     await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
@@ -2381,7 +2446,7 @@ async function auditHomeViewportBounds(page, browser) {
       assert.deepEqual(layout.gridPanels.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
       assert.ok(layout.gridPanels[0].x < layout.gridPanels[1].x && layout.gridPanels[0].y === layout.gridPanels[1].y,
         "desktop Home places the example and saved copies in parallel columns", layout.gridPanels);
-      assert.equal(layout.otherActions.length, 3, "the secondary start region retains all three supported actions");
+      assert.equal(layout.otherActions.length, 4, "the secondary start region retains all four supported actions");
       assert.equal(layout.savedAction?.borderWidth, "0px", "the saved-copy action keeps its approved quiet border");
     }
     assert.deepEqual(layout.gridPanels.map(({ label }) => label), width <= 1023
@@ -2393,6 +2458,8 @@ async function auditHomeViewportBounds(page, browser) {
       `${width}px ${profile.id}/${density.id} populated Home Sales flow fits its own content box`, layout.exampleFlow);
     assert.ok(layout.exampleButton.x >= 0 && layout.exampleButton.right <= width + 1,
       `${width}px ${profile.id}/${density.id} populated Home Sales CTA remains unobstructed`, layout.exampleButton);
+    assert.deepEqual(layout.otherActions.map(({ label }) => label), ["Open work file…", "Choose file…", "Choose folder…", "Open"],
+      `${width}px ${profile.id}/${density.id} populated Home retains the exact four secondary actions`);
     if (width === 320) {
       assert.equal(layout.exampleFlow.whiteSpace, "normal");
       assert.equal(layout.exampleFlow.flexWrap, "wrap");
@@ -2434,7 +2501,8 @@ async function auditHomeViewportBounds(page, browser) {
           page.locator(".ts-home-copy-action").nth(index),
         ]),
         ["Sales example", page.locator(".ts-home-example-action > button")],
-        ["CSV or Excel file input", page.locator('.ts-home-other-row input[type="file"][accept]')],
+        ["work-file input", page.getByLabel("Open work file", { exact: true })],
+        ["CSV or Excel file input", page.locator('.ts-home-other-row input[type="file"][accept*=".csv"]')],
         ["project folder input", page.locator('.ts-home-other-row input[type="file"][multiple]')],
         ["release plan example", page.getByRole("button", { name: "Open release plan example", exact: true })],
       ];
@@ -2461,7 +2529,7 @@ async function auditHomeViewportBounds(page, browser) {
         await page.keyboard.press("Tab");
         await assertFocus(label, locator);
       }
-      for (const [label, locator] of [["project folder input", expectedControls.at(-2)[1]], ["CSV or Excel file input", expectedControls.at(-3)[1]], ["Sales example", expectedControls.at(-4)[1]], ...expectedControls.slice(0, savedCopyCount).reverse()]) {
+      for (const [label, locator] of expectedControls.slice(0, -1).reverse()) {
         await page.keyboard.press("Shift+Tab");
         await assertFocus(label, locator);
       }
@@ -2482,7 +2550,7 @@ async function auditHomeViewportBounds(page, browser) {
         "the 320px saved-copy action remains within the viewport");
       if (density.id === "comfortable") {
         assert.ok(layout.otherActions.every(({ height }) => height >= 36),
-          "Comfortable density keeps the three secondary actions at least 36px tall");
+          "Comfortable density keeps the four secondary actions at least 36px tall");
         assert.ok(layout.savedAction.height >= 36,
           "the 320px saved-copy action retains the Comfortable target height");
       }
@@ -2528,6 +2596,7 @@ async function auditHomeViewportBounds(page, browser) {
     });
     evidence(copyRect.top >= 0 && copyRect.bottom <= height,
       `${width}x${height} saved copy action can be reached by scrolling Home`, { ...layout, copyRect });
+        await auditHomeWorkFileInput(page, `${width}x${height} populated Home ${profile.id}/${density.id}`);
         observations.push({ homeViewport: `${width}x${height} ${profile.id}/${density.id}`, ...layout, copyRect, heldControl: homeHeld });
       }
     }
@@ -2639,7 +2708,7 @@ async function auditHomeViewportBounds(page, browser) {
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("open-project").isDisabled(), true,
     "a real unknown-open recovery state disables the folder input");
-  assert.equal(await page.locator(".ts-home-file-action").first().getAttribute("aria-disabled"), "true",
+  assert.equal(await page.locator('.ts-home-file-action:has(input[data-testid="open-project"])').getAttribute("aria-disabled"), "true",
     "a real unknown-open recovery state exposes the folder label as unavailable");
   assert.equal(await page.getByRole("button", { name: `Open saved ${unbrokenName}`, exact: true }).isDisabled(), true,
     "a real unknown-open recovery state disables the saved-copy action");
@@ -4196,6 +4265,7 @@ async function main() {
     tallGridLayoutOnlyAudit: observations.filter((item) => item.tallGridLayoutOnly || item.tallGridPanelResize),
     homeViewportAudit: observations.filter((item) => item.homeViewport),
     homeEmptyViewportAudit: observations.filter((item) => item.homeEmptyViewport),
+    homeWorkFileInputAudit: observations.filter((item) => item.homeWorkFileInput),
     homeAppearancePopoverAudit: observations.filter((item) => item.homeAppearancePopover),
     homeAppearanceReactivity: observations.find((item) => item.homeAppearanceReactivity)?.homeAppearanceReactivity ?? null,
     homeAppearanceShortViewport: observations.find((item) => item.homeAppearanceShortViewport)?.homeAppearanceShortViewport ?? null,

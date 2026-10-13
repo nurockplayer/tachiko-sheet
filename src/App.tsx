@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
+import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
 import {
   UnknownOperationOutcomeError,
@@ -1001,6 +1002,28 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
+  async function openWorkFile(file: File): Promise<void> {
+    if (blockUnknownOpenRecovery() || !begin()) return;
+    try {
+      if (import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
+      requireWorkFileName(file.name);
+      guardReplacement();
+      setMessage(null);
+      setCurrentness("pending");
+      const bytes = await readWorkFile(file);
+      if ((await replaceWork(() => runtime.openWorkFile(bytes))).kind !== "confirmed") return;
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
+    } catch (error) {
+      if (error instanceof OpenedProjectionRecoveryError) {
+        failClosedAfterOpenRecovery(error);
+        return;
+      }
+      setCurrentness("current");
+      setOutcome("idle");
+      throw error;
+    } finally { end(); }
+  }
+
   async function openExample(): Promise<void> {
     if (blockUnknownOpenRecovery()) return;
     if (!begin()) return;
@@ -1446,20 +1469,31 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setOutcome("idle");
   }
 
-  async function prepareDownload(format: "csv" | "xlsx"): Promise<boolean> {
+  function currentWorkFileOmissions(): string[] {
+    return workFileOmissions({ importedSource: importedSourceRef.current !== null, report: reportRef.current !== null });
+  }
+
+  async function prepareDownload(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     const live = viewRef.current;
     const metadata = interop?.metadata;
-    if (!live || !metadata || !begin()) return false;
+    if (!live || (format !== "ro" && !metadata) || !begin()) return false;
     setMessage(null);
     setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
     try {
-      const exported = await runtime.exportSpreadsheet(witnessOf(live), metadata, format);
+      if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
+      if (format === "ro" && (currentness !== "current" || draftDirtyRef.current || reportDraftDirtyRef.current)) {
+        throw new Error("Finish or cancel unfinished edits and wait for the values before preparing a download.");
+      }
+      const exported = format === "ro"
+        ? await runtime.exportWorkFile(witnessOf(live))
+        : await runtime.exportSpreadsheet(witnessOf(live), metadata!, format);
       preparedDownloadRef.current = {
         format, occurrence: live.occurrence, revision: exported.revision,
         collectionId: live.table.collection.id, bytes: exported.bytes.slice(0),
+        ...(format === "ro" ? { omissions: currentWorkFileOmissions() } : {}),
       };
-      setInterop((current) => current ? { ...current, ledger: exported.ledger, downloadStatus: "consent", downloadError: null } : current);
+      setInterop((current) => current ? { ...current, ledger: "ledger" in exported ? exported.ledger : current.ledger, downloadStatus: "consent", downloadError: null } : current);
       setOutcome("idle");
       return true;
     } catch (error) {
@@ -1471,15 +1505,26 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     } finally { end(); }
   }
 
-  async function download(format: "csv" | "xlsx"): Promise<boolean> {
+  async function download(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     const live = viewRef.current;
     const prepared = preparedDownloadRef.current;
-    if (!live || !prepared || !preparedDownloadIsCurrent(prepared, live, format) || !begin()) return false;
+    if (!live || !prepared || !preparedDownloadIsCurrent(prepared, live, format) ||
+      (format === "ro" && (currentness !== "current" || draftDirtyRef.current || reportDraftDirtyRef.current ||
+        !sameWorkFileOmissions(prepared.omissions ?? [], currentWorkFileOmissions())))) {
+      preparedDownloadRef.current = null;
+      setMessage("The work changed after this download was prepared. Prepare it again and review it before downloading.");
+      return false;
+    }
+    if (!begin()) return false;
     setMessage(null);
     setInterop((current) => current ? { ...current, downloadError: null } : current);
     try {
-      const blob = new Blob([prepared.bytes], { type: format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
+      if (format === "ro" && !preparedDownloadIsCurrent(prepared, await runtime.read(), "ro")) {
+        throw new Error("The work changed after this download was prepared. Prepare it again and review it before downloading.");
+      }
+      const blob = new Blob([prepared.bytes], { type: format === "ro" ? "application/octet-stream" : format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       // The host saves it: a browser download, or the desktop Save panel.
       await hostFiles.saveFile(`${live.title}.${format}`, blob);
       preparedDownloadRef.current = null;
@@ -1591,6 +1636,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
+    if (viewRef.current?.openedFromWorkFile) {
+      setMessage(WORK_FILE_SAVE_UNAVAILABLE);
+      return false;
+    }
     if (!begin()) return false;
     const live = viewRef.current;
     if (!live) {
@@ -2131,6 +2180,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           copies={savedCopies}
           copiesStatus={savedCopiesStatus}
           onRetryCopies={refreshCopies}
+          onOpenWorkFile={openWorkFile}
+          workFileUnavailableReason={import.meta.env.MODE === "desktop" ? WORK_FILE_DESKTOP_UNAVAILABLE : null}
+          workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
