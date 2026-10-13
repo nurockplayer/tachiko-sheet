@@ -527,6 +527,7 @@ export function SheetShell(props: SheetShellProps) {
   const [copyForClose, setCopyForClose] = useState(false);
   const [savedClose, setSavedClose] = useState<(ViewWitness & { name: string; phase: "clear-draft" | "confirm" }) | null>(null);
   const [copyName, setCopyName] = useState("");
+  const savedCopyNamesInSessionRef = useRef(new Set<string>());
   const [copyPending, setCopyPending] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
@@ -1521,7 +1522,7 @@ export function SheetShell(props: SheetShellProps) {
   function openCopyDialog(forClose = false): void {
     setCopyError(null);
     setLocalError(null);
-    setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copiesStatus === "ready" ? copies.map((copy) => copy.name) : []));
+    setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copies.map((copy) => copy.name), savedCopyNamesInSessionRef.current));
     setCopyForClose(forClose);
     setCaptureCopyParentFailure(false);
     setCopyOpen(true);
@@ -1558,6 +1559,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       const created = await onCreateCopy(name);
       if (created) {
+        savedCopyNamesInSessionRef.current.add(name);
         setCaptureCopyParentFailure(false);
         setCopyParentFailureMessage(null);
         setCopyOpen(false);

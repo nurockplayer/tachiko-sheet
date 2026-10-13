@@ -62,6 +62,100 @@ try {
   await page.goto(LOCAL_ORIGIN);
   await openReleasePlanExample(page);
 
+  // Reload a real saved copy so its name comes from the last successful
+  // inventory, independently of any names remembered in this UI session.
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const firstSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+  const firstName = await firstSave.getByRole("textbox", { name: "Copy name", exact: true }).inputValue();
+  await firstSave.getByRole("button", { name: "Create copy", exact: true }).click();
+  await firstSave.waitFor({ state: "detached" });
+  await page.reload();
+  await waitForColdHome(page);
+  await page.getByRole("button", { name: `Open saved ${firstName}`, exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+
+  // Delay only list callbacks, after the real IndexedDB reads succeed. A
+  // failed list throws at its read-only transaction; writes stay real.
+  await page.evaluate(() => {
+    const transaction = IDBDatabase.prototype.transaction;
+    const getAll = IDBObjectStore.prototype.getAll;
+    const heldTransactions = new WeakSet();
+    const probe = window.__saveCloseListProbe = { mode: null, started: 0, replies: [] };
+    IDBDatabase.prototype.transaction = function (stores, mode, ...rest) {
+      const listing = this.name === "tachiko-sheet-local-copies" && mode === "readonly" &&
+        Array.isArray(stores) && stores.includes("copies") && stores.includes("opaque-copies");
+      const fault = listing ? probe.mode : null;
+      if (fault) {
+        probe.mode = null;
+        probe.started += 1;
+        if (fault === "fail") throw new Error("controlled saved-copy list failure");
+      }
+      const tx = transaction.call(this, stores, mode, ...rest);
+      if (fault === "delay") heldTransactions.add(tx);
+      return tx;
+    };
+    IDBObjectStore.prototype.getAll = function (...args) {
+      const request = getAll.apply(this, args);
+      if (!heldTransactions.has(this.transaction)) return request;
+      return new Proxy(request, {
+        get(target, key) { return Reflect.get(target, key, target); },
+        set(target, key, value) {
+          if (key === "onsuccess") target.onsuccess = (event) => probe.replies.push(() => value.call(target, event));
+          else Reflect.set(target, key, value, target);
+          return true;
+        },
+      });
+    };
+  });
+  const existingNames = new Set([firstName]);
+  let refreshesStarted = 0;
+  for (const mode of ["delay", "fail"]) {
+    await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+    let dialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+    const name = await dialog.getByRole("textbox", { name: "Copy name", exact: true }).inputValue();
+    assert.equal(existingNames.has(name), false, "prefill avoids every previously saved name");
+    // Save the proposed X copy, then reopen before the list can supply it.
+    await page.evaluate((fault) => { window.__saveCloseListProbe.mode = fault; }, mode);
+    await dialog.getByRole("button", { name: "Create copy", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+    existingNames.add(name);
+    await page.waitForFunction((count) => window.__saveCloseListProbe.started === count, ++refreshesStarted);
+    await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+    dialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+    const reopened = await dialog.getByRole("textbox", { name: "Copy name", exact: true }).inputValue();
+    assert.equal(existingNames.has(reopened), false, `${mode} refresh: immediate reopen avoids every existing name`);
+    assert.equal(await page.evaluate((candidate) => window.__tachikoAcceptance.savedSnapshot(candidate), reopened), null);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    if (mode === "delay") {
+      await page.waitForFunction(() => window.__saveCloseListProbe.replies.length === 2);
+      await page.evaluate(() => { window.__saveCloseListProbe.replies.splice(0).forEach((reply) => reply()); });
+    }
+    results.push(`save-then-immediate-reopen-with-${mode}-list-refresh`);
+  }
+
+  // Even an incomplete inventory cannot weaken create-only refusal. A person
+  // can edit the colliding name and retry without losing their live changes.
+  await edit(page, 4);
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const retryDialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+  const retryName = retryDialog.getByRole("textbox", { name: "Copy name", exact: true });
+  const uniqueName = await retryName.inputValue();
+  const collidingName = [...existingNames][0];
+  const originalCopy = await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), collidingName);
+  await retryName.fill(collidingName);
+  await retryDialog.getByRole("button", { name: "Create copy", exact: true }).click();
+  await retryDialog.getByRole("alert").waitFor();
+  assert.equal(await retryName.inputValue(), collidingName, "collision retains the editable name");
+  assert.equal(await retryName.isEditable(), true, "collision allows renaming and retry");
+  await unsaved(page, 4);
+  assert.deepEqual(await page.evaluate((name) => window.__tachikoAcceptance.savedSnapshot(name), collidingName), originalCopy, "collision never overwrites the existing copy");
+  await retryName.fill(uniqueName);
+  await retryDialog.getByRole("button", { name: "Create copy", exact: true }).click();
+  await retryDialog.waitFor({ state: "detached" });
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  assert.equal((await page.getByTestId(impactId).textContent()).trim(), "4", "successful rename retry preserves the edit");
+  results.push("incomplete-inventory-collision-is-visible-editable-and-recoverable");
+
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   const download = page.getByRole("region", { name: "Download spreadsheet", exact: true });
   for (const label of ["Prepare CSV", "Prepare XLSX"]) {
