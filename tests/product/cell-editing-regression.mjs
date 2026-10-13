@@ -258,7 +258,7 @@ const cases = [
     await input.setInputFiles(messyCsv);
     const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
     await dialog.locator("select").nth(1).selectOption("number");
-    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
     before = await state(page); count = await dispatches(page); draft = "4";
     await page.locator("[role=grid] tbody tr").first().locator("td").nth(1).dblclick();

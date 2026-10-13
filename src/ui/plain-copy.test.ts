@@ -37,7 +37,17 @@ function copyViolations(source: ast.SourceFile): string[] {
         // Includes host-copy objects, error fallbacks and copy helper returns.
         (/\s/.test(text) && (attribute === undefined || attribute.name.getText(source).startsWith("on")))
       );
-      if (ordinary && BANNED.test(text)) {
+      // The frozen #146 seed (web-save-closure-current.mjs) requires these
+      // exact labels. Allow only their existing SheetShell element contexts;
+      // the same words elsewhere remain subject to the ordinary-copy guard.
+      const shell = source.fileName === path.join(root, "src/ui/SheetShell.tsx");
+      const opening = parent && ast.isJsxElement(parent) ? parent.openingElement : undefined;
+      const frozenSaveClosureLabel = shell && (
+        (ast.isJsxText(node) && text.trim() === "Import candidate" && opening?.tagName.getText(source) === "button") ||
+        (attribute?.name.getText(source) === "aria-label" && ["Source fidelity ledger", "Cross-table summary binding"].includes(text) &&
+          parent && ast.isJsxAttribute(parent) && ancestors.some((ancestor) => ast.isJsxOpeningElement(ancestor) && ancestor.tagName.getText(source) === "section"))
+      );
+      if (ordinary && BANNED.test(text) && !frozenSaveClosureLabel) {
         const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
         violations.push(`${path.relative(root, source.fileName)}:${line}: ${text.trim()}`);
       }

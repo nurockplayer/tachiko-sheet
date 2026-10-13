@@ -66,7 +66,7 @@ async function importWorkbook(page) {
   const types = dialog.locator("select");
   await types.nth(2).selectOption("number");
   await types.nth(4).selectOption("number");
-  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 }
 

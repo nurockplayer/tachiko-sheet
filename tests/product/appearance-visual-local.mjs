@@ -1041,7 +1041,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
       const panelStyle = panel ? getComputedStyle(panel) : null;
       const interop = panel?.matches(".ts-interop") ? panel : null;
       const interopSpacing = interop ? (() => {
-        const ledger = interop.querySelector('[aria-label="Import & export changes and warnings"]');
+        const ledger = interop.querySelector('[aria-label="Source fidelity ledger"]');
         const cleanup = interop.querySelector('[aria-label="Cleanup preview"]');
         const download = interop.querySelector('[aria-label="Download spreadsheet"]');
         const preview = cleanup?.querySelector(":scope > .ts-preview");

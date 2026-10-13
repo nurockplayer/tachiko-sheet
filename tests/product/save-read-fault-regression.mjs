@@ -66,12 +66,12 @@ try {
   await importDialog.waitFor();
   const columnTypes = importDialog.locator("select");
   for (let index = 0; index < 5; index += 1) await columnTypes.nth(index).selectOption(index === 2 || index === 3 ? "number" : "text");
-  await importDialog.getByRole("button", { name: "Import file", exact: true }).click();
+  await importDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("button", { name: "Choose tables and fields", exact: true }).click();
-  const binding = page.locator('[aria-label="Cross-table summary setup"] select');
+  const binding = page.locator('[aria-label="Cross-table summary binding"] select');
   for (const [index, value] of ["sheet_1", "column_1", "column_3", "sheet_1", "column_1", "column_2", "column_4"].entries()) {
     await binding.nth(index).selectOption(value);
   }

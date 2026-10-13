@@ -94,7 +94,7 @@ async function importSource(page, file) {
     assert.equal(await types.nth(index).inputValue(), "text", "all three columns stay Text");
   }
   await timed("import", async () => {
-    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await ready(page);
     await grid(page).locator("tbody tr.ts-row").first().waitFor();
   });
@@ -160,7 +160,7 @@ async function refusedImport(page, file, label) {
   const refusal = page.getByRole("alert");
   await dialog.or(refusal).first().waitFor();
   if (await dialog.count()) {
-    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await refusal.first().waitFor();
     const text = (await refusal.allTextContents()).join(" ");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();

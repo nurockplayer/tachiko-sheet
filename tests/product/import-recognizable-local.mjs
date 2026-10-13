@@ -52,7 +52,7 @@ try {
     }
   }
 
-  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
   assert.equal(await page.locator("h1.ts-title").textContent(), "messy.csv", "the work is named after the file");
   assert.equal(await page.locator("#ts-active-table option:checked").textContent(), "messy", "the table is named after the file");
@@ -76,7 +76,7 @@ try {
     await largeDialog.waitFor();
     assert.deepEqual(await largeDialog.locator("select").evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"]);
     assert.equal(await largeDialog.getByText("First 5 of 65 rows").count(), 1);
-    await largeDialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await largeDialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await largePage.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
     assert.equal(await largePage.locator("h1.ts-title").textContent(), "orders-65.csv");
     await largeContext.close();
