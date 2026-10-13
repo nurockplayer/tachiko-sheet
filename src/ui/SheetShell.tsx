@@ -52,6 +52,8 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
+import { suggestedCopyName } from "./copy-name.js";
+import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
@@ -522,7 +524,10 @@ export function SheetShell(props: SheetShellProps) {
   const [salesEntryOutcome, setSalesEntryOutcome] = useState<SalesEntryOutcome | null>(null);
   const [compactHomeLayout, setCompactHomeLayout] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [copyForClose, setCopyForClose] = useState(false);
+  const [savedClose, setSavedClose] = useState<(ViewWitness & { name: string; phase: "clear-draft" | "confirm" }) | null>(null);
   const [copyName, setCopyName] = useState("");
+  const savedCopyNamesInSessionRef = useRef(new Set<string>());
   const [copyPending, setCopyPending] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
@@ -571,6 +576,8 @@ export function SheetShell(props: SheetShellProps) {
   const spreadsheetInputId = useId();
   const copyNameId = useId();
   const copyErrorId = useId();
+  const exportUnavailableId = useId();
+  const closeSaveUnavailableId = useId();
   const copyNameDescriptionBaseId = useId();
   const lockNoteId = useId();
   const notesId = useId();
@@ -598,6 +605,7 @@ export function SheetShell(props: SheetShellProps) {
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const resultsOccurrenceRef = useRef<string | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeSaveButtonRef = useRef<HTMLButtonElement | null>(null);
   const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const recoveryRefreshRef = useRef<HTMLButtonElement | null>(null);
   const desktopRefreshRef = useRef<HTMLButtonElement | null>(null);
@@ -1064,6 +1072,25 @@ export function SheetShell(props: SheetShellProps) {
   }, [draftActive]);
 
   useEffect(() => {
+    if (!savedClose || busy || copyPending) return;
+    // Closing the name dialog clears its disposable draft. Let that existing
+    // notification update the parent's save/dirty indicators before confirming.
+    if (savedClose.phase === "clear-draft") {
+      setSavedClose({ ...savedClose, phase: "confirm" });
+      return;
+    }
+    setSavedClose(null);
+    if (savedCloseIsConfirmed(savedClose, { view, saveStatus, dirty, currentness }, draftActive || hasInvalidReportDraft)) {
+      setCopyForClose(false);
+      void closeWork();
+    } else {
+      setCopyOpen(true);
+      setCopyName(savedClose.name);
+      setCopyError("Saving the current changes could not be confirmed. Keep this work open and try again.");
+    }
+  }, [savedClose, busy, copyPending, saveStatus, dirty, draftActive, hasInvalidReportDraft, currentness, view]);
+
+  useEffect(() => {
     const onPointerTermination = (event: PointerEvent) => clearOwnedSharedPointer(heldPointerOwnerRef, event.pointerId);
     const onWindowBlur = () => clearHeldSharedButtons(heldPointerOwnerRef);
     window.addEventListener("blur", onWindowBlur);
@@ -1492,10 +1519,11 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
-  function openCopyDialog(): void {
+  function openCopyDialog(forClose = false): void {
     setCopyError(null);
     setLocalError(null);
-    setCopyName("");
+    setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copies.map((copy) => copy.name), savedCopyNamesInSessionRef.current));
+    setCopyForClose(forClose);
     setCaptureCopyParentFailure(false);
     setCopyOpen(true);
   }
@@ -1506,12 +1534,17 @@ export function SheetShell(props: SheetShellProps) {
     setCopyError(null);
     setCopyName("");
     setCaptureCopyParentFailure(false);
-    saveCopyButtonRef.current?.focus();
+    if (copyForClose) {
+      setCopyForClose(false);
+      requestAnimationFrame(() => closeSaveButtonRef.current?.focus());
+    } else {
+      saveCopyButtonRef.current?.focus();
+    }
   }
 
   async function createCopy(): Promise<void> {
     const name = copyName.trim();
-    if (name === "" || copyPending) return;
+    if (name === "" || copyPending || controlsLocked) return;
     if (hasInvalidReportDraft) {
       setCopyError("Correct the invalid report presentation text before creating a copy.");
       return;
@@ -1522,15 +1555,18 @@ export function SheetShell(props: SheetShellProps) {
     setCaptureCopyParentFailure(true);
     setCopyPending(true);
     setLocalError(null);
+    const closingView = copyForClose && view ? { occurrence: view.occurrence, revision: view.revision } : null;
     try {
       const created = await onCreateCopy(name);
       if (created) {
+        savedCopyNamesInSessionRef.current.add(name);
         setCaptureCopyParentFailure(false);
         setCopyParentFailureMessage(null);
         setCopyOpen(false);
         setCopyError(null);
         setCopyName("");
-        saveCopyButtonRef.current?.focus();
+        if (closingView) setSavedClose({ ...closingView, name, phase: "clear-draft" });
+        else saveCopyButtonRef.current?.focus();
       } else {
         setCopyError(`The copy “${name}” was not created. The name is still here; adjust it and try again.`);
       }
@@ -1855,7 +1891,7 @@ export function SheetShell(props: SheetShellProps) {
           type="button"
           className="ts-button ts-button--primary"
           ref={saveCopyButtonRef}
-          onClick={openCopyDialog}
+          onClick={() => openCopyDialog()}
           disabled={controlsLocked || saveStatus === "saving"}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
         >
@@ -2200,9 +2236,10 @@ export function SheetShell(props: SheetShellProps) {
         <h3 className="ts-content-heading">Download</h3>
         <p className="ts-subtle">The file is prepared from your current work and the imported file’s information. Review changes and warnings before downloading.</p>
         <div className="ts-row-actions">
-          <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
-          <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
         </div>
+        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. Save a copy to keep your work on this device.</p> : null}
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
@@ -2729,22 +2766,31 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
       ) : null}
       {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The file has been prepared. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
-      {closeOpen ? (
+      {closeOpen && !copyOpen && !savedClose ? (() => {
+        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
+        return (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Unsaved work</h2>
             <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+            {closeSaveReason ? <p className="ts-hint" id={closeSaveUnavailableId}>{closeSaveReason}</p> : null}
           </div>
           <div className="ts-dialog-actions">
             <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
               Keep editing
             </button>
+            <span className="ts-close-save-action">
+              <button type="button" className="ts-button ts-button--primary" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
+                Save a copy…
+              </button>
+            </span>
             <button type="button" className="ts-button ts-button--danger" onClick={() => void closeWork()}>
               Close without saving
             </button>
           </div>
         </Modal>
-      ) : null}
+        );
+      })() : null}
     </div>
   );
 }
