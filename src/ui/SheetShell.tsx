@@ -53,7 +53,7 @@ import {
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
 import { suggestedCopyName } from "./copy-name.js";
-import { savedCloseIsConfirmed } from "./save-close.js";
+import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
@@ -2766,19 +2766,21 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
       ) : null}
       {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload}><div className="ts-dialog-intro"><h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat.toUpperCase()}</h2><p>The file has been prepared. {hostCopy.exportConsent}</p></div><div className="ts-dialog-scroll">{interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}</div><div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelDownload}>Cancel</button><button type="button" className="ts-button ts-button--primary" onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button></div></Modal> : null}
-      {closeOpen && !copyOpen && !savedClose ? (
+      {closeOpen && !copyOpen && !savedClose ? (() => {
+        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
+        return (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Unsaved work</h2>
             <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
-            {cellDraftActive || anyNotesDraft || hasInvalidReportDraft ? <p className="ts-hint" id={closeSaveUnavailableId}>Keep editing to finish or cancel the unfinished edits before saving a copy.</p> : null}
+            {closeSaveReason ? <p className="ts-hint" id={closeSaveUnavailableId}>{closeSaveReason}</p> : null}
           </div>
           <div className="ts-dialog-actions">
             <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
               Keep editing
             </button>
             <span className="ts-close-save-action">
-              <button type="button" className="ts-button ts-button--primary" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={controlsLocked || currentness !== "current" || saveStatus === "saving" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft} aria-describedby={cellDraftActive || anyNotesDraft || hasInvalidReportDraft ? closeSaveUnavailableId : undefined}>
+              <button type="button" className="ts-button ts-button--primary" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
                 Save a copy…
               </button>
             </span>
@@ -2787,7 +2789,8 @@ export function SheetShell(props: SheetShellProps) {
             </button>
           </div>
         </Modal>
-      ) : null}
+        );
+      })() : null}
     </div>
   );
 }

@@ -258,6 +258,44 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Edit cell", exact: true }).inputValue(), "6", "unfinished edit survives");
   results.push("unfinished-edits-kept-with-visible-save-guidance");
 
+  // Use the existing recovery lane's lost execute reply: the real edit is
+  // dispatched, but its outcome must remain unknown until explicit Refresh.
+  await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Escape");
+  await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
+  await page.getByTestId(impactId).dblclick();
+  const unknownEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await unknownEditor.fill("7");
+  await unknownEditor.press("Enter");
+  const recovery = page.getByRole("region", { name: "Recovery", exact: true });
+  await recovery.waitFor();
+  await recovery.getByTestId("operation-outcome").filter({ hasText: "Outcome needs review" }).waitFor();
+  assert.equal(await recovery.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
+  const copyWritesBefore = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
+  const recoveryClose = recovery.getByRole("button", { name: "Close and abandon recovery", exact: true });
+  await recoveryClose.click();
+  close = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  await close.waitFor();
+  const unknownSave = close.getByRole("button", { name: "Save a copy…", exact: true });
+  assert.equal(await unknownSave.isDisabled(), true, "unknown currentness cannot be saved from Close");
+  const unknownReasonId = await unknownSave.getAttribute("aria-describedby");
+  assert.ok(unknownReasonId, "unknown currentness has an accessible explanation");
+  const unknownReason = close.locator(`[id="${unknownReasonId}"]`);
+  assert.equal(await unknownReason.isVisible(), true, "refresh guidance is visible in Close");
+  assert.match(await unknownReason.textContent(), /refresh/i, "guidance explains how to recover before saving");
+  await close.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await close.waitFor({ state: "detached" });
+  assert.equal(await recovery.isVisible(), true, "Keep editing returns to the recovery path");
+  assert.equal(await recovery.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
+  assert.equal(await page.getByTestId("project-ready").count(), 0, "Keep editing cannot expose an unconfirmed sheet");
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Close and abandon recovery");
+  assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()), copyWritesBefore,
+    "Close and Keep editing do not dispatch a copy write");
+  await page.evaluate(() => window.__tachikoAcceptance.settleFaultWindow());
+  await recovery.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByTestId("project-ready").waitFor();
+  assert.equal((await page.getByTestId(impactId).textContent()).trim(), "7", "Refresh reads the real dispatched edit");
+  results.push("unknown-currentness-close-save-has-accessible-refresh-guidance-and-keeps-recovery");
+
   console.log(JSON.stringify({ status: "PASS", lane: "save-close-local", results }));
 } finally {
   if (context) await context.close().catch(() => {});

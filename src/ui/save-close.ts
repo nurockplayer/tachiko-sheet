@@ -9,3 +9,15 @@ export function savedCloseIsConfirmed(
   return state.saveStatus === "saved" && !state.dirty && !hasDraft && state.currentness === "current" &&
     state.view?.occurrence === savedView.occurrence && state.view.revision === savedView.revision;
 }
+
+/** Plain reason shown beside a disabled "Save a copy…" in the unsaved-work Close dialog. */
+export function closeSaveUnavailableReason(
+  state: Pick<SheetShellProps, "saveStatus" | "currentness"> & { busy: boolean },
+  hasDraft: boolean,
+): string | null {
+  if (hasDraft) return "Keep editing to finish or cancel the unfinished edits before saving a copy.";
+  if (state.currentness === "unknown") return "This work could not be confirmed. Keep editing, then refresh before saving a copy.";
+  if (state.currentness === "pending") return "These values are still being updated. Keep editing and wait for confirmation before saving a copy.";
+  if (state.saveStatus === "saving" || state.busy) return "Another action is still finishing. Wait for it before saving a copy.";
+  return null;
+}
