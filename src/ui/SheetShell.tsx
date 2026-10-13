@@ -1474,6 +1474,19 @@ export function SheetShell(props: SheetShellProps) {
     catch (error) { setLocalError(workFileOpenRefusal(error)); }
   }
 
+  useEffect(() => {
+    if (import.meta.env.MODE !== "acceptance") return;
+    // Acceptance exercises resident-work refusals through the same handler
+    // as Home's picker, without exposing a second product Open control.
+    const attempt = (event: Event) => {
+      const detail = (event as CustomEvent<{ file: File; handled: boolean; complete: () => void }>).detail;
+      detail.handled = true;
+      void openWorkFile(detail.file).finally(detail.complete);
+    };
+    window.addEventListener("tachiko-acceptance-open-work-file", attempt);
+    return () => window.removeEventListener("tachiko-acceptance-open-work-file", attempt);
+  });
+
   function workFileInput(locked: boolean): ReactNode {
     const unavailable = workFileUnavailableReason !== null;
     return <label className={`ts-button ts-home-file-action${locked || unavailable ? " ts-home-file-action--disabled" : ""}`} aria-disabled={locked || unavailable}>
@@ -2237,11 +2250,6 @@ export function SheetShell(props: SheetShellProps) {
     const preview = interop?.cleanupPreview ?? null;
     return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-interop">
       <h2 className="ts-content-heading">Import &amp; export</h2>
-      <section className="ts-interop-section" aria-label="Open work file">
-        <h3 className="ts-content-heading">Open a Tachiko work file</h3>
-        <p className="ts-subtle">Close or save any changed work before opening another file.</p>
-        {workFileInput(controlsLocked)}
-      </section>
       <section className="ts-interop-section" aria-label="Source fidelity ledger">
         <h3 className="ts-content-heading">Changes and warnings</h3>
         {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}

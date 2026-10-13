@@ -45,7 +45,12 @@ async function edit(page, id, value) {
 }
 async function prepare(page) {
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Download work file (.ro)", exact: true }).click();
+  const panel = page.getByRole("tabpanel", { name: "Import & export", exact: true });
+  assert.deepEqual(await panel.getByRole("heading").allTextContents(), ["Import & export", "Changes and warnings", "Cleanup", "Download"]);
+  assert.equal(await panel.getByTestId("open-work-file").count(), 0, "Open work file stays on Home");
+  const downloads = panel.getByRole("region", { name: "Download spreadsheet", exact: true });
+  assert.deepEqual(await downloads.locator(".ts-row-actions button").allTextContents(), ["Download work file (.ro)", "Prepare CSV", "Prepare XLSX"]);
+  await downloads.getByRole("button", { name: "Download work file (.ro)", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
   assert.match(await dialog.textContent(), /Downloading does not save a copy/);
@@ -65,8 +70,28 @@ async function download(page, file, omissionPattern) {
   return { path: path.join(profileRoot, file), bytes: await readFile(path.join(profileRoot, file)) };
 }
 async function open(page, file) {
-  await page.getByTestId("open-work-file").setInputFiles(file);
+  await page.getByRole("region", { name: "Other ways to start", exact: true }).getByTestId("open-work-file").setInputFiles(file);
   await ready(page);
+}
+async function attemptResidentOpen(page, file) {
+  // Keep a real browser File (including the sparse over-limit file), and call
+  // the same Shell handler as Home without adding an Open control to the view.
+  await page.evaluate(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.hidden = true;
+    input.dataset.testid = "resident-work-file-probe";
+    document.body.append(input);
+  });
+  try {
+    await page.getByTestId("resident-work-file-probe").setInputFiles(file);
+    await page.getByTestId("resident-work-file-probe").evaluate(async input => {
+      if (!input.files?.[0]) throw new Error("The refusal probe needs a real File.");
+      await window.__tachikoAcceptance.attemptResidentWorkFileOpen(input.files[0]);
+    });
+  } finally {
+    await page.getByTestId("resident-work-file-probe").evaluate(input => input.remove());
+  }
 }
 function fixtureInventory(files, fieldEdit) {
   const schemas = JSON.parse(files["schemas.json"]);
@@ -234,7 +259,7 @@ try {
       try { await handle.truncate(64 * 1024 * 1024 + 1); }
       finally { await handle.close(); }
     } else await writeFile(refusalFile, buffer);
-    await page.getByTestId("open-work-file").setInputFiles(refusalFile);
+    await attemptResidentOpen(page, refusalFile);
     await page.getByRole("alert").filter({ hasText: /work file|Choose a Tachiko/ }).waitFor();
     assert.match(await page.getByRole("alert").last().textContent(), reason, `${name}: actual Work refusal reason remains visible`);
     assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.workFileSnapshot()), before, `${name}: resident occurrence, revision and exact core bytes preserved`);

@@ -116,6 +116,7 @@ export interface AcceptanceCoreFailureProbe {
 export interface AcceptanceApi {
   runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
+  attemptResidentWorkFileOpen(file: File): Promise<void>;
   savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null>;
   workMethodCounts(): Record<string, number>;
   applyInterfaceProfile(input: unknown): boolean;
@@ -1533,6 +1534,15 @@ export async function workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot> {
   return { occurrence: view.occurrence, revision: view.revision, title: view.title, opaqueBytesHash: await hashBytes(snapshot.bytes) };
 }
 
+/** Exercise the real Shell handler with resident work; the picker lives on Home only. */
+export function attemptResidentWorkFileOpen(file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const detail = { file, handled: false, complete: resolve };
+    window.dispatchEvent(new CustomEvent("tachiko-acceptance-open-work-file", { detail }));
+    if (!detail.handled) reject(new Error("The Shell work-file handler is unavailable."));
+  });
+}
+
 /** Readonly host observation; opaque bytes and their attachment are never decoded or rewritten. */
 export async function savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null> {
   const copy = await requireWiring().copies.readAny(name);
@@ -2262,6 +2272,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
   window.__tachikoAcceptance = {
     runtimeSnapshot,
     workFileSnapshot,
+    attemptResidentWorkFileOpen,
     savedSnapshot,
     workMethodCounts,
     applyInterfaceProfile,
