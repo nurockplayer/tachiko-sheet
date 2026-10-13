@@ -1484,8 +1484,17 @@ export function SheetShell(props: SheetShellProps) {
       detail.handled = true;
       void openWorkFile(detail.file).finally(detail.complete);
     };
+    const attemptSaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ name: string; handled: boolean; complete: () => void }>).detail;
+      detail.handled = true;
+      void openSaved(detail.name).finally(detail.complete);
+    };
     window.addEventListener("tachiko-acceptance-open-work-file", attempt);
-    return () => window.removeEventListener("tachiko-acceptance-open-work-file", attempt);
+    window.addEventListener("tachiko-acceptance-open-saved-copy", attemptSaved);
+    return () => {
+      window.removeEventListener("tachiko-acceptance-open-work-file", attempt);
+      window.removeEventListener("tachiko-acceptance-open-saved-copy", attemptSaved);
+    };
   });
 
   function workFileInput(locked: boolean): ReactNode {

@@ -12,7 +12,7 @@ import type {
   SavedCopySummary,
   AnySavedCopy,
 } from "../contracts.js";
-import { reportPresentationLimitViolation } from "../contracts.js";
+import { reportPresentationLimitViolation, requireWorkFileSize } from "../contracts.js";
 
 /**
  * A dedicated IndexedDB database for durable local copies. This name is app
@@ -162,11 +162,26 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
   return copy;
 }
 
-function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
+/** Persisted input and alternate host ports must pass this before cloning or hashing. */
+export function validateWorkFileCopy(record: Pick<WorkFileSavedCopy, "revision" | "bytes" | "importedSource" | "presentation">): void {
   if (typeof record.revision !== "string" || !record.revision ||
     Object.prototype.toString.call(record.bytes) !== "[object ArrayBuffer]" || !record.bytes.byteLength) {
     throw new TypeError("The saved work file is invalid. Nothing was opened.");
   }
+  requireWorkFileSize(record.bytes.byteLength);
+  // Portable packages omit import provenance. No attachment, even an otherwise
+  // valid foreign source, can establish provenance for this variant.
+  if (record.importedSource !== undefined) {
+    throw new TypeError("The saved work file has unsupported import information. Nothing was opened.");
+  }
+  validatePresentationAttachment(record.presentation);
+  if (record.presentation && record.presentation.snapshotRevision !== record.revision) {
+    throw new Error("The saved report settings do not match this project copy.");
+  }
+}
+
+function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
+  validateWorkFileCopy(record);
   return {
     kind: "work-file",
     formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
@@ -174,18 +189,12 @@ function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
     savedAt: record.savedAt,
     revision: record.revision,
     bytes: cloneBytes(record.bytes),
-    ...(record.importedSource ? { importedSource: {
-      ...record.importedSource,
-      bytes: cloneBytes(record.importedSource.bytes),
-      metadata: structuredClone(record.importedSource.metadata),
-      ledger: structuredClone(record.importedSource.ledger),
-    }} : {}),
     ...(record.presentation !== undefined ? { presentation: clonePresentation(record.presentation) } : {}),
   };
 }
 
-function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
-  if (presentation === undefined) return undefined;
+export function validatePresentationAttachment(presentation: unknown): asserts presentation is PresentationAttachment | undefined {
+  if (presentation === undefined) return;
   if (typeof presentation !== "object" || presentation === null) {
     throw new TypeError("The presentation attachment is invalid.");
   }
@@ -202,7 +211,11 @@ function clonePresentation(presentation: unknown): PresentationAttachment | unde
     reportPresentationLimitViolation(report as PresentationAttachment["report"]) !== null) {
     throw new TypeError("The presentation attachment is invalid.");
   }
-  return structuredClone(candidate as PresentationAttachment);
+}
+
+function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
+  validatePresentationAttachment(presentation);
+  return presentation === undefined ? undefined : structuredClone(presentation);
 }
 
 /**
@@ -321,7 +334,14 @@ function classifyStoredEnvelope(record: unknown, storeName: StoredListingEntry["
     return "opaque";
   }
   if (storeName === LOCAL_OPAQUE_COPIES_STORE && hasKind && envelope.kind === "work-file" &&
-      hasFormatVersion && envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) return "work-file";
+      hasFormatVersion && envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) {
+    try {
+      validateWorkFileCopy(envelope as unknown as StoredWorkFileCopy);
+      return "work-file";
+    } catch {
+      return undefined;
+    }
+  }
   return undefined;
 }
 
@@ -412,8 +432,14 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
       }
       if ((record as Record<string, unknown>).name !== name) return null;
+      // Preserve the plain corrupt/over-limit refusal while list classifies the
+      // same invalid input without failing unrelated rows.
+      const envelope = record as Record<string, unknown>;
+      if (entry.storeName === LOCAL_OPAQUE_COPIES_STORE && envelope.kind === "work-file" &&
+        envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) {
+        return toWorkFileSavedCopy(record as StoredWorkFileCopy);
+      }
       const kind = classifyStoredEnvelope(record, entry.storeName);
-      if (kind === "work-file") return toWorkFileSavedCopy(record as StoredWorkFileCopy);
       if (kind === "opaque") return toOpaqueSavedCopy(record as StoredOpaqueCopy);
       if (kind === "canonical") return toCanonicalSavedCopy(record as StoredCopy);
       throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
@@ -494,7 +520,7 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
           savedAt: new Date().toISOString(),
           revision: snapshot.revision,
           bytes: snapshot.bytes,
-          ...(snapshot.importedSource ? { importedSource: snapshot.importedSource } : {}),
+          ...(snapshot.importedSource !== undefined ? { importedSource: snapshot.importedSource } : {}),
           ...(snapshot.presentation !== undefined ? { presentation: snapshot.presentation } : {}),
         };
         // Clone before any await; no caller can mutate the pending durable payload.

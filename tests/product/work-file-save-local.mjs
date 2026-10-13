@@ -143,6 +143,12 @@ async function mutateStored(page, name, replacementName, fault) {
           if (fault === "corrupt") { row.bytes = row.bytes.slice(0); new Uint8Array(row.bytes)[0] ^= 255; delete row.presentation; }
           if (fault === "digest") row.presentation.snapshotDigest = "0".repeat(64);
           if (fault === "revision") row.presentation.snapshotRevision = "different-revision";
+          if (fault === "invalid-import") row.importedSource = {metadata: null, ledger: null};
+          if (fault === "foreign-import") row.importedSource = {
+            name: "foreign.csv", format: "csv", bytes: new TextEncoder().encode("foreign\nvalue\n").buffer,
+            metadata: {version: 1, sheets: []}, ledger: [],
+          };
+          if (fault === "invalid-presentation") row.presentation.report.legendVisible = null;
           if (fault === "unknown") row.kind = "future";
           store.add(row);
         };
@@ -311,11 +317,35 @@ try {
   assert.match(await page.getByLabel("Current report data", {exact: true}).textContent(), /PEN\s*1200/);
   results.push("local-report-settings-digest-revision-bound-summary-definition-result-oracle-double-Save-process-reopen");
 
-  for (const fault of ["digest", "revision"]) await mutateStored(page, "Portable report", `Report ${fault} mismatch`, fault);
+  const attachmentFaults = ["digest", "revision", "invalid-import", "foreign-import", "invalid-presentation"];
+  for (const fault of attachmentFaults) await mutateStored(page, "Portable report", `Report ${fault} mismatch`, fault);
+  // Core-only file admission is clean but has no durable Save receipt. Every
+  // refusal must preserve that occurrence and must not promote it to Saved.
+  await page.evaluate(async bytes => {
+    await window.__tachikoAcceptance.attemptResidentWorkFileOpen(new File([new Uint8Array(bytes)], "resident.ro"));
+  }, [...secondReportFile.bytes]);
+  await ready(page);
+  const resident = await page.evaluate(() => window.__tachikoAcceptance.workFileSnapshot());
+  const residentSaveStatus = await page.getByTestId("save-status").textContent();
+  assert.doesNotMatch(residentSaveStatus, /Saved on this device/);
+  for (const fault of attachmentFaults) {
+    const name = `Report ${fault} mismatch`;
+    const before = await raw(page, name);
+    await page.evaluate(name => window.__tachikoAcceptance.attemptResidentSavedCopyOpen(name), name);
+    const refusal = fault.includes("import") ? /unsupported import information/
+      : fault === "invalid-presentation" ? /presentation attachment is invalid/ : /saved report settings do not match/;
+    await page.getByRole("alert").filter({hasText: refusal}).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.__tachikoAcceptance.workFileSnapshot()), resident);
+    assert.equal(await page.getByTestId("save-status").textContent(), residentSaveStatus);
+    assert.deepEqual(await raw(page, name), before);
+    await page.getByRole("tab", {name: "Import & export", exact: true}).click();
+    assert.equal(await page.getByTestId("project-ready").count(), 1, "refusal cannot install corrupt import UI state");
+  }
+  results.push("malformed-and-foreign-import-and-invalid-or-misbound-presentation-refuse-resident-unchanged-never-Saved");
   await coldHome(page);
-  for (const fault of ["digest", "revision"]) {
+  for (const fault of attachmentFaults) {
     await page.getByRole("button", {name: `Open saved Report ${fault} mismatch`, exact: true}).click();
-    await page.getByRole("alert").filter({hasText: /saved report settings do not match/}).waitFor();
+    await page.getByRole("alert").filter({hasText: /could not be opened/}).waitFor();
     assert.equal(await page.getByTestId("project-ready").count(), 0);
   }
   await openSaved(page, "Existing opaque");

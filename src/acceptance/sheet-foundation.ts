@@ -117,6 +117,7 @@ export interface AcceptanceApi {
   runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   attemptResidentWorkFileOpen(file: File): Promise<void>;
+  attemptResidentSavedCopyOpen(name: string): Promise<void>;
   faultNextWorkFileCopyReply(fault: "unknown" | "stale"): void;
   savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null>;
   workMethodCounts(): Record<string, number>;
@@ -1545,6 +1546,15 @@ export function attemptResidentWorkFileOpen(file: File): Promise<void> {
   });
 }
 
+/** Exercise Home's saved-copy handler while observing an existing resident work. */
+export function attemptResidentSavedCopyOpen(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const detail = { name, handled: false, complete: resolve };
+    window.dispatchEvent(new CustomEvent("tachiko-acceptance-open-saved-copy", { detail }));
+    if (!detail.handled) reject(new Error("The Shell saved-copy handler is unavailable."));
+  });
+}
+
 /** Readonly host observation; opaque bytes and their attachment are never decoded or rewritten. */
 export async function savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null> {
   const copy = await requireWiring().copies.readAny(name);
@@ -2288,6 +2298,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
     workFileSnapshot,
     faultNextWorkFileCopyReply: (fault) => { workFileCopyReplyFault = fault; },
     attemptResidentWorkFileOpen,
+    attemptResidentSavedCopyOpen,
     savedSnapshot,
     workMethodCounts,
     applyInterfaceProfile,
