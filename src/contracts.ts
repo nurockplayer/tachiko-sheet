@@ -111,7 +111,7 @@ export interface ImportedWorkbook {
   ledger: FidelityFinding[];
 }
 
-export type SavedCopyKind = "canonical" | "opaque";
+export type SavedCopyKind = "canonical" | "opaque" | "work-file";
 export interface SavedCopySummary { name: string; savedAt: string; kind?: SavedCopyKind }
 export interface SavedCopy {
   name: string;
@@ -133,7 +133,12 @@ export interface OpaqueSavedCopy extends SavedCopySummary {
   /** Optional host-private report configuration; never part of the opaque bytes. */
   presentation?: PresentationAttachment;
 }
-export type AnySavedCopy = SavedCopy | OpaqueSavedCopy;
+/** Private local carrier for unchanged Work portable-package bytes. */
+export interface WorkFileSavedCopy extends Omit<OpaqueSavedCopy, "kind" | "formatVersion"> {
+  kind: "work-file";
+  formatVersion: 1;
+}
+export type AnySavedCopy = SavedCopy | OpaqueSavedCopy | WorkFileSavedCopy;
 export interface OpaqueProjectExport {
   revision: string;
   bytes: ArrayBuffer;
@@ -255,6 +260,8 @@ export interface LocalCopies {
   readAny(name: string): Promise<AnySavedCopy | null>;
   create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt>;
   createOpaque(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
+  /** Optional writer capability; compatible readers remain available without it. */
+  createWorkFile?(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
   close(): Promise<void>;
 }
 
@@ -283,6 +290,7 @@ export interface SheetShellProps {
   onOpenFiles(files: FileList): Promise<void>;
   onOpenWorkFile?(file: File): Promise<void>;
   workFileUnavailableReason?: string | null;
+  workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;

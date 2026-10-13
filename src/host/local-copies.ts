@@ -5,6 +5,7 @@ import type {
   LocalCopies,
   OpaqueProjectExport,
   OpaqueSavedCopy,
+  WorkFileSavedCopy,
   PresentationAttachment,
   SaveReceipt,
   SavedCopy,
@@ -22,6 +23,8 @@ export const LOCAL_COPIES_DB_NAME = "tachiko-sheet-local-copies";
 export const LOCAL_COPIES_STORE = "copies";
 export const LOCAL_OPAQUE_COPIES_STORE = "opaque-copies";
 export const OPAQUE_COPY_FORMAT_VERSION = 2;
+// A variant in the existing private store, not a new database/schema or core format.
+export const WORK_FILE_COPY_FORMAT_VERSION = 1;
 const DB_VERSION = 2;
 
 interface StoredFile {
@@ -51,6 +54,11 @@ interface StoredOpaqueCopy {
   importedSource?: Omit<ImportedSourceAttachment, "bytes"> & { bytes: ArrayBuffer };
   /** Private presentation data paired to this exact opaque snapshot. */
   presentation?: PresentationAttachment;
+}
+
+interface StoredWorkFileCopy extends Omit<StoredOpaqueCopy, "kind" | "formatVersion"> {
+  kind: "work-file";
+  formatVersion: 1;
 }
 
 let connection: Promise<IDBDatabase> | undefined;
@@ -154,6 +162,28 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
   return copy;
 }
 
+function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
+  if (typeof record.revision !== "string" || !record.revision ||
+    Object.prototype.toString.call(record.bytes) !== "[object ArrayBuffer]" || !record.bytes.byteLength) {
+    throw new TypeError("The saved work file is invalid. Nothing was opened.");
+  }
+  return {
+    kind: "work-file",
+    formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
+    name: record.name,
+    savedAt: record.savedAt,
+    revision: record.revision,
+    bytes: cloneBytes(record.bytes),
+    ...(record.importedSource ? { importedSource: {
+      ...record.importedSource,
+      bytes: cloneBytes(record.importedSource.bytes),
+      metadata: structuredClone(record.importedSource.metadata),
+      ledger: structuredClone(record.importedSource.ledger),
+    }} : {}),
+    ...(record.presentation !== undefined ? { presentation: clonePresentation(record.presentation) } : {}),
+  };
+}
+
 function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
   if (presentation === undefined) return undefined;
   if (typeof presentation !== "object" || presentation === null) {
@@ -191,7 +221,7 @@ function conflictError(name: string): DOMException {
  * the selected record in one strict transaction prevents a canonical/opaque
  * same-name race and rolls back any partial write on conflict or abort.
  */
-function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | StoredOpaqueCopy): Promise<void> {
+function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | StoredOpaqueCopy | StoredWorkFileCopy): Promise<void> {
   return new Promise((resolve, reject) => {
     let failure: unknown;
     let checked = 0;
@@ -290,6 +320,8 @@ function classifyStoredEnvelope(record: unknown, storeName: StoredListingEntry["
       typeof envelope.formatVersion === "number" && envelope.formatVersion === OPAQUE_COPY_FORMAT_VERSION) {
     return "opaque";
   }
+  if (storeName === LOCAL_OPAQUE_COPIES_STORE && hasKind && envelope.kind === "work-file" &&
+      hasFormatVersion && envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) return "work-file";
   return undefined;
 }
 
@@ -380,6 +412,7 @@ export function createLocalCopies(): LocalCopies {
       }
       if ((record as Record<string, unknown>).name !== name) return null;
       const kind = classifyStoredEnvelope(record, entry.storeName);
+      if (kind === "work-file") return toWorkFileSavedCopy(record as StoredWorkFileCopy);
       if (kind === "opaque") return toOpaqueSavedCopy(record as StoredOpaqueCopy);
       if (kind === "canonical") return toCanonicalSavedCopy(record as StoredCopy);
       throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
@@ -391,6 +424,7 @@ export function createLocalCopies(): LocalCopies {
       // record. Never expose an opaque record through the legacy canonical
       // return type, which would make it possible to open it as tree files.
       const copy = await this.readAny(name);
+      if (copy?.kind === "work-file") throw new TypeError("Work-file local copies must be read with readAny().");
       if (copy?.kind === "opaque") {
         throw new TypeError("Opaque local copies must be read with readAny().");
       }

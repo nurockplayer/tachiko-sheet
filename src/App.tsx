@@ -1226,7 +1226,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setCurrentness("pending");
       const copy = await copies.readAny(name);
       if (!copy) throw new Error(`the saved copy “${name}” is no longer stored on this device`);
-      if (copy.kind !== "opaque" && copy.importedSource) {
+      if (copy.kind !== "opaque" && copy.kind !== "work-file" && copy.importedSource) {
         await runtime.validateImportedProject(copy.files, copy.importedSource.metadata);
       }
       const candidateInterop = copy.importedSource ? {
@@ -1236,10 +1236,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // Validate the optional presentation before replacing the resident work.
       // A hash failure is a known refusal to open this copy, not a failed Open
       // after the new occurrence has already become resident.
-      const presentationDigest = copy.kind === "opaque" && copy.presentation
+      const presentationDigest = (copy.kind === "opaque" || copy.kind === "work-file") && copy.presentation
         ? await opaqueSnapshotDigest(copy.bytes)
         : null;
-      const presentation = copy.kind === "opaque" && copy.presentation
+      const presentation = (copy.kind === "opaque" || copy.kind === "work-file") && copy.presentation
         ? (() => {
             if (copy.presentation!.snapshotRevision !== copy.revision ||
               copy.presentation!.snapshotDigest !== presentationDigest) {
@@ -1249,7 +1249,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           })()
         : null;
       if ((await replaceWork(
-        () => copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
+        () => copy.kind === "work-file" ? runtime.openWorkFile(copy.bytes)
+          : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");

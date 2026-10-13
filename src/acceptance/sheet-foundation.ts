@@ -29,7 +29,7 @@ export interface AcceptanceRuntimeSnapshot {
 }
 
 export interface AcceptanceSavedSnapshot {
-  kind: "canonical" | "opaque";
+  kind: "canonical" | "opaque" | "work-file";
   revision: string;
   bytesHash: string;
   presentation: PresentationAttachment | null;
@@ -1547,9 +1547,9 @@ export function attemptResidentWorkFileOpen(file: File): Promise<void> {
 export async function savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null> {
   const copy = await requireWiring().copies.readAny(name);
   if (!copy) return null;
-  if (copy.kind === "opaque") {
+  if (copy.kind === "opaque" || copy.kind === "work-file") {
     return {
-      kind: "opaque",
+      kind: copy.kind,
       revision: copy.revision,
       bytesHash: await hashBytes(copy.bytes),
       presentation: copy.presentation ? structuredClone(copy.presentation) : null,
