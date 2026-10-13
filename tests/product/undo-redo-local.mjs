@@ -70,7 +70,7 @@ async function createSalesSummary(productCategory) {
   await lastResult.waitFor({ state: "attached" });
   await page.waitForFunction(() => {
     const last = document.querySelector('[data-testid^="j4-result-"]:last-of-type');
-    return Boolean(last?.querySelector('table[aria-label="Cross-table groups"]') || last?.querySelector('[aria-label="Cross-table diagnostics"]'));
+    return Boolean(last?.querySelector('table[aria-label="Cross-table groups"]') || last?.querySelector('[aria-label="Summary problems"]'));
   });
   const groupsTable = lastResult.getByLabel("Cross-table groups", { exact: true });
   assert.equal(await groupsTable.count(), 1, `new Sales result should include visible groups: ${await lastResult.innerText()}`);

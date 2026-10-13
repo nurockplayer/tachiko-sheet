@@ -22,7 +22,7 @@ try {
   await page.goto(LOCAL_ORIGIN);
   await waitForColdHome(page);
   await (await homeImportInput(page)).setInputFiles(messyCsv);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
 
   const preview = dialog.getByRole("table", { name: /^First rows of / });
@@ -38,11 +38,11 @@ try {
     "plain numeric columns are suggested as Number; other text stays Text");
   assert.equal(await dialog.getByText("Number suggested from its values").count(), 2);
   // Notes that only confirm faithful reading are tucked away, not shown as warnings.
-  assert.equal(await dialog.getByText(/locale-sensitive inference/).isVisible(), false);
+  assert.equal(await dialog.getByText(/Numbers are not guessed from regional formatting/).isVisible(), false);
   assert.equal(await dialog.getByText("Nothing in this file needs your attention before import.").isVisible(), true);
   const details = dialog.locator("summary", { hasText: /^Import details \(\d+\)$/ });
   await details.click();
-  assert.equal(await dialog.getByText(/locale-sensitive inference/).isVisible(), true);
+  assert.equal(await dialog.getByText(/Numbers are not guessed from regional formatting/).isVisible(), true);
   // The disclosure is part of the modal focus trap in both directions.
   for (const key of ["Tab", "Shift+Tab"]) {
     await details.focus();
@@ -72,7 +72,7 @@ try {
     await largePage.goto(LOCAL_ORIGIN);
     await waitForColdHome(largePage);
     await (await homeImportInput(largePage)).setInputFiles(large);
-    const largeDialog = largePage.getByRole("dialog", { name: "Review import candidate", exact: true });
+    const largeDialog = largePage.getByRole("dialog", { name: "Review import preview", exact: true });
     await largeDialog.waitFor();
     assert.deepEqual(await largeDialog.locator("select").evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"]);
     assert.equal(await largeDialog.getByText("First 5 of 65 rows").count(), 1);

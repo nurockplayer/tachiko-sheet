@@ -590,7 +590,7 @@ export function AppearanceSelector({
               {exportHasQueuedChoice ? "Export active profile…" : "Export selected profile…"}
             </button>
           </div>
-          {exportHasQueuedChoice && <p className="ts-appearance-inline-status">The queued choice applies after editing; export uses the active profile.</p>}
+          {exportHasQueuedChoice && <p className="ts-appearance-inline-status">Your choice takes effect after editing; export uses the appearance currently in use.</p>}
 
           {readingFile && <p className="ts-appearance-inline-status" role="status" aria-live="polite">Reading profile file…</p>}
           {stagedProfile && (
@@ -599,7 +599,7 @@ export function AppearanceSelector({
                 <span className="ts-appearance-imported-badge">Imported</span>
                 <bdi dir="auto">{stagedProfile.name}</bdi>
               </div>
-              <p className="ts-appearance-candidate__metadata">Valid v1 profile · {stagedProfile.density === "compact" ? "Compact" : "Comfortable"} · Light</p>
+              <p className="ts-appearance-candidate__metadata">Valid appearance profile · {stagedProfile.density === "compact" ? "Compact" : "Comfortable"} · Light</p>
               <p className="ts-appearance-candidate__hint">Ready to apply. Current profile stays {activeChoice.kind === "built-in" ? PROFILE_LABELS[activeChoice.profileId] : <bdi dir="auto">{activeChoice.profile.name}</bdi>} until you choose Apply.</p>
               <div className="ts-appearance-candidate__actions">
                 <button type="button" className="ts-button ts-button--primary" onClick={applyStagedProfile}>Apply profile</button>
@@ -664,7 +664,7 @@ export function AppearanceSelector({
           Escape closes and returns to Appearance.
         </p>
         {activeChoice.kind === "imported" && (
-          <p className="ts-appearance-export-note">Export requests normalized v1 JSON for the active profile. It contains no workbook data.</p>
+          <p className="ts-appearance-export-note">Export the appearance currently in use as a .tachiko-profile.json file. It contains no workbook data.</p>
         )}
 
         {preference.notice === "invalid-preference" && (

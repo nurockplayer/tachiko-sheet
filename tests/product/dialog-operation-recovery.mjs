@@ -60,7 +60,7 @@ try {
   await page.waitForFunction(() => document.querySelector('input[type="file"][accept*=".csv"]')?.disabled === true);
   assert.equal(await page.getByRole("alert").count(), 0, "retry clears the previous inspection failure while new inspection is pending");
   await page.evaluate(() => window.__tachikoAcceptance.releaseImportInspection());
-  const importDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await importDialog.waitFor();
   assert.equal(await page.getByRole("alert").count(), 0, "valid inspection opens a clean candidate dialog");
 
@@ -77,7 +77,7 @@ try {
   }
   await writeFile(invalidNumberCsv, `${longRows.join("\n")}\n`, "utf8");
   await input.setInputFiles(invalidNumberCsv);
-  const failedImportDialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const failedImportDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await failedImportDialog.waitFor();
   await failedImportDialog.locator("select").first().selectOption("number");
   const failedImportAction = failedImportDialog.getByRole("button", { name: "Import candidate", exact: true });
@@ -264,7 +264,7 @@ try {
   assert.equal(await downloadPanel.getByRole("alert").count(), 1, "Prepare failure is actionable in the Download panel");
   assert.match(await prepareFailure.textContent(), /export could not be prepared/i);
   await page.evaluate(() => window.__tachikoAcceptance.failNextCleanupPreview());
-  await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+  await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
   const alerts = page.getByRole("alert");
   await alerts.filter({ hasText: "A cleanup preview could not be created." }).waitFor();
   assert.equal(await alerts.count(), 2, "cleanup failure keeps its global alert while the prior Download failure remains actionable");

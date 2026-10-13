@@ -70,7 +70,7 @@ function baseDisplay(field: FieldProjection): FieldDisplay {
     return {
       text: UNAVAILABLE_TEXT,
       tone: "muted",
-      title: "The core reports this calculation as unavailable.",
+      title: "This calculation has no available result.",
     };
   }
   return storedDisplay(field);

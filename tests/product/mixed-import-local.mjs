@@ -83,7 +83,7 @@ async function cellText(page, row, column) {
 
 async function importSource(page, file) {
   await (await homeImportInput(page)).setInputFiles(file);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
   const types = dialog.locator("select");
   assert.equal(await types.count(), COLS);
@@ -165,7 +165,7 @@ async function closeToHome(page) {
 
 async function refusedImport(page, file, label) {
   await (await homeImportInput(page)).setInputFiles(file);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   const refusal = page.getByRole("alert");
   await dialog.or(refusal).first().waitFor();
   if (await dialog.count()) {
@@ -220,7 +220,7 @@ try {
       }
       // CSV keeps nonfinite-looking source Text; explicit Number must fail.
       await (await homeImportInput(page)).setInputFiles(path.join(fixtures, `nonfinite.${format}`));
-      const review = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+      const review = page.getByRole("dialog", { name: "Review import preview", exact: true });
       await review.or(page.getByRole("alert")).first().waitFor();
       if (await review.count()) {
         await review.locator("select").nth(1).selectOption("number");

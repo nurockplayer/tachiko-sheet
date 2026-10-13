@@ -256,7 +256,7 @@ const cases = [
     await page.getByRole("button", { name: "Close without saving", exact: true }).click();
     const input = await homeImportInput(page);
     await input.setInputFiles(messyCsv);
-    const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+    const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
     await dialog.locator("select").nth(1).selectOption("number");
     await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
@@ -264,11 +264,11 @@ const cases = [
     await page.locator("[role=grid] tbody tr").first().locator("td").nth(1).dblclick();
     await editor(page).fill(draft);
     await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-    await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+    await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
     await page.getByTestId("cleanup-preview").waitFor();
     count = await dispatches(page);
-    await page.getByRole("button", { name: "Commit preview", exact: true }).click();
-    await refused("committing a cleanup preview");
+    await page.getByRole("button", { name: "Apply preview", exact: true }).click();
+    await refused("applying a cleanup preview");
   }],
   ["copy name, notes and report text accept real keys without the grid defect", async (page) => {
     await page.getByRole("button", { name: "Save a copy", exact: true }).click();

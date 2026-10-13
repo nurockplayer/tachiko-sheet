@@ -87,7 +87,7 @@ async function cellText(page, row, column) {
 
 async function importSource(page, file) {
   await (await homeImportInput(page)).setInputFiles(file);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
   const types = dialog.locator("select");
   for (let index = 0; index < await types.count(); index++) {
@@ -156,7 +156,7 @@ async function closeToHome(page) {
 
 async function refusedImport(page, file, label) {
   await (await homeImportInput(page)).setInputFiles(file);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   const refusal = page.getByRole("alert");
   await dialog.or(refusal).first().waitFor();
   if (await dialog.count()) {

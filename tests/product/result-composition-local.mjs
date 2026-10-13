@@ -61,7 +61,7 @@ async function start() {
 async function importWorkbook(page) {
   await page.setViewportSize({ width: 1512, height: 982 });
   await (await homeImportInput(page)).setInputFiles(fixture);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
   const types = dialog.locator("select");
   await types.nth(2).selectOption("number");
@@ -144,7 +144,7 @@ try {
   await importWorkbook(page);
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.ok(await page.locator("[role=tabpanel].ts-brief").count(), "unconfigured pre-binding Summary keeps its deferred no-result wrapper");
-  await page.getByRole("heading", { name: "Authoritative result", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Calculated result", exact: true }).waitFor();
   await page.getByRole("heading", { name: "Cross-table summary", exact: true }).waitFor();
   const summaryTable = await createSummary(page);
   const actual = await groupRows(summaryTable);

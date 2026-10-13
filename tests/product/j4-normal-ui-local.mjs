@@ -729,13 +729,13 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   // The core must reject that second Create before publication, and the
   // existing current result must remain available without a refresh.
   const firstSummary = await groupText(page);
-  const firstRefreshControls = await page.getByRole("button", { name: "Refresh core result", exact: true }).count();
+  const firstRefreshControls = await page.getByRole("button", { name: "Refresh summary", exact: true }).count();
   await chooseBinding(page, { orderQuantity: "product_code" });
   await page.getByRole("button", { name: "Create cross-table summary", exact: true }).click();
   await page.getByRole("alert").waitFor();
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
   assert.equal(await page.getByTestId("j4-result-0").count(), 1, "a known pre-publication rejection must retain the existing result");
-  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), firstRefreshControls, "a known pre-publication rejection must retain existing refresh controls");
+  assert.equal(await page.getByRole("button", { name: "Refresh summary", exact: true }).count(), firstRefreshControls, "a known pre-publication rejection must retain existing refresh controls");
   assert.equal(await groupText(page), firstSummary, "a known pre-publication rejection must retain the current grouped values");
 
   const tablePicker = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
@@ -813,7 +813,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await catalogEditor.waitFor({ state: "detached" });
   assert.match(await catalogCategory.textContent(), /\sPEN\s/, "Catalog A must contain a real trim candidate before preview");
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+  await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
   await page.getByTestId("cleanup-preview").waitFor();
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("sales");
@@ -845,7 +845,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   assert.equal(await page.getByTestId("cleanup-preview").count(), 0, "collection switch must clear the A preview");
   const staleCommitDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
-  assert.equal(await page.getByRole("button", { name: "Commit preview", exact: true }).count(), 0, "stale A commit must not remain actionable");
+  assert.equal(await page.getByRole("button", { name: "Apply preview", exact: true }).count(), 0, "stale A commit must not remain actionable");
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), staleCommitDispatches, "retained stale cleanup must dispatch zero requests");
 
   // Fresh B preview/commit targets only the selected sales collection.
@@ -863,12 +863,12 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current", "diagnostics are a confirmed Work observation, not an unknown workbook state");
   assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Results need attention");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.getByLabel("Cross-table diagnostics", { exact: true }).waitFor();
+  await page.getByLabel("Summary problems", { exact: true }).waitFor();
   assert.match(await page.getByText("Some results need attention. Check the affected summaries.", { exact: true }).textContent(), /Some results need attention/);
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 1, "confirmed observation retains its complete definition inventory");
-  assert.equal(await page.getByLabel("Cross-table diagnostics", { exact: true }).count(), 1, "the affected result exposes its Work diagnostics");
+  assert.equal(await page.getByLabel("Summary problems", { exact: true }).count(), 1, "the affected result exposes its Work diagnostics");
   assert.equal(await page.getByLabel("Cross-table groups", { exact: true }).count(), 0, "diagnostic results withhold grouped values");
-  const diagnosticResult = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) });
+  const diagnosticResult = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Summary problems", { exact: true }) });
   assert.equal(await diagnosticResult.getByLabel("Cross-table groups", { exact: true }).count(), 0, "diagnostic values do not retain the old grouped result");
   assert.equal(await page.getByRole("tab", { name: "Import & export", exact: true }).count(), 1, "confirmed diagnostics keep normal workbook navigation available");
   await page.getByRole("tab", { name: "Report", exact: true }).click();
@@ -887,13 +887,13 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.getByRole("button", { name: "Remove report", exact: true }).click();
   await page.getByText("The report configuration was removed. Table data and the cross-table definition were kept.", { exact: true }).waitFor();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+  await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
   await page.getByTestId("cleanup-preview").waitFor();
   const bTargets = page.getByLabel("Cleanup targets", { exact: true });
   assert.ok(await bTargets.locator("tbody tr").count() > 0, "B preview must expose an explicit target");
   assert.match(await bTargets.textContent(), /product_code/, "B preview target must belong to sales");
   const bCommitDispatches = await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
-  const bCommit = page.getByRole("button", { name: "Commit preview", exact: true });
+  const bCommit = page.getByRole("button", { name: "Apply preview", exact: true });
   await bCommit.click();
   await bCommit.waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => window.__tachikoAcceptance.executeRequestCount()), bCommitDispatches + 1, "fresh B cleanup must dispatch once");
@@ -914,7 +914,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByTestId("j4-result-1").getByLabel("Cross-table groups", { exact: true }).waitFor();
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "recovery must retain the first summary after the second publication");
-  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 2, "recovery must retain the first refresh control");
+  assert.equal(await page.getByRole("button", { name: "Refresh summary", exact: true }).count(), 2, "recovery must retain the first refresh control");
 
   // A modified cell draft must remain in place when summary creation is
   // attempted. Cancelling it permits the normal create path to continue.
@@ -946,7 +946,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   // result and definition, rather than leaving just one sibling visible.
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   const priorGroups = await allGroupRows(page);
-  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 3);
+  assert.equal(await page.getByRole("button", { name: "Refresh summary", exact: true }).count(), 3);
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
@@ -962,7 +962,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await rejectedEditor.press("Escape");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 3, "a known edit rejection must retain every result");
-  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 3, "a known edit rejection must retain sibling refresh controls");
+  assert.equal(await page.getByRole("button", { name: "Refresh summary", exact: true }).count(), 3, "a known edit rejection must retain sibling refresh controls");
   assert.deepEqual(await allGroupRows(page), priorGroups, "a known edit rejection must restore complete prior J4 results");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await tablePicker.selectOption("catalog");
@@ -990,7 +990,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
     assert.match(values, /PEN: 1000/);
   }
   assert.equal(await page.getByRole("button", { name: /Refresh cross-table summary/ }).count(), 0, "the ordinary edit path must not need manual Refresh");
-  assert.equal(await page.getByRole("button", { name: "Refresh core result", exact: true }).count(), 3);
+  assert.equal(await page.getByRole("button", { name: "Refresh summary", exact: true }).count(), 3);
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("j4-restart");
@@ -1062,7 +1062,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.evaluate(() => window.__tachikoAcceptance.releaseSecondScalarRequeryReply());
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "unknown");
-  assert.match(await page.locator("body").textContent(), /change was published/i);
+  assert.match(await page.locator("body").textContent(), /change was applied/i);
   assert.equal((await page.getByTestId("persistence-status").textContent())?.trim(), "Not saved yet", "known publication recovery visibly preserves the unsaved persistence obligation");
   assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true", "the existing dirty authority remains independently known in recovery");
   assert.doesNotMatch(await page.locator("body").textContent(), /change was not applied/i);
@@ -1198,7 +1198,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   assert.equal(diagnosticDefinitionIds.length, 2, "both actual Work definitions are re-queried after publication");
   assert.notEqual(diagnosticDefinitionIds[0], diagnosticDefinitionIds[1], "the automatic re-query addresses two distinct definition IDs");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  const diagnosticDefinition = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) });
+  const diagnosticDefinition = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Summary problems", { exact: true }) });
   const validSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
   await diagnosticDefinition.waitFor();
   await validSibling.waitFor();
@@ -1239,7 +1239,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
   assert.equal((await page.getByTestId("currentness").textContent())?.trim(), "Results need attention", "saved truth retains diagnostic attention");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) }).count(), 1);
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Summary problems", { exact: true }) }).count(), 1);
   const reopenedSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
   assert.equal(await reopenedSibling.count(), 1, "fresh reopen retains the unaffected sibling result");
   assert.match(await reopenedSibling.textContent(), /NOTE/);
@@ -1274,7 +1274,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   assert.equal(await page.getByRole("button", { name: "Save a copy", exact: true }).isDisabled(), true);
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
   await page.getByRole("heading", { name: "Previous grouped result", exact: true }).waitFor();
-  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) }).count(), 1);
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Summary problems", { exact: true }) }).count(), 1);
   const previousSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
   assert.equal(await previousSibling.count(), 1);
   assert.equal(await previousSibling.locator(".ts-content-meta").textContent().then((text) => text?.startsWith("Previous result") ?? false), true, "a valid sibling snapshot is labeled previous while pending");
@@ -1283,7 +1283,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   const pendingCreateButtons = page.getByRole("button", { name: "Create bar report", exact: true });
   assert.equal(await pendingCreateButtons.count(), 1, "the result with no grouped values offers no report creation");
   for (const button of await pendingCreateButtons.all()) assert.equal(await button.isDisabled(), true);
-  const pendingRefreshButtons = page.getByRole("button", { name: "Refresh core result", exact: true });
+  const pendingRefreshButtons = page.getByRole("button", { name: "Refresh summary", exact: true });
   assert.equal(await pendingRefreshButtons.count(), 2);
   for (const button of await pendingRefreshButtons.all()) assert.equal(await button.isDisabled(), true);
   await page.getByRole("tab", { name: "Report", exact: true }).click();
@@ -1305,7 +1305,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table diagnostics", { exact: true }) }).count(), 1);
+  assert.equal(await page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Summary problems", { exact: true }) }).count(), 1);
   const refreshedSibling = page.locator('[data-testid^="j4-result-"]').filter({ has: page.getByLabel("Cross-table groups", { exact: true }) });
   assert.equal(await refreshedSibling.count(), 1);
   assert.deepEqual(await groupRows(refreshedSibling.getByLabel("Cross-table groups", { exact: true })), ["NOTE: 250000", "PEN: 62500"], "explicit Refresh observes the scalar edit through Work");
@@ -1374,7 +1374,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   assert.equal(armedTargetProbe.actualReplyRevision, null);
   assert.equal(armedTargetProbe.consumed, false);
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await currentA.getByRole("button", { name: "Refresh core result", exact: true }).click();
+  await currentA.getByRole("button", { name: "Refresh summary", exact: true }).click();
   await page.waitForFunction(() => {
     const probe = window.__tachikoAcceptance.targetedQueryFaultProbe();
     return !probe.armed && document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current";

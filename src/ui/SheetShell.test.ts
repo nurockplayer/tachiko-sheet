@@ -337,7 +337,7 @@ describe("recovery presentation", () => {
     const unknownMutation = render({ currentness: "unknown", outcome: "unknown", dirty: true });
     expect(chipText(unknownMutation, "persistence-status")).toBe("Not saved yet");
     expect(chipText(unknownMutation, "operation-outcome")).toBe("Outcome needs review");
-    expect(unknownMutation).not.toContain("change was published");
+    expect(unknownMutation).not.toContain("change was applied");
 
     const cleanReplacement = render({ currentness: "unknown", outcome: "unknown", dirty: false });
     expect(chipText(cleanReplacement, "persistence-status")).toBe(null);

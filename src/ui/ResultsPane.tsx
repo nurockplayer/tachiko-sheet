@@ -174,7 +174,7 @@ function ResultCard(props: {
     {model.state === "E" ? <p className="ts-result-state-copy">This summary has no confirmed current result. Refresh it to try again. Its values are hidden until then.</p> : null}
     {model.state === "G" ? <p className="ts-result-state-copy">These results can’t be confirmed. Use Refresh in the header to read the work again. Values and chart are hidden until then.</p> : null}
     {model.state === "J" ? <p className="ts-result-reading">Reading the result…</p> : null}
-    {model.state === "D" && result ? <ul className="ts-result-diagnostics" aria-label="Summary diagnostics">
+    {model.state === "D" && result ? <ul className="ts-result-diagnostics" aria-label="Summary problems">
       {result.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.code}{diagnostic.lookup_key ? ` · ${diagnostic.lookup_key}` : ""}</li>)}
     </ul> : null}
     {model.state === "D" || model.state === "E" ? <div className="ts-result-actions">

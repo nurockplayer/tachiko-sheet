@@ -1199,7 +1199,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
       ];
       evidence(legalNotice.view === "workbook" && legalNotice.directSibling,
         `${legalLabel} remains a sibling after the workbook shell`, legalNotice);
-      evidence(legalNotice.text === "Tachiko Sheet · experimental core kit notices: ",
+      evidence(legalNotice.text === "Tachiko Sheet · software licenses: ",
         `${legalLabel} preserves the exact notice copy`, legalNotice);
       evidence(JSON.stringify(legalNotice.links.map(({ text, href }) => ({ text, href }))) === JSON.stringify(expectedLinks),
         `${legalLabel} preserves all three notice destinations and labels in order`, legalNotice);
@@ -1279,12 +1279,12 @@ async function auditInteropPreviewTrimCases(browser) {
     for (const profile of profiles) {
       for (const density of densities) {
         for (const viewport of [{ width: 1512, height: 982 }, { width: 320, height: 640 }]) {
-          const label = `${viewport.width}px ${profile.id}/${density.id} Preview trim`;
+          const label = `${viewport.width}px ${profile.id}/${density.id} Preview trimming spaces`;
           await page.setViewportSize(viewport);
           await choose(page, profile.id, density.id);
           await page.keyboard.press("Escape");
           await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-          await page.getByRole("button", { name: "Preview trim", exact: true }).click();
+          await page.getByRole("button", { name: "Preview trimming spaces", exact: true }).click();
           const preview = page.getByTestId("cleanup-preview");
           await preview.waitFor();
           const summary = (await preview.locator(":scope > p").textContent())?.trim() ?? "";

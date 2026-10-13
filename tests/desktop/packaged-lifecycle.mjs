@@ -348,14 +348,14 @@ async function importSource(file) {
     transfer.items.add(new File([bytes], ${JSON.stringify(path.basename(file))}, { type: ${JSON.stringify(type)} }));
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
-    const review = await waitFor(() => dialog("Review import candidate"), "import review");
+    const review = await waitFor(() => dialog("Review import preview"), "import review");
     const types = [...review.querySelectorAll("select")].map((s) => s.value);
     const expectedTypes = ${JSON.stringify(Array.from({ length: COLS }, (_, c) => mixed && c % 2 ? "number" : "text"))};
     if (JSON.stringify(types) !== JSON.stringify(expectedTypes)) throw new Error("unexpected confirmed types: " + types);
     return true;
   `);
   await timed("import", () => evaluate(`
-    click(await waitFor(() => button("Import candidate", dialog("Review import candidate")), "enabled Import candidate"));
+    click(await waitFor(() => button("Import candidate", dialog("Review import preview")), "enabled Import candidate"));
     await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "imported grid", 240000);
     return true;
   `, 300_000));
@@ -512,12 +512,12 @@ async function refusedImport(content, name) {
     transfer.items.add(new File([Uint8Array.from(atob(${JSON.stringify(bytes)}), (c) => c.charCodeAt(0))], ${JSON.stringify(name)}, { type: "text/csv" }));
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
-    const outcome = await waitFor(() => dialog("Review import candidate") || document.querySelector('[role="alert"]'), "refusal");
+    const outcome = await waitFor(() => dialog("Review import preview") || document.querySelector('[role="alert"]'), "refusal");
     if (outcome.getAttribute("role") === "dialog") {
       click(button("Import candidate", outcome));
       await waitFor(() => document.querySelector('[role="alert"]'), "refusal alert");
       const text = [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(" ");
-      click(button("Cancel", dialog("Review import candidate")));
+      click(button("Cancel", dialog("Review import preview")));
       return { text, opened: Boolean(document.querySelector('[data-testid="project-ready"]')) };
     }
     return { text: outcome.textContent, opened: Boolean(document.querySelector('[data-testid="project-ready"]')) };

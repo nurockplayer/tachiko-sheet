@@ -1,5 +1,5 @@
 // Ordering and failure laws of the desktop's Worker-shaped native channel.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NativeRuntimeChannel, decodeFrame, encodeFrame, type NativeRuntimeTransport } from "../../src/host/native-runtime.js";
 
 const encoder = new TextEncoder();
@@ -57,7 +57,8 @@ describe("native runtime channel", () => {
     channel.postMessage({ id: 1, kind: "command", request: { type: "slow" } });
     channel.postMessage({ id: 2, kind: "command", request: { type: "fast" } });
     channel.postMessage({ id: 3, kind: "observe_occurrence" });
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    // Wait for all three replies rather than a fixed delay (slow CI runners).
+    await vi.waitFor(() => expect(messages).toHaveLength(3), { timeout: 5_000, interval: 10 });
     expect(seen).toEqual(['{"type":"slow"}', '{"type":"fast"}', ""]);
     expect(messages.map((message) => message.id)).toEqual([1, 2, 3]);
     expect(attaches).toBe(1);

@@ -48,7 +48,7 @@ try {
   await page.goto(LOCAL_ORIGIN);
   await waitForColdHome(page);
   await (await homeImportInput(page)).setInputFiles(csv);
-  const dialog = page.getByRole("dialog", { name: "Review import candidate", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.or(page.getByRole("alert")).first().waitFor();
   assert.equal(await dialog.count(), 1, `import review opens: ${(await page.getByRole("alert").allTextContents()).join(" ")}`);
   await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
