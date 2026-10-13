@@ -5,6 +5,7 @@ import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmiss
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
 import {
   UnknownOperationOutcomeError,
+  type AnySavedCopy,
   bindingCatalogContainsDate,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CanonicalProjectFile,
@@ -40,7 +41,9 @@ import {
   SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
+import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { useHostFiles } from "./host/host-files.js";
+import { validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
 
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
 const EXAMPLE_BASE = "/examples/release-plan/";
@@ -317,6 +320,19 @@ async function opaqueSnapshotDigest(bytes: ArrayBuffer): Promise<string> {
   if (!globalThis.crypto?.subtle) throw new Error("This device cannot verify the project copy.");
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Complete attachment admission before dispatching any resident-work replacement. */
+export async function savedCopyPresentation(copy: AnySavedCopy): Promise<PresentationAttachment | null> {
+  if (copy.kind === "work-file") validateWorkFileCopy(copy);
+  if (copy.kind !== "opaque" && copy.kind !== "work-file") return null;
+  validatePresentationAttachment(copy.presentation);
+  if (!copy.presentation) return null;
+  if (copy.presentation.snapshotRevision !== copy.revision ||
+    copy.presentation.snapshotDigest !== await opaqueSnapshotDigest(copy.bytes)) {
+    throw new Error("The saved report settings do not match this project copy.");
+  }
+  return copy.presentation;
 }
 
 async function loadExampleFiles(): Promise<CanonicalProjectFile[]> {
@@ -1226,30 +1242,18 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setCurrentness("pending");
       const copy = await copies.readAny(name);
       if (!copy) throw new Error(`the saved copy “${name}” is no longer stored on this device`);
-      if (copy.kind !== "opaque" && copy.importedSource) {
+      // Hash and attachment failures are known refusals before replacement.
+      const presentation = await savedCopyPresentation(copy);
+      if (copy.kind !== "opaque" && copy.kind !== "work-file" && copy.importedSource) {
         await runtime.validateImportedProject(copy.files, copy.importedSource.metadata);
       }
       const candidateInterop = copy.importedSource ? {
         importInspection: null, metadata: copy.importedSource.metadata, ledger: copy.importedSource.ledger,
         cleanupPreview: null, downloadStatus: "idle" as const, downloadError: null,
       } : null;
-      // Validate the optional presentation before replacing the resident work.
-      // A hash failure is a known refusal to open this copy, not a failed Open
-      // after the new occurrence has already become resident.
-      const presentationDigest = copy.kind === "opaque" && copy.presentation
-        ? await opaqueSnapshotDigest(copy.bytes)
-        : null;
-      const presentation = copy.kind === "opaque" && copy.presentation
-        ? (() => {
-            if (copy.presentation!.snapshotRevision !== copy.revision ||
-              copy.presentation!.snapshotDigest !== presentationDigest) {
-              throw new Error("The saved report settings do not match this project copy.");
-            }
-            return copy.presentation!;
-          })()
-        : null;
       if ((await replaceWork(
-        () => copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
+        () => copy.kind === "work-file" ? runtime.openWorkFile(copy.bytes)
+          : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
@@ -1267,7 +1271,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setCurrentness("current");
         setOutcome("idle");
       }
-      throw new Error(describe(error, `The saved copy “${name}” could not be opened.`));
+      throw new Error(error instanceof Error && /portable_package\.resource_limit/.test(error.message)
+        ? workFileOpenRefusal(error)
+        : describe(error, `The saved copy “${name}” could not be opened.`));
     } finally {
       end();
     }
@@ -1636,7 +1642,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
-    if (viewRef.current?.openedFromWorkFile) {
+    if (viewRef.current?.openedFromWorkFile && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
       return false;
     }
@@ -1652,14 +1658,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setSaveStatus("saving");
     try {
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const hasDateColumn = definitionBearing
+      const hasDateColumn = definitionBearing || live.openedFromWorkFile
         ? false
         : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
       let snapshotRevision: string;
       let receipt;
-      if (definitionBearing || hasDateColumn) {
-        const snapshot = await runtime.exportOpaque(witnessOf(live));
+      if (live.openedFromWorkFile || definitionBearing || hasDateColumn) {
+        const snapshot = live.openedFromWorkFile
+          ? await runtime.exportWorkFile(witnessOf(live))
+          : await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
+        if (live.openedFromWorkFile) validateWorkFileCopy({
+          ...snapshot, importedSource: importedSourceRef.current ?? undefined,
+        });
         const configuredReport = reportRef.current;
         const source = configuredReport && j4ResultsRef.current.find((candidate) =>
           candidate.definitionId === configuredReport.definitionId &&
@@ -1675,7 +1686,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           snapshotRevision,
           snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
         } : undefined;
-        receipt = await copies.createOpaque(name, {
+        const writeCopy = live.openedFromWorkFile ? copies.createWorkFile! : copies.createOpaque;
+        receipt = await writeCopy.call(copies, name, {
           ...snapshot,
           importedSource: importedSourceRef.current ?? undefined,
           presentation,
@@ -2182,6 +2194,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onRetryCopies={refreshCopies}
           onOpenWorkFile={openWorkFile}
           workFileUnavailableReason={import.meta.env.MODE === "desktop" ? WORK_FILE_DESKTOP_UNAVAILABLE : null}
+          workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onOpenExample={openExample}

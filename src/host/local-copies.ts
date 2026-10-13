@@ -5,13 +5,14 @@ import type {
   LocalCopies,
   OpaqueProjectExport,
   OpaqueSavedCopy,
+  WorkFileSavedCopy,
   PresentationAttachment,
   SaveReceipt,
   SavedCopy,
   SavedCopySummary,
   AnySavedCopy,
 } from "../contracts.js";
-import { reportPresentationLimitViolation } from "../contracts.js";
+import { reportPresentationLimitViolation, requireWorkFileSize } from "../contracts.js";
 
 /**
  * A dedicated IndexedDB database for durable local copies. This name is app
@@ -22,6 +23,8 @@ export const LOCAL_COPIES_DB_NAME = "tachiko-sheet-local-copies";
 export const LOCAL_COPIES_STORE = "copies";
 export const LOCAL_OPAQUE_COPIES_STORE = "opaque-copies";
 export const OPAQUE_COPY_FORMAT_VERSION = 2;
+// A variant in the existing private store, not a new database/schema or core format.
+export const WORK_FILE_COPY_FORMAT_VERSION = 1;
 const DB_VERSION = 2;
 
 interface StoredFile {
@@ -51,6 +54,11 @@ interface StoredOpaqueCopy {
   importedSource?: Omit<ImportedSourceAttachment, "bytes"> & { bytes: ArrayBuffer };
   /** Private presentation data paired to this exact opaque snapshot. */
   presentation?: PresentationAttachment;
+}
+
+interface StoredWorkFileCopy extends Omit<StoredOpaqueCopy, "kind" | "formatVersion"> {
+  kind: "work-file";
+  formatVersion: 1;
 }
 
 let connection: Promise<IDBDatabase> | undefined;
@@ -154,8 +162,39 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
   return copy;
 }
 
-function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
-  if (presentation === undefined) return undefined;
+/** Persisted input and alternate host ports must pass this before cloning or hashing. */
+export function validateWorkFileCopy(record: Pick<WorkFileSavedCopy, "revision" | "bytes" | "importedSource" | "presentation">): void {
+  if (typeof record.revision !== "string" || !record.revision ||
+    Object.prototype.toString.call(record.bytes) !== "[object ArrayBuffer]" || !record.bytes.byteLength) {
+    throw new TypeError("The saved work file is invalid. Nothing was opened.");
+  }
+  requireWorkFileSize(record.bytes.byteLength);
+  // Portable packages omit import provenance. No attachment, even an otherwise
+  // valid foreign source, can establish provenance for this variant.
+  if (record.importedSource !== undefined) {
+    throw new TypeError("The saved work file has unsupported import information. Nothing was opened.");
+  }
+  validatePresentationAttachment(record.presentation);
+  if (record.presentation && record.presentation.snapshotRevision !== record.revision) {
+    throw new Error("The saved report settings do not match this project copy.");
+  }
+}
+
+function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
+  validateWorkFileCopy(record);
+  return {
+    kind: "work-file",
+    formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
+    name: record.name,
+    savedAt: record.savedAt,
+    revision: record.revision,
+    bytes: cloneBytes(record.bytes),
+    ...(record.presentation !== undefined ? { presentation: clonePresentation(record.presentation) } : {}),
+  };
+}
+
+export function validatePresentationAttachment(presentation: unknown): asserts presentation is PresentationAttachment | undefined {
+  if (presentation === undefined) return;
   if (typeof presentation !== "object" || presentation === null) {
     throw new TypeError("The presentation attachment is invalid.");
   }
@@ -172,7 +211,11 @@ function clonePresentation(presentation: unknown): PresentationAttachment | unde
     reportPresentationLimitViolation(report as PresentationAttachment["report"]) !== null) {
     throw new TypeError("The presentation attachment is invalid.");
   }
-  return structuredClone(candidate as PresentationAttachment);
+}
+
+function clonePresentation(presentation: unknown): PresentationAttachment | undefined {
+  validatePresentationAttachment(presentation);
+  return presentation === undefined ? undefined : structuredClone(presentation);
 }
 
 /**
@@ -191,7 +234,7 @@ function conflictError(name: string): DOMException {
  * the selected record in one strict transaction prevents a canonical/opaque
  * same-name race and rolls back any partial write on conflict or abort.
  */
-function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | StoredOpaqueCopy): Promise<void> {
+function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | StoredOpaqueCopy | StoredWorkFileCopy): Promise<void> {
   return new Promise((resolve, reject) => {
     let failure: unknown;
     let checked = 0;
@@ -290,6 +333,15 @@ function classifyStoredEnvelope(record: unknown, storeName: StoredListingEntry["
       typeof envelope.formatVersion === "number" && envelope.formatVersion === OPAQUE_COPY_FORMAT_VERSION) {
     return "opaque";
   }
+  if (storeName === LOCAL_OPAQUE_COPIES_STORE && hasKind && envelope.kind === "work-file" &&
+      hasFormatVersion && envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) {
+    try {
+      validateWorkFileCopy(envelope as unknown as StoredWorkFileCopy);
+      return "work-file";
+    } catch {
+      return undefined;
+    }
+  }
   return undefined;
 }
 
@@ -304,7 +356,8 @@ function compareSummaries(left: SummaryMetadata, right: SummaryMetadata): number
   return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
 }
 
-export function createLocalCopies(): LocalCopies {
+/** Disable only the portable writer for rollback; all readers stay installed. */
+export function createLocalCopies(options: { workFileWrites?: boolean } = {}): LocalCopies {
   return {
     async list(): Promise<SavedCopySummary[]> {
       const db = await openDatabase();
@@ -379,6 +432,13 @@ export function createLocalCopies(): LocalCopies {
         throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
       }
       if ((record as Record<string, unknown>).name !== name) return null;
+      // Preserve the plain corrupt/over-limit refusal while list classifies the
+      // same invalid input without failing unrelated rows.
+      const envelope = record as Record<string, unknown>;
+      if (entry.storeName === LOCAL_OPAQUE_COPIES_STORE && envelope.kind === "work-file" &&
+        envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) {
+        return toWorkFileSavedCopy(record as StoredWorkFileCopy);
+      }
       const kind = classifyStoredEnvelope(record, entry.storeName);
       if (kind === "opaque") return toOpaqueSavedCopy(record as StoredOpaqueCopy);
       if (kind === "canonical") return toCanonicalSavedCopy(record as StoredCopy);
@@ -391,6 +451,7 @@ export function createLocalCopies(): LocalCopies {
       // record. Never expose an opaque record through the legacy canonical
       // return type, which would make it possible to open it as tree files.
       const copy = await this.readAny(name);
+      if (copy?.kind === "work-file") throw new TypeError("Work-file local copies must be read with readAny().");
       if (copy?.kind === "opaque") {
         throw new TypeError("Opaque local copies must be read with readAny().");
       }
@@ -448,6 +509,27 @@ export function createLocalCopies(): LocalCopies {
       await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);
       return {name: record.name, savedAt: record.savedAt, kind: "opaque", revision: record.revision};
     },
+
+    ...(options.workFileWrites === false ? {} : {
+      async createWorkFile(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt> {
+        if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
+        const record: StoredWorkFileCopy = {
+          kind: "work-file",
+          formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
+          name,
+          savedAt: new Date().toISOString(),
+          revision: snapshot.revision,
+          bytes: snapshot.bytes,
+          ...(snapshot.importedSource !== undefined ? { importedSource: snapshot.importedSource } : {}),
+          ...(snapshot.presentation !== undefined ? { presentation: snapshot.presentation } : {}),
+        };
+        // Clone before any await; no caller can mutate the pending durable payload.
+        const copy = toWorkFileSavedCopy(record);
+        const db = await openDatabase();
+        await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy);
+        return { name: copy.name, savedAt: copy.savedAt, kind: "work-file", revision: copy.revision };
+      },
+    }),
 
     async close(): Promise<void> {
       const pending = connection;

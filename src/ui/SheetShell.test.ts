@@ -966,8 +966,15 @@ describe("SheetShell static rendering", () => {
 });
 
 describe("work-file entry and Save availability", () => {
-  it("associates the visible portable-origin reason with the disabled local Save action", () => {
+  it("allows local Save for portable-origin work", () => {
     const markup = render({ view: { ...makeView(), openedFromWorkFile: true } });
+    const save = markup.match(/<button[^>]*>Save a copy<\/button>/);
+    expect(save).not.toBeNull();
+    expect(save![0]).not.toContain("disabled");
+  });
+
+  it("explains unavailable portable writes when the writer is disabled for rollback", () => {
+    const markup = render({ view: { ...makeView(), openedFromWorkFile: true }, workFileSaveUnavailableReason: "Download the work file to keep these changes." });
     const save = markup.match(/<button[^>]*aria-describedby="([^"]+)"[^>]*>Save a copy<\/button>/);
     expect(save).not.toBeNull();
     expect(save![0]).toContain("disabled");

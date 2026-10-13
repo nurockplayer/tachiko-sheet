@@ -147,6 +147,11 @@ try {
     [path.join(root, 'tests', 'product', 'work-file-local.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const workFileSave = await runStep(
+    'work-file-save-local',
+    [path.join(root, 'tests', 'product', 'work-file-save-local.mjs')],
+    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+  );
   const saveClose = await runStep(
     'save-close-local',
     [path.join(root, 'tests', 'product', 'save-close-local.mjs')],
@@ -271,7 +276,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = workFile === 0 && saveClose === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
+    const localOk = workFile === 0 && workFileSave === 0 && saveClose === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -311,7 +316,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    exitCode = workFile === 0 && saveClose === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
+    exitCode = workFile === 0 && workFileSave === 0 && saveClose === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && resultComposition === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {

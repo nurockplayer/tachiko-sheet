@@ -29,7 +29,7 @@ export interface AcceptanceRuntimeSnapshot {
 }
 
 export interface AcceptanceSavedSnapshot {
-  kind: "canonical" | "opaque";
+  kind: "canonical" | "opaque" | "work-file";
   revision: string;
   bytesHash: string;
   presentation: PresentationAttachment | null;
@@ -117,6 +117,8 @@ export interface AcceptanceApi {
   runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   attemptResidentWorkFileOpen(file: File): Promise<void>;
+  attemptResidentSavedCopyOpen(name: string): Promise<void>;
+  faultNextWorkFileCopyReply(fault: "unknown" | "stale"): void;
   savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null>;
   workMethodCounts(): Record<string, number>;
   applyInterfaceProfile(input: unknown): boolean;
@@ -274,6 +276,7 @@ function operationGate() {
 const importInspectionGate = operationGate();
 const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
+let workFileCopyReplyFault: "unknown" | "stale" | null = null;
 const trackerReplyGate = operationGate();
 const scalarRequerySecondReplyGate = operationGate();
 const historyRequerySecondReplyGate = operationGate();
@@ -1543,13 +1546,22 @@ export function attemptResidentWorkFileOpen(file: File): Promise<void> {
   });
 }
 
+/** Exercise Home's saved-copy handler while observing an existing resident work. */
+export function attemptResidentSavedCopyOpen(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const detail = { name, handled: false, complete: resolve };
+    window.dispatchEvent(new CustomEvent("tachiko-acceptance-open-saved-copy", { detail }));
+    if (!detail.handled) reject(new Error("The Shell saved-copy handler is unavailable."));
+  });
+}
+
 /** Readonly host observation; opaque bytes and their attachment are never decoded or rewritten. */
 export async function savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null> {
   const copy = await requireWiring().copies.readAny(name);
   if (!copy) return null;
-  if (copy.kind === "opaque") {
+  if (copy.kind === "opaque" || copy.kind === "work-file") {
     return {
-      kind: "opaque",
+      kind: copy.kind,
       revision: copy.revision,
       bytesHash: await hashBytes(copy.bytes),
       presentation: copy.presentation ? structuredClone(copy.presentation) : null,
@@ -2268,11 +2280,25 @@ export function installAcceptance(next: AcceptanceWiring): void {
       return result;
     };
   }
+  const createWorkFile = next.copies.createWorkFile;
+  if (createWorkFile) {
+    next.copies.createWorkFile = async (...args) => {
+      const fault = workFileCopyReplyFault;
+      workFileCopyReplyFault = null;
+      const result = await createWorkFile.apply(next.copies, args);
+      await copyWriteGate.pause();
+      if (fault === "unknown") throw new Error("Controlled unknown local-copy outcome after durable completion.");
+      if (fault === "stale") return { ...result, revision: "controlled-stale-copy-revision" };
+      return result;
+    };
+  }
   installRuntimeInvocationTracking(next.runtime);
   window.__tachikoAcceptance = {
     runtimeSnapshot,
     workFileSnapshot,
+    faultNextWorkFileCopyReply: (fault) => { workFileCopyReplyFault = fault; },
     attemptResidentWorkFileOpen,
+    attemptResidentSavedCopyOpen,
     savedSnapshot,
     workMethodCounts,
     applyInterfaceProfile,

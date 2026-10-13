@@ -395,6 +395,7 @@ export function SheetShell(props: SheetShellProps) {
     copiesStatus = "ready",
     onRetryCopies = async () => {},
     onOpenFiles,
+    workFileSaveUnavailableReason = null,
     onOpenWorkFile = async () => { throw new Error("Opening work files is unavailable."); },
     workFileUnavailableReason = null,
     workFileOmissions = [],
@@ -869,7 +870,7 @@ export function SheetShell(props: SheetShellProps) {
   }, [captureCopyParentFailure, copyParentFailureMessage, message]);
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
-  const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, openedFromWorkFile: view?.openedFromWorkFile }, false);
+  const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
   const modalInteractionOpen = copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
@@ -1483,8 +1484,17 @@ export function SheetShell(props: SheetShellProps) {
       detail.handled = true;
       void openWorkFile(detail.file).finally(detail.complete);
     };
+    const attemptSaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ name: string; handled: boolean; complete: () => void }>).detail;
+      detail.handled = true;
+      void openSaved(detail.name).finally(detail.complete);
+    };
     window.addEventListener("tachiko-acceptance-open-work-file", attempt);
-    return () => window.removeEventListener("tachiko-acceptance-open-work-file", attempt);
+    window.addEventListener("tachiko-acceptance-open-saved-copy", attemptSaved);
+    return () => {
+      window.removeEventListener("tachiko-acceptance-open-work-file", attempt);
+      window.removeEventListener("tachiko-acceptance-open-saved-copy", attemptSaved);
+    };
   });
 
   function workFileInput(locked: boolean): ReactNode {
@@ -1563,7 +1573,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function openCopyDialog(forClose = false): void {
-    if (view?.openedFromWorkFile) return;
+    if (view?.openedFromWorkFile && workFileSaveUnavailableReason) return;
     setCopyError(null);
     setLocalError(null);
     setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copies.map((copy) => copy.name), savedCopyNamesInSessionRef.current));
@@ -1942,12 +1952,12 @@ export function SheetShell(props: SheetShellProps) {
           className="ts-button ts-button--primary"
           ref={saveCopyButtonRef}
           onClick={() => openCopyDialog()}
-          disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile)}
-          aria-describedby={view?.openedFromWorkFile ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
+          disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile && workFileSaveUnavailableReason)}
+          aria-describedby={view?.openedFromWorkFile && workFileSaveUnavailableReason ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
         >
           Save a copy
         </button>
-        {view?.openedFromWorkFile ? <span className="ts-hint" id={saveUnavailableId}>{saveUnavailableReason}</span> : null}
+        {view?.openedFromWorkFile && workFileSaveUnavailableReason ? <span className="ts-hint" id={saveUnavailableId}>{saveUnavailableReason}</span> : null}
         {closeButton("ts-button ts-close-project-desktop")}
         <details className="ts-command-overflow">
           <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
@@ -2836,7 +2846,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       </Modal> : null}
       {closeOpen && !copyOpen && !savedClose ? (() => {
-        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, openedFromWorkFile: view?.openedFromWorkFile }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
+        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
         return (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
