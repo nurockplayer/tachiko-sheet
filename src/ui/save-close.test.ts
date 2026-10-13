@@ -62,7 +62,9 @@ describe("Save a copy unavailable reason", () => {
   });
 });
 
-it("makes local Save visibly unavailable for portable-file origin even when all other gates are ready", () => {
-  expect(closeSaveUnavailableReason({ saveStatus: "not-saved", currentness: "current", busy: false, openedFromWorkFile: true }, false))
+it("allows local Save for portable work and keeps a disabled-writer rollback reason", () => {
+  const ready = { saveStatus: "not-saved", currentness: "current", busy: false } as const;
+  expect(closeSaveUnavailableReason(ready, false)).toBeNull();
+  expect(closeSaveUnavailableReason({ ...ready, workFileSaveUnavailableReason: "Download the work file to keep these changes." }, false))
     .toBe("Download the work file to keep these changes.");
 });

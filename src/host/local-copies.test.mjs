@@ -10,6 +10,7 @@ import {spawnSync} from "node:child_process";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
+import {createHash} from "node:crypto";
 import {chromium} from "playwright";
 
 // The pinned `typescript` package is a native compiler build, so its JS entry
@@ -55,6 +56,11 @@ async function compileProductionModule(sourceUrl) {
   return transpileWithCli(source);
 }
 
+const previousReaderUrl = new URL("../../tests/fixtures/local-copies-39ed2f2.ts.txt", import.meta.url);
+const previousReaderSource = await readFile(previousReaderUrl);
+// Entire main 39ed2f2 module, byte-exact: classification + actual readAny refusal.
+assert.equal(createHash("sha256").update(previousReaderSource).digest("hex"), "d554edf9acbfde37a09fedcbe412cb59540ad018929572b42f89adfabc2322e3");
+const compiledPreviousReader = await compileProductionModule(previousReaderUrl);
 const compiled = await compileProductionModule(new URL("./local-copies.ts", import.meta.url));
 const compiledContracts = await compileProductionModule(new URL("../contracts.ts", import.meta.url));
 
@@ -70,6 +76,9 @@ const origin = "https://tachiko-sheet-host.test/";
 
 async function installRoutes(router) {
   await router.route("**/*", (route) => {
+    if (new URL(route.request().url()).pathname === "/previous-reader.js") {
+      return route.fulfill({status: 200, contentType: "text/javascript; charset=utf-8", body: compiledPreviousReader});
+    }
     if (new URL(route.request().url()).pathname === "/contracts.js") {
       return route.fulfill({status: 200, contentType: "text/javascript; charset=utf-8", body: compiledContracts});
     }
@@ -913,3 +922,190 @@ test("close releases the connection and canonical and opaque copies survive a br
     await rm(userDataDir, {recursive: true, force: true});
   }
 });
+
+test("work-file copies clone unchanged bytes and actual attachments through a strict completed transaction", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const transactions = [];
+    const original = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (stores, mode, options) {
+      if (mode === "readwrite") transactions.push({stores, options});
+      return original.call(this, stores, mode, options);
+    };
+    const bytes = new Uint8Array([80, 75, 3, 4]);
+    const presentation = {version: 1, snapshotRevision: "portable-r1", snapshotDigest: "a".repeat(64), report: {
+      definitionId: "summary-1", type: "line", title: "Local report", categoryLabel: "Category", valueLabel: "Amount", legendVisible: false,
+    }};
+    try {
+      const pending = host.createWorkFile("Portable", {revision: "portable-r1", bytes: bytes.buffer, presentation});
+      bytes[0] = 0;
+      presentation.report.title = "alias mutation";
+      const receipt = await pending;
+      const first = await host.readAny("Portable");
+      new Uint8Array(first.bytes)[0] = 9;
+      first.presentation.report.title = "returned alias mutation";
+      const second = await host.readAny("Portable");
+      let canonicalReadError;
+      try { await host.read("Portable"); } catch (error) { canonicalReadError = error.message; }
+      return {receipt, transactions, listed: await host.list(), copy: {...second, bytes: [...new Uint8Array(second.bytes)]}, canonicalReadError};
+    } finally { IDBDatabase.prototype.transaction = original; }
+  }));
+  assert.equal(result.receipt.kind, "work-file");
+  assert.equal(result.receipt.revision, "portable-r1");
+  assert.deepEqual(result.transactions, [{stores: ["copies", "opaque-copies"], options: {durability: "strict"}}]);
+  assert.deepEqual(result.listed, [{name: "Portable", savedAt: result.receipt.savedAt, kind: "work-file"}]);
+  assert.equal(result.copy.formatVersion, 1);
+  assert.deepEqual(result.copy.bytes, [80, 75, 3, 4]);
+  assert.equal(result.copy.presentation.report.title, "Local report");
+  assert.equal(result.copy.presentation.snapshotRevision, "portable-r1");
+  assert.equal(result.copy.presentation.snapshotDigest, "a".repeat(64));
+  assert.equal("importedSource" in result.copy, false, "no absent attachment is fabricated");
+  assert.match(result.canonicalReadError, /readAny/);
+}));
+
+test("work-file receipts stay pending until transaction completion, not add request success", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const original = IDBDatabase.prototype.transaction;
+    let complete;
+    let observed;
+    const reachedCompletion = new Promise(resolve => { observed = resolve; });
+    IDBDatabase.prototype.transaction = function (stores, mode, options) {
+      const tx = original.call(this, stores, mode, options);
+      if (mode !== "readwrite") return tx;
+      return new Proxy(tx, {
+        get(target, key) {
+          const value = Reflect.get(target, key, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+        set(target, key, value) {
+          if (key === "oncomplete") target.oncomplete = event => { complete = () => value.call(target, event); observed(); };
+          else Reflect.set(target, key, value, target);
+          return true;
+        },
+      });
+    };
+    try {
+      let settled = false;
+      const pending = host.createWorkFile("Completion", {revision: "r1", bytes: new Uint8Array([1]).buffer}).then(receipt => { settled = true; return receipt; });
+      await reachedCompletion;
+      await Promise.resolve();
+      const beforeCompletion = settled;
+      complete();
+      const receipt = await pending;
+      return {beforeCompletion, settled, kind: receipt.kind};
+    } finally { IDBDatabase.prototype.transaction = original; }
+  }));
+  assert.equal(result.beforeCompletion, false);
+  assert.equal(result.settled, true);
+  assert.equal(result.kind, "work-file");
+}));
+
+test("the byte-exact 39ed2f2 reader explicitly refuses the new envelope without changing any copy; writer rollback keeps the reader", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const current = window.createLocalCopiesUnderTest();
+    await current.create("Canonical", {revision: "old-r1", files: [{path: "manifest.json", bytes: new Uint8Array([7]).buffer}]});
+    await current.createOpaque("Opaque v2", {revision: "old-r2", bytes: new Uint8Array([8]).buffer});
+    await current.createWorkFile("New portable", {revision: "new-r1", bytes: new Uint8Array([80, 75, 3, 4]).buffer});
+    const before = await current.readAny("New portable");
+    const previous = (await import("/previous-reader.js")).createLocalCopies();
+    let refusal;
+    try { await previous.readAny("New portable"); }
+    catch (error) { refusal = {name: error.name, message: error.message}; }
+    const previousList = await previous.list();
+    const oldCanonical = await previous.readAny("Canonical");
+    const oldOpaque = await previous.readAny("Opaque v2");
+    await previous.close();
+    const readerOnly = window.createLocalCopiesUnderTest({workFileWrites: false});
+    const after = await readerOnly.readAny("New portable");
+    return {refusal, previousList, oldCanonical: [...new Uint8Array(oldCanonical.files[0].bytes)], oldOpaque: [...new Uint8Array(oldOpaque.bytes)],
+      writerDisabled: readerOnly.createWorkFile === undefined, before: {...before, bytes: [...new Uint8Array(before.bytes)]}, after: {...after, bytes: [...new Uint8Array(after.bytes)]}};
+  }));
+  assert.deepEqual(result.refusal, {name: "TypeError", message: 'The local copy "New portable" uses an unsupported record envelope or storage location.'});
+  assert.deepEqual(result.previousList.find(copy => copy.name === "New portable"), {name: "New portable", savedAt: result.before.savedAt});
+  assert.deepEqual(result.oldCanonical, [7]);
+  assert.deepEqual(result.oldOpaque, [8]);
+  assert.equal(result.writerDisabled, true);
+  assert.deepEqual(result.after, result.before, "old-reader refusal and rollback never rewrite or delete the portable bytes");
+}));
+
+test("work-file classification refuses missing/unknown versions, misplaced envelopes and corrupt record shapes independently", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    await host.createWorkFile("Healthy", {revision: "r1", bytes: new Uint8Array([1, 2]).buffer});
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(window.localCopiesDbName);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const base = {kind: "work-file", formatVersion: 1, savedAt: "2026-10-14T00:00:00.000Z", revision: "r1", bytes: new Uint8Array([1, 2]).buffer};
+    const cases = [
+      ["opaque-copies", {...base, name: "Missing version", formatVersion: undefined}],
+      ["opaque-copies", {...base, name: "Future version", formatVersion: 2}],
+      ["opaque-copies", {...base, name: "String version", formatVersion: "1"}],
+      ["opaque-copies", {...base, name: "Unknown kind", kind: "future"}],
+      ["copies", {...base, name: "Misplaced"}],
+      ["opaque-copies", {...base, name: "Invalid bytes", bytes: "not bytes"}],
+      ["opaque-copies", {...base, name: "Empty bytes", bytes: new ArrayBuffer(0)}],
+      ["opaque-copies", {...base, name: "Missing revision", revision: null}],
+      ["opaque-copies", {...base, name: "Invalid report", presentation: {version: 99}}],
+    ];
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(["copies", "opaque-copies"], "readwrite");
+      for (const [store, row] of cases) tx.objectStore(store).add(row);
+      tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+    });
+    const failures = [];
+    for (const [, row] of cases) {
+      try { await host.readAny(row.name); failures.push(null); }
+      catch (error) { failures.push({name: error.name, message: error.message}); }
+    }
+    db.close();
+    return {failures, listed: await host.list(), healthy: [...new Uint8Array((await host.readAny("Healthy")).bytes)]};
+  }));
+  assert.equal(result.failures.length, 9);
+  assert.ok(result.failures.every(failure => failure?.name === "TypeError"));
+  assert.ok(result.failures.slice(0, 5).every(failure => /unsupported record envelope or storage location/.test(failure.message)));
+  assert.ok(result.failures.slice(5, 8).every(failure => /saved work file is invalid/.test(failure.message)));
+  assert.match(result.failures[8].message, /presentation attachment is invalid/);
+  assert.deepEqual(result.healthy, [1, 2]);
+  assert.equal(result.listed.length, 10, "one corrupt row never prevents listing other copies");
+}));
+
+test("portable creates preserve all destinations on cross-kind conflicts, quota, abort and invalid attachments", async () => withBrowser(async (browser) => {
+  const result = await withPage(browser, (page) => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const snapshot = {revision: "r1", bytes: new Uint8Array([80, 75]).buffer};
+    await host.create("Canonical", {revision: "old", files: [{path: "manifest.json", bytes: new Uint8Array([7]).buffer}]});
+    await host.createOpaque("Opaque", {revision: "old", bytes: new Uint8Array([8]).buffer});
+    await host.createWorkFile("Portable", snapshot);
+    const failures = [];
+    const attempt = async (name, data = snapshot) => {
+      try { await host.createWorkFile(name, data); failures.push(null); }
+      catch (error) { failures.push({name: error.name, message: error.message}); }
+    };
+    for (const name of ["Canonical", "Opaque", "Portable"]) await attempt(name);
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (stores, mode, options) {
+      if (mode === "readwrite") throw new DOMException("Controlled quota failure", "QuotaExceededError");
+      return transaction.call(this, stores, mode, options);
+    };
+    try { await attempt("Quota"); } finally { IDBDatabase.prototype.transaction = transaction; }
+    const add = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (...args) {
+      const request = add.apply(this, args);
+      queueMicrotask(() => this.transaction.abort());
+      return request;
+    };
+    try { await attempt("Abort"); } finally { IDBObjectStore.prototype.add = add; }
+    await attempt("Invalid", {...snapshot, presentation: {version: 99}});
+    await attempt("Empty", {...snapshot, bytes: new ArrayBuffer(0)});
+    return {failures, listed: (await host.list()).map(copy => copy.name).sort(), canonical: [...new Uint8Array((await host.readAny("Canonical")).files[0].bytes)],
+      opaque: [...new Uint8Array((await host.readAny("Opaque")).bytes)], portable: [...new Uint8Array((await host.readAny("Portable")).bytes)]};
+  }));
+  assert.deepEqual(result.failures.slice(0, 3).map(failure => failure.name), ["ConstraintError", "ConstraintError", "ConstraintError"]);
+  assert.equal(result.failures[3].name, "QuotaExceededError");
+  assert.ok(result.failures[4]);
+  assert.deepEqual(result.failures.slice(5).map(failure => failure.name), ["TypeError", "TypeError"]);
+  assert.deepEqual(result.listed, ["Canonical", "Opaque", "Portable"]);
+  assert.deepEqual(result.canonical, [7]); assert.deepEqual(result.opaque, [8]); assert.deepEqual(result.portable, [80, 75]);
+}));

@@ -336,7 +336,8 @@ function compareSummaries(left: SummaryMetadata, right: SummaryMetadata): number
   return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
 }
 
-export function createLocalCopies(): LocalCopies {
+/** Disable only the portable writer for rollback; all readers stay installed. */
+export function createLocalCopies(options: { workFileWrites?: boolean } = {}): LocalCopies {
   return {
     async list(): Promise<SavedCopySummary[]> {
       const db = await openDatabase();
@@ -482,6 +483,27 @@ export function createLocalCopies(): LocalCopies {
       await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);
       return {name: record.name, savedAt: record.savedAt, kind: "opaque", revision: record.revision};
     },
+
+    ...(options.workFileWrites === false ? {} : {
+      async createWorkFile(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt> {
+        if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
+        const record: StoredWorkFileCopy = {
+          kind: "work-file",
+          formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
+          name,
+          savedAt: new Date().toISOString(),
+          revision: snapshot.revision,
+          bytes: snapshot.bytes,
+          ...(snapshot.importedSource ? { importedSource: snapshot.importedSource } : {}),
+          ...(snapshot.presentation !== undefined ? { presentation: snapshot.presentation } : {}),
+        };
+        // Clone before any await; no caller can mutate the pending durable payload.
+        const copy = toWorkFileSavedCopy(record);
+        const db = await openDatabase();
+        await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy);
+        return { name: copy.name, savedAt: copy.savedAt, kind: "work-file", revision: copy.revision };
+      },
+    }),
 
     async close(): Promise<void> {
       const pending = connection;

@@ -59,7 +59,7 @@ async function boot(): Promise<void> {
   }
 
   const runtime = createSheetRuntime(kitLoader);
-  const copies = createLocalCopies();
+  const copies = createLocalCopies({ workFileWrites: import.meta.env.MODE !== "desktop" });
   createRoot(root).render(
     <HostCopyContext.Provider value={hostCopy}>
       <HostFilesContext.Provider value={hostFiles}>

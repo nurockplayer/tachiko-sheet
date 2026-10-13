@@ -1637,7 +1637,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
-    if (viewRef.current?.openedFromWorkFile) {
+    if (viewRef.current?.openedFromWorkFile && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
       return false;
     }
@@ -1653,13 +1653,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setSaveStatus("saving");
     try {
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const hasDateColumn = definitionBearing
+      const hasDateColumn = definitionBearing || live.openedFromWorkFile
         ? false
         : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
       let snapshotRevision: string;
       let receipt;
-      if (definitionBearing || hasDateColumn) {
-        const snapshot = await runtime.exportOpaque(witnessOf(live));
+      if (live.openedFromWorkFile || definitionBearing || hasDateColumn) {
+        const snapshot = live.openedFromWorkFile
+          ? await runtime.exportWorkFile(witnessOf(live))
+          : await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
         const configuredReport = reportRef.current;
         const source = configuredReport && j4ResultsRef.current.find((candidate) =>
@@ -1676,7 +1678,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           snapshotRevision,
           snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
         } : undefined;
-        receipt = await copies.createOpaque(name, {
+        const writeCopy = live.openedFromWorkFile ? copies.createWorkFile! : copies.createOpaque;
+        receipt = await writeCopy.call(copies, name, {
           ...snapshot,
           importedSource: importedSourceRef.current ?? undefined,
           presentation,
@@ -2183,6 +2186,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onRetryCopies={refreshCopies}
           onOpenWorkFile={openWorkFile}
           workFileUnavailableReason={import.meta.env.MODE === "desktop" ? WORK_FILE_DESKTOP_UNAVAILABLE : null}
+          workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onOpenExample={openExample}

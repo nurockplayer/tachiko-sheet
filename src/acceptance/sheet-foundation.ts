@@ -117,6 +117,7 @@ export interface AcceptanceApi {
   runtimeSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   workFileSnapshot(): Promise<AcceptanceRuntimeSnapshot>;
   attemptResidentWorkFileOpen(file: File): Promise<void>;
+  faultNextWorkFileCopyReply(fault: "unknown" | "stale"): void;
   savedSnapshot(name: string): Promise<AcceptanceSavedSnapshot | null>;
   workMethodCounts(): Record<string, number>;
   applyInterfaceProfile(input: unknown): boolean;
@@ -274,6 +275,7 @@ function operationGate() {
 const importInspectionGate = operationGate();
 const importApplicationGate = operationGate();
 const copyWriteGate = operationGate();
+let workFileCopyReplyFault: "unknown" | "stale" | null = null;
 const trackerReplyGate = operationGate();
 const scalarRequerySecondReplyGate = operationGate();
 const historyRequerySecondReplyGate = operationGate();
@@ -2268,10 +2270,23 @@ export function installAcceptance(next: AcceptanceWiring): void {
       return result;
     };
   }
+  const createWorkFile = next.copies.createWorkFile;
+  if (createWorkFile) {
+    next.copies.createWorkFile = async (...args) => {
+      const fault = workFileCopyReplyFault;
+      workFileCopyReplyFault = null;
+      const result = await createWorkFile.apply(next.copies, args);
+      await copyWriteGate.pause();
+      if (fault === "unknown") throw new Error("Controlled unknown local-copy outcome after durable completion.");
+      if (fault === "stale") return { ...result, revision: "controlled-stale-copy-revision" };
+      return result;
+    };
+  }
   installRuntimeInvocationTracking(next.runtime);
   window.__tachikoAcceptance = {
     runtimeSnapshot,
     workFileSnapshot,
+    faultNextWorkFileCopyReply: (fault) => { workFileCopyReplyFault = fault; },
     attemptResidentWorkFileOpen,
     savedSnapshot,
     workMethodCounts,
