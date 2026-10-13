@@ -2446,7 +2446,7 @@ async function auditHomeViewportBounds(page, browser) {
       assert.deepEqual(layout.gridPanels.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
       assert.ok(layout.gridPanels[0].x < layout.gridPanels[1].x && layout.gridPanels[0].y === layout.gridPanels[1].y,
         "desktop Home places the example and saved copies in parallel columns", layout.gridPanels);
-      assert.equal(layout.otherActions.length, 3, "the secondary start region retains all three supported actions");
+      assert.equal(layout.otherActions.length, 4, "the secondary start region retains all four supported actions");
       assert.equal(layout.savedAction?.borderWidth, "0px", "the saved-copy action keeps its approved quiet border");
     }
     assert.deepEqual(layout.gridPanels.map(({ label }) => label), width <= 1023
