@@ -38,6 +38,9 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { historyCommandForKey } from "./history-keyboard.js";
+import { Modal } from "./Modal.js";
+import { NewTableDialog } from "./NewTableDialog.js";
+import { RowEntry, type RowDraft } from "./RowEntry.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -399,6 +402,9 @@ export function SheetShell(props: SheetShellProps) {
     onOpenWorkFile = async () => { throw new Error("Opening work files is unavailable."); },
     workFileUnavailableReason = null,
     workFileOmissions = [],
+    onNewTable,
+    onInsertRow,
+    onRemoveRows,
     onOpenExample,
     onOpenSaved,
     onSelectCollection = async () => {},
@@ -528,6 +534,12 @@ export function SheetShell(props: SheetShellProps) {
   const [localError, setLocalError] = useState<string | null>(null);
   const [salesEntryOutcome, setSalesEntryOutcome] = useState<SalesEntryOutcome | null>(null);
   const [compactHomeLayout, setCompactHomeLayout] = useState(false);
+  const [newTableOpen, setNewTableOpen] = useState(false);
+  const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
+  const [rowError, setRowError] = useState<{ message: string; fields?: string[] } | null>(null);
+  const rowDraftActive = rowDraft !== null && Object.values(rowDraft.values).some((value) => value !== "");
+  const rowCommandPendingRef = useRef(false);
+  const newTableTriggerRef = useRef<HTMLButtonElement>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyForClose, setCopyForClose] = useState(false);
   const [savedClose, setSavedClose] = useState<(ViewWitness & { name: string; phase: "clear-draft" | "confirm" }) | null>(null);
@@ -871,8 +883,8 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
-  const historyDraftLocked = editor !== null || anyNotesDraft;
+  const modalInteractionOpen = newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
     const request = historyFocusRequest;
@@ -992,9 +1004,9 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
   }, [controlsLocked, currentness, historyInteractionLocked, localHistory, onHistory, props.appearancePreference, view]);
   const cellDraftActive = editor !== null && editor.value !== editor.original;
-  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
+  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   const draftActive =
-    cellDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
+    cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -1422,8 +1434,8 @@ export function SheetShell(props: SheetShellProps) {
 
   async function selectCollection(next: string): Promise<void> {
     if (!witness || next === view?.table.collection.key) return;
-    if (cellDraftActive) {
-      setLocalError("Apply or cancel the value you are editing before switching tables.");
+    if (cellDraftActive || rowDraftActive) {
+      setLocalError("Apply or cancel the unfinished input before switching tables.");
       if (editor) focusCell(editor.entity, editor.field);
       return;
     }
@@ -1599,6 +1611,10 @@ export function SheetShell(props: SheetShellProps) {
   async function createCopy(): Promise<void> {
     const name = copyName.trim();
     if (name === "" || copyPending || controlsLocked) return;
+    if (rowDraftActive) {
+      setCopyError("Add or clear the unfinished row before creating a copy.");
+      return;
+    }
     if (hasInvalidReportDraft) {
       setCopyError("Correct the invalid report presentation text before creating a copy.");
       return;
@@ -1684,6 +1700,73 @@ export function SheetShell(props: SheetShellProps) {
     const row = table.rows.find((candidate) => rowEntity(candidate) === state.entity);
     if (!row) return null;
     return fieldForColumn(row, state.field);
+  }
+
+  useEffect(() => {
+    if ((view && rowDraft && rowDraft.occurrence !== view.occurrence) || (!view && currentness === "current")) {
+      setRowDraft(null);
+      setRowError(null);
+    }
+  }, [view?.occurrence, currentness, rowDraft]);
+
+  async function addRow(): Promise<void> {
+    if (!view || !witness || !onInsertRow || controlsLocked || rowCommandPendingRef.current || cellDraftActive || rowDraft?.needsReview) return;
+    const draft = rowDraft?.occurrence === view.occurrence && rowDraft.collection === table?.collection.id
+      ? rowDraft : { occurrence: view.occurrence, collection: view.table.collection.id, values: {} };
+    const initializers = [];
+    for (const column of columns) {
+      const raw = Object.hasOwn(draft.values, column.id) ? draft.values[column.id] ?? "" : "";
+      if (column.field_type === "boolean") {
+        if (raw !== "true" && raw !== "false") {
+          setRowError({ message: "Choose Yes or No before adding this row.", fields: [column.id] });
+          return;
+        }
+        initializers.push({ field: column.id, input: { kind: "boolean" as const, value: raw === "true" } });
+      } else if (column.field_type === "text" || column.field_type === "number" || column.field_type === "date") {
+        initializers.push({ field: column.id, input: scalarEditOf(column.field_type, raw) });
+      } else return;
+    }
+    if (editor && editor.value === editor.original) setEditor(null);
+    rowCommandPendingRef.current = true;
+    setCommitPending(true);
+    setRowError(null);
+    try {
+      const result = await onInsertRow(witness, view.table.collection.key, initializers);
+      if (result.kind === "confirmed") {
+        // Inputs are locked during dispatch. Clear only this submitted draft.
+        setRowDraft((current) => current === rowDraft ? null : current);
+      } else if (result.kind === "refused") {
+        const matchingType = columns.filter((column) => column.field_type === result.fieldType);
+        const matchingValue = matchingType.filter((column) => result.message.includes(`'${draft.values[column.id] ?? ""}'`));
+        setRowError({ message: result.message, fields: (matchingValue.length ? matchingValue : matchingType).map((column) => column.id) });
+      } else {
+        setRowDraft({ ...draft, needsReview: true });
+        setRowError({ message: "The row request needs review. Refresh to check its outcome; it has not been retried." });
+      }
+    } catch (error) {
+      setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") });
+    } finally {
+      rowCommandPendingRef.current = false;
+      setCommitPending(false);
+    }
+  }
+
+  async function deleteRow(): Promise<void> {
+    if (!view || !witness || !selectedEntity || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
+    if (editor && editor.value === editor.original) setEditor(null);
+    rowCommandPendingRef.current = true;
+    setCommitPending(true);
+    setRowError(null);
+    try {
+      const result = await onRemoveRows(witness, view.table.collection.key, [selectedEntity]);
+      if (result.kind === "refused") setRowError({ message: result.message });
+      if (result.kind === "confirmed") {
+        setSelectedEntity(null);
+        setFocusedKey(null);
+        requestAnimationFrame(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
+      }
+    } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
+    finally { rowCommandPendingRef.current = false; setCommitPending(false); }
   }
 
   function renderHome(): ReactNode {
@@ -1790,6 +1873,7 @@ export function SheetShell(props: SheetShellProps) {
       <section className="ts-home-other" aria-label="Other ways to start">
         <h2 className="ts-home-other-title">Other ways to start</h2>
         <div className="ts-home-other-list">
+
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
             <span className="ts-home-other-copy"><strong>Open a Tachiko work file</strong><span>Open tables, values, formulas and summaries from a .ro file. The file stays unchanged.</span></span>
@@ -1826,6 +1910,7 @@ export function SheetShell(props: SheetShellProps) {
       <main className={`ts-home${hasSavedCopies ? " ts-home--has-copies" : ""}${recoveryLocked ? " ts-home--recovery" : ""}${startupLocked ? " ts-home--startup-unavailable" : ""}`}>
         <header className="ts-home-head">
           <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand">Tachiko Sheet</h1></div>
+            {onNewTable && !recoveryLocked && !startupLocked ? <button ref={newTableTriggerRef} type="button" className="ts-button ts-home-new-command" aria-label="New table" disabled={fileActionsLocked} onClick={() => setNewTableOpen(true)}><span className="ts-home-new-label">New table</span><span className="ts-home-new-symbol" aria-hidden="true">+</span></button> : null}
           {renderAppearanceSelector("home")}
         </header>
         <div className="ts-home-content">
@@ -2026,6 +2111,17 @@ export function SheetShell(props: SheetShellProps) {
             ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
             : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
             : table.rows.map((row, index) => renderRow(row, index))}
+          {table.native_table_profile && onInsertRow ? <RowEntry
+            columns={columns} names={columns.map((column) => names.column(table.collection.id, column.id) ?? column.key)}
+            values={rowDraft && rowDraft.occurrence === view?.occurrence && rowDraft.collection === table.collection.id ? rowDraft.values : {}}
+            disabled={controlsLocked || cellDraftActive || currentness !== "current"}
+            needsReview={rowDraft?.needsReview === true}
+            error={rowError}
+            onChange={(field, value) => {
+              setRowError(null);
+              setRowDraft((current) => ({ occurrence: view!.occurrence, collection: table.collection.id, needsReview: current?.occurrence === view!.occurrence && current.collection === table.collection.id ? current.needsReview : undefined, values: { ...(current?.occurrence === view!.occurrence && current.collection === table.collection.id ? current.values : {}), [field]: value } }));
+            }} onAdd={() => void addRow()} onClear={() => { setRowDraft(null); setRowError(null); }}
+          /> : null}
         </tbody>
       </table>
     );
@@ -2051,6 +2147,12 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
+        {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
+        {onInsertRow && onRemoveRows ? table.native_table_profile ? <div className="ts-actions ts-row-actions ts-table-row-actions">
+          <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} onClick={() => void deleteRow()}>Delete row</button>
+          <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
+        </div> : <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
+        {rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>
           {hasResults ? resultsHidden ? <button ref={resultsShowButtonRef} type="button" className="ts-button ts-results-show" onClick={() => setResultsHidden(false)}>Show results</button> : <>
             <ResultsPane
@@ -2576,7 +2678,7 @@ export function SheetShell(props: SheetShellProps) {
         <nav className="ts-work-context" aria-label="Workbook actions">
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
-            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive}>
+            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive || rowDraftActive}>
               {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.key}</option>)}
             </select>
           </div>
@@ -2743,6 +2845,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
+      {newTableOpen && onNewTable ? <NewTableDialog onCreate={onNewTable} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
       {copyOpen ? (
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">
@@ -2789,7 +2892,7 @@ export function SheetShell(props: SheetShellProps) {
               type="button"
               className="ts-button ts-button--primary"
               onClick={() => void createCopy()}
-              disabled={copyPending || copyName.trim() === "" || hasInvalidReportDraft}
+              disabled={copyPending || copyName.trim() === "" || hasInvalidReportDraft || rowDraftActive}
               aria-busy={copyPending}
             >
               {copyPending ? "Working…" : "Create copy"}
@@ -2846,7 +2949,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       </Modal> : null}
       {closeOpen && !copyOpen && !savedClose ? (() => {
-        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, cellDraftActive || anyNotesDraft || hasInvalidReportDraft);
+        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft);
         return (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">
@@ -2872,70 +2975,6 @@ export function SheetShell(props: SheetShellProps) {
         );
       })() : null}
     </div>
-  );
-}
-
-function Modal({ label, onCancel, children, variant = "review", dismissDisabled = false }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review"; dismissDisabled?: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const root = ref.current;
-    if (!root) return;
-    const target =
-      root.querySelector<HTMLElement>("[data-autofocus]") ?? focusableElements(root)[0] ?? null;
-    target?.focus();
-  }, []);
-
-  function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!dismissDisabled) onCancel();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const root = ref.current;
-    if (!root) return;
-    const nodes = focusableElements(root);
-    const first = nodes[0];
-    const last = nodes[nodes.length - 1];
-    if (!first || !last) return;
-    const active = root.ownerDocument.activeElement;
-    if (event.shiftKey && (active === first || !root.contains(active))) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
-  return (
-    <div
-      className="ts-modal-backdrop"
-      onMouseDown={(event) => {
-        if (!dismissDisabled && event.target === event.currentTarget) onCancel();
-      }}
-    >
-      <div
-        ref={ref}
-        className={`ts-modal ts-modal--${variant}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-        onKeyDown={onKeyDown}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function focusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(
-    root.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary, [tabindex]:not([tabindex='-1'])",
-    ),
   );
 }
 

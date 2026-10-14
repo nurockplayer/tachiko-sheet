@@ -29,6 +29,9 @@ import {
   type SalesEntryTipMarker,
   type SavedCopySummary,
   type ScalarEdit,
+  type NewTableColumn,
+  type RowInitializer,
+  type RowCommandOutcome,
   type SheetRuntime,
   type ViewWitness,
   type WorkbookView,
@@ -974,7 +977,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setMessage("The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
 
-  function failClosedAfterUnknownHistory(direction: "undo" | "redo"): void {
+  function failClosedAfterUnknownHistory(direction: "undo" | "redo" | "row change"): void {
     viewRef.current = null;
     installView(null);
     clearJ4Results();
@@ -986,6 +989,26 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setCurrentness("unknown");
     setOutcome("unknown");
     setMessage(`The ${direction} request was dispatched but could not be confirmed. Refresh to re-read the work; it was not retried.`);
+  }
+
+  async function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
+    if (blockUnknownOpenRecovery() || !begin()) return false;
+    try {
+      guardReplacement();
+      setMessage(null);
+      setCurrentness("pending");
+      const result = await replaceWork(() => runtime.newTable(name, columns));
+      if (result.kind === "confirmed") {
+        pendingDirtyRef.current = true;
+        syncDirty();
+      }
+      // An acknowledged/unknown open leaves the dialog, then uses existing recovery.
+      return result.kind !== "blocked" && result.kind !== "startup-unavailable";
+    } catch (error) {
+      setCurrentness("current");
+      setOutcome("idle");
+      throw new Error(describe(error, "The table could not be created."));
+    } finally { end(); }
   }
 
   async function openFiles(files: FileList): Promise<void> {
@@ -1606,6 +1629,58 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
+  async function changeRows(
+    witness: ViewWitness,
+    command: () => ReturnType<SheetRuntime["insertRow"]>,
+  ): Promise<RowCommandOutcome> {
+    if (blockUnknownOpenRecovery() || !begin()) return { kind: "refused", message: "Wait for the current work before changing rows." };
+    const priorJ4 = { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] };
+    let published = false;
+    try {
+      const live = viewRef.current;
+      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
+        setOutcome("idle");
+        return { kind: "refused", message: "This row draft belongs to an older view. Refresh before adding it." };
+      }
+      setMessage(null);
+      setCurrentness("pending");
+      const confirmed = await command();
+      published = true;
+      // Real-kit qualification confirms one history action for insert/remove.
+      installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
+      await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
+      return { kind: "confirmed" };
+    } catch (error) {
+      if (published || error instanceof PublishedProjectionRecoveryError) {
+        installLocalHistory(emptyLocalHistory());
+        failClosedAfterPublicationRecovery(witness.occurrence);
+        return { kind: "recovery" };
+      }
+      if (error instanceof UnknownOperationOutcomeError) {
+        installLocalHistory(emptyLocalHistory());
+        failClosedAfterUnknownHistory("row change");
+        return { kind: "recovery" };
+      }
+      setOutcome("idle");
+      if (error instanceof SheetSessionError) {
+        setCurrentness("unknown");
+      } else {
+        setCurrentness("current");
+      }
+      const failure = (error as { failure?: { code?: string } })?.failure;
+      const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
+      return { kind: "refused", message: describe(error, "The row change was not applied."), fieldType };
+    } finally { end(); }
+  }
+
+  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
+    return changeRows(witness, () => runtime.insertRow(witness, collection, initializers));
+  }
+
+  function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
+    return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
+  }
+
   async function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
@@ -2197,6 +2272,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
+          onNewTable={newTable}
+          onInsertRow={insertRow}
+          onRemoveRows={removeRows}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}

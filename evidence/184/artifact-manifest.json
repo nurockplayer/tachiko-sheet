@@ -1,0 +1,47 @@
+{
+  "base": "147b8f269f85e95be02366961cfbd8c918304c0f",
+  "productionAssets": [
+    {
+      "path": "dist/assets/index-BMuVxdPW.js",
+      "sha256": "7c56a5ec15f49f5de343b9e6bc9f8277632d1b693b748036bcc125409d5b1ad8"
+    },
+    {
+      "path": "dist/assets/index-BS8DX0lF.css",
+      "sha256": "1e8f6975f8f600d2e4bf4bbe52d77a30d218096efd8753f2acd464dae42cabd5"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "evidence/184/dialog-1400.png",
+      "sha256": "2dbf6c0b941a50e27f14ac7e54adbe46d16ad9037ecba3b8e88596ccd413da24"
+    },
+    {
+      "path": "evidence/184/dialog-800.png",
+      "sha256": "413fe675f0cd3677c0604d6242328214e530de8267b8a3712004151030b53d11"
+    },
+    {
+      "path": "evidence/184/home-1400.png",
+      "sha256": "7120f5971e4502ce66527608112c30339b50d40263675c86deffb401fa1a0da2"
+    },
+    {
+      "path": "evidence/184/home-800.png",
+      "sha256": "871a0646ac0c19e4217cc0f458c6d3daceeb4d5ff6d6cbef637aef6407473662"
+    },
+    {
+      "path": "evidence/184/refusal-1400.png",
+      "sha256": "95003382d0492b9e5479f0a035ecba410c2ca859f89da189d789da280fcbfebf"
+    },
+    {
+      "path": "evidence/184/refusal-800.png",
+      "sha256": "10c8062eb364a73583b6a9c4c70c7b794fcdeaff638a4a6ba33b313e48c63ec2"
+    },
+    {
+      "path": "evidence/184/table-1400.png",
+      "sha256": "fbbcd9f323b3d651aa881f94b279af7af03eda65994bea3a36dbad43a4b0a156"
+    },
+    {
+      "path": "evidence/184/table-800.png",
+      "sha256": "20901f9ed087483e55cbded9fd791bc99a465c9d903d5f6d33cc736e22fed668"
+    }
+  ]
+}
