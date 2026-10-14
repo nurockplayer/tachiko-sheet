@@ -127,7 +127,7 @@ function ResultCard(props: {
 }) {
   const { model } = props;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
-  const chartRegionRef = useRef<HTMLDivElement | null>(null);
+  const [chartRegion, setChartRegion] = useState<HTMLDivElement | null>(null);
   const [chartWidth, setChartWidth] = useState(0);
   const [fontGeneration, setFontGeneration] = useState(0);
   const result = model.result;
@@ -137,7 +137,7 @@ function ResultCard(props: {
   const displayState = model.state === "A" && model.showChart && !chartFits ? "H" : model.state;
 
   useEffect(() => {
-    const node = chartRegionRef.current;
+    const node = chartRegion;
     if (!node) return;
     const observer = new ResizeObserver((entries) => setChartWidth(entries[0]?.contentRect.width ?? 0));
     observer.observe(node);
@@ -148,7 +148,7 @@ function ResultCard(props: {
     };
     document.fonts?.addEventListener("loadingdone", remeasure);
     return () => { observer.disconnect(); document.fonts?.removeEventListener("loadingdone", remeasure); };
-  }, [props.chartFontKey]);
+  }, [chartRegion, props.chartFontKey]);
 
   useEffect(() => {
     if (["A", "H", "K"].includes(props.model.state)) props.onChartMode(effectiveMode);
@@ -186,8 +186,8 @@ function ResultCard(props: {
         <thead><tr><th scope="col">{model.report?.categoryLabel ?? "Category"}</th><th scope="col">{model.report?.valueLabel ?? "Value"}</th></tr></thead>
         <tbody>{groups.map((group, index) => <tr key={`${group.category}-${index}`}><td>{group.category}</td><td>{group.value}</td></tr>)}</tbody>
       </table>}
-      {model.state === "C" ? <div ref={chartRegionRef} className="ts-mini-chart-region ts-mini-chart-region--previous" aria-label="Previous chart hidden while results update"><div className="ts-mini-chart-placeholder">The chart is hidden while the result updates.</div></div> : null}
-      {model.showChart && model.state !== "C" ? <div ref={chartRegionRef} className="ts-mini-chart-region">
+      {model.state === "C" ? <div ref={setChartRegion} className="ts-mini-chart-region ts-mini-chart-region--previous" aria-label="Previous chart hidden while results update"><div className="ts-mini-chart-placeholder">The chart is hidden while the result updates.</div></div> : null}
+      {model.showChart && model.state !== "C" ? <div ref={setChartRegion} className="ts-mini-chart-region">
         {chartFits ? <MiniBarChart groups={groups} width={chartWidth} categoryLabel={model.report?.categoryLabel ?? "Category"} valueLabel={model.report?.valueLabel ?? "Value"} /> : <p className="ts-result-deferred">The chart is shown in Report.</p>}
       </div> : null}
       {model.chartMode === "deferred" && !model.showChart ? <p className="ts-result-deferred">The chart is shown in Report.</p> : null}
