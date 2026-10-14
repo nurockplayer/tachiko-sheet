@@ -517,7 +517,13 @@ try {
   // ordinary manual-Refresh expectation with a complete automatic re-query.
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   reportData = page.getByLabel("Current report data", { exact: true });
-  await reportData.waitFor();
+  await page.waitForFunction(() => {
+    const report = document.querySelector('[aria-label="Current report data"]');
+    const text = report?.textContent ?? "";
+    return document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current"
+      && !text.includes("These values are being updated")
+      && /PEN\s*1000/.test(text) && /NOTE\s*1000/.test(text);
+  });
   assert.match(await reportData.textContent(), /PEN\s*1000/);
   assert.match(await reportData.textContent(), /NOTE\s*1000/);
   await page.waitForFunction(() => {

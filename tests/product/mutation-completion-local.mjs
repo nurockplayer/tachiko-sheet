@@ -205,7 +205,9 @@ await run('summary-targeted-refresh', async p => {
   assert.equal(await results.count(), 2, 'targeted Refresh retains siblings');
   assert.equal(await p.locator('[data-work-dirty]').getAttribute('data-work-dirty'), dirty);
 });
-await run('work-file-origin-after-mutation-recovery', async p => {
+// Exercise App's real recovery/Refresh/Save adapters. The seam's mock port
+// cannot prove openedFromWorkFile survives into the persisted carrier.
+for (const mode of ['published', 'known', 'unknown']) await run(`work-file-origin-after-mutation-${mode}`, async p => {
   const bytes = await p.evaluate(async () => {
     const kit = await import('/core-kit/experimental-client.js'), client = kit.createExperimentalDesignerClient();
     try {
@@ -214,19 +216,38 @@ await run('work-file-origin-after-mutation-recovery', async p => {
     } finally { client.close(); }
   });
   await p.getByTestId('open-work-file').setInputFiles({ name: 'source.ro', mimeType: 'application/octet-stream', buffer: Buffer.from(bytes) }); await ready(p);
+  const before = await table(p), inserts = await count(p, 'insert_row');
   const entry = p.locator('.ts-entry-row'); await entry.locator('input').fill('4');
-  await p.evaluate(() => { window.__completion.arm = { type: 'insert_row', mode: 'unknown' }; });
-  await button(entry, 'Add').click(); await p.getByRole('heading', { name: 'Refresh required', exact: true }).waitFor();
-  await button(p, 'Refresh').click(); await ready(p);
-  // Unknown-row input is retained for review; explicitly discard it before Save.
-  await button(p.locator('.ts-entry-row'), 'Clear').click();
+  if (mode !== 'published') await p.evaluate(mode => { window.__completion.arm = { type: 'insert_row', mode }; }, mode);
+  await button(entry, 'Add').click();
+  if (mode !== 'published') {
+    await p.getByRole('heading', { name: 'Refresh required', exact: true }).waitFor();
+    assert.equal(await p.getByTestId('currentness').getAttribute('data-currentness'), 'unknown');
+    assert.equal(await p.getByTestId('operation-outcome').count(), mode === 'unknown' ? 1 : 0,
+      'only a lost acknowledgement reports an unknown operation outcome');
+    const message = await p.locator('body').textContent();
+    if (mode === 'known') assert.match(message, /The change was applied, but the current values could not be confirmed/);
+    else assert.match(message, /The row change request was dispatched but could not be confirmed/);
+    assert.equal(await button(p, 'Save a copy').count(), 0, 'recovery withholds Save until Refresh confirms the resident work');
+    await button(p, 'Refresh').click();
+  }
+  await ready(p);
+  assert.equal(await p.getByTestId('currentness').getAttribute('data-currentness'), 'current');
+  assert.equal(await count(p, 'insert_row'), inserts + 1, 'Refresh observes without replaying the mutation');
+  const after = await table(p);
+  assert.notEqual(after.revision, before.revision, 'Refresh confirms the real publication');
+  assert.equal(after.rows.length, before.rows.length + 1);
+  assert.equal(after.rows[0].fields.find(field => field.target.field === after.columns[0].id).stored.value, 4);
+  assert.equal(await unload(p), true, 'confirmed publication still needs a durable Save');
+  // Recovery retains the row draft for review; explicitly discard it before Save.
+  if (mode !== 'published') await button(p.locator('.ts-entry-row'), 'Clear').click();
   await save(p);
   const kind = await p.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const r = indexedDB.open('tachiko-sheet-local-copies', 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
     try { return await new Promise((resolve, reject) => { const r = db.transaction('opaque-copies').objectStore('opaque-copies').get('characterized'); r.onsuccess = () => resolve(r.result?.kind); r.onerror = () => reject(r.error); }); }
     finally { db.close(); }
   });
-  assert.equal(kind, 'work-file', 'openedFromWorkFile survives mutation Refresh and selects the real Save carrier');
+  assert.equal(kind, 'work-file', `openedFromWorkFile survives ${mode} completion and selects the real Save carrier`);
 });
 await rm(root, { recursive: true, force: true });
 console.log(JSON.stringify({ status: 'PASS', checks, dist }));
