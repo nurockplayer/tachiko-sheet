@@ -14,7 +14,7 @@ for (const source of ['src/core-loader.ts', 'src/host/native-runtime.ts']) {
 }
 assert.equal(entries.length, 3, 'cover the Web entry and both additional native kit entries');
 
-test('Web and desktop dev imports serve the intact public core-kit JavaScript', async () => {
+test('Web and desktop dev imports preserve core-kit bytes and Vite URL modules', async () => {
   for (const mode of ['development', 'desktop']) {
     const cacheDir = await mkdtemp(path.join(tmpdir(), 'sheet-dev-core-kit-'));
     let server;
@@ -23,7 +23,12 @@ test('Web and desktop dev imports serve the intact public core-kit JavaScript', 
         root: fileURLToPath(root),
         mode,
         cacheDir,
-        server: { host: '127.0.0.1', port: 0, hmr: false, watch: null },
+        server: {
+          host: '127.0.0.1', port: 0, hmr: false, watch: null,
+          // Vite 8.3 checks public asset URL IDs against its filesystem allowlist.
+          // Permit those IDs here so the URL-module regression reaches transforms.
+          fs: { allow: [fileURLToPath(root), '/core-kit'] },
+        },
         optimizeDeps: { noDiscovery: true, include: [] },
       });
       await server.listen();
@@ -42,6 +47,17 @@ test('Web and desktop dev imports serve the intact public core-kit JavaScript', 
           `${mode}: ${entry} is served without transforming kit bytes`,
         );
       }
+      const wasmEntry = '/core-kit/designer_runtime.wasm';
+      const urlResponse = await fetch(`http://127.0.0.1:${address.port}${wasmEntry}?import&url`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      assert.equal(urlResponse.status, 200, `${mode}: ${wasmEntry}?import&url`);
+      assert.match(urlResponse.headers.get('content-type') ?? '', /(?:java|ecma)script/i);
+      assert.match(
+        await urlResponse.text(),
+        /^export default ["']\/core-kit\/designer_runtime\.wasm["'];?$/m,
+        `${mode}: the WASM URL import is a JavaScript URL module, not raw bytes`,
+      );
     } finally {
       await server?.close();
       await rm(cacheDir, { recursive: true, force: true });

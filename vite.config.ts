@@ -9,11 +9,11 @@ function publicCoreKitDevImports(): Plugin {
     configureServer(server) {
       server.middlewares.use((request, _response, next) => {
         const url = new URL(request.url ?? "/", "http://localhost");
-        if (url.pathname.startsWith("/core-kit/") && url.searchParams.has("import")) {
+        if (url.pathname.startsWith("/core-kit/") && url.search === "?import") {
           // Vite injects ?import even for @vite-ignore dynamic imports. Its
           // public middleware skips that marker, sending the kit to transforms.
-          url.searchParams.delete("import");
-          request.url = `${url.pathname}${url.search}`;
+          // Keep all other queries on Vite's normal path, including ?import&url.
+          request.url = url.pathname;
         }
         next();
       });
