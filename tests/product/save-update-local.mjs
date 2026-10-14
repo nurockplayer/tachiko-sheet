@@ -154,15 +154,29 @@ async function dismissedCloseSave(p, dismissal) {
   await p.waitForFunction(() => window.__saveEvidence.heldCompletion !== null);
   assert.match(await p.getByTestId('save-status').textContent(), /Saving/);
   assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
-  if (dismissal === 'Escape') {
-    // Save disables itself while pending; place keyboard focus on the enabled
-    // dismissal action so Escape is delivered through the modal's key handler.
-    await button(d, 'Keep editing').focus();
+  if (dismissal === 'Escape' || dismissal === 'Escape outside') {
+    assert.equal(await d.evaluate(element => element.contains(document.activeElement)), true,
+      'real Save activation keeps focus inside the pending dialog');
+    if (dismissal === 'Escape outside') {
+      // Separate robustness case; the ordinary Escape case never refocuses.
+      await p.evaluate(() => document.activeElement.blur());
+      assert.equal(await d.evaluate(element => element.contains(document.activeElement)), false);
+      await p.evaluate(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, keyCode: 229 }));
+      });
+      assert.equal(await d.count(), 1, 'composing Escape does not dismiss the modal');
+    }
     await p.keyboard.press('Escape');
   }
   else if (dismissal === 'Backdrop') await p.locator('.ts-modal-backdrop').click({ position: { x: 2, y: 2 } });
   else await button(d, 'Keep editing').click();
   await d.waitFor({ state: 'detached' });
+  assert.equal(await p.evaluate(() => typeof window.__saveEvidence.heldCompletion), 'function',
+    'dialog is dismissed before pending save completion is released');
+  assert.equal(await p.getByTestId('project-ready').count(), 1);
+  assert.match(await p.getByTestId('save-status').textContent(), /Saving/);
+  assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
   await p.evaluate(() => window.__releaseSaveCompletion());
   await p.waitForFunction(() => {
     const status = document.querySelector('[data-testid="save-status"]');
@@ -180,6 +194,7 @@ async function dismissedCloseSave(p, dismissal) {
 const cases = {
   async closeKeepEditing(p) { await dismissedCloseSave(p, 'Keep editing'); },
   async closeEscape(p) { await dismissedCloseSave(p, 'Escape'); },
+  async closeEscapeOutside(p) { await dismissedCloseSave(p, 'Escape outside'); },
   async closeBackdrop(p) { await dismissedCloseSave(p, 'Backdrop'); },
   async unboundCloseIntent(p) {
     await button(p, 'Open sales example').click(); await ready(p);
@@ -202,8 +217,9 @@ const cases = {
     await nameDialog.getByRole('textbox', { name: 'Copy name', exact: true }).fill('Q4');
     await button(nameDialog, 'Create copy').click();
     await p.waitForFunction(() => window.__saveEvidence.heldCompletion !== null);
+    await p.evaluate(() => document.activeElement.blur());
     await p.keyboard.press('Escape');
-    assert.equal(await nameDialog.count(), 1, 'pending copy writes retain their existing dismissal guard');
+    assert.equal(await nameDialog.count(), 1, 'pending copy writes retain their dismissal guard even with escaped focus');
     assert.equal(await button(nameDialog, 'Cancel').isDisabled(), true);
     await p.evaluate(() => window.__releaseSaveCompletion()); await saved(p); await ready(p);
     assert.equal(await p.getByTestId('project-ready').count(), 1);

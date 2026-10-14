@@ -639,6 +639,7 @@ export function SheetShell(props: SheetShellProps) {
   const resultsOccurrenceRef = useRef<string | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeSaveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const keepEditingButtonRef = useRef<HTMLButtonElement | null>(null);
   const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const recoveryRefreshRef = useRef<HTMLButtonElement | null>(null);
   const desktopRefreshRef = useRef<HTMLButtonElement | null>(null);
@@ -3118,12 +3119,12 @@ export function SheetShell(props: SheetShellProps) {
             {closeSaveReason ? <p className="ts-hint" id={closeSaveUnavailableId}>{closeSaveReason}</p> : null}
           </div>
           <div className="ts-dialog-actions">
-            <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
+            <button type="button" className="ts-button" ref={keepEditingButtonRef} data-autofocus="true" onClick={keepEditing}>
               Keep editing
             </button>
             {view?.openedFromWorkFile ? <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => { invalidateCloseSaveIntent(); setCloseOpen(false); void prepareDownload("ro", event.currentTarget); }}>Download work file (.ro)</button> : null}
             <span className="ts-close-save-action">
-              <button type="button" className="ts-button ts-button--primary" onClick={() => void saveWork(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
+              <button type="button" className="ts-button ts-button--primary" onClick={() => { keepEditingButtonRef.current?.focus(); void saveWork(true); }} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
                 Save
               </button>
               <button type="button" className="ts-button" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
