@@ -49,6 +49,17 @@ async function start() {
           this.record.replies.push(structuredClone(event.data));
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
           const request = this.record.requests.find(request => request.id === event.data.id);
+          const createIndex = this.record.requests.findLastIndex(request => request.request?.type === "new_table");
+          const afterCreate = this.record.requests.slice(createIndex + 1);
+          const fault = window.__rowEvidence.failCreationObservation;
+          if (createIndex >= 0 && event.data.status === "ok" &&
+            ((fault === "table" && request?.request?.type === "query_table") ||
+             (fault === "discovery" && request?.request?.type === "bootstrap" && afterCreate.filter(request => request.request?.type === "bootstrap").length === 2))) {
+            window.__rowEvidence.failCreationObservation = null;
+            // Creation really succeeded. Lose only the subsequent observation
+            // reply, without fabricating core data or replaying creation.
+            this.dispatchEvent(new ErrorEvent("error", { message: `Controlled lost creation ${fault} observation` }));
+          }
           if (window.__rowEvidence.loseNextInsertReply && request?.request?.type === "insert_row" && event.data.response?.type === "published") {
             window.__rowEvidence.loseNextInsertReply = false;
             // Core really published. Lose the client acknowledgement, never
@@ -139,6 +150,11 @@ async function independentOracle(page, reopened) {
 try {
   let page = await start();
   await page.getByRole("button", { name: "New table", exact: true }).waitFor();
+  const homeEntry = page.getByRole("region", { name: "Other ways to start", exact: true });
+  assert.equal(await homeEntry.locator(".ts-home-other-row").first().locator("strong").textContent(), "New table");
+  await homeEntry.getByRole("button", { name: "New table…", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.textContent === "New table…");
   await capture(page, "home");
   await page.setViewportSize({ width: 320, height: 640 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "New table must not overflow the narrow Home header");
@@ -247,7 +263,7 @@ try {
   checks.push("normal-download-open-ro-preserves-authored-rows-and-native-row-profile");
   await closeWithoutSave(page);
   await page.getByRole("button", { name: "Appearance", exact: true }).focus();
-  await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
   assert.equal(await page.getByLabel("Open work file", { exact: true }).evaluate(element => element === document.activeElement), true, "New table preserves saved-copy-to-work-file keyboard order");
   const csv = path.join(work, "import.csv"); await writeFile(csv, "Item,Amount\nTea,2\n");
   await (await homeImportInput(page)).setInputFiles(csv);
@@ -257,6 +273,9 @@ try {
   await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   const salesBefore = await projection(page);
+  assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
+  assert.equal(await page.locator('.ts-grid tfoot .ts-entry-row').count(), 1);
+  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), salesBefore.rows.length + 1, "accessible grid rows contain only the header and actual data");
   assert.equal(salesBefore.native_table_profile, true, "the current Sales example is a native table accepted by core");
   for (const column of salesBefore.columns) {
     await entry(page).locator(`[data-entry-field="${column.id}"]`).fill(column.field_type === "number" ? "6" : column.key === "category" ? "ROW-PROBE" : "ROW-PROBE-CODE");
@@ -306,6 +325,32 @@ try {
   await entry(page).getByRole("button", { name: "Clear", exact: true }).click();
   assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isEnabled(), true);
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
+  await closeWithoutSave(page);
+  for (const fault of ["table", "discovery"]) {
+    await page.getByRole("button", { name: "New table…", exact: true }).click();
+    const creation = dialog(page);
+    await creation.getByLabel("Table name", { exact: true }).fill(`Recovered_${fault}`);
+    await creation.getByLabel("Column 1 name", { exact: true }).fill("Item");
+    await page.evaluate(fault => { window.__rowEvidence.failCreationObservation = fault; }, fault);
+    await creation.getByRole("button", { name: "Create table", exact: true }).click();
+    await creation.waitFor({ state: "detached" });
+    await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
+    assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true", `${fault} recovery keeps acknowledged creation unsaved`);
+    await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click();
+    await ready(page);
+    assert.equal((await projection(page)).rows.length, 0);
+    assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true", `${fault} Refresh preserves unsaved creation`);
+    assert.equal(await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event); return event.defaultPrevented;
+    }), true, `${fault} recovered creation retains unload protection`);
+    await page.getByRole("button", { name: "Close project", exact: true }).click();
+    const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+    await unsaved.waitFor();
+    await unsaved.getByRole("button", { name: "Keep editing", exact: true }).click();
+    await closeWithoutSave(page);
+    checks.push(`acknowledged-create-lost-${fault}-observation-refresh-unsaved-close-and-unload`);
+  }
   await terminate();
   const result = { status: "PASS", dist: path.resolve(dist), checks, processes, screenshots, oracle };
   await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, oracle: "all rows, values and stable IDs verified", evidence }));

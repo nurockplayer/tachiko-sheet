@@ -419,6 +419,23 @@ describe("projection access", () => {
 });
 
 describe("SheetShell static rendering", () => {
+  it("starts Other ways with New table and preserves the existing file/example entries", () => {
+    const markup = render({ onNewTable: async () => true });
+    const otherWays = markup.slice(markup.indexOf('aria-label="Other ways to start"'));
+    expect(otherWays).toContain("Start an empty table with your own columns.");
+    expect(otherWays).toContain(">New table…</button>");
+    expect(otherWays.indexOf("<strong>New table</strong>")).toBeLessThan(otherWays.indexOf("<strong>Open a Tachiko work file</strong>"));
+  });
+
+  it("keeps the row-entry draft in a presentational footer outside the data rows", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
+    const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
+    expect(body).not.toContain("ts-entry-row");
+    expect(markup).toContain('<tfoot aria-label="Add row entry" role="presentation"><tr role="presentation" class="ts-entry-row"');
+  });
+
   it("reserves windowed scroll height outside the table and leaves small tables intrinsic", () => {
     const view = makeView();
     const seed = view.table.rows[0]!;

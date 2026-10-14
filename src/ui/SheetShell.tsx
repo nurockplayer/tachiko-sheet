@@ -1873,7 +1873,11 @@ export function SheetShell(props: SheetShellProps) {
       <section className="ts-home-other" aria-label="Other ways to start">
         <h2 className="ts-home-other-title">Other ways to start</h2>
         <div className="ts-home-other-list">
-
+          {onNewTable && !recoveryLocked && !startupLocked ? <div className="ts-home-other-row">
+            <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 3h14v14H3zM3 7h14M7 3v14M12 3v14" /></svg></span>
+            <span className="ts-home-other-copy"><strong>New table</strong><span>Start an empty table with your own columns.</span></span>
+            <button type="button" className="ts-button" disabled={fileActionsLocked} onClick={(event) => { newTableTriggerRef.current = event.currentTarget; setNewTableOpen(true); }}>New table…</button>
+          </div> : null}
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
             <span className="ts-home-other-copy"><strong>Open a Tachiko work file</strong><span>Open tables, values, formulas and summaries from a .ro file. The file stays unchanged.</span></span>
@@ -1910,7 +1914,7 @@ export function SheetShell(props: SheetShellProps) {
       <main className={`ts-home${hasSavedCopies ? " ts-home--has-copies" : ""}${recoveryLocked ? " ts-home--recovery" : ""}${startupLocked ? " ts-home--startup-unavailable" : ""}`}>
         <header className="ts-home-head">
           <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand">Tachiko Sheet</h1></div>
-            {onNewTable && !recoveryLocked && !startupLocked ? <button ref={newTableTriggerRef} type="button" className="ts-button ts-home-new-command" aria-label="New table" disabled={fileActionsLocked} onClick={() => setNewTableOpen(true)}><span className="ts-home-new-label">New table</span><span className="ts-home-new-symbol" aria-hidden="true">+</span></button> : null}
+            {onNewTable && !recoveryLocked && !startupLocked ? <button type="button" className="ts-button ts-home-new-command" aria-label="New table" disabled={fileActionsLocked} onClick={(event) => { newTableTriggerRef.current = event.currentTarget; setNewTableOpen(true); }}><span className="ts-home-new-label">New table</span><span className="ts-home-new-symbol" aria-hidden="true">+</span></button> : null}
           {renderAppearanceSelector("home")}
         </header>
         <div className="ts-home-content">
@@ -2111,7 +2115,8 @@ export function SheetShell(props: SheetShellProps) {
             ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
             : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
             : table.rows.map((row, index) => renderRow(row, index))}
-          {table.native_table_profile && onInsertRow ? <RowEntry
+        </tbody>
+        {table.native_table_profile && onInsertRow ? <tfoot aria-label="Add row entry" role="presentation"><RowEntry
             columns={columns} names={columns.map((column) => names.column(table.collection.id, column.id) ?? column.key)}
             values={rowDraft && rowDraft.occurrence === view?.occurrence && rowDraft.collection === table.collection.id ? rowDraft.values : {}}
             disabled={controlsLocked || cellDraftActive || currentness !== "current"}
@@ -2121,8 +2126,7 @@ export function SheetShell(props: SheetShellProps) {
               setRowError(null);
               setRowDraft((current) => ({ occurrence: view!.occurrence, collection: table.collection.id, needsReview: current?.occurrence === view!.occurrence && current.collection === table.collection.id ? current.needsReview : undefined, values: { ...(current?.occurrence === view!.occurrence && current.collection === table.collection.id ? current.values : {}), [field]: value } }));
             }} onAdd={() => void addRow()} onClear={() => { setRowDraft(null); setRowError(null); }}
-          /> : null}
-        </tbody>
+          /></tfoot> : null}
       </table>
     );
     return (

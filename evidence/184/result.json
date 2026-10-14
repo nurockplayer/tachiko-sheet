@@ -9,18 +9,20 @@
     "normal-download-open-ro-preserves-authored-rows-and-native-row-profile",
     "import-release-actions-unavailable-sales-native-insert-delete-undo-redo-supported",
     "date-no-today-default-empty-refusal-explicit-last-field-enter-opaque-save-reopen",
-    "unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear"
+    "unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear",
+    "acknowledged-create-lost-table-observation-refresh-unsaved-close-and-unload",
+    "acknowledged-create-lost-discovery-observation-refresh-unsaved-close-and-unload"
   ],
   "processes": [
     {
-      "pid": 53250,
-      "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-1JNtWI/profile",
+      "pid": 63487,
+      "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-adUFxR/profile",
       "coldHome": true,
       "exitObserved": true
     },
     {
-      "pid": 53273,
-      "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-1JNtWI/profile",
+      "pid": 63503,
+      "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-adUFxR/profile",
       "coldHome": true,
       "exitObserved": true
     }
@@ -38,13 +40,13 @@
   "oracle": {
     "rows": [
       {
-        "id": "native_table_row_0001_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
+        "id": "native_table_row_0001_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
         "key": "row_0001",
         "fields": [
           {
             "target": {
-              "entity": "native_table_row_0001_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0001_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0001.item",
             "stored": {
@@ -58,8 +60,8 @@
           },
           {
             "target": {
-              "entity": "native_table_row_0001_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0004_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0001_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0004_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0001.amount",
             "stored": {
@@ -73,8 +75,8 @@
           },
           {
             "target": {
-              "entity": "native_table_row_0001_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0005_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0001_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0005_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0001.paid",
             "stored": {
@@ -89,13 +91,13 @@
         ]
       },
       {
-        "id": "native_table_row_0002_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
+        "id": "native_table_row_0002_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
         "key": "row_0002",
         "fields": [
           {
             "target": {
-              "entity": "native_table_row_0002_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0002_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0002.item",
             "stored": {
@@ -109,8 +111,8 @@
           },
           {
             "target": {
-              "entity": "native_table_row_0002_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0004_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0002_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0004_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0002.amount",
             "stored": {
@@ -124,8 +126,8 @@
           },
           {
             "target": {
-              "entity": "native_table_row_0002_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0005_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0002_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0005_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0002.paid",
             "stored": {
@@ -140,13 +142,13 @@
         ]
       },
       {
-        "id": "native_table_row_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
+        "id": "native_table_row_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
         "key": "row_0003",
         "fields": [
           {
             "target": {
-              "entity": "native_table_row_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0003.item",
             "stored": {
@@ -160,8 +162,8 @@
           },
           {
             "target": {
-              "entity": "native_table_row_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0004_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0004_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0003.amount",
             "stored": {
@@ -175,8 +177,8 @@
           },
           {
             "target": {
-              "entity": "native_table_row_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
-              "field": "native_table_field_0005_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1"
+              "entity": "native_table_row_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
+              "field": "native_table_field_0005_ef44658e-4f32-4b36-9d47-8bd6a0ad6326"
             },
             "address": "row_0003.paid",
             "stored": {
@@ -193,17 +195,17 @@
     ],
     "columns": [
       {
-        "id": "native_table_field_0003_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
+        "id": "native_table_field_0003_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
         "key": "item",
         "field_type": "text"
       },
       {
-        "id": "native_table_field_0004_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
+        "id": "native_table_field_0004_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
         "key": "amount",
         "field_type": "number"
       },
       {
-        "id": "native_table_field_0005_ae2ac5da-14e4-4af6-90e7-fcbac1091cd1",
+        "id": "native_table_field_0005_ef44658e-4f32-4b36-9d47-8bd6a0ad6326",
         "key": "paid",
         "field_type": "boolean",
         "dropdown_options": [

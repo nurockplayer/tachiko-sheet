@@ -998,7 +998,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(null);
       setCurrentness("pending");
       const result = await replaceWork(() => runtime.newTable(name, columns));
-      if (result.kind === "confirmed") {
+      if (result.kind === "confirmed" || result.kind === "acknowledged-recovery") {
+        // Creation is already acknowledged even if its first coherent read
+        // or summary discovery failed. Refresh observes that unsaved work;
+        // it must not erase Close/unload protection for the authored table.
         pendingDirtyRef.current = true;
         syncDirty();
       }

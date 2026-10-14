@@ -6,188 +6,189 @@
       "step": "copy-example-fixture",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/copy-example-fixture.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/copy-example-fixture.log"
     },
     {
       "step": "build-acceptance",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/build-acceptance.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/build-acceptance.log"
     },
     {
       "step": "new-table-rows-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/new-table-rows-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/new-table-rows-local.log"
     },
     {
       "step": "work-file-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/work-file-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/work-file-local.log"
     },
     {
       "step": "work-file-save-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/work-file-save-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/work-file-save-local.log"
     },
     {
       "step": "save-close-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/save-close-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/save-close-local.log"
     },
     {
       "step": "j4-normal-ui-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/j4-normal-ui-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/j4-normal-ui-local-transport.log"
     },
     {
       "step": "j4-imported-attachment-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/j4-imported-attachment-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/j4-imported-attachment-local-transport.log"
     },
     {
       "step": "result-composition-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/result-composition-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/result-composition-local.log"
     },
     {
       "step": "results-chart-redraw",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/results-chart-redraw.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/results-chart-redraw.log"
     },
     {
       "step": "j5-report-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/j5-report-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/j5-report-local-transport.log"
     },
     {
       "step": "save-read-fault-regression-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/save-read-fault-regression-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/save-read-fault-regression-local-transport.log"
     },
     {
       "step": "interface-profile-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/interface-profile-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/interface-profile-local-transport.log"
     },
     {
       "step": "appearance-selector-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/appearance-selector-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/appearance-selector-local.log"
     },
     {
       "step": "appearance-visual-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/appearance-visual-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/appearance-visual-local.log"
     },
     {
       "step": "home-visual-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/home-visual-local.log",
-      "evidenceDirectory": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/tachiko-sheet-home-visual-lOV9Jl"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/home-visual-local.log",
+      "evidenceDirectory": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/tachiko-sheet-home-visual-tfsjNC"
     },
     {
       "step": "interface-profile-interchange-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/interface-profile-interchange-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/interface-profile-interchange-local.log"
     },
     {
       "step": "primary-actions-forced-colors-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/primary-actions-forced-colors-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/primary-actions-forced-colors-local-transport.log"
     },
     {
       "step": "initial-launch-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/initial-launch-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/initial-launch-local-transport.log"
     },
     {
       "step": "undo-redo-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/undo-redo-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/undo-redo-local.log"
     },
     {
       "step": "cell-editing-regression",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/cell-editing-regression.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/cell-editing-regression.log"
     },
     {
       "step": "j3-normal-ui-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/j3-normal-ui-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/j3-normal-ui-local-transport.log"
     },
     {
       "step": "grid-window-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/grid-window-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/grid-window-local.log"
     },
     {
       "step": "import-recognizable-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/import-recognizable-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/import-recognizable-local.log"
     },
     {
       "step": "capacity-8406-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/capacity-8406-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/capacity-8406-local.log"
     },
     {
       "step": "mixed-import-local",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/mixed-import-local.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/mixed-import-local.log"
     },
     {
       "step": "browser-m1",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/browser-m1.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/browser-m1.log"
     },
     {
       "step": "browser-recovery-regression",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/browser-recovery-regression.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/browser-recovery-regression.log"
     },
     {
       "step": "browser-initial-launch-regression",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/browser-initial-launch-regression.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/browser-initial-launch-regression.log"
     },
     {
       "step": "product-focus",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/product-focus.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/product-focus.log"
     },
     {
       "step": "dialog-operation-recovery-local-transport",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/evidence/product-acceptance/dialog-operation-recovery-local-transport.log"
+      "log": "/private/tmp/sheet184-repair-validation/product-final/dialog-operation-recovery-local-transport.log"
     }
-  ]
+  ],
+  "originalSummarySha256": "ac625b6e4f7501c23e604704634d62e339959de020d768531246b069f0c6b1a8"
 }

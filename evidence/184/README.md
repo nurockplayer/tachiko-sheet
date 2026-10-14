@@ -1,18 +1,24 @@
-# #184 table lifecycle evidence
+# #184 table lifecycle repair evidence
 
-New table, Add row and Delete row use the intact pinned public core kit. The
-adapter shares the existing serialized confirmed-publication/read/recovery
-path with cell edits; creation shares the existing occurrence replacement path.
-No frontend document engine, defaults, row-history payloads or storage codec
-were added. The entry row is a disposable, occurrence/collection-bound draft.
-An uncertain insertion requires review and clearing before another Add.
+This repair batch starts at PR #188 HEAD `69ca1cebcd5b9f4c114d974eb6e08cd0d962ed18`
+and implements the lead's three-item disposition:
 
-## Production browser evidence
+1. Acknowledged creation remains unsaved when the first table observation or
+   summary discovery fails. Refresh retains Close and unload protection.
+   Two production-browser regressions lose only real observation replies;
+   they never replace core data, fabricate creation success or replay creation.
+2. The disposable Add-row entry lives in a presentation-only `tfoot`, outside
+   `tbody` and accessible data rows. The Sales lane checks both DOM and
+   accessible row counts. Frozen #146 seed files and runners are unchanged.
+3. Home's first "Other ways to start" entry is New table, using the existing
+   row pattern. Both creation triggers return dialog focus to their initiating
+   button. The non-frozen visual assertions now require this new fifth entry
+   while retaining all four existing entries and all geometry/focus checks.
 
-The screenshots below were captured from `pnpm build` (`dist`), not the dev
-server or an acceptance mock. `artifact-manifest.json` binds their bytes to
-that build's JS/CSS. `result.json` retains the actual process-exit receipts and
-independent fixed-value/core projection comparison.
+The eight screenshots are refreshed from the production `dist` build. The
+artifact manifest records JS/CSS and screenshot hashes; `result.json` records
+all ten lifecycle groups, actual browser process exits and the independent
+saved-byte/core projection oracle.
 
 | Screen | Desktop (1400px) | Compact (800px) |
 | --- | --- | --- |
@@ -21,69 +27,49 @@ independent fixed-value/core projection comparison.
 | Expenses with three rows | [table-1400.png](table-1400.png) | [table-800.png](table-800.png) |
 | Refused Number draft | [refusal-1400.png](refusal-1400.png) | [refusal-800.png](refusal-800.png) |
 
-The normal-UI lane covers empty/duplicate creation refusals; three explicit
-inserts; scalar edit; delete/Undo/Redo/Undo with exact ID/value restoration;
-invalid and empty Number refusals with unchanged core projection and retained
-field inputs; Save guard for unfinished rows; explicit Yes/No and IME-safe
-Enter; Save/full browser process exit/same-profile Home/reopen; independent
-all-field comparison using a separate public client; Download/Open `.ro`;
-Date blank refusal and explicit input/opaque Save/reopen. The observer only
-copies actual public Worker replies. It supplies no success or calculation.
-Synthetic composition evidence is not a physical IME claim. A held Enter does
-not submit repeated rows. Controlled lost-reply evidence verifies that Refresh
-reads the actually published row once, retains its draft, and changing that
-draft cannot unlock another Add until explicit Clear. Compact grids
-retain the existing horizontal-scroll behavior.
-
-## Availability and desktop
-
-Availability uses the authoritative public `native_table_profile` flag.
-New tables and reopened native tables accept the commands. The current Sales
-example's Catalog and Sales collections also accept insert/delete; their UI
-row lifecycle and history were verified. CSV import, Release plan and tracker
-refuse generic native-table row commands. Their row controls are unavailable
-with a reason. No command is dispatched just to discover capability.
-
-Desktop exposes the same UI. The unchanged native channel forwards `new_table`,
-`insert_row` and `remove_table_rows`; differential WASM/native-host evidence
-verifies create with all four scalar types, insert/delete/Undo/Redo, opaque
-export/reopen with exact fields/IDs, and existing mixed-import scenarios. Date
-uses the existing opaque Save path because canonical export refuses Date.
-This evidence does not claim a packaged-app or physical macOS/IME walkthrough.
-
-## Commands and results
+## Repair validation
 
 - `pnpm typecheck`: PASS.
-- `pnpm test`: PASS, unchanged 30-test seed harness.
-- `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit`: PASS, 554 Vitest + 125 Node tests.
-- `pnpm build`: PASS; production acceptance-hook exclusion PASS.
-- `TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs`: PASS, eight lifecycle groups and eight screenshots.
-- `NODE_OPTIONS='--import=/private/tmp/sheet184-appearance-receipt.mjs' pnpm acceptance:product`: PASS, 31/31 steps; the preload only preserves the complete visual result before child exit, with unchanged launch/assertions. Visual matrix PASS, zero findings.
-- `pnpm build:desktop`: PASS; Worker/WASM and acceptance-hook exclusion PASS.
-- `pnpm exec vitest run tests/desktop/native-parity.test.ts`: PASS, 2/2 with the real native frame harness built by `pnpm test:desktop-parity`.
+- `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit`: PASS, 556 Vitest + 125 Node tests.
+- `pnpm build`: PASS, including production acceptance-hook exclusion.
+- `TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs`: PASS, ten groups, eight screenshots.
+- `pnpm acceptance:save-closure` with the supported single-process Chromium
+  executable wrapper: PASS, seven prerequisites and eleven current cases.
+- `NODE_OPTIONS=--import=/private/tmp/sheet184-repair-validation/appearance-receipt.mjs pnpm acceptance:product`: PASS, 31/31 steps; visual matrix 24 combinations / 24 geometry cases, zero findings.
+- `pnpm acceptance:production-lifecycle` with the same wrapper: infrastructure
+  BLOCKED (exit 78). The owned browser reached CDP; navigation to the real local
+  production HTTP server timed out before Home loaded. No behavioral PASS is
+  claimed. The runner recorded fresh build/seed identities and the real failure.
 
-The initial plain `pnpm test:unit` failed at Chromium launch because the macOS
-sandbox denied its Mach-port rendezvous; the supported single-process run
-passed. The initial native qualification attempted canonical export of a Date
-table and was refused; it was corrected to the existing opaque carrier and
-passed. The first full product regression run found narrow Sales overflow, a
-save-reminder layout shift and an extra Home fixed-list row; source repairs
-preserve the existing assertions and frozen acceptance files. Final root-cause
-repairs scope row-toolbar spacing, retain the Home popover header anchor, keep
-controls in the existing scroll owner, and contain the hidden Results
-announcement so it cannot extend the document.
+The full product runner uses an out-of-repository `NODE_OPTIONS --import`
+observer only to preserve its complete visual JSON before child exit. It
+changes no assertion, product code or browser launch. Two initial full runs passed 30/31 steps while the visual lane retained old
+Home action-count and keyboard-order assumptions. Those assertions now require
+New table first in both empty and returning Home and verify forward/reverse
+Tab order while preserving every existing action and geometry check. A
+standalone visual attempt was infrastructure-blocked when Chromium closed
+during context creation; it earned no PASS. The final full run completes the
+24-combination, 24-geometry-case visual matrix with zero findings.
+
+Desktop transport/runtime support is inherited from the original #184 batch;
+this repair does not claim a new desktop/package/physical IME qualification.
+Lowercased/ASCII-only headers and Yes/No scalar display remain outside this
+three-item repair disposition.
 
 ## Delivery metadata
 
-The supplied worktree's shared Git metadata refuses `index.lock` creation in
-this sandbox. Candidate commits are therefore assembled in the writable
-`/private/tmp/sheet184-delivery-candidate` checkout from identical validated
-files at the authorized base. The requested remote branch is
-`codex/184-new-table-rows`. The original worktree retains its source changes at
-base `147b8f2`; Opus must reconcile its local Git metadata with the pushed
-candidate. Its pre-existing `.serena/project.yml` modification is preserved and
-excluded from the candidate.
+The supplied worktree is based at `69ca1ce`; its shared Git metadata still
+denies `index.lock`. The repair commit is assembled in writable
+`/private/tmp/sheet184-repair-candidate` from byte-identical validated files at
+that pushed HEAD, then normally pushed to `codex/184-new-table-rows` without
+force. The supplied worktree keeps its source/evidence repairs and the
+pre-existing `.serena/project.yml` modification; Serena is excluded from the
+candidate. Test-generated shared evidence logs are archived outside the repo.
 
-Opus retains integration and fresh deep independent Codex-review ownership.
-No merge, deployment or review-thread disposition is claimed. No new product
-or semantic decision is open; column evolution/order remains outside #184.
+Complete local receipts/logs: `/private/tmp/sheet184-repair-validation/`.
+`validation-results.json`, `product-summary.json` and `visual-summary.json`
+record the repair run outcomes. Validation ran on the repaired source before
+commit assembly; source hashes in the artifact manifest bind those files to
+the delivered bytes. Opus retains hosted checks, fresh independent deep Codex
+review and integration. This handback claims no merge, deployment or independent
+review, and no production-lifecycle PASS.
