@@ -37,7 +37,7 @@ export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }:
     setPending(true);
     setError(null);
     try {
-      if (await onCreate(name, columns.map(({ name, field_type }) => ({ name, field_type })))) onSuccess();
+      if (await onCreate(name.trim(), columns.map(({ name, field_type }) => ({ name: name.trim(), field_type })))) onSuccess();
       else setError("The table could not be opened. Check the current work status before trying again.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The table could not be created."); }
     finally { pendingRef.current = false; setPending(false); }

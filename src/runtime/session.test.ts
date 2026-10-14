@@ -1272,7 +1272,7 @@ describe("createSheetRuntime", () => {
 });
 
 describe("Work file adapter admission and export", () => {
-  it.each(["close", "replacement"])("clears work-file origin at %s before a lost replacement reply", async (boundary) => {
+  it.each(["close", "replacement", "import"])("clears work-file origin at %s after a lost replacement reply", async (boundary) => {
     const { runtime, client } = await opened();
     Object.assign(client, {
       verifyPortableRo: async () => {},
@@ -1283,11 +1283,37 @@ describe("Work file adapter admission and export", () => {
       await runtime.close();
       client.hooks.newTable = () => client.openThenLoseReply(new Error("lost acknowledgement"));
       await expect(runtime.newTable("Ordinary", [{ name: "A", field_type: "text" }])).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
+    } else if (boundary === "import") {
+      Object.assign(client, { importSpreadsheet: () => client.openThenLoseReply(new Error("lost acknowledgement")) });
+      await expect(runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true }, { column_types: [], extra_columns: [] })).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
     } else {
       client.hooks.openProject = () => client.openThenLoseReply(new Error("lost acknowledgement"));
       await expect(runtime.openCanonical(CANONICAL_FILES)).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
     }
     expect((await runtime.read()).openedFromWorkFile).toBeUndefined();
+  });
+
+  it.each(["open", "import"])("preserves work-file origin after a trusted %s refusal", async (operation) => {
+    const { runtime, client } = await opened();
+    Object.assign(client, {
+      verifyPortableRo: async () => {},
+      openPortableRo: (bytes: ArrayBuffer) => client.openProject(bytes),
+    });
+    const original = await runtime.openWorkFile(new ArrayBuffer(4));
+    const rejection = new FakeDesignerRuntimeError("invalid_project", client.currentRevision);
+    if (operation === "open") {
+      client.hooks.openProject = async () => { throw rejection; };
+      await expect(runtime.openOpaque(new ArrayBuffer(0))).rejects.toBe(rejection);
+    } else {
+      Object.assign(client, { importSpreadsheet: vi.fn(async () => { throw rejection; }) });
+      await expect(runtime.importSpreadsheet(new ArrayBuffer(0), "csv", { delimiter: ",", header: true }, { column_types: [], extra_columns: [] })).rejects.toBe(rejection);
+    }
+    const retained = await runtime.read();
+    expect(retained).toEqual(original);
+    expect(retained.openedFromWorkFile).toBe(true);
+    const edited = await runtime.edit(retained, IMPACT, { kind: "number", input: "4" });
+    expect(edited.occurrence).toBe(original.occurrence);
+    expect(edited.openedFromWorkFile).toBe(true);
   });
 
   it("refuses oversized buffers before cloning or dispatch and preserves open work", async () => {

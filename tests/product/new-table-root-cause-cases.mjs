@@ -48,6 +48,26 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
     });
   }
   const cases = {
+    // Round 5-B: the dialog validates trimmed names and must dispatch those names.
+    "5-B-trim": async () => {
+      await openDialog(" Expenses ");
+      await dialog().getByLabel("Column 1 name", { exact: true }).fill(" Item ");
+      const before = (await requests("new_table")).length;
+      await dialog().getByRole("button", { name: "Create table", exact: true }).click();
+      await page.waitForFunction(() => {
+        const d = document.querySelector('[role="dialog"][aria-label="New table"]');
+        return !d || d.querySelector('[role="alert"]');
+      });
+      const dispatched = (await requests("new_table")).slice(before);
+      assert.equal(dispatched.length, 1, "Create dispatches exactly once");
+      assert.equal(dispatched[0].request.name, "Expenses", "table name is trimmed before dispatch");
+      assert.deepEqual(dispatched[0].request.columns, [{ name: "Item", field_type: "text" }], "column names are trimmed before dispatch");
+      assert.equal(await dialog().count(), 0, "padded valid names create successfully in the real core");
+      await ready(page);
+      const table = await projection(page);
+      assert.equal(table.collection.key, "expenses");
+      assert.deepEqual(table.columns.map(column => column.key), ["item"]);
+    },
     "R1-resident": async () => {
       await createNamed("Old");
       await page.evaluate(() => { window.__rowEvidence.loseNextClose = true; });

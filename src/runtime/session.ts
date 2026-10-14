@@ -388,13 +388,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     dispatchOpen: () => Promise<OpenedProjection>,
     fromWorkFile = false,
   ): Promise<WorkbookView> {
-    openedFromWorkFile = false;
     try {
       await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
     } catch (error) {
       if (error instanceof UnknownOperationOutcomeError) {
         // The open may have replaced the resident core work; the old
         // projection is never safe to retain after an unknown reply.
+        openedFromWorkFile = false;
         active = null;
         residentCollection = null;
         residentAvailable = true;
@@ -847,7 +847,6 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const { kit, client } = await loadKitOnce();
       const importSheet = capability(client.importSpreadsheet, "spreadsheet import");
       let imported;
-      openedFromWorkFile = false;
       try {
         imported = await afterNotReplaced(
           requestedAt,
@@ -855,6 +854,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
+          openedFromWorkFile = false;
           active = null;
           residentCollection = null;
           residentAvailable = true;
