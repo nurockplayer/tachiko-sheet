@@ -650,7 +650,7 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
-  const lastCollectionIdentityRef = useRef(collectionIdentity);
+  const focusedProjectionRef = useRef<{ identity: string; rows: string[]; fields: string[] } | null>(null);
   const reportRenderKey = reportRenderResetKey(view, report, j4Results, currentness);
   const missingJ4DefinitionIds = missingKeyedGroupedSumDefinitionIds(j4DefinitionIds, j4Results);
   const resultsNeedAttention = j4Results.some((result) => result.diagnostics.length > 0) ||
@@ -714,17 +714,6 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [view?.occurrence, report?.definitionId, report?.type]);
 
-  // The callback only requests a collection; the installed projection is the
-  // authority for a real switch. Reset roving focus before the new grid paints
-  // so an old table key cannot leave this grid with no tab stop.
-  useLayoutEffect(() => {
-    if (lastCollectionIdentityRef.current !== collectionIdentity) {
-      setFocusedKey(null);
-      lastCellRef.current = null;
-    }
-    lastCollectionIdentityRef.current = collectionIdentity;
-  }, [collectionIdentity]);
-
   useLayoutEffect(() => {
     if (commitPending || !focusRejectedEditorRef.current) return;
     const input = editorInputRef.current;
@@ -767,6 +756,35 @@ export function SheetShell(props: SheetShellProps) {
     table?.rows.forEach((row, index) => indices.set(rowEntity(row), index));
     return indices;
   }, [table]);
+
+  // Reconcile roving state from every installed projection, independently of
+  // mutation completion or DOM focus intent. Retain the prior order through a
+  // temporarily absent recovery view so the same occurrence can recover it.
+  useLayoutEffect(() => {
+    if (!table || !collectionIdentity) return;
+    const previous = focusedProjectionRef.current;
+    const rows = table.rows.map(rowEntity);
+    const fields = columns.map(column => column.id);
+    focusedProjectionRef.current = { identity: collectionIdentity, rows, fields };
+    if (previous?.identity !== collectionIdentity) {
+      setFocusedKey(null);
+      lastCellRef.current = null;
+      return;
+    }
+    setFocusedKey(current => {
+      if (!current || !rows.length || !fields.length) return null;
+      const [entity, field] = current.split("\u0000");
+      // Prefer the next survivor in the prior order, then the previous one.
+      const nearest = (value: string, prior: string[], surviving: string[]) => {
+        if (surviving.includes(value)) return value;
+        const index = prior.indexOf(value);
+        return prior.slice(index + 1).find(candidate => surviving.includes(candidate))
+          ?? prior.slice(0, index).reverse().find(candidate => surviving.includes(candidate))
+          ?? surviving[0]!;
+      };
+      return cellKey(nearest(entity!, previous.rows, rows), nearest(field!, previous.fields, fields));
+    });
+  }, [collectionIdentity, table, columns]);
 
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
@@ -1783,24 +1801,15 @@ export function SheetShell(props: SheetShellProps) {
     try {
       const result = await onRemoveRows(witness, view.table.collection.key, [selectedEntity]);
       if (result.kind === "refused") setRowError({ message: result.message });
-      if (result.kind === "confirmed" && liveOccurrenceRef.current === intent.occurrence) {
-        if (completionMayUpdateUi(intent)) {
-          setSelectedEntity(null);
-          setFocusedKey(null);
-          requestAnimationFrame(() => {
-            if (completionMayUpdateUi(intent)) withAppFocus(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
+      if (result.kind === "confirmed" && completionMayUpdateUi(intent)) {
+        requestAnimationFrame(() => {
+          if (!completionMayUpdateUi(intent)) return;
+          withAppFocus(() => {
+            const target = gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")
+              ?? shellRef.current?.querySelector<HTMLElement>(".ts-entry-row [data-entry-field]");
+            target?.focus();
           });
-        } else {
-          const rows = view.table.rows;
-          const removedIndex = rows.findIndex(row => rowEntity(row) === selectedEntity);
-          const survivingRows = rows.filter(row => rowEntity(row) !== selectedEntity);
-          const nearest = survivingRows[Math.min(removedIndex, survivingRows.length - 1)];
-          setFocusedKey(current => {
-            if (!current?.startsWith(`${selectedEntity}\u0000`)) return current;
-            const field = current.slice(selectedEntity.length + 1);
-            return nearest ? cellKey(rowEntity(nearest), field) : null;
-          });
-        }
+        });
       }
     } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
@@ -2239,7 +2248,7 @@ export function SheetShell(props: SheetShellProps) {
   /** Rows kept mounted outside the window: editor, selection/focus and the default tab stop. */
   function pinnedGridRows(): number[] {
     const pinned: number[] = [];
-    for (const entity of [editor?.entity, selectedEntity, pendingCellFocusRef.current?.entity]) {
+    for (const entity of [editor?.entity, selectedEntity, focusedKey?.split("\u0000")[0], pendingCellFocusRef.current?.entity]) {
       const index = entity ? rowIndexByEntity.get(entity) : undefined;
       if (index !== undefined) pinned.push(index);
     }

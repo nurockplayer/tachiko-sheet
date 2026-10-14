@@ -9,6 +9,7 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
 import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
+import { runNewTableRound6Cases } from "./new-table-round6-cases.mjs";
 import { runNewTableRound4Cases } from "./new-table-round4-cases.mjs";
 import { runNewTableRepairCases } from "./new-table-repair-cases.mjs";
 
@@ -184,11 +185,12 @@ async function independentOracle(page, reopened) {
 }
 try {
   let page = await start();
+  if (process.env.TABLE_ROWS_ROUND6_CASE) await runNewTableRound6Cases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROUND4_CASE) await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
   let oracle;
-  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE) {
+  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
   await page.getByRole("button", { name: "New table", exact: true }).waitFor();
   const homeEntry = page.getByRole("region", { name: "Other ways to start", exact: true });
   assert.equal(await homeEntry.locator(".ts-home-other-row").first().locator("strong").textContent(), "New table");
@@ -367,7 +369,8 @@ try {
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
   await closeWithoutSave(page);
   }
-  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE) {
+  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
+    await runNewTableRound6Cases({ page, ready, projection, checks });
     await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
     await runNewTableRepairCases({ page, ready, projection, checks });
     await runNewTableRootCauseCases({ page, ready, projection, checks });
