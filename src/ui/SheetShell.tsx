@@ -32,6 +32,7 @@ import type {
   SalesCatalogLayoutMarker,
   SalesEntryTipMarker,
   SheetShellProps,
+  SavedCopySummary,
   ViewWitness,
   WorkbookView,
 } from "../contracts.js";
@@ -545,7 +546,8 @@ export function SheetShell(props: SheetShellProps) {
   const rowDraftActive = rowDraft !== null && Object.values(rowDraft.values).some((value) => value !== "");
   const rowCommandPendingRef = useRef(false);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
-  const [deleteName, setDeleteName] = useState<string | null>(null);
+  const [deleteSelection, setDeleteSelection] = useState<SavedCopySummary | null>(null);
+  const deleteName = deleteSelection?.name ?? null;
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1705,23 +1707,29 @@ export function SheetShell(props: SheetShellProps) {
 
   function cancelDelete(): void {
     if (deletePending) return;
-    setDeleteName(null); setDeleteError(null);
-    requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+    setDeleteSelection(null); setDeleteError(null);
+    requestAnimationFrame(() => {
+      const trigger = deleteTriggerRef.current;
+      if (trigger?.isConnected) trigger.focus();
+      else focusHomeAfterDelete();
+    });
+  }
+
+  function focusHomeAfterDelete(): void {
+    const shell = shellRef.current;
+    const target = shell?.querySelector<HTMLElement>('.ts-home-copy-action:not(:disabled)') ??
+      shell?.querySelector<HTMLElement>('.ts-home-new-command:not(:disabled)') ??
+      shell?.querySelector<HTMLElement>('.ts-home-brand h1');
+    target?.focus();
   }
 
   async function deleteCopy(): Promise<void> {
-    if (!deleteName || !onDeleteCopy || deletePending || controlsLocked) return;
+    if (!deleteSelection || !onDeleteCopy || deletePending || controlsLocked) return;
     setDeletePending(true); setDeleteError(null);
     try {
-      await onDeleteCopy(deleteName);
-      setDeleteName(null);
-      requestAnimationFrame(() => {
-        const shell = shellRef.current;
-        const target = shell?.querySelector<HTMLElement>('.ts-home-copy-action:not(:disabled)') ??
-          shell?.querySelector<HTMLElement>('.ts-home-new-command:not(:disabled)') ??
-          shell?.querySelector<HTMLElement>('.ts-home-brand h1');
-        target?.focus();
-      });
+      await onDeleteCopy(deleteSelection);
+      setDeleteSelection(null);
+      requestAnimationFrame(focusHomeAfterDelete);
     } catch (error) { setDeleteError(explain(error, "The copy could not be deleted.")); }
     finally { setDeletePending(false); }
   }
@@ -1779,6 +1787,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function closeWork(): Promise<void> {
+    if (saveStatus === "saving") return;
     invalidateCloseSaveIntent();
     setSalesEntryOutcome(null);
     setCloseOpen(false);
@@ -1969,7 +1978,7 @@ export function SheetShell(props: SheetShellProps) {
                   </button>
                   {onDeleteCopy ? <button type="button" className="ts-button ts-button--ghost ts-home-copy-delete" tabIndex={-1}
                     aria-label={`Delete saved ${copy.name}`} disabled={controlsLocked || recoveryLocked || startupLocked}
-                    onClick={event => { deleteTriggerRef.current = event.currentTarget; setDeleteName(copy.name); setDeleteError(null); }}>Delete</button> : null}
+                    onClick={event => { deleteTriggerRef.current = event.currentTarget; setDeleteSelection(copy); setDeleteError(null); }}>Delete</button> : null}
                   {whitespaceDescription ? <span className="ts-visually-hidden" id={whitespaceDescriptionId}>{whitespaceDescription}</span> : null}
                 </li>
               );
@@ -3131,7 +3140,7 @@ export function SheetShell(props: SheetShellProps) {
                 Save a copy…
               </button>
             </span>
-            <button type="button" className="ts-button ts-button--danger" onClick={() => void closeWork()}>
+            <button type="button" className="ts-button ts-button--danger" onClick={() => void closeWork()} disabled={saveStatus === "saving"}>
               Close without saving
             </button>
           </div>

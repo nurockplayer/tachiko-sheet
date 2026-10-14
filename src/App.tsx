@@ -2361,13 +2361,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
             if (!binding || binding.occurrence !== viewRef.current?.occurrence) return false;
             return createCopy(binding.copy.name, binding.copy);
           }}
-          onDeleteCopy={copies.delete ? async (name) => {
+          onDeleteCopy={copies.delete ? async (copy) => {
+            const name = copy.name;
             if (boundCopyRef.current?.copy.name === name || pendingReplacementRef.current?.boundCopy?.name === name || openRecoveryCheckpointRef.current?.boundCopy?.name === name) {
               throw new Error(`Close “${name}” before deleting it.`);
             }
             if (!begin()) throw new Error("Another operation is in progress.");
-            try { await copies.delete!(name); await refreshCopies(); }
-            finally { end(); }
+            try { await copies.delete!(name, copy); }
+            finally { try { await refreshCopies(); } finally { end(); } }
           } : undefined}
           onClose={close}
           onRefresh={refresh}

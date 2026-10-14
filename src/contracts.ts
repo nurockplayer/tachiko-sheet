@@ -279,7 +279,7 @@ export interface LocalCopies {
   replace?(expected: SavedCopySummary, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt>;
   replaceOpaque?(expected: SavedCopySummary, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
   replaceWorkFile?(expected: SavedCopySummary, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
-  delete?(name: string): Promise<void>;
+  delete?(name: string, expected: SavedCopySummary): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -322,7 +322,7 @@ export interface SheetShellProps {
   onCreateCopy(name: string): Promise<boolean>;
   boundCopyName?: string | null;
   onSave?(): Promise<boolean>;
-  onDeleteCopy?(name: string): Promise<void>;
+  onDeleteCopy?(copy: SavedCopySummary): Promise<void>;
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;
   onDraftChange(dirty: boolean): void;

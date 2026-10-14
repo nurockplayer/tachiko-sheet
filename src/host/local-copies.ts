@@ -372,23 +372,34 @@ function replaceCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy 
   });
 }
 
-function deleteCopyOnce(db: IDBDatabase, name: string): Promise<void> {
+const DELETE_COPY_CHANGED_MESSAGE = "This copy changed in another window. Refresh Home and try again.";
+
+/** Compare the confirmed record and delete it within the same strict transaction. */
+function deleteCopyOnce(db: IDBDatabase, expected: SavedCopySummary, legacyRecord?: unknown): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readwrite", { durability: "strict" });
     let failure: unknown;
     let checked = 0;
-    const locations: string[] = [];
-    tx.oncomplete = () => resolve();
+    const entries: StoredListingEntry[] = [];
+    tx.oncomplete = () => failure ? reject(failure) : resolve();
     tx.onabort = () => reject(failure ?? tx.error ?? new Error("The copy could not be deleted."));
-    for (const storeName of [LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE]) {
-      const request = tx.objectStore(storeName).get(name);
+    tx.onerror = () => { failure ??= tx.error ?? new Error("The copy could not be deleted."); };
+    for (const storeName of [LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE] as const) {
+      const request = tx.objectStore(storeName).get(expected.name);
+      request.onerror = () => { failure ??= request.error; };
       request.onsuccess = () => {
-        if (request.result !== undefined) locations.push(storeName);
+        if (request.result !== undefined) entries.push({ record: request.result, storeName });
         if (++checked !== 2) return;
-        if (locations.length > 1) {
-          failure = new Error(`The local-copy name “${name}” exists in multiple stores. Nothing was deleted.`);
+        const entry = entries[0];
+        const current = entry?.record;
+        if (entries.length !== 1 || !hasUsableSummaryMetadata(current) || current.name !== expected.name ||
+            current.savedAt !== expected.savedAt || classifyStoredEnvelope(current, entry!.storeName) !== expected.kind ||
+            !matchesSaveWitness(current, expected, legacyRecord)) {
+          failure = new Error(DELETE_COPY_CHANGED_MESSAGE);
           tx.abort();
-        } else if (locations[0]) tx.objectStore(locations[0]).delete(name);
+          return;
+        }
+        tx.objectStore(entry!.storeName).delete(expected.name);
       };
     }
   });
@@ -402,6 +413,7 @@ interface StoredListingEntry {
 interface SummaryMetadata {
   name: string;
   savedAt: string;
+  saveToken?: unknown;
 }
 
 function summarize(record: SummaryMetadata, storeName: StoredListingEntry["storeName"]): SavedCopySummary {
@@ -409,6 +421,7 @@ function summarize(record: SummaryMetadata, storeName: StoredListingEntry["store
   return {
     name: record.name,
     savedAt: record.savedAt,
+    ...(typeof record.saveToken === "string" ? { saveToken: record.saveToken } : {}),
     ...(kind ? {kind} : {}),
   };
 }
@@ -459,6 +472,8 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
   // tokenless witnesses cannot authorize a replacement. Weak keys release old
   // snapshots when their open-session binding is discarded.
   const legacyReads = new WeakMap<SavedCopySummary, unknown>();
+  // Home retains only a summary; its complete legacy selection stays private.
+  const legacySelections = new WeakMap<SavedCopySummary, unknown>();
   function rememberRead(copy: AnySavedCopy, record: unknown): AnySavedCopy {
     if (copy.saveToken === undefined) legacyReads.set(copy, structuredClone(record));
     return copy;
@@ -494,7 +509,13 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
       return records
         .filter((entry): entry is StoredListingEntry & {record: Record<string, unknown> & SummaryMetadata} => hasUsableSummaryMetadata(entry.record))
         .sort((left, right) => compareSummaries(left.record, right.record))
-        .map((entry) => summarize(entry.record, entry.storeName));
+        .map((entry) => {
+          const summary = summarize(entry.record, entry.storeName);
+          // getAll already returns a detached IndexedDB snapshot; do not clone
+          // again, especially for invalid or oversized listed records.
+          if (entry.record.saveToken === undefined) legacySelections.set(summary, entry.record);
+          return summary;
+        });
     },
 
     async readAny(name: string): Promise<AnySavedCopy | null> {
@@ -642,9 +663,12 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
       },
     }),
 
-    async delete(name: string): Promise<void> {
+    async delete(name: string, expected: SavedCopySummary): Promise<void> {
       if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
-      await deleteCopyOnce(await openDatabase(), name);
+      if (!expected || expected.name !== name) throw new Error(DELETE_COPY_CHANGED_MESSAGE);
+      const witness = { ...expected };
+      const legacyRecord = legacySelections.get(expected) ?? legacyReads.get(expected);
+      await deleteCopyOnce(await openDatabase(), witness, legacyRecord);
     },
 
     async close(): Promise<void> {

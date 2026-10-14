@@ -192,6 +192,44 @@ async function dismissedCloseSave(p, dismissal) {
   await close(p); await open(p, 'Q4'); await oracle(p, 'Q4', expected);
 }
 const cases = {
+  async staleDelete(p) {
+    await seed(p); await close(p);
+    const b = await newPage(); await open(b, 'Q4');
+    // Capture the confirmation before the other tab saves.
+    await button(p, 'Delete saved Q4').click();
+    const d = p.getByRole('dialog', { name: 'Delete copy', exact: true });
+    const expected = await edit(b, 97); await button(b, 'Save').click(); await saved(b);
+    const before = await records(b);
+    await button(d, 'Delete').click();
+    await p.waitForFunction(() => !document.querySelector('[role=dialog][aria-label="Delete copy"]') || document.querySelector('[role=dialog][aria-label="Delete copy"] [role=alert]'));
+    assert.deepEqual(await records(p), before, 'stale Home cannot delete the newer save');
+    await d.getByRole('alert').filter({ hasText: 'This copy changed in another window. Refresh Home and try again.' }).waitFor();
+    await button(d, 'Cancel').click();
+    await p.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await p.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Open saved Q4', 'refreshed Home restores focus after refusal');
+    await oracle(b, 'Q4', expected);
+    // The refusal refreshes Home; its next confirmation can delete that save.
+    await button(p, 'Delete saved Q4').click(); await button(d, 'Delete').click();
+    await d.waitFor({ state: 'detached' });
+    assert.equal(Object.values(await records(p)).flat().length, 0);
+  },
+  async pendingCloseWithoutSaving(p) {
+    await seed(p); const expected = await edit(p, 99); await deferSaveCompletion(p);
+    await button(p, 'Close project').click();
+    const d = p.getByRole('dialog', { name: 'Unsaved work', exact: true });
+    await button(d, 'Save').click();
+    await p.waitForFunction(() => window.__saveEvidence.heldCompletion !== null);
+    const discard = button(d, 'Close without saving');
+    assert.equal(await discard.isDisabled(), true, 'Close without saving is unavailable during the save');
+    assert.equal(await button(d, 'Keep editing').isEnabled(), true);
+    assert.equal(await d.evaluate(el => el.contains(document.activeElement)), true, 'focus stays in the pending dialog');
+    // Exercise the handler guard independently of the disabled attribute.
+    await discard.evaluate(el => { el.disabled = false; el.click(); });
+    assert.equal(await d.count(), 1, 'guard refuses a close while saving');
+    assert.equal(await p.getByTestId('project-ready').count(), 1);
+    await p.evaluate(() => window.__releaseSaveCompletion()); await waitForColdHome(p);
+    await open(p, 'Q4'); await oracle(p, 'Q4', expected);
+  },
   async closeKeepEditing(p) { await dismissedCloseSave(p, 'Keep editing'); },
   async closeEscape(p) { await dismissedCloseSave(p, 'Escape'); },
   async closeEscapeOutside(p) { await dismissedCloseSave(p, 'Escape outside'); },
