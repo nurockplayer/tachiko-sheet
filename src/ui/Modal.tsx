@@ -63,4 +63,3 @@ function focusableElements(root: HTMLElement): HTMLElement[] {
     ),
   );
 }
-
