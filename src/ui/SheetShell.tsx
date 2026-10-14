@@ -1,3 +1,4 @@
+import { completionMayUpdateUi as completionIntentIsCurrent, survivingFocusedKey, firstUsableCompletionTarget } from "../app/mutation-completion.js";
 import {
   useCallback,
   useEffect,
@@ -784,19 +785,7 @@ export function SheetShell(props: SheetShellProps) {
       lastCellRef.current = null;
       return;
     }
-    setFocusedKey(current => {
-      if (!current || !rows.length || !fields.length) return null;
-      const [entity, field] = current.split("\u0000");
-      // Prefer the next survivor in the prior order, then the previous one.
-      const nearest = (value: string, prior: string[], surviving: string[]) => {
-        if (surviving.includes(value)) return value;
-        const index = prior.indexOf(value);
-        return prior.slice(index + 1).find(candidate => surviving.includes(candidate))
-          ?? prior.slice(0, index).reverse().find(candidate => surviving.includes(candidate))
-          ?? surviving[0]!;
-      };
-      return cellKey(nearest(entity!, previous.rows, rows), nearest(field!, previous.fields, fields));
-    });
+    setFocusedKey(current => survivingFocusedKey(current, previous, { rows, fields }));
   }, [collectionIdentity, table, columns]);
 
   useLayoutEffect(() => {
@@ -950,19 +939,13 @@ export function SheetShell(props: SheetShellProps) {
         return;
       }
     }
-    if (!destination && historyFocusDestinationIsUsable(request.initiator, shell)) {
-      destination = request.initiator;
-    }
-    if (!destination && currentness === "unknown") {
-      const recoveryRefresh = recoveryRefreshRef.current;
-      if (historyFocusDestinationIsUsable(recoveryRefresh, shell)) destination = recoveryRefresh;
-    }
-    if (!destination) {
-      const more = commandOverflowSummaryRef.current;
-      const refresh = desktopRefreshRef.current;
-      if (historyFocusDestinationIsUsable(more, shell)) destination = more;
-      else if (historyFocusDestinationIsUsable(refresh, shell)) destination = refresh;
-    }
+    destination = firstUsableCompletionTarget([
+      destination,
+      request.initiator,
+      currentness === "unknown" ? recoveryRefreshRef.current : null,
+      commandOverflowSummaryRef.current,
+      desktopRefreshRef.current,
+    ], (target) => historyFocusDestinationIsUsable(target, shell));
     if (destination && document.activeElement !== destination) destination.focus();
     historyFocusRequestRef.current = null;
     setHistoryFocusRequest(null);
@@ -1368,7 +1351,7 @@ export function SheetShell(props: SheetShellProps) {
   // Selection and DOM focus require unchanged intent. Roving state must
   // still name a surviving cell when the previously focused row disappears.
   function completionMayUpdateUi(intent: { generation: number; occurrence: string | null }): boolean {
-    return focusIntentRef.current === intent.generation && liveOccurrenceRef.current === intent.occurrence && intent.occurrence !== null;
+    return completionIntentIsCurrent(intent, completionIntent());
   }
 
   useLayoutEffect(() => {

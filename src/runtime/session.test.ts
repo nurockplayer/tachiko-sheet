@@ -1563,3 +1563,28 @@ describe("native table and row adapter", () => {
     });
   }
 });
+
+// #189: the application seam must preserve this adapter's evidence vocabulary.
+describe("#189 scalar/history completion evidence", () => {
+  for (const command of ["scalar", "undo", "redo"] as const) {
+    const dispatch = (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) => command === "scalar"
+      ? runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "250" })
+      : runtime.trackerHistory(witnessOf(view), command);
+    for (const outcome of ["refused", "unknown"] as const) it(`${command}: ${outcome} never fabricates publication or replays on read`, async () => {
+      const { runtime, view, client } = await opened();
+      if (command !== "scalar") {
+        // Establish the ordinary history admission tail first.
+        const edited = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "number", input: "8" });
+        if (command === "redo") await runtime.trackerHistory(witnessOf(edited.view), "undo");
+      }
+      const current = await runtime.read();
+      const error = outcome === "refused" ? new FakeDesignerRuntimeError("invalid_number", current.revision) : new Error("lost acknowledgement");
+      if (command === "scalar") client.hooks.editNumber = async () => { throw error; };
+      else client.hooks.trackerCommand = async () => { throw error; };
+      const before = client.calls.editNumber + client.calls.trackerCommand.length;
+      await expect(dispatch(runtime, current)).rejects.toBeInstanceOf(outcome === "refused" ? FakeDesignerRuntimeError : UnknownOperationOutcomeError);
+      expect(await runtime.read()).toEqual(current);
+      expect(client.calls.editNumber + client.calls.trackerCommand.length).toBe(before + 1);
+    });
+  }
+});
