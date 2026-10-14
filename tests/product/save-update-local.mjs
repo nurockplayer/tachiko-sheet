@@ -125,7 +125,100 @@ async function seed(p, sales = true) {
   else await openReleasePlanExample(p);
   await copy(p, 'Q4');
 }
+async function deferSaveCompletion(p) {
+  await p.evaluate(() => {
+    const original = IDBDatabase.prototype.transaction;
+    window.__saveEvidence.heldCompletion = null;
+    IDBDatabase.prototype.transaction = function(stores, mode, options) {
+      const tx = original.call(this, stores, mode, options);
+      if (mode === 'readwrite') Object.defineProperty(tx, 'oncomplete', { set(handler) {
+        tx.addEventListener('complete', event => {
+          window.__saveEvidence.heldCompletion = () => handler.call(tx, event);
+        });
+      } });
+      return tx;
+    };
+    window.__releaseSaveCompletion = () => {
+      IDBDatabase.prototype.transaction = original;
+      window.__saveEvidence.heldCompletion();
+      window.__saveEvidence.heldCompletion = null;
+    };
+  });
+}
+async function dismissedCloseSave(p, dismissal) {
+  await seed(p); const expected = await edit(p, 91);
+  await deferSaveCompletion(p);
+  await button(p, 'Close project').click();
+  const d = p.getByRole('dialog', { name: 'Unsaved work', exact: true });
+  await button(d, 'Save').click();
+  await p.waitForFunction(() => window.__saveEvidence.heldCompletion !== null);
+  assert.match(await p.getByTestId('save-status').textContent(), /Saving/);
+  assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
+  if (dismissal === 'Escape') {
+    // Save disables itself while pending; place keyboard focus on the enabled
+    // dismissal action so Escape is delivered through the modal's key handler.
+    await button(d, 'Keep editing').focus();
+    await p.keyboard.press('Escape');
+  }
+  else if (dismissal === 'Backdrop') await p.locator('.ts-modal-backdrop').click({ position: { x: 2, y: 2 } });
+  else await button(d, 'Keep editing').click();
+  await d.waitFor({ state: 'detached' });
+  await p.evaluate(() => window.__releaseSaveCompletion());
+  await p.waitForFunction(() => {
+    const status = document.querySelector('[data-testid="save-status"]');
+    return status === null || /Saved on this device/.test(status.textContent);
+  });
+  // Allow the save-confirmation effects to run before checking retention.
+  await p.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await p.getByTestId('project-ready').count(), 1, `${dismissal} cancels only the close intent`);
+  await saved(p);
+  assert.equal(await p.locator('[data-work-dirty="false"]').count(), 1, 'completed current save clears dirty state');
+  assert.equal(await p.getByRole('dialog').count(), 0);
+  await oracle(p, 'Q4', expected);
+  await close(p); await open(p, 'Q4'); await oracle(p, 'Q4', expected);
+}
 const cases = {
+  async closeKeepEditing(p) { await dismissedCloseSave(p, 'Keep editing'); },
+  async closeEscape(p) { await dismissedCloseSave(p, 'Escape'); },
+  async closeBackdrop(p) { await dismissedCloseSave(p, 'Backdrop'); },
+  async unboundCloseIntent(p) {
+    await button(p, 'Open sales example').click(); await ready(p);
+    const expected = await edit(p, 93);
+    const closeDialog = p.getByRole('dialog', { name: 'Unsaved work', exact: true });
+    const nameDialog = p.getByRole('dialog', { name: 'Save a copy', exact: true });
+    for (const dismissal of ['Cancel', 'Escape']) {
+      await button(p, 'Close project').click(); await button(closeDialog, 'Save').click();
+      await nameDialog.getByRole('textbox', { name: 'Copy name', exact: true }).fill('Cancelled');
+      if (dismissal === 'Escape') await p.keyboard.press('Escape');
+      else await button(nameDialog, 'Cancel').click();
+      await nameDialog.waitFor({ state: 'detached' });
+      await button(closeDialog, 'Keep editing').click();
+      assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
+      assert.doesNotMatch(await p.getByTestId('save-status').textContent(), /Saved on this device/);
+      assert.equal(Object.values(await records(p)).flat().length, 0);
+    }
+    // A regular copy save after cancelling Close must not inherit its intent.
+    await deferSaveCompletion(p); await button(p, 'Save').click();
+    await nameDialog.getByRole('textbox', { name: 'Copy name', exact: true }).fill('Q4');
+    await button(nameDialog, 'Create copy').click();
+    await p.waitForFunction(() => window.__saveEvidence.heldCompletion !== null);
+    await p.keyboard.press('Escape');
+    assert.equal(await nameDialog.count(), 1, 'pending copy writes retain their existing dismissal guard');
+    assert.equal(await button(nameDialog, 'Cancel').isDisabled(), true);
+    await p.evaluate(() => window.__releaseSaveCompletion()); await saved(p); await ready(p);
+    assert.equal(await p.getByTestId('project-ready').count(), 1);
+    assert.equal(await p.locator('[data-work-dirty="false"]').count(), 1);
+    await oracle(p, 'Q4', expected);
+    // A fresh explicit Close -> Save a copy still closes after confirmation.
+    const next = await edit(p, 95); await deferSaveCompletion(p);
+    await button(p, 'Close project').click(); await button(closeDialog, 'Save a copy…').click();
+    await nameDialog.getByRole('textbox', { name: 'Copy name', exact: true }).fill('Q5');
+    await button(nameDialog, 'Create copy').click();
+    await p.waitForFunction(() => window.__saveEvidence.heldCompletion !== null);
+    await p.keyboard.press('Escape'); assert.equal(await nameDialog.count(), 1);
+    await p.evaluate(() => window.__releaseSaveCompletion()); await waitForColdHome(p);
+    await open(p, 'Q5'); await oracle(p, 'Q5', next);
+  },
   async recreateConflict(p) {
     const freeze = async p => p.evaluate(() => {
       const Original = Date;

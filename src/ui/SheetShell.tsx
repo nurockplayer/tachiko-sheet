@@ -552,7 +552,8 @@ export function SheetShell(props: SheetShellProps) {
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyForClose, setCopyForClose] = useState(false);
   const [closeSaveAttempted, setCloseSaveAttempted] = useState(false);
-  const [savedClose, setSavedClose] = useState<(ViewWitness & { name: string; phase: "clear-draft" | "confirm" }) | null>(null);
+  const closeSaveIntentRef = useRef<symbol | null>(null);
+  const [savedClose, setSavedClose] = useState<(ViewWitness & { intent: symbol; name: string; phase: "clear-draft" | "confirm" }) | null>(null);
   const [copyName, setCopyName] = useState("");
   const savedCopyNamesInSessionRef = useRef(new Set<string>());
   const [copyPending, setCopyPending] = useState(false);
@@ -582,6 +583,7 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     liveOccurrenceRef.current = view?.occurrence ?? null;
     pendingCellFocusRef.current = null;
+    invalidateCloseSaveIntent();
   }, [view?.occurrence]);
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -1128,6 +1130,10 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => {
     if (!savedClose || busy || copyPending) return;
+    if (savedClose.intent !== closeSaveIntentRef.current) {
+      setSavedClose(null);
+      return;
+    }
     // Closing the name dialog clears its disposable draft. Let that existing
     // notification update the parent's save/dirty indicators before confirming.
     if (savedClose.phase === "clear-draft") {
@@ -1634,8 +1640,15 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  function invalidateCloseSaveIntent(): void {
+    closeSaveIntentRef.current = null;
+    setSavedClose(null);
+  }
+
   function openCopyDialog(forClose = false): void {
     if (view?.openedFromWorkFile && workFileSaveUnavailableReason) return;
+    invalidateCloseSaveIntent();
+    if (forClose) closeSaveIntentRef.current = Symbol("close after copy save");
     setCopyError(null);
     setLocalError(null);
     setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copies.map((copy) => copy.name), savedCopyNamesInSessionRef.current));
@@ -1646,6 +1659,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function closeCopyDialog(): void {
     if (copyPending) return;
+    invalidateCloseSaveIntent();
     setCopyOpen(false);
     setCopyError(null);
     setCopyName("");
@@ -1666,10 +1680,14 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     const witness = { occurrence: view.occurrence, revision: view.revision };
+    const intent = forClose ? Symbol("close after save") : null;
+    if (intent) closeSaveIntentRef.current = intent;
     setCloseSaveAttempted(forClose);
     setLocalError(null);
     try {
-      if (await onSave() && forClose) setSavedClose({ ...witness, name: boundCopyName, phase: "confirm" });
+      if (await onSave() && intent && closeSaveIntentRef.current === intent) {
+        setSavedClose({ ...witness, intent, name: boundCopyName, phase: "confirm" });
+      }
     } catch (error) { setLocalError(explain(error, "The copy could not be saved on this device.")); }
   }
 
@@ -1724,7 +1742,8 @@ export function SheetShell(props: SheetShellProps) {
     setCaptureCopyParentFailure(true);
     setCopyPending(true);
     setLocalError(null);
-    const closingView = copyForClose && view ? { occurrence: view.occurrence, revision: view.revision } : null;
+    const intent = copyForClose ? closeSaveIntentRef.current : null;
+    const closingView = intent && view ? { occurrence: view.occurrence, revision: view.revision, intent } : null;
     try {
       const created = await onCreateCopy(name);
       if (created) {
@@ -1734,7 +1753,7 @@ export function SheetShell(props: SheetShellProps) {
         setCopyOpen(false);
         setCopyError(null);
         setCopyName("");
-        if (closingView) setSavedClose({ ...closingView, name, phase: "clear-draft" });
+        if (closingView && closeSaveIntentRef.current === closingView.intent) setSavedClose({ ...closingView, name, phase: "clear-draft" });
         else saveCopyButtonRef.current?.focus();
       } else {
         setCopyError(`The copy “${name}” was not created. The name is still here; adjust it and try again.`);
@@ -1748,6 +1767,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function requestClose(): Promise<void> {
     if (busy || commitPending) return;
+    invalidateCloseSaveIntent();
     setSalesEntryOutcome(null);
     if (dirty || draftActive || hasInvalidReportDraft || currentness === "unknown") {
       setCloseSaveAttempted(false);
@@ -1758,6 +1778,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function closeWork(): Promise<void> {
+    invalidateCloseSaveIntent();
     setSalesEntryOutcome(null);
     setCloseOpen(false);
     setLocalError(null);
@@ -1769,6 +1790,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function keepEditing(): void {
+    invalidateCloseSaveIntent();
     setCloseSaveAttempted(false);
     setCloseOpen(false);
     requestAnimationFrame(() => {
@@ -3099,7 +3121,7 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
               Keep editing
             </button>
-            {view?.openedFromWorkFile ? <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => { setCloseOpen(false); void prepareDownload("ro", event.currentTarget); }}>Download work file (.ro)</button> : null}
+            {view?.openedFromWorkFile ? <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => { invalidateCloseSaveIntent(); setCloseOpen(false); void prepareDownload("ro", event.currentTarget); }}>Download work file (.ro)</button> : null}
             <span className="ts-close-save-action">
               <button type="button" className="ts-button ts-button--primary" onClick={() => void saveWork(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
                 Save
