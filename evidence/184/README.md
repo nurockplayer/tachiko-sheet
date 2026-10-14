@@ -58,6 +58,7 @@ This evidence does not claim a packaged-app or physical macOS/IME walkthrough.
 - `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit`: PASS, 554 Vitest + 125 Node tests.
 - `pnpm build`: PASS; production acceptance-hook exclusion PASS.
 - `TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs`: PASS, eight lifecycle groups and eight screenshots.
+- `NODE_OPTIONS='--import=/private/tmp/sheet184-appearance-receipt.mjs' pnpm acceptance:product`: PASS, 31/31 steps; the preload only preserves the complete visual result before child exit, with unchanged launch/assertions. Visual matrix PASS, zero findings.
 - `pnpm build:desktop`: PASS; Worker/WASM and acceptance-hook exclusion PASS.
 - `pnpm exec vitest run tests/desktop/native-parity.test.ts`: PASS, 2/2 with the real native frame harness built by `pnpm test:desktop-parity`.
 
