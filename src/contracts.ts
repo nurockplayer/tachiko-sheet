@@ -273,6 +273,11 @@ export interface LocalCopies {
   createOpaque(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
   /** Optional writer capability; compatible readers remain available without it. */
   createWorkFile?(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
+  /** Compare the exact last-read/written summary inside the replace transaction. */
+  replace?(expected: SavedCopySummary, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt>;
+  replaceOpaque?(expected: SavedCopySummary, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
+  replaceWorkFile?(expected: SavedCopySummary, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
+  delete?(name: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -313,6 +318,9 @@ export interface SheetShellProps {
   localHistory: LocalHistorySnapshot;
   onHistory(direction: "undo" | "redo"): Promise<FieldTarget | null>;
   onCreateCopy(name: string): Promise<boolean>;
+  boundCopyName?: string | null;
+  onSave?(): Promise<boolean>;
+  onDeleteCopy?(name: string): Promise<void>;
   onClose(): Promise<void>;
   onRefresh(): Promise<void>;
   onDraftChange(dirty: boolean): void;

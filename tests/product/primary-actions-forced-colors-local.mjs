@@ -88,8 +88,8 @@ const results = [];
 try {
   await page.goto(LOCAL_ORIGIN);
   await openReleasePlanExample(page);
-  results.push(...await sample(page.getByRole("button", { name: "Save a copy", exact: true }), "Save a copy"));
-  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  results.push(...await sample(page.getByRole("button", { name: "Save", exact: true }), "Save"));
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   const copyName = page.getByRole("textbox", { name: "Copy name", exact: true });
   await copyName.fill("forced-colors-probe");
   const createCopy = page.getByRole("button", { name: "Create copy", exact: true });
@@ -199,7 +199,7 @@ try {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   assert.equal(results.length, 8 * 4, "all eight actual primary consumers must be checked in both profiles/palettes");
-  console.log(JSON.stringify({ case: "enabled primary forced-colors rendered consumers", status: "PASS", inventory: ["Save a copy", "Apply Notes", "Apply preview", "Create cross-table summary", "Export current PNG", "Create copy", "Import candidate", "Download"], samples: results, interactionResults }));
+  console.log(JSON.stringify({ case: "enabled primary forced-colors rendered consumers", status: "PASS", inventory: ["Save", "Apply Notes", "Apply preview", "Create cross-table summary", "Export current PNG", "Create copy", "Import candidate", "Download"], samples: results, interactionResults }));
 } finally {
   await context.close();
   await rm(profileDir, { recursive: true, force: true });

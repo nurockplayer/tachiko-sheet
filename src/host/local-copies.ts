@@ -297,6 +297,69 @@ function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | St
   });
 }
 
+export const COPY_CHANGED_MESSAGE = "This copy changed in another window. Save a copy instead.";
+
+/** CAS and replacement (including a store transition) are one atomic write. */
+function replaceCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | StoredOpaqueCopy | StoredWorkFileCopy, expected: SavedCopySummary): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readwrite", { durability: "strict" });
+    let failure: unknown;
+    let checked = 0;
+    const entries: StoredListingEntry[] = [];
+    tx.oncomplete = () => failure ? reject(failure) : resolve();
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error("The local-copy transaction was aborted."));
+    tx.onerror = () => { failure ??= tx.error ?? new Error("The local-copy transaction failed."); };
+    for (const sourceStore of [LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE] as const) {
+      const request = tx.objectStore(sourceStore).get(expected.name);
+      request.onerror = () => { failure ??= request.error; };
+      request.onsuccess = () => {
+        if (request.result !== undefined) entries.push({ record: request.result, storeName: sourceStore });
+        if (++checked !== 2) return;
+        const entry = entries[0];
+        const current = entry?.record;
+        if (entries.length !== 1 || !hasUsableSummaryMetadata(current) || current.name !== expected.name ||
+            current.savedAt !== expected.savedAt || !expected.kind || classifyStoredEnvelope(current, entry!.storeName) !== expected.kind) {
+          failure = new Error(COPY_CHANGED_MESSAGE);
+          tx.abort();
+          return;
+        }
+        // Ensure even two saves within one millisecond have distinct witnesses.
+        if (record.savedAt <= current.savedAt) {
+          const previous = Date.parse(current.savedAt);
+          if (!Number.isFinite(previous)) {
+            failure = new Error(COPY_CHANGED_MESSAGE); tx.abort(); return;
+          }
+          record.savedAt = new Date(previous + 1).toISOString();
+        }
+        if (entry!.storeName !== storeName) tx.objectStore(entry!.storeName).delete(expected.name);
+        tx.objectStore(storeName).put(record);
+      };
+    }
+  });
+}
+
+function deleteCopyOnce(db: IDBDatabase, name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readwrite", { durability: "strict" });
+    let failure: unknown;
+    let checked = 0;
+    const locations: string[] = [];
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error("The copy could not be deleted."));
+    for (const storeName of [LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE]) {
+      const request = tx.objectStore(storeName).get(name);
+      request.onsuccess = () => {
+        if (request.result !== undefined) locations.push(storeName);
+        if (++checked !== 2) return;
+        if (locations.length > 1) {
+          failure = new Error(`The local-copy name “${name}” exists in multiple stores. Nothing was deleted.`);
+          tx.abort();
+        } else if (locations[0]) tx.objectStore(locations[0]).delete(name);
+      };
+    }
+  });
+}
+
 interface StoredListingEntry {
   record: unknown;
   storeName: typeof LOCAL_COPIES_STORE | typeof LOCAL_OPAQUE_COPIES_STORE;
@@ -358,7 +421,7 @@ function compareSummaries(left: SummaryMetadata, right: SummaryMetadata): number
 
 /** Disable only the portable writer for rollback; all readers stay installed. */
 export function createLocalCopies(options: { workFileWrites?: boolean } = {}): LocalCopies {
-  return {
+  const host = {
     async list(): Promise<SavedCopySummary[]> {
       const db = await openDatabase();
       const records = await new Promise<StoredListingEntry[]>((resolve, reject) => {
@@ -458,7 +521,7 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
       return copy;
     },
 
-    async create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt> {
+    async create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment, expected?: SavedCopySummary): Promise<SaveReceipt> {
       if (typeof name !== "string" || name.length === 0) {
         throw new TypeError("A local copy needs a non-empty name.");
       }
@@ -477,11 +540,12 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         } : undefined,
       };
       const db = await openDatabase();
-      await addCopyOnce(db, LOCAL_COPIES_STORE, record);
+      if (expected) await replaceCopyOnce(db, LOCAL_COPIES_STORE, record, expected);
+      else await addCopyOnce(db, LOCAL_COPIES_STORE, record);
       return {name: record.name, savedAt: record.savedAt, kind: "canonical", revision: record.revision};
     },
 
-    async createOpaque(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt> {
+    async createOpaque(name: string, snapshot: OpaqueProjectExport, expected?: SavedCopySummary): Promise<SaveReceipt> {
       if (typeof name !== "string" || name.length === 0) {
         throw new TypeError("A local copy needs a non-empty name.");
       }
@@ -506,12 +570,13 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         presentation: clonePresentation(snapshot.presentation),
       };
       const db = await openDatabase();
-      await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);
+      if (expected) await replaceCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record, expected);
+      else await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);
       return {name: record.name, savedAt: record.savedAt, kind: "opaque", revision: record.revision};
     },
 
     ...(options.workFileWrites === false ? {} : {
-      async createWorkFile(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt> {
+      async createWorkFile(name: string, snapshot: OpaqueProjectExport, expected?: SavedCopySummary): Promise<SaveReceipt> {
         if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
         const record: StoredWorkFileCopy = {
           kind: "work-file",
@@ -526,10 +591,16 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         // Clone before any await; no caller can mutate the pending durable payload.
         const copy = toWorkFileSavedCopy(record);
         const db = await openDatabase();
-        await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy);
+        if (expected) await replaceCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy, expected);
+        else await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy);
         return { name: copy.name, savedAt: copy.savedAt, kind: "work-file", revision: copy.revision };
       },
     }),
+
+    async delete(name: string): Promise<void> {
+      if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
+      await deleteCopyOnce(await openDatabase(), name);
+    },
 
     async close(): Promise<void> {
       const pending = connection;
@@ -541,5 +612,13 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         // The connection never opened; nothing to release.
       }
     },
+  };
+  return {
+    ...host,
+    replace: (expected, snapshot, importedSource) => host.create(expected.name, snapshot, importedSource, { ...expected }),
+    replaceOpaque: (expected, snapshot) => host.createOpaque(expected.name, snapshot, { ...expected }),
+    ...(options.workFileWrites === false ? {} : {
+      replaceWorkFile: (expected: SavedCopySummary, snapshot: OpaqueProjectExport) => host.createWorkFile!(expected.name, snapshot, { ...expected }),
+    }),
   };
 }
