@@ -95,6 +95,15 @@ for (const mode of ['published', 'known', 'unknown', 'refused']) {
         if (command === 'summary') await binding(p, mode === 'refused');
       }
       const before = await table(p);
+      // Capture occurrence markers before dispatch, and inspect completion
+      // before Refresh can repair missing marker effects.
+      const markerSnapshot = () => p.locator('.ts-app-root').evaluate(node => ({
+        initial: node.getAttribute('data-sales-initial-occurrence'),
+        changed: node.getAttribute('data-sales-changed-occurrence'),
+      }));
+      const priorMarkers = await markerSnapshot();
+      if (command !== 'cleanup') assert.ok(priorMarkers.initial ?? priorMarkers.changed,
+        'Sales occurrence marker must exist before dispatch; missing marker attributes cannot pass vacuously');
       const type = { scalar: 'edit_scalar', insert: 'insert_row', delete: 'remove_table_rows', undo: 'undo', redo: 'redo', cleanup: 'commit_cleanup', summary: 'create_keyed_grouped_sum' }[command];
       const n = await count(p, type);
       if (['known', 'unknown'].includes(mode)) await p.evaluate(arm => { window.__completion.arm = arm; }, { type, mode });
@@ -118,6 +127,13 @@ for (const mode of ['published', 'known', 'unknown', 'refused']) {
         assert.equal(await unload(p), true);
         assert.equal(await p.locator('td[data-testid^="cell:"]').count(), 0);
         assert.equal(await p.getByTestId('operation-outcome').count(), mode === 'unknown' ? 1 : 0);
+        const markers = await markerSnapshot();
+        if (mode === 'unknown') assert.deepEqual(markers, priorMarkers, 'unknown completion preserves unconfirmed onboarding markers before Refresh');
+        else {
+          assert.equal(markers.initial, null, 'known publication ends initial onboarding at completion');
+          assert.equal(markers.changed, command === 'cleanup' || command === 'summary' ? priorMarkers.changed : priorMarkers.initial ?? priorMarkers.changed,
+            'known scalar/row/history publication marks Sales changed before Refresh');
+        }
         await button(p, 'Refresh').click(); await ready(p);
         assert.equal(await count(p, type), n + 1, 'Refresh observes without replay');
         assert.equal(await unload(p), true, 'Refresh cannot invent a Save receipt');

@@ -900,11 +900,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     draftDirtyRef.current = false;
     syncDirty();
     markNotSaved();
-    cleanupPreviewContextRef.current = null;
+    if (!recovery.resetPreview) cleanupPreviewContextRef.current = null;
     setCurrentness("unknown");
     setOutcome(recovery.kind === "unknown-outcome" ? "unknown" : "idle");
     if (recovery.resetPreview) {
       setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
+      cleanupPreviewContextRef.current = null;
     }
     if (recovery.retainedInput !== undefined) recoveryDraftRef.current = recovery.retainedInput;
     setMessage(recovery.message);
@@ -954,25 +955,28 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     },
   });
 
-  async function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
-    if (blockUnknownOpenRecovery() || !begin()) return false;
+  function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
+    if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve(false);
     const unconfirmed = new Error("Tachiko couldn't confirm the table was created. Nothing was saved — choose Create to try again.");
-    try {
-      // This dialog is a Home action. Its own disposable configuration is
-      // allowed to submit; a resident work or pending publication is not.
-      if (viewRef.current !== null) throw new Error("Close the open work before creating a table.");
-      guardReplacement(true);
-      setMessage(null);
-      setCurrentness("pending");
-      return await mutationCompletion.newTable(() => replaceWork(() => runtime.newTable(name, columns)), unconfirmed);
-    } catch (error) {
+    const failure = (error: unknown): unknown => {
       if (!terminalReloadRequiredRef.current) {
         setCurrentness("current");
         setOutcome("idle");
       }
-      if (error === unconfirmed) throw error;
-      throw new Error(describe(error, "The table could not be created."));
-    } finally { end(); }
+      return error === unconfirmed ? error : new Error(describe(error, "The table could not be created."));
+    };
+    try {
+      // The schema dialog is a Home action; its resident is disposable.
+      if (viewRef.current !== null) throw new Error("Close the open work before creating a table.");
+      guardReplacement(true);
+      setMessage(null);
+      setCurrentness("pending");
+      return mutationCompletion.newTable(() => replaceWork(() => runtime.newTable(name, columns)), unconfirmed, end, failure);
+    } catch (error) {
+      const rejected = failure(error);
+      end();
+      return Promise.reject(rejected);
+    }
   }
 
   async function openFiles(files: FileList): Promise<void> {
@@ -1418,8 +1422,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     finally { end(); }
   }
 
-  async function commitCleanup(witness: ViewWitness, previewId: string): Promise<boolean> {
-    if (blockUnknownOpenRecovery()) return false;
+  function commitCleanup(witness: ViewWitness, previewId: string): Promise<boolean> {
+    if (blockUnknownOpenRecovery()) return Promise.resolve(false);
     const live = viewRef.current;
     const context = cleanupPreviewContextRef.current;
     if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision ||
@@ -1427,13 +1431,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       context.collection !== live.table.collection.key || context.previewId !== previewId) {
       setOutcome("idle");
       setMessage("This cleanup preview is no longer current. Preview it again before committing.");
-      return false;
+      return Promise.resolve(false);
     }
-    if (!begin()) return false;
-    try {
-      const result = await mutationCompletion.run({ kind: "cleanup", witness, dispatch: () => runtime.commitCleanup(witness, previewId) });
-      return result.kind === "published";
-    } finally { end(); }
+    if (!begin()) return Promise.resolve(false);
+    return mutationCompletion.run({ kind: "cleanup", witness, dispatch: () => runtime.commitCleanup(witness, previewId) }, result => result.kind === "published", end);
   }
 
   function cancelCleanup(): void {
@@ -1512,37 +1513,36 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     } finally { end(); }
   }
 
-  async function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean> {
-    if (blockUnknownOpenRecovery() || !begin()) return false;
-    try {
-      const live = viewRef.current;
-      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
-        setOutcome("idle");
-        setMessage("This draft belongs to an older view. Refresh to load the current work.");
-        return false;
-      }
-      const result = await mutationCompletion.run({ kind: "scalar", witness, edit, dispatch: () => runtime.editConfirmed(witness, target, edit) });
-      // Known/unknown publication must exit the rejected-editor retry path.
-      return result.kind !== "refused";
-    } finally { end(); }
+  function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean> {
+    if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve(false);
+    const live = viewRef.current;
+    if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
+      setOutcome("idle");
+      setMessage("This draft belongs to an older view. Refresh to load the current work.");
+      end();
+      return Promise.resolve(false);
+    }
+    // Map/finish inside the seam's continuation, as in base App's finally.
+    // Known/unknown publication must exit the rejected-editor retry path.
+    return mutationCompletion.run({ kind: "scalar", witness, edit, dispatch: () => runtime.editConfirmed(witness, target, edit) }, result => result.kind !== "refused", end);
   }
 
-  async function changeRows(
+  function changeRows(
     witness: ViewWitness,
     command: () => ReturnType<SheetRuntime["insertRow"]>,
   ): Promise<RowCommandOutcome> {
-    if (blockUnknownOpenRecovery() || !begin()) return { kind: "refused", message: "Wait for the current work before changing rows." };
-    try {
-      const live = viewRef.current;
-      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
-        setOutcome("idle");
-        return { kind: "refused", message: "This row draft belongs to an older view. Refresh before adding it." };
-      }
-      const result = await mutationCompletion.run({ kind: "rows", witness, dispatch: command });
+    if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before changing rows." });
+    const live = viewRef.current;
+    if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
+      setOutcome("idle");
+      end();
+      return Promise.resolve({ kind: "refused", message: "This row draft belongs to an older view. Refresh before adding it." });
+    }
+    return mutationCompletion.run<RowCommandOutcome>({ kind: "rows", witness, dispatch: command }, result => {
       if (result.kind === "published") return { kind: "confirmed" };
       if (result.kind === "refused") return result;
       return { kind: "recovery" };
-    } finally { end(); }
+    }, end);
   }
 
   function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
@@ -1553,16 +1553,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
   }
 
-  async function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
+  function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
     if (!live || currentness !== "current" || known.occurrence !== live.occurrence ||
-      known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return null;
+      known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return Promise.resolve(null);
     const witness = witnessOf(live);
-    try {
-      const result = await mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) });
-      return result.kind === "published" ? result.focusTarget : null;
-    } finally { end(); }
+    return mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) }, result => result.kind === "published" ? result.focusTarget : null, end);
   }
 
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
@@ -1680,25 +1677,24 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (bindingCatalogContainsDate(catalog)) {
         setMessage(DATE_SUMMARY_UNSUPPORTED_MESSAGE);
         setOutcome("idle");
+        end();
         return false;
       }
-      const result = await mutationCompletion.run({ kind: "summary", witness, dispatch: () => runtime.createKeyedGroupedSum(witness, binding) });
-      return result.kind !== "refused";
+      return mutationCompletion.run({ kind: "summary", witness, dispatch: () => runtime.createKeyedGroupedSum(witness, binding) }, result => result.kind !== "refused", end);
     } catch (error) {
       setOutcome("idle");
       setMessage(describe(error, "The current tables could not be checked before creating the cross-table summary."));
+      end();
       return false;
-    } finally { end(); }
+    }
   }
 
-  async function refreshJ4(witness: ViewWitness, definitionId: string): Promise<boolean> {
-    if (blockUnknownOpenRecovery()) return false;
+  function refreshJ4(witness: ViewWitness, definitionId: string): Promise<boolean> {
+    if (blockUnknownOpenRecovery()) return Promise.resolve(false);
     const admitted = viewRef.current;
-    if (!admitted || !targetedResultRefreshIsAdmitted({ currentness, live: admitted, witness, definitionIds: j4DefinitionIdsRef.current, definitionId })) return false;
-    if (!begin()) return false;
-    try {
-      return await mutationCompletion.refreshSummary(witness, definitionId, () => runtime.queryKeyedGroupedSum(witness, definitionId));
-    } finally { end(); }
+    if (!admitted || !targetedResultRefreshIsAdmitted({ currentness, live: admitted, witness, definitionIds: j4DefinitionIdsRef.current, definitionId })) return Promise.resolve(false);
+    if (!begin()) return Promise.resolve(false);
+    return mutationCompletion.refreshSummary(witness, definitionId, () => runtime.queryKeyedGroupedSum(witness, definitionId), end);
   }
 
   function createReport(definitionId: string, type: ReportConfiguration["type"]): void {
@@ -2028,6 +2024,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     <div
       className="ts-app-root"
       data-work-dirty={dirty ? "true" : "false"}
+      data-sales-initial-occurrence={salesInitialOccurrence ?? undefined}
+      data-sales-changed-occurrence={salesChangedOccurrence ?? undefined}
       data-work-currentness={view ? currentness : undefined}
     >
       <SheetShell

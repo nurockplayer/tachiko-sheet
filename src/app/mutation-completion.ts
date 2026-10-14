@@ -105,7 +105,14 @@ export function createMutationCompletion(port: MutationCompletionPort) {
     port.setOutcome("idle");
   }
 
-  async function run(command: MutationCommand): Promise<MutationCompletion> {
+  function run(command: MutationCommand): Promise<MutationCompletion>;
+  function run<T>(command: MutationCommand, complete: (result: MutationCompletion) => T, finish: () => void): Promise<T>;
+  async function run<T>(
+    command: MutationCommand,
+    complete?: (result: MutationCompletion) => T,
+    finish: () => void = () => {},
+  ): Promise<T | MutationCompletion> {
+    const completed = (result: MutationCompletion) => complete ? complete(result) : result;
     const before = port.state();
     const prior = (command.kind === "scalar" || command.kind === "summary") && before.currentness !== "current"
       ? null : { definitionIds: [...before.definitionIds], results: [...before.results] };
@@ -114,7 +121,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       // Cleanup historically leaves its summaries for explicit Refresh. Its
       // currentness is also unchanged during dispatch; preserve that policy.
       if (command.kind !== "cleanup") {
-        port.setMessage(null);
+        if (command.kind !== "summary") port.setMessage(null);
         port.setCurrentness("pending");
       }
       if (command.kind === "summary") {
@@ -147,36 +154,44 @@ export function createMutationCompletion(port: MutationCompletionPort) {
           ? confirmHistoryCommand(history, confirmed.view, confirmed.publication, command.direction)
           : confirmScalarHistory(history, confirmed.view, confirmed.publication, true));
         await observePublication(confirmed.view, prior, command.witness.occurrence);
-        return { kind: "published", focusTarget: command.kind === "history" && confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null };
+        return completed({ kind: "published", focusTarget: command.kind === "history" && confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null });
       }
       port.setOutcome("idle");
-      return { kind: "published", focusTarget: null };
+      return completed({ kind: "published", focusTarget: null });
     } catch (error) {
-      if (published || error instanceof PublishedProjectionRecoveryError) return recover("known-publication-recovery", command);
+      if (published || error instanceof PublishedProjectionRecoveryError) return completed(recover("known-publication-recovery", command));
       // Preserve history's existing fail-closed policy even for a trusted
       // refusal: its admitted local tail is discarded, with no command replay.
-      if (error instanceof UnknownOperationOutcomeError || command.kind === "history") return recover("unknown-outcome", command);
+      if (error instanceof UnknownOperationOutcomeError || command.kind === "history") return completed(recover("unknown-outcome", command));
       if (command.kind === "scalar" && error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
         port.setOutcome("idle"); port.setCurrentness("unknown");
         const message = "This draft belongs to an unconfirmed work view. Refresh to re-read the work; the draft was kept.";
-        port.setMessage(message); return { kind: "refused", message };
+        port.setMessage(message); return completed({ kind: "refused", message });
       }
       const current = port.state().view;
       if ((command.kind === "scalar" || command.kind === "summary") && prior && current?.occurrence === command.witness.occurrence && current.revision === command.witness.revision) port.restoreResults(prior);
+      // J4 refusal set currentness before outcome in the base; the other
+      // commands set outcome first. Keep that distinction too.
+      if (command.kind === "summary") port.setCurrentness("current");
       port.setOutcome("idle");
       if (command.kind === "cleanup") port.clearPreview();
-      else port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
+      else if (command.kind !== "summary") port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
       const message = describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
       if (command.kind !== "rows") port.setMessage(message);
       const failure = (error as { failure?: { code?: string } })?.failure;
       const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
-      return { kind: "refused", message, ...(command.kind === "rows" ? { fieldType } : {}) };
+      return completed({ kind: "refused", message, ...(command.kind === "rows" ? { fieldType } : {}) });
+    } finally {
+      // App's base finally/end ran in this continuation. A caller awaiting
+      // this seam before end adds a microtask and can render the value with
+      // stale busy/history availability. Map the result and finish here.
+      finish();
     }
   }
 
-  async function refreshSummary(witness: ViewWitness, definitionId: string, dispatch: () => Promise<KeyedGroupedSumResult>): Promise<boolean> {
+  async function refreshSummary(witness: ViewWitness, definitionId: string, dispatch: () => Promise<KeyedGroupedSumResult>, finish: () => void = () => {}): Promise<boolean> {
     const admitted = port.state().view;
-    if (!admitted) return false;
+    if (!admitted) { finish(); return false; }
     try {
       port.setMessage(null); port.setCurrentness("pending");
       const result = await dispatch(), current = port.state().view;
@@ -191,7 +206,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         port.setMessage("The work could not be confirmed. Refresh the workbook to recheck all results."); return false;
       }
       port.dropResult(definitionId); port.setCurrentness("current"); port.setOutcome("idle"); port.setMessage(null); return false;
-    }
+    } finally { finish(); }
   }
   function save(live: ViewWitness, snapshotRevision: string, receipt: SaveReceipt): boolean {
     const stillCurrent = saveCompletionIsCurrent(live, port.state().view, snapshotRevision, receipt.revision);
@@ -208,7 +223,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
   }
   return {
     run, recover, refreshSummary, save, confirmCoordinatedPublication,
-    newTable: (dispatch: Parameters<typeof completeNewTable>[0], unconfirmed: Error) => completeNewTable(dispatch, { ...port.newTable, markDirty: port.markDirty }, unconfirmed),
+    newTable: (dispatch: Parameters<typeof completeNewTable>[0], unconfirmed: Error, finish: () => void = () => {}, failure: (error: unknown) => unknown = error => error) => completeNewTable(dispatch, { ...port.newTable, markDirty: port.markDirty }, unconfirmed, finish, failure),
   };
 }
 
@@ -238,16 +253,21 @@ async function completeNewTable(
   dispatch: () => Promise<{ kind: "confirmed" | "refused" | "blocked" | "startup-unavailable" | "acknowledged-recovery" | "unknown-recovery" }>,
   effects: NewTableCompletionPort & { markDirty(): void },
   unconfirmed: Error,
+  finish: () => void,
+  failure: (error: unknown) => unknown,
 ): Promise<boolean> {
-  const result = await dispatch();
-  if (result.kind === "confirmed") { effects.markDirty(); return true; }
-  if (result.kind !== "acknowledged-recovery" && result.kind !== "unknown-recovery") return false;
-  try { await effects.close(); } catch { effects.closeFailed(); }
-  effects.resetClosed();
-  effects.retainDraft();
-  // Creation is a disposable empty resident, unlike an uncertain edit. Only
-  // the next explicit Create may replay; the dialog retains the schema.
-  throw unconfirmed;
+  try {
+    const result = await dispatch();
+    if (result.kind === "confirmed") { effects.markDirty(); return true; }
+    if (result.kind !== "acknowledged-recovery" && result.kind !== "unknown-recovery") return false;
+    try { await effects.close(); } catch { effects.closeFailed(); }
+    effects.resetClosed();
+    effects.retainDraft();
+    // Creation is a disposable empty resident, unlike an uncertain edit. Only
+    // the next explicit Create may replay; the dialog retains the schema.
+    throw unconfirmed;
+  } catch (error) { throw failure(error); }
+  finally { finish(); }
 }
 
 /** Ordered history focus candidates retain the user's newer choice first.

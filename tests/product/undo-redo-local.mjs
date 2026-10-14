@@ -37,6 +37,29 @@ async function waitCell(testId, value) {
     return content?.textContent?.trim() === expectedValue;
   }, { testId, value: String(value) });
 }
+// Check the completed value and both controls in one frame. Waiting separately
+// for an enabled control would hide stale completion and delay the next key.
+async function historyStep(shortcut, testId, value, undoEnabled, redoEnabled) {
+  await page.keyboard.press(shortcut);
+  await page.waitForFunction(({ testId, value, undoEnabled, redoEnabled }) => {
+    const content = document.querySelector(`[data-testid="${testId}"] .ts-cell-value`);
+    if (content?.textContent?.trim() !== value) return false;
+    // Base renders the projection while the authoritative summary re-read is
+    // pending. Completion begins only when that read has become current.
+    if (document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness') !== 'current') return false;
+    const controls = [...document.querySelectorAll('.ts-history-command')];
+    const undo = controls.find(node => node.textContent.trim() === 'Undo');
+    const redo = controls.find(node => node.textContent.trim() === 'Redo');
+    const first = window.__completedHistoryFrames[content.closest('[data-work-revision]').getAttribute('data-work-revision')];
+    if (!first) return false;
+    if (!(undo instanceof HTMLButtonElement) || !(redo instanceof HTMLButtonElement) ||
+        undo.disabled === undoEnabled || redo.disabled === redoEnabled ||
+        first.undoDisabled === undoEnabled || first.redoDisabled === redoEnabled) {
+      throw new Error(`History is stale at completion for ${value}: Undo disabled=${undo?.disabled}, Redo disabled=${redo?.disabled}, completion frame=${JSON.stringify(first)}`);
+    }
+    return true;
+  }, { testId, value: String(value), undoEnabled, redoEnabled });
+}
 async function waitForJ4Current() {
   await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
 }
@@ -134,6 +157,36 @@ try {
 
   // Two known edits unwind/redo in order; a NoChange rejection preserves Redo.
   await page.getByTestId(productCode).focus();
+  await page.evaluate(testId => {
+    const frames = window.__completedHistoryFrames = {};
+    new MutationObserver(() => {
+      if (document.querySelector('[data-testid="currentness"]')?.getAttribute('data-currentness') !== 'current') return;
+      const target = document.querySelector(`[data-testid="${testId}"]`);
+      const revision = target?.getAttribute('data-work-revision');
+      if (!revision || frames[revision]) return;
+      const controls = [...document.querySelectorAll('.ts-history-command')];
+      frames[revision] = {
+        undoDisabled: controls.find(node => node.textContent.trim() === 'Undo')?.disabled,
+        redoDisabled: controls.find(node => node.textContent.trim() === 'Redo')?.disabled,
+      };
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+  }, productCode);
+  const historyTiming = await context.newCDPSession(page);
+  // Exercise the same real publications on a slower CPU; pending summary
+  // observation remains allowed, but a current completion must be coherent.
+  await historyTiming.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+  try {
+    for (let iteration = 0; iteration < 20; iteration++) {
+      await historyStep("Control+Z", productCode, "UNDO-A", true, true);
+      await historyStep("Control+Z", productCode, initialValue, false, true);
+      await historyStep("Control+Shift+Z", productCode, "UNDO-A", true, true);
+      await historyStep("Control+Y", productCode, "UNDO-B", true, false);
+    }
+  } finally {
+    await historyTiming.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    await historyTiming.detach();
+  }
+  console.log("PASS: 20 immediate Undo/Redo loops with value/control consistency in the same frame (6x CPU slowdown)");
   await page.keyboard.press("Control+Z");
   await waitCell(productCode, "UNDO-A");
   assert.equal(await redo.isDisabled(), false);
