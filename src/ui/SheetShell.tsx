@@ -39,6 +39,7 @@ import type { InterfaceProfileV1 } from "../application/interface-profile-contra
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
+import { isComposingEvent } from "./composition-event.js";
 import { NewTableDialog } from "./NewTableDialog.js";
 import { RowEntry, type RowDraft } from "./RowEntry.js";
 import { BriefFacts } from "./BriefFacts.js";
@@ -535,6 +536,7 @@ export function SheetShell(props: SheetShellProps) {
   const [salesEntryOutcome, setSalesEntryOutcome] = useState<SalesEntryOutcome | null>(null);
   const [compactHomeLayout, setCompactHomeLayout] = useState(false);
   const [newTableOpen, setNewTableOpen] = useState(false);
+  const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[] } | null>(null);
   const rowDraftActive = rowDraft !== null && Object.values(rowDraft.values).some((value) => value !== "");
@@ -1006,7 +1008,8 @@ export function SheetShell(props: SheetShellProps) {
   const cellDraftActive = editor !== null && editor.value !== editor.original;
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   const draftActive =
-    cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "");
+    cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
+    (newTableOpen && newTableDraftActive);
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -1755,6 +1758,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!view || !witness || !selectedEntity || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
+    const intent = completionIntent();
     setCommitPending(true);
     setRowError(null);
     try {
@@ -1763,7 +1767,9 @@ export function SheetShell(props: SheetShellProps) {
       if (result.kind === "confirmed") {
         setSelectedEntity(null);
         setFocusedKey(null);
-        requestAnimationFrame(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
+        requestAnimationFrame(() => {
+          if (completionMayMoveFocus(intent)) withAppFocus(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
+        });
       }
     } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
@@ -2849,7 +2855,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {newTableOpen && onNewTable ? <NewTableDialog onCreate={onNewTable} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
+      {newTableOpen && onNewTable ? <NewTableDialog onCreate={onNewTable} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
       {copyOpen ? (
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">
@@ -2980,11 +2986,6 @@ export function SheetShell(props: SheetShellProps) {
       })() : null}
     </div>
   );
-}
-
-function isComposingEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {
-  const native = event.nativeEvent as KeyboardEvent;
-  return native.isComposing === true || native.keyCode === 229;
 }
 
 function currentnessLabel(currentness: SheetShellProps["currentness"], resultsNeedAttention = false): string {

@@ -1,0 +1,93 @@
+{
+  "base": "4c640a89e34dfaf703d91db71d58fb1b1f49da0f",
+  "regression": "tests/product/new-table-repair-cases.mjs",
+  "baselineCommand": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=/private/tmp/sheet184-repair2-candidate/dist TABLE_ROWS_REPAIR_CASE=all TABLE_ROWS_OUT=/private/tmp/sheet184-repair2-validation/baseline-delivery node tests/product/new-table-rows-local.mjs",
+  "baselineSource": "Exact-base temporary clone, all tracked source/core files unchanged; node_modules symlinked only for dependencies. A redundant unused nested core-kit symlink from initial setup was removed before the final baseline build/run. All six final failures are behavioral after Home/core prerequisites; A/D retain real successful creation/deletion receipts.",
+  "baseline": [
+    {
+      "repair": "A",
+      "status": "FAIL",
+      "error": "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"project-ready\"][aria-busy=\"false\"]') to be visible\u001b[22m\n"
+    },
+    {
+      "repair": "B",
+      "status": "FAIL",
+      "error": "TimeoutError: page.waitForFunction: Timeout 10000ms exceeded."
+    },
+    {
+      "repair": "C",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: composition Escape keeps the dialog open\n\n0 !== 1\n"
+    },
+    {
+      "repair": "D",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: late delete frame respects newer focus\n\nfalse !== true\n"
+    },
+    {
+      "repair": "E",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: insert clears the Sales initial marker\n+ actual - expected\n\n+ 'Not saved yet'\n- 'Edited \u2014 not saved'\n"
+    },
+    {
+      "repair": "F",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: remove/add defaults remain unique\n\n2 !== 3\n"
+    }
+  ],
+  "repaired": [
+    {
+      "repair": "A",
+      "status": "PASS"
+    },
+    {
+      "repair": "B",
+      "status": "PASS"
+    },
+    {
+      "repair": "C",
+      "status": "PASS"
+    },
+    {
+      "repair": "D",
+      "status": "PASS"
+    },
+    {
+      "repair": "E",
+      "status": "PASS"
+    },
+    {
+      "repair": "F",
+      "status": "PASS"
+    }
+  ],
+  "logs": "/private/tmp/sheet184-repair2-validation",
+  "baselineProductionAssets": [
+    {
+      "path": "dist/assets/index-BS8DX0lF.css",
+      "sha256": "1e8f6975f8f600d2e4bf4bbe52d77a30d218096efd8753f2acd464dae42cabd5"
+    },
+    {
+      "path": "dist/assets/index-jrXxgsg0.js",
+      "sha256": "3dd1a48537a834568c21aefc9df5785afbd99d96aa0d80d48cf54e4038b396fe"
+    }
+  ],
+  "baselineSourceHashes": [
+    {
+      "path": "src/App.tsx",
+      "sha256": "2c935a3a7e8683936334238abe5fd5af371991cc428cef09dc5aaa73b17fae51"
+    },
+    {
+      "path": "src/ui/Modal.tsx",
+      "sha256": "220878551ce8a5e16e7eb11a5ef5571a12f0806bf36d85da496c9f87acc14d57"
+    },
+    {
+      "path": "src/ui/NewTableDialog.tsx",
+      "sha256": "995a3544c7c5d29655e4970cfcea399668e2efb0184fc40de0f489c68be45b33"
+    },
+    {
+      "path": "src/ui/SheetShell.tsx",
+      "sha256": "d0d2c48a94e2b1c0c3b8ef914566550ffc7396e105c802ff0661aa1e44cff6df"
+    }
+  ]
+}

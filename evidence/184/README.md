@@ -1,24 +1,34 @@
-# #184 table lifecycle repair evidence
+# #184 repair-batch 2 evidence
 
-This repair batch starts at PR #188 HEAD `69ca1cebcd5b9f4c114d974eb6e08cd0d962ed18`
-and implements the lead's three-item disposition:
+This batch implements the latest Opus A–F disposition on PR #188, from pushed
+base `4c640a89e34dfaf703d91db71d58fb1b1f49da0f`.
 
-1. Acknowledged creation remains unsaved when the first table observation or
-   summary discovery fails. Refresh retains Close and unload protection.
-   Two production-browser regressions lose only real observation replies;
-   they never replace core data, fabricate creation success or replay creation.
-2. The disposable Add-row entry lives in a presentation-only `tfoot`, outside
-   `tbody` and accessible data rows. The Sales lane checks both DOM and
-   accessible row counts. Frozen #146 seed files and runners are unchanged.
-3. Home's first "Other ways to start" entry is New table, using the existing
-   row pattern. Both creation triggers return dialog focus to their initiating
-   button. The non-frozen visual assertions now require this new fifth entry
-   while retaining all four existing entries and all geometry/focus checks.
+| Item | Change | Production regression |
+| --- | --- | --- |
+| A | Creation-specific recovery allows a coherent authoritative Refresh to expose the created table, unsaved and protected, without replay. Authoritative absence returns Home with a plain explanation. | Lose a real successful creation reply → Refresh → unsaved Close/unload → Save/reopen; then lose another creation reply, close the real resident through its Worker protocol and Refresh to prove absence and no replay. |
+| B | New-table name, headers, types and column structure register with the existing draft lifecycle when different from the initial defaults. The Home dialog can submit its own draft. | Initial/reverted defaults are clean; each kind of draft protects unload; refused Create retains protection; Cancel clears it. |
+| C | Modal keyboard handling uses the same composition guard as the sheet editor. | Escape with `isComposing=true` and with key code 229 keeps the dialog, draft and focus; ordinary Escape dismisses it. |
+| D | Delete captures the existing completion intent and occurrence, then checks them inside its frame before moving focus. | Hold frames after a real deletion, choose Appearance, release the frames and verify newer focus remains. |
+| E | Shared insert/delete completion updates the Sales initial/change markers on confirmed publication, including known-publication observation recovery. | Fresh Sales insertion and fresh Sales-row deletion show “Edited — not saved” and an Updated tip. |
+| F | Default headers use an unused ordinal, checking existing names with trimmed, case-insensitive comparison. | Add three columns, remove the middle, add again and verify unique defaults; explicitly valid headers reach real core creation. |
 
-The eight screenshots are refreshed from the production `dist` build. The
-artifact manifest records JS/CSS and screenshot hashes; `result.json` records
-all ten lifecycle groups, actual browser process exits and the independent
-saved-byte/core projection oracle.
+`tests/product/new-table-repair-cases.mjs` exercises the production UI and real
+Worker/WASM. It only withholds real replies or queued frames; it fabricates no
+runtime success, projection, refusal or absence. Every item failed behaviorally
+on an unmodified exact-base temporary clone's production build, after Home and
+core prerequisites succeeded. A's observation retained the successful creation
+reply and coherent real table read while the UI stayed hidden. D retained the
+real delete publication while its frame moved focus away from Appearance.
+B waited for the existing dirty lifecycle to settle, which never happened on
+the base. C, E and F failed explicit assertions. The same six regressions pass
+on the repaired production source. [Before/after receipt](regression-results.json).
+
+The full production new-table lane passes all 16 groups, including the existing
+all-field/ID independent saved-byte oracle and actual full browser process
+exit/restart. All eight screenshots were recaptured from the repaired production
+build and are byte-identical to the prior captures. [Lane receipt](result.json)
+and [source/artifact/frozen-file hashes](artifact-manifest.json) bind the evidence
+to the tested files.
 
 | Screen | Desktop (1400px) | Compact (800px) |
 | --- | --- | --- |
@@ -27,49 +37,34 @@ saved-byte/core projection oracle.
 | Expenses with three rows | [table-1400.png](table-1400.png) | [table-800.png](table-800.png) |
 | Refused Number draft | [refusal-1400.png](refusal-1400.png) | [refusal-800.png](refusal-800.png) |
 
-## Repair validation
+## Validation and limits
 
-- `pnpm typecheck`: PASS.
-- `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit`: PASS, 556 Vitest + 125 Node tests.
-- `pnpm build`: PASS, including production acceptance-hook exclusion.
-- `TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs`: PASS, ten groups, eight screenshots.
-- `pnpm acceptance:save-closure` with the supported single-process Chromium
-  executable wrapper: PASS, seven prerequisites and eleven current cases.
-- `NODE_OPTIONS=--import=/private/tmp/sheet184-repair-validation/appearance-receipt.mjs pnpm acceptance:product`: PASS, 31/31 steps; visual matrix 24 combinations / 24 geometry cases, zero findings.
-- `pnpm acceptance:production-lifecycle` with the same wrapper: infrastructure
-  BLOCKED (exit 78). The owned browser reached CDP; navigation to the real local
-  production HTTP server timed out before Home loaded. No behavioral PASS is
-  claimed. The runner recorded fresh build/seed identities and the real failure.
+PASS: typecheck; unit (556 Vitest + 125 Node); production build with hook
+exclusion; production new-table lane (16 groups); full product (31/31), including
+the 24-combination / 24-geometry-case visual matrix with zero findings.
+The exact commands/results are recorded in [validation-results.json](validation-results.json).
+Complete logs and earlier attempts are retained in
+`/private/tmp/sheet184-repair2-validation/`. The baseline clone is
+`/private/tmp/sheet184-repair2-candidate`, still at unmodified `4c640a8`.
 
-The full product runner uses an out-of-repository `NODE_OPTIONS --import`
-observer only to preserve its complete visual JSON before child exit. It
-changes no assertion, product code or browser launch. Two initial full runs passed 30/31 steps while the visual lane retained old
-Home action-count and keyboard-order assumptions. Those assertions now require
-New table first in both empty and returning Home and verify forward/reverse
-Tab order while preserving every existing action and geometry check. A
-standalone visual attempt was infrastructure-blocked when Chromium closed
-during context creation; it earned no PASS. The final full run completes the
-24-combination, 24-geometry-case visual matrix with zero findings.
+An initial unit run caught implementation vocabulary in the no-work message;
+the message was repaired and the complete unit gate rerun. An initial full
+new-table run passed the original ten groups and B–F, but A's extra absence
+probe targeted the already closed independent oracle worker. The harness now
+retains the first product worker; the complete lane was rerun successfully.
+Earlier baseline setup attempts used an invalid default header or unavailable
+Results tab; those results earned no regression credit. The exact-base final
+run reproduced all six valid behavioral failures. No infrastructure failure is
+counted as PASS.
 
-Desktop transport/runtime support is inherited from the original #184 batch;
-this repair does not claim a new desktop/package/physical IME qualification.
-Lowercased/ASCII-only headers and Yes/No scalar display remain outside this
-three-item repair disposition.
-
-## Delivery metadata
-
-The supplied worktree is based at `69ca1ce`; its shared Git metadata still
-denies `index.lock`. The repair commit is assembled in writable
-`/private/tmp/sheet184-repair-candidate` from byte-identical validated files at
-that pushed HEAD, then normally pushed to `codex/184-new-table-rows` without
-force. The supplied worktree keeps its source/evidence repairs and the
-pre-existing `.serena/project.yml` modification; Serena is excluded from the
-candidate. Test-generated shared evidence logs are archived outside the repo.
-
-Complete local receipts/logs: `/private/tmp/sheet184-repair-validation/`.
-`validation-results.json`, `product-summary.json` and `visual-summary.json`
-record the repair run outcomes. Validation ran on the repaired source before
-commit assembly; source hashes in the artifact manifest bind those files to
-the delivered bytes. Opus retains hosted checks, fresh independent deep Codex
-review and integration. This handback claims no merge, deployment or independent
-review, and no production-lifecycle PASS.
+The out-of-repository `NODE_OPTIONS --import` observer used for full product
+acceptance only preserves the complete visual JSON; it changes no assertions,
+launch behavior or product code. The existing runner selects its supported
+single-process Chromium fallback when the normal sandbox launch is unavailable.
+Frozen #146 files/runners, `public/core-kit` and lockfiles are unchanged. Serena
+was left untouched; its pre-existing local modification is preserved.
+Existing space/ASCII/header normalization limits remain core-owned under Work
+#525. Desktop qualification is inherited from the original lane; this batch
+claims no new native/package/physical IME qualification. Opus retains hosted
+gates, fresh independent exact-HEAD review and integration. No review threads
+were resolved, and no independent approval or merge is claimed.

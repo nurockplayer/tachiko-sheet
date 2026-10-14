@@ -1,6 +1,6 @@
 {
-  "repairBase": "69ca1cebcd5b9f4c114d974eb6e08cd0d962ed18",
-  "validation": "Repaired source in w184 before byte-identical commit assembly; hosted/fresh independent review remains with Opus.",
+  "repairBase": "4c640a89e34dfaf703d91db71d58fb1b1f49da0f",
+  "validation": "Tested source in w184; source/artifact hashes bind delivered files. Opus owns hosted gates, fresh independent review and integration.",
   "checks": [
     {
       "command": "pnpm typecheck",
@@ -17,35 +17,26 @@
     {
       "command": "pnpm build",
       "status": "PASS",
-      "exitCode": 0
+      "exitCode": 0,
+      "productionAcceptanceHooksExcluded": true
     },
     {
       "command": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs",
       "status": "PASS",
       "exitCode": 0,
-      "groups": 10,
+      "groups": 16,
+      "repairRegressions": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F"
+      ],
       "screenshots": 8
     },
     {
-      "command": "PLAYWRIGHT_CHROMIUM_EXECUTABLE=/private/tmp/sheet184-repair-validation/chromium-single-process TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR=/private/tmp/sheet184-repair-validation/save-lifecycle pnpm acceptance:save-closure",
-      "status": "PASS",
-      "exitCode": 0,
-      "prerequisites": 7,
-      "currentCases": 11
-    },
-    {
-      "command": "PLAYWRIGHT_CHROMIUM_EXECUTABLE=/private/tmp/sheet184-repair-validation/chromium-single-process TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR=/private/tmp/sheet184-repair-validation/save-lifecycle pnpm acceptance:production-lifecycle",
-      "status": "BLOCKED",
-      "exitCode": 78,
-      "phase": "cold-Home-and-production-runtime",
-      "error": {
-        "name": "TimeoutError",
-        "message": "page.goto: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:4197/\", waiting until \"domcontentloaded\"\u001b[22m\n",
-        "stack": "page.goto: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:4197/\", waiting until \"domcontentloaded\"\u001b[22m\n\n    at waitForColdHome (/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/tests/product/production-lifecycle.mjs:128:33)\n    at /Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/tests/product/production-lifecycle.mjs:251:31"
-      }
-    },
-    {
-      "command": "NODE_OPTIONS=--import=/private/tmp/sheet184-repair-validation/appearance-receipt.mjs pnpm acceptance:product",
+      "command": "NODE_OPTIONS=--import=/private/tmp/sheet184-repair2-validation/appearance-receipt.mjs pnpm acceptance:product",
       "status": "PASS",
       "exitCode": 0,
       "steps": 31,
@@ -56,28 +47,34 @@
   ],
   "earlierAttempts": [
     {
-      "check": "full product",
+      "check": "unit",
       "status": "FAIL",
-      "passedSteps": 30,
-      "totalSteps": 31,
-      "reason": "Old empty-Home keyboard skip assumption",
-      "log": "/private/tmp/sheet184-repair-validation/product-attempt1.log"
-    },
-    {
-      "check": "full product",
-      "status": "FAIL",
-      "passedSteps": 30,
-      "totalSteps": 31,
-      "reason": "Old returning-Home four-action assumption",
-      "log": "/private/tmp/sheet184-repair-validation/product-attempt2.log"
-    },
-    {
-      "check": "standalone visual",
-      "status": "BLOCKED",
       "exitCode": 1,
-      "reason": "Chromium closed during browser context/page creation",
-      "log": "/private/tmp/sheet184-repair-validation/visual-focused.log"
+      "reason": "Plain-copy regression rejected implementation vocabulary in the new no-work message; repaired and full gate rerun.",
+      "log": "/private/tmp/sheet184-repair2-validation/unit.log"
+    },
+    {
+      "check": "new-table full lane",
+      "status": "FAIL",
+      "exitCode": 1,
+      "passedGroups": 15,
+      "totalGroups": 16,
+      "reason": "Additional A absence probe targeted an already closed independent oracle Worker. Harness retains first product Worker; full lane rerun.",
+      "log": "/private/tmp/sheet184-repair2-validation/new-table-lane.log"
+    },
+    {
+      "check": "focused repaired A-F",
+      "status": "FAIL",
+      "exitCode": 1,
+      "reason": "B asserted before chained draft effects settled; E deleted a referenced Catalog row and correctly produced attention diagnostics. Tests now wait for settled dirty state and delete a Sales row; corrected focused and full lanes pass.",
+      "log": "/private/tmp/sheet184-repair2-validation/repaired-focused.log"
     }
   ],
-  "logRoot": "/private/tmp/sheet184-repair-validation"
+  "environment": {
+    "productionLane": "Existing disk-routed production transport and single-process Chromium; real Worker/WASM retained.",
+    "fullProduct": "Unmodified full product runner, supported single-process fallback. Out-of-repo observer preserves complete visual JSON only.",
+    "normalChromiumProbe": "Unavailable under sandbox; no normal-process-browser PASS claimed."
+  },
+  "excludedTrackedFilesVerifiedByteIdentical": 62,
+  "logRoot": "/private/tmp/sheet184-repair2-validation"
 }

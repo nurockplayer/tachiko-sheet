@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
+import { runNewTableRepairCases } from "./new-table-repair-cases.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -39,16 +40,32 @@ async function start() {
   await installDistRoutes(context, dist);
   await context.addInitScript(() => {
     window.__rowEvidence = { workers: [] };
+    const originalFrame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = callback => {
+      if (window.__rowEvidence.deletePublished && window.__rowEvidence.holdDeleteFrames) {
+        (window.__rowEvidence.deleteFrames ??= []).push(callback);
+        return -window.__rowEvidence.deleteFrames.length;
+      }
+      return originalFrame(callback);
+    };
     const Original = window.Worker;
     window.Worker = class extends Original {
       constructor(...args) {
         super(...args);
         this.record = { requests: [], replies: [], tables: [] };
+        window.__rowEvidence.liveWorker ??= this;
         window.__rowEvidence.workers.push(this.record);
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
           const request = this.record.requests.find(request => request.id === event.data.id);
+          if (window.__rowEvidence.loseNextCreateReply && request?.request?.type === "new_table" && event.data.response?.type === "opened") {
+            window.__rowEvidence.loseNextCreateReply = false;
+            this.dispatchEvent(new ErrorEvent("error", { message: "Controlled lost creation acknowledgement" }));
+          }
+          if (window.__rowEvidence.holdDeleteFrames && request?.request?.type === "remove_table_rows" && event.data.response?.type === "published") {
+            window.__rowEvidence.deletePublished = true;
+          }
           const createIndex = this.record.requests.findLastIndex(request => request.request?.type === "new_table");
           const afterCreate = this.record.requests.slice(createIndex + 1);
           const fault = window.__rowEvidence.failCreationObservation;
@@ -149,6 +166,9 @@ async function independentOracle(page, reopened) {
 }
 try {
   let page = await start();
+  if (process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
+  let oracle;
+  if (!process.env.TABLE_ROWS_REPAIR_CASE) {
   await page.getByRole("button", { name: "New table", exact: true }).waitFor();
   const homeEntry = page.getByRole("region", { name: "Other ways to start", exact: true });
   assert.equal(await homeEntry.locator(".ts-home-other-row").first().locator("strong").textContent(), "New table");
@@ -244,7 +264,7 @@ try {
   await terminate(); page = await start();
   await page.getByRole("button", { name: "Open saved Expenses copy", exact: true }).click(); await ready(page);
   const reopened = await projection(page); assert.deepEqual(reopened.rows, savedRows);
-  const oracle = await independentOracle(page, reopened);
+  oracle = await independentOracle(page, reopened);
   checks.push("save-full-process-exit-same-profile-home-reopen-fixed-value-independent-core-oracle");
   // The reopened native flag must still expose the actual row actions.
   await entry(page).getByRole("button", { name: "Add", exact: true }).waitFor();
@@ -351,9 +371,11 @@ try {
     await closeWithoutSave(page);
     checks.push(`acknowledged-create-lost-${fault}-observation-refresh-unsaved-close-and-unload`);
   }
+  }
+  if (!process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
   await terminate();
   const result = { status: "PASS", dist: path.resolve(dist), checks, processes, screenshots, oracle };
-  await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, oracle: "all rows, values and stable IDs verified", evidence }));
+  await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, oracle: oracle ? "all rows, values and stable IDs verified" : "not exercised in focused repair run", evidence }));
 } catch (cause) {
   console.error(cause);
   await writeFile(path.join(evidence, "failure.json"), JSON.stringify({ status: "FAIL", error: String(cause), checks, processes }, null, 2));

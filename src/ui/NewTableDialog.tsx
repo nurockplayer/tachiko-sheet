@@ -1,10 +1,11 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { NewTableColumn } from "../contracts.js";
 import { Modal } from "./Modal.js";
 
-export function NewTableDialog({ onCreate, onCancel }: {
+export function NewTableDialog({ onCreate, onCancel, onDraftChange }: {
   onCreate(name: string, columns: NewTableColumn[]): Promise<boolean>;
   onCancel(): void;
+  onDraftChange(active: boolean): void;
 }) {
   const id = useId();
   const serial = useRef(1);
@@ -13,6 +14,10 @@ export function NewTableDialog({ onCreate, onCancel }: {
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const draftActive = name !== "" || columns.length !== 1 ||
+    columns[0]?.name !== "Column 1" || columns[0]?.field_type !== "text";
+  useEffect(() => { onDraftChange(draftActive); }, [draftActive, onDraftChange]);
+  useEffect(() => () => onDraftChange(false), [onDraftChange]);
   async function create() {
     if (pendingRef.current) return;
     pendingRef.current = true;
@@ -33,7 +38,11 @@ export function NewTableDialog({ onCreate, onCancel }: {
         <label className="ts-dialog-field"><span className="ts-field-label">Column {index + 1} type</span><select className="ts-text-input" aria-label={`Column ${index + 1} type`} value={column.field_type} disabled={pending} onChange={event => { const value = event.currentTarget.value as NewTableColumn["field_type"]; setError(null); setColumns(current => current.map(item => item.id === column.id ? { ...item, field_type: value } : item)); }}><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="boolean">Yes/No</option></select></label>
         <button className="ts-button" type="button" aria-label={`Remove column ${index + 1}`} disabled={pending || columns.length === 1} onClick={() => { setError(null); setColumns(current => current.filter(item => item.id !== column.id)); }}>Remove</button>
       </div>)}
-      <button type="button" className="ts-button" disabled={pending} onClick={() => { const next = serial.current++; setError(null); setColumns(current => [...current, { id: next, name: `Column ${current.length + 1}`, field_type: "text" }]); }}>Add column</button>
+      <button type="button" className="ts-button" disabled={pending} onClick={() => { const next = serial.current++; setError(null); setColumns(current => {
+        let ordinal = 1;
+        while (current.some(column => column.name.trim().toLowerCase() === `column ${ordinal}`)) ordinal += 1;
+        return [...current, { id: next, name: `Column ${ordinal}`, field_type: "text" }];
+      }); }}>Add column</button>
     </div>
     {error ? <p className="ts-dialog-error" role="alert">{error}</p> : null}
     <div className="ts-dialog-actions"><button type="button" className="ts-button" disabled={pending} onClick={onCancel}>Cancel</button><button type="button" className="ts-button ts-button--primary" disabled={pending} aria-busy={pending} onClick={() => void create()}>{pending ? "Working…" : "Create table"}</button></div>

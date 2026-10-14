@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { isComposingEvent } from "./composition-event.js";
 
 export function Modal({ label, onCancel, children, variant = "review", dismissDisabled = false }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review"; dismissDisabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -12,6 +13,7 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
   }, []);
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (isComposingEvent(event)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
