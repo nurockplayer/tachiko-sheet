@@ -46,7 +46,7 @@ import {
 import { SheetShell } from "./ui/SheetShell.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { useHostFiles } from "./host/host-files.js";
-import { validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
+import { COPY_CHANGED_MESSAGE, validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
 
 /** Fixed same-origin transport inventory; bytes are opaque and never parsed. */
 const EXAMPLE_BASE = "/examples/release-plan/";
@@ -404,6 +404,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const draftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
   const dirtyRef = useRef(false);
+  const boundCopyRef = useRef<{ occurrence: string; copy: SavedCopySummary } | null>(null);
+  const [boundCopyName, setBoundCopyName] = useState<string | null>(null);
+  function bindCopy(occurrence: string | null, copy: SavedCopySummary | null): void {
+    boundCopyRef.current = occurrence && copy ? { occurrence, copy } : null;
+    setBoundCopyName(boundCopyRef.current?.copy.name ?? null);
+  }
   const savedRevisionRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
   const recoveryDraftRef = useRef<string | null>(null);
@@ -433,6 +439,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     importedSource: ImportedSourceAttachment | null;
     interop: InteropState | null;
     savedRevision: string | null;
+    boundCopy: SavedCopySummary | null;
     presentation: PresentationAttachment | null;
   };
   // Candidate provenance stays private until Refresh proves that the
@@ -452,6 +459,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     report: ReportConfiguration | null;
     savedRevision: string | null;
     saveStatus: SaveStatus;
+    boundCopy: SavedCopySummary | null;
     recoveryDraft: string | null;
     cleanupPreviewContext: CleanupPreviewContext | null;
   };
@@ -709,6 +717,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   type ReplacementProvenance = {
     importedSource?: ImportedSourceAttachment | null;
     interop?: InteropState | null;
+    boundCopy?: SavedCopySummary | null;
     savedRevision?: string | null;
     presentation?: PresentationAttachment | null;
   };
@@ -731,6 +740,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       report: reportRef.current ? { ...reportRef.current } : null,
       savedRevision: savedRevisionRef.current,
       saveStatus,
+      boundCopy: boundCopyRef.current?.copy ?? null,
       recoveryDraft: recoveryDraftRef.current,
       cleanupPreviewContext: cleanupPreviewContextRef.current,
     } : null;
@@ -777,9 +787,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           importedSource: provenance.importedSource ?? null,
           interop: provenance.interop ?? null,
           savedRevision: provenance.savedRevision ?? null,
+          boundCopy: provenance.boundCopy ?? null,
           presentation: provenance.presentation ?? null,
         }
       : null;
+    bindCopy(null, null);
     savedRevisionRef.current = null;
     setSaveStatus("not-saved");
     importedSourceRef.current = null;
@@ -822,6 +834,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     recoveredReport: ReportConfiguration | null = null,
   ): void {
     abandonSalesOccurrenceMarkers();
+    bindCopy(next.occurrence, provenance.boundCopy ?? null);
     installView(next);
     installJ4Results(results);
     installReport(recoveredReport);
@@ -1317,7 +1330,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if ((await replaceWork(
         () => copy.kind === "work-file" ? runtime.openWorkFile(copy.bytes)
           : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
-        { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation },
+        { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
@@ -1751,7 +1764,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
-  async function createCopy(name: string): Promise<boolean> {
+  async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (viewRef.current?.openedFromWorkFile && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
@@ -1767,6 +1780,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     saveInFlightRef.current = true;
     setMessage(null);
     setSaveStatus("saving");
+    function requireCurrentSnapshot(revision: string): void {
+      const current = viewRef.current;
+      if (!current || current.occurrence !== live!.occurrence || current.revision !== live!.revision || revision !== live!.revision) {
+        throw new Error("The open work changed before saving. Keep it open and try again.");
+      }
+    }
     try {
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
       const hasDateColumn = definitionBearing || live.openedFromWorkFile
@@ -1797,16 +1816,28 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           snapshotRevision,
           snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
         } : undefined;
-        const writeCopy = live.openedFromWorkFile ? copies.createWorkFile! : copies.createOpaque;
-        receipt = await writeCopy.call(copies, name, {
+        requireCurrentSnapshot(snapshotRevision);
+        const payload = {
           ...snapshot,
           importedSource: importedSourceRef.current ?? undefined,
           presentation,
-        });
+        };
+        if (expected) {
+          const replace = live.openedFromWorkFile ? copies.replaceWorkFile : copies.replaceOpaque;
+          if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
+          receipt = await replace.call(copies, expected, payload);
+        } else {
+          const create = live.openedFromWorkFile ? copies.createWorkFile! : copies.createOpaque;
+          receipt = await create.call(copies, name, payload);
+        }
       } else {
         const snapshot = await runtime.exportCanonical(witnessOf(live));
         snapshotRevision = snapshot.revision;
-        receipt = await copies.create(name, snapshot, importedSourceRef.current ?? undefined);
+        requireCurrentSnapshot(snapshotRevision);
+        if (expected) {
+          if (!copies.replace) throw new Error("Save is unavailable. Save a copy instead.");
+          receipt = await copies.replace(expected, snapshot, importedSourceRef.current ?? undefined);
+        } else receipt = await copies.create(name, snapshot, importedSourceRef.current ?? undefined);
       }
       void refreshCopies();
       const current = viewRef.current;
@@ -1816,6 +1847,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         current.revision === snapshotRevision &&
         receipt.revision === snapshotRevision;
       if (stillCurrent) {
+        bindCopy(live.occurrence, receipt);
         setSalesEntryTip((marker) => salesEntryTipAfterSuccessfulSave(marker, live.occurrence));
         setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, live.occurrence));
         savedRevisionRef.current = receipt.revision;
@@ -1826,12 +1858,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         markNotSaved();
       }
       setOutcome("idle");
-      return true;
+      return expected ? stillCurrent : true;
     } catch (error) {
       markNotSaved();
       setSaveStatus("failed");
       setOutcome("idle");
-      setMessage(describe(error, "The copy could not be saved on this device."));
+      setMessage(error instanceof Error && error.message === COPY_CHANGED_MESSAGE ? COPY_CHANGED_MESSAGE : describe(error, "The copy could not be saved on this device."));
       return false;
     } finally {
       saveInFlightRef.current = false;
@@ -2034,6 +2066,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(describe(error, "The work could not be closed."));
       throw new Error(describe(error, "The work could not be closed."));
     } finally {
+      bindCopy(null, null);
       viewRef.current = null;
       installView(null);
       installJ4DefinitionIds([]);
@@ -2130,6 +2163,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
             return;
           }
           installReport(recoveredReport);
+          bindCopy(next.occurrence, pendingReplacement.boundCopy);
           savedRevisionRef.current = next.revision;
           setSaveStatus("saved");
           pendingReplacementRef.current = null;
@@ -2181,6 +2215,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         draftDirtyRef.current = checkpoint.draftDirty;
         installReport(checkpoint.report ? { ...checkpoint.report } : null, checkpoint.presentationDirty);
         recoveryDraftRef.current = checkpoint.recoveryDraft;
+        bindCopy(next.occurrence, checkpoint.boundCopy);
         savedRevisionRef.current = recoveryDecision.saved ? checkpoint.savedRevision : null;
         setSaveStatus(recoveryDecision.saved ? checkpoint.saveStatus : "not-saved");
         unknownOpenRecoveryRef.current = false;
@@ -2220,6 +2255,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // The authoritative reobserve proved that the uncertain occurrence is
         // gone. Discard its dirty/recovery context so normal Open routes can
         // safely establish a fresh occurrence without replaying anything.
+        bindCopy(null, null);
         const recovered = noResidentRecoveryState();
         abandonSalesOccurrenceMarkers();
         pendingDirtyRef.current = recovered.dirty;
@@ -2319,6 +2355,21 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           localHistory={localHistory}
           onHistory={runHistory}
           onCreateCopy={createCopy}
+          boundCopyName={boundCopyRef.current?.occurrence === view?.occurrence ? boundCopyName : null}
+          onSave={async () => {
+            const binding = boundCopyRef.current;
+            if (!binding || binding.occurrence !== viewRef.current?.occurrence) return false;
+            return createCopy(binding.copy.name, binding.copy);
+          }}
+          onDeleteCopy={copies.delete ? async (copy) => {
+            const name = copy.name;
+            if (boundCopyRef.current?.copy.name === name || pendingReplacementRef.current?.boundCopy?.name === name || openRecoveryCheckpointRef.current?.boundCopy?.name === name) {
+              throw new Error(`Close “${name}” before deleting it.`);
+            }
+            if (!begin()) throw new Error("Another operation is in progress.");
+            try { await copies.delete!(name, copy); }
+            finally { try { await refreshCopies(); } finally { end(); } }
+          } : undefined}
           onClose={close}
           onRefresh={refresh}
           onDraftChange={onDraftChange}

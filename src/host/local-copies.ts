@@ -37,6 +37,7 @@ interface StoredCopy {
   kind?: "canonical";
   name: string;
   savedAt: string;
+  saveToken?: string;
   revision: string;
   files: StoredFile[];
   /** Private IndexedDB composition, never a canonical project entry. */
@@ -48,6 +49,7 @@ interface StoredOpaqueCopy {
   formatVersion: 2;
   name: string;
   savedAt: string;
+  saveToken?: string;
   revision: string;
   bytes: ArrayBuffer;
   /** Private IndexedDB composition, never embedded in the opaque bytes. */
@@ -127,6 +129,7 @@ function toCanonicalSavedCopy(record: StoredCopy): SavedCopy {
   return {
     name: record.name,
     savedAt: record.savedAt,
+    ...(record.saveToken !== undefined ? { saveToken: record.saveToken } : {}),
     kind: "canonical",
     revision: record.revision,
     files: record.files.map((file) => ({ path: file.path, bytes: cloneBytes(file.bytes) })),
@@ -143,6 +146,7 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
   const copy: OpaqueSavedCopy = {
     name: record.name,
     savedAt: record.savedAt,
+    ...(record.saveToken !== undefined ? { saveToken: record.saveToken } : {}),
     kind: "opaque",
     formatVersion: 2,
     revision: record.revision,
@@ -187,6 +191,7 @@ function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
     formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
     name: record.name,
     savedAt: record.savedAt,
+    ...(record.saveToken !== undefined ? { saveToken: record.saveToken } : {}),
     revision: record.revision,
     bytes: cloneBytes(record.bytes),
     ...(record.presentation !== undefined ? { presentation: clonePresentation(record.presentation) } : {}),
@@ -297,6 +302,109 @@ function addCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | St
   });
 }
 
+export const COPY_CHANGED_MESSAGE = "This copy changed in another window. Save a copy instead.";
+
+/** Compare persisted legacy data synchronously while the transaction is active.
+ * Unsupported structures/depth refuse rather than claiming an equal witness.
+ */
+function equalStoredSnapshot(left: unknown, right: unknown, depth = 0): boolean {
+  if (depth > 100) return false;
+  if (Object.is(left, right)) return true;
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) return false;
+  const tag = Object.prototype.toString.call(left);
+  if (tag !== Object.prototype.toString.call(right)) return false;
+  if (tag === "[object ArrayBuffer]") {
+    const a = new Uint8Array(left as ArrayBuffer), b = new Uint8Array(right as ArrayBuffer);
+    return a.length === b.length && a.every((byte, i) => byte === b[i]);
+  }
+  if (tag !== "[object Object]" && tag !== "[object Array]") return false;
+  if (Array.isArray(left) && left.length !== (right as unknown[]).length) return false;
+  const a = left as Record<string, unknown>, b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every(key =>
+    Object.hasOwn(b, key) && equalStoredSnapshot(a[key], b[key], depth + 1));
+}
+
+function matchesSaveWitness(current: Record<string, unknown>, expected: SavedCopySummary, legacyRecord: unknown): boolean {
+  if (current.saveToken !== undefined || expected.saveToken !== undefined) {
+    return typeof current.saveToken === "string" && current.saveToken.length > 0 && current.saveToken === expected.saveToken;
+  }
+  return legacyRecord !== undefined && equalStoredSnapshot(current, legacyRecord);
+}
+
+/** CAS and replacement (including a store transition) are one atomic write. */
+function replaceCopyOnce(db: IDBDatabase, storeName: string, record: StoredCopy | StoredOpaqueCopy | StoredWorkFileCopy, expected: SavedCopySummary, legacyRecord?: unknown): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readwrite", { durability: "strict" });
+    let failure: unknown;
+    let checked = 0;
+    const entries: StoredListingEntry[] = [];
+    tx.oncomplete = () => failure ? reject(failure) : resolve();
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error("The local-copy transaction was aborted."));
+    tx.onerror = () => { failure ??= tx.error ?? new Error("The local-copy transaction failed."); };
+    for (const sourceStore of [LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE] as const) {
+      const request = tx.objectStore(sourceStore).get(expected.name);
+      request.onerror = () => { failure ??= request.error; };
+      request.onsuccess = () => {
+        if (request.result !== undefined) entries.push({ record: request.result, storeName: sourceStore });
+        if (++checked !== 2) return;
+        const entry = entries[0];
+        const current = entry?.record;
+        if (entries.length !== 1 || !hasUsableSummaryMetadata(current) || current.name !== expected.name ||
+            current.savedAt !== expected.savedAt || !expected.kind || classifyStoredEnvelope(current, entry!.storeName) !== expected.kind ||
+            !matchesSaveWitness(current, expected, legacyRecord)) {
+          failure = new Error(COPY_CHANGED_MESSAGE);
+          tx.abort();
+          return;
+        }
+        // Ensure even two saves within one millisecond have distinct witnesses.
+        if (record.savedAt <= current.savedAt) {
+          const previous = Date.parse(current.savedAt);
+          if (!Number.isFinite(previous)) {
+            failure = new Error(COPY_CHANGED_MESSAGE); tx.abort(); return;
+          }
+          record.savedAt = new Date(previous + 1).toISOString();
+        }
+        if (entry!.storeName !== storeName) tx.objectStore(entry!.storeName).delete(expected.name);
+        tx.objectStore(storeName).put(record);
+      };
+    }
+  });
+}
+
+const DELETE_COPY_CHANGED_MESSAGE = "This copy changed in another window. Refresh Home and try again.";
+
+/** Compare the confirmed record and delete it within the same strict transaction. */
+function deleteCopyOnce(db: IDBDatabase, expected: SavedCopySummary, legacyRecord?: unknown): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE], "readwrite", { durability: "strict" });
+    let failure: unknown;
+    let checked = 0;
+    const entries: StoredListingEntry[] = [];
+    tx.oncomplete = () => failure ? reject(failure) : resolve();
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error("The copy could not be deleted."));
+    tx.onerror = () => { failure ??= tx.error ?? new Error("The copy could not be deleted."); };
+    for (const storeName of [LOCAL_COPIES_STORE, LOCAL_OPAQUE_COPIES_STORE] as const) {
+      const request = tx.objectStore(storeName).get(expected.name);
+      request.onerror = () => { failure ??= request.error; };
+      request.onsuccess = () => {
+        if (request.result !== undefined) entries.push({ record: request.result, storeName });
+        if (++checked !== 2) return;
+        const entry = entries[0];
+        const current = entry?.record;
+        if (entries.length !== 1 || !hasUsableSummaryMetadata(current) || current.name !== expected.name ||
+            current.savedAt !== expected.savedAt || classifyStoredEnvelope(current, entry!.storeName) !== expected.kind ||
+            !matchesSaveWitness(current, expected, legacyRecord)) {
+          failure = new Error(DELETE_COPY_CHANGED_MESSAGE);
+          tx.abort();
+          return;
+        }
+        tx.objectStore(entry!.storeName).delete(expected.name);
+      };
+    }
+  });
+}
+
 interface StoredListingEntry {
   record: unknown;
   storeName: typeof LOCAL_COPIES_STORE | typeof LOCAL_OPAQUE_COPIES_STORE;
@@ -305,6 +413,7 @@ interface StoredListingEntry {
 interface SummaryMetadata {
   name: string;
   savedAt: string;
+  saveToken?: unknown;
 }
 
 function summarize(record: SummaryMetadata, storeName: StoredListingEntry["storeName"]): SavedCopySummary {
@@ -312,6 +421,7 @@ function summarize(record: SummaryMetadata, storeName: StoredListingEntry["store
   return {
     name: record.name,
     savedAt: record.savedAt,
+    ...(typeof record.saveToken === "string" ? { saveToken: record.saveToken } : {}),
     ...(kind ? {kind} : {}),
   };
 }
@@ -358,7 +468,17 @@ function compareSummaries(left: SummaryMetadata, right: SummaryMetadata): number
 
 /** Disable only the portable writer for rollback; all readers stay installed. */
 export function createLocalCopies(options: { workFileWrites?: boolean } = {}): LocalCopies {
-  return {
+  // Retain the complete raw read privately: list summaries or reconstructed
+  // tokenless witnesses cannot authorize a replacement. Weak keys release old
+  // snapshots when their open-session binding is discarded.
+  const legacyReads = new WeakMap<SavedCopySummary, unknown>();
+  // Home retains only a summary; its complete legacy selection stays private.
+  const legacySelections = new WeakMap<SavedCopySummary, unknown>();
+  function rememberRead(copy: AnySavedCopy, record: unknown): AnySavedCopy {
+    if (copy.saveToken === undefined) legacyReads.set(copy, structuredClone(record));
+    return copy;
+  }
+  const host = {
     async list(): Promise<SavedCopySummary[]> {
       const db = await openDatabase();
       const records = await new Promise<StoredListingEntry[]>((resolve, reject) => {
@@ -389,7 +509,13 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
       return records
         .filter((entry): entry is StoredListingEntry & {record: Record<string, unknown> & SummaryMetadata} => hasUsableSummaryMetadata(entry.record))
         .sort((left, right) => compareSummaries(left.record, right.record))
-        .map((entry) => summarize(entry.record, entry.storeName));
+        .map((entry) => {
+          const summary = summarize(entry.record, entry.storeName);
+          // getAll already returns a detached IndexedDB snapshot; do not clone
+          // again, especially for invalid or oversized listed records.
+          if (entry.record.saveToken === undefined) legacySelections.set(summary, entry.record);
+          return summary;
+        });
     },
 
     async readAny(name: string): Promise<AnySavedCopy | null> {
@@ -437,11 +563,11 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
       const envelope = record as Record<string, unknown>;
       if (entry.storeName === LOCAL_OPAQUE_COPIES_STORE && envelope.kind === "work-file" &&
         envelope.formatVersion === WORK_FILE_COPY_FORMAT_VERSION) {
-        return toWorkFileSavedCopy(record as StoredWorkFileCopy);
+        return rememberRead(toWorkFileSavedCopy(record as StoredWorkFileCopy), record);
       }
       const kind = classifyStoredEnvelope(record, entry.storeName);
-      if (kind === "opaque") return toOpaqueSavedCopy(record as StoredOpaqueCopy);
-      if (kind === "canonical") return toCanonicalSavedCopy(record as StoredCopy);
+      if (kind === "opaque") return rememberRead(toOpaqueSavedCopy(record as StoredOpaqueCopy), record);
+      if (kind === "canonical") return rememberRead(toCanonicalSavedCopy(record as StoredCopy), record);
       throw new TypeError(`The local copy "${name}" uses an unsupported record envelope or storage location.`);
     },
 
@@ -458,13 +584,14 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
       return copy;
     },
 
-    async create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt> {
+    async create(name: string, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment, expected?: SavedCopySummary, legacyRecord?: unknown): Promise<SaveReceipt> {
       if (typeof name !== "string" || name.length === 0) {
         throw new TypeError("A local copy needs a non-empty name.");
       }
       const record: StoredCopy = {
         name,
         savedAt: new Date().toISOString(),
+        saveToken: crypto.randomUUID(),
         kind: "canonical",
         revision: String(snapshot.revision),
         files: cloneFiles(snapshot.files),
@@ -477,11 +604,12 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         } : undefined,
       };
       const db = await openDatabase();
-      await addCopyOnce(db, LOCAL_COPIES_STORE, record);
-      return {name: record.name, savedAt: record.savedAt, kind: "canonical", revision: record.revision};
+      if (expected) await replaceCopyOnce(db, LOCAL_COPIES_STORE, record, expected, legacyRecord);
+      else await addCopyOnce(db, LOCAL_COPIES_STORE, record);
+      return {name: record.name, savedAt: record.savedAt, saveToken: record.saveToken, kind: "canonical", revision: record.revision};
     },
 
-    async createOpaque(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt> {
+    async createOpaque(name: string, snapshot: OpaqueProjectExport, expected?: SavedCopySummary, legacyRecord?: unknown): Promise<SaveReceipt> {
       if (typeof name !== "string" || name.length === 0) {
         throw new TypeError("A local copy needs a non-empty name.");
       }
@@ -494,6 +622,7 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         formatVersion: OPAQUE_COPY_FORMAT_VERSION,
         name,
         savedAt: new Date().toISOString(),
+        saveToken: crypto.randomUUID(),
         revision: snapshot.revision,
         bytes: cloneBytes(snapshot.bytes),
         importedSource: snapshot.importedSource ? {
@@ -506,18 +635,20 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         presentation: clonePresentation(snapshot.presentation),
       };
       const db = await openDatabase();
-      await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);
-      return {name: record.name, savedAt: record.savedAt, kind: "opaque", revision: record.revision};
+      if (expected) await replaceCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record, expected, legacyRecord);
+      else await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, record);
+      return {name: record.name, savedAt: record.savedAt, saveToken: record.saveToken, kind: "opaque", revision: record.revision};
     },
 
     ...(options.workFileWrites === false ? {} : {
-      async createWorkFile(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt> {
+      async createWorkFile(name: string, snapshot: OpaqueProjectExport, expected?: SavedCopySummary, legacyRecord?: unknown): Promise<SaveReceipt> {
         if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
         const record: StoredWorkFileCopy = {
           kind: "work-file",
           formatVersion: WORK_FILE_COPY_FORMAT_VERSION,
           name,
           savedAt: new Date().toISOString(),
+          saveToken: crypto.randomUUID(),
           revision: snapshot.revision,
           bytes: snapshot.bytes,
           ...(snapshot.importedSource !== undefined ? { importedSource: snapshot.importedSource } : {}),
@@ -526,10 +657,19 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         // Clone before any await; no caller can mutate the pending durable payload.
         const copy = toWorkFileSavedCopy(record);
         const db = await openDatabase();
-        await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy);
-        return { name: copy.name, savedAt: copy.savedAt, kind: "work-file", revision: copy.revision };
+        if (expected) await replaceCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy, expected, legacyRecord);
+        else await addCopyOnce(db, LOCAL_OPAQUE_COPIES_STORE, copy);
+        return { name: copy.name, savedAt: copy.savedAt, saveToken: copy.saveToken, kind: "work-file", revision: copy.revision };
       },
     }),
+
+    async delete(name: string, expected: SavedCopySummary): Promise<void> {
+      if (typeof name !== "string" || !name) throw new TypeError("A local copy needs a non-empty name.");
+      if (!expected || expected.name !== name) throw new Error(DELETE_COPY_CHANGED_MESSAGE);
+      const witness = { ...expected };
+      const legacyRecord = legacySelections.get(expected) ?? legacyReads.get(expected);
+      await deleteCopyOnce(await openDatabase(), witness, legacyRecord);
+    },
 
     async close(): Promise<void> {
       const pending = connection;
@@ -541,5 +681,13 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         // The connection never opened; nothing to release.
       }
     },
+  };
+  return {
+    ...host,
+    replace: (expected, snapshot, importedSource) => host.create(expected.name, snapshot, importedSource, { ...expected }, legacyReads.get(expected)),
+    replaceOpaque: (expected, snapshot) => host.createOpaque(expected.name, snapshot, { ...expected }, legacyReads.get(expected)),
+    ...(options.workFileWrites === false ? {} : {
+      replaceWorkFile: (expected: SavedCopySummary, snapshot: OpaqueProjectExport) => host.createWorkFile!(expected.name, snapshot, { ...expected }, legacyReads.get(expected)),
+    }),
   };
 }

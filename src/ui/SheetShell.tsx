@@ -32,6 +32,7 @@ import type {
   SalesCatalogLayoutMarker,
   SalesEntryTipMarker,
   SheetShellProps,
+  SavedCopySummary,
   ViewWitness,
   WorkbookView,
 } from "../contracts.js";
@@ -413,6 +414,9 @@ export function SheetShell(props: SheetShellProps) {
     localHistory = emptyLocalHistory(),
     onHistory = async () => null,
     onCreateCopy,
+    boundCopyName = null,
+    onSave,
+    onDeleteCopy,
     onClose,
     onRefresh,
     interop = null,
@@ -542,9 +546,16 @@ export function SheetShell(props: SheetShellProps) {
   const rowDraftActive = rowDraft !== null && Object.values(rowDraft.values).some((value) => value !== "");
   const rowCommandPendingRef = useRef(false);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
+  const [deleteSelection, setDeleteSelection] = useState<SavedCopySummary | null>(null);
+  const deleteName = deleteSelection?.name ?? null;
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyForClose, setCopyForClose] = useState(false);
-  const [savedClose, setSavedClose] = useState<(ViewWitness & { name: string; phase: "clear-draft" | "confirm" }) | null>(null);
+  const [closeSaveAttempted, setCloseSaveAttempted] = useState(false);
+  const closeSaveIntentRef = useRef<symbol | null>(null);
+  const [savedClose, setSavedClose] = useState<(ViewWitness & { intent: symbol; name: string; phase: "clear-draft" | "confirm" }) | null>(null);
   const [copyName, setCopyName] = useState("");
   const savedCopyNamesInSessionRef = useRef(new Set<string>());
   const [copyPending, setCopyPending] = useState(false);
@@ -574,6 +585,7 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     liveOccurrenceRef.current = view?.occurrence ?? null;
     pendingCellFocusRef.current = null;
+    invalidateCloseSaveIntent();
   }, [view?.occurrence]);
   const [historyFocusRequest, setHistoryFocusRequest] = useState<HistoryFocusRequest | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -629,6 +641,7 @@ export function SheetShell(props: SheetShellProps) {
   const resultsOccurrenceRef = useRef<string | null>(null);
   const saveCopyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeSaveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const keepEditingButtonRef = useRef<HTMLButtonElement | null>(null);
   const recoveryCloseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const recoveryRefreshRef = useRef<HTMLButtonElement | null>(null);
   const desktopRefreshRef = useRef<HTMLButtonElement | null>(null);
@@ -904,7 +917,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = deleteName !== null || newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -1034,6 +1047,9 @@ export function SheetShell(props: SheetShellProps) {
   const importErrorMessage = interop?.importInspection
     ? (importError && message && message.length > 0 ? importConfirmationMessage(message) : importError)
     : importError;
+  const closeSaveError = closeSaveAttempted && (saveStatus === "failed" || localError !== null)
+    ? errorMessage ?? "The copy could not be saved on this device." : null;
+  const closeSaveErrorIsInline = closeOpen && !copyOpen && !savedClose && closeSaveError !== null;
   const copyErrorIsInline = copyOpen && localError === null && (
     copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
   );
@@ -1117,6 +1133,10 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => {
     if (!savedClose || busy || copyPending) return;
+    if (savedClose.intent !== closeSaveIntentRef.current) {
+      setSavedClose(null);
+      return;
+    }
     // Closing the name dialog clears its disposable draft. Let that existing
     // notification update the parent's save/dirty indicators before confirming.
     if (savedClose.phase === "clear-draft") {
@@ -1623,8 +1643,15 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  function invalidateCloseSaveIntent(): void {
+    closeSaveIntentRef.current = null;
+    setSavedClose(null);
+  }
+
   function openCopyDialog(forClose = false): void {
     if (view?.openedFromWorkFile && workFileSaveUnavailableReason) return;
+    invalidateCloseSaveIntent();
+    if (forClose) closeSaveIntentRef.current = Symbol("close after copy save");
     setCopyError(null);
     setLocalError(null);
     setCopyName(suggestedCopyName(names.title ?? view?.title ?? null, copies.map((copy) => copy.name), savedCopyNamesInSessionRef.current));
@@ -1635,6 +1662,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function closeCopyDialog(): void {
     if (copyPending) return;
+    invalidateCloseSaveIntent();
     setCopyOpen(false);
     setCopyError(null);
     setCopyName("");
@@ -1645,6 +1673,65 @@ export function SheetShell(props: SheetShellProps) {
     } else {
       saveCopyButtonRef.current?.focus();
     }
+  }
+
+  async function saveWork(forClose = false): Promise<void> {
+    if (!view || controlsLocked || currentness !== "current" || saveStatus === "saving" || modalInteractionOpen && !forClose) return;
+    if (!boundCopyName) { openCopyDialog(forClose); return; }
+    if (!onSave || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft) {
+      setLocalError("Finish or clear the unfinished changes before saving.");
+      return;
+    }
+    const witness = { occurrence: view.occurrence, revision: view.revision };
+    const intent = forClose ? Symbol("close after save") : null;
+    if (intent) closeSaveIntentRef.current = intent;
+    setCloseSaveAttempted(forClose);
+    setLocalError(null);
+    try {
+      if (await onSave() && intent && closeSaveIntentRef.current === intent) {
+        setSavedClose({ ...witness, intent, name: boundCopyName, phase: "confirm" });
+      }
+    } catch (error) { setLocalError(explain(error, "The copy could not be saved on this device.")); }
+  }
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (!view || event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      void saveWork();
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
+
+  function cancelDelete(): void {
+    if (deletePending) return;
+    setDeleteSelection(null); setDeleteError(null);
+    requestAnimationFrame(() => {
+      const trigger = deleteTriggerRef.current;
+      if (trigger?.isConnected) trigger.focus();
+      else focusHomeAfterDelete();
+    });
+  }
+
+  function focusHomeAfterDelete(): void {
+    const shell = shellRef.current;
+    const target = shell?.querySelector<HTMLElement>('.ts-home-copy-action:not(:disabled)') ??
+      shell?.querySelector<HTMLElement>('.ts-home-new-command:not(:disabled)') ??
+      shell?.querySelector<HTMLElement>('.ts-home-brand h1');
+    target?.focus();
+  }
+
+  async function deleteCopy(): Promise<void> {
+    if (!deleteSelection || !onDeleteCopy || deletePending || controlsLocked) return;
+    setDeletePending(true); setDeleteError(null);
+    try {
+      await onDeleteCopy(deleteSelection);
+      setDeleteSelection(null);
+      requestAnimationFrame(focusHomeAfterDelete);
+    } catch (error) { setDeleteError(explain(error, "The copy could not be deleted.")); }
+    finally { setDeletePending(false); }
   }
 
   async function createCopy(): Promise<void> {
@@ -1664,7 +1751,8 @@ export function SheetShell(props: SheetShellProps) {
     setCaptureCopyParentFailure(true);
     setCopyPending(true);
     setLocalError(null);
-    const closingView = copyForClose && view ? { occurrence: view.occurrence, revision: view.revision } : null;
+    const intent = copyForClose ? closeSaveIntentRef.current : null;
+    const closingView = intent && view ? { occurrence: view.occurrence, revision: view.revision, intent } : null;
     try {
       const created = await onCreateCopy(name);
       if (created) {
@@ -1674,7 +1762,7 @@ export function SheetShell(props: SheetShellProps) {
         setCopyOpen(false);
         setCopyError(null);
         setCopyName("");
-        if (closingView) setSavedClose({ ...closingView, name, phase: "clear-draft" });
+        if (closingView && closeSaveIntentRef.current === closingView.intent) setSavedClose({ ...closingView, name, phase: "clear-draft" });
         else saveCopyButtonRef.current?.focus();
       } else {
         setCopyError(`The copy “${name}” was not created. The name is still here; adjust it and try again.`);
@@ -1688,8 +1776,10 @@ export function SheetShell(props: SheetShellProps) {
 
   async function requestClose(): Promise<void> {
     if (busy || commitPending) return;
+    invalidateCloseSaveIntent();
     setSalesEntryOutcome(null);
     if (dirty || draftActive || hasInvalidReportDraft || currentness === "unknown") {
+      setCloseSaveAttempted(false);
       setCloseOpen(true);
       return;
     }
@@ -1697,6 +1787,8 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function closeWork(): Promise<void> {
+    if (saveStatus === "saving") return;
+    invalidateCloseSaveIntent();
     setSalesEntryOutcome(null);
     setCloseOpen(false);
     setLocalError(null);
@@ -1708,6 +1800,8 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function keepEditing(): void {
+    invalidateCloseSaveIntent();
+    setCloseSaveAttempted(false);
     setCloseOpen(false);
     requestAnimationFrame(() => {
       if (!view) {
@@ -1861,7 +1955,12 @@ export function SheetShell(props: SheetShellProps) {
                 ...(whitespaceDescription ? [whitespaceDescriptionId] : []),
               ].join(" ") || undefined;
               return (
-                <li key={copy.name} className="ts-home-copy-row">
+                <li key={copy.name} className="ts-home-copy-row" onKeyDown={(event) => {
+                  if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+                  const actions = event.currentTarget.querySelectorAll<HTMLButtonElement>("button");
+                  const target = event.key === "ArrowRight" ? actions[actions.length - 1] : actions[0];
+                  if (target && !target.disabled) { event.preventDefault(); target.focus(); }
+                }}>
                   <button
                     type="button"
                     className="ts-home-copy-action"
@@ -1877,6 +1976,9 @@ export function SheetShell(props: SheetShellProps) {
                     </span>
                     <svg className="ts-home-copy-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
                   </button>
+                  {onDeleteCopy ? <button type="button" className="ts-button ts-button--ghost ts-home-copy-delete" tabIndex={-1}
+                    aria-label={`Delete saved ${copy.name}`} disabled={controlsLocked || recoveryLocked || startupLocked}
+                    onClick={event => { deleteTriggerRef.current = event.currentTarget; setDeleteSelection(copy); setDeleteError(null); }}>Delete</button> : null}
                   {whitespaceDescription ? <span className="ts-visually-hidden" id={whitespaceDescriptionId}>{whitespaceDescription}</span> : null}
                 </li>
               );
@@ -1959,7 +2061,7 @@ export function SheetShell(props: SheetShellProps) {
     return (
       <main className={`ts-home${hasSavedCopies ? " ts-home--has-copies" : ""}${recoveryLocked ? " ts-home--recovery" : ""}${startupLocked ? " ts-home--startup-unavailable" : ""}`}>
         <header className="ts-home-head">
-          <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand">Tachiko Sheet</h1></div>
+          <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand" tabIndex={-1}>Tachiko Sheet</h1></div>
             {onNewTable && !recoveryLocked && !startupLocked ? <button type="button" className="ts-button ts-home-new-command" aria-label="New table" disabled={fileActionsLocked} onClick={(event) => { newTableTriggerRef.current = event.currentTarget; setNewTableOpen(true); }}><span className="ts-home-new-label">New table</span><span className="ts-home-new-symbol" aria-hidden="true">+</span></button> : null}
           {renderAppearanceSelector("home")}
         </header>
@@ -2085,11 +2187,15 @@ export function SheetShell(props: SheetShellProps) {
         <button
           type="button"
           className="ts-button ts-button--primary"
-          ref={saveCopyButtonRef}
-          onClick={() => openCopyDialog()}
+          onClick={() => void saveWork()}
           disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile && workFileSaveUnavailableReason)}
           aria-describedby={view?.openedFromWorkFile && workFileSaveUnavailableReason ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
         >
+          Save
+        </button>
+        <button type="button" ref={saveCopyButtonRef} className="ts-button ts-save-copy-secondary" onClick={() => openCopyDialog()}
+          aria-describedby={view?.openedFromWorkFile && workFileSaveUnavailableReason ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
+          disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile && workFileSaveUnavailableReason)}>
           Save a copy
         </button>
         {view?.openedFromWorkFile && workFileSaveUnavailableReason ? <span className="ts-hint" id={saveUnavailableId}>{saveUnavailableReason}</span> : null}
@@ -2889,7 +2995,7 @@ export function SheetShell(props: SheetShellProps) {
       onClickCapture={(event) => releaseSharedButton(event.target, heldPointerOwnerRef)}
       onBlurCapture={(event) => releaseSharedButton(event.target, heldPointerOwnerRef)}
     >
-      {errorMessage && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
+      {errorMessage && !closeSaveErrorIsInline && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
         <div className="ts-error" role="alert">
           {errorMessage}
         </div>
@@ -2901,6 +3007,14 @@ export function SheetShell(props: SheetShellProps) {
         if (created) newTableFocusIntentRef.current = generation;
         return created;
       }} onSuccess={() => setNewTableOpen(false)} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
+      {deleteName !== null ? <Modal variant="close" label="Delete copy" onCancel={cancelDelete} dismissDisabled={deletePending}>
+        <div className="ts-dialog-intro"><h2 className="ts-h2">Delete “{deleteName}”?</h2><p>This deletes the saved copy from this device. It cannot be undone.</p></div>
+        {deleteError ? <p role="alert" className="ts-dialog-error">{deleteError}</p> : null}
+        <div className="ts-dialog-actions">
+          <button type="button" className="ts-button" data-autofocus="true" onClick={cancelDelete} disabled={deletePending}>Cancel</button>
+          <button type="button" className="ts-button ts-button--danger" onClick={() => void deleteCopy()} disabled={deletePending || controlsLocked}>Delete</button>
+        </div>
+      </Modal> : null}
       {copyOpen ? (
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">
@@ -3010,19 +3124,23 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Unsaved work</h2>
             <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+            {closeSaveError ? <p className="ts-dialog-error" role="alert">{closeSaveError}</p> : null}
             {closeSaveReason ? <p className="ts-hint" id={closeSaveUnavailableId}>{closeSaveReason}</p> : null}
           </div>
           <div className="ts-dialog-actions">
-            <button type="button" className="ts-button" data-autofocus="true" onClick={keepEditing}>
+            <button type="button" className="ts-button" ref={keepEditingButtonRef} data-autofocus="true" onClick={keepEditing}>
               Keep editing
             </button>
-            {view?.openedFromWorkFile ? <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => { setCloseOpen(false); void prepareDownload("ro", event.currentTarget); }}>Download work file (.ro)</button> : null}
+            {view?.openedFromWorkFile ? <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => { invalidateCloseSaveIntent(); setCloseOpen(false); void prepareDownload("ro", event.currentTarget); }}>Download work file (.ro)</button> : null}
             <span className="ts-close-save-action">
-              <button type="button" className="ts-button ts-button--primary" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
+              <button type="button" className="ts-button ts-button--primary" onClick={() => { keepEditingButtonRef.current?.focus(); void saveWork(true); }} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
+                Save
+              </button>
+              <button type="button" className="ts-button" ref={closeSaveButtonRef} onClick={() => openCopyDialog(true)} disabled={closeSaveReason !== null} aria-describedby={closeSaveReason ? closeSaveUnavailableId : undefined}>
                 Save a copy…
               </button>
             </span>
-            <button type="button" className="ts-button ts-button--danger" onClick={() => void closeWork()}>
+            <button type="button" className="ts-button ts-button--danger" onClick={() => void closeWork()} disabled={saveStatus === "saving"}>
               Close without saving
             </button>
           </div>

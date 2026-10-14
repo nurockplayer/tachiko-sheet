@@ -12,14 +12,25 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
     target?.focus();
   }, []);
 
-  function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    if (isComposingEvent(event)) return;
-    if (event.key === "Escape") {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const document = root.ownerDocument;
+    function onEscape(event: KeyboardEvent): void {
+      if (event.key !== "Escape" || event.isComposing || event.keyCode === 229) return;
+      const modals = document.querySelectorAll(".ts-modal[aria-modal='true']");
+      if (modals.item(modals.length - 1) !== root) return;
+      // Capture Escape even when a disabled control has dropped focus to body.
       event.preventDefault();
       event.stopPropagation();
       if (!dismissDisabled) onCancel();
-      return;
     }
+    document.addEventListener("keydown", onEscape, true);
+    return () => document.removeEventListener("keydown", onEscape, true);
+  }, [onCancel, dismissDisabled]);
+
+  function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (isComposingEvent(event)) return;
     if (event.key !== "Tab") return;
     const root = ref.current;
     if (!root) return;

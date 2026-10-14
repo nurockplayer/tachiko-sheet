@@ -2063,7 +2063,7 @@ body { margin: 0; }
     grid-column: 1 / -1;
     grid-row: 2 / span 2;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     grid-template-rows: auto auto;
     gap: 7px;
     min-width: 0;
@@ -2072,10 +2072,12 @@ body { margin: 0; }
   .ts-save-status { grid-column: 1 / -1; grid-row: 1; min-width: 0; }
   .ts-header-actions > .ts-refresh-command { grid-column: 1; grid-row: 2; }
   .ts-header-actions > .ts-history-command { display: none; }
+  .ts-header-actions > .ts-save-copy-secondary { grid-column: 3; grid-row: 2; padding-inline: 8px; }
+  .ts-header-actions > .ts-button--primary, .ts-header-actions > .ts-refresh-command { padding-inline: 10px; }
   .ts-header-actions > .ts-button--primary { grid-column: 2; grid-row: 2; }
   .ts-close-project-desktop { display: none; }
   .ts-command-overflow { display: block; }
-  .ts-command-overflow { grid-column: 3; grid-row: 2; position: relative; }
+  .ts-command-overflow { grid-column: 4; grid-row: 2; position: relative; }
   .ts-command-overflow > summary {
     display: flex;
     align-items: center;
@@ -2503,7 +2505,9 @@ body { margin: 0; }
   list-style: none;
 }
 
-.ts-home-copy-row { border-top: 1px solid #e2e4eb; }
+.ts-home-copy-row { border-top: 1px solid #e2e4eb; display: flex; align-items: center; }
+.ts-home-copy-row .ts-home-copy-action { flex: 1; min-width: 0; }
+.ts-home-copy-delete { flex: none; margin-inline-end: 12px; }
 
 .ts-home-copy-action {
   position: relative;

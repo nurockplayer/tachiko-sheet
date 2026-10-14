@@ -484,7 +484,8 @@ try {
   }
   assert.equal(new Set(Object.values(ordinaryStates).map((paint) => paint.background)).size, 3,
     "admitted imported ordinary control has distinct rest, hover, and pressed surfaces");
-  const primary = page.getByRole("button", { name: "Save a copy", exact: true });
+  // #185 makes Save the header primary; keep the imported-role oracle intact.
+  const primary = page.getByRole("button", { name: "Save", exact: true });
   const primaryPaint = [];
   await page.mouse.move(1, 1);
   primaryPaint.push(await primary.evaluate((node) => {

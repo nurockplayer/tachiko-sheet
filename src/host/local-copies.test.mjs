@@ -61,6 +61,12 @@ const previousReaderSource = await readFile(previousReaderUrl);
 // Entire main 39ed2f2 module, byte-exact: classification + actual readAny refusal.
 assert.equal(createHash("sha256").update(previousReaderSource).digest("hex"), "d554edf9acbfde37a09fedcbe412cb59540ad018929572b42f89adfabc2322e3");
 const compiledPreviousReader = await compileProductionModule(previousReaderUrl);
+// Exact pre-slice reader: compatibility is exercised against real base source,
+// rather than inferred from the new adapter's own read path.
+const baseReaderUrl = new URL("../../tests/fixtures/local-copies-6ed45b1.ts.txt", import.meta.url);
+const baseReaderSource = await readFile(baseReaderUrl);
+assert.equal(createHash("sha256").update(baseReaderSource).digest("hex"), "346d19d41da4937156b0aa2694c94b2df0706c2e80e6552b58e8be6b763e01a8");
+const compiledBaseReader = await compileProductionModule(baseReaderUrl);
 const compiled = await compileProductionModule(new URL("./local-copies.ts", import.meta.url));
 const compiledContracts = await compileProductionModule(new URL("../contracts.ts", import.meta.url));
 
@@ -76,6 +82,9 @@ const origin = "https://tachiko-sheet-host.test/";
 
 async function installRoutes(router) {
   await router.route("**/*", (route) => {
+    if (new URL(route.request().url()).pathname === "/base-reader.js") {
+      return route.fulfill({status: 200, contentType: "text/javascript; charset=utf-8", body: compiledBaseReader});
+    }
     if (new URL(route.request().url()).pathname === "/previous-reader.js") {
       return route.fulfill({status: 200, contentType: "text/javascript; charset=utf-8", body: compiledPreviousReader});
     }
@@ -194,7 +203,7 @@ test("create commits a durable copy; list/read return the stored bytes and core 
   assert.equal(result.receipt.name, "Sample A");
   assert.equal(result.receipt.revision, "core-rev-7");
   assert.match(result.receipt.savedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-  assert.deepEqual(result.listed, [{name: "Sample A", savedAt: result.receipt.savedAt, kind: "canonical"}]);
+  assert.deepEqual(result.listed, [{name: "Sample A", savedAt: result.receipt.savedAt, saveToken: result.receipt.saveToken, kind: "canonical"}]);
   assert.equal(result.revision, "core-rev-7");
   assert.deepEqual(result.paths, ["manifest.json", "entities/0.jsonl"]);
   assert.deepEqual(result.first, [1, 2, 3, 4]);
@@ -509,11 +518,12 @@ test("opaque format-2 bytes are cloned, persisted, and explicitly discriminated"
       listed: await host.list(),
     };
   }));
-  assert.deepEqual(result.receipt, {name: "Opaque", savedAt: result.receipt.savedAt, kind: "opaque", revision: "core-rev-2"});
+  assert.match(result.receipt.saveToken, /^[0-9a-f-]{36}$/i);
+  assert.deepEqual(result.receipt, {name: "Opaque", savedAt: result.receipt.savedAt, saveToken: result.receipt.saveToken, kind: "opaque", revision: "core-rev-2"});
   assert.deepEqual(result.legacyReadFailure, {name: "TypeError"});
   assert.deepEqual(result.first, {kind: "opaque", formatVersion: 2, revision: "core-rev-2", bytes: [0x66, 0, 0x72, 0x6d, 0x61, 0x74, 0x32], hasFiles: false, hasImportedSource: false});
   assert.deepEqual(result.second, {kind: "opaque", formatVersion: 2, bytes: [0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x32]});
-  assert.deepEqual(result.listed, [{name: "Opaque", savedAt: result.receipt.savedAt, kind: "opaque"}]);
+  assert.deepEqual(result.listed, [{name: "Opaque", savedAt: result.receipt.savedAt, saveToken: result.receipt.saveToken, kind: "opaque"}]);
 }));
 
 test("opaque copies retain only a validated, cloned presentation attachment", async () => withBrowser(async (browser) => {
@@ -953,7 +963,7 @@ test("work-file copies clone unchanged bytes and actual attachments through a st
   assert.equal(result.receipt.kind, "work-file");
   assert.equal(result.receipt.revision, "portable-r1");
   assert.deepEqual(result.transactions, [{stores: ["copies", "opaque-copies"], options: {durability: "strict"}}]);
-  assert.deepEqual(result.listed, [{name: "Portable", savedAt: result.receipt.savedAt, kind: "work-file"}]);
+  assert.deepEqual(result.listed, [{name: "Portable", savedAt: result.receipt.savedAt, saveToken: result.receipt.saveToken, kind: "work-file"}]);
   assert.equal(result.copy.formatVersion, 1);
   assert.deepEqual(result.copy.bytes, [80, 75, 3, 4]);
   assert.equal(result.copy.presentation.report.title, "Local report");
@@ -1109,3 +1119,266 @@ test("portable creates preserve all destinations on cross-kind conflicts, quota,
   assert.deepEqual(result.listed, ["Canonical", "Opaque", "Portable"]);
   assert.deepEqual(result.canonical, [7]); assert.deepEqual(result.opaque, [8]); assert.deepEqual(result.portable, [80, 75]);
 }));
+
+test("#185 replace CAS reads both stores in one strict transaction; stale and deleted copies refuse", async () => withBrowser(async browser => {
+  await withPage(browser, async page => {
+    const result = await page.evaluate(async () => {
+      const host = window.createLocalCopiesUnderTest();
+      const tree = revision => ({ revision, files: [{ path: "manifest.json", bytes: new TextEncoder().encode(revision).buffer }] });
+      const first = await host.create("Q4", tree("one"));
+      const other = await host.create("Untouched", tree("other"));
+      const before = await host.readAny(other.name);
+      const transactions = [];
+      const original = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function(stores, mode, options) {
+        transactions.push({ stores: Array.from(stores), mode, durability: options?.durability });
+        return original.call(this, stores, mode, options);
+      };
+      const second = await host.replace(first, tree("two"));
+      IDBDatabase.prototype.transaction = original;
+      const errors = [];
+      try { await host.replace(first, tree("stale")); } catch (error) { errors.push(error.message); }
+      const updated = await host.readAny("Q4");
+      const untouched = await host.readAny(other.name);
+      await host.delete("Q4", (await host.list()).find(copy => copy.name === "Q4"));
+      try { await host.replace(second, tree("deleted")); } catch (error) { errors.push(error.message); }
+      return { first, second, transactions, errors, updated, before: { ...before, bytes: [...new Uint8Array(before.files[0].bytes)] }, untouched: { ...untouched, bytes: [...new Uint8Array(untouched.files[0].bytes)] }, missing: await host.readAny("Q4") };
+    });
+    assert.notEqual(result.first.savedAt, result.second.savedAt);
+    assert.deepEqual(result.transactions, [{ stores: ["copies", "opaque-copies"], mode: "readwrite", durability: "strict" }]);
+    assert.deepEqual(result.errors, Array(2).fill("This copy changed in another window. Save a copy instead."));
+    assert.equal(result.updated.revision, "two");
+    assert.deepEqual(result.untouched, result.before);
+    assert.equal(result.missing, null);
+  });
+}));
+
+test("#185 a failed cross-store replace rolls back completely and old readers admit the completed canonical write", async () => withBrowser(async browser => {
+  await withPage(browser, async page => {
+    const result = await page.evaluate(async () => {
+      const host = window.createLocalCopiesUnderTest();
+      const first = await host.create("CAS", { revision: "old", files: [{ path: "manifest.json", bytes: new Uint8Array([1, 2]).buffer }] });
+      const original = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function(value) {
+        const request = original.call(this, value);
+        request.addEventListener("success", () => this.transaction.abort());
+        return request;
+      };
+      let aborted = false;
+      try { await host.replaceOpaque(first, { revision: "new", bytes: new Uint8Array([8, 9]).buffer }); }
+      catch { aborted = true; }
+      finally { IDBObjectStore.prototype.put = original; }
+      const old = await host.readAny("CAS");
+      const changed = await host.replace(first, { revision: "completed", files: [{ path: "manifest.json", bytes: new Uint8Array([3, 4]).buffer }] });
+      const previous = await import("/previous-reader.js");
+      const rollbackRead = await previous.createLocalCopies().readAny("CAS");
+      return { aborted, old: { ...old, bytes: [...new Uint8Array(old.files[0].bytes)] }, changed, rollbackRead: { ...rollbackRead, bytes: [...new Uint8Array(rollbackRead.files[0].bytes)] }, rows: await host.list() };
+    });
+    assert.equal(result.aborted, true);
+    assert.equal(result.old.kind, "canonical"); assert.equal(result.old.revision, "old");
+    assert.deepEqual(result.old.bytes, [1, 2]);
+    assert.equal(result.rollbackRead.revision, "completed");
+    assert.deepEqual(result.rollbackRead.bytes, [3, 4]);
+    assert.equal(result.rows.length, 1);
+  });
+}));
+
+test("#185 the exact base reader reopens replaced canonical, legacy, opaque-v2 and work-file envelopes", async () => withBrowser(async browser => {
+  await withPage(browser, async page => {
+    const result = await page.evaluate(async () => {
+      const host = window.createLocalCopiesUnderTest();
+      const tree = revision => ({ revision, files: [{ path: "manifest.json", bytes: new Uint8Array([1, 2]).buffer }] });
+      const opaque = revision => ({ revision, bytes: new Uint8Array([3, 4]).buffer });
+      const canonical = await host.create("Canonical", tree("one"));
+      await host.create("Legacy", tree("one")); await host.close();
+      const db = await new Promise(resolve => { const r = indexedDB.open(window.localCopiesDbName, 2); r.onsuccess = () => resolve(r.result); });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("copies", "readwrite"); const store = tx.objectStore("copies"); const r = store.get("Legacy");
+        r.onsuccess = () => { const record = r.result; delete record.kind; store.put(record); };
+        tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+      }); db.close();
+      const legacy = await host.readAny("Legacy");
+      const v2 = await host.createOpaque("Opaque", opaque("one"));
+      const work = await host.createWorkFile("Work", opaque("one"));
+      await host.replace(canonical, tree("two")); await host.replace(legacy, tree("two"));
+      await host.replaceOpaque(v2, opaque("two")); await host.replaceWorkFile(work, opaque("two"));
+      const previous = (await import("/base-reader.js")).createLocalCopies();
+      const reads = [];
+      for (const name of ["Canonical", "Legacy", "Opaque", "Work"]) {
+        const copy = await previous.readAny(name);
+        reads.push({ name, kind: copy.kind, revision: copy.revision, bytes: [...new Uint8Array(copy.files?.[0].bytes ?? copy.bytes)] });
+      }
+      await previous.close(); await host.close(); return reads;
+    });
+    assert.deepEqual(result, [
+      { name: "Canonical", kind: "canonical", revision: "two", bytes: [1, 2] },
+      { name: "Legacy", kind: "canonical", revision: "two", bytes: [1, 2] },
+      { name: "Opaque", kind: "opaque", revision: "two", bytes: [3, 4] },
+      { name: "Work", kind: "work-file", revision: "two", bytes: [3, 4] },
+    ]);
+  });
+}));
+
+for (const scenario of ['frozen-clock', 'backward-clock', 'delete-recreate-same-name']) {
+  test(`#190 P1 ${scenario} cannot reuse a stale save witness`, async () => withBrowser(async browser => {
+    await withPage(browser, async page => {
+      const result = await page.evaluate(async scenario => {
+        const host = window.createLocalCopiesUnderTest();
+        const OriginalDate = Date;
+        let now = '2026-10-15T00:00:00.000Z';
+        window.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : [now])); } };
+        const tree = revision => ({ revision, files: [{ path: 'manifest.json', bytes: new TextEncoder().encode(revision).buffer }] });
+        try {
+          const first = await host.create('Q4', tree('old'));
+          const stale = await host.readAny('Q4');
+          // Exercise an ordinary equal-time/rollback replace before the ABA.
+          if (scenario !== 'delete-recreate-same-name') {
+            if (scenario === 'backward-clock') now = '2026-10-14T00:00:00.000Z';
+            const next = await host.replace(first, tree('intermediate'));
+            if (scenario === 'backward-clock') now = first.savedAt;
+            if (next.saveToken === first.saveToken && next.saveToken) throw new Error('replace reused its token');
+          }
+          await host.delete('Q4', (await host.list()).find(copy => copy.name === 'Q4'));
+          const recreated = await host.create('Q4', tree('new'));
+          const before = await host.readAny('Q4');
+          let error;
+          try { await host.replace(stale, tree('clobbered')); } catch (e) { error = e.message; }
+          const after = await host.readAny('Q4');
+          return { first, recreated, error, before, after };
+        } finally { window.Date = OriginalDate; await host.close(); }
+      }, scenario);
+      assert.equal(result.error, 'This copy changed in another window. Save a copy instead.');
+      assert.equal(result.first.savedAt, result.recreated.savedAt, 'deterministic timestamp collision');
+      assert.match(result.first.saveToken, /^[0-9a-f-]{36}$/i);
+      assert.notEqual(result.first.saveToken, result.recreated.saveToken);
+      assert.deepEqual(result.after, result.before);
+    });
+  }));
+}
+
+for (const mutation of ['revision', 'path', 'bytes', 'length', 'attachment', 'kind']) {
+  test(`#190 P1 tokenless legacy compares the complete read snapshot: ${mutation}`, async () => withBrowser(async browser => {
+    await withPage(browser, async page => {
+      const result = await page.evaluate(async mutation => {
+        const host = window.createLocalCopiesUnderTest();
+        const db = await new Promise(resolve => { const r = indexedDB.open(window.localCopiesDbName, 2); r.onupgradeneeded = () => { r.result.createObjectStore('copies', { keyPath: 'name' }); r.result.createObjectStore('opaque-copies', { keyPath: 'name' }); }; r.onsuccess = () => resolve(r.result); });
+        const change = fn => new Promise((resolve, reject) => {
+          const tx = db.transaction('copies', 'readwrite'); const store = tx.objectStore('copies');
+          const r = store.get('Legacy'); r.onsuccess = () => store.put(fn(r.result));
+          tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+        });
+        await change(() => ({ name: 'Legacy', savedAt: '2026-10-15T00:00:00.000Z', revision: 'old', files: [{ path: 'manifest.json', bytes: new Uint8Array([1, 2]).buffer }] }));
+        const stale = await host.readAny('Legacy');
+        await change(record => {
+          if (mutation === 'revision') record.revision = 'new';
+          if (mutation === 'path') record.files[0].path = 'other.json';
+          if (mutation === 'bytes') record.files[0].bytes = new Uint8Array([9, 2]).buffer;
+          if (mutation === 'length') record.files[0].bytes = new Uint8Array([1, 2, 3]).buffer;
+          if (mutation === 'attachment') record.extra = { paired: 'other' };
+          if (mutation === 'kind') record.kind = 'canonical';
+          return record;
+        });
+        const before = await host.readAny('Legacy');
+        const snapshot = { revision: 'replacement', files: [{ path: 'manifest.json', bytes: new Uint8Array([8]).buffer }] };
+        let error; try { await host.replace(stale, snapshot); } catch (e) { error = e.message; }
+        const after = await host.readAny('Legacy');
+        // A fresh read establishes equality and may upgrade the tokenless copy.
+        const receipt = await host.replace(after, snapshot);
+        let summaryError; try { await host.replace({ name: 'Legacy', savedAt: receipt.savedAt, kind: 'canonical' }, snapshot); } catch (e) { summaryError = e.message; }
+        db.close(); await host.close();
+        return { error, before, after, receipt, summaryError };
+      }, mutation);
+      assert.equal(result.error, 'This copy changed in another window. Save a copy instead.');
+      assert.deepEqual(result.after, result.before);
+      assert.match(result.receipt.saveToken, /^[0-9a-f-]{36}$/i);
+      assert.equal(result.summaryError, result.error, 'missing session token cannot replace a token-bearing record');
+    });
+  }));
+}
+
+test('#190 P1 token-bearing writes are readable by the hash-pinned 6ed45b1 reader', async () => withBrowser(async browser => {
+  await withPage(browser, async page => {
+    const result = await page.evaluate(async () => {
+      const host = window.createLocalCopiesUnderTest();
+      const base = (await import('/base-reader.js')).createLocalCopies();
+      const tree = { revision: 'r1', files: [{ path: 'manifest.json', bytes: new Uint8Array([1, 2]).buffer }] };
+      const opaque = { revision: 'r1', bytes: new Uint8Array([3, 4]).buffer };
+      const receipts = [await host.create('Canonical', tree), await host.createOpaque('Opaque', opaque), await host.createWorkFile('Work', opaque)];
+      const reads = [];
+      for (const receipt of receipts) {
+        const initial = await base.readAny(receipt.name);
+        const replace = receipt.kind === 'canonical' ? () => host.replace(receipt, tree) : receipt.kind === 'opaque' ? () => host.replaceOpaque(receipt, opaque) : () => host.replaceWorkFile(receipt, opaque);
+        const next = await replace();
+        const reopened = await base.readAny(receipt.name);
+        const current = await host.readAny(receipt.name);
+        reads.push({ receipt, next, initial: { kind: initial.kind, revision: initial.revision, bytes: [...new Uint8Array(initial.files?.[0].bytes ?? initial.bytes)] }, reopened: { kind: reopened.kind, revision: reopened.revision, bytes: [...new Uint8Array(reopened.files?.[0].bytes ?? reopened.bytes)] }, token: current.saveToken });
+      }
+      await base.close(); await host.close(); return reads;
+    });
+    for (const read of result) {
+      assert.match(read.receipt.saveToken, /^[0-9a-f-]{36}$/i);
+      assert.match(read.next.saveToken, /^[0-9a-f-]{36}$/i);
+      assert.notEqual(read.receipt.saveToken, read.next.saveToken);
+      assert.equal(read.token, read.next.saveToken);
+      assert.deepEqual(read.reopened, read.initial);
+      assert.equal(read.initial.kind, read.receipt.kind);
+      assert.deepEqual(read.initial.bytes, read.receipt.kind === 'canonical' ? [1, 2] : [3, 4]);
+    }
+  });
+}));
+
+for (const kind of ['canonical', 'opaque', 'work-file']) {
+  for (const legacy of [false, true]) {
+    test(`#190 stale-delete refuses ${kind} ${legacy ? 'legacy' : 'token-bearing'} listing`, async () => withBrowser(async browser => {
+      await withPage(browser, async page => {
+        const result = await page.evaluate(async ({ kind, legacy }) => {
+          const host = window.createLocalCopiesUnderTest();
+          const tree = { revision: 'old', files: [{ path: 'manifest.json', bytes: new Uint8Array([1, 2]).buffer }] };
+          const opaque = { revision: 'old', bytes: new Uint8Array([1, 2]).buffer };
+          const receipt = kind === 'canonical' ? await host.create('Q4', tree) : kind === 'opaque' ? await host.createOpaque('Q4', opaque) : await host.createWorkFile('Q4', opaque);
+          const db = await new Promise(resolve => { const r = indexedDB.open(window.localCopiesDbName, 2); r.onsuccess = () => resolve(r.result); });
+          const storeName = kind === 'canonical' ? 'copies' : 'opaque-copies';
+          const change = fn => new Promise((resolve, reject) => {
+            const tx = db.transaction(storeName, 'readwrite'); const store = tx.objectStore(storeName); const r = store.get('Q4');
+            r.onsuccess = () => store.put(fn(r.result)); tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+          });
+          if (legacy) await change(record => { delete record.saveToken; if (kind === 'canonical') delete record.kind; return record; });
+          const stale = (await host.list())[0];
+          // Keep time, kind and revision identical; change actual payload or token.
+          await change(record => {
+            if (legacy) {
+              if (kind === 'canonical') record.files[0].bytes = new Uint8Array([9, 2]).buffer;
+              else record.bytes = new Uint8Array([9, 2]).buffer;
+            } else record.saveToken = crypto.randomUUID();
+            return record;
+          });
+          const before = await host.readAny('Q4');
+          const transactions = []; const original = IDBDatabase.prototype.transaction;
+          IDBDatabase.prototype.transaction = function(stores, mode, options) {
+            transactions.push({ stores: Array.from(stores), mode, durability: options?.durability });
+            return original.call(this, stores, mode, options);
+          };
+          let error;
+          try { await host.delete(stale.name, stale); } catch (e) { error = e.message; }
+          finally { IDBDatabase.prototype.transaction = original; }
+          const after = await host.readAny('Q4');
+          db.close(); await host.close();
+          return { receipt, stale, error, before, after, transactions };
+        }, { kind, legacy });
+        const message = 'This copy changed in another window. Refresh Home and try again.';
+        assert.equal(result.error, message);
+        assert.deepEqual(result.after, result.before);
+        assert.deepEqual(result.transactions, [{ stores: ['copies', 'opaque-copies'], mode: 'readwrite', durability: 'strict' }]);
+        if (!legacy) assert.equal(result.stale.saveToken, result.receipt.saveToken, 'listing carries persisted token');
+        const deletion = await page.evaluate(async () => {
+          const host = window.createLocalCopiesUnderTest(); const fresh = (await host.list())[0];
+          await host.delete(fresh.name, fresh); const missing = await host.readAny('Q4');
+          let missingError; try { await host.delete(fresh.name, fresh); } catch (e) { missingError = e.message; }
+          await host.close(); return { missing, missingError };
+        });
+        assert.equal(deletion.missing, null, 'a fresh selection deletes the exact record');
+        assert.equal(deletion.missingError, message, 'missing records refuse');
+      });
+    }));
+  }
+}
