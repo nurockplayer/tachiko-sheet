@@ -1,5 +1,25 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+
+/** Keep ignored kit imports on Vite's byte-preserving public-file path. */
+function publicCoreKitDevImports(): Plugin {
+  return {
+    name: "public-core-kit-dev-imports",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((request, _response, next) => {
+        const url = new URL(request.url ?? "/", "http://localhost");
+        if (url.pathname.startsWith("/core-kit/") && url.search === "?import") {
+          // Vite injects ?import even for @vite-ignore dynamic imports. Its
+          // public middleware skips that marker, sending the kit to transforms.
+          // Keep all other queries on Vite's normal path, including ?import&url.
+          request.url = url.pathname;
+        }
+        next();
+      });
+    },
+  };
+}
 
 /**
  * Two build shapes share one source tree:
@@ -12,7 +32,7 @@ export default defineConfig(({ mode }) => {
   const acceptance = mode === "acceptance";
   const desktop = mode === "desktop";
   return {
-    plugins: [react()],
+    plugins: [publicCoreKitDevImports(), react()],
     base: "/",
     build: {
       outDir: acceptance ? "dist-acceptance" : desktop ? "dist-desktop" : "dist",
