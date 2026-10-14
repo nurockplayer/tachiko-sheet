@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { LOCAL_ORIGIN, installDistRoutes } from './dist-routes.mjs';
 import { waitForColdHome, openReleasePlanExample } from './home-entry.mjs';
-const dist = process.env.WORK_DIST;
+const dist = process.env.WORK_DIST ?? 'dist';
 if (!dist) throw new Error('BLOCKED: WORK_DIST must name a production build');
 const work = await mkdtemp(path.join(tmpdir(), 'sheet185-'));
 let profile = path.join(work, 'profile');
@@ -126,6 +126,70 @@ async function seed(p, sales = true) {
   await copy(p, 'Q4');
 }
 const cases = {
+  async recreateConflict(p) {
+    const freeze = async p => p.evaluate(() => {
+      const Original = Date;
+      window.Date = class extends Original { constructor(...args) { super(...(args.length ? args : ['2026-10-15T00:00:00.000Z'])); } };
+    });
+    await freeze(p); await seed(p); await close(p); await open(p, 'Q4');
+    const b = await newPage(); await freeze(b);
+    await button(b, 'Delete saved Q4').click();
+    await button(b.getByRole('dialog', { name: 'Delete copy', exact: true }), 'Delete').click();
+    await b.getByRole('dialog', { name: 'Delete copy', exact: true }).waitFor({ state: 'detached' });
+    await button(b, 'Open sales example').click(); await ready(b); const recreatedDraft = await edit(b, 81); await copy(b, 'Q4');
+    const before = await records(b); const draft = await edit(p, 83);
+    await button(p, 'Save').click();
+    await p.getByText(conflict, { exact: true }).waitFor();
+    assert.deepEqual(await records(b), before);
+    assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
+    assert.doesNotMatch(await p.getByTestId('save-status').textContent(), /Saved on this device/);
+    assert.equal((await projection(p)).rows.find(r => r.id === draft.row).fields.find(f => f.target.field === draft.field).stored.value, 83);
+    await close(b); await open(b, 'Q4'); await oracle(b, 'Q4', recreatedDraft);
+  },
+  async closeConflict(p) {
+    await seed(p); await close(p); await open(p, 'Q4');
+    const b = await newPage(); await open(b, 'Q4');
+    await edit(b, 85); await button(b, 'Save').click(); await saved(b);
+    const before = await records(p); const draft = await edit(p, 87);
+    await button(p, 'Close project').click();
+    const d = p.getByRole('dialog', { name: 'Unsaved work', exact: true });
+    await button(d, 'Save').click(); await p.getByTestId('save-status').filter({ hasText: /Save failed/ }).waitFor();
+    assert.equal(await d.getByRole('alert').textContent(), conflict, 'conflict is inside the still-open dialog');
+    assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
+    assert.deepEqual(await records(p), before);
+    await button(d, 'Keep editing').click(); await ready(p);
+    assert.equal((await projection(p)).rows.find(r => r.id === draft.row).fields.find(f => f.target.field === draft.field).stored.value, 87);
+  },
+  async closeQuota(p) {
+    await seed(p); const draft = await edit(p, 89); const before = await records(p);
+    await p.evaluate(() => {
+      const original = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function(stores, mode, options) {
+        if (mode === 'readwrite') throw new DOMException('Controlled quota failure', 'QuotaExceededError');
+        return original.call(this, stores, mode, options);
+      };
+      window.__restoreSaveFault = () => { IDBDatabase.prototype.transaction = original; };
+    });
+    await button(p, 'Close project').click();
+    const d = p.getByRole('dialog', { name: 'Unsaved work', exact: true });
+    await button(d, 'Save').click(); await p.getByTestId('save-status').filter({ hasText: /Save failed/ }).waitFor();
+    assert.match(await d.getByRole('alert').textContent(), /Controlled quota failure/, 'quota failure is inside the still-open dialog');
+    assert.equal(await p.locator('[data-work-dirty="true"]').count(), 1);
+    assert.deepEqual(await records(p), before);
+    await p.evaluate(() => window.__restoreSaveFault()); await button(d, 'Keep editing').click(); await ready(p);
+    assert.equal((await projection(p)).rows.find(r => r.id === draft.row).fields.find(f => f.target.field === draft.field).stored.value, 89);
+    await button(p, 'Close project').click(); await button(d, 'Save').click(); await waitForColdHome(p);
+    await open(p, 'Q4'); await oracle(p, 'Q4', draft);
+  },
+  async lastDeleteFocus(p) {
+    await seed(p); await close(p);
+    await button(p, 'Delete saved Q4').click();
+    const d = p.getByRole('dialog', { name: 'Delete copy', exact: true });
+    await button(d, 'Delete').click(); await d.waitFor({ state: 'detached' });
+    await p.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(Object.values(await records(p)).flat().length, 0);
+    assert.equal(await p.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'New table', 'deleting the last copy restores focus to a stable Home action');
+  },
   async lifecycle(p) {
     await button(p, 'Open sales example').click(); await ready(p); await edit(p, 27);
     await copy(p, 'Q4', true); const expected = await edit(p, 31); await button(p, 'Save').click(); await saved(p);
@@ -175,7 +239,7 @@ const cases = {
     await seed(p, false); await close(p);
     await p.evaluate(async () => {
       const db = await new Promise(resolve => { const r = indexedDB.open('tachiko-sheet-local-copies', 2); r.onsuccess = () => resolve(r.result); });
-      await new Promise((resolve, reject) => { const tx = db.transaction('copies', 'readwrite'); const s = tx.objectStore('copies'); const r = s.get('Q4'); r.onsuccess = () => { const v = r.result; v.name = 'Legacy'; delete v.kind; s.add(v); }; tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); }); db.close();
+      await new Promise((resolve, reject) => { const tx = db.transaction('copies', 'readwrite'); const s = tx.objectStore('copies'); const r = s.get('Q4'); r.onsuccess = () => { const v = r.result; v.name = 'Legacy'; delete v.kind; delete v.saveToken; s.add(v); }; tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); }); db.close();
     });
     for (const name of ['Q4', 'Legacy']) { const before = await records(p); await open(p, name); const expected = await edit(p, 61); await button(p, 'Save').click(); await saved(p); await close(p); await open(p, name); await oracle(p, name, expected); await close(p); const after = await records(p); for (const store of Object.keys(after)) assert.deepEqual(after[store].filter(r => r.name !== name), before[store].filter(r => r.name !== name)); }
     await button(p, 'Open sales example').click(); await ready(p); await copy(p, 'Opaque'); const expected = await edit(p, 63); await button(p, 'Save').click(); await saved(p); await close(p); await open(p, 'Opaque'); await oracle(p, 'Opaque', expected);

@@ -123,10 +123,12 @@ export interface ImportedWorkbook {
 }
 
 export type SavedCopyKind = "canonical" | "opaque" | "work-file";
-export interface SavedCopySummary { name: string; savedAt: string; kind?: SavedCopyKind }
+export interface SavedCopySummary { name: string; savedAt: string; kind?: SavedCopyKind; saveToken?: string }
 export interface SavedCopy {
   name: string;
   savedAt: string;
+  /** Private local-save witness; absent on legacy records. */
+  saveToken?: string;
   /** Legacy canonical records predate the discriminator and are inferred as canonical. */
   kind?: "canonical";
   revision: string;
@@ -273,7 +275,7 @@ export interface LocalCopies {
   createOpaque(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
   /** Optional writer capability; compatible readers remain available without it. */
   createWorkFile?(name: string, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
-  /** Compare the exact last-read/written summary inside the replace transaction. */
+  /** Compare the last-read/written token (or exact legacy read) inside the replace transaction. */
   replace?(expected: SavedCopySummary, snapshot: CanonicalTreeExport, importedSource?: ImportedSourceAttachment): Promise<SaveReceipt>;
   replaceOpaque?(expected: SavedCopySummary, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;
   replaceWorkFile?(expected: SavedCopySummary, snapshot: OpaqueProjectExport): Promise<SaveReceipt>;

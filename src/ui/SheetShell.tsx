@@ -551,6 +551,7 @@ export function SheetShell(props: SheetShellProps) {
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyForClose, setCopyForClose] = useState(false);
+  const [closeSaveAttempted, setCloseSaveAttempted] = useState(false);
   const [savedClose, setSavedClose] = useState<(ViewWitness & { name: string; phase: "clear-draft" | "confirm" }) | null>(null);
   const [copyName, setCopyName] = useState("");
   const savedCopyNamesInSessionRef = useRef(new Set<string>());
@@ -1041,6 +1042,9 @@ export function SheetShell(props: SheetShellProps) {
   const importErrorMessage = interop?.importInspection
     ? (importError && message && message.length > 0 ? importConfirmationMessage(message) : importError)
     : importError;
+  const closeSaveError = closeSaveAttempted && (saveStatus === "failed" || localError !== null)
+    ? errorMessage ?? "The copy could not be saved on this device." : null;
+  const closeSaveErrorIsInline = closeOpen && !copyOpen && !savedClose && closeSaveError !== null;
   const copyErrorIsInline = copyOpen && localError === null && (
     copyError !== null || (copyParentFailureMessage !== null && message === copyParentFailureMessage)
   );
@@ -1662,6 +1666,7 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     const witness = { occurrence: view.occurrence, revision: view.revision };
+    setCloseSaveAttempted(forClose);
     setLocalError(null);
     try {
       if (await onSave() && forClose) setSavedClose({ ...witness, name: boundCopyName, phase: "confirm" });
@@ -1691,7 +1696,13 @@ export function SheetShell(props: SheetShellProps) {
     try {
       await onDeleteCopy(deleteName);
       setDeleteName(null);
-      requestAnimationFrame(() => shellRef.current?.querySelector<HTMLButtonElement>(".ts-home-copy-action")?.focus());
+      requestAnimationFrame(() => {
+        const shell = shellRef.current;
+        const target = shell?.querySelector<HTMLElement>('.ts-home-copy-action:not(:disabled)') ??
+          shell?.querySelector<HTMLElement>('.ts-home-new-command:not(:disabled)') ??
+          shell?.querySelector<HTMLElement>('.ts-home-brand h1');
+        target?.focus();
+      });
     } catch (error) { setDeleteError(explain(error, "The copy could not be deleted.")); }
     finally { setDeletePending(false); }
   }
@@ -1739,6 +1750,7 @@ export function SheetShell(props: SheetShellProps) {
     if (busy || commitPending) return;
     setSalesEntryOutcome(null);
     if (dirty || draftActive || hasInvalidReportDraft || currentness === "unknown") {
+      setCloseSaveAttempted(false);
       setCloseOpen(true);
       return;
     }
@@ -1757,6 +1769,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function keepEditing(): void {
+    setCloseSaveAttempted(false);
     setCloseOpen(false);
     requestAnimationFrame(() => {
       if (!view) {
@@ -2016,7 +2029,7 @@ export function SheetShell(props: SheetShellProps) {
     return (
       <main className={`ts-home${hasSavedCopies ? " ts-home--has-copies" : ""}${recoveryLocked ? " ts-home--recovery" : ""}${startupLocked ? " ts-home--startup-unavailable" : ""}`}>
         <header className="ts-home-head">
-          <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand">Tachiko Sheet</h1></div>
+          <div className="ts-home-brand"><img src="/tachiko-sheet-mark.svg" alt="" aria-hidden="true" /><h1 className="ts-brand" tabIndex={-1}>Tachiko Sheet</h1></div>
             {onNewTable && !recoveryLocked && !startupLocked ? <button type="button" className="ts-button ts-home-new-command" aria-label="New table" disabled={fileActionsLocked} onClick={(event) => { newTableTriggerRef.current = event.currentTarget; setNewTableOpen(true); }}><span className="ts-home-new-label">New table</span><span className="ts-home-new-symbol" aria-hidden="true">+</span></button> : null}
           {renderAppearanceSelector("home")}
         </header>
@@ -2950,7 +2963,7 @@ export function SheetShell(props: SheetShellProps) {
       onClickCapture={(event) => releaseSharedButton(event.target, heldPointerOwnerRef)}
       onBlurCapture={(event) => releaseSharedButton(event.target, heldPointerOwnerRef)}
     >
-      {errorMessage && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
+      {errorMessage && !closeSaveErrorIsInline && !copyErrorIsInline && !importErrorIsInline && !downloadErrorIsInline ? (
         <div className="ts-error" role="alert">
           {errorMessage}
         </div>
@@ -3079,6 +3092,7 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-dialog-intro">
             <h2 className="ts-h2">Unsaved work</h2>
             <p>This work has changes that are not saved. Keep editing to return to the sheet, or close without saving.</p>
+            {closeSaveError ? <p className="ts-dialog-error" role="alert">{closeSaveError}</p> : null}
             {closeSaveReason ? <p className="ts-hint" id={closeSaveUnavailableId}>{closeSaveReason}</p> : null}
           </div>
           <div className="ts-dialog-actions">
