@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -55,6 +55,7 @@ class FakeDesignerRuntimeError extends Error {
 }
 
 interface Hooks {
+  newTable?: () => Promise<OpenedProjection>;
   openProject?: () => Promise<OpenedProjection>;
   inspectImportedProject?: () => Promise<OpenedProjection>;
   observeOccurrence?: () => Promise<OccurrenceProjection>;
@@ -84,6 +85,7 @@ function scalarField(
 
 class FakeClient {
   readonly calls = {
+    newTable: [] as Array<{ name: string; columns: NewTableColumnInput[] }>,
     openProject: [] as ArrayBuffer[],
     inspectImportedProject: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
     bootstrap: 0,
@@ -94,7 +96,7 @@ class FakeClient {
     editText: 0,
     editBoolean: 0,
     editDate: 0,
-    trackerCommand: [] as Array<{ type: "undo" | "redo"; expected_revision: string }>,
+    trackerCommand: [] as TrackerCommand[],
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
     createKeyedGroupedSum: [] as KeyedGroupedSumDefinitionInput[],
@@ -182,7 +184,7 @@ class FakeClient {
     };
   }
 
-  async trackerCommand(request: { type: "undo" | "redo"; expected_revision: string }): Promise<PublicationProjection> {
+  async trackerCommand(request: TrackerCommand): Promise<PublicationProjection> {
     this.calls.trackerCommand.push(request);
     this.#requireOpen();
     const hook = this.hooks.trackerCommand;
@@ -191,6 +193,7 @@ class FakeClient {
       return hook();
     }
     this.#requireRevision(request.expected_revision);
+    if (request.type === "insert_row" || request.type === "remove_table_rows") return this.#publish(IMPACT);
     const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
     if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);
     const base = this.#revision;
@@ -198,6 +201,12 @@ class FakeClient {
     if (request.type === "undo") { this.#undoCount -= 1; this.#redoCount += 1; }
     else { this.#redoCount -= 1; this.#undoCount = Math.min(64, this.#undoCount + 1); }
     return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [] };
+  }
+
+  async newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection> {
+    this.calls.newTable.push({ name, columns });
+    if (this.hooks.newTable) return this.hooks.newTable();
+    return this.#opened();
   }
 
   async openProject(bytes: ArrayBuffer): Promise<OpenedProjection> {
@@ -1353,4 +1362,139 @@ it("does not verify or open a work file after Close invalidates pending kit star
   await closing;
   expect(verify).not.toHaveBeenCalled();
   expect(open).not.toHaveBeenCalled();
+});
+
+
+describe("native table and row adapter", () => {
+  const columns = [{ name: "Amount", field_type: "number" as const }];
+  const initializers = [{ field: "f1", input: { kind: "number" as const, input: "" } }];
+
+  it("opens a fresh occurrence and snapshots the declared columns before queueing", async () => {
+    const { runtime, client, view } = await opened();
+    const inputs = columns.map(column => ({ ...column }));
+    const pending = runtime.newTable("Expenses", inputs);
+    inputs[0]!.name = "Changed later";
+    const next = await pending;
+    expect(next.occurrence).not.toBe(view.occurrence);
+    expect(client.calls.newTable).toEqual([{ name: "Expenses", columns }]);
+    await expect(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "5" })).rejects.toMatchObject({ code: "stale-witness" });
+  });
+
+  it("preserves the old work after a trusted new-table refusal", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.newTable = async () => { throw new FakeDesignerRuntimeError("invalid_table_operation", view.revision); };
+    await expect(runtime.newTable("", columns)).rejects.toBeInstanceOf(FakeDesignerRuntimeError);
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("requires recovery for an unknown new-table outcome", async () => {
+    const { runtime, client } = await opened();
+    client.hooks.newTable = async () => { throw new Error("lost reply"); };
+    await expect(runtime.newTable("Expenses", columns)).rejects.toMatchObject({ name: "OpenedProjectionRecoveryError", operationOutcome: "unknown" });
+  });
+
+  it("requires recovery after opening with an incoherent projection", async () => {
+    const { runtime, client } = await opened();
+    client.hooks.bootstrap = async () => ({ title: TITLE, revision: "wrong", default_collection: COLLECTION.key, collections: [COLLECTION] });
+    await expect(runtime.newTable("Expenses", columns)).rejects.toMatchObject({ name: "OpenedProjectionRecoveryError", operationOutcome: "opened" });
+  });
+
+  it("does not dispatch new table after its queued session was replaced", async () => {
+    const client = new FakeClient();
+    const gate = deferred<CoreKit>();
+    const runtime = createSheetRuntime(() => gate.promise);
+    const pending = runtime.newTable("Expenses", columns);
+    const refused = expect(pending).rejects.toMatchObject({ code: "session-replaced" });
+    await tick();
+    const closing = runtime.close();
+    gate.resolve(makeKit(client).kit);
+    await refused; await closing;
+    expect(client.calls.newTable).toEqual([]);
+  });
+
+  it("snapshots row initializers and removal identities before the serialized dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    const inputs = [{ field: "f1", input: { kind: "number" as const, input: "" } }];
+    const inserted = runtime.insertRow(witnessOf(view), COLLECTION.key, inputs);
+    inputs[0]!.input.input = "0";
+    const next = await inserted;
+    expect(client.calls.trackerCommand[0]).toMatchObject({ initializers });
+    const entities = ["e1"];
+    const removed = runtime.removeRows(witnessOf(next.view), COLLECTION.key, entities);
+    entities[0] = "different-entity";
+    await removed;
+    expect(client.calls.trackerCommand[1]).toMatchObject({ entities: ["e1"] });
+  });
+
+  for (const type of ["insert_row", "remove_table_rows"] as const) {
+    const invoke = (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) => type === "insert_row"
+      ? runtime.insertRow(witnessOf(view), COLLECTION.key, initializers)
+      : runtime.removeRows(witnessOf(view), COLLECTION.key, ["e1"]);
+
+    it(`${type}: returns only a coherent publication and passes every explicit input unchanged`, async () => {
+      const { runtime, client, view } = await opened();
+      const confirmed = await invoke(runtime, view);
+      expect(confirmed.publication.base_revision).toBe(view.revision);
+      expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+      expect(confirmed.view.occurrence).toBe(view.occurrence);
+      expect(client.calls.trackerCommand[0]).toEqual({ type, expected_revision: view.revision, collection: COLLECTION.key,
+        ...(type === "insert_row" ? { initializers } : { entities: ["e1"] }) });
+    });
+
+    it(`${type}: refuses stale witnesses without dispatch`, async () => {
+      const { runtime, client, view } = await opened();
+      await expect(invoke(runtime, { ...view, occurrence: "old" })).rejects.toMatchObject({ code: "stale-witness" });
+      expect(client.calls.trackerCommand).toEqual([]);
+    });
+
+    it(`${type}: preserves a live witness after a trusted core refusal`, async () => {
+      const { runtime, client, view } = await opened();
+      client.hooks.trackerCommand = async () => { throw new FakeDesignerRuntimeError("invalid_number", view.revision); };
+      await expect(invoke(runtime, view)).rejects.toBeInstanceOf(FakeDesignerRuntimeError);
+      expect(await runtime.read()).toEqual(view);
+      await expect(invoke(runtime, view)).resolves.toHaveProperty("publication");
+    });
+
+    it(`${type}: invalidates witnesses after an unknown dispatched outcome`, async () => {
+      const { runtime, client, view } = await opened();
+      client.hooks.trackerCommand = async () => { throw new Error("lost transport"); };
+      await expect(invoke(runtime, view)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+      await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
+      expect(client.calls.trackerCommand).toHaveLength(1);
+      expect(await runtime.read()).toEqual(view);
+    });
+
+    it(`${type}: discards a late reply after close`, async () => {
+      const { runtime, client, view } = await opened();
+      const gate = deferred<PublicationProjection>();
+      client.hooks.trackerCommand = () => gate.promise;
+      const pending = invoke(runtime, view);
+      const refused = expect(pending).rejects.toBeInstanceOf(SheetSessionError);
+      await tick(); await runtime.close();
+      gate.resolve({ base_revision: view.revision, resulting_revision: "r2", entities: [], fields: [], affected_calculations: [] });
+      await refused;
+    });
+
+    it(`${type}: rejects a coherent read from a different occurrence after publication`, async () => {
+      const { runtime, client, view } = await opened();
+      client.hooks.observeOccurrence = async () => ({ scope: "replacement-occurrence", revision: client.currentRevision });
+      await expect(invoke(runtime, view)).rejects.toMatchObject({ name: "PublishedProjectionRecoveryError" });
+      await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
+    });
+
+    it(`${type}: reports a wrong-base publication as unknown without replay`, async () => {
+      const { runtime, client, view } = await opened();
+      client.hooks.trackerCommand = async () => ({ base_revision: "wrong", resulting_revision: "r2", entities: [], fields: [], affected_calculations: [] });
+      await expect(invoke(runtime, view)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+      await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
+      expect(client.calls.trackerCommand).toHaveLength(1);
+    });
+
+    it(`${type}: separates acknowledged publication from incoherent replacement`, async () => {
+      const { runtime, client, view } = await opened();
+      client.hooks.trackerCommand = async () => ({ base_revision: view.revision, resulting_revision: "different", entities: [], fields: [], affected_calculations: [] });
+      await expect(invoke(runtime, view)).rejects.toMatchObject({ name: "PublishedProjectionRecoveryError" });
+      await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
+    });
+  }
 });
