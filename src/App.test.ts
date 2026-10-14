@@ -391,3 +391,40 @@ describe("saved-copy inventory freshness", () => {
     expect(savedCopiesRequestIsCurrent(3, 3)).toBe(true);
   });
 });
+
+// #189: explicit completion-boundary characterization before extraction.
+describe("#189 completion provenance and Save admission", () => {
+  for (const command of ["scalar", "undo", "redo", "insert", "delete", "cleanup", "summary"] as const) {
+    it(`${command}: known publication ends initial onboarding; uncertainty/refusal preserves it until observation`, () => {
+      const markers = {
+        salesEntryTip: { occurrence: "sales", collection: "catalog", field: "price" },
+        salesCatalogLayout: { occurrence: "sales", collectionId: "catalog-id" },
+        salesInitialOccurrence: "sales", salesChangedOccurrence: null,
+      };
+      const editLike = !["cleanup", "summary"].includes(command);
+      expect(salesMarkersAfterBoundary(markers, "known-publication-recovery", "sales", editLike)).toEqual({
+        ...markers, salesInitialOccurrence: null, salesChangedOccurrence: editLike ? "sales" : null,
+      });
+      expect(salesMarkersAfterBoundary(markers, "unknown-publication", "sales", editLike)).toEqual(markers);
+      expect(salesMarkersAfterBoundary(markers, "prepublication-refusal", "sales", editLike)).toEqual(markers);
+      // A semantic acknowledgement cannot serve as a durable-save receipt.
+      expect(settledSaveStatus("saved", "opening-revision", "published-revision", false)).toBe("not-saved");
+    });
+  }
+  it("does not admit a targeted summary Refresh from recovery or a foreign occurrence", () => {
+    for (const currentness of ["pending", "unknown"] as const) expect(targetedResultRefreshIsAdmitted({
+      currentness, live: { occurrence: "sales", revision: "r" }, witness: { occurrence: "sales", revision: "r" }, definitionIds: ["summary"], definitionId: "summary",
+    })).toBe(false);
+    expect(targetedResultRefreshIsAdmitted({ currentness: "current", live: { occurrence: "replacement", revision: "r" }, witness: { occurrence: "sales", revision: "r" }, definitionIds: ["summary"], definitionId: "summary" })).toBe(false);
+  });
+  it("retains unknown scalar input only through reobservation and keeps draft saves unsaved", () => {
+    const draft = '{"kind":"number","input":"250"}';
+    expect(recoveryDraftAfterBoundary(draft, "reobserve")).toBe(draft);
+    expect(recoveryDraftAfterBoundary(draft, "replacement")).toBeNull();
+    expect(recoveryDraftAfterBoundary(draft, "close")).toBeNull();
+    for (const previous of ["saving", "saved", "not-saved"] as const) {
+      expect(settledSaveStatus(previous, "r", "r", true)).toBe("not-saved");
+      expect(settledSaveStatus(previous, "r", "r", false)).toBe("saved");
+    }
+  });
+});
