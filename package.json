@@ -29,7 +29,7 @@
     "build:acceptance": "node scripts/copy-example-fixture.mjs && vite build --mode acceptance",
     "preview:acceptance": "vite preview --mode acceptance",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test:unit": "vitest run src/runtime src/ui src/application src/host/appearance-preference.test.ts src/host/interface-profile-files.test.ts src/App.test.ts tests/product tests/desktop/native-channel.test.ts && node --test src/host/local-copies.test.mjs tests/product/example-copy.node.mjs tests/verify-core-kit-provenance.test.mjs",
+    "test:unit": "vitest run src/runtime src/ui src/application src/host/appearance-preference.test.ts src/host/interface-profile-files.test.ts src/App.test.ts tests/product tests/desktop/native-channel.test.ts && node --test src/host/local-copies.test.mjs tests/product/example-copy.node.mjs tests/verify-core-kit-provenance.test.mjs tests/dev-core-kit.test.mjs",
     "test:runner-lifecycle": "node --test tests/runner-process-lifecycle.test.mjs",
     "verify:core-kit": "node scripts/verify-core-kit.mjs",
     "qualification:core-kit": "node scripts/qualify-core-kit.mjs",
