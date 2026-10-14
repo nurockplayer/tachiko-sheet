@@ -13,7 +13,6 @@ function harness() {
   let recovery: MutationRecovery | null = null, dirty = false, reads = 0;
   const effects: string[] = [];
   const markers = { initial: "sales" as string | null, changed: null as string | null };
-  const provenance = { openedFromWorkFile: true, source: "original.ro" };
   let inFlight = true;
   const finish = () => { inFlight = false; effects.push("finish"); };
   let observed: KeyedGroupedSumResult[] = [];
@@ -41,10 +40,10 @@ function harness() {
       port.installView(null); port.clearResults(); port.markDirty(); port.markNotSaved();
       port.setCurrentness("unknown"); port.setOutcome(next.kind === "unknown-outcome" ? "unknown" : "idle");
       if (next.resetPreview) port.clearPreview();
-      effects.push("provenance-retained"); port.setMessage(next.message);
+      port.setMessage(next.message);
     }, acceptSave() { dirty = false; effects.push("saved"); },
   };
-  return { completion: createMutationCompletion(port), state, port, effects, markers, provenance, finish, get inFlight() { return inFlight; }, get recovery() { return recovery; }, get dirty() { return dirty; }, get reads() { return reads; }, observed(results: KeyedGroupedSumResult[]) { observed = results; } };
+  return { completion: createMutationCompletion(port), state, port, effects, markers, finish, get inFlight() { return inFlight; }, get recovery() { return recovery; }, get dirty() { return dirty; }, get reads() { return reads; }, observed(results: KeyedGroupedSumResult[]) { observed = results; } };
 }
 
 describe("mutation completion boundaries", () => {
@@ -133,7 +132,6 @@ describe("52aef66 completion effect order", () => {
       expect(h.effects).toEqual(expected);
       expect(h.markers).toEqual({ initial: null, changed: path === "cleanup" || path === "summary" ? null : "sales" });
       expect(h.dirty).toBe(true); expect(h.state.savedRevision).toBeNull(); expect(h.inFlight).toBe(false);
-      expect(h.provenance).toEqual({ openedFromWorkFile: true, source: "original.ro" });
     });
   }
   for (const kind of ["scalar", "rows", "history", "cleanup", "summary"] as const) {
@@ -148,10 +146,9 @@ describe("52aef66 completion effect order", () => {
           ...(mode === "known-publication-recovery" ? ["initial-ended", ...(tracked ? ["sales-changed"] : [])] : []),
           `recovery:${mode}`, "history:0/0", "value:none", "clear-results", "dirty", "not-saved", "currentness:unknown",
           `outcome:${mode === "unknown-outcome" ? "unknown" : "idle"}`,
-          ...(mode === "known-publication-recovery" || kind === "cleanup" ? ["preview"] : []), "provenance-retained", "message",
+          ...(mode === "known-publication-recovery" || kind === "cleanup" ? ["preview"] : []), "message",
         ]);
         expect(h.markers).toEqual({ initial: mode === "known-publication-recovery" ? null : "sales", changed: mode === "known-publication-recovery" && tracked ? "sales" : null });
-        expect(h.provenance).toEqual({ openedFromWorkFile: true, source: "original.ro" });
       });
     }
   }
@@ -164,7 +161,7 @@ describe("52aef66 completion effect order", () => {
       if (kind === "summary") h.port.setMessage(null);
       await h.completion.run(command, completion => completion, h.finish); h.effects.push("focus");
       const expected = kind === "history"
-        ? ["message-cleared", "currentness:pending", "dispatch", "history:0/0", "recovery:unknown-outcome", "history:0/0", "value:none", "clear-results", "dirty", "not-saved", "currentness:unknown", "outcome:unknown", "provenance-retained", "message", "finish", "focus"]
+        ? ["message-cleared", "currentness:pending", "dispatch", "history:0/0", "recovery:unknown-outcome", "history:0/0", "value:none", "clear-results", "dirty", "not-saved", "currentness:unknown", "outcome:unknown", "message", "finish", "focus"]
         : kind === "cleanup" ? ["dispatch", "outcome:idle", "preview", "message", "finish", "focus"]
         : ["message-cleared", "currentness:pending", ...(kind === "summary" ? ["clear-results"] : []), "dispatch",
           ...(kind === "scalar" || kind === "summary" ? ["restore-results"] : []),
