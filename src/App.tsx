@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
-import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
+import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
+import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
 import {
   UnknownOperationOutcomeError,
@@ -41,7 +42,6 @@ import {
   NoResidentWorkError,
   PublishedProjectionRecoveryError,
   RuntimeStartupError,
-  SheetSessionError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
@@ -66,18 +66,7 @@ export interface AppProps {
 
 export type RecoveryDraftBoundary = "reobserve" | "replacement" | "close";
 
-/** A completed copy is saved only for its exact current revision with no retained draft. */
-export function settledSaveStatus(
-  previous: SaveStatus,
-  savedRevision: string | null,
-  liveRevision: string | null,
-  hasUncommittedDraft: boolean,
-): SaveStatus {
-  if (previous === "failed") return previous;
-  return savedRevision !== null && liveRevision !== null && savedRevision === liveRevision && !hasUncommittedDraft
-    ? "saved"
-    : "not-saved";
-}
+export { settledSaveStatus } from "./app/mutation-completion.js";
 
 /** Keep an unknown-edit draft only while reobserving its own occurrence. */
 export function recoveryDraftAfterBoundary(
@@ -550,7 +539,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function observeSalesRevision(next: WorkbookView): void {
     const opening = salesOpeningRef.current;
-    if (!opening || opening.occurrence !== next.occurrence || opening.revision === next.revision) return;
+    if (!salesRevisionHasChanged(opening, next)) return;
     setSalesInitialOccurrence(null);
     setSalesChangedOccurrence(next.occurrence);
   }
@@ -630,39 +619,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const next = j4ResultsRef.current.filter((result) => result.definitionId !== definitionId);
     j4ResultsRef.current = next;
     setJ4Results(next);
-  }
-
-  /** Complete the shared observation half of any known semantic publication. */
-  async function completePublishedObservation(
-    next: WorkbookView,
-    priorJ4: { definitionIds: string[]; results: KeyedGroupedSumResult[] } | null,
-    expectedOccurrence: string,
-  ): Promise<void> {
-    if (next.occurrence !== expectedOccurrence) {
-      throw new Error("The open work changed before its summaries could be confirmed.");
-    }
-    installView(next);
-    clearCleanupPreview();
-    pendingDirtyRef.current = true;
-    syncDirty();
-    if (savedRevisionRef.current !== next.revision) markNotSaved();
-
-    // Keep the old same-occurrence result snapshot visibly pending until the
-    // complete new definition/result set is confirmed in one atomic install.
-    const results = await readJ4Results(next);
-    const ids = results.map((result) => result.definitionId);
-    const uniqueIds = new Set(ids);
-    if (results.some((result) => result.revision !== next.revision) || uniqueIds.size !== ids.length ||
-      (priorJ4 && priorJ4.definitionIds.some((id) => !uniqueIds.has(id)))) {
-      throw new Error("The complete summary results did not match the changed work.");
-    }
-    if (viewRef.current?.occurrence !== next.occurrence || viewRef.current.revision !== next.revision) {
-      throw new Error("The changed work could not be matched to its summaries.");
-    }
-    installJ4Results(results);
-    observeSalesRevision(next);
-    setCurrentness("current");
-    setOutcome("idle");
   }
 
   function witnessOf(target: WorkbookView): ViewWitness {
@@ -929,92 +885,74 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
-  function failClosedAfterPublicationRecovery(knownPublishedOccurrence?: string, confirmedEditOccurrence?: string | null): void {
-    if (knownPublishedOccurrence) {
-      setSalesInitialOccurrence((initialOccurrence) => salesMarkersAfterBoundary({
-        salesEntryTip: null, salesCatalogLayout: null, salesInitialOccurrence: initialOccurrence, salesChangedOccurrence: null,
-      }, "known-publication-recovery", knownPublishedOccurrence).salesInitialOccurrence);
+  function markMutationDirty(): void {
+    pendingDirtyRef.current = true;
+    syncDirty();
+  }
+
+  /** React/ref adapter for the seam's recovery decision. Replacement/Open
+   * retains its separate checkpoint policy: an unknown source is not an edit. */
+  function installMutationRecovery(recovery: MutationRecovery): void {
+    viewRef.current = null;
+    installView(null);
+    clearJ4Results();
+    pendingDirtyRef.current = true;
+    draftDirtyRef.current = false;
+    syncDirty();
+    markNotSaved();
+    cleanupPreviewContextRef.current = null;
+    setCurrentness("unknown");
+    setOutcome(recovery.kind === "unknown-outcome" ? "unknown" : "idle");
+    if (recovery.resetPreview) {
+      setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
     }
-    if (knownPublishedOccurrence && confirmedEditOccurrence) {
-      setSalesChangedOccurrence((changedOccurrence) => salesMarkersAfterBoundary({
-        salesEntryTip, salesCatalogLayout, salesInitialOccurrence: null, salesChangedOccurrence,
-      }, "known-publication-recovery", knownPublishedOccurrence, true).salesChangedOccurrence);
-    }
-    viewRef.current = null;
-    installView(null);
-    clearJ4Results();
-    // Keep dirty as publication truth; the editor/projection itself is no
-    // longer safe to present or retry until Refresh re-observes the resident work.
-    pendingDirtyRef.current = true;
-    draftDirtyRef.current = false;
-    syncDirty();
-    markNotSaved();
-    setCurrentness("unknown");
-    // Publication is known; only projection freshness remains unknown.
-    setOutcome("idle");
-    // The old preview targeted the projection we just discarded.
-    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
-    cleanupPreviewContextRef.current = null;
-    setMessage("The change was applied, but the current values could not be confirmed. Refresh to read the work again.");
+    if (recovery.retainedInput !== undefined) recoveryDraftRef.current = recovery.retainedInput;
+    setMessage(recovery.message);
   }
 
-  function failClosedAfterUnknownCleanup(): void {
-    viewRef.current = null;
-    installView(null);
-    clearJ4Results();
-    pendingDirtyRef.current = true;
-    draftDirtyRef.current = false;
-    syncDirty();
-    markNotSaved();
-    setCurrentness("unknown");
-    setOutcome("unknown");
-    setInterop((current) => current ? { ...current, cleanupPreview: null, downloadStatus: "idle", downloadError: null } : current);
-    cleanupPreviewContextRef.current = null;
-    setMessage("The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
-  }
-
-  function failClosedAfterUnknownEdit(edit: ScalarEdit): void {
-    viewRef.current = null;
-    installView(null);
-    clearJ4Results();
-    pendingDirtyRef.current = true;
-    draftDirtyRef.current = false;
-    syncDirty();
-    markNotSaved();
-    cleanupPreviewContextRef.current = null;
-    setCurrentness("unknown");
-    setOutcome("unknown");
-    recoveryDraftRef.current = JSON.stringify(edit);
-    setMessage(`The change was dispatched but its outcome is unknown. Refresh to re-read the work. Input retained for review: ${recoveryDraftRef.current}`);
-  }
-
-  function failClosedAfterUnknownJ4(): void {
-    viewRef.current = null;
-    installView(null);
-    clearJ4Results();
-    pendingDirtyRef.current = true;
-    draftDirtyRef.current = false;
-    syncDirty();
-    markNotSaved();
-    cleanupPreviewContextRef.current = null;
-    setCurrentness("unknown");
-    setOutcome("unknown");
-    setMessage("The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
-  }
-
-  function failClosedAfterUnknownHistory(direction: "undo" | "redo" | "row change"): void {
-    viewRef.current = null;
-    installView(null);
-    clearJ4Results();
-    pendingDirtyRef.current = true;
-    draftDirtyRef.current = false;
-    syncDirty();
-    markNotSaved();
-    cleanupPreviewContextRef.current = null;
-    setCurrentness("unknown");
-    setOutcome("unknown");
-    setMessage(`The ${direction} request was dispatched but could not be confirmed. Refresh to re-read the work; it was not retried.`);
-  }
+  const mutationCompletion = createMutationCompletion({
+    state: () => ({
+      view: viewRef.current, history: localHistoryRef.current, currentness,
+      savedRevision: savedRevisionRef.current,
+      definitionIds: j4DefinitionIdsRef.current, results: j4ResultsRef.current,
+    }),
+    installView, installHistory: installLocalHistory,
+    clearResults: clearJ4Results, readResults: readJ4Results, readView: () => runtime.read(),
+    installResults: installJ4Results,
+    restoreResults: ({ definitionIds, results }) => restoreJ4Results(definitionIds, results),
+    upsertResult: upsertJ4Result, dropResult: dropJ4Result,
+    clearPreview: clearCleanupPreview, markDirty: markMutationDirty, markNotSaved,
+    endInitial: (occurrence) => setSalesInitialOccurrence((initial) => salesInitialOccurrenceAfterConfirmedChange(initial, occurrence)),
+    markSalesChanged: (occurrence) => {
+      const changed = salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, occurrence);
+      if (changed) setSalesChangedOccurrence(changed);
+    },
+    observeSales: observeSalesRevision, setCurrentness, setOutcome, setMessage,
+    recover: installMutationRecovery,
+    newTable: {
+      close: () => runtime.close(),
+      resetClosed: resetClosedWorkState,
+      retainDraft: () => { setMessage(null); draftDirtyRef.current = true; syncDirty(); },
+      closeFailed: () => {
+        resetClosedWorkState();
+        terminalReloadRequiredRef.current = true;
+        savedCopiesRequestRef.current += 1;
+        setReloadRequired(true);
+        setCurrentness("unknown");
+        setMessage(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+        throw new Error(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+      },
+    },
+    acceptSave: (occurrence, receipt) => {
+      bindCopy(occurrence, receipt);
+      setSalesEntryTip((marker) => salesEntryTipAfterSuccessfulSave(marker, occurrence));
+      setSalesInitialOccurrence((initial) => salesInitialOccurrenceAfterConfirmedChange(initial, occurrence));
+      savedRevisionRef.current = receipt.revision;
+      pendingDirtyRef.current = false;
+      presentationDirtyRef.current = false;
+      syncDirty();
+    },
+  });
 
   async function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
     if (blockUnknownOpenRecovery() || !begin()) return false;
@@ -1026,33 +964,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       guardReplacement(true);
       setMessage(null);
       setCurrentness("pending");
-      const result = await replaceWork(() => runtime.newTable(name, columns));
-      if (result.kind === "confirmed") {
-        pendingDirtyRef.current = true;
-        syncDirty();
-        return true;
-      }
-      if (result.kind === "acknowledged-recovery" || result.kind === "unknown-recovery") {
-        try {
-          await runtime.close();
-        } catch {
-          resetClosedWorkState();
-          terminalReloadRequiredRef.current = true;
-          savedCopiesRequestRef.current += 1;
-          setReloadRequired(true);
-          setCurrentness("unknown");
-          setMessage(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
-          throw new Error(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
-        }
-        resetClosedWorkState();
-        setMessage(null);
-        // The empty occurrence is disposable; the user's schema stays in
-        // the still-open dialog. Only another explicit Create may dispatch.
-        draftDirtyRef.current = true;
-        syncDirty();
-        throw unconfirmed;
-      }
-      return false;
+      return await mutationCompletion.newTable(() => replaceWork(() => runtime.newTable(name, columns)), unconfirmed);
     } catch (error) {
       if (!terminalReloadRequiredRef.current) {
         setCurrentness("current");
@@ -1275,11 +1187,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         selected.table.collection.key !== catalogCollection.key) {
         throw new Error("The confirmed Sales summary could not land on the Catalog table.");
       }
-      installView(selected);
-      installJ4Results(results);
-      pendingDirtyRef.current = true;
-      syncDirty();
-      markNotSaved();
+      // This coordinator additionally verifies the unique Sales source and
+      // Catalog landing; the shared seam still completes its publication.
+      mutationCompletion.confirmCoordinatedPublication(selected, results);
       installReport(salesReportConfiguration(created.definitionId), true);
       setSalesEntryTip({ occurrence: selected.occurrence, collection: "catalog", field: "price" });
       setSalesCatalogLayout({ occurrence: selected.occurrence, collectionId: selected.table.collection.id });
@@ -1294,13 +1204,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (published || (createDispatched && error instanceof PublishedProjectionRecoveryError)) {
         installReport(null);
         abandonSalesOccurrenceMarkers();
-        failClosedAfterPublicationRecovery();
+        mutationCompletion.recover("known-publication-recovery", { kind: "summary" });
         return { kind: "published-recovery" };
       }
       if (createDispatched && error instanceof UnknownOperationOutcomeError) {
         installReport(null);
         abandonSalesOccurrenceMarkers();
-        failClosedAfterUnknownJ4();
+        mutationCompletion.recover("unknown-outcome", { kind: "summary" });
         return { kind: "unknown-recovery" };
       }
       return await refuseSalesEntry(opened, error);
@@ -1521,29 +1431,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
     if (!begin()) return false;
     try {
-      const next = await runtime.commitCleanup(witness, previewId);
-      // Cleanup publishes a semantic replacement. Its prior core groups are
-      // no longer current; keep definition IDs so explicit Refresh can query
-      // the newly published revision.
-      clearJ4Results();
-      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
-      installView(next); pendingDirtyRef.current = true; syncDirty(); markNotSaved();
-      clearCleanupPreview();
-      setOutcome("idle");
-      return true;
-    } catch (error) {
-      if (error instanceof PublishedProjectionRecoveryError) {
-        failClosedAfterPublicationRecovery(witness.occurrence);
-      } else if (error instanceof UnknownOperationOutcomeError) {
-        failClosedAfterUnknownCleanup();
-      } else {
-        setOutcome("idle");
-        clearCleanupPreview();
-        setMessage(describe(error, "The cleanup was not applied."));
-      }
-      return false;
-    }
-    finally { end(); }
+      const result = await mutationCompletion.run({ kind: "cleanup", witness, dispatch: () => runtime.commitCleanup(witness, previewId) });
+      return result.kind === "published";
+    } finally { end(); }
   }
 
   function cancelCleanup(): void {
@@ -1623,12 +1513,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean> {
-    if (blockUnknownOpenRecovery()) return false;
-    if (!begin()) return false;
-    const priorJ4 = currentness === "current"
-      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] }
-      : null;
-    let published = false;
+    if (blockUnknownOpenRecovery() || !begin()) return false;
     try {
       const live = viewRef.current;
       if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
@@ -1636,48 +1521,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setMessage("This draft belongs to an older view. Refresh to load the current work.");
         return false;
       }
-      setMessage(null);
-      setCurrentness("pending");
-      const confirmed = await runtime.editConfirmed(witness, target, edit);
-      published = true;
-      installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
-      const next = confirmed.view;
-      await completePublishedObservation(next, priorJ4, witness.occurrence);
-      return true;
-    } catch (error) {
-      if (published || error instanceof PublishedProjectionRecoveryError) {
-        installLocalHistory(emptyLocalHistory());
-        failClosedAfterPublicationRecovery(
-          witness.occurrence,
-          salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence),
-        );
-        // Publication is known; avoid SheetShell's rejected-draft path and
-        // ordinary semantic retry while only observation remains unresolved.
-        return true;
-      } else if (error instanceof UnknownOperationOutcomeError) {
-        installLocalHistory(emptyLocalHistory());
-        failClosedAfterUnknownEdit(edit);
-        return true;
-      } else {
-        if (error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
-          setOutcome("idle");
-          setCurrentness("unknown");
-          setMessage("This draft belongs to an unconfirmed work view. Refresh to re-read the work; the draft was kept.");
-          return false;
-        }
-        const current = viewRef.current;
-        if (priorJ4 && current &&
-          current.occurrence === witness.occurrence && current.revision === witness.revision) {
-          restoreJ4Results(priorJ4.definitionIds, priorJ4.results);
-        }
-        setOutcome("idle");
-        setCurrentness("current");
-        setMessage(describe(error, "The change was not applied."));
-      }
-      return false;
-    } finally {
-      end();
-    }
+      const result = await mutationCompletion.run({ kind: "scalar", witness, edit, dispatch: () => runtime.editConfirmed(witness, target, edit) });
+      // Known/unknown publication must exit the rejected-editor retry path.
+      return result.kind !== "refused";
+    } finally { end(); }
   }
 
   async function changeRows(
@@ -1685,42 +1532,16 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     command: () => ReturnType<SheetRuntime["insertRow"]>,
   ): Promise<RowCommandOutcome> {
     if (blockUnknownOpenRecovery() || !begin()) return { kind: "refused", message: "Wait for the current work before changing rows." };
-    const priorJ4 = { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] };
-    let published = false;
     try {
       const live = viewRef.current;
       if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
         setOutcome("idle");
         return { kind: "refused", message: "This row draft belongs to an older view. Refresh before adding it." };
       }
-      setMessage(null);
-      setCurrentness("pending");
-      const confirmed = await command();
-      published = true;
-      // Real-kit qualification confirms one history action for insert/remove.
-      installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
-      await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
-      return { kind: "confirmed" };
-    } catch (error) {
-      if (published || error instanceof PublishedProjectionRecoveryError) {
-        installLocalHistory(emptyLocalHistory());
-        failClosedAfterPublicationRecovery(witness.occurrence, salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence));
-        return { kind: "recovery" };
-      }
-      if (error instanceof UnknownOperationOutcomeError) {
-        installLocalHistory(emptyLocalHistory());
-        failClosedAfterUnknownHistory("row change");
-        return { kind: "recovery" };
-      }
-      setOutcome("idle");
-      if (error instanceof SheetSessionError) {
-        setCurrentness("unknown");
-      } else {
-        setCurrentness("current");
-      }
-      const failure = (error as { failure?: { code?: string } })?.failure;
-      const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
-      return { kind: "refused", message: describe(error, "The row change was not applied."), fieldType };
+      const result = await mutationCompletion.run({ kind: "rows", witness, dispatch: command });
+      if (result.kind === "published") return { kind: "confirmed" };
+      if (result.kind === "refused") return result;
+      return { kind: "recovery" };
     } finally { end(); }
   }
 
@@ -1738,30 +1559,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (!live || currentness !== "current" || known.occurrence !== live.occurrence ||
       known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return null;
     const witness = witnessOf(live);
-    const priorJ4 = { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] };
-    let published = false;
     try {
-      setMessage(null);
-      setCurrentness("pending");
-      const confirmed = await runtime.trackerHistory(witness, direction);
-      published = true;
-      installLocalHistory(confirmHistoryCommand(localHistoryRef.current, confirmed.view, confirmed.publication, direction));
-      await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
-      return confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null;
-    } catch (error) {
-      installLocalHistory(emptyLocalHistory());
-      if (published || error instanceof PublishedProjectionRecoveryError) {
-        failClosedAfterPublicationRecovery(
-          witness.occurrence,
-          salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence),
-        );
-      } else {
-        failClosedAfterUnknownHistory(direction);
-      }
-      return null;
-    } finally {
-      end();
-    }
+      const result = await mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) });
+      return result.kind === "published" ? result.focusTarget : null;
+    } finally { end(); }
   }
 
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
@@ -1840,24 +1641,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         } else receipt = await copies.create(name, snapshot, importedSourceRef.current ?? undefined);
       }
       void refreshCopies();
-      const current = viewRef.current;
-      const stillCurrent =
-        current !== null &&
-        current.occurrence === live.occurrence &&
-        current.revision === snapshotRevision &&
-        receipt.revision === snapshotRevision;
-      if (stillCurrent) {
-        bindCopy(live.occurrence, receipt);
-        setSalesEntryTip((marker) => salesEntryTipAfterSuccessfulSave(marker, live.occurrence));
-        setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, live.occurrence));
-        savedRevisionRef.current = receipt.revision;
-        pendingDirtyRef.current = false;
-        presentationDirtyRef.current = false;
-        syncDirty();
-      } else {
-        markNotSaved();
-      }
-      setOutcome("idle");
+      const stillCurrent = mutationCompletion.save(live, snapshotRevision, receipt);
       return expected ? stillCurrent : true;
     } catch (error) {
       markNotSaved();
@@ -1890,13 +1674,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   async function createJ4(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
     if (!begin()) return false;
-    const priorJ4 = currentness === "current"
-      ? { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] }
-      : null;
-    const priorOccurrence = witness.occurrence;
-    const priorRevision = witness.revision;
-    let published = false;
-    let creationStarted = false;
     try {
       setMessage(null);
       const catalog = await runtime.listKeyedGroupedSumBindings(witness);
@@ -1905,53 +1682,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setOutcome("idle");
         return false;
       }
-      creationStarted = true;
-      setCurrentness("pending");
-      clearJ4Results();
-      await runtime.createKeyedGroupedSum(witness, binding);
-      published = true;
-      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
-      const next = await runtime.read();
-      const results = await readJ4Results(next);
-      installView(next);
-      installJ4Results(results);
-      clearCleanupPreview();
-      pendingDirtyRef.current = true;
-      syncDirty();
-      markNotSaved();
-      setCurrentness("current");
-      setOutcome("idle");
-      return true;
+      const result = await mutationCompletion.run({ kind: "summary", witness, dispatch: () => runtime.createKeyedGroupedSum(witness, binding) });
+      return result.kind !== "refused";
     } catch (error) {
-      if (!creationStarted) {
-        setOutcome("idle");
-        setMessage(describe(error, "The current tables could not be checked before creating the cross-table summary."));
-        return false;
-      }
-      if (published) {
-        failClosedAfterPublicationRecovery(witness.occurrence);
-        return true;
-      }
-      if (error instanceof PublishedProjectionRecoveryError) {
-        failClosedAfterPublicationRecovery(witness.occurrence);
-        return true;
-      }
-      if (error instanceof UnknownOperationOutcomeError) {
-        failClosedAfterUnknownJ4();
-        return true;
-      }
-      const current = viewRef.current;
-      if (priorJ4 && current &&
-        current.occurrence === priorOccurrence && current.revision === priorRevision) {
-        restoreJ4Results(priorJ4.definitionIds, priorJ4.results);
-      }
-      setCurrentness("current");
       setOutcome("idle");
-      setMessage(describe(error, "The cross-table summary was not created."));
+      setMessage(describe(error, "The current tables could not be checked before creating the cross-table summary."));
       return false;
-    } finally {
-      end();
-    }
+    } finally { end(); }
   }
 
   async function refreshJ4(witness: ViewWitness, definitionId: string): Promise<boolean> {
@@ -1960,41 +1697,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (!admitted || !targetedResultRefreshIsAdmitted({ currentness, live: admitted, witness, definitionIds: j4DefinitionIdsRef.current, definitionId })) return false;
     if (!begin()) return false;
     try {
-      setMessage(null);
-      setCurrentness("pending");
-      const result = await runtime.queryKeyedGroupedSum(witness, definitionId);
-      const current = viewRef.current;
-      if (!current || current.occurrence !== admitted.occurrence || current.revision !== admitted.revision ||
-        current.occurrence !== witness.occurrence || current.revision !== witness.revision) return false;
-      if (result.definitionId !== definitionId || result.revision !== admitted.revision) {
-        throw new Error("The refreshed result did not match this summary and the current work.");
-      }
-      // A targeted refresh must not discard sibling summaries. Replace the
-      // requested result in place, or append it only when it was not already
-      // visible; the definition inventory remains the recovery control set.
-      upsertJ4Result(result);
-      setCurrentness("current");
-      setOutcome("idle");
-      return true;
-    } catch (error) {
-      const current = viewRef.current;
-      if (!current || current.occurrence !== admitted.occurrence || current.revision !== admitted.revision) return false;
-      if (error instanceof SheetSessionError && (error.code === "not-open" || error.code === "stale-witness")) {
-        setCurrentness("unknown");
-        setOutcome("unknown");
-        setMessage("The work could not be confirmed. Refresh the workbook to recheck all results.");
-        return false;
-      }
-      // A failed targeted refresh invalidates only that result. Other current
-      // summaries and every definition refresh control remain available.
-      dropJ4Result(definitionId);
-      setCurrentness("current");
-      setOutcome("idle");
-      setMessage(null);
-      return false;
-    } finally {
-      end();
-    }
+      return await mutationCompletion.refreshSummary(witness, definitionId, () => runtime.queryKeyedGroupedSum(witness, definitionId));
+    } finally { end(); }
   }
 
   function createReport(definitionId: string, type: ReportConfiguration["type"]): void {
