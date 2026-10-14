@@ -38,46 +38,6 @@ export async function runNewTableRepairCases({ page, ready, projection, checks }
     await dialog().waitFor({ state: "detached" });
   }
   const cases = {
-    A: async () => {
-      await openDialog("Lost_acknowledgement");
-      await dialog().getByLabel("Column 1 name", { exact: true }).fill("Item");
-      await page.evaluate(() => { window.__rowEvidence.loseNextCreateReply = true; });
-      await create();
-      await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
-      const count = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(r => r.request?.type === "new_table").length);
-      await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click();
-      await ready(page);
-      assert.equal((await projection(page)).rows.length, 0);
-      assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true");
-      assert.equal(await unloadProtected(), true);
-      assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(r => r.request?.type === "new_table").length), count, "Refresh must never replay creation");
-      await page.getByRole("button", { name: "Close project", exact: true }).click();
-      const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
-      await unsaved.waitFor(); await unsaved.getByRole("button", { name: "Keep editing", exact: true }).click();
-      await page.getByRole("button", { name: "Save a copy", exact: true }).click();
-      const copy = page.getByRole("dialog", { name: "Save a copy", exact: true });
-      await copy.getByLabel("Copy name", { exact: true }).fill("Recovered creation");
-      await copy.getByRole("button", { name: "Create copy", exact: true }).click(); await copy.waitFor({ state: "detached" });
-      await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
-      await cleanup();
-      await page.getByRole("button", { name: "Open saved Recovered creation", exact: true }).click(); await ready(page);
-      assert.equal((await projection(page)).collection.key, "lost_acknowledgement");
-      await cleanup();
-      await openDialog("Lost_then_absent");
-      await dialog().getByLabel("Column 1 name", { exact: true }).fill("Item");
-      await page.evaluate(() => { window.__rowEvidence.loseNextCreateReply = true; });
-      await create();
-      // Real resident work can disappear before observation. Close through
-      // the real Worker protocol; do not manufacture a no-project reply.
-      await page.evaluate(() => window.__rowEvidence.liveWorker.postMessage({ id: -184, kind: "close_project" }));
-      await page.waitForFunction(() => window.__rowEvidence.workers[0].replies.some(reply => reply.id === -184 && reply.status === "closed"));
-      const absentCount = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(r => r.request?.type === "new_table").length);
-      await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click();
-      await page.getByRole("button", { name: "New table", exact: true }).waitFor();
-      await page.getByText("No table is open. There is no work to recover; the creation request has not been retried.", { exact: true }).waitFor();
-      assert.equal(await unloadProtected(), false, "proven absence clears protection");
-      assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(r => r.request?.type === "new_table").length), absentCount);
-    },
     B: async () => {
       await openDialog(); assert.equal(await unloadProtected(), false, "initial defaults are not a draft");
       const name = dialog().getByLabel("Table name", { exact: true });

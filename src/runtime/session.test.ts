@@ -1272,6 +1272,24 @@ describe("createSheetRuntime", () => {
 });
 
 describe("Work file adapter admission and export", () => {
+  it.each(["close", "replacement"])("clears work-file origin at %s before a lost replacement reply", async (boundary) => {
+    const { runtime, client } = await opened();
+    Object.assign(client, {
+      verifyPortableRo: async () => {},
+      openPortableRo: (bytes: ArrayBuffer) => client.openProject(bytes),
+    });
+    expect((await runtime.openWorkFile(new ArrayBuffer(4))).openedFromWorkFile).toBe(true);
+    if (boundary === "close") {
+      await runtime.close();
+      client.hooks.newTable = () => client.openThenLoseReply(new Error("lost acknowledgement"));
+      await expect(runtime.newTable("Ordinary", [{ name: "A", field_type: "text" }])).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
+    } else {
+      client.hooks.openProject = () => client.openThenLoseReply(new Error("lost acknowledgement"));
+      await expect(runtime.openCanonical(CANONICAL_FILES)).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
+    }
+    expect((await runtime.read()).openedFromWorkFile).toBeUndefined();
+  });
+
   it("refuses oversized buffers before cloning or dispatch and preserves open work", async () => {
     const { runtime, client, view } = await opened();
     const verify = vi.fn(async () => {});

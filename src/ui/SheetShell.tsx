@@ -566,6 +566,7 @@ export function SheetShell(props: SheetShellProps) {
   // Bumped by any pointer or key input outside the cell editor. A late
   // completion may move focus only if the user has not acted since.
   const focusIntentRef = useRef(0);
+  const newTableFocusIntentRef = useRef<number | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
   const appFocusingRef = useRef(false);
   // Declared before the windowing effects so a replacement occurrence never
@@ -1326,10 +1327,26 @@ export function SheetShell(props: SheetShellProps) {
     return { generation: focusIntentRef.current, occurrence: liveOccurrenceRef.current };
   }
 
-  // One intent/occurrence rule for selection, roving state and DOM focus.
+  // Selection and DOM focus require unchanged intent. Roving state must
+  // still name a surviving cell when the previously focused row disappears.
   function completionMayUpdateUi(intent: { generation: number; occurrence: string | null }): boolean {
     return focusIntentRef.current === intent.generation && liveOccurrenceRef.current === intent.occurrence && intent.occurrence !== null;
   }
+
+  useLayoutEffect(() => {
+    const generation = newTableFocusIntentRef.current;
+    if (generation === null || newTableOpen || !view) return;
+    newTableFocusIntentRef.current = null;
+    const intent = { generation, occurrence: view.occurrence };
+    requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent)) return;
+      withAppFocus(() => {
+        const firstCell = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
+        const firstEntry = shellRef.current?.querySelector<HTMLElement>(".ts-entry-row [data-entry-field]");
+        (firstCell ?? firstEntry)?.focus();
+      });
+    });
+  }, [newTableOpen, view]);
 
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
@@ -1766,12 +1783,24 @@ export function SheetShell(props: SheetShellProps) {
     try {
       const result = await onRemoveRows(witness, view.table.collection.key, [selectedEntity]);
       if (result.kind === "refused") setRowError({ message: result.message });
-      if (result.kind === "confirmed" && completionMayUpdateUi(intent)) {
-        setSelectedEntity(null);
-        setFocusedKey(null);
-        requestAnimationFrame(() => {
-          if (completionMayUpdateUi(intent)) withAppFocus(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
-        });
+      if (result.kind === "confirmed" && liveOccurrenceRef.current === intent.occurrence) {
+        if (completionMayUpdateUi(intent)) {
+          setSelectedEntity(null);
+          setFocusedKey(null);
+          requestAnimationFrame(() => {
+            if (completionMayUpdateUi(intent)) withAppFocus(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
+          });
+        } else {
+          const rows = view.table.rows;
+          const removedIndex = rows.findIndex(row => rowEntity(row) === selectedEntity);
+          const survivingRows = rows.filter(row => rowEntity(row) !== selectedEntity);
+          const nearest = survivingRows[Math.min(removedIndex, survivingRows.length - 1)];
+          setFocusedKey(current => {
+            if (!current?.startsWith(`${selectedEntity}\u0000`)) return current;
+            const field = current.slice(selectedEntity.length + 1);
+            return nearest ? cellKey(rowEntity(nearest), field) : null;
+          });
+        }
       }
     } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
@@ -2857,7 +2886,12 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {newTableOpen && onNewTable ? <NewTableDialog onCreate={onNewTable} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
+      {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {
+        const generation = focusIntentRef.current;
+        const created = await onNewTable(name, columns);
+        if (created) newTableFocusIntentRef.current = generation;
+        return created;
+      }} onSuccess={() => setNewTableOpen(false)} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
       {copyOpen ? (
         <Modal variant="save" label="Save a copy" onCancel={closeCopyDialog} dismissDisabled={copyPending}>
           <div className="ts-dialog-intro">

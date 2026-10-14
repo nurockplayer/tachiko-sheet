@@ -388,6 +388,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     dispatchOpen: () => Promise<OpenedProjection>,
     fromWorkFile = false,
   ): Promise<WorkbookView> {
+    openedFromWorkFile = false;
     try {
       await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
     } catch (error) {
@@ -846,6 +847,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const { kit, client } = await loadKitOnce();
       const importSheet = capability(client.importSpreadsheet, "spreadsheet import");
       let imported;
+      openedFromWorkFile = false;
       try {
         imported = await afterNotReplaced(
           requestedAt,
@@ -971,6 +973,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       return;
     }
     closed = true;
+    openedFromWorkFile = false;
     epoch += 1;
     active = null;
     residentCollection = null;

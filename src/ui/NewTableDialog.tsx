@@ -10,9 +10,10 @@ function columnLetter(ordinal: number): string {
   return name;
 }
 
-export function NewTableDialog({ onCreate, onCancel, onDraftChange }: {
+export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }: {
   onCreate(name: string, columns: NewTableColumn[]): Promise<boolean>;
   onCancel(): void;
+  onSuccess(): void;
   onDraftChange(active: boolean): void;
 }) {
   const id = useId();
@@ -36,7 +37,7 @@ export function NewTableDialog({ onCreate, onCancel, onDraftChange }: {
     setPending(true);
     setError(null);
     try {
-      if (await onCreate(name, columns.map(({ name, field_type }) => ({ name, field_type })))) onCancel();
+      if (await onCreate(name, columns.map(({ name, field_type }) => ({ name, field_type })))) onSuccess();
       else setError("The table could not be opened. Check the current work status before trying again.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The table could not be created."); }
     finally { pendingRef.current = false; setPending(false); }

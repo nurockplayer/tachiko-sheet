@@ -1,88 +1,48 @@
 {
-  "repairBase": "5959e7b3ee11edfa00609281111dca5c0da52a7c",
-  "validation": "Tested repaired source in w184; artifact-manifest binds all delivered source/evidence bytes. Opus owns hosted gates, fresh independent review and integration.",
+  "repairBase": "8aea7bfafc82b9086078d11a6b1ca3db92a013c1",
+  "validation": "Final source in w184; byte-identical source/evidence copied to temporary clone for commit. Opus retains hosted gates, independent exact-HEAD review and integration.",
   "checks": [
     {
       "command": "pnpm typecheck",
       "status": "PASS",
       "exitCode": 0,
-      "log": "/private/tmp/sheet184-repair3-validation/typecheck-final.log"
+      "log": "/private/tmp/sheet184-round4-validation/typecheck.log"
     },
     {
       "command": "TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit",
       "status": "PASS",
       "exitCode": 0,
-      "vitest": 558,
-      "node": 125,
-      "log": "/private/tmp/sheet184-repair3-validation/unit.log"
+      "log": "/private/tmp/sheet184-round4-validation/unit.log",
+      "vitest": 560,
+      "node": 125
     },
     {
       "command": "pnpm build",
       "status": "PASS",
       "exitCode": 0,
-      "productionAcceptanceHooksExcluded": true,
-      "log": "/private/tmp/sheet184-repair3-validation/build.log"
+      "log": "/private/tmp/sheet184-round4-validation/build.log",
+      "productionAcceptanceHooksExcluded": true
     },
     {
       "command": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs",
       "status": "PASS",
       "exitCode": 0,
-      "groups": 25,
-      "screenshots": 8,
-      "log": "/private/tmp/sheet184-repair3-validation/new-table-lane.log"
+      "log": "/private/tmp/sheet184-round4-validation/new-table-lane.log",
+      "groups": 29,
+      "screenshots": 10
     },
     {
-      "command": "NODE_OPTIONS=--import=/private/tmp/sheet184-repair3-validation/appearance-receipt.mjs pnpm acceptance:product",
-      "status": "FAIL",
-      "exitCode": 1,
-      "passedSteps": 22,
-      "totalSteps": 31,
-      "infrastructureFailures": [
-        "appearance-visual-local",
-        "home-visual-local",
-        "initial-launch-local-transport",
-        "cell-editing-regression",
-        "import-recognizable-local",
-        "browser-m1",
-        "browser-recovery-regression",
-        "browser-initial-launch-regression",
-        "product-focus"
-      ],
-      "fullGatePass": false,
-      "log": "/private/tmp/sheet184-repair3-validation/product.log"
+      "command": "pnpm acceptance:product",
+      "status": "NOT_RUN",
+      "reason": "Explicit bounded-writer instruction; Opus runs outside the sandbox. No full product PASS claimed."
     }
   ],
-  "beforeAfter": "regression-results.json: each of the five findings fails on the 5959e7b production build and passes after; scalar unknown-outcome included. History is supplemental shared-rule coverage.",
   "earlierAttempts": [
-    {
-      "check": "baseline clone build",
-      "status": "BLOCKED",
-      "reason": "The reused node_modules symlink triggered pnpm pre-script dependency verification and invalid module resolution. No regression credit; frozen install in w184 and clean-base production build/snapshot succeeded."
-    },
-    {
-      "check": "initial focused baseline",
-      "status": "FAIL",
-      "reason": "Harness held undefined request types; fixed fault arming before behavioral baseline capture."
-    },
-    {
-      "check": "intermediate focused baseline/repaired",
-      "status": "FAIL",
-      "reason": "Additional identity probe used a non-UUID occurrence, correctly refused by core. Real probe now uses crypto.randomUUID; final baseline/repaired runs complete with explicit assertions."
-    }
+    "Initial repaired run exposed an error-message wrapper; fixed.",
+    "A direct absence probe initially used the wrong protocol kind and timed out; corrected to the existing observe_occurrence protocol.",
+    "An intermediate harness cleanup raced a second Close; now waits for Home.",
+    "The initial newer-focus probe targeted a Home control that unmounts; corrected to a persistent external DOM focus target.",
+    "Screenshot inspection caught a stale generic Open-recovery banner; removed and all requested checks rerun."
   ],
-  "environment": {
-    "productionLane": "Real Worker/WASM over existing disk-routed production transport and single-process Chromium.",
-    "fullProduct": "Full unmodified runner selected supported single-process fallback; nine infrastructure failures give no full-gate PASS. Out-of-repo console observer only retains complete visual JSON if emitted; none emitted.",
-    "normalChromiumProbe": "Normal and single-process full Chrome both failed a two-context qualification probe. No assertion/runner changes or blind full rerun."
-  },
-  "excludedTrackedFilesVerifiedByteIdentical": 62,
-  "logRoot": "/private/tmp/sheet184-repair3-validation",
-  "delivery": {
-    "worktreeMetadata": "index.lock denied in w184",
-    "temporaryClone": "/private/tmp/sheet184-repair3-candidate",
-    "parent": "5959e7b3ee11edfa00609281111dca5c0da52a7c",
-    "byteIdenticalFiles": 24,
-    "push": "normal, no force",
-    "originalWorktree": "Tested repairs retained at metadata HEAD 5959e7b; Serena excluded"
-  }
+  "excluded": "Frozen #146 seeds/runners, public/core-kit, lockfiles and Serena unchanged; all 62 manifest-protected files byte-identical to the repair base."
 }

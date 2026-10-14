@@ -9,6 +9,7 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
 import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
+import { runNewTableRound4Cases } from "./new-table-round4-cases.mjs";
 import { runNewTableRepairCases } from "./new-table-repair-cases.mjs";
 
 const dist = process.env.WORK_DIST;
@@ -185,8 +186,9 @@ try {
   let page = await start();
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
+  if (process.env.TABLE_ROWS_ROUND4_CASE) await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
   let oracle;
-  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE) {
+  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE) {
   await page.getByRole("button", { name: "New table", exact: true }).waitFor();
   const homeEntry = page.getByRole("region", { name: "Other ways to start", exact: true });
   assert.equal(await homeEntry.locator(".ts-home-other-row").first().locator("strong").textContent(), "New table");
@@ -364,33 +366,9 @@ try {
   assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isEnabled(), true);
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
   await closeWithoutSave(page);
-  for (const fault of ["table", "discovery"]) {
-    await page.getByRole("button", { name: "New table…", exact: true }).click();
-    const creation = dialog(page);
-    await creation.getByLabel("Table name", { exact: true }).fill(`Recovered_${fault}`);
-    await creation.getByLabel("Column 1 name", { exact: true }).fill("Item");
-    await page.evaluate(fault => { window.__rowEvidence.failCreationObservation = fault; }, fault);
-    await creation.getByRole("button", { name: "Create table", exact: true }).click();
-    await creation.waitFor({ state: "detached" });
-    await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
-    assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true", `${fault} recovery keeps acknowledged creation unsaved`);
-    await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click();
-    await ready(page);
-    assert.equal((await projection(page)).rows.length, 0);
-    assert.equal(await page.locator("[data-work-dirty]").getAttribute("data-work-dirty"), "true", `${fault} Refresh preserves unsaved creation`);
-    assert.equal(await page.evaluate(() => {
-      const event = new Event("beforeunload", { cancelable: true });
-      window.dispatchEvent(event); return event.defaultPrevented;
-    }), true, `${fault} recovered creation retains unload protection`);
-    await page.getByRole("button", { name: "Close project", exact: true }).click();
-    const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
-    await unsaved.waitFor();
-    await unsaved.getByRole("button", { name: "Keep editing", exact: true }).click();
-    await closeWithoutSave(page);
-    checks.push(`acknowledged-create-lost-${fault}-observation-refresh-unsaved-close-and-unload`);
   }
-  }
-  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE) {
+  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE) {
+    await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
     await runNewTableRepairCases({ page, ready, projection, checks });
     await runNewTableRootCauseCases({ page, ready, projection, checks });
   }

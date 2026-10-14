@@ -1,94 +1,94 @@
 {
   "base": "147b8f269f85e95be02366961cfbd8c918304c0f",
-  "repairBase": "5959e7b3ee11edfa00609281111dca5c0da52a7c",
+  "repairBase": "8aea7bfafc82b9086078d11a6b1ca3db92a013c1",
   "productionAssets": [
     {
       "path": "dist/assets/index-BS8DX0lF.css",
       "sha256": "1e8f6975f8f600d2e4bf4bbe52d77a30d218096efd8753f2acd464dae42cabd5"
     },
     {
-      "path": "dist/assets/index-DvezwbLQ.js",
-      "sha256": "b50866de1790331bc3a41425fc21532b57b17d0d126f435460b5d9b224d871d9"
+      "path": "dist/assets/index-zw9yV0zd.js",
+      "sha256": "a6aadb91baa09eed285d03bd335c458627a27cafac846944bc8bb07a44152567"
     }
   ],
   "screenshots": [
     {
-      "path": "evidence/184/dialog-1400.png",
-      "sha256": "d58cc3e77e186b2e8a3c2830cb7a26b7db8032644b68bc230dfb0d6ec875d6af"
-    },
-    {
-      "path": "evidence/184/dialog-800.png",
-      "sha256": "725e5fffd0a286bf4eebd695a89d797554271c57ef6ad936efc614d0f55151a3"
-    },
-    {
       "path": "evidence/184/home-1400.png",
-      "sha256": "25b5e4c64251669bbf3579868afda6e225d5caaeba644ec9bf50491efa6ce268"
+      "sha256": "4f0ef82cf3f3290da784e975352f5e6c05e30e3067c82b978251e964800502d6"
     },
     {
       "path": "evidence/184/home-800.png",
-      "sha256": "5c68935e1fe1972dd41e88da992bf9a98c07f9f7bf7f383aeb20fec669ba2a95"
+      "sha256": "a4bd6213ad695acd0a3ea888d9920aa183f9fc92e9fa11045bb7ccdce3bdaa4f"
     },
     {
-      "path": "evidence/184/refusal-1400.png",
-      "sha256": "718d682f8946cc14cf89d6b8b66c155c8d2c902f540c178a4307b90d709ce08b"
+      "path": "evidence/184/dialog-1400.png",
+      "sha256": "e7517afa4ce3750fe9ff938d0624f9b74b64701822a56aebea78b49fa5147bb2"
     },
     {
-      "path": "evidence/184/refusal-800.png",
-      "sha256": "e7e1ef77ef82a777a784b4ff6677737e833fed8f87b11f95ca7cfbb07608babb"
+      "path": "evidence/184/dialog-800.png",
+      "sha256": "f38d0053a02a411d77cf7b718b07ee902a0e3c27d97be57fd66f42efa3ae6ca8"
     },
     {
       "path": "evidence/184/table-1400.png",
-      "sha256": "7d519979a0679fc71d3c628023bc9e53619a1f7eb8efe7230ce6edb64abc9e8c"
+      "sha256": "fbbcd9f323b3d651aa881f94b279af7af03eda65994bea3a36dbad43a4b0a156"
     },
     {
       "path": "evidence/184/table-800.png",
-      "sha256": "c8b91f28d84fabf874cbe0c53b5296699a8739e3d707cf19ffb8e02f5a80ac2d"
+      "sha256": "20901f9ed087483e55cbded9fd791bc99a465c9d903d5f6d33cc736e22fed668"
+    },
+    {
+      "path": "evidence/184/refusal-1400.png",
+      "sha256": "95003382d0492b9e5479f0a035ecba410c2ca859f89da189d789da280fcbfebf"
+    },
+    {
+      "path": "evidence/184/refusal-800.png",
+      "sha256": "10c8062eb364a73583b6a9c4c70c7b794fcdeaff638a4a6ba33b313e48c63ec2"
+    },
+    {
+      "path": "evidence/184/unconfirmed-dialog-1400.png",
+      "sha256": "6ae0d3fbd78c8f5d8add27c4690fdd5a91501a6b833f84879a3d71373f8605a4"
+    },
+    {
+      "path": "evidence/184/unconfirmed-dialog-800.png",
+      "sha256": "eccdd1ee8df6788c92ca4632b0fd94d3563a5225ba52e3bcb6549be80ca9cc79"
     }
   ],
   "testedSourceFiles": [
     {
       "path": "src/App.tsx",
-      "sha256": "40ddcaf8eec5ff3c7a45bbc4827e3609aed1272578b26cabdd2844cb9a9f730f"
+      "sha256": "0fe9266b09cade458b9ee03fa360609dfbc396a85ae9eedd70cc19d0276be7f7"
     },
     {
-      "path": "src/ui/Modal.tsx",
-      "sha256": "c3a174281ca8852b3f9919c88cf64929b244135594f7af389f683db3efd22af6"
+      "path": "src/runtime/session.ts",
+      "sha256": "6a75b2d7356c7f3963559303e2a0548d8f7a034b7908336ee2bf098085240719"
+    },
+    {
+      "path": "src/runtime/session.test.ts",
+      "sha256": "1d065d94e1b56097e57c991894040521ad80dc72cecf2e4a99345c9279feb79a"
     },
     {
       "path": "src/ui/NewTableDialog.tsx",
-      "sha256": "cd748c489bb95250f325377af7b8bd4cf18a0876baf4e397c3fa3b4cf6769a34"
-    },
-    {
-      "path": "src/ui/RowEntry.tsx",
-      "sha256": "0c36492090b001cf1db87dbc0880189818ec527171da2bbc8b75c4d95c649442"
-    },
-    {
-      "path": "src/ui/SheetShell.test.ts",
-      "sha256": "673a868587f9b92b53ac563142a1ab82539f7c8effac75c81e22c0cbc84b2b95"
+      "sha256": "bc13d9144be52fb754122d21816cf5dbc91503ac9e023574671da71adf8b4f19"
     },
     {
       "path": "src/ui/SheetShell.tsx",
-      "sha256": "35104a5cc6a7a2953e045635527dbe253d9678e77c88e2e6ab18d4426322220c"
-    },
-    {
-      "path": "src/ui/composition-event.ts",
-      "sha256": "4f89ca5294d9184d246cb1dd425a9996f53bf3c140cde167f7f03eda4ab7b97b"
-    },
-    {
-      "path": "tests/product/appearance-visual-local.mjs",
-      "sha256": "cdb27df72700e06da1d20b6f1db3054cdc92030e83ea4de9971dfaf67e055c61"
+      "sha256": "7366b12eae0acae607df17e19d5067635f8821d428230153914bcf2a4bb66177"
     },
     {
       "path": "tests/product/new-table-repair-cases.mjs",
-      "sha256": "d03ae19e54a7b3b54e05559ea467261212d52be7b999bb114146566b6bc79d2f"
+      "sha256": "d168f87a7ecf9f553a12191704e46b29213d625a709d6d708ed9aa9ece15e6a1"
     },
     {
       "path": "tests/product/new-table-root-cause-cases.mjs",
-      "sha256": "e02c2c854f9bed9b8aa32a3596c6a0842a86d7c1779261c59b95c40eadf014cf"
+      "sha256": "b49a07850d65796c937142674982c2581a94996c7ad52f96f898651055676fff"
+    },
+    {
+      "path": "tests/product/new-table-round4-cases.mjs",
+      "sha256": "698d19c4f60d542f16e1ce42b4edca1f4a5d9e576290d06b36bfcff3e40607fa"
     },
     {
       "path": "tests/product/new-table-rows-local.mjs",
-      "sha256": "1ca22892b75ea4c1e5519fb01464c71e282b519d7cf5276e5def1b3971dacd1f"
+      "sha256": "1832e3e37f180debcc6ebc10cacb75785bce6e22603e2e907edca5ead06eccbc"
     }
   ],
   "unchangedFrozenFiles": [
@@ -119,12 +119,12 @@
   },
   "baselineProductionAssets": [
     {
-      "path": "/private/tmp/sheet184-repair3-validation/baseline-dist/assets/index-BS8DX0lF.css",
+      "path": "/private/tmp/sheet184-round4-validation/dist-base/assets/index-BS8DX0lF.css",
       "sha256": "1e8f6975f8f600d2e4bf4bbe52d77a30d218096efd8753f2acd464dae42cabd5"
     },
     {
-      "path": "/private/tmp/sheet184-repair3-validation/baseline-dist/assets/index-Dl39TeK0.js",
-      "sha256": "0211eafcf7ea9061b9e6f7da1d6a0ffe3cf34d41d3eaa0fd666816c6d563d696"
+      "path": "/private/tmp/sheet184-round4-validation/dist-base/assets/index-DvezwbLQ.js",
+      "sha256": "b50866de1790331bc3a41425fc21532b57b17d0d126f435460b5d9b224d871d9"
     }
   ],
   "excludedFiles": [

@@ -74,26 +74,6 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       assert.match(await dialog().getByRole("alert").textContent(), /reload/i);
       await page.evaluate(() => { window.__rowEvidence.loseNextCreateReply = false; });
     },
-    "R1-identity": async () => {
-      await openDialog("Requested");
-      await dialog().getByLabel("Column 1 name", { exact: true }).fill("Item");
-      await page.evaluate(() => { window.__rowEvidence.loseNextCreateReply = true; });
-      await dialog().getByRole("button", { name: "Create table", exact: true }).click();
-      await dialog().waitFor({ state: "detached" });
-      await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
-      // Replace via the real core, never a manufactured read. Same shape but
-      // a different title must not inherit the requested creation's identity.
-      await page.evaluate(() => window.__rowEvidence.liveWorker.postMessage({ id: -188,
-        kind: "command", request: { type: "new_table", occurrence_id: crypto.randomUUID(), name: "Old", columns: [{ name: "Item", field_type: "text" }] } }));
-      await page.waitForFunction(() => window.__rowEvidence.workers[0].replies.some(r => r.id === -188 && r.response?.type === "opened"));
-      const count = (await requests("new_table")).length;
-      await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click();
-      await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false" ||
-        [...document.querySelectorAll(".ts-home button")].some(b => b.textContent === "Refresh" && !b.disabled));
-      assert.equal(await page.getByTestId("project-ready").count(), 0, "mismatched resident cannot be exposed as the new table");
-      assert.equal((await requests("new_table")).length, count, "identity recovery never replays creation");
-      assert.equal(await page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; }), true);
-    },
     R2: async () => {
       await sales(); const before = await projection(page);
       await page.getByTestId(`cell:${before.rows[0].id}:${before.columns[0].id}`).focus();

@@ -87,20 +87,6 @@ export function recoveryDraftAfterBoundary(
   return boundary === "reobserve" ? draft : null;
 }
 
-/** Request identity for a creation dispatched only after proven absence. */
-export function recoveredCreationMatches(
-  request: { title: string; columns: NewTableColumn[] },
-  observed: WorkbookView,
-): boolean {
-  const signature = (columns: Array<{ name: string; field_type: string }>) =>
-    columns.map(column => `${column.name}\u0000${column.field_type}`).sort();
-  const actual = signature(observed.table.columns.map(column => ({ name: column.key, field_type: column.field_type })));
-  const expected = signature(request.columns);
-  return observed.title === request.title && observed.table.native_table_profile === true &&
-    observed.collections.length === 1 && actual.length === expected.length &&
-    actual.every((column, index) => column === expected[index]);
-}
-
 export function noResidentRecoveryState(): {
   dirty: false;
   currentness: "current";
@@ -435,9 +421,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   // Independent of the old-work checkpoint: an unknown Open may start from
   // the home screen, so recovery must remain fail-closed even without one.
   const unknownOpenRecoveryRef = useRef(false);
-  // Runtime creation preflight proves absence. Recovery must additionally
-  // match this request's normalized signature before exposing resident work.
-  const newTableRecoveryRef = useRef<{ title: string; columns: NewTableColumn[] } | null>(null);
   const salesOpeningRef = useRef<{ occurrence: string; revision: string } | null>(null);
   // A known import publication can still lose its first projection. This is
   // separate from operation outcome: the candidate source identity is not
@@ -838,7 +821,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     provenance: ReplacementProvenance = {},
     recoveredReport: ReportConfiguration | null = null,
   ): void {
-    newTableRecoveryRef.current = null;
     abandonSalesOccurrenceMarkers();
     installView(next);
     installJ4Results(results);
@@ -1023,6 +1005,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
     if (blockUnknownOpenRecovery() || !begin()) return false;
+    const unconfirmed = new Error("Tachiko couldn't confirm the table was created. Nothing was saved — choose Create to try again.");
     try {
       // This dialog is a Home action. Its own disposable configuration is
       // allowed to submit; a resident work or pending publication is not.
@@ -1031,22 +1014,38 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(null);
       setCurrentness("pending");
       const result = await replaceWork(() => runtime.newTable(name, columns));
-      if (result.kind === "confirmed" || result.kind === "acknowledged-recovery" || result.kind === "unknown-recovery") {
-        newTableRecoveryRef.current = result.kind === "confirmed" ? null : {
-          title: name.trim(), columns: columns.map(column => ({ ...column, name: column.name.trim().toLowerCase() })),
-        };
-        // Creation may have succeeded even with a lost acknowledgement.
-        // Keep protection until an authoritative read proves the resident
-        // table or its absence; never retry the creation command.
+      if (result.kind === "confirmed") {
         pendingDirtyRef.current = true;
         syncDirty();
-        if (result.kind === "unknown-recovery") setMessage("The table creation request could not be confirmed. Refresh to check whether your new table was created; it has not been retried.");
+        return true;
       }
-      // An acknowledged/unknown open leaves the dialog, then uses existing recovery.
-      return result.kind !== "blocked" && result.kind !== "startup-unavailable";
+      if (result.kind === "acknowledged-recovery" || result.kind === "unknown-recovery") {
+        try {
+          await runtime.close();
+        } catch {
+          resetClosedWorkState();
+          terminalReloadRequiredRef.current = true;
+          savedCopiesRequestRef.current += 1;
+          setReloadRequired(true);
+          setCurrentness("unknown");
+          setMessage(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+          throw new Error(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+        }
+        resetClosedWorkState();
+        setMessage(null);
+        // The empty occurrence is disposable; the user's schema stays in
+        // the still-open dialog. Only another explicit Create may dispatch.
+        draftDirtyRef.current = true;
+        syncDirty();
+        throw unconfirmed;
+      }
+      return false;
     } catch (error) {
-      setCurrentness("current");
-      setOutcome("idle");
+      if (!terminalReloadRequiredRef.current) {
+        setCurrentness("current");
+        setOutcome("idle");
+      }
+      if (error === unconfirmed) throw error;
       throw new Error(describe(error, "The table could not be created."));
     } finally { end(); }
   }
@@ -2054,7 +2053,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setInterop(null);
       cleanupPreviewContextRef.current = null;
       pendingReplacementRef.current = null;
-      newTableRecoveryRef.current = null;
       unknownOpenRecoveryRef.current = false;
       provenanceUnconfirmedRef.current = false;
       clearOpenCheckpoint();
@@ -2074,25 +2072,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // Discovery is part of the coherent refresh boundary. Do not install a
       // table projection that has not yet been paired with its J4 inventory.
       const results = await readJ4Results(next);
-      const creation = newTableRecoveryRef.current;
-      if (creation && recoveredCreationMatches(creation, next)) {
-        commitReplacement(next, results);
-        pendingReplacementRef.current = null;
-        unknownOpenRecoveryRef.current = false;
-        provenanceUnconfirmedRef.current = false;
-        clearOpenCheckpoint();
-        pendingDirtyRef.current = true;
-        syncDirty();
-        setMessage("Your new table was recovered. Save a copy to keep it.");
-        return;
-      }
-      if (creation) {
-        // A coherent read alone cannot prove this creation. Keep it hidden
-        // behind the existing unknown-open gate, with no dispatch or replay.
-        newTableRecoveryRef.current = null;
-        unknownOpenRecoveryRef.current = true;
-        clearOpenCheckpoint();
-      }
       const checkpoint = openRecoveryCheckpointRef.current;
       const pendingReplacement = pendingReplacementRef.current;
       const recoveryDecision = checkpoint ? openRecoveryRestoreDecision(checkpoint, next) : null;
@@ -2241,8 +2220,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // The authoritative reobserve proved that the uncertain occurrence is
         // gone. Discard its dirty/recovery context so normal Open routes can
         // safely establish a fresh occurrence without replaying anything.
-        const recoveringCreation = newTableRecoveryRef.current;
-        newTableRecoveryRef.current = null;
         const recovered = noResidentRecoveryState();
         abandonSalesOccurrenceMarkers();
         pendingDirtyRef.current = recovered.dirty;
@@ -2258,7 +2235,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         markNotSaved();
         setCurrentness(recovered.currentness);
         setOutcome(recovered.outcome);
-        setMessage(recoveringCreation ? "No table is open. There is no work to recover; the creation request has not been retried." : recovered.message);
+        setMessage(recovered.message);
         return;
       } else {
         setCurrentness("unknown");
