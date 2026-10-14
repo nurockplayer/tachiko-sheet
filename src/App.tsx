@@ -29,6 +29,9 @@ import {
   type SalesEntryTipMarker,
   type SavedCopySummary,
   type ScalarEdit,
+  type NewTableColumn,
+  type RowInitializer,
+  type RowCommandOutcome,
   type SheetRuntime,
   type ViewWitness,
   type WorkbookView,
@@ -418,6 +421,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   // Independent of the old-work checkpoint: an unknown Open may start from
   // the home screen, so recovery must remain fail-closed even without one.
   const unknownOpenRecoveryRef = useRef(false);
+  const salesOpeningRef = useRef<{ occurrence: string; revision: string } | null>(null);
   // A known import publication can still lose its first projection. This is
   // separate from operation outcome: the candidate source identity is not
   // safe to expose or save until an authoritative refresh settles it.
@@ -536,7 +540,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     syncDirty();
   }
 
+  function observeSalesRevision(next: WorkbookView): void {
+    const opening = salesOpeningRef.current;
+    if (!opening || opening.occurrence !== next.occurrence || opening.revision === next.revision) return;
+    setSalesInitialOccurrence(null);
+    setSalesChangedOccurrence(next.occurrence);
+  }
+
   function abandonSalesOccurrenceMarkers(): void {
+    salesOpeningRef.current = null;
     const markers = salesMarkersAfterBoundary({
       salesEntryTip, salesCatalogLayout, salesInitialOccurrence, salesChangedOccurrence,
     }, "abandon");
@@ -640,6 +652,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       throw new Error("The changed work could not be matched to its summaries.");
     }
     installJ4Results(results);
+    observeSalesRevision(next);
     setCurrentness("current");
     setOutcome("idle");
   }
@@ -680,11 +693,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setSaveStatus((previous) => settledSaveStatus(previous, saved, live?.revision ?? null, hasUncommittedDraft));
   }
 
-  function guardReplacement(): void {
+  function guardReplacement(allowHomeDraft = false): void {
     if (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current) {
       throw new Error("Recovery is pending. Refresh or close the open work before opening another project.");
     }
-    if (dirtyRef.current || draftDirtyRef.current) {
+    const onlyHomeDraft = allowHomeDraft && viewRef.current === null &&
+      !pendingDirtyRef.current && !reportDraftDirtyRef.current && !presentationDirtyRef.current;
+    if ((dirtyRef.current || draftDirtyRef.current) && !onlyHomeDraft) {
       throw new Error(
         "The open work has unsaved changes. Close or save it before opening another project.",
       );
@@ -974,7 +989,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setMessage("The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried.");
   }
 
-  function failClosedAfterUnknownHistory(direction: "undo" | "redo"): void {
+  function failClosedAfterUnknownHistory(direction: "undo" | "redo" | "row change"): void {
     viewRef.current = null;
     installView(null);
     clearJ4Results();
@@ -986,6 +1001,53 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setCurrentness("unknown");
     setOutcome("unknown");
     setMessage(`The ${direction} request was dispatched but could not be confirmed. Refresh to re-read the work; it was not retried.`);
+  }
+
+  async function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
+    if (blockUnknownOpenRecovery() || !begin()) return false;
+    const unconfirmed = new Error("Tachiko couldn't confirm the table was created. Nothing was saved — choose Create to try again.");
+    try {
+      // This dialog is a Home action. Its own disposable configuration is
+      // allowed to submit; a resident work or pending publication is not.
+      if (viewRef.current !== null) throw new Error("Close the open work before creating a table.");
+      guardReplacement(true);
+      setMessage(null);
+      setCurrentness("pending");
+      const result = await replaceWork(() => runtime.newTable(name, columns));
+      if (result.kind === "confirmed") {
+        pendingDirtyRef.current = true;
+        syncDirty();
+        return true;
+      }
+      if (result.kind === "acknowledged-recovery" || result.kind === "unknown-recovery") {
+        try {
+          await runtime.close();
+        } catch {
+          resetClosedWorkState();
+          terminalReloadRequiredRef.current = true;
+          savedCopiesRequestRef.current += 1;
+          setReloadRequired(true);
+          setCurrentness("unknown");
+          setMessage(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+          throw new Error(LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE);
+        }
+        resetClosedWorkState();
+        setMessage(null);
+        // The empty occurrence is disposable; the user's schema stays in
+        // the still-open dialog. Only another explicit Create may dispatch.
+        draftDirtyRef.current = true;
+        syncDirty();
+        throw unconfirmed;
+      }
+      return false;
+    } catch (error) {
+      if (!terminalReloadRequiredRef.current) {
+        setCurrentness("current");
+        setOutcome("idle");
+      }
+      if (error === unconfirmed) throw error;
+      throw new Error(describe(error, "The table could not be created."));
+    } finally { end(); }
   }
 
   async function openFiles(files: FileList): Promise<void> {
@@ -1208,6 +1270,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       installReport(salesReportConfiguration(created.definitionId), true);
       setSalesEntryTip({ occurrence: selected.occurrence, collection: "catalog", field: "price" });
       setSalesCatalogLayout({ occurrence: selected.occurrence, collectionId: selected.table.collection.id });
+      salesOpeningRef.current = { occurrence: selected.occurrence, revision: selected.revision };
       setSalesInitialOccurrence(selected.occurrence);
       setSalesChangedOccurrence(null);
       setCurrentness("current");
@@ -1567,8 +1630,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
       const next = confirmed.view;
       await completePublishedObservation(next, priorJ4, witness.occurrence);
-      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
-      setSalesChangedOccurrence(salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence));
       return true;
     } catch (error) {
       if (published || error instanceof PublishedProjectionRecoveryError) {
@@ -1606,6 +1667,58 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
+  async function changeRows(
+    witness: ViewWitness,
+    command: () => ReturnType<SheetRuntime["insertRow"]>,
+  ): Promise<RowCommandOutcome> {
+    if (blockUnknownOpenRecovery() || !begin()) return { kind: "refused", message: "Wait for the current work before changing rows." };
+    const priorJ4 = { definitionIds: [...j4DefinitionIdsRef.current], results: [...j4ResultsRef.current] };
+    let published = false;
+    try {
+      const live = viewRef.current;
+      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
+        setOutcome("idle");
+        return { kind: "refused", message: "This row draft belongs to an older view. Refresh before adding it." };
+      }
+      setMessage(null);
+      setCurrentness("pending");
+      const confirmed = await command();
+      published = true;
+      // Real-kit qualification confirms one history action for insert/remove.
+      installLocalHistory(confirmScalarHistory(localHistoryRef.current, confirmed.view, confirmed.publication, true));
+      await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
+      return { kind: "confirmed" };
+    } catch (error) {
+      if (published || error instanceof PublishedProjectionRecoveryError) {
+        installLocalHistory(emptyLocalHistory());
+        failClosedAfterPublicationRecovery(witness.occurrence, salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence));
+        return { kind: "recovery" };
+      }
+      if (error instanceof UnknownOperationOutcomeError) {
+        installLocalHistory(emptyLocalHistory());
+        failClosedAfterUnknownHistory("row change");
+        return { kind: "recovery" };
+      }
+      setOutcome("idle");
+      if (error instanceof SheetSessionError) {
+        setCurrentness("unknown");
+      } else {
+        setCurrentness("current");
+      }
+      const failure = (error as { failure?: { code?: string } })?.failure;
+      const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
+      return { kind: "refused", message: describe(error, "The row change was not applied."), fieldType };
+    } finally { end(); }
+  }
+
+  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
+    return changeRows(witness, () => runtime.insertRow(witness, collection, initializers));
+  }
+
+  function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
+    return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
+  }
+
   async function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
@@ -1621,8 +1734,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       published = true;
       installLocalHistory(confirmHistoryCommand(localHistoryRef.current, confirmed.view, confirmed.publication, direction));
       await completePublishedObservation(confirmed.view, priorJ4, witness.occurrence);
-      setSalesInitialOccurrence((occurrence) => salesInitialOccurrenceAfterConfirmedChange(occurrence, witness.occurrence));
-      setSalesChangedOccurrence(salesChangeOccurrenceAfterConfirmedEdit(salesEntryTip, witness.occurrence));
       return confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null;
     } catch (error) {
       installLocalHistory(emptyLocalHistory());
@@ -2038,6 +2149,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       installView(next);
       installJ4Results(results);
+      observeSalesRevision(next);
       const cleanupContext = cleanupPreviewContextRef.current;
       if (cleanupContext && (cleanupContext.occurrence !== next.occurrence ||
         cleanupContext.revision !== next.revision ||
@@ -2197,6 +2309,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
+          onNewTable={newTable}
+          onInsertRow={insertRow}
+          onRemoveRows={removeRows}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}

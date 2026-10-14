@@ -29,6 +29,8 @@ import {
   type FieldTarget,
   type KitLoader,
   type ScalarEdit,
+  type NewTableColumn,
+  type RowInitializer,
   type SheetRuntime,
   type ImportedWorkbook,
   type KeyedGroupedSumBindingCatalog,
@@ -392,6 +394,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       if (error instanceof UnknownOperationOutcomeError) {
         // The open may have replaced the resident core work; the old
         // projection is never safe to retain after an unknown reply.
+        openedFromWorkFile = false;
         active = null;
         residentCollection = null;
         residentAvailable = true;
@@ -421,6 +424,29 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     };
     residentCollection = read.collection;
     return read.view;
+  }
+
+  function newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView> {
+    const requestedAt = epoch;
+    const inputs = columns.map((column) => ({ ...column }));
+    return enqueue(async () => {
+      assertNotReplaced(requestedAt);
+      const { kit, client } = await loadKitOnce();
+      assertNotReplaced(requestedAt);
+      // Home/closed UI state is not proof of absence: a failed Close may
+      // leave real work resident. Only a core no-project refusal permits New.
+      let noResident = false;
+      try {
+        await afterNotReplaced(requestedAt, dispatch(kit, () => client.observeOccurrence()));
+      } catch (error) {
+        if (!isNoProject(kit, error)) throw error;
+        assertNotReplaced(requestedAt);
+        noResident = true;
+      }
+      if (!noResident) throw new Error("A table is still open. Reload before creating a new table.");
+      const create = capability(client.newTable, "new table");
+      return openSession(kit, client, requestedAt, () => create.call(client, name, inputs));
+    });
   }
 
   function openFiles(files: FileList): Promise<WorkbookView> {
@@ -538,7 +564,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function editConfirmed(witness: ViewWitness, target: FieldTarget, change: ScalarEdit) {
+  function confirmedMutation(
+    witness: ViewWitness,
+    command: (client: PublicClient, revision: string) => Promise<PublicationProjection>,
+  ) {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
@@ -548,7 +577,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       try {
         publication = await afterUsable(
           expected,
-          dispatch(kit, () => dispatchScalarEdit(client, live.revision, target, change)),
+          dispatch(kit, () => command(client, live.revision)),
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
@@ -561,7 +590,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         active = null;
         residentCollection = live.collection;
         throw new UnknownOperationOutcomeError(
-          "The edit returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          "The change returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
           { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
         );
       }
@@ -590,6 +619,26 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       };
       residentCollection = result.collection;
       return { view: result.view, publication };
+    });
+  }
+
+  function editConfirmed(witness: ViewWitness, target: FieldTarget, change: ScalarEdit) {
+    return confirmedMutation(witness, (client, revision) => dispatchScalarEdit(client, revision, target, change));
+  }
+
+  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
+    const inputs = initializers.map(({ field, input }) => ({ field, input: { ...input } }));
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "row insertion");
+      return command.call(client, { type: "insert_row", expected_revision: revision, collection, initializers: inputs });
+    });
+  }
+
+  function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
+    const targets = [...entities];
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "row deletion");
+      return command.call(client, { type: "remove_table_rows", expected_revision: revision, collection, entities: targets });
     });
   }
 
@@ -805,6 +854,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
+          openedFromWorkFile = false;
           active = null;
           residentCollection = null;
           residentAvailable = true;
@@ -923,6 +973,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       return;
     }
     closed = true;
+    openedFromWorkFile = false;
     epoch += 1;
     active = null;
     residentCollection = null;
@@ -950,7 +1001,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };

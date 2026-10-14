@@ -1,0 +1,48 @@
+{
+  "repairBase": "8aea7bfafc82b9086078d11a6b1ca3db92a013c1",
+  "validation": "Final source in w184; byte-identical source/evidence copied to temporary clone for commit. Opus retains hosted gates, independent exact-HEAD review and integration.",
+  "checks": [
+    {
+      "command": "pnpm typecheck",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/sheet184-round4-validation/typecheck.log"
+    },
+    {
+      "command": "TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/sheet184-round4-validation/unit.log",
+      "vitest": 560,
+      "node": 125
+    },
+    {
+      "command": "pnpm build",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/sheet184-round4-validation/build.log",
+      "productionAcceptanceHooksExcluded": true
+    },
+    {
+      "command": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_SCREENSHOTS=1 TABLE_ROWS_OUT=evidence/184 node tests/product/new-table-rows-local.mjs",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "/private/tmp/sheet184-round4-validation/new-table-lane.log",
+      "groups": 29,
+      "screenshots": 10
+    },
+    {
+      "command": "pnpm acceptance:product",
+      "status": "NOT_RUN",
+      "reason": "Explicit bounded-writer instruction; Opus runs outside the sandbox. No full product PASS claimed."
+    }
+  ],
+  "earlierAttempts": [
+    "Initial repaired run exposed an error-message wrapper; fixed.",
+    "A direct absence probe initially used the wrong protocol kind and timed out; corrected to the existing observe_occurrence protocol.",
+    "An intermediate harness cleanup raced a second Close; now waits for Home.",
+    "The initial newer-focus probe targeted a Home control that unmounts; corrected to a persistent external DOM focus target.",
+    "Screenshot inspection caught a stale generic Open-recovery banner; removed and all requested checks rerun."
+  ],
+  "excluded": "Frozen #146 seeds/runners, public/core-kit, lockfiles and Serena unchanged; all 62 manifest-protected files byte-identical to the repair base."
+}

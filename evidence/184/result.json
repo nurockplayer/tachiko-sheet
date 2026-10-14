@@ -1,0 +1,239 @@
+{
+  "status": "PASS",
+  "dist": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/dist",
+  "checks": [
+    "new-default-column-add-remove-empty-and-duplicate-core-refusals-unsaved-close",
+    "three-inserts-edit-delete-undo-redo-undo-exact-identity-restoration",
+    "invalid-and-empty-number-core-refusal-kept-draft-no-publication-save-guard-ime-enter",
+    "save-full-process-exit-same-profile-home-reopen-fixed-value-independent-core-oracle",
+    "normal-download-open-ro-preserves-authored-rows-and-native-row-profile",
+    "import-release-actions-unavailable-sales-native-insert-delete-undo-redo-supported",
+    "date-no-today-default-empty-refusal-explicit-last-field-enter-opaque-save-reopen",
+    "unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear",
+    "4-A-ack",
+    "4-A-table",
+    "4-A-discovery",
+    "4-B",
+    "4-C",
+    "4-D",
+    "4-D-intent",
+    "4-A-close",
+    "repair-2-B",
+    "repair-2-C",
+    "repair-2-D",
+    "repair-2-E",
+    "repair-2-F",
+    "repair-3-R1-resident",
+    "repair-3-R2",
+    "repair-3-R3",
+    "repair-3-R4-row",
+    "repair-3-R4-scalar",
+    "repair-3-R4-history",
+    "repair-3-defaults",
+    "repair-3-constraints"
+  ],
+  "processes": [
+    {
+      "pid": 71540,
+      "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-eG6r8o/profile",
+      "coldHome": true,
+      "exitObserved": true
+    },
+    {
+      "pid": 71549,
+      "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-eG6r8o/profile",
+      "coldHome": true,
+      "exitObserved": true
+    }
+  ],
+  "screenshots": [
+    "home-1400.png",
+    "home-800.png",
+    "dialog-1400.png",
+    "dialog-800.png",
+    "table-1400.png",
+    "table-800.png",
+    "refusal-1400.png",
+    "refusal-800.png",
+    "unconfirmed-dialog-1400.png",
+    "unconfirmed-dialog-800.png"
+  ],
+  "oracle": {
+    "rows": [
+      {
+        "id": "native_table_row_0001_38725147-6720-4325-a374-18e85ac8e2b3",
+        "key": "row_0001",
+        "fields": [
+          {
+            "target": {
+              "entity": "native_table_row_0001_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0003_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0001.item",
+            "stored": {
+              "kind": "text",
+              "value": "Tea"
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "text"
+          },
+          {
+            "target": {
+              "entity": "native_table_row_0001_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0004_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0001.amount",
+            "stored": {
+              "kind": "number",
+              "value": 4.5
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "number"
+          },
+          {
+            "target": {
+              "entity": "native_table_row_0001_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0005_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0001.paid",
+            "stored": {
+              "kind": "boolean",
+              "value": true
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "boolean"
+          }
+        ]
+      },
+      {
+        "id": "native_table_row_0002_38725147-6720-4325-a374-18e85ac8e2b3",
+        "key": "row_0002",
+        "fields": [
+          {
+            "target": {
+              "entity": "native_table_row_0002_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0003_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0002.item",
+            "stored": {
+              "kind": "text",
+              "value": "Train"
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "text"
+          },
+          {
+            "target": {
+              "entity": "native_table_row_0002_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0004_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0002.amount",
+            "stored": {
+              "kind": "number",
+              "value": 12
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "number"
+          },
+          {
+            "target": {
+              "entity": "native_table_row_0002_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0005_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0002.paid",
+            "stored": {
+              "kind": "boolean",
+              "value": false
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "boolean"
+          }
+        ]
+      },
+      {
+        "id": "native_table_row_0003_38725147-6720-4325-a374-18e85ac8e2b3",
+        "key": "row_0003",
+        "fields": [
+          {
+            "target": {
+              "entity": "native_table_row_0003_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0003_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0003.item",
+            "stored": {
+              "kind": "text",
+              "value": "Lunch"
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "text"
+          },
+          {
+            "target": {
+              "entity": "native_table_row_0003_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0004_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0003.amount",
+            "stored": {
+              "kind": "number",
+              "value": 8.25
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "number"
+          },
+          {
+            "target": {
+              "entity": "native_table_row_0003_38725147-6720-4325-a374-18e85ac8e2b3",
+              "field": "native_table_field_0005_38725147-6720-4325-a374-18e85ac8e2b3"
+            },
+            "address": "row_0003.paid",
+            "stored": {
+              "kind": "boolean",
+              "value": true
+            },
+            "formula": null,
+            "calculated": null,
+            "diagnostics": [],
+            "editable_scalar": "boolean"
+          }
+        ]
+      }
+    ],
+    "columns": [
+      {
+        "id": "native_table_field_0003_38725147-6720-4325-a374-18e85ac8e2b3",
+        "key": "item",
+        "field_type": "text"
+      },
+      {
+        "id": "native_table_field_0004_38725147-6720-4325-a374-18e85ac8e2b3",
+        "key": "amount",
+        "field_type": "number"
+      },
+      {
+        "id": "native_table_field_0005_38725147-6720-4325-a374-18e85ac8e2b3",
+        "key": "paid",
+        "field_type": "boolean",
+        "dropdown_options": [
+          "true",
+          "false"
+        ]
+      }
+    ]
+  }
+}

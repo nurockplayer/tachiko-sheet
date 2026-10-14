@@ -1,0 +1,100 @@
+{
+  "repairBase": "8aea7bfafc82b9086078d11a6b1ca3db92a013c1",
+  "baselineProductionBuild": "Built from unchanged production source before repairs; dist-base retained under /private/tmp/sheet184-round4-validation",
+  "before": [
+    {
+      "round4": "4-A-ack",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: uncertain creation keeps the configured dialog open\n\n0 !== 1\n"
+    },
+    {
+      "round4": "4-A-table",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: uncertain creation keeps the configured dialog open\n\n0 !== 1\n"
+    },
+    {
+      "round4": "4-A-discovery",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: uncertain creation keeps the configured dialog open\n\n0 !== 1\n"
+    },
+    {
+      "round4": "4-B",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-C",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: removed focusedKey still leaves one Tab stop in the grid\n\n0 !== 1\n"
+    },
+    {
+      "round4": "4-D",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: successful Create focuses the first Add-row field\n\nfalse !== true\n"
+    },
+    {
+      "round4": "4-D-intent",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-A-close",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: uncertain cleanup requires Reload\n\n0 !== 1\n"
+    }
+  ],
+  "after": [
+    {
+      "round4": "4-A-ack",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-A-table",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-A-discovery",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-B",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-C",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-D",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-D-intent",
+      "status": "PASS"
+    },
+    {
+      "round4": "4-A-close",
+      "status": "PASS"
+    }
+  ],
+  "workFileOriginUnitRegression": {
+    "cases": [
+      "close",
+      "replacement"
+    ],
+    "before": {
+      "status": "FAIL",
+      "actual": true,
+      "expected": "undefined",
+      "assertion": "(await runtime.read()).openedFromWorkFile",
+      "log": "/private/tmp/sheet184-round4-validation/before-unit.log"
+    },
+    "after": {
+      "status": "PASS",
+      "log": "/private/tmp/sheet184-round4-validation/unit.log"
+    }
+  },
+  "supplemental": "The normal .ro -> Close -> New -> ordinary Save and persistent newer-focus probe pass on both versions. Required B RED is the unit lost-reply boundary. Surviving Old resident precheck remains PASS.",
+  "logs": {
+    "before": "/private/tmp/sheet184-round4-validation/before-final.log",
+    "after": "/private/tmp/sheet184-round4-validation/new-table-lane.log"
+  }
+}

@@ -1189,7 +1189,7 @@ body { margin: 0; }
 @media (max-width: 1023px) {
   .ts-table-composition { flex-direction: column; overflow: auto; }
   .ts-table-composition > .ts-work-region { flex: 0 0 auto; width: 100%; }
-  .ts-work-region > .ts-grid-scroll { order: 1; flex: 0 0 auto; width: 100%; max-height: min(48vh, 420px); }
+  .ts-work-region > .ts-grid-scroll { order: 1; flex: 0 0 auto; width: 100%; max-height: min(48vh, 420px, var(--ts-grid-available-height, 100vh)); }
   .ts-table-composition--sales-catalog .ts-work-region > .ts-grid-scroll { max-height: var(--ts-sales-grid-max-height, 55vh); }
   .ts-work-region > .ts-sales-tip { order: 0; }
   .ts-sales-tip-body--side { display: none; }
@@ -2677,3 +2677,32 @@ body { margin: 0; }
   .ts-home-copy-action:focus-visible { outline-color: Highlight; }
   .ts-home-example-action > .ts-button:disabled { border-color: GrayText; background: Canvas; color: GrayText; }
 }
+
+/* #184 uses the existing dialog, input, button and grid tokens. */
+.ts-new-columns { display: grid; gap: 12px; }
+.ts-new-column { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .6fr) auto; gap: 8px; align-items: end; }
+.ts-new-column .ts-dialog-field { margin: 0; }
+.ts-new-column .ts-button { margin-bottom: 0; }
+.ts-table-row-actions { order: 2; flex: none; align-items: center; margin: 8px 0; }
+.ts-table-row-note { order: 3; flex: none; margin: 0; }
+.ts-entry-row .ts-row-head { padding-block: 8px; vertical-align: top; }
+.ts-entry-row .ts-row-head > span { display: block; margin-bottom: 4px; }
+.ts-entry-row .ts-cell { padding: 8px; vertical-align: top; cursor: default; }
+.ts-entry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.ts-entry-row .ts-text-input { width: 100%; min-width: 100px; }
+.ts-entry-row [aria-invalid="true"] { border-color: var(--ts-error-ink); }
+.ts-row-error { order: 4; flex: none; margin: 8px 0; }
+@media (max-width: 600px) { .ts-new-column { grid-template-columns: minmax(0, 1fr) minmax(100px, .65fr); } .ts-new-column .ts-button { grid-column: 1 / -1; justify-self: end; } }
+
+.ts-home-new-symbol { display: none; }
+@media (max-width: 599px) {
+  .ts-home-new-command { width: 32px; padding-inline: 0; }
+  .ts-home-new-label { display: none; }
+  .ts-home-new-symbol { display: inline; font-size: 18px; }
+}
+
+.ts-home-head:has(.ts-home-new-command) { gap: 8px; flex-wrap: nowrap; }
+.ts-home-new-command { margin-left: auto; }
+
+/* Keep the existing screen-reader announcement inside its Results heading. */
+.ts-results-heading { position: relative; }

@@ -178,6 +178,37 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   const reopened = await step(log, "open imported project", () => client.openImportedProject(saved!.bytes.slice(0), metadata));
   await step(log, "query reopened", () => client.queryTable(reopened!.table.collection.key));
 
+  // #184: the unchanged native transport must admit exactly the same table
+  // creation, explicit row lifecycle, history and canonical reopening as WASM.
+  const nativeTable = await step(log, "new native table", () => client.newTable("Expenses", [
+    { name: "Item", field_type: "text" }, { name: "Amount", field_type: "number" },
+    { name: "Paid", field_type: "boolean" }, { name: "Date", field_type: "date" },
+  ]));
+  const nativeKey = nativeTable!.table.collection.key;
+  const nativeColumns = nativeTable!.table.columns;
+  const initializers = nativeColumns.map(column => ({ field: column.id, input: column.field_type === "number"
+    ? { kind: "number" as const, input: "4.5" }
+    : column.field_type === "boolean" ? { kind: "boolean" as const, value: true }
+    : column.field_type === "date" ? { kind: "date" as const, value: "2026-10-14" }
+    : { kind: "text" as const, value: "Tea 雪" } }));
+  const inserted = await step(log, "insert native row", () => client.trackerCommand({ type: "insert_row", expected_revision: nativeTable!.table.revision, collection: nativeKey, initializers }));
+  const afterInsert = await step(log, "read native row", () => client.queryTable(nativeKey));
+  expect(afterInsert!.native_table_profile).toBe(true);
+  expect(afterInsert!.rows).toHaveLength(1);
+  const removed = await step(log, "remove native row", () => client.trackerCommand({ type: "remove_table_rows", expected_revision: inserted!.resulting_revision, collection: nativeKey, entities: [afterInsert!.rows[0]!.id] }));
+  const undone = await step(log, "undo native delete", () => client.trackerCommand({ type: "undo", expected_revision: removed!.resulting_revision }));
+  const afterUndo = await step(log, "read restored native row", () => client.queryTable(nativeKey));
+  expect(afterUndo!.rows).toEqual(afterInsert!.rows);
+  const redone = await step(log, "redo native delete", () => client.trackerCommand({ type: "redo", expected_revision: undone!.resulting_revision }));
+  const afterRedo = await step(log, "read redone native deletion", () => client.queryTable(nativeKey));
+  expect(afterRedo!.rows).toEqual([]);
+  const restored = await step(log, "undo native delete again", () => client.trackerCommand({ type: "undo", expected_revision: redone!.resulting_revision }));
+  const nativeTree = await step(log, "export native table", () => client.exportProject(restored!.resulting_revision));
+  await step(log, "reopen native table", () => client.openProject(nativeTree!.bytes.slice(0)));
+  const afterReopen = await step(log, "read reopened native table", () => client.queryTable(nativeKey));
+  expect(afterReopen!.native_table_profile).toBe(true);
+  expect(afterReopen!.rows).toEqual(afterInsert!.rows);
+
   // Refusals and local bridge limits.
   await step(log, "inspect malformed csv", () => client.inspectSpreadsheet(new TextEncoder().encode('a,b\n"open\n').buffer, "csv", options));
   await step(log, "oversized command refused", () => client.queryTable("x".repeat(70_000)));

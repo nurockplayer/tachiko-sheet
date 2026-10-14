@@ -1,0 +1,329 @@
+{
+  "base": "f5320aa979e680f9faf650ad9abd2da387142004",
+  "scope": [
+    "5-A",
+    "5-B"
+  ],
+  "baseline": {
+    "productionSource": "Unmodified f5320aa; only the new regression tests were added before these runs.",
+    "5-A": {
+      "command": "pnpm exec vitest run src/runtime/session.test.ts -t 'preserves work-file origin after a trusted'",
+      "exitCode": 1,
+      "failedTests": 2,
+      "assertion": "Both open and import trusted refusals retain the same occurrence/revision but lose openedFromWorkFile: true; retained view does not equal original .ro view."
+    },
+    "5-B": {
+      "command": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=/private/tmp/sheet184-round5-validation/dist-base TABLE_ROWS_ROOT_CASE=5-B-trim TABLE_ROWS_OUT=/private/tmp/sheet184-round5-validation/before-browser node tests/product/new-table-rows-local.mjs",
+      "exitCode": 1,
+      "error": "AssertionError [ERR_ASSERTION]: table name is trimmed before dispatch\n+ actual - expected\n\n+ ' Expenses '\n- 'Expenses'\n",
+      "actualRequest": {
+        "type": "new_table",
+        "occurrence_id": "24308ca2-0d3a-40cd-bcb9-18eb198d6c6c",
+        "name": " Expenses ",
+        "columns": [
+          {
+            "name": " Item ",
+            "field_type": "text"
+          }
+        ]
+      }
+    }
+  },
+  "validation": [
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit",
+      "exitCode": 0,
+      "vitest": 563,
+      "node": 125
+    },
+    {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "productionHookExclusion": "PASS"
+    },
+    {
+      "command": "pnpm exec vitest run src/runtime/session.test.ts",
+      "exitCode": 0,
+      "tests": 80
+    },
+    {
+      "command": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_ROOT_CASE=5-B-trim TABLE_ROWS_OUT=/private/tmp/sheet184-round5-validation/after-browser node tests/product/new-table-rows-local.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_OUT=/private/tmp/sheet184-round5-validation/new-table-lane node tests/product/new-table-rows-local.mjs",
+      "exitCode": 0,
+      "groups": 30
+    },
+    {
+      "command": "pnpm acceptance:product",
+      "status": "NOT RUN: explicitly assigned to Opus"
+    }
+  ],
+  "newTableLane": {
+    "status": "PASS",
+    "dist": "/Users/tachikoma/Developer/tachiko-sheet-worktrees/w184/dist",
+    "checks": [
+      "new-default-column-add-remove-empty-and-duplicate-core-refusals-unsaved-close",
+      "three-inserts-edit-delete-undo-redo-undo-exact-identity-restoration",
+      "invalid-and-empty-number-core-refusal-kept-draft-no-publication-save-guard-ime-enter",
+      "save-full-process-exit-same-profile-home-reopen-fixed-value-independent-core-oracle",
+      "normal-download-open-ro-preserves-authored-rows-and-native-row-profile",
+      "import-release-actions-unavailable-sales-native-insert-delete-undo-redo-supported",
+      "date-no-today-default-empty-refusal-explicit-last-field-enter-opaque-save-reopen",
+      "unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear",
+      "4-A-ack",
+      "4-A-table",
+      "4-A-discovery",
+      "4-B",
+      "4-C",
+      "4-D",
+      "4-D-intent",
+      "4-A-close",
+      "repair-2-B",
+      "repair-2-C",
+      "repair-2-D",
+      "repair-2-E",
+      "repair-2-F",
+      "repair-3-5-B-trim",
+      "repair-3-R1-resident",
+      "repair-3-R2",
+      "repair-3-R3",
+      "repair-3-R4-row",
+      "repair-3-R4-scalar",
+      "repair-3-R4-history",
+      "repair-3-defaults",
+      "repair-3-constraints"
+    ],
+    "processes": [
+      {
+        "pid": 78949,
+        "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-nmICbe/profile",
+        "coldHome": true,
+        "exitObserved": true
+      },
+      {
+        "pid": 78961,
+        "profile": "/var/folders/qk/brhw7ct95ng6pbzj0z85_8qw0000gn/T/sheet184-nmICbe/profile",
+        "coldHome": true,
+        "exitObserved": true
+      }
+    ],
+    "screenshots": [],
+    "oracle": {
+      "rows": [
+        {
+          "id": "native_table_row_0001_425121f4-1614-44f1-83b7-88476e949e54",
+          "key": "row_0001",
+          "fields": [
+            {
+              "target": {
+                "entity": "native_table_row_0001_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0003_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0001.item",
+              "stored": {
+                "kind": "text",
+                "value": "Tea"
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "text"
+            },
+            {
+              "target": {
+                "entity": "native_table_row_0001_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0004_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0001.amount",
+              "stored": {
+                "kind": "number",
+                "value": 4.5
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "number"
+            },
+            {
+              "target": {
+                "entity": "native_table_row_0001_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0005_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0001.paid",
+              "stored": {
+                "kind": "boolean",
+                "value": true
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "boolean"
+            }
+          ]
+        },
+        {
+          "id": "native_table_row_0002_425121f4-1614-44f1-83b7-88476e949e54",
+          "key": "row_0002",
+          "fields": [
+            {
+              "target": {
+                "entity": "native_table_row_0002_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0003_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0002.item",
+              "stored": {
+                "kind": "text",
+                "value": "Train"
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "text"
+            },
+            {
+              "target": {
+                "entity": "native_table_row_0002_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0004_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0002.amount",
+              "stored": {
+                "kind": "number",
+                "value": 12
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "number"
+            },
+            {
+              "target": {
+                "entity": "native_table_row_0002_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0005_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0002.paid",
+              "stored": {
+                "kind": "boolean",
+                "value": false
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "boolean"
+            }
+          ]
+        },
+        {
+          "id": "native_table_row_0003_425121f4-1614-44f1-83b7-88476e949e54",
+          "key": "row_0003",
+          "fields": [
+            {
+              "target": {
+                "entity": "native_table_row_0003_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0003_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0003.item",
+              "stored": {
+                "kind": "text",
+                "value": "Lunch"
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "text"
+            },
+            {
+              "target": {
+                "entity": "native_table_row_0003_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0004_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0003.amount",
+              "stored": {
+                "kind": "number",
+                "value": 8.25
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "number"
+            },
+            {
+              "target": {
+                "entity": "native_table_row_0003_425121f4-1614-44f1-83b7-88476e949e54",
+                "field": "native_table_field_0005_425121f4-1614-44f1-83b7-88476e949e54"
+              },
+              "address": "row_0003.paid",
+              "stored": {
+                "kind": "boolean",
+                "value": true
+              },
+              "formula": null,
+              "calculated": null,
+              "diagnostics": [],
+              "editable_scalar": "boolean"
+            }
+          ]
+        }
+      ],
+      "columns": [
+        {
+          "id": "native_table_field_0003_425121f4-1614-44f1-83b7-88476e949e54",
+          "key": "item",
+          "field_type": "text"
+        },
+        {
+          "id": "native_table_field_0004_425121f4-1614-44f1-83b7-88476e949e54",
+          "key": "amount",
+          "field_type": "number"
+        },
+        {
+          "id": "native_table_field_0005_425121f4-1614-44f1-83b7-88476e949e54",
+          "key": "paid",
+          "field_type": "boolean",
+          "dropdown_options": [
+            "true",
+            "false"
+          ]
+        }
+      ]
+    }
+  },
+  "sourceHashes": [
+    {
+      "path": "src/runtime/session.ts",
+      "sha256": "a34f7ebd46842ddb2514d44fb7e82b811c4ef67bd539c266e84c0ed14ad1e44a"
+    },
+    {
+      "path": "src/runtime/session.test.ts",
+      "sha256": "58c49e5ed05e6a961a24b0164a4d7562eba08ec5b1e986cf4de2f000af20b2e3"
+    },
+    {
+      "path": "src/ui/NewTableDialog.tsx",
+      "sha256": "8e5bce3f6ebd9161f74f935888bc61bf794d909224a4dd21a24cdd354401d3c5"
+    },
+    {
+      "path": "tests/product/new-table-root-cause-cases.mjs",
+      "sha256": "1008afa1c211ede46f98ae9315b31af25f9fb62d1a89f9b9e4f1a5f8834c24f2"
+    }
+  ],
+  "productionAssets": [
+    {
+      "path": "dist/assets/index-BS8DX0lF.css",
+      "sha256": "1e8f6975f8f600d2e4bf4bbe52d77a30d218096efd8753f2acd464dae42cabd5"
+    },
+    {
+      "path": "dist/assets/index-UI1uYqhX.js",
+      "sha256": "af5024f8d95fe4a85caa823752d666156e47501b06e522e91cab2de82c0724f9"
+    }
+  ],
+  "protectedFiles": {
+    "count": 62,
+    "result": "All byte-identical to f5320aa, including frozen #146 files/runners, core-kit and lockfiles."
+  },
+  "logs": "/private/tmp/sheet184-round5-validation"
+}

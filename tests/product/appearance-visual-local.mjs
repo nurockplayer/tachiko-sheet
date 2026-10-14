@@ -1754,8 +1754,8 @@ async function auditHomeViewportBounds(page, browser) {
               await emptyPage.evaluate(() => document.activeElement?.blur());
             }
           }
-          assert.equal(layout.rows, 4, "Other ways retains work-file, import, folder, and release-plan example actions");
-          assert.deepEqual(layout.actionNames, ["Open a Tachiko work file", "Import a CSV or Excel file", "Open a project folder", "Release plan example"]);
+          assert.equal(layout.rows, 5, "Other ways starts with New table and retains work-file, import, folder, and release-plan example actions");
+          assert.deepEqual(layout.actionNames, ["New table", "Open a Tachiko work file", "Import a CSV or Excel file", "Open a project folder", "Release plan example"]);
           assert.equal(layout.imports, 1, "Home retains one real single-file import input");
           assert.equal(layout.folders, 1, "Home retains one real directory input");
           assert.equal(layout.workFiles, 1, "Home retains one real single-file .ro input named Open work file");
@@ -2074,8 +2074,8 @@ async function auditHomeViewportBounds(page, browser) {
   assert.equal(ordinaryHomeGeometry.surface, "rgb(255, 255, 255)", "Tachiko Home uses its approved white app surface");
   assert.deepEqual(ordinaryHomeGeometry.sections.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
   assert.equal(ordinaryHomeGeometry.sections.length, 3, "Home keeps its three approved content regions");
-  assert.equal(ordinaryHomeGeometry.actions.length, 4, "the Other ways region contains work-file, import, folder, and release-plan actions");
-  assert.deepEqual(ordinaryHomeGeometry.actions.map(({ label }) => label), ["Open work file…", "Choose file…", "Choose folder…", "Open"]);
+  assert.equal(ordinaryHomeGeometry.actions.length, 5, "the Other ways region starts with New table and retains work-file, import, folder, and release-plan actions");
+  assert.deepEqual(ordinaryHomeGeometry.actions.map(({ label }) => label), ["New table…", "Open work file…", "Choose file…", "Choose folder…", "Open"]);
   assert.ok(ordinaryHomeGeometry.actions.every(({ x, right }) => x >= 0 && right <= 1513), "Other ways actions remain within the desktop viewport");
   assert.equal(ordinaryHomeGeometry.savedRows.length, 1, "the saved copy appears in the Saved copies region");
   assert.ok(ordinaryHomeGeometry.savedRows[0].action.x >= 0 && ordinaryHomeGeometry.savedRows[0].timestamp.right <= 1512,
@@ -2100,6 +2100,9 @@ async function auditHomeViewportBounds(page, browser) {
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim()), "Open sales example",
     "Tab from Appearance follows the approved primary Sales action order");
   await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.getByRole("button", { name: "New table…", exact: true }).evaluate((button) => document.activeElement === button), true,
+    "Tab reaches New table as the first Other ways entry after saved copies");
   await page.keyboard.press("Tab");
   assert.equal(await page.getByLabel("Open work file", { exact: true }).evaluate((input) => document.activeElement === input), true,
     "Tab reaches the real work-file input before import and folder Open");
@@ -2446,7 +2449,7 @@ async function auditHomeViewportBounds(page, browser) {
       assert.deepEqual(layout.gridPanels.map(({ label }) => label), ["Sales and catalog example", "Saved copies", "Other ways to start"]);
       assert.ok(layout.gridPanels[0].x < layout.gridPanels[1].x && layout.gridPanels[0].y === layout.gridPanels[1].y,
         "desktop Home places the example and saved copies in parallel columns", layout.gridPanels);
-      assert.equal(layout.otherActions.length, 4, "the secondary start region retains all four supported actions");
+      assert.equal(layout.otherActions.length, 5, "the secondary start region includes New table and retains all four existing actions");
       assert.equal(layout.savedAction?.borderWidth, "0px", "the saved-copy action keeps its approved quiet border");
     }
     assert.deepEqual(layout.gridPanels.map(({ label }) => label), width <= 1023
@@ -2458,8 +2461,8 @@ async function auditHomeViewportBounds(page, browser) {
       `${width}px ${profile.id}/${density.id} populated Home Sales flow fits its own content box`, layout.exampleFlow);
     assert.ok(layout.exampleButton.x >= 0 && layout.exampleButton.right <= width + 1,
       `${width}px ${profile.id}/${density.id} populated Home Sales CTA remains unobstructed`, layout.exampleButton);
-    assert.deepEqual(layout.otherActions.map(({ label }) => label), ["Open work file…", "Choose file…", "Choose folder…", "Open"],
-      `${width}px ${profile.id}/${density.id} populated Home retains the exact four secondary actions`);
+    assert.deepEqual(layout.otherActions.map(({ label }) => label), ["New table…", "Open work file…", "Choose file…", "Choose folder…", "Open"],
+      `${width}px ${profile.id}/${density.id} populated Home starts with New table and retains all four existing actions`);
     if (width === 320) {
       assert.equal(layout.exampleFlow.whiteSpace, "normal");
       assert.equal(layout.exampleFlow.flexWrap, "wrap");
@@ -2501,6 +2504,7 @@ async function auditHomeViewportBounds(page, browser) {
           page.locator(".ts-home-copy-action").nth(index),
         ]),
         ["Sales example", page.locator(".ts-home-example-action > button")],
+        ["New table", page.getByRole("button", { name: "New table…", exact: true })],
         ["work-file input", page.getByLabel("Open work file", { exact: true })],
         ["CSV or Excel file input", page.locator('.ts-home-other-row input[type="file"][accept*=".csv"]')],
         ["project folder input", page.locator('.ts-home-other-row input[type="file"][multiple]')],
@@ -2550,7 +2554,7 @@ async function auditHomeViewportBounds(page, browser) {
         "the 320px saved-copy action remains within the viewport");
       if (density.id === "comfortable") {
         assert.ok(layout.otherActions.every(({ height }) => height >= 36),
-          "Comfortable density keeps the four secondary actions at least 36px tall");
+          "Comfortable density keeps all five secondary actions at least 36px tall");
         assert.ok(layout.savedAction.height >= 36,
           "the 320px saved-copy action retains the Comfortable target height");
       }

@@ -64,9 +64,20 @@ export type ScalarEdit =
   | { kind: "boolean"; value: boolean }
   | { kind: "date"; value: string };
 
+export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean" };
+export type RowInitializer = { field: string; input: ScalarEdit };
+/** Refusals retain the draft; recovery must never replay a dispatched command. */
+export type RowCommandOutcome =
+  | { kind: "confirmed" }
+  | { kind: "refused"; message: string; fieldType?: string }
+  | { kind: "recovery" };
+
 export interface SheetRuntime {
   /** Read-only, cached client/kit readiness; never opens or creates work. */
   prepare(): Promise<void>;
+  newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
+  insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
+  removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
   /**
@@ -292,6 +303,9 @@ export interface SheetShellProps {
   workFileUnavailableReason?: string | null;
   workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
+  onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;
+  onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<RowCommandOutcome>;
+  onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
