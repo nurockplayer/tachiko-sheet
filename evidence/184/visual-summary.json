@@ -1,6 +1,8 @@
 {
-  "status": "PASS",
-  "combinations": 24,
-  "geometryCases": 24,
-  "failures": 0
+  "status": "BLOCKED",
+  "gate": "appearance-visual-local",
+  "exitCode": 1,
+  "reason": "Chromium context closed during newPage at auditInteropPreviewTrimCases; no complete current visual matrix receipt. Home visual also lost a browser context.",
+  "log": "/private/tmp/sheet184-repair3-validation/product-shared-evidence/appearance-visual-local.log",
+  "screenshots": "The separate production new-table lane completed and refreshed all eight screenshots."
 }

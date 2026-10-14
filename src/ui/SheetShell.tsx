@@ -538,7 +538,7 @@ export function SheetShell(props: SheetShellProps) {
   const [newTableOpen, setNewTableOpen] = useState(false);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
-  const [rowError, setRowError] = useState<{ message: string; fields?: string[] } | null>(null);
+  const [rowError, setRowError] = useState<{ message: string; fields?: string[]; allowFocus?: () => boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && Object.values(rowDraft.values).some((value) => value !== "");
   const rowCommandPendingRef = useRef(false);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
@@ -734,7 +734,7 @@ export function SheetShell(props: SheetShellProps) {
     if (props.busy || currentness === "unknown" || input.disabled) return;
     const intent = focusRejectedEditorRef.current;
     focusRejectedEditorRef.current = null;
-    if (completionMayMoveFocus(intent)) withAppFocus(() => input.focus());
+    if (completionMayUpdateUi(intent)) withAppFocus(() => input.focus());
   }, [commitPending, currentness, editor, props.busy]);
 
   useEffect(() => {
@@ -1307,7 +1307,7 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       // The publication may settle after the user has already chosen another
       // cell or control; never pull focus back from that newer choice.
-      if (completionMayMoveFocus(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
+      if (completionMayUpdateUi(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
     }
     return accepted;
   }
@@ -1326,7 +1326,8 @@ export function SheetShell(props: SheetShellProps) {
     return { generation: focusIntentRef.current, occurrence: liveOccurrenceRef.current };
   }
 
-  function completionMayMoveFocus(intent: { generation: number; occurrence: string | null }): boolean {
+  // One intent/occurrence rule for selection, roving state and DOM focus.
+  function completionMayUpdateUi(intent: { generation: number; occurrence: string | null }): boolean {
     return focusIntentRef.current === intent.generation && liveOccurrenceRef.current === intent.occurrence && intent.occurrence !== null;
   }
 
@@ -1389,7 +1390,7 @@ export function SheetShell(props: SheetShellProps) {
       const step = event.shiftKey ? -1 : 1;
       const intent = completionIntent();
       void commitEditor().then((accepted) => {
-        if (accepted && completionMayMoveFocus(intent)) withAppFocus(() => moveFocus(event, position, step));
+        if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => moveFocus(event, position, step));
       });
     }
   }
@@ -1731,6 +1732,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
+    const intent = completionIntent();
     setCommitPending(true);
     setRowError(null);
     try {
@@ -1741,7 +1743,7 @@ export function SheetShell(props: SheetShellProps) {
       } else if (result.kind === "refused") {
         const matchingType = columns.filter((column) => column.field_type === result.fieldType);
         const matchingValue = matchingType.filter((column) => result.message.includes(`'${draft.values[column.id] ?? ""}'`));
-        setRowError({ message: result.message, fields: (matchingValue.length ? matchingValue : matchingType).map((column) => column.id) });
+        setRowError({ message: result.message, fields: (matchingValue.length ? matchingValue : matchingType).map((column) => column.id), allowFocus: () => completionMayUpdateUi(intent) });
       } else {
         setRowDraft({ ...draft, needsReview: true });
         setRowError({ message: "The row request needs review. Refresh to check its outcome; it has not been retried." });
@@ -1764,11 +1766,11 @@ export function SheetShell(props: SheetShellProps) {
     try {
       const result = await onRemoveRows(witness, view.table.collection.key, [selectedEntity]);
       if (result.kind === "refused") setRowError({ message: result.message });
-      if (result.kind === "confirmed") {
+      if (result.kind === "confirmed" && completionMayUpdateUi(intent)) {
         setSelectedEntity(null);
         setFocusedKey(null);
         requestAnimationFrame(() => {
-          if (completionMayMoveFocus(intent)) withAppFocus(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
+          if (completionMayUpdateUi(intent)) withAppFocus(() => gridScrollRef.current?.querySelector<HTMLElement>("td[tabindex='0']")?.focus());
         });
       }
     } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }

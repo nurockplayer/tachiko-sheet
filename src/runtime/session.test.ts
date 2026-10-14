@@ -1371,6 +1371,7 @@ describe("native table and row adapter", () => {
 
   it("opens a fresh occurrence and snapshots the declared columns before queueing", async () => {
     const { runtime, client, view } = await opened();
+    await runtime.close();
     const inputs = columns.map(column => ({ ...column }));
     const pending = runtime.newTable("Expenses", inputs);
     inputs[0]!.name = "Changed later";
@@ -1380,21 +1381,41 @@ describe("native table and row adapter", () => {
     await expect(runtime.edit(witnessOf(view), IMPACT, { kind: "number", input: "5" })).rejects.toMatchObject({ code: "stale-witness" });
   });
 
-  it("preserves the old work after a trusted new-table refusal", async () => {
+  it("refuses resident work before any new-table dispatch", async () => {
     const { runtime, client, view } = await opened();
-    client.hooks.newTable = async () => { throw new FakeDesignerRuntimeError("invalid_table_operation", view.revision); };
-    await expect(runtime.newTable("", columns)).rejects.toBeInstanceOf(FakeDesignerRuntimeError);
+    await expect(runtime.newTable("Expenses", columns)).rejects.toThrow("Reload");
+    expect(client.calls.newTable).toEqual([]);
     expect(await runtime.read()).toEqual(view);
+  });
+
+  it("checks the real resident even after a failed Close marked the adapter closed", async () => {
+    const { runtime, client } = await opened();
+    const closeProject = client.closeProject.bind(client);
+    client.closeProject = async () => { throw new Error("lost close"); };
+    await expect(runtime.close()).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+    await expect(runtime.newTable("Expenses", columns)).rejects.toThrow("Reload");
+    expect(client.calls.newTable).toEqual([]);
+    client.closeProject = closeProject;
+  });
+
+  it("does not treat an untrusted preflight read as proof of absence", async () => {
+    const { runtime, client } = await opened();
+    await runtime.close();
+    client.hooks.observeOccurrence = async () => { throw new Error("lost preflight"); };
+    await expect(runtime.newTable("Expenses", columns)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+    expect(client.calls.newTable).toEqual([]);
   });
 
   it("requires recovery for an unknown new-table outcome", async () => {
     const { runtime, client } = await opened();
+    await runtime.close();
     client.hooks.newTable = async () => { throw new Error("lost reply"); };
     await expect(runtime.newTable("Expenses", columns)).rejects.toMatchObject({ name: "OpenedProjectionRecoveryError", operationOutcome: "unknown" });
   });
 
   it("requires recovery after opening with an incoherent projection", async () => {
     const { runtime, client } = await opened();
+    await runtime.close();
     client.hooks.bootstrap = async () => ({ title: TITLE, revision: "wrong", default_collection: COLLECTION.key, collections: [COLLECTION] });
     await expect(runtime.newTable("Expenses", columns)).rejects.toMatchObject({ name: "OpenedProjectionRecoveryError", operationOutcome: "opened" });
   });

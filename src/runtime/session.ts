@@ -432,6 +432,17 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
+      // Home/closed UI state is not proof of absence: a failed Close may
+      // leave real work resident. Only a core no-project refusal permits New.
+      let noResident = false;
+      try {
+        await afterNotReplaced(requestedAt, dispatch(kit, () => client.observeOccurrence()));
+      } catch (error) {
+        if (!isNoProject(kit, error)) throw error;
+        assertNotReplaced(requestedAt);
+        noResident = true;
+      }
+      if (!noResident) throw new Error("A table is still open. Reload before creating a new table.");
       const create = capability(client.newTable, "new table");
       return openSession(kit, client, requestedAt, () => create.call(client, name, inputs));
     });

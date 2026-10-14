@@ -1,93 +1,3177 @@
 {
-  "base": "4c640a89e34dfaf703d91db71d58fb1b1f49da0f",
-  "regression": "tests/product/new-table-repair-cases.mjs",
-  "baselineCommand": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=/private/tmp/sheet184-repair2-candidate/dist TABLE_ROWS_REPAIR_CASE=all TABLE_ROWS_OUT=/private/tmp/sheet184-repair2-validation/baseline-delivery node tests/product/new-table-rows-local.mjs",
-  "baselineSource": "Exact-base temporary clone, all tracked source/core files unchanged; node_modules symlinked only for dependencies. A redundant unused nested core-kit symlink from initial setup was removed before the final baseline build/run. All six final failures are behavioral after Home/core prerequisites; A/D retain real successful creation/deletion receipts.",
-  "baseline": [
+  "base": "5959e7b3ee11edfa00609281111dca5c0da52a7c",
+  "baselineProductionBuild": "Production src was clean at 5959e7b when pnpm build ran in w184; the dist was snapshotted before source repair. Exact-base clone retains original source.",
+  "beforeCommand": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=/private/tmp/sheet184-repair3-validation/baseline-dist TABLE_ROWS_ROOT_CASE=all TABLE_ROWS_OUT=/private/tmp/sheet184-repair3-validation/baseline-final node tests/product/new-table-rows-local.mjs",
+  "beforeExitCode": 1,
+  "afterCommand": "TACHIKO_TEST_SINGLE_PROCESS=1 WORK_DIST=dist TABLE_ROWS_ROOT_CASE=all TABLE_ROWS_OUT=/private/tmp/sheet184-repair3-validation/repaired-final node tests/product/new-table-rows-local.mjs",
+  "afterExitCode": 0,
+  "findingMap": {
+    "R3 #1 / decision (3)": [
+      "R1-resident",
+      "R1-identity"
+    ],
+    "R3 #2 / decision (1)": [
+      "R2"
+    ],
+    "R3 #3 / decision (1)": [
+      "R3"
+    ],
+    "R3 #4 / decision (2)": [
+      "R4-row",
+      "R4-scalar"
+    ],
+    "connector defaults / decision (4)": [
+      "defaults",
+      "constraints"
+    ]
+  },
+  "supplemental": "R4-history passes both before and after; it is shared-boundary coverage, not a reproduced finding.",
+  "before": [
     {
-      "repair": "A",
+      "repair3": "R1-resident",
       "status": "FAIL",
-      "error": "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"project-ready\"][aria-busy=\"false\"]') to be visible\u001b[22m\n"
+      "item": "R1-resident",
+      "error": "AssertionError [ERR_ASSERTION]: authoritative resident precheck dispatches no creation over Old\n\n2 !== 1\n",
+      "observation": {
+        "title": "Tachiko SheetOldAppearanceAppearanceCloseFor this browser on this device.Your work and saved copies stay unchanged.Interface profileTachikoFamiliar SpreadsheetMinimal-FocusCustom profileA local .tachi",
+        "alerts": [
+          "Your new table was recovered. Save a copy to keep it."
+        ],
+        "requests": [
+          {
+            "id": 5,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "old"
+            }
+          },
+          {
+            "id": 6,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "4098991b-9096-44a4-9f99-7114844095c9"
+            }
+          },
+          {
+            "id": 7,
+            "kind": "close_project"
+          },
+          {
+            "id": 8,
+            "kind": "command",
+            "request": {
+              "type": "new_table",
+              "occurrence_id": "2d3b0cfa-04f9-41bc-ae46-909d78aadb2b",
+              "name": "Requested",
+              "columns": [
+                {
+                  "name": "Item",
+                  "field_type": "text"
+                },
+                {
+                  "name": "Item",
+                  "field_type": "text"
+                }
+              ]
+            }
+          },
+          {
+            "id": 9,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 10,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "bd493f2a-6076-4acd-8e56-e24fa3abc396"
+            }
+          },
+          {
+            "id": 11,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "old"
+            }
+          },
+          {
+            "id": 12,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "097771cf-7f62-4c03-9424-1781176a46cc"
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 4,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Old",
+                "revision": "resident/0",
+                "default_collection": "old",
+                "collections": [
+                  {
+                    "id": "native_table_schema_0002_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                    "key": "old",
+                    "entity_count": 0
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": []
+              }
+            }
+          },
+          {
+            "id": 5,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/0",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "native_table_schema_0002_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                  "key": "old",
+                  "entity_count": 0
+                },
+                "columns": [
+                  {
+                    "id": "native_table_field_0003_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                    "key": "item",
+                    "field_type": "text"
+                  }
+                ],
+                "rows": []
+              }
+            }
+          },
+          {
+            "id": 6,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Old",
+                "revision": "resident/0",
+                "default_collection": "old",
+                "collections": [
+                  {
+                    "id": "native_table_schema_0002_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                    "key": "old",
+                    "entity_count": 0
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": []
+              }
+            }
+          },
+          {
+            "id": 8,
+            "status": "error",
+            "error": {
+              "code": "invalid_table_operation",
+              "message": "table creation rejected: duplicate column names are not allowed",
+              "current_revision": "resident/0",
+              "diagnostics": []
+            }
+          },
+          {
+            "id": 9,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/130a8fc4-00e0-47ce-aa22-c2465d05e595/native_table_document_0001_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                "revision": "resident/0"
+              }
+            }
+          },
+          {
+            "id": 10,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Old",
+                "revision": "resident/0",
+                "default_collection": "old",
+                "collections": [
+                  {
+                    "id": "native_table_schema_0002_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                    "key": "old",
+                    "entity_count": 0
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": []
+              }
+            }
+          },
+          {
+            "id": 11,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/0",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "native_table_schema_0002_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                  "key": "old",
+                  "entity_count": 0
+                },
+                "columns": [
+                  {
+                    "id": "native_table_field_0003_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                    "key": "item",
+                    "field_type": "text"
+                  }
+                ],
+                "rows": []
+              }
+            }
+          },
+          {
+            "id": 12,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Old",
+                "revision": "resident/0",
+                "default_collection": "old",
+                "collections": [
+                  {
+                    "id": "native_table_schema_0002_130a8fc4-00e0-47ce-aa22-c2465d05e595",
+                    "key": "old",
+                    "entity_count": 0
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": []
+              }
+            }
+          }
+        ]
+      }
     },
     {
-      "repair": "B",
+      "repair3": "R1-identity",
       "status": "FAIL",
-      "error": "TimeoutError: page.waitForFunction: Timeout 10000ms exceeded."
+      "item": "R1-identity",
+      "error": "AssertionError [ERR_ASSERTION]: mismatched resident cannot be exposed as the new table\n\n1 !== 0\n",
+      "observation": {
+        "title": "Tachiko SheetOldAppearanceAppearanceCloseFor this browser on this device.Your work and saved copies stay unchanged.Interface profileTachikoFamiliar SpreadsheetMinimal-FocusCustom profileA local .tachi",
+        "alerts": [
+          "Your new table was recovered. Save a copy to keep it."
+        ],
+        "requests": [
+          {
+            "id": 13,
+            "kind": "close_project"
+          },
+          {
+            "id": -189,
+            "kind": "close_project"
+          },
+          {
+            "id": 14,
+            "kind": "command",
+            "request": {
+              "type": "new_table",
+              "occurrence_id": "032ec02c-b6aa-4acc-abcf-d5a524ee036c",
+              "name": "Requested",
+              "columns": [
+                {
+                  "name": "Item",
+                  "field_type": "text"
+                }
+              ]
+            }
+          },
+          {
+            "id": -188,
+            "kind": "command",
+            "request": {
+              "type": "new_table",
+              "occurrence_id": "130e6b55-f7ae-4d79-a619-e78989290865",
+              "name": "Old",
+              "columns": [
+                {
+                  "name": "Item",
+                  "field_type": "text"
+                }
+              ]
+            }
+          },
+          {
+            "id": 15,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 16,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "f97d36c4-3c69-49ed-96da-99d8d245e911"
+            }
+          },
+          {
+            "id": 17,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "old"
+            }
+          },
+          {
+            "id": 18,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "a1aa1b7e-6587-4757-a49a-d78400a784aa"
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 13,
+            "status": "closed"
+          },
+          {
+            "id": -189,
+            "status": "closed"
+          },
+          {
+            "id": 14,
+            "status": "ok",
+            "response": {
+              "type": "opened",
+              "payload": {
+                "bootstrap": {
+                  "title": "Requested",
+                  "revision": "resident/0",
+                  "default_collection": "requested",
+                  "collections": [
+                    {
+                      "id": "native_table_schema_0002_032ec02c-b6aa-4acc-abcf-d5a524ee036c",
+                      "key": "requested",
+                      "entity_count": 0
+                    }
+                  ],
+                  "keyed_grouped_sum_definition_ids": []
+                },
+                "table": {
+                  "revision": "resident/0",
+                  "native_table_profile": true,
+                  "collection": {
+                    "id": "native_table_schema_0002_032ec02c-b6aa-4acc-abcf-d5a524ee036c",
+                    "key": "requested",
+                    "entity_count": 0
+                  },
+                  "columns": [
+                    {
+                      "id": "native_table_field_0003_032ec02c-b6aa-4acc-abcf-d5a524ee036c",
+                      "key": "item",
+                      "field_type": "text"
+                    }
+                  ],
+                  "rows": []
+                }
+              }
+            }
+          },
+          {
+            "id": -188,
+            "status": "ok",
+            "response": {
+              "type": "opened",
+              "payload": {
+                "bootstrap": {
+                  "title": "Old",
+                  "revision": "resident/0",
+                  "default_collection": "old",
+                  "collections": [
+                    {
+                      "id": "native_table_schema_0002_130e6b55-f7ae-4d79-a619-e78989290865",
+                      "key": "old",
+                      "entity_count": 0
+                    }
+                  ],
+                  "keyed_grouped_sum_definition_ids": []
+                },
+                "table": {
+                  "revision": "resident/0",
+                  "native_table_profile": true,
+                  "collection": {
+                    "id": "native_table_schema_0002_130e6b55-f7ae-4d79-a619-e78989290865",
+                    "key": "old",
+                    "entity_count": 0
+                  },
+                  "columns": [
+                    {
+                      "id": "native_table_field_0003_130e6b55-f7ae-4d79-a619-e78989290865",
+                      "key": "item",
+                      "field_type": "text"
+                    }
+                  ],
+                  "rows": []
+                }
+              }
+            }
+          },
+          {
+            "id": 15,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/130e6b55-f7ae-4d79-a619-e78989290865/native_table_document_0001_130e6b55-f7ae-4d79-a619-e78989290865",
+                "revision": "resident/0"
+              }
+            }
+          },
+          {
+            "id": 16,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Old",
+                "revision": "resident/0",
+                "default_collection": "old",
+                "collections": [
+                  {
+                    "id": "native_table_schema_0002_130e6b55-f7ae-4d79-a619-e78989290865",
+                    "key": "old",
+                    "entity_count": 0
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": []
+              }
+            }
+          },
+          {
+            "id": 17,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/0",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "native_table_schema_0002_130e6b55-f7ae-4d79-a619-e78989290865",
+                  "key": "old",
+                  "entity_count": 0
+                },
+                "columns": [
+                  {
+                    "id": "native_table_field_0003_130e6b55-f7ae-4d79-a619-e78989290865",
+                    "key": "item",
+                    "field_type": "text"
+                  }
+                ],
+                "rows": []
+              }
+            }
+          },
+          {
+            "id": 18,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Old",
+                "revision": "resident/0",
+                "default_collection": "old",
+                "collections": [
+                  {
+                    "id": "native_table_schema_0002_130e6b55-f7ae-4d79-a619-e78989290865",
+                    "key": "old",
+                    "entity_count": 0
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": []
+              }
+            }
+          }
+        ]
+      }
     },
     {
-      "repair": "C",
+      "repair3": "R2",
       "status": "FAIL",
-      "error": "AssertionError [ERR_ASSERTION]: composition Escape keeps the dialog open\n\n0 !== 1\n"
+      "item": "R2",
+      "error": "AssertionError [ERR_ASSERTION]: late delete preserves newer selection\n\n'false' !== 'true'\n",
+      "observation": {
+        "title": "Tachiko SheetSales and catalogAppearanceAppearanceCloseFor this browser on this device.Your work and saved copies stay unchanged.Interface profileTachikoFamiliar SpreadsheetMinimal-FocusCustom profile",
+        "alerts": [],
+        "requests": [
+          {
+            "id": 41,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "079e028c-afc2-4d11-a3f4-e0b833266df5"
+            }
+          },
+          {
+            "id": 42,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 43,
+            "kind": "command",
+            "request": {
+              "type": "remove_table_rows",
+              "expected_revision": "resident/1",
+              "collection": "catalog",
+              "entities": [
+                "30000000-0000-4000-8000-000000000001"
+              ]
+            }
+          },
+          {
+            "id": 44,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 45,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "079de1c6-6d12-45a3-93db-ef37ca1ee16d"
+            }
+          },
+          {
+            "id": 46,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 47,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "97d04385-fb41-438d-8fd5-9c635d34e0a0"
+            }
+          },
+          {
+            "id": 48,
+            "kind": "command",
+            "request": {
+              "type": "query_keyed_grouped_sum",
+              "definition_id": "5675daf5-6862-415b-96d2-1bc02992903b"
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 42,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/1",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 43,
+            "status": "ok",
+            "response": {
+              "type": "published",
+              "payload": {
+                "base_revision": "resident/1",
+                "resulting_revision": "resident/2",
+                "entities": [
+                  "30000000-0000-4000-8000-000000000001"
+                ],
+                "fields": [
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000201"
+                  },
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000202"
+                  },
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000203"
+                  }
+                ],
+                "affected_calculations": []
+              }
+            }
+          },
+          {
+            "id": 43,
+            "status": "ok",
+            "response": {
+              "type": "published",
+              "payload": {
+                "base_revision": "resident/1",
+                "resulting_revision": "resident/2",
+                "entities": [
+                  "30000000-0000-4000-8000-000000000001"
+                ],
+                "fields": [
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000201"
+                  },
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000202"
+                  },
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000203"
+                  }
+                ],
+                "affected_calculations": []
+              }
+            }
+          },
+          {
+            "id": 44,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/045df8e5-7a32-45af-bc89-1ea8e2478979/50000000-0000-4000-8000-000000000001",
+                "revision": "resident/2"
+              }
+            }
+          },
+          {
+            "id": 45,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/2",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 1
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "5675daf5-6862-415b-96d2-1bc02992903b"
+                ]
+              }
+            }
+          },
+          {
+            "id": 46,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/2",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 1
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 47,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/2",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 1
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "5675daf5-6862-415b-96d2-1bc02992903b"
+                ]
+              }
+            }
+          },
+          {
+            "id": 48,
+            "status": "ok",
+            "response": {
+              "type": "keyed_grouped_sum",
+              "payload": {
+                "definition_id": "5675daf5-6862-415b-96d2-1bc02992903b",
+                "revision": "resident/2",
+                "groups": [],
+                "diagnostics": [
+                  {
+                    "code": "lookup.missing_key",
+                    "entity": "40000000-0000-4000-8000-000000000001",
+                    "field": null,
+                    "lookup_key": "PEN",
+                    "candidates": []
+                  },
+                  {
+                    "code": "lookup.missing_key",
+                    "entity": "40000000-0000-4000-8000-000000000003",
+                    "field": null,
+                    "lookup_key": "PEN",
+                    "candidates": []
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
     },
     {
-      "repair": "D",
+      "repair3": "R3",
       "status": "FAIL",
-      "error": "AssertionError [ERR_ASSERTION]: late delete frame respects newer focus\n\nfalse !== true\n"
+      "item": "R3",
+      "error": "AssertionError [ERR_ASSERTION]: late refusal must not focus an entry field over newer intent\n\nfalse !== true\n",
+      "observation": {
+        "title": "Tachiko SheetSales and catalogAppearanceAppearanceCloseFor this browser on this device.Your work and saved copies stay unchanged.Interface profileTachikoFamiliar SpreadsheetMinimal-FocusCustom profile",
+        "alerts": [
+          "The row change was not applied. (Details: 'abc' is not a finite Number)"
+        ],
+        "requests": [
+          {
+            "id": 66,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "c7500861-4055-49cc-ac13-03371d6f418f"
+            }
+          },
+          {
+            "id": 67,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "sales"
+            }
+          },
+          {
+            "id": 68,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "9899e7e3-6386-44a3-9b3b-9b8e938f6f2f"
+            }
+          },
+          {
+            "id": 69,
+            "kind": "command",
+            "request": {
+              "type": "query_keyed_grouped_sum",
+              "definition_id": "3bae2b20-856a-41fb-a71c-c828a89178e9"
+            }
+          },
+          {
+            "id": 70,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 71,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "239eb755-5889-47f4-a14d-96e0dd7cacea"
+            }
+          },
+          {
+            "id": 72,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 73,
+            "kind": "command",
+            "request": {
+              "type": "insert_row",
+              "expected_revision": "resident/1",
+              "collection": "catalog",
+              "initializers": [
+                {
+                  "field": "20000000-0000-4000-8000-000000000201",
+                  "input": {
+                    "kind": "text",
+                    "value": "ROOT-PROBE"
+                  }
+                },
+                {
+                  "field": "20000000-0000-4000-8000-000000000202",
+                  "input": {
+                    "kind": "text",
+                    "value": "ROOT-PROBE"
+                  }
+                },
+                {
+                  "field": "20000000-0000-4000-8000-000000000203",
+                  "input": {
+                    "kind": "number",
+                    "input": "abc"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 67,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/1",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "10000000-0000-4000-8000-000000000001",
+                  "key": "sales",
+                  "entity_count": 3
+                },
+                "columns": [
+                  {
+                    "id": "10000000-0000-4000-8000-000000000101",
+                    "key": "product_code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000102",
+                    "key": "quantity",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "40000000-0000-4000-8000-000000000001",
+                    "key": "sale_pen_3",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "40000000-0000-4000-8000-000000000001",
+                          "field": "10000000-0000-4000-8000-000000000101"
+                        },
+                        "address": "sale_pen_3.product_code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "40000000-0000-4000-8000-000000000001",
+                          "field": "10000000-0000-4000-8000-000000000102"
+                        },
+                        "address": "sale_pen_3.quantity",
+                        "stored": {
+                          "kind": "number",
+                          "value": 3
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "40000000-0000-4000-8000-000000000002",
+                    "key": "sale_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "40000000-0000-4000-8000-000000000002",
+                          "field": "10000000-0000-4000-8000-000000000101"
+                        },
+                        "address": "sale_note.product_code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "40000000-0000-4000-8000-000000000002",
+                          "field": "10000000-0000-4000-8000-000000000102"
+                        },
+                        "address": "sale_note.quantity",
+                        "stored": {
+                          "kind": "number",
+                          "value": 2
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "40000000-0000-4000-8000-000000000003",
+                    "key": "sale_pen_1",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "40000000-0000-4000-8000-000000000003",
+                          "field": "10000000-0000-4000-8000-000000000101"
+                        },
+                        "address": "sale_pen_1.product_code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "40000000-0000-4000-8000-000000000003",
+                          "field": "10000000-0000-4000-8000-000000000102"
+                        },
+                        "address": "sale_pen_1.quantity",
+                        "stored": {
+                          "kind": "number",
+                          "value": 1
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 68,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/1",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "3bae2b20-856a-41fb-a71c-c828a89178e9"
+                ]
+              }
+            }
+          },
+          {
+            "id": 69,
+            "status": "ok",
+            "response": {
+              "type": "keyed_grouped_sum",
+              "payload": {
+                "definition_id": "3bae2b20-856a-41fb-a71c-c828a89178e9",
+                "revision": "resident/1",
+                "groups": [
+                  {
+                    "category": "NOTE",
+                    "value": 1000
+                  },
+                  {
+                    "category": "PEN",
+                    "value": 800
+                  }
+                ],
+                "diagnostics": []
+              }
+            }
+          },
+          {
+            "id": 70,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/cc00b1ed-db8f-4bde-bfe3-b336954d3bad/50000000-0000-4000-8000-000000000001",
+                "revision": "resident/1"
+              }
+            }
+          },
+          {
+            "id": 71,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/1",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "3bae2b20-856a-41fb-a71c-c828a89178e9"
+                ]
+              }
+            }
+          },
+          {
+            "id": 72,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/1",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 73,
+            "status": "error",
+            "error": {
+              "code": "invalid_number",
+              "message": "'abc' is not a finite Number",
+              "current_revision": "resident/1",
+              "diagnostics": []
+            }
+          },
+          {
+            "id": 73,
+            "status": "error",
+            "error": {
+              "code": "invalid_number",
+              "message": "'abc' is not a finite Number",
+              "current_revision": "resident/1",
+              "diagnostics": []
+            }
+          }
+        ]
+      }
     },
     {
-      "repair": "E",
+      "repair3": "R4-row",
       "status": "FAIL",
-      "error": "AssertionError [ERR_ASSERTION]: insert clears the Sales initial marker\n+ actual - expected\n\n+ 'Not saved yet'\n- 'Edited \u2014 not saved'\n"
+      "item": "R4-row",
+      "error": "AssertionError [ERR_ASSERTION]: insert_row recovery clears initial Sales marker\n+ actual - expected\n\n+ 'Not saved yet'\n- 'Edited \u2014 not saved'\n",
+      "observation": {
+        "title": "Tachiko SheetSales and catalogAppearanceAppearanceCloseFor this browser on this device.Your work and saved copies stay unchanged.Interface profileTachikoFamiliar SpreadsheetMinimal-FocusCustom profile",
+        "alerts": [
+          "The row request needs review. Refresh to check its outcome; it has not been retried."
+        ],
+        "requests": [
+          {
+            "id": 96,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "88872f81-07f1-42d7-bfdc-5108c54cb74d"
+            }
+          },
+          {
+            "id": 97,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 98,
+            "kind": "command",
+            "request": {
+              "type": "insert_row",
+              "expected_revision": "resident/1",
+              "collection": "catalog",
+              "initializers": [
+                {
+                  "field": "20000000-0000-4000-8000-000000000201",
+                  "input": {
+                    "kind": "text",
+                    "value": "ROOT-PROBE"
+                  }
+                },
+                {
+                  "field": "20000000-0000-4000-8000-000000000202",
+                  "input": {
+                    "kind": "text",
+                    "value": "ROOT-PROBE"
+                  }
+                },
+                {
+                  "field": "20000000-0000-4000-8000-000000000203",
+                  "input": {
+                    "kind": "number",
+                    "input": "6"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": 99,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 100,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "71572b16-65b3-40e4-9f25-cdac572c0fcc"
+            }
+          },
+          {
+            "id": 101,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 102,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "5c9b1b1c-cbb9-4b8c-9114-7bffefd48c4a"
+            }
+          },
+          {
+            "id": 103,
+            "kind": "command",
+            "request": {
+              "type": "query_keyed_grouped_sum",
+              "definition_id": "4ac6c1ba-a048-4293-84a6-908fa07e7fc3"
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 96,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/1",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "4ac6c1ba-a048-4293-84a6-908fa07e7fc3"
+                ]
+              }
+            }
+          },
+          {
+            "id": 97,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/1",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 98,
+            "status": "ok",
+            "response": {
+              "type": "published",
+              "payload": {
+                "base_revision": "resident/1",
+                "resulting_revision": "resident/2",
+                "entities": [
+                  "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f"
+                ],
+                "fields": [
+                  {
+                    "entity": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                    "field": "20000000-0000-4000-8000-000000000201"
+                  },
+                  {
+                    "entity": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                    "field": "20000000-0000-4000-8000-000000000202"
+                  },
+                  {
+                    "entity": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                    "field": "20000000-0000-4000-8000-000000000203"
+                  }
+                ],
+                "affected_calculations": []
+              }
+            }
+          },
+          {
+            "id": 99,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/8dab5607-82a5-48ef-88e5-9423d220112f/50000000-0000-4000-8000-000000000001",
+                "revision": "resident/2"
+              }
+            }
+          },
+          {
+            "id": 100,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/2",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 3
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "4ac6c1ba-a048-4293-84a6-908fa07e7fc3"
+                ]
+              }
+            }
+          },
+          {
+            "id": 101,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/2",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 3
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                    "key": "row_0001",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "row_0001.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "ROOT-PROBE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "row_0001.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "ROOT-PROBE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "native_table_row_0001_8dab5607-82a5-48ef-88e5-9423d220112f",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "row_0001.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 6
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 102,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/2",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 3
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "4ac6c1ba-a048-4293-84a6-908fa07e7fc3"
+                ]
+              }
+            }
+          },
+          {
+            "id": 103,
+            "status": "ok",
+            "response": {
+              "type": "keyed_grouped_sum",
+              "payload": {
+                "definition_id": "4ac6c1ba-a048-4293-84a6-908fa07e7fc3",
+                "revision": "resident/2",
+                "groups": [
+                  {
+                    "category": "NOTE",
+                    "value": 1000
+                  },
+                  {
+                    "category": "PEN",
+                    "value": 800
+                  }
+                ],
+                "diagnostics": []
+              }
+            }
+          }
+        ]
+      }
     },
     {
-      "repair": "F",
+      "repair3": "R4-scalar",
       "status": "FAIL",
-      "error": "AssertionError [ERR_ASSERTION]: remove/add defaults remain unique\n\n2 !== 3\n"
+      "item": "R4-scalar",
+      "error": "AssertionError [ERR_ASSERTION]: edit_scalar recovery clears initial Sales marker\n+ actual - expected\n\n+ 'Not saved yet'\n- 'Edited \u2014 not saved'\n",
+      "observation": {
+        "title": "Tachiko SheetSales and catalogAppearanceAppearanceCloseFor this browser on this device.Your work and saved copies stay unchanged.Interface profileTachikoFamiliar SpreadsheetMinimal-FocusCustom profile",
+        "alerts": [
+          "An unconfirmed input was retained for review: {\"kind\":\"number\",\"input\":\"17\"}"
+        ],
+        "requests": [
+          {
+            "id": 126,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "089308dd-50da-4e3d-8ed0-97a8e6f4f3ff"
+            }
+          },
+          {
+            "id": 127,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 128,
+            "kind": "command",
+            "request": {
+              "type": "edit_scalar",
+              "expected_revision": "resident/1",
+              "target": {
+                "entity": "30000000-0000-4000-8000-000000000001",
+                "field": "20000000-0000-4000-8000-000000000203"
+              },
+              "input": {
+                "kind": "number",
+                "input": "17"
+              }
+            }
+          },
+          {
+            "id": 129,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 130,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "ee1b2a99-b2c7-46f4-ae29-42e955e11512"
+            }
+          },
+          {
+            "id": 131,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 132,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "49cbfe65-f4f7-4fbd-8c00-99fb17b5e9a5"
+            }
+          },
+          {
+            "id": 133,
+            "kind": "command",
+            "request": {
+              "type": "query_keyed_grouped_sum",
+              "definition_id": "8ce480c5-378a-490b-897b-4403f62a3eca"
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 126,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/1",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "8ce480c5-378a-490b-897b-4403f62a3eca"
+                ]
+              }
+            }
+          },
+          {
+            "id": 127,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/1",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 128,
+            "status": "ok",
+            "response": {
+              "type": "published",
+              "payload": {
+                "base_revision": "resident/1",
+                "resulting_revision": "resident/2",
+                "entities": [],
+                "fields": [
+                  {
+                    "entity": "30000000-0000-4000-8000-000000000001",
+                    "field": "20000000-0000-4000-8000-000000000203"
+                  }
+                ],
+                "affected_calculations": []
+              }
+            }
+          },
+          {
+            "id": 129,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/beb03ec3-efaf-4809-b5ea-0769f02ea35f/50000000-0000-4000-8000-000000000001",
+                "revision": "resident/2"
+              }
+            }
+          },
+          {
+            "id": 130,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/2",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "8ce480c5-378a-490b-897b-4403f62a3eca"
+                ]
+              }
+            }
+          },
+          {
+            "id": 131,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/2",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 17
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 132,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/2",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "8ce480c5-378a-490b-897b-4403f62a3eca"
+                ]
+              }
+            }
+          },
+          {
+            "id": 133,
+            "status": "ok",
+            "response": {
+              "type": "keyed_grouped_sum",
+              "payload": {
+                "definition_id": "8ce480c5-378a-490b-897b-4403f62a3eca",
+                "revision": "resident/2",
+                "groups": [
+                  {
+                    "category": "NOTE",
+                    "value": 1000
+                  },
+                  {
+                    "category": "PEN",
+                    "value": 68
+                  }
+                ],
+                "diagnostics": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repair3": "R4-history",
+      "status": "PASS"
+    },
+    {
+      "repair3": "defaults",
+      "status": "FAIL",
+      "item": "defaults",
+      "error": "AssertionError [ERR_ASSERTION]: default header is a core-valid spreadsheet letter\n\n'Column 1' !== 'A'\n",
+      "observation": {
+        "alerts": [],
+        "requests": [
+          {
+            "id": 164,
+            "kind": "command",
+            "request": {
+              "type": "undo",
+              "expected_revision": "resident/2"
+            }
+          },
+          {
+            "id": 165,
+            "kind": "observe_occurrence"
+          },
+          {
+            "id": 166,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "a37d4dae-e9f0-47d2-88f6-5290dbd4d6aa"
+            }
+          },
+          {
+            "id": 167,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 168,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "97c6dc89-60b2-46bc-b44c-0b2351642e54"
+            }
+          },
+          {
+            "id": 169,
+            "kind": "command",
+            "request": {
+              "type": "query_keyed_grouped_sum",
+              "definition_id": "ad3f8708-5229-4bfa-add1-a2ab2bde87c6"
+            }
+          },
+          {
+            "id": 170,
+            "kind": "close_project"
+          },
+          {
+            "id": -189,
+            "kind": "close_project"
+          }
+        ],
+        "replies": [
+          {
+            "id": 164,
+            "status": "ok",
+            "response": {
+              "type": "published",
+              "payload": {
+                "base_revision": "resident/2",
+                "resulting_revision": "resident/3",
+                "entities": [
+                  "native_table_row_0001_66275d89-cab4-4aa9-bf6f-67046c60f30d"
+                ],
+                "fields": [
+                  {
+                    "entity": "native_table_row_0001_66275d89-cab4-4aa9-bf6f-67046c60f30d",
+                    "field": "20000000-0000-4000-8000-000000000201"
+                  },
+                  {
+                    "entity": "native_table_row_0001_66275d89-cab4-4aa9-bf6f-67046c60f30d",
+                    "field": "20000000-0000-4000-8000-000000000202"
+                  },
+                  {
+                    "entity": "native_table_row_0001_66275d89-cab4-4aa9-bf6f-67046c60f30d",
+                    "field": "20000000-0000-4000-8000-000000000203"
+                  }
+                ],
+                "affected_calculations": []
+              }
+            }
+          },
+          {
+            "id": 165,
+            "status": "ok",
+            "response": {
+              "type": "occurrence_observed",
+              "payload": {
+                "scope": "designer-occurrence/66275d89-cab4-4aa9-bf6f-67046c60f30d/50000000-0000-4000-8000-000000000001",
+                "revision": "resident/3"
+              }
+            }
+          },
+          {
+            "id": 166,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/3",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "ad3f8708-5229-4bfa-add1-a2ab2bde87c6"
+                ]
+              }
+            }
+          },
+          {
+            "id": 167,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/3",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 168,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/3",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "ad3f8708-5229-4bfa-add1-a2ab2bde87c6"
+                ]
+              }
+            }
+          },
+          {
+            "id": 169,
+            "status": "ok",
+            "response": {
+              "type": "keyed_grouped_sum",
+              "payload": {
+                "definition_id": "ad3f8708-5229-4bfa-add1-a2ab2bde87c6",
+                "revision": "resident/3",
+                "groups": [
+                  {
+                    "category": "NOTE",
+                    "value": 1000
+                  },
+                  {
+                    "category": "PEN",
+                    "value": 800
+                  }
+                ],
+                "diagnostics": []
+              }
+            }
+          },
+          {
+            "id": 170,
+            "status": "closed"
+          },
+          {
+            "id": -189,
+            "status": "closed"
+          }
+        ]
+      }
+    },
+    {
+      "repair3": "constraints",
+      "status": "FAIL",
+      "item": "constraints",
+      "error": "AssertionError [ERR_ASSERTION]: invalid table name is checked before dispatch\n\n5 !== 4\n",
+      "observation": {
+        "alerts": [
+          "The table could not be created. (Details: table creation rejected: table name must use letters, numbers, '-' or '_')"
+        ],
+        "requests": [
+          {
+            "id": 166,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "a37d4dae-e9f0-47d2-88f6-5290dbd4d6aa"
+            }
+          },
+          {
+            "id": 167,
+            "kind": "command",
+            "request": {
+              "type": "query_table",
+              "collection": "catalog"
+            }
+          },
+          {
+            "id": 168,
+            "kind": "command",
+            "request": {
+              "type": "bootstrap",
+              "occurrence_id": "97c6dc89-60b2-46bc-b44c-0b2351642e54"
+            }
+          },
+          {
+            "id": 169,
+            "kind": "command",
+            "request": {
+              "type": "query_keyed_grouped_sum",
+              "definition_id": "ad3f8708-5229-4bfa-add1-a2ab2bde87c6"
+            }
+          },
+          {
+            "id": 170,
+            "kind": "close_project"
+          },
+          {
+            "id": -189,
+            "kind": "close_project"
+          },
+          {
+            "id": -189,
+            "kind": "close_project"
+          },
+          {
+            "id": 171,
+            "kind": "command",
+            "request": {
+              "type": "new_table",
+              "occurrence_id": "caf395f1-ac29-4bce-9bdc-f175a67aa20e",
+              "name": "Bad name",
+              "columns": [
+                {
+                  "name": "Item",
+                  "field_type": "text"
+                }
+              ]
+            }
+          }
+        ],
+        "replies": [
+          {
+            "id": 166,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/3",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "ad3f8708-5229-4bfa-add1-a2ab2bde87c6"
+                ]
+              }
+            }
+          },
+          {
+            "id": 167,
+            "status": "ok",
+            "response": {
+              "type": "table",
+              "payload": {
+                "revision": "resident/3",
+                "native_table_profile": true,
+                "collection": {
+                  "id": "20000000-0000-4000-8000-000000000001",
+                  "key": "catalog",
+                  "entity_count": 2
+                },
+                "columns": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000201",
+                    "key": "code",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000202",
+                    "key": "category",
+                    "field_type": "text"
+                  },
+                  {
+                    "id": "20000000-0000-4000-8000-000000000203",
+                    "key": "price",
+                    "field_type": "number"
+                  }
+                ],
+                "rows": [
+                  {
+                    "id": "30000000-0000-4000-8000-000000000001",
+                    "key": "catalog_pen",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_pen.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_pen.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "PEN"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000001",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_pen.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 200
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "30000000-0000-4000-8000-000000000002",
+                    "key": "catalog_note",
+                    "fields": [
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000201"
+                        },
+                        "address": "catalog_note.code",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000202"
+                        },
+                        "address": "catalog_note.category",
+                        "stored": {
+                          "kind": "text",
+                          "value": "NOTE"
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "text"
+                      },
+                      {
+                        "target": {
+                          "entity": "30000000-0000-4000-8000-000000000002",
+                          "field": "20000000-0000-4000-8000-000000000203"
+                        },
+                        "address": "catalog_note.price",
+                        "stored": {
+                          "kind": "number",
+                          "value": 500
+                        },
+                        "formula": null,
+                        "calculated": null,
+                        "diagnostics": [],
+                        "editable_scalar": "number"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": 168,
+            "status": "ok",
+            "response": {
+              "type": "bootstrap",
+              "payload": {
+                "title": "Sales and catalog",
+                "revision": "resident/3",
+                "default_collection": "sales",
+                "collections": [
+                  {
+                    "id": "20000000-0000-4000-8000-000000000001",
+                    "key": "catalog",
+                    "entity_count": 2
+                  },
+                  {
+                    "id": "10000000-0000-4000-8000-000000000001",
+                    "key": "sales",
+                    "entity_count": 3
+                  }
+                ],
+                "keyed_grouped_sum_definition_ids": [
+                  "ad3f8708-5229-4bfa-add1-a2ab2bde87c6"
+                ]
+              }
+            }
+          },
+          {
+            "id": 169,
+            "status": "ok",
+            "response": {
+              "type": "keyed_grouped_sum",
+              "payload": {
+                "definition_id": "ad3f8708-5229-4bfa-add1-a2ab2bde87c6",
+                "revision": "resident/3",
+                "groups": [
+                  {
+                    "category": "NOTE",
+                    "value": 1000
+                  },
+                  {
+                    "category": "PEN",
+                    "value": 800
+                  }
+                ],
+                "diagnostics": []
+              }
+            }
+          },
+          {
+            "id": 170,
+            "status": "closed"
+          },
+          {
+            "id": -189,
+            "status": "closed"
+          },
+          {
+            "id": -189,
+            "status": "closed"
+          },
+          {
+            "id": 171,
+            "status": "error",
+            "error": {
+              "code": "invalid_table_operation",
+              "message": "table creation rejected: table name must use letters, numbers, '-' or '_'",
+              "current_revision": "unavailable",
+              "diagnostics": []
+            }
+          }
+        ]
+      }
     }
   ],
-  "repaired": [
+  "after": [
     {
-      "repair": "A",
+      "repair3": "R1-resident",
       "status": "PASS"
     },
     {
-      "repair": "B",
+      "repair3": "R1-identity",
       "status": "PASS"
     },
     {
-      "repair": "C",
+      "repair3": "R2",
       "status": "PASS"
     },
     {
-      "repair": "D",
+      "repair3": "R3",
       "status": "PASS"
     },
     {
-      "repair": "E",
+      "repair3": "R4-row",
       "status": "PASS"
     },
     {
-      "repair": "F",
+      "repair3": "R4-scalar",
+      "status": "PASS"
+    },
+    {
+      "repair3": "R4-history",
+      "status": "PASS"
+    },
+    {
+      "repair3": "defaults",
+      "status": "PASS"
+    },
+    {
+      "repair3": "constraints",
       "status": "PASS"
     }
   ],
-  "logs": "/private/tmp/sheet184-repair2-validation",
-  "baselineProductionAssets": [
-    {
-      "path": "dist/assets/index-BS8DX0lF.css",
-      "sha256": "1e8f6975f8f600d2e4bf4bbe52d77a30d218096efd8753f2acd464dae42cabd5"
-    },
-    {
-      "path": "dist/assets/index-jrXxgsg0.js",
-      "sha256": "3dd1a48537a834568c21aefc9df5785afbd99d96aa0d80d48cf54e4038b396fe"
-    }
-  ],
-  "baselineSourceHashes": [
-    {
-      "path": "src/App.tsx",
-      "sha256": "2c935a3a7e8683936334238abe5fd5af371991cc428cef09dc5aaa73b17fae51"
-    },
-    {
-      "path": "src/ui/Modal.tsx",
-      "sha256": "220878551ce8a5e16e7eb11a5ef5571a12f0806bf36d85da496c9f87acc14d57"
-    },
-    {
-      "path": "src/ui/NewTableDialog.tsx",
-      "sha256": "995a3544c7c5d29655e4970cfcea399668e2efb0184fc40de0f489c68be45b33"
-    },
-    {
-      "path": "src/ui/SheetShell.tsx",
-      "sha256": "d0d2c48a94e2b1c0c3b8ef914566550ffc7396e105c802ff0661aa1e44cff6df"
-    }
-  ]
+  "logs": "/private/tmp/sheet184-repair3-validation"
 }

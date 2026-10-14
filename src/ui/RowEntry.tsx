@@ -9,7 +9,7 @@ export function RowEntry({ columns, names, values, disabled, needsReview, error,
   values: Record<string, string>;
   disabled: boolean;
   needsReview: boolean;
-  error: { message: string; fields?: string[] } | null;
+  error: { message: string; fields?: string[]; allowFocus?: () => boolean } | null;
   onChange(field: string, value: string): void;
   onAdd(): void;
   onClear(): void;
@@ -17,7 +17,7 @@ export function RowEntry({ columns, names, values, disabled, needsReview, error,
   const root = useRef<HTMLTableRowElement>(null);
   const composing = useRef(false);
   useEffect(() => {
-    if (!error?.fields?.length || disabled) return;
+    if (!error?.fields?.length || disabled || (error.allowFocus && !error.allowFocus())) return;
     const input = Array.from(root.current?.querySelectorAll<HTMLElement>("[data-entry-field]") ?? []).find(input => input.dataset.entryField === error.fields![0]);
     input?.focus();
   }, [error, disabled]);

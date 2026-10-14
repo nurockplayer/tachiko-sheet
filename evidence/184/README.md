@@ -1,70 +1,77 @@
-# #184 repair-batch 2 evidence
+# #184 root-cause batch 3 evidence
 
-This batch implements the latest Opus A–F disposition on PR #188, from pushed
-base `4c640a89e34dfaf703d91db71d58fb1b1f49da0f`.
+This implements Opus's latest **ROOT-CAUSE CHECKPOINT**, decisions (1)–(4),
+on PR #188, from `5959e7b3ee11edfa00609281111dca5c0da52a7c`.
 
-| Item | Change | Production regression |
+| Finding / decision | Change | Before → after production regression |
 | --- | --- | --- |
-| A | Creation-specific recovery allows a coherent authoritative Refresh to expose the created table, unsaved and protected, without replay. Authoritative absence returns Home with a plain explanation. | Lose a real successful creation reply → Refresh → unsaved Close/unload → Save/reopen; then lose another creation reply, close the real resident through its Worker protocol and Refresh to prove absence and no replay. |
-| B | New-table name, headers, types and column structure register with the existing draft lifecycle when different from the initial defaults. The Home dialog can submit its own draft. | Initial/reverted defaults are clean; each kind of draft protects unload; refused Create retains protection; Cancel clears it. |
-| C | Modal keyboard handling uses the same composition guard as the sheet editor. | Escape with `isComposing=true` and with key code 229 keeps the dialog, draft and focus; ordinary Escape dismisses it. |
-| D | Delete captures the existing completion intent and occurrence, then checks them inside its frame before moving focus. | Hold frames after a real deletion, choose Appearance, release the frames and verify newer focus remains. |
-| E | Shared insert/delete completion updates the Sales initial/change markers on confirmed publication, including known-publication observation recovery. | Fresh Sales insertion and fresh Sales-row deletion show “Edited — not saved” and an Updated tip. |
-| F | Default headers use an unused ordinal, checking existing names with trimmed, case-insensitive comparison. | Add three columns, remove the middle, add again and verify unique defaults; explicitly valid headers reach real core creation. |
+| R3 #2, #3 / (1) | One captured intent/occurrence predicate protects delete selection, roving cell state, deferred DOM focus and RowEntry refusal focus. Existing scalar behavior reuses that predicate. Drafts and error messages remain available. | Hold real delete reply, focus a surviving cell, release → its selection/focus remains. Hold real invalid-Number refusal, focus Appearance, release → error/draft remain without stealing focus. `R2`, `R3`: FAIL → PASS. |
+| R3 #4 / (2) | Record Sales opening occurrence/revision. Completed publication observation and coherent Refresh use one revision comparison to update initial/change markers for row, scalar and history paths; equivalent confirmed per-path updates are removed. | Lose real insert acknowledgement → Refresh → one inserted row and Edited/Updated markers. Lose real scalar acknowledgement → Refresh → exact changed value and Edited/Updated markers, without replay. `R4-row`, `R4-scalar`: FAIL → PASS. Unknown Undo additionally verifies the same boundary (`R4-history`, supplemental PASS on both versions). |
+| R3 #1 / (3) | The runtime observes the real occurrence immediately before creation; only authoritative no-project permits dispatch. Recovery retains the requested trimmed title and normalized column keys/types, admitting only a matching coherent native table. Mismatch uses the existing unknown-open gate. | Lose Close dispatch with `Old` resident, then prepare a creation whose real duplicate-header refusal would be lost → reload refusal and **zero new creation dispatches**. Separately, lose a successful creation reply, replace it through the real core with a differently titled table, Refresh → projection stays hidden/protected, without replay. `R1-resident`, `R1-identity`: FAIL → PASS. |
+| Connector default-name finding / (4) | Defaults are the next unused spreadsheet letter, compared case-insensitively. The dialog gives the current #525 name-limit hint and checks table/column name syntax before dispatch. Trusted core refusals remain visible. | Name-only creation with default A succeeds; A/B/C → remove B → add gives A/C/B and creates without header repair. Invalid table/column names show field errors before any command. `defaults`, `constraints`: FAIL → PASS. |
 
-`tests/product/new-table-repair-cases.mjs` exercises the production UI and real
-Worker/WASM. It only withholds real replies or queued frames; it fabricates no
-runtime success, projection, refusal or absence. Every item failed behaviorally
-on an unmodified exact-base temporary clone's production build, after Home and
-core prerequisites succeeded. A's observation retained the successful creation
-reply and coherent real table read while the UI stayed hidden. D retained the
-real delete publication while its frame moved focus away from Appearance.
-B waited for the existing dirty lifecycle to settle, which never happened on
-the base. C, E and F failed explicit assertions. The same six regressions pass
-on the repaired production source. [Before/after receipt](regression-results.json).
+[Before/after receipt](regression-results.json) retains real request/reply
+observations and each failing assertion. The production build used for baseline
+proof was made while w184's production source was unchanged at `5959e7b`, then
+snapshotted before repair. An exact-base temporary clone retains the original
+source. The final same-harness run reproduces all five findings behaviorally;
+setup failures earn no regression credit. The harness only delays/loses actual
+replies or Close dispatch, or sends real core commands for the identity probe.
+It manufactures no success, refusal, projection or no-work reply.
 
-The full production new-table lane passes all 16 groups, including the existing
-all-field/ID independent saved-byte oracle and actual full browser process
-exit/restart. All eight screenshots were recaptured from the repaired production
-build and are byte-identical to the prior captures. [Lane receipt](result.json)
-and [source/artifact/frozen-file hashes](artifact-manifest.json) bind the evidence
-to the tested files.
+The complete production new-table lane passes **25 groups**, including all
+nine batch-3 cases, the six batch-2 cases, independent saved-byte/all-field/ID
+oracles and full browser process exit/restart. Batch-2 draft/default tests now
+use A and require real creation with untouched default headers.
+[Lane receipt](result.json), [source/artifact/frozen-file hashes](artifact-manifest.json).
+
+All eight screenshots were recaptured from the repaired production build:
 
 | Screen | Desktop (1400px) | Compact (800px) |
 | --- | --- | --- |
 | Home | [home-1400.png](home-1400.png) | [home-800.png](home-800.png) |
-| New table dialog | [dialog-1400.png](dialog-1400.png) | [dialog-800.png](dialog-800.png) |
+| New table dialog with name-limit hint | [dialog-1400.png](dialog-1400.png) | [dialog-800.png](dialog-800.png) |
 | Expenses with three rows | [table-1400.png](table-1400.png) | [table-800.png](table-800.png) |
 | Refused Number draft | [refusal-1400.png](refusal-1400.png) | [refusal-800.png](refusal-800.png) |
 
-## Validation and limits
+## Actual validation
 
-PASS: typecheck; unit (556 Vitest + 125 Node); production build with hook
-exclusion; production new-table lane (16 groups); full product (31/31), including
-the 24-combination / 24-geometry-case visual matrix with zero findings.
-The exact commands/results are recorded in [validation-results.json](validation-results.json).
-Complete logs and earlier attempts are retained in
-`/private/tmp/sheet184-repair2-validation/`. The baseline clone is
-`/private/tmp/sheet184-repair2-candidate`, still at unmodified `4c640a8`.
+| Check | Result |
+| --- | --- |
+| `pnpm typecheck` | PASS, exit 0 |
+| `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit` | PASS, 558 Vitest + 125 Node, exit 0 |
+| `pnpm build` | PASS, production hook exclusion included, exit 0 |
+| Production new-table lane, screenshots enabled | PASS, 25 groups / 8 screenshots, exit 0 |
+| Full `pnpm acceptance:product` | **FAIL, exit 1: 22/31 steps PASS; nine infrastructure failures. No full-gate PASS.** |
 
-An initial unit run caught implementation vocabulary in the no-work message;
-the message was repaired and the complete unit gate rerun. An initial full
-new-table run passed the original ten groups and B–F, but A's extra absence
-probe targeted the already closed independent oracle worker. The harness now
-retains the first product worker; the complete lane was rerun successfully.
-Earlier baseline setup attempts used an invalid default header or unavailable
-Results tab; those results earned no regression credit. The exact-base final
-run reproduced all six valid behavioral failures. No infrastructure failure is
-counted as PASS.
+The full runner attempted every step. Chromium launch or context creation
+failed in `appearance-visual-local`, `home-visual-local`,
+`initial-launch-local-transport`, `cell-editing-regression`,
+`import-recognizable-local`, `browser-m1`, `browser-recovery-regression`,
+`browser-initial-launch-regression` and `product-focus`. Logs report
+`Target page, context or browser has been closed`; some launch failures also
+report SIGABRT. Required behavior in those steps did not complete. The complete
+visual matrix did not emit a current receipt; [visual status](visual-summary.json)
+is BLOCKED. No earlier visual PASS is reused.
 
-The out-of-repository `NODE_OPTIONS --import` observer used for full product
-acceptance only preserves the complete visual JSON; it changes no assertions,
-launch behavior or product code. The existing runner selects its supported
-single-process Chromium fallback when the normal sandbox launch is unavailable.
-Frozen #146 files/runners, `public/core-kit` and lockfiles are unchanged. Serena
-was left untouched; its pre-existing local modification is preserved.
-Existing space/ASCII/header normalization limits remain core-owned under Work
-#525. Desktop qualification is inherited from the original lane; this batch
-claims no new native/package/physical IME qualification. Opus retains hosted
-gates, fresh independent exact-HEAD review and integration. No review threads
-were resolved, and no independent approval or merge is claimed.
+[Exact commands/results and disclosed earlier attempts](validation-results.json),
+[full product step receipt](product-summary.json). Complete logs and archived
+shared evidence: `/private/tmp/sheet184-repair3-validation/`.
+The unmodified product runner used its supported single-process fallback.
+An out-of-repository console observer only preserves a complete visual JSON if
+one is emitted; it changes no assertions or launch behavior. A separate supported
+full-Chrome probe failed in both normal and single-process modes; no full rerun
+or test weakening follows from that infrastructure failure.
+
+All 62 recorded core-kit/lock/frozen-acceptance files are byte-identical to the
+base. Frozen #146 seeds/runners, public/core-kit and lockfiles are unchanged.
+Serena's existing local modification is preserved and excluded. Desktop/package
+qualification is inherited; no new native, physical IME or complete visual
+qualification is claimed. Opus retains hosted gates, fresh independent
+exact-HEAD review and integration. Review threads remain open. No merge or
+independent approval is claimed.
+
+Worktree metadata denied `index.lock`. The same 24 source/evidence files were
+verified byte-identical and committed from `/private/tmp/sheet184-repair3-candidate`
+at the exact `5959e7b` parent, for a normal non-force push. w184 retains the tested
+repairs at metadata HEAD `5959e7b`; its existing Serena modification is excluded.

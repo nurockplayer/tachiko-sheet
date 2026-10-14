@@ -85,7 +85,7 @@ export async function runNewTableRepairCases({ page, ready, projection, checks }
       await name.fill(""); await assertDraftProtection(false, "reverting the name clears protection");
       const column = dialog().getByLabel("Column 1 name", { exact: true });
       await column.fill("Item"); await assertDraftProtection(true, "a column draft protects unload");
-      await column.fill("Column 1"); await assertDraftProtection(false);
+      await column.fill("A"); await assertDraftProtection(false);
       const type = dialog().getByLabel("Column 1 type", { exact: true });
       await type.selectOption("number"); await assertDraftProtection(true, "a type draft protects unload");
       await type.selectOption("text"); await assertDraftProtection(false);
@@ -153,9 +153,6 @@ export async function runNewTableRepairCases({ page, ready, projection, checks }
       await dialog().getByRole("button", { name: "Remove column 2", exact: true }).click(); await add.click();
       const names = await dialog().locator(".ts-new-column input").evaluateAll(inputs => inputs.map(input => input.value));
       assert.equal(new Set(names).size, names.length, "remove/add defaults remain unique");
-      // The pinned core still refuses spaces in headers (Work #525). Use
-      // explicit valid headers after verifying the UI's default-name oracle.
-      for (let i = 0; i < names.length; i++) await dialog().getByLabel(`Column ${i + 1} name`, { exact: true }).fill(names[i].replaceAll(" ", "_"));
       await create(); await ready(page);
       assert.equal((await projection(page)).columns.length, 3, "unique headers reach the real creation boundary");
     },
