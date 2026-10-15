@@ -5,6 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createServer } from 'vite';
+import { projectTransferFromFiles } from '../public/core-kit/experimental-client.js';
+import { projectTransferToEntries } from '../public/core-kit/host/project-transfer.js';
+import { archiveEntries } from './product/work-file-archive.mjs';
 
 const root = new URL('../', import.meta.url);
 const entries = [];
@@ -13,6 +16,30 @@ for (const source of ['src/core-loader.ts', 'src/host/native-runtime.ts']) {
   entries.push(...[...text.matchAll(/export const PUBLIC_\w+_ENTRY = "([^"]+)"/g)].map((match) => match[1]));
 }
 assert.equal(entries.length, 3, 'cover the Web entry and both additional native kit entries');
+
+test('kit host accepts a backslash in a v3 folder root but refuses it in a relative path', async () => {
+  const archive = Buffer.from((await readFile(new URL('./fixtures/work-file/constrained-v3.hex', import.meta.url), 'utf8')).replace(/\s/g, ''), 'hex');
+  const canonical = archiveEntries(archive).slice(1).map(({ name, body }) => ({
+    path: name.replace(/^payload\//, ''), bytes: Uint8Array.from(body).buffer,
+  }));
+  assert.equal(canonical.length, 19);
+  assert.equal(JSON.parse(new TextDecoder().decode(canonical[0].bytes)).format_version, 3);
+  function selectedFiles(relativePath = path => path) {
+    // FileList order can differ from storage order; retain the original bytes.
+    const files = canonical.slice().reverse().map(({ path, bytes }) => {
+      const file = new File([bytes], path.split('/').at(-1));
+      Object.defineProperty(file, 'webkitRelativePath', { value: `Forecast\\Final.roproj/${relativePath(path)}` });
+      return file;
+    });
+    return Object.assign(files, { item: index => files[index] ?? null });
+  }
+  const transferred = await projectTransferFromFiles(selectedFiles());
+  assert.deepEqual(projectTransferToEntries(transferred), canonical, 'root is stripped; every canonical path and byte survives');
+  await assert.rejects(
+    projectTransferFromFiles(selectedFiles(path => path.replace('entities/', 'entities\\'))),
+    /one safe project directory/,
+  );
+});
 
 test('Web and desktop dev imports preserve core-kit bytes and Vite URL modules', async () => {
   for (const mode of ['development', 'desktop']) {
