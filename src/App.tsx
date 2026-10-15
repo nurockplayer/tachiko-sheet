@@ -568,6 +568,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     installJ4DefinitionIds(results.map((result) => result.definitionId));
     j4ResultsRef.current = results;
     setJ4Results(results);
+    // Full discovery is authoritative: history can remove the definition a
+    // report refers to. Drop that presentation binding with its missing source.
+    // Pending/failed reads and targeted refreshes never take this path.
+    const configuredReport = reportRef.current;
+    if (configuredReport && !results.some(result => result.definitionId === configuredReport.definitionId)) {
+      installReport(null, true);
+    }
   }
 
   /** Restore confirmed pre-publication J4 state after a refused operation. */
