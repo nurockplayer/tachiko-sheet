@@ -214,6 +214,18 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   expect(afterReopen!.columns).toEqual(nativeColumns);
   expect(afterReopen!.collection.display_name).toBe("My Expenses");
 
+  // Desktop local copies retain portable bytes, even though external .ro
+  // Open/Download is disabled. Exercise the actual native verify/open route
+  // used by Home, rather than only reopening the explicit v3 project above.
+  const localCopy = await step(log, "export native portable local copy", () => client.exportPortableRo(afterReopen!.revision));
+  await step(log, "close before native portable reopen", () => client.closeProject());
+  await step(log, "verify native portable local copy", () => client.verifyPortableRo(localCopy!.bytes.slice(0)));
+  await step(log, "open native portable local copy", () => client.openPortableRo(localCopy!.bytes.slice(0)));
+  const portableReopen = await step(log, "read native portable local copy", () => client.queryTable(nativeKey));
+  expect(portableReopen!.rows).toEqual(afterInsert!.rows);
+  expect(portableReopen!.columns).toEqual(nativeColumns);
+  expect(portableReopen!.collection).toEqual(afterReopen!.collection);
+
   // Refusals and local bridge limits.
   await step(log, "inspect malformed csv", () => client.inspectSpreadsheet(new TextEncoder().encode('a,b\n"open\n').buffer, "csv", options));
   await step(log, "oversized command refused", () => client.queryTable("x".repeat(70_000)));

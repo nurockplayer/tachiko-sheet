@@ -59,7 +59,9 @@ async function boot(): Promise<void> {
   }
 
   const runtime = createSheetRuntime(kitLoader);
-  const copies = createLocalCopies({ workFileWrites: import.meta.env.MODE !== "desktop" });
+  // Portable local copies use IndexedDB on both hosts. External desktop .ro
+  // Open/Download remains separately gated in App.
+  const copies = createLocalCopies();
   createRoot(root).render(
     <HostCopyContext.Provider value={hostCopy}>
       <HostFilesContext.Provider value={hostFiles}>

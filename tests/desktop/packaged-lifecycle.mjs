@@ -675,6 +675,92 @@ for w in list where (w[kCGWindowOwnerName as String] as? String) == "Tachiko She
   if (id) execFileSync("screencapture", ["-x", "-o", `-l${id}`, path.join(folder, `${label}.png`)]);
 }
 
+// New-table work has a v3 origin. Its internal portable local copy must survive
+// a complete native process exit, independently of external .ro file support.
+async function namedTableJourney() {
+  const name = "desktop-named-table";
+  const labels = ["Item Name", "項目", "Amount"];
+  pid = await timed("launch", launch);
+  await coldHome();
+  assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), true, "external desktop .ro Open stays disabled");
+  await evaluate(`
+    click(await waitFor(() => button("New table"), "New table"));
+    const form = await waitFor(() => dialog("New table"), "New table dialog");
+    fill(textbox("Table name"), "My Expenses");
+    for (const [index, label] of ${JSON.stringify(labels)}.entries()) {
+      if (index) click(button("Add column", form));
+      fill(await waitFor(() => textbox("Column " + (index + 1) + " name"), "column name"), label);
+    }
+    const type = form.querySelector('[aria-label="Column 3 type"]');
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(type, "number");
+    type.dispatchEvent(new Event("change", { bubbles: true }));
+    click(button("Create table", form));
+    await waitFor(() => !dialog("New table") && current(), "named table");
+    for (const [index, value] of ["Tea", "飲食", "4.5"].entries()) {
+      fill(textbox("New row " + ${JSON.stringify(labels)}[index] + (index === 2 ? " (Number)" : " (Text)")), value);
+    }
+    click(button("Add", document.querySelector(".ts-entry-row")));
+    await waitFor(() => current() && grid()?.querySelector("tbody tr.ts-row"), "new row");
+    return true;
+  `);
+  const snapshot = () => evaluate(`
+    click(await waitFor(() => tab("Table"), "Table tab"));
+    await waitFor(() => current() && grid()?.querySelector("tbody tr.ts-row"), "table ready");
+    return {
+      name: document.querySelector("#ts-active-table option:checked")?.textContent,
+      columns: [...grid().querySelectorAll(".ts-col-head")].map(el => el.textContent),
+      cells: [...grid().querySelectorAll("tbody tr.ts-row td")].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
+    };
+  `);
+  const initial = await snapshot();
+  assert.equal(initial.name, "My Expenses");
+  assert.deepEqual(initial.columns, labels);
+  assert.deepEqual(initial.cells.map(cell => cell.value), ["Tea", "飲食", "4.5"]);
+  await evaluate(`
+    click(tab("Import & export"));
+    await waitFor(() => [...document.querySelectorAll("button")].some(el => nameOf(el) === "Download work file (.ro)" && el.disabled), "disabled desktop .ro Download");
+    return true;
+  `);
+  await saveCopy(name);
+  assert.equal(await unsavedCheck(), false, "new-table Save a copy confirms durable save");
+  await quit(pid);
+  pid = await timed("launch", launch);
+  await coldHome();
+  await openSaved(name);
+  assert.deepEqual(await snapshot(), initial, "full native restart preserves every name, cell identity and value");
+  assert.doesNotMatch(await evaluate(`return document.body.innerText;`), /Download the work file to keep these changes/);
+
+  await edit(0, 2, "7");
+  await evaluate(`
+    click(await waitFor(() => button("Save"), "bound Save"));
+    await waitFor(() => document.querySelector('[data-testid="save-status"]')?.textContent.includes("Saved on this device"), "bound save completed");
+    return true;
+  `);
+  const updated = await snapshot();
+  assert.deepEqual(updated.cells.map(cell => cell.value), ["Tea", "飲食", "7"]);
+  assert.equal(await unsavedCheck(), false, "bound Save confirms durable replacement");
+  await quit(pid);
+  pid = await timed("launch", launch);
+  await coldHome();
+  await openSaved(name);
+  assert.deepEqual(await snapshot(), updated, "bound Save survives full native restart");
+
+  await edit(0, 2, "9");
+  const closed = await snapshot();
+  assert.deepEqual(closed.cells.map(cell => cell.value), ["Tea", "飲食", "9"]);
+  await evaluate(`
+    click(button("Close project"));
+    const unsaved = await waitFor(() => dialog("Unsaved work"), "Unsaved work");
+    click(button("Save", unsaved));
+    await waitFor(() => document.querySelector('.ts-app[data-view="home"]'), "Close → Save reached Home");
+    return true;
+  `);
+  await openSaved(name);
+  assert.deepEqual(await snapshot(), closed, "Close → Save replaces the bound portable local copy");
+  await quit(pid);
+  pid = undefined;
+}
+
 // ---- run ---------------------------------------------------------------------
 
 const webkitData = [
@@ -686,6 +772,7 @@ for (const folder of webkitData) await rm(folder, { recursive: true, force: true
 const results = [];
 let pid;
 try {
+  await namedTableJourney();
   if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
   const cases = process.env.DESKTOP_JOURNEYS === "sales" ? [] : [
     ...formats.map(format => ({ format, rows: 8406, cols: 3, mixed: false })),
@@ -772,7 +859,7 @@ try {
   }
   console.log(JSON.stringify({
     case: "desktop packaged lifecycle (native runtime)",
-    journeys: { sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    journeys: { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),

@@ -2543,7 +2543,7 @@ export function SheetShell(props: SheetShellProps) {
           <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
         </div>
         {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
-        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. {view.openedFromWorkFile ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
+        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. {view.openedFromWorkFile && !workFileUnavailableReason ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
