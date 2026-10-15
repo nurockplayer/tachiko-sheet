@@ -35,11 +35,11 @@ Logs and machine-readable command results: `/tmp/sheet-197/` (`results.jsonl`). 
 | --- | --- |
 | `pnpm install --frozen-lockfile` | PASS |
 | `pnpm typecheck` | PASS |
-| `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit` | FAIL overall: 631/631 Vitest PASS; 142/144 Node PASS. Two CLI provenance tests fail at the intentionally absent lead review URL (shipped-lock verification; altered-asset delegation cannot reach its digest assertion). No tests weakened. |
+| `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit` | Writer run: 631/631 Vitest, 142/144 Node (two provenance tests awaited the lead review URL). **After the lead receipt: 631 Vitest + 144/144 Node PASS** |
 | `pnpm build` | PASS, including production hook exclusion |
 | `pnpm build:acceptance` | PASS |
 | `pnpm verify:core-kit` | Writer run: FAIL, pending lead reproduction. **After the lead receipt: PASS** |
-| `pnpm qualification:j3-public-composition` | FAIL_OR_UNQUALIFIED at the same provenance prerequisite, before behavioral composition; no J3 PASS |
+| `pnpm qualification:j3-public-composition` | Writer run: blocked at the provenance prerequisite. **After the lead receipt: PASS_COMPOSITION_SUBSET_ONLY** (same scope as #196). Lead also re-pinned and passed `qualification:j4-public-composition` |
 | `WORK_CLIENT_KIT=public/core-kit WORK_CORE_COMMIT=d5dc6b8b48b14623f4acacd414c660f91b002e2f node tests/kit.mjs` | PASS: C1 integrity, 24 manifest-listed assets; does not confer review credit |
 | `WORK_DIST=dist TACHIKO_TEST_SINGLE_PROCESS=1 node tests/product/v3-folder-save-local.mjs` | PASS: 4 ordinary-selection scenarios; no diagnostic flag |
 | `WORK_DIST=dist TACHIKO_TEST_SINGLE_PROCESS=1 pnpm acceptance:display-names` | PASS: 6 groups |
@@ -82,3 +82,6 @@ Full product acceptance skipped as instructed; lead runs it. Hosted/macOS job, f
 | `runtime/worker-client.js` | `73c9cf3b935b18332bb63f1095cfe6adb902ccd301c9a18db0f1ed87b5d00ea0` |
 | `runtime/worker-runtime.d.ts` | `657179a14c93df62c7a8d2e0718076082c3d53ed30b94f3f23b21cc8608587c3` |
 | `runtime/worker-runtime.js` | `b2c0ed8e317ded0c38e1775418f8ca597b19d52062f2d131751e5b5476915bce` |
+
+
+**Final qualified state (lead):** the lead's independent reproduction is the review in `verify-core-kit.mjs` and `core-kit.lock.json`. verify:core-kit, J3 and J4 qualification, and all unit tests pass. Hosted preparation, Web product + M1 and macOS pass at `ab4f5af9`. The lead's full `pnpm acceptance:product` passed 35/35 steps, with v3-folder-save as an ordinary gate.
