@@ -12,7 +12,7 @@
   "qualificationArtifactReview": {
     "sourceCommit": "d5dc6b8b48b14623f4acacd414c660f91b002e2f",
     "artifactManifestSha256": "0e021a9ca97b2b8a599f941f26db9bc8a8d86e9b169b871facb6f215c2b5d603",
-    "url": null
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186306547"
   },
-  "notes": "Exact producer authorized by #197; two unchanged-exporter builds by the writer match in all 25 files. Lead independent reproduction pending: https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186194480. Review URL intentionally null until the lead supplies its independent receipt; provenance qualification is blocked. Product acceptance and independent candidate review are separate."
+  "notes": "Exact producer authorized by #197; two unchanged-exporter builds by the writer and an independent lead reproduction from a clean Work checkout all match in all 25 files (manifest 0e021a9c). Product acceptance and PR #198 candidate review are separate."
 }
