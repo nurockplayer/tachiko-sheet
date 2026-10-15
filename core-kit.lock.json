@@ -12,7 +12,7 @@
   "qualificationArtifactReview": {
     "sourceCommit": "16545c55e49dfb4de5b55fd46e2260fd82ff4a58",
     "artifactManifestSha256": "41f452f2d24d022e650124c27ad5bbc82865a1ee56f7bf86c5043228a31c07a7",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/195#issuecomment-6182811855"
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/195#issuecomment-6183108676"
   },
-  "notes": "Exact producer authorized by #195; two unchanged-exporter builds match in all 25 files. Receipt records writer acquisition only; independent lead artifact reproduction and final candidate review remain pending. Product acceptance is separate."
+  "notes": "Exact producer authorized by #195; two unchanged-exporter builds by the writer and an independent lead reproduction from a clean Work checkout all match in all 25 files (manifest 41f452f2). Product acceptance and PR #196 candidate review are separate."
 }
