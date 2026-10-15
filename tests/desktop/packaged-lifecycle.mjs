@@ -219,7 +219,10 @@ function press(el, key) {
 const ready = () => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false";
 const current = () => ready() && document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current";
 const grid = () => document.querySelector('table[aria-label="Table"]');
-const rowAt = (row) => grid()?.querySelector('tbody tr[aria-rowindex="' + (row + 2) + '"]');
+// Windowed grids carry aria-rowindex; small, fully rendered grids correctly
+// omit it, so fall back to the row's position among rendered data rows.
+const rowAt = (row) => grid()?.querySelector('tbody tr[aria-rowindex="' + (row + 2) + '"]') ??
+  (grid()?.querySelector("tbody tr.ts-row[aria-rowindex]") ? null : grid()?.querySelectorAll("tbody tr.ts-row")[row] ?? null);
 const cellAt = (row, column) => rowAt(row)?.querySelectorAll("td")[column];
 const tab = (name) => [...document.querySelectorAll('[role="tab"]')].find((t) => nameOf(t) === name);
 async function visibleTable(name) {
