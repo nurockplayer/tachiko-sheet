@@ -197,7 +197,9 @@ const dialog = (name) => [...document.querySelectorAll('[role="dialog"]')].find(
 const textbox = (name) => [...document.querySelectorAll("input,textarea")].find((i) => {
   const labelled = i.getAttribute("aria-labelledby");
   const label = i.getAttribute("aria-label") || (labelled && document.getElementById(labelled)?.textContent) ||
-    (i.id && document.querySelector('label[for="' + i.id + '"]')?.textContent) || "";
+    (i.id && document.querySelector('label[for="' + i.id + '"]')?.textContent) ||
+    // Implicit (wrapping) labels, e.g. the New table dialog's column fields.
+    (i.labels?.[0]?.textContent) || "";
   return label.trim() === name;
 });
 function pointer(el, type) {
