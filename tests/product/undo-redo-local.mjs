@@ -274,6 +274,9 @@ try {
   await page.getByTestId(`j4-result-${latestSummaryIndex}`).getByRole("button", { name: "Create bar report", exact: true }).click();
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).waitFor();
+  const authoredReport = [["Title", "Summary history"], ["Category label", "Product code"], ["Value label", "Value ¥"]];
+  for (const [label, value] of authoredReport) await page.getByLabel(label, { exact: true }).fill(value);
+  await page.getByLabel("Show legend", { exact: true }).uncheck();
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("undo-summary-report");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
@@ -317,7 +320,7 @@ try {
   }
   await definitionHistoryStep("undo", 1);
   await page.getByRole("tab", { name: "Report", exact: true }).click();
-  assert.equal(await page.getByLabel("Title", { exact: true }).count(), 0, "Undo removes the report configuration bound to the deleted summary");
+  assert.equal(await page.getByLabel("Title", { exact: true }).count(), 0, "Undo detaches the presentation bound to the absent summary");
   assert.equal(await page.getByRole("region", { name: "Report chart", exact: true }).count(), 0, "the deleted source leaves no stale chart");
   assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0, "the deleted source cannot be exported");
   // A dangling report would refuse this Save while a sibling summary remains.
@@ -330,6 +333,10 @@ try {
   await definitionHistoryStep("redo", 1);
   await definitionHistoryStep("redo", 2);
   assert.equal(await redo.isDisabled(), true, "both definitions have been restored by Work");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  for (const [label, value] of authoredReport) assert.equal(await page.getByLabel(label, { exact: true }).inputValue(), value, "Redo restores settings after Save while detached, with a sibling summary resident");
+  assert.equal(await page.getByLabel("Show legend", { exact: true }).isChecked(), false);
+  assert.match(await page.locator(".ts-report-output-note").textContent(), /This bar report/);
 
   // Both resident grouped results follow a real Catalog price scalar edit and
   // authoritative tracker history without an intervening Refresh.
@@ -695,8 +702,11 @@ try {
   assert.notEqual(await desktopRefresh.evaluate((node) => node === document.activeElement), true, "compact fallback never steals focus to the desktop Refresh command");
   await notesPage.setViewportSize({ width: 1280, height: 800 });
   await notesPage.close();
-  console.log("PASS: real acceptance-build Undo/Redo scalar, saved definitions, report removal, recovery, reopen and notes-lock journey");
+  console.log("PASS: real acceptance-build Undo/Redo scalar, saved definitions, report detachment/restoration, recovery, reopen and notes-lock journey");
 } finally {
   await context.close();
   await browser.close();
 }
+
+// Include durable report history and occurrence boundaries in this lane's gates.
+await import("./report-history-local.mjs");
