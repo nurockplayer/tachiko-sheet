@@ -19,6 +19,7 @@ export function tableColumns(table: WorkbookView["table"]): TableColumn[] {
   return (first?.fields ?? []).map((field) => ({
     id: field.target.field,
     key: field.target.field,
+    display_name: field.target.field,
     field_type: "unknown",
   }));
 }

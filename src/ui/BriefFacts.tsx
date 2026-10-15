@@ -28,7 +28,7 @@ export function BriefFacts({ entity, occurrence, revision, currentness, row, col
           const numeric = field?.calculated?.status === "value" || field?.stored?.kind === "number";
           return (
             <tr className="ts-fact" key={column.id}>
-              <th className="ts-fact-key" scope="row">{column.key}</th>
+              <th className="ts-fact-key" scope="row">{column.display_name}</th>
               <td
                 className={`ts-fact-value ts-cell--${display.tone}${numeric ? " ts-fact-value--numeric" : ""}`}
                 data-testid={`brief:${entity}:${column.id}`}

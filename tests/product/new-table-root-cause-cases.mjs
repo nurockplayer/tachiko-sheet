@@ -48,7 +48,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
     });
   }
   const cases = {
-    // Round 5-B: the dialog validates trimmed names and must dispatch those names.
+    // Round 5-B: Work trims authoring names; the dialog must send the untouched draft.
     "5-B-trim": async () => {
       await openDialog(" Expenses ");
       await dialog().getByLabel("Column 1 name", { exact: true }).fill(" Item ");
@@ -60,8 +60,8 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       });
       const dispatched = (await requests("new_table")).slice(before);
       assert.equal(dispatched.length, 1, "Create dispatches exactly once");
-      assert.equal(dispatched[0].request.name, "Expenses", "table name is trimmed before dispatch");
-      assert.deepEqual(dispatched[0].request.columns, [{ name: "Item", field_type: "text" }], "column names are trimmed before dispatch");
+      assert.equal(dispatched[0].request.name, " Expenses ", "table name reaches Work exactly as typed");
+      assert.deepEqual(dispatched[0].request.columns, [{ name: " Item ", field_type: "text" }], "column names reach Work exactly as typed");
       assert.equal(await dialog().count(), 0, "padded valid names create successfully in the real core");
       await ready(page);
       const table = await projection(page);
@@ -155,19 +155,19 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       assert.deepEqual((await projection(page)).columns.map(c => [c.key, c.field_type]), [["a", "text"]], "name-only creation needs no header repair");
     },
     constraints: async () => {
-      await openDialog("Bad name");
+      await openDialog("   ");
       await dialog().getByLabel("Column 1 name", { exact: true }).fill("Item");
       const before = (await requests("new_table")).length;
       await dialog().getByRole("button", { name: "Create table", exact: true }).click();
       await dialog().getByRole("alert").waitFor();
-      assert.equal((await requests("new_table")).length, before, "invalid table name is checked before dispatch");
+      assert.equal((await requests("new_table")).length, before + 1, "Work authoritatively refuses the table name after one dispatch");
       assert.equal(await dialog().getByLabel("Table name", { exact: true }).getAttribute("aria-invalid"), "true");
       await dialog().getByLabel("Table name", { exact: true }).fill("Valid_name");
-      await dialog().getByLabel("Column 1 name", { exact: true }).fill("_Bad");
+      await dialog().getByLabel("Column 1 name", { exact: true }).fill("Bad\u0001Name");
       await dialog().getByRole("button", { name: "Create table", exact: true }).click(); await dialog().getByRole("alert").waitFor();
-      assert.equal((await requests("new_table")).length, before, "invalid column name is checked before dispatch");
+      assert.equal((await requests("new_table")).length, before + 2, "Work authoritatively refuses the column name after one dispatch");
       assert.equal(await dialog().getByLabel("Column 1 name", { exact: true }).getAttribute("aria-invalid"), "true");
-      await dialog().getByText("Names can use letters, numbers, - and _.", { exact: true }).waitFor();
+      await dialog().getByRole("alert").filter({ hasText: /control characters/ }).waitFor();
     },
   };
   async function recoverSales(type, openingRevision, verify) {

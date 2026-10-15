@@ -4,6 +4,7 @@ import type {
   CollectionSummary,
   FieldBatchProjection,
   FieldTarget,
+  PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
 import type { KeyedGroupedSumProjection } from "../public/core-kit/runtime/protocol.js";
@@ -52,6 +53,8 @@ export interface WorkbookView {
   title: string;
   /** Ephemeral admission evidence, set only by the Work portable-file entry. */
   openedFromWorkFile?: boolean;
+  /** Host admission evidence: New table uses Work's v3 origin. Save via portable bytes. */
+  requiresPortableSave?: boolean;
   occurrence: string;
   revision: string;
   collections: CollectionSummary[];
@@ -97,7 +100,7 @@ export interface SheetRuntime {
   exportCanonical(witness: ViewWitness): Promise<CanonicalTreeExport>;
   exportOpaque(witness: ViewWitness): Promise<OpaqueProjectExport>;
   listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog>;
-  createKeyedGroupedSum(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<KeyedGroupedSumResult>;
+  createKeyedGroupedSum(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<KeyedGroupedSumResult & { publication: PublicationProjection }>;
   queryKeyedGroupedSum(witness: ViewWitness, definitionId: string): Promise<KeyedGroupedSumResult>;
   discoverKeyedGroupedSums(witness: ViewWitness): Promise<KeyedGroupedSumResult[]>;
   /** The public kit parses all spreadsheet bytes; Sheet retains no parser. */
@@ -163,7 +166,8 @@ export interface OpaqueProjectExport {
 export interface KeyedGroupedSumBindingCatalog {
   collections: Array<{
     key: string;
-    fields: Array<{ key: string; fieldType: string }>;
+    displayName?: string;
+    fields: Array<{ key: string; displayName?: string; fieldType: string }>;
   }>;
 }
 

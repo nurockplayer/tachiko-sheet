@@ -963,7 +963,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setCurrentness("current");
         setOutcome("idle");
       }
-      return error === unconfirmed ? error : new Error(describe(error, "The table could not be created."));
+      return error === unconfirmed || (error && typeof error === "object" && "failure" in error)
+        ? error : new Error(describe(error, "The table could not be created."));
     };
     try {
       // The schema dialog is a Home action; its resident is disposable.
@@ -1564,7 +1565,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
-    if (viewRef.current?.openedFromWorkFile && !copies.createWorkFile) {
+    if ((viewRef.current?.openedFromWorkFile || viewRef.current?.requiresPortableSave) && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
       return false;
     }
@@ -1585,18 +1586,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
     }
     try {
+      const portableSave = live.openedFromWorkFile || live.requiresPortableSave;
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const hasDateColumn = definitionBearing || live.openedFromWorkFile
+      const hasDateColumn = definitionBearing || portableSave
         ? false
         : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
       let snapshotRevision: string;
       let receipt;
-      if (live.openedFromWorkFile || definitionBearing || hasDateColumn) {
-        const snapshot = live.openedFromWorkFile
+      if (portableSave || definitionBearing || hasDateColumn) {
+        const snapshot = portableSave
           ? await runtime.exportWorkFile(witnessOf(live))
           : await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
-        if (live.openedFromWorkFile) validateWorkFileCopy({
+        if (portableSave) validateWorkFileCopy({
           ...snapshot, importedSource: importedSourceRef.current ?? undefined,
         });
         const configuredReport = reportRef.current;
@@ -1621,11 +1623,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           presentation,
         };
         if (expected) {
-          const replace = live.openedFromWorkFile ? copies.replaceWorkFile : copies.replaceOpaque;
+          const replace = portableSave ? copies.replaceWorkFile : copies.replaceOpaque;
           if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
           receipt = await replace.call(copies, expected, payload);
         } else {
-          const create = live.openedFromWorkFile ? copies.createWorkFile! : copies.createOpaque;
+          const create = portableSave ? copies.createWorkFile! : copies.createOpaque;
           receipt = await create.call(copies, name, payload);
         }
       } else {

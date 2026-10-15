@@ -36,7 +36,7 @@ import {
 } from "./session.js";
 
 const TITLE = "Qualification workbook";
-const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", entity_count: 1 };
+const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", display_name: "tasks", entity_count: 1 };
 const IMPACT: FieldTarget = { entity: "e1", field: "impact" };
 const NOTES: FieldTarget = { entity: "e1", field: "notes" };
 const FILES = { length: 18, item: () => null } as unknown as FileList;
@@ -147,8 +147,8 @@ class FakeClient {
       revision: this.#revision,
       collection: COLLECTION,
       columns: [
-        { id: "f1", key: "impact", field_type: "number" },
-        { id: "f2", key: "notes", field_type: "text" },
+        { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+        { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
       ],
       rows: [
         {
@@ -180,7 +180,7 @@ class FakeClient {
       resulting_revision: this.#revision,
       entities: [target.entity],
       fields: [target],
-      affected_calculations: [],
+      affected_calculations: [], schemas: [], schema_fields: [],
     };
   }
 
@@ -200,7 +200,7 @@ class FakeClient {
     this.#bump();
     if (request.type === "undo") { this.#undoCount -= 1; this.#redoCount += 1; }
     else { this.#redoCount -= 1; this.#undoCount = Math.min(64, this.#undoCount + 1); }
-    return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [] };
+    return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [], schemas: [], schema_fields: [] };
   }
 
   async newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection> {
@@ -425,7 +425,7 @@ function installCatalog(
   client: FakeClient,
   definitions: Array<{
     collection: CollectionSummary;
-    columns: Array<{ id: string; key: string; field_type: string }>;
+    columns: Array<{ id: string; key: string; display_name?: string; field_type: string }>;
     rows?: TableProjection["rows"];
   }>,
   revision = "r1",
@@ -448,7 +448,7 @@ function installCatalog(
     return {
       revision,
       collection: definition.collection,
-      columns: definition.columns,
+      columns: definition.columns.map(column => ({ ...column, display_name: column.key })),
       rows: definition.rows ?? [],
     };
   };
@@ -456,11 +456,11 @@ function installCatalog(
 
 function catalogTable(
   key: string,
-  columns: Array<{ id: string; key: string; field_type: string }>,
+  columns: Array<{ id: string; key: string; display_name?: string; field_type: string }>,
   entityCount = 0,
 ): { collection: CollectionSummary; columns: typeof columns; rows: TableProjection["rows"] } {
   return {
-    collection: { id: `schema-${key}`, key, entity_count: entityCount },
+    collection: { id: `schema-${key}`, key, display_name: key, entity_count: entityCount },
     columns,
     rows: [],
   };
@@ -584,7 +584,7 @@ describe("createSheetRuntime", () => {
       resulting_revision: "r2",
       entities: [IMPACT.entity],
       fields: [IMPACT],
-      affected_calculations: [],
+      affected_calculations: [], schemas: [], schema_fields: [],
     });
     client.hooks.queryTable = async () => { throw new Error("replacement read must not run"); };
 
@@ -606,7 +606,7 @@ describe("createSheetRuntime", () => {
       resulting_revision: "r3",
       entities: [IMPACT.entity],
       fields: [IMPACT],
-      affected_calculations: [],
+      affected_calculations: [], schemas: [], schema_fields: [],
     });
     client.hooks.queryTable = async () => { throw new Error("replacement read must not run"); };
 
@@ -639,7 +639,7 @@ describe("createSheetRuntime", () => {
       resulting_revision: "unobserved-revision",
       entities: [IMPACT.entity],
       fields: [IMPACT],
-      affected_calculations: [],
+      affected_calculations: [], schemas: [], schema_fields: [],
     });
 
     const error = await failure(runtime.trackerHistory(witnessOf(edit.view), "undo"));
@@ -674,7 +674,7 @@ describe("createSheetRuntime", () => {
       resulting_revision: "late-reply",
       entities: [IMPACT.entity],
       fields: [IMPACT],
-      affected_calculations: [],
+      affected_calculations: [], schemas: [], schema_fields: [],
     });
     const late = await failure(pending);
     expect(late).toBeInstanceOf(SheetSessionError);
@@ -1088,29 +1088,29 @@ describe("createSheetRuntime", () => {
     {
       label: "selected table",
       definitions: [catalogTable("tasks", [
-        { id: "f1", key: "impact", field_type: "number" },
-        { id: "f2", key: "notes", field_type: "text" },
-        { id: "f3", key: "when", field_type: "date" },
+        { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+        { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
+        { id: "f3", key: "when", display_name: "when", field_type: "date" },
       ])],
     },
     {
       label: "unrelated third table",
       definitions: [
         catalogTable("tasks", [
-          { id: "f1", key: "impact", field_type: "number" },
-          { id: "f2", key: "notes", field_type: "text" },
+          { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+          { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
         ]),
-        catalogTable("inventory", [{ id: "f3", key: "received", field_type: "date" }]),
+        catalogTable("inventory", [{ id: "f3", key: "received", display_name: "received", field_type: "date" }]),
       ],
     },
     {
       label: "unrelated empty table schema",
       definitions: [
         catalogTable("tasks", [
-          { id: "f1", key: "impact", field_type: "number" },
-          { id: "f2", key: "notes", field_type: "text" },
+          { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+          { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
         ]),
-        catalogTable("inventory", [{ id: "f3", key: "received", field_type: "date" }]),
+        catalogTable("inventory", [{ id: "f3", key: "received", display_name: "received", field_type: "date" }]),
       ],
     },
   ])("refuses Date schemas in the $label before producer Create", async ({ definitions }) => {
@@ -1138,8 +1138,8 @@ describe("createSheetRuntime", () => {
     const { client, runtime, view } = await opened();
     const queryTableBefore = client.calls.queryTable.length;
     installCatalog(client, [catalogTable("tasks", [
-      { id: "f1", key: "impact", field_type: "number" },
-      { id: "f2", key: "notes", field_type: "reference" },
+      { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+      { id: "f2", key: "notes", display_name: "notes", field_type: "reference" },
     ])]);
     await runtime.createKeyedGroupedSum(witnessOf(view), {
       ordersCollection: "tasks",
@@ -1190,8 +1190,8 @@ describe("createSheetRuntime", () => {
         client.hooks.queryTable = async () => ({
           revision: "stale", collection: COLLECTION,
           columns: [
-            { id: "f1", key: "impact", field_type: "number" },
-            { id: "f2", key: "notes", field_type: "text" },
+            { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+            { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
           ],
           rows: [],
         });
@@ -1208,13 +1208,13 @@ describe("createSheetRuntime", () => {
         }),
       install: (client: FakeClient) => {
         client.hooks.bootstrap = async () => ({ title: TITLE, revision: "r1", default_collection: "tasks", collections: [
-          COLLECTION, { id: "col-2", key: "inventory", entity_count: 0 },
+          COLLECTION, { id: "col-2", key: "inventory", display_name: "inventory", entity_count: 0 },
         ] });
         client.hooks.queryTable = async (key) => {
           if (key === "inventory") throw new Error("unavailable table");
           return { revision: "r1", collection: COLLECTION, columns: [
-            { id: "f1", key: "impact", field_type: "number" },
-            { id: "f2", key: "notes", field_type: "text" },
+            { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
+            { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
           ], rows: [] };
         };
       },
@@ -1536,7 +1536,7 @@ describe("native table and row adapter", () => {
       const pending = invoke(runtime, view);
       const refused = expect(pending).rejects.toBeInstanceOf(SheetSessionError);
       await tick(); await runtime.close();
-      gate.resolve({ base_revision: view.revision, resulting_revision: "r2", entities: [], fields: [], affected_calculations: [] });
+      gate.resolve({ base_revision: view.revision, resulting_revision: "r2", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] });
       await refused;
     });
 
@@ -1549,7 +1549,7 @@ describe("native table and row adapter", () => {
 
     it(`${type}: reports a wrong-base publication as unknown without replay`, async () => {
       const { runtime, client, view } = await opened();
-      client.hooks.trackerCommand = async () => ({ base_revision: "wrong", resulting_revision: "r2", entities: [], fields: [], affected_calculations: [] });
+      client.hooks.trackerCommand = async () => ({ base_revision: "wrong", resulting_revision: "r2", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] });
       await expect(invoke(runtime, view)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
       expect(client.calls.trackerCommand).toHaveLength(1);
@@ -1557,7 +1557,7 @@ describe("native table and row adapter", () => {
 
     it(`${type}: separates acknowledged publication from incoherent replacement`, async () => {
       const { runtime, client, view } = await opened();
-      client.hooks.trackerCommand = async () => ({ base_revision: view.revision, resulting_revision: "different", entities: [], fields: [], affected_calculations: [] });
+      client.hooks.trackerCommand = async () => ({ base_revision: view.revision, resulting_revision: "different", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] });
       await expect(invoke(runtime, view)).rejects.toMatchObject({ name: "PublishedProjectionRecoveryError" });
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
     });

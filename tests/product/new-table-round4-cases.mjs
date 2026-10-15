@@ -78,10 +78,10 @@ export async function runNewTableRound4Cases({ page, ready, projection, checks, 
       await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
       const kind = await page.evaluate(async () => {
         const db = await new Promise((resolve, reject) => { const r = indexedDB.open("tachiko-sheet-local-copies", 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-        try { return await new Promise((resolve, reject) => { const r = db.transaction("copies").objectStore("copies").get("Round4 ordinary"); r.onsuccess = () => resolve(r.result.kind); r.onerror = () => reject(r.error); }); }
+        try { return await new Promise((resolve, reject) => { const r = db.transaction("opaque-copies").objectStore("opaque-copies").get("Round4 ordinary"); r.onsuccess = () => resolve(r.result.kind); r.onerror = () => reject(r.error); }); }
         finally { db.close(); }
       });
-      assert.notEqual(kind, "work-file", "New table saves through the ordinary copy carrier after .ro Close");
+      assert.equal(kind, "work-file", "New table uses its own v3-origin portable carrier after .ro Close");
     },
     "4-C": async () => {
       await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);

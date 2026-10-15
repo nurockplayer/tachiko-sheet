@@ -146,15 +146,15 @@ function values(table) {
   return table.rows.map(row => Object.fromEntries(row.fields.map(field => [cols.get(field.target.field), field.stored?.value])));
 }
 async function fillRow(page, { item, amount, paid }) {
-  await entry(page).getByLabel('New row item (Text)', { exact: true }).fill(item);
-  await entry(page).getByLabel('New row amount (Number)', { exact: true }).fill(String(amount));
-  await entry(page).getByLabel('New row paid (Yes/No)', { exact: true }).selectOption(String(paid));
+  await entry(page).getByLabel('New row Item (Text)', { exact: true }).fill(item);
+  await entry(page).getByLabel('New row Amount (Number)', { exact: true }).fill(String(amount));
+  await entry(page).getByLabel('New row Paid (Yes/No)', { exact: true }).selectOption(String(paid));
 }
 async function add(page, row) {
   await fillRow(page, row); const previous = (await projection(page)).rows.length;
   await entry(page).getByRole("button", { name: "Add", exact: true }).click(); await ready(page);
   assert.equal((await projection(page)).rows.length, previous + 1);
-  assert.equal(await entry(page).getByLabel('New row amount (Number)', { exact: true }).inputValue(), "");
+  assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).inputValue(), "");
 }
 async function closeWithoutSave(page) {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
@@ -171,11 +171,12 @@ async function independentOracle(page, reopened) {
   assert.equal(reopened.native_table_profile, true);
   const separate = await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const r = indexedDB.open("tachiko-sheet-local-copies", 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-    const record = await new Promise((resolve, reject) => { const r = db.transaction("copies", "readonly").objectStore("copies").get("Expenses copy"); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+    const record = await new Promise((resolve, reject) => { const r = db.transaction("opaque-copies", "readonly").objectStore("opaque-copies").get("Expenses copy"); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
     db.close();
     const kit = await import("/core-kit/experimental-client.js"); const client = kit.createExperimentalDesignerClient();
     try {
-      await kit.openCanonicalTreeFromEntries(client, record.files);
+      if (record.kind !== "work-file") throw new Error("New-table copies must use the existing portable work-file carrier");
+      await client.openPortableRo(record.bytes.slice(0));
       const bootstrap = await client.bootstrap(); return await client.queryTable(bootstrap.default_collection);
     } finally { client.close(); }
   });
@@ -218,7 +219,7 @@ try {
   await d.getByRole("button", { name: "Add column", exact: true }).click();
   await d.getByLabel("Column 2 name", { exact: true }).fill("Item");
   await d.getByRole("button", { name: "Create table", exact: true }).click();
-  await d.getByRole("alert").filter({ hasText: /duplicate|unique|distinct/i }).waitFor();
+  await d.getByRole("alert").filter({ hasText: /duplicate|unique|distinct/i }).first().waitFor();
   await d.getByLabel("Column 2 name", { exact: true }).fill("Amount"); await d.getByLabel("Column 2 type", { exact: true }).selectOption("number");
   await d.getByRole("button", { name: "Add column", exact: true }).click();
   await d.getByLabel("Column 3 name", { exact: true }).fill("Paid"); await d.getByLabel("Column 3 type", { exact: true }).selectOption("boolean");
@@ -251,9 +252,9 @@ try {
     await fillRow(page, { item: "Refused draft", amount: raw, paid: false });
     await entry(page).getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: /not a finite Number/ }).waitFor(); await ready(page);
-    assert.equal(await entry(page).getByLabel('New row amount (Number)', { exact: true }).inputValue(), raw);
-    assert.equal(await entry(page).getByLabel('New row item (Text)', { exact: true }).inputValue(), "Refused draft");
-    assert.equal(await entry(page).getByLabel('New row amount (Number)', { exact: true }).getAttribute("aria-invalid"), "true");
+    assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).inputValue(), raw);
+    assert.equal(await entry(page).getByLabel('New row Item (Text)', { exact: true }).inputValue(), "Refused draft");
+    assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).getAttribute("aria-invalid"), "true");
     assert.deepEqual(await projection(page), before, "refused row publishes nothing; empty Number never becomes zero");
     const receipt = await page.evaluate(() => { const w = window.__rowEvidence.workers[0]; const request = w.requests.filter(message => message.request?.type === "insert_row").at(-1); return { request: request.request, reply: w.replies.find(reply => reply.id === request.id) }; });
     assert.equal(receipt.reply.status, "error"); assert.equal(receipt.reply.error.code, "invalid_number");
@@ -267,7 +268,7 @@ try {
   await entry(page).getByRole("button", { name: "Clear", exact: true }).click();
   // Last-field Enter during composition cannot publish a row.
   await fillRow(page, { item: "IME draft", amount: 9, paid: true });
-  const last = entry(page).getByLabel('New row paid (Yes/No)', { exact: true });
+  const last = entry(page).getByLabel('New row Paid (Yes/No)', { exact: true });
   await last.dispatchEvent("compositionstart"); await last.dispatchEvent("keydown", { key: "Enter", keyCode: 13, isComposing: true });
   await last.dispatchEvent("compositionend");
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
@@ -337,7 +338,7 @@ try {
   d = dialog(page); await d.getByLabel("Table name", { exact: true }).fill("Dates");
   await d.getByLabel("Column 1 name", { exact: true }).fill("When"); await d.getByLabel("Column 1 type", { exact: true }).selectOption("date");
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await ready(page);
-  const dateInput = entry(page).getByLabel("New row when (Date)", { exact: true }); assert.equal(await dateInput.inputValue(), "");
+  const dateInput = entry(page).getByLabel("New row When (Date)", { exact: true }); assert.equal(await dateInput.inputValue(), "");
   const blankDateView = await projection(page);
   await entry(page).getByRole("button", { name: "Add", exact: true }).click(); await page.getByRole("alert").waitFor(); await ready(page);
   assert.deepEqual(await projection(page), blankDateView); assert.equal(await dateInput.getAttribute("aria-invalid"), "true");
@@ -350,14 +351,14 @@ try {
   await closeWithoutSave(page); await page.getByRole("button", { name: "Open saved Dates copy", exact: true }).click(); await ready(page);
   assert.deepEqual(values(await projection(page)), [{ when: "2026-10-14" }]);
   checks.push("date-no-today-default-empty-refusal-explicit-last-field-enter-opaque-save-reopen");
-  await entry(page).getByLabel("New row when (Date)", { exact: true }).fill("2026-10-15");
+  await entry(page).getByLabel("New row When (Date)", { exact: true }).fill("2026-10-15");
   await page.evaluate(() => { window.__rowEvidence.loseNextInsertReply = true; });
   await entry(page).getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.match(await page.getByTestId("operation-outcome").textContent(), /Outcome needs review/);
   await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click(); await ready(page);
   assert.deepEqual(values(await projection(page)).sort((a, b) => a.when.localeCompare(b.when)), [{ when: "2026-10-14" }, { when: "2026-10-15" }], "the lost reply's row was published exactly once");
-  const retained = entry(page).getByLabel("New row when (Date)", { exact: true });
+  const retained = entry(page).getByLabel("New row When (Date)", { exact: true });
   assert.equal(await retained.inputValue(), "2026-10-15");
   assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isDisabled(), true);
   const count = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length);

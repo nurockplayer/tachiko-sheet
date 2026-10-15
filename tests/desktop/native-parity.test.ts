@@ -179,11 +179,14 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   await step(log, "query reopened", () => client.queryTable(reopened!.table.collection.key));
 
   // #184: the unchanged native transport must admit exactly the same table
-  // creation, explicit row lifecycle, history and canonical reopening as WASM.
-  const nativeTable = await step(log, "new native table", () => client.newTable("Expenses", [
-    { name: "Item", field_type: "text" }, { name: "Amount", field_type: "number" },
+  // creation, typed names, row lifecycle, history and v3 reopening as WASM.
+  const nativeTable = await step(log, "new native table", () => client.newTable("My Expenses", [
+    { name: "Item Name", field_type: "text" }, { name: "Amount", field_type: "number" },
     { name: "Paid", field_type: "boolean" }, { name: "Date", field_type: "date" },
+    { name: "項目", field_type: "text" },
   ]));
+  expect(nativeTable!.table.collection.display_name).toBe("My Expenses");
+  expect(nativeTable!.table.columns.map(column => column.display_name)).toEqual(["Item Name", "Amount", "Paid", "Date", "項目"]);
   const nativeKey = nativeTable!.table.collection.key;
   const nativeColumns = nativeTable!.table.columns;
   const initializers = nativeColumns.map(column => ({ field: column.id, input: column.field_type === "number"
@@ -203,11 +206,13 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   const afterRedo = await step(log, "read redone native deletion", () => client.queryTable(nativeKey));
   expect(afterRedo!.rows).toEqual([]);
   const restored = await step(log, "undo native delete again", () => client.trackerCommand({ type: "undo", expected_revision: redone!.resulting_revision }));
-  const nativeTree = await step(log, "export native table", () => client.exportProject(restored!.resulting_revision));
+  const nativeTree = await step(log, "export native table", () => client.exportProjectV3(restored!.resulting_revision));
   await step(log, "reopen native table", () => client.openProject(nativeTree!.bytes.slice(0)));
   const afterReopen = await step(log, "read reopened native table", () => client.queryTable(nativeKey));
   expect(afterReopen!.native_table_profile).toBe(true);
   expect(afterReopen!.rows).toEqual(afterInsert!.rows);
+  expect(afterReopen!.columns).toEqual(nativeColumns);
+  expect(afterReopen!.collection.display_name).toBe("My Expenses");
 
   // Refusals and local bridge limits.
   await step(log, "inspect malformed csv", () => client.inspectSpreadsheet(new TextEncoder().encode('a,b\n"open\n').buffer, "csv", options));
