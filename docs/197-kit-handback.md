@@ -17,7 +17,7 @@ All 25 files match byte for byte. First output vendored intact in `public/core-k
 
 [Writer acquisition receipt](https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186203372). These are two writer builds, not independent reproduction/review. The initial wrapper invocation failed before the exporter because PATH was unquoted; the corrected invocation above succeeded twice.
 
-[Lead independent reproduction pending](https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186194480). The verifier's candidate entry points at that placeholder comment; the lock's artifact-review URL is intentionally null. Opus must reproduce the artifact independently, replace both review references with its actual receipt and update the notes. No independent artifact or final-candidate review credit is claimed; provenance verification fails closed pending that handback.
+**Update (lead):** the independent byte-identical reproduction is complete ([receipt](https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186306547)). `verify-core-kit.mjs` and `core-kit.lock.json` cite it as the review, and `pnpm verify:core-kit` passes. The lead also updated the J4 public-composition qualification pin constants to `d5dc6b8b` / `0e021a9c`.
 
 ## Adoption and regression
 
@@ -38,7 +38,7 @@ Logs and machine-readable command results: `/tmp/sheet-197/` (`results.jsonl`). 
 | `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit` | FAIL overall: 631/631 Vitest PASS; 142/144 Node PASS. Two CLI provenance tests fail at the intentionally absent lead review URL (shipped-lock verification; altered-asset delegation cannot reach its digest assertion). No tests weakened. |
 | `pnpm build` | PASS, including production hook exclusion |
 | `pnpm build:acceptance` | PASS |
-| `pnpm verify:core-kit` | FAIL / pending lead independent artifact reproduction URL; no qualification PASS |
+| `pnpm verify:core-kit` | Writer run: FAIL, pending lead reproduction. **After the lead receipt: PASS** |
 | `pnpm qualification:j3-public-composition` | FAIL_OR_UNQUALIFIED at the same provenance prerequisite, before behavioral composition; no J3 PASS |
 | `WORK_CLIENT_KIT=public/core-kit WORK_CORE_COMMIT=d5dc6b8b48b14623f4acacd414c660f91b002e2f node tests/kit.mjs` | PASS: C1 integrity, 24 manifest-listed assets; does not confer review credit |
 | `WORK_DIST=dist TACHIKO_TEST_SINGLE_PROCESS=1 node tests/product/v3-folder-save-local.mjs` | PASS: 4 ordinary-selection scenarios; no diagnostic flag |

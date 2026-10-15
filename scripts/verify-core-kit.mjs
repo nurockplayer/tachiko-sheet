@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
-    // #197 producer: writer acquisition only; lead independent reproduction pending.
     // #197 producer. Review = the lead's independent byte-identical artifact
     // reproduction from a clean Work checkout; handback = the writer's acquisition.
     sourceCommit: 'd5dc6b8b48b14623f4acacd414c660f91b002e2f',
