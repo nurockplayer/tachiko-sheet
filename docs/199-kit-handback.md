@@ -18,6 +18,8 @@ Both exporter commands and `diff -qr` PASS. All 25 files match byte for byte; fi
 
 [Writer acquisition / lead independent reproduction pending placeholder](https://github.com/nurockplayer/tachiko-sheet/issues/199#issuecomment-6200958431). These are two writer builds, not independent reproduction or review. The new verifier entry and lock review URL cite this placeholder; the lock deliberately records `lead independent reproduction pending; product acceptance separate`, so provenance qualification fails closed. After actual independent reproduction, the lead must replace both review references, restore the qualified status and update the notes before rerunning dependent gates. The `d5dc6b8b` rollback entry and its actual receipts remain intact.
 
+**Update (lead):** the independent byte-identical reproduction is complete ([receipt](https://github.com/nurockplayer/tachiko-sheet/issues/199#issuecomment-6201033802)). `verify-core-kit.mjs` and `core-kit.lock.json` cite it as the review, the lock's qualified status and notes are restored, and `pnpm verify:core-kit` passes. After the receipt the lead reran `pnpm test:unit` (631 Vitest + 145/145 Node PASS), `qualification:j3-public-composition` (PASS_COMPOSITION_SUBSET_ONLY, same scope as #197) and `qualification:j4-public-composition` (PASS).
+
 ## Adoption and regression
 
 Web lock and all seven native Work Cargo entries pin the same exact source. A byte comparison against the baseline confirms Cargo.lock changes only seven source references. pnpm lockfile unchanged. J3 corpus changes only `core_source` and `core_manifest_sha256`; J4 changes only the two corresponding qualification constants. No Sheet product source changes or acceptance-runner changes. Frozen #146 runners untouched. Existing compatibility and user-record preservation boundaries remain in force; no down-conversion or record rewrite.
@@ -34,11 +36,11 @@ Exact commands, exit codes, elapsed time, minimum free bytes and logs: `/private
 | --- | --- |
 | `pnpm install --frozen-lockfile` | PASS; pnpm 12.11.2, lockfile unchanged |
 | `pnpm typecheck` | PASS |
-| `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit` | FAIL CLOSED: 631/631 Vitest pass; 143/145 Node pass. The two failures below await lead reproduction |
+| `TACHIKO_TEST_SINGLE_PROCESS=1 pnpm test:unit` | Writer run: FAIL CLOSED, 631/631 Vitest, 143/145 Node (the two failures below awaited lead reproduction). **After the lead receipt: 631 Vitest + 145/145 Node PASS** |
 | `pnpm build` | PASS; production hook exclusion passes (85 files) |
 | `pnpm build:acceptance` | PASS |
 | `WORK_CLIENT_KIT=public/core-kit WORK_CORE_COMMIT=abc2be6c5813771ea7b6c5b4a3292e9c72396b33 node tests/kit.mjs` | PASS; C1 sourceCommit and 24 asset hashes |
-| `pnpm verify:core-kit` | FAIL CLOSED; lock qualificationStatus explicitly awaits lead reproduction |
+| `pnpm verify:core-kit` | Writer run: FAIL CLOSED, awaiting lead reproduction. **After the lead receipt: PASS** |
 | `WORK_DIST=dist TACHIKO_TEST_SINGLE_PROCESS=1 node tests/product/v3-folder-save-local.mjs` | PASS; all 4 ordinary-selection v3 scenarios; 12 actual browser exits |
 | `WORK_DIST=dist TACHIKO_TEST_SINGLE_PROCESS=1 pnpm acceptance:display-names` | PASS; 6 groups; 2 actual browser exits |
 | `WORK_DIST=dist TACHIKO_TEST_SINGLE_PROCESS=1 node tests/product/save-update-local.mjs` | PASS; 17 groups; 19 actual browser exits |

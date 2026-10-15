@@ -1,6 +1,6 @@
 {
   "schema": "tachiko-sheet-core-kit-lock-v1",
-  "qualificationStatus": "lead independent reproduction pending; product acceptance separate",
+  "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
   "sourceCommit": "abc2be6c5813771ea7b6c5b4a3292e9c72396b33",
@@ -12,7 +12,7 @@
   "qualificationArtifactReview": {
     "sourceCommit": "abc2be6c5813771ea7b6c5b4a3292e9c72396b33",
     "artifactManifestSha256": "a98552ac69c9a33005f89d72b997a9b3afc0409937b217947e23e93e95ebe38f",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/199#issuecomment-6200958431"
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/199#issuecomment-6201033802"
   },
-  "notes": "Exact producer authorized by #199; two unchanged-exporter writer builds match all 25 files (manifest a98552ac). Lead independent reproduction pending: the review URL is a placeholder, not qualification evidence. Product acceptance and fresh candidate review remain separate lead gates."
+  "notes": "Exact producer authorized by #199; two unchanged-exporter builds by the writer and an independent lead reproduction from a clean Work checkout all match in all 25 files (manifest a98552ac). Product acceptance and the candidate review are separate."
 }
