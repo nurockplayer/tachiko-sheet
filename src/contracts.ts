@@ -53,7 +53,7 @@ export interface WorkbookView {
   title: string;
   /** Ephemeral admission evidence, set only by the Work portable-file entry. */
   openedFromWorkFile?: boolean;
-  /** Host admission evidence: New table uses Work's v3 origin. Save via portable bytes. */
+  /** New-table admission or confirmed typed export evidence requires Work's v3 writer. */
   requiresPortableSave?: boolean;
   occurrence: string;
   revision: string;

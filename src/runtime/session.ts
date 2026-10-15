@@ -725,8 +725,27 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const project = await afterUsable(expected, dispatch(kit, () => client.exportProject(live.revision)));
+      const explicitV3 = () => client.exportProjectV3(live.revision);
+      let project;
+      let usedExplicitV3 = requiresPortableSave;
+      try {
+        project = await afterUsable(expected, dispatch(kit, usedExplicitV3 ? explicitV3 : () => client.exportProject(live.revision)));
+      } catch (error) {
+        assertUsable(expected);
+        // This kit exposes no origin in open/inspect/occurrence projections.
+        // At the pinned producer, ordinary export's v3-origin guard emits
+        // unsupported_project. Use that typed refusal, never message text or
+        // frontend manifest parsing, to select the explicit compatible writer.
+        // Other refusals and an unsuccessful explicit export remain failures.
+        if (usedExplicitV3 || !(error instanceof kit.DesignerRuntimeError) || error.failure.code !== "unsupported_project") throw error;
+        project = await afterUsable(expected, dispatch(kit, explicitV3));
+        usedExplicitV3 = true;
+      }
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
+      // Retain only confirmed producer evidence for this occurrence. Every
+      // open path (including recovery/Home) reaches this common fallback;
+      // replacement/Close reset it along with the other admission evidence.
+      if (usedExplicitV3) requiresPortableSave = true;
       return { revision: project.revision, bytes: project.bytes.slice(0) };
     });
   }
