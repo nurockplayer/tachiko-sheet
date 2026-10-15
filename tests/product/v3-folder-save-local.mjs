@@ -1,4 +1,4 @@
-// #196: real producer v3 folders through Open, private copies and full browser exit.
+// #197: real producer v3 folders through Open, private copies and full browser exit.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -114,7 +114,7 @@ async function makeFolder(variant) {
   for (const f of generated.files) {
     const filename = path.join(folder, f.path); await mkdir(path.dirname(filename), {recursive: true}); await writeFile(filename, Buffer.from(f.bytes));
   }
-  return {folder, baseline: generated.table, producerPaths: generated.files.map(f => f.path)};
+  return {folder, baseline: generated.table};
 }
 async function oracle(name, expectedTable, summary) {
   const actual = await page.evaluate(async name => {
@@ -154,26 +154,7 @@ try {
   ]) {
     try {
       await start();
-      const {folder, baseline, producerPaths} = await makeFolder(variant);
-      if (process.env.V3_ORDERED_SELECTION === '1') {
-        // Diagnostic isolation only: the pinned kit currently rejects the
-        // browser's directory enumeration order. Preserve all selected File
-        // objects/bytes and supply the producer's emitted order at this input
-        // boundary. Default mode always tests the unmodified real selection.
-        await page.getByTestId('open-project').evaluate((input, paths) => {
-          input.addEventListener('change', () => {
-            const selected = [...input.files];
-            window.__v3.selectedPaths = selected.map(f => f.webkitRelativePath);
-            const ordered = new DataTransfer();
-            for (const path of paths) {
-              const file = selected.find(f => f.webkitRelativePath.slice(f.webkitRelativePath.indexOf('/') + 1) === path);
-              if (!file) throw new Error(`Missing actual selected file ${path}`);
-              ordered.items.add(file);
-            }
-            input.files = ordered.files;
-          }, {capture: true, once: true});
-        }, producerPaths);
-      }
+      const {folder, baseline} = await makeFolder(variant);
       await openFolder(page, folder); // Actual Home folder input, not a runtime seam.
       const opened = await table(); assert.deepEqual(opened.rows, baseline.rows); assert.deepEqual(opened.columns, baseline.columns);
       if (variant.addSummary) await createSummary();
@@ -203,7 +184,7 @@ try {
       results.push({variant: variant.name, status: 'FAIL', error: String(error), text});
     } finally {await stop();}
   }
-  const selection = process.env.V3_ORDERED_SELECTION === '1' ? 'DIAGNOSTIC_PRODUCER_ORDERED_SELECTION' : 'REAL_DIRECTORY_SELECTION';
+  const selection = 'REAL_DIRECTORY_SELECTION';
   console.log(JSON.stringify({work, selection, results, processes}));
   await writeFile(path.join(work, 'receipt.json'), JSON.stringify({selection, results, processes}, null, 2));
   assert.equal(results.filter(r => r.status === 'FAIL').length, 0, 'all v3 folder persistence scenarios pass');
