@@ -244,7 +244,9 @@ async function resultRows() {
 // animation-frame window update always runs.
 async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
-  const rows = Number(grid().getAttribute("aria-rowcount")) - 1;
+  // Fully rendered grids omit aria-rowcount; count their data rows instead.
+  const rowCount = grid().getAttribute("aria-rowcount");
+  const rows = rowCount === null ? grid().querySelectorAll("tbody tr.ts-row").length : Number(rowCount) - 1;
   const visible = () => {
     const target = rowAt(row);
     if (!target) return null;
