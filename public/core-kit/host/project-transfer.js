@@ -2,9 +2,17 @@ const PROJECT_BUNDLE_MAGIC = new TextEncoder().encode("TWDPROJ1");
 const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
 const CANONICAL_PROJECT_FILE_COUNTS = [18, 19];
 const MAX_PROJECT_TRANSFER_FILES = 1_024;
+// BEGIN generated Rust storage paths
+// Run: node packages/browser-client/scripts/generate-project-paths.mjs
+const CANONICAL_PROJECT_PATHS = {
+    1: ["manifest.json", "schemas.json", "entities/0.jsonl", "entities/1.jsonl", "entities/2.jsonl", "entities/3.jsonl", "entities/4.jsonl", "entities/5.jsonl", "entities/6.jsonl", "entities/7.jsonl", "entities/8.jsonl", "entities/9.jsonl", "entities/a.jsonl", "entities/b.jsonl", "entities/c.jsonl", "entities/d.jsonl", "entities/e.jsonl", "entities/f.jsonl"],
+    2: ["manifest.json", "schemas.json", "entities/0.jsonl", "entities/1.jsonl", "entities/2.jsonl", "entities/3.jsonl", "entities/4.jsonl", "entities/5.jsonl", "entities/6.jsonl", "entities/7.jsonl", "entities/8.jsonl", "entities/9.jsonl", "entities/a.jsonl", "entities/b.jsonl", "entities/c.jsonl", "entities/d.jsonl", "entities/e.jsonl", "entities/f.jsonl", "definitions.json"],
+    3: ["manifest.json", "schemas.json", "definitions.json", "entities/0.jsonl", "entities/1.jsonl", "entities/2.jsonl", "entities/3.jsonl", "entities/4.jsonl", "entities/5.jsonl", "entities/6.jsonl", "entities/7.jsonl", "entities/8.jsonl", "entities/9.jsonl", "entities/a.jsonl", "entities/b.jsonl", "entities/c.jsonl", "entities/d.jsonl", "entities/e.jsonl", "entities/f.jsonl"],
+};
 /// Pack user-selected directory entries into the app-private host/WASM arena.
-/// This is a generic path/byte transfer DTO, not a `.roproj` parser or codec;
-/// Rust storage remains the sole authority for the canonical tree and meaning.
+/// Validate exact directory membership and package it in Rust storage's order.
+/// Only manifest version dispatch happens here; Rust still admits all content
+/// and canonical bytes. Opaque transfer framing remains available separately.
 export async function projectTransferFromFiles(files) {
     if (files.length === 0)
         throw new Error("No project directory was selected.");
@@ -16,10 +24,13 @@ export async function projectTransferFromFiles(files) {
         throw new Error("No project directory was selected.");
     const root = rootDirectory(first);
     const encoder = new TextEncoder();
-    const transferred = [];
+    const filesByPath = new Map();
     let total = PROJECT_BUNDLE_MAGIC.byteLength + 4;
     for (const file of files) {
         const relativePath = relativeFilePath(file, root);
+        if (filesByPath.has(relativePath)) {
+            throw new Error(`The selected project contains duplicate path '${relativePath}'.`);
+        }
         const path = encoder.encode(relativePath);
         if (path.byteLength > 65_535) {
             throw new Error("A selected project path exceeds the private host transfer profile.");
@@ -28,28 +39,45 @@ export async function projectTransferFromFiles(files) {
         if (nextTotal > MAX_PROJECT_TRANSFER_BYTES) {
             throw new Error("The selected project exceeds the 64 MiB host transfer boundary.");
         }
-        const bytes = new Uint8Array(await file.arrayBuffer());
         total = nextTotal;
-        transferred.push({ path, bytes });
+        filesByPath.set(relativePath, file);
     }
-    const output = new Uint8Array(total);
-    const view = new DataView(output.buffer);
-    let offset = 0;
-    output.set(PROJECT_BUNDLE_MAGIC, offset);
-    offset += PROJECT_BUNDLE_MAGIC.byteLength;
-    view.setUint32(offset, transferred.length, true);
-    offset += 4;
-    for (const file of transferred) {
-        view.setUint16(offset, file.path.byteLength, true);
-        offset += 2;
-        view.setUint32(offset, file.bytes.byteLength, true);
-        offset += 4;
-        output.set(file.path, offset);
-        offset += file.path.byteLength;
-        output.set(file.bytes, offset);
-        offset += file.bytes.byteLength;
+    // Check membership before reading payloads, then dispatch from the manifest.
+    // v2 and v3 have the same set but different storage ordering.
+    const possiblePaths = CANONICAL_PROJECT_PATHS[files.length === 18 ? 1 : 3];
+    assertExactPaths(filesByPath, possiblePaths);
+    const manifestBytes = new Uint8Array(await filesByPath.get("manifest.json").arrayBuffer());
+    let version;
+    try {
+        const manifest = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifestBytes));
+        if (typeof manifest === "object" && manifest !== null && "format_version" in manifest) {
+            version = manifest.format_version;
+        }
     }
-    return output.buffer;
+    catch {
+        throw new Error("The selected project manifest is not valid UTF-8 JSON.");
+    }
+    const paths = typeof version === "number" ? CANONICAL_PROJECT_PATHS[version] : undefined;
+    if (paths === undefined)
+        throw new Error("The selected project manifest has no supported format version (1, 2 or 3).");
+    assertExactPaths(filesByPath, paths);
+    const transferred = [];
+    for (const path of paths) {
+        const bytes = path === "manifest.json" ? manifestBytes
+            : new Uint8Array(await filesByPath.get(path).arrayBuffer());
+        transferred.push({ path: encoder.encode(path), bytes });
+    }
+    return encodeTransfer(transferred, total);
+}
+function assertExactPaths(files, paths) {
+    for (const path of files.keys()) {
+        if (!paths.includes(path))
+            throw new Error(`The selected project contains unexpected path '${path}'.`);
+    }
+    for (const path of paths) {
+        if (!files.has(path))
+            throw new Error(`The selected project is missing '${path}'.`);
+    }
 }
 /**
  * Encode opaque canonical path/byte entries for the private host/WASM arena.
@@ -142,7 +170,7 @@ function encodeTransfer(transferred, total) {
 }
 function rootDirectory(file) {
     const [root, ...relative] = file.webkitRelativePath.split("/");
-    if (root === undefined || root.length === 0 || relative.length === 0) {
+    if (root === undefined || !isSafeRelativePath(root) || relative.length === 0) {
         throw new Error("Select the complete .roproj directory, not individual files.");
     }
     return root;
@@ -150,8 +178,7 @@ function rootDirectory(file) {
 function relativeFilePath(file, expectedRoot) {
     const [root, ...components] = file.webkitRelativePath.split("/");
     if (root !== expectedRoot ||
-        components.length === 0 ||
-        components.some((component) => component.length === 0 || component === "." || component === "..")) {
+        !isSafeRelativePath(components.join("/"))) {
         throw new Error("The selected files do not form one safe project directory.");
     }
     return components.join("/");

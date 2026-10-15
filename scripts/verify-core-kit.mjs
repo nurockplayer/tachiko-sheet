@@ -13,6 +13,15 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // #197 producer: writer acquisition only; lead independent reproduction pending.
+    // Placeholder comment is not review credit. The lock's URL stays null until
+    // the lead replaces this reference with its actual independent receipt.
+    sourceCommit: 'd5dc6b8b48b14623f4acacd414c660f91b002e2f',
+    artifactManifestSha256: '0e021a9ca97b2b8a599f941f26db9bc8a8d86e9b169b871facb6f215c2b5d603',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186194480',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186203372',
+  },
+  {
     // #195 producer. Review = the lead's independent byte-identical artifact
     // reproduction from a clean Work checkout; handback = the writer's acquisition.
     sourceCommit: '16545c55e49dfb4de5b55fd46e2260fd82ff4a58',

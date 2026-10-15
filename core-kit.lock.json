@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "16545c55e49dfb4de5b55fd46e2260fd82ff4a58",
+  "sourceCommit": "d5dc6b8b48b14623f4acacd414c660f91b002e2f",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "41f452f2d24d022e650124c27ad5bbc82865a1ee56f7bf86c5043228a31c07a7",
+  "artifactManifestSha256": "0e021a9ca97b2b8a599f941f26db9bc8a8d86e9b169b871facb6f215c2b5d603",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/195#issuecomment-6182811855",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186203372",
   "qualificationArtifactReview": {
-    "sourceCommit": "16545c55e49dfb4de5b55fd46e2260fd82ff4a58",
-    "artifactManifestSha256": "41f452f2d24d022e650124c27ad5bbc82865a1ee56f7bf86c5043228a31c07a7",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/195#issuecomment-6183108676"
+    "sourceCommit": "d5dc6b8b48b14623f4acacd414c660f91b002e2f",
+    "artifactManifestSha256": "0e021a9ca97b2b8a599f941f26db9bc8a8d86e9b169b871facb6f215c2b5d603",
+    "url": null
   },
-  "notes": "Exact producer authorized by #195; two unchanged-exporter builds by the writer and an independent lead reproduction from a clean Work checkout all match in all 25 files (manifest 41f452f2). Product acceptance and PR #196 candidate review are separate."
+  "notes": "Exact producer authorized by #197; two unchanged-exporter builds by the writer match in all 25 files. Lead independent reproduction pending: https://github.com/nurockplayer/tachiko-sheet/issues/197#issuecomment-6186194480. Review URL intentionally null until the lead supplies its independent receipt; provenance qualification is blocked. Product acceptance and independent candidate review are separate."
 }
