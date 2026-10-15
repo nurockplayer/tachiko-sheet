@@ -8,7 +8,7 @@ export function workFileOmissions(attachments: { importedSource: boolean; report
   ];
 }
 
-export const WORK_FILE_SAVE_UNAVAILABLE = "Download the work file to keep these changes.";
+export const WORK_FILE_SAVE_UNAVAILABLE = "Saving a local copy is unavailable. Keep this work open and try again.";
 export const WORK_FILE_DESKTOP_UNAVAILABLE = "Opening and downloading work files is available in the browser version only. It is not available in the Mac app yet.";
 
 export async function readWorkFile(file: Pick<File, "size" | "arrayBuffer">): Promise<ArrayBuffer> {

@@ -18,6 +18,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     newBudget(): Promise<OpenedProjection>;
     newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
     duplicateCollection(expectedRevision: string, collection: string, name: string): Promise<DuplicateCollectionProjection>;
+    /** Return complete entity and schema presentation invalidation from Rust. */
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
     inspectProject(bytes: ArrayBuffer): Promise<OpenedProjection>;

@@ -2242,7 +2242,7 @@ export function SheetShell(props: SheetShellProps) {
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.key}</th>)}
+            {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.display_name}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -2252,7 +2252,7 @@ export function SheetShell(props: SheetShellProps) {
             : table.rows.map((row, index) => renderRow(row, index))}
         </tbody>
         {table.native_table_profile && onInsertRow ? <tfoot aria-label="Add row entry" role="presentation"><RowEntry
-            columns={columns} names={columns.map((column) => names.column(table.collection.id, column.id) ?? column.key)}
+            columns={columns} names={columns.map((column) => names.column(table.collection.id, column.id) ?? column.display_name)}
             values={rowDraft && rowDraft.occurrence === view?.occurrence && rowDraft.collection === table.collection.id ? rowDraft.values : {}}
             disabled={controlsLocked || cellDraftActive || currentness !== "current"}
             needsReview={rowDraft?.needsReview === true}
@@ -2522,7 +2522,7 @@ export function SheetShell(props: SheetShellProps) {
                   const row = table.rows.findIndex((candidate) => rowEntity(candidate) === change.target.entity);
                   const column = columns.find((candidate) => candidate.id === change.target.field);
                   return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
-                    <td>{`Row ${row + 1}, ${column?.key ?? change.target.field}`}</td>
+                    <td>{`Row ${row + 1}, ${column?.display_name ?? change.target.field}`}</td>
                   </tr>;
                 })}</tbody>
               </table>
@@ -2543,7 +2543,7 @@ export function SheetShell(props: SheetShellProps) {
           <button type="button" className="ts-button" disabled={controlsLocked || !interop?.metadata} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
         </div>
         {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
-        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. {view.openedFromWorkFile ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
+        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV and XLSX downloads are available only for work opened from an imported spreadsheet. Examples cannot be downloaded in these formats yet. {view.openedFromWorkFile && !workFileUnavailableReason ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
@@ -2602,11 +2602,11 @@ export function SheetShell(props: SheetShellProps) {
         setJ4Pending(false);
       }
     };
-    const selector = (label: string, key: keyof KeyedGroupedSumBindingChoice, values: Array<{ key: string }>) => (
+    const selector = (label: string, key: keyof KeyedGroupedSumBindingChoice, values: Array<{ key: string; displayName?: string }>) => (
       <div className="ts-summary-field"><label className="ts-field-label" htmlFor={`j4-${key}`}>{label}</label>
       <select id={`j4-${key}`} value={j4Binding?.[key] ?? ""} onChange={(event) => choose(key, event.currentTarget.value)} disabled={controlsLocked || j4Pending}>
         <option value="">Choose a field</option>
-        {values.map((value) => <option key={value.key} value={value.key}>{value.key}</option>)}
+        {values.map((value) => <option key={value.key} value={value.key}>{value.displayName ?? value.key}</option>)}
       </select></div>
     );
     const hasField = (collectionKey: string, fieldKey: string) => fields(collectionKey).some((field) => field.key === fieldKey);
@@ -2818,7 +2818,7 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
             <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive || rowDraftActive}>
-              {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.key}</option>)}
+              {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.display_name}</option>)}
             </select>
           </div>
         </nav>

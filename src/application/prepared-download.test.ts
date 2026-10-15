@@ -5,7 +5,7 @@ import { preparedDownloadIsCurrent, type PreparedDownload } from "./prepared-dow
 
 const live: WorkbookView = {
   title: "Selected sheet", occurrence: "o1", revision: "r1", collections: [],
-  table: { revision: "r1", collection: { id: "schema-second", key: "second", entity_count: 0 }, columns: [], rows: [] },
+  table: { revision: "r1", collection: { id: "schema-second", key: "second", display_name: "second", entity_count: 0 }, columns: [], rows: [] },
 };
 const prepared: PreparedDownload = {
   format: "csv", occurrence: "o1", revision: "r1", collectionId: "schema-second", bytes: new Uint8Array([1, 2]).buffer,

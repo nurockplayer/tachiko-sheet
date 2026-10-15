@@ -133,6 +133,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let residentAvailable = false;
   // Host session evidence from an acknowledged Work admission; never document state.
   let openedFromWorkFile = false;
+  let requiresPortableSave = false;
   let closed = false;
   let epoch = 0;
 
@@ -287,6 +288,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         view: {
           title: bootstrap.title,
           ...(openedFromWorkFile ? { openedFromWorkFile: true } : {}),
+          ...(requiresPortableSave ? { requiresPortableSave: true } : {}),
           occurrence: occurrence.scope,
           revision: occurrence.revision,
           collections: bootstrap.collections,
@@ -355,7 +357,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
           if (!table) throw new SheetSessionError("incoherent-reply", "A core collection was not returned.");
           return {
             key: collection.key,
-            fields: table.columns.map((column) => ({ key: column.key, fieldType: column.field_type })),
+            displayName: collection.display_name,
+            fields: table.columns.map((column) => ({ key: column.key, displayName: column.display_name, fieldType: column.field_type })),
           };
         }),
       },
@@ -387,6 +390,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     expected: number,
     dispatchOpen: () => Promise<OpenedProjection>,
     fromWorkFile = false,
+    fromNewTable = false,
   ): Promise<WorkbookView> {
     try {
       await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
@@ -395,6 +399,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         // The open may have replaced the resident core work; the old
         // projection is never safe to retain after an unknown reply.
         openedFromWorkFile = false;
+        requiresPortableSave = false;
         active = null;
         residentCollection = null;
         residentAvailable = true;
@@ -404,6 +409,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       throw error;
     }
     openedFromWorkFile = fromWorkFile;
+    requiresPortableSave = fromNewTable;
     // The successful open replaced the resident occurrence even before its
     // projection is coherent; invalidate every old witness immediately.
     active = null;
@@ -445,7 +451,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       if (!noResident) throw new Error("A table is still open. Reload before creating a new table.");
       const create = capability(client.newTable, "new table");
-      return openSession(kit, client, requestedAt, () => create.call(client, name, inputs));
+      return openSession(kit, client, requestedAt, () => create.call(client, name, inputs), false, true);
     });
   }
 
@@ -719,8 +725,27 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const project = await afterUsable(expected, dispatch(kit, () => client.exportProject(live.revision)));
+      const explicitV3 = () => client.exportProjectV3(live.revision);
+      let project;
+      let usedExplicitV3 = requiresPortableSave;
+      try {
+        project = await afterUsable(expected, dispatch(kit, usedExplicitV3 ? explicitV3 : () => client.exportProject(live.revision)));
+      } catch (error) {
+        assertUsable(expected);
+        // This kit exposes no origin in open/inspect/occurrence projections.
+        // At the pinned producer, ordinary export's v3-origin guard emits
+        // unsupported_project. Use that typed refusal, never message text or
+        // frontend manifest parsing, to select the explicit compatible writer.
+        // Other refusals and an unsuccessful explicit export remain failures.
+        if (usedExplicitV3 || !(error instanceof kit.DesignerRuntimeError) || error.failure.code !== "unsupported_project") throw error;
+        project = await afterUsable(expected, dispatch(kit, explicitV3));
+        usedExplicitV3 = true;
+      }
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
+      // Retain only confirmed producer evidence for this occurrence. Every
+      // open path (including recovery/Home) reaches this common fallback;
+      // replacement/Close reset it along with the other admission evidence.
+      if (usedExplicitV3) requiresPortableSave = true;
       return { revision: project.revision, bytes: project.bytes.slice(0) };
     });
   }
@@ -781,7 +806,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   function createKeyedGroupedSum(
     witness: ViewWitness,
     binding: KeyedGroupedSumBindingChoice,
-  ): Promise<KeyedGroupedSumResult> {
+  ): Promise<KeyedGroupedSumResult & { publication: PublicationProjection }> {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
@@ -823,7 +848,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
       residentCollection = read.collection;
-      return asKeyedGroupedSumResult(published.result);
+      return { ...asKeyedGroupedSumResult(published.result), publication: published.publication };
     });
   }
 
@@ -855,6 +880,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
           openedFromWorkFile = false;
+          requiresPortableSave = false;
           active = null;
           residentCollection = null;
           residentAvailable = true;
@@ -864,6 +890,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw error;
       }
       openedFromWorkFile = false;
+      requiresPortableSave = false;
       active = null;
       residentCollection = null;
       residentAvailable = true;
@@ -974,6 +1001,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }
     closed = true;
     openedFromWorkFile = false;
+    requiresPortableSave = false;
     epoch += 1;
     active = null;
     residentCollection = null;

@@ -2,7 +2,7 @@ import { projectTransferFromEntries, projectTransferFromFiles, } from "./host/pr
 import { DesignerRuntimeError } from "./runtime/client.js";
 import { WorkerDesignerClient } from "./runtime/worker-client.js";
 export const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
-const CANONICAL_PROJECT_FILE_COUNT = 18;
+const MAX_CANONICAL_PROJECT_FILE_COUNT = 19;
 const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
 /**
  * Check the public canonical-tree shape before any bytes are dispatched to a
@@ -10,8 +10,8 @@ const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
  * parser and source of meaning.
  */
 export function preflightCanonicalProjectEntries(entries) {
-    if (entries.length > CANONICAL_PROJECT_FILE_COUNT) {
-        throw new Error("A canonical .roproj/v1 directory cannot contain more than 18 files.");
+    if (entries.length > MAX_CANONICAL_PROJECT_FILE_COUNT) {
+        throw new Error("A canonical .roproj directory cannot contain more than 19 files.");
     }
     const paths = new Set();
     let total = 8 + 4;

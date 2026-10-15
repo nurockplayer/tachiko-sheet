@@ -249,17 +249,94 @@ try {
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   assert.equal(await undo.isDisabled(), false, "Save alone does not create a history barrier");
 
-  // A successful grouped-definition publication is outside scalar history and forms a barrier.
-  // Keep two distinct summaries resident so scalar history must refresh the full set.
+  // Saved definitions participate in Work's tracker history. Sheet re-reads
+  // the complete resident inventory, including removals and restorations.
   await edit(productCode, initialValue);
   await waitCell(productCode, initialValue);
   await createSalesSummary("category");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const firstSummaryCard = await page.locator('[data-testid^="result-card:"]').getAttribute("data-testid");
+  assert.ok(firstSummaryCard);
   await createSalesSummary("code");
   assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 2, "two distinct Sales grouped definitions are resident");
   assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"]);
   assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"]);
-  assert.equal(await undo.isDisabled(), true, "successful non-admitted semantic definition clears exposed history");
+  assert.equal(await undo.isDisabled(), false, "summary creation remains available to Undo");
   assert.equal(await redo.isDisabled(), true);
+
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const summaryCards = await page.locator('[data-testid^="result-card:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-testid")));
+  assert.equal(summaryCards.length, 2);
+  // Discovery order follows opaque definition IDs, not creation time.
+  const latestSummaryIndex = summaryCards.findIndex(id => id !== firstSummaryCard);
+  assert.ok(latestSummaryIndex >= 0);
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByTestId(`j4-result-${latestSummaryIndex}`).getByRole("button", { name: "Create bar report", exact: true }).click();
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).waitFor();
+  const authoredReport = [["Title", "Summary history"], ["Category label", "Product code"], ["Value label", "Value ¥"]];
+  for (const [label, value] of authoredReport) await page.getByLabel(label, { exact: true }).fill(value);
+  await page.getByLabel("Show legend", { exact: true }).uncheck();
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("undo-summary-report");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  assert.equal(await page.locator(".ts-app-root").getAttribute("data-work-dirty"), "false");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const summarySavedRevision = await cell(productCode).getAttribute("data-work-revision");
+  assert.ok(summarySavedRevision);
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+
+  async function definitionHistoryStep(direction, count) {
+    const commands = await methodCount(), publications = await publicationCount();
+    const control = direction === "undo" ? undo : redo;
+    await control.click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false" &&
+      document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current");
+    assert.equal(await methodCount(), commands + 1, "one real tracker command per definition history step");
+    assert.equal(await publicationCount(), publications + 1, "one real publication per definition history step");
+    const expectedFocus = await control.isDisabled() ? page.locator(".ts-refresh-command") : control;
+    const expectedFocusText = (await expectedFocus.textContent()).trim();
+    await page.waitForFunction(text => document.activeElement?.textContent?.trim() === text, expectedFocusText);
+    assert.equal(await expectedFocus.evaluate(node => node === document.activeElement), true, "definition history uses its command origin or Refresh when exhausted");
+    assert.equal(await page.locator(".ts-app-root").getAttribute("data-work-dirty"), "true", "definition history changes the saved revision");
+    assert.equal(await page.getByTestId("save-status").textContent(), "Not saved yet");
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
+    const revision = await cell(productCode).getAttribute("data-work-revision");
+    assert.deepEqual(await page.locator('[data-testid^="result-card:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-testid"))), count === 2 ? summaryCards : count === 1 ? [firstSummaryCard] : [], "the J4 pane removes the latest definition and restores its original identity");
+    assert.equal(await page.getByTestId("results-pane").count(), count ? 1 : 0, "no orphaned results pane remains after the final definition is removed");
+    await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+    assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), count, "authoritative summary inventory follows definition history");
+    for (let index = 0; index < count; index++) {
+      assert.deepEqual(await j4Rows(index), ["NOTE: 1000", "PEN: 800"], "every resident summary is freshly authoritative");
+    }
+    await page.getByRole("tab", { name: "Brief", exact: true }).click();
+    const facts = page.locator('[data-testid^="brief:"]');
+    assert.ok(await facts.count() > 0, "Brief retains the selected table record, without summary cards");
+    const factWitnesses = await facts.evaluateAll(nodes => nodes.map(node => ({ revision: node.getAttribute("data-work-revision"), currentness: node.getAttribute("data-work-currentness") })));
+    assert.ok(factWitnesses.every(fact => fact.currentness === "current" && fact.revision === revision), "every Brief fact matches the authoritative table publication");
+    assert.notEqual(factWitnesses[0].revision, summarySavedRevision, "Brief observes the new history publication");
+    assert.equal(await page.locator('[data-testid^="j4-result-"]').count(), 0, "Brief shows no stale summary card");
+  }
+  await definitionHistoryStep("undo", 1);
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  assert.equal(await page.getByLabel("Title", { exact: true }).count(), 0, "Undo detaches the presentation bound to the absent summary");
+  assert.equal(await page.getByRole("region", { name: "Report chart", exact: true }).count(), 0, "the deleted source leaves no stale chart");
+  assert.equal(await page.getByRole("button", { name: "Export current PNG", exact: true }).count(), 0, "the deleted source cannot be exported");
+  // A dangling report would refuse this Save while a sibling summary remains.
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await definitionHistoryStep("undo", 0);
+  await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
+  await page.getByText("No current cross-table result is available. Create a summary after choosing its fields.", { exact: true }).waitFor();
+  assert.equal(await undo.isDisabled(), false, "earlier scalar history survives definition removals");
+  await definitionHistoryStep("redo", 1);
+  await definitionHistoryStep("redo", 2);
+  assert.equal(await redo.isDisabled(), true, "both definitions have been restored by Work");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  for (const [label, value] of authoredReport) assert.equal(await page.getByLabel(label, { exact: true }).inputValue(), value, "Redo restores settings after Save while detached, with a sibling summary resident");
+  assert.equal(await page.getByLabel("Show legend", { exact: true }).isChecked(), false);
+  assert.match(await page.locator(".ts-report-output-note").textContent(), /This bar report/);
 
   // Both resident grouped results follow a real Catalog price scalar edit and
   // authoritative tracker history without an intervening Refresh.
@@ -284,6 +361,15 @@ try {
   await waitForJ4Current();
   assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"], "Undo restores the authoritative old Work totals");
   assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"]);
+  await undo.click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current" &&
+    document.querySelectorAll('[data-testid^="j4-result-"]').length === 1);
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"], "Undo across the interleaved scalar edit removes only the latest definition");
+  await redo.click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current" &&
+    document.querySelectorAll('[data-testid^="j4-result-"]').length === 2);
+  assert.deepEqual(await j4Rows(0), ["NOTE: 1000", "PEN: 800"]);
+  assert.deepEqual(await j4Rows(1), ["NOTE: 1000", "PEN: 800"], "Redo discovers the restored definition before redoing the scalar edit");
   await redo.click();
   await waitCell(priceTestId, "250");
   await waitForJ4Current();
@@ -616,8 +702,11 @@ try {
   assert.notEqual(await desktopRefresh.evaluate((node) => node === document.activeElement), true, "compact fallback never steals focus to the desktop Refresh command");
   await notesPage.setViewportSize({ width: 1280, height: 800 });
   await notesPage.close();
-  console.log("PASS: real acceptance-build Undo/Redo scalar, barrier, recovery, reopen and notes-lock journey");
+  console.log("PASS: real acceptance-build Undo/Redo scalar, saved definitions, report detachment/restoration, recovery, reopen and notes-lock journey");
 } finally {
   await context.close();
   await browser.close();
 }
+
+// Include durable report history and occurrence boundaries in this lane's gates.
+await import("./report-history-local.mjs");

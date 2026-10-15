@@ -13,6 +13,14 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // #195 producer. Review = the lead's independent byte-identical artifact
+    // reproduction from a clean Work checkout; handback = the writer's acquisition.
+    sourceCommit: '16545c55e49dfb4de5b55fd46e2260fd82ff4a58',
+    artifactManifestSha256: '41f452f2d24d022e650124c27ad5bbc82865a1ee56f7bf86c5043228a31c07a7',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/195#issuecomment-6183108676',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/195#issuecomment-6182811855',
+  },
+  {
     sourceCommit: '518aaa55e046a4e4676b4d5e05d8189c4c6343fe',
     artifactManifestSha256: 'ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b',
     review: 'https://github.com/nurockplayer/tachiko-work/pull/369#issuecomment-5645924065',

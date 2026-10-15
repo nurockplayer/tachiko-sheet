@@ -45,7 +45,8 @@
     "test:desktop-host": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "desktop:build:e2e": "tauri build --target aarch64-apple-darwin --bundles app --features e2e --config src-tauri/tauri.e2e.conf.json",
     "acceptance:desktop": "node tests/desktop/packaged-lifecycle.mjs",
-    "test:desktop-parity": "cargo build --locked --release --example frame_harness --manifest-path src-tauri/Cargo.toml && vitest run tests/desktop/native-parity.test.ts"
+    "test:desktop-parity": "cargo build --locked --release --example frame_harness --manifest-path src-tauri/Cargo.toml && vitest run tests/desktop/native-parity.test.ts",
+    "acceptance:display-names": "node tests/product/display-names-local.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

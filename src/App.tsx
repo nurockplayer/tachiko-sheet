@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
+import { DetachedReportPresentations } from "./application/detached-report-presentations.js";
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
@@ -405,6 +406,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const j4DefinitionIdsRef = useRef<string[]>([]);
   const j4ResultsRef = useRef<KeyedGroupedSumResult[]>([]);
   const reportRef = useRef<ReportConfiguration | null>(null);
+  const detachedReportsRef = useRef(new DetachedReportPresentations());
   const presentationDirtyRef = useRef(false);
   type CleanupPreviewContext = {
     occurrence: string;
@@ -520,6 +522,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function installView(next: WorkbookView | null): void {
+    // A temporarily unreadable view does not prove an occurrence change.
+    // Confirmed Open/replace and explicit Close own the cache boundary.
+    if (next) detachedReportsRef.current.observeOccurrence(next.occurrence);
     installLocalHistory(next ? observeLocalHistory(localHistoryRef.current, next) : emptyLocalHistory());
     viewRef.current = next;
     setView(next);
@@ -568,6 +573,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     installJ4DefinitionIds(results.map((result) => result.definitionId));
     j4ResultsRef.current = results;
     setJ4Results(results);
+    // Full discovery alone confirms definition absence/restoration. Detached
+    // settings are private to this occurrence, never shown/exported as current.
+    const live = viewRef.current;
+    if (live) {
+      const restored = detachedReportsRef.current.reconcile(live.occurrence, reportRef.current, j4DefinitionIdsRef.current);
+      if (restored !== reportRef.current) installReport(restored, true);
+    }
   }
 
   /** Restore confirmed pre-publication J4 state after a refused operation. */
@@ -792,8 +804,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     abandonSalesOccurrenceMarkers();
     bindCopy(next.occurrence, provenance.boundCopy ?? null);
     installView(next);
-    installJ4Results(results);
+    // Discovery must not detach the previous occurrence's current report.
     installReport(recoveredReport);
+    installJ4Results(results);
     pendingDirtyRef.current = false;
     draftDirtyRef.current = false;
     reportDraftDirtyRef.current = false;
@@ -963,7 +976,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setCurrentness("current");
         setOutcome("idle");
       }
-      return error === unconfirmed ? error : new Error(describe(error, "The table could not be created."));
+      return error === unconfirmed || (error && typeof error === "object" && "failure" in error)
+        ? error : new Error(describe(error, "The table could not be created."));
     };
     try {
       // The schema dialog is a Home action; its resident is disposable.
@@ -1062,6 +1076,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function resetClosedWorkState(): void {
+    detachedReportsRef.current.observeOccurrence(null);
     viewRef.current = null;
     installView(null);
     installJ4DefinitionIds([]);
@@ -1564,7 +1579,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
     if (blockUnknownOpenRecovery()) return false;
-    if (viewRef.current?.openedFromWorkFile && !copies.createWorkFile) {
+    if ((viewRef.current?.openedFromWorkFile || viewRef.current?.requiresPortableSave) && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
       return false;
     }
@@ -1585,20 +1600,24 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
     }
     try {
+      const portableSave = live.openedFromWorkFile || live.requiresPortableSave;
       const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const hasDateColumn = definitionBearing || live.openedFromWorkFile
+      const hasDateColumn = definitionBearing || portableSave
         ? false
         : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
       let snapshotRevision: string;
       let receipt;
-      if (live.openedFromWorkFile || definitionBearing || hasDateColumn) {
-        const snapshot = live.openedFromWorkFile
+      if (portableSave || definitionBearing || hasDateColumn) {
+        const snapshot = portableSave
           ? await runtime.exportWorkFile(witnessOf(live))
           : await runtime.exportOpaque(witnessOf(live));
         snapshotRevision = snapshot.revision;
-        if (live.openedFromWorkFile) validateWorkFileCopy({
+        if (portableSave) validateWorkFileCopy({
           ...snapshot, importedSource: importedSourceRef.current ?? undefined,
         });
+        // Save writes only the truthful current state, without a dangling
+        // report. Detached settings stay in memory for same-occurrence Redo;
+        // they are not persisted and are discarded on Close/Open/replacement.
         const configuredReport = reportRef.current;
         const source = configuredReport && j4ResultsRef.current.find((candidate) =>
           candidate.definitionId === configuredReport.definitionId &&
@@ -1621,11 +1640,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           presentation,
         };
         if (expected) {
-          const replace = live.openedFromWorkFile ? copies.replaceWorkFile : copies.replaceOpaque;
+          const replace = portableSave ? copies.replaceWorkFile : copies.replaceOpaque;
           if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
           receipt = await replace.call(copies, expected, payload);
         } else {
-          const create = live.openedFromWorkFile ? copies.createWorkFile! : copies.createOpaque;
+          const create = portableSave ? copies.createWorkFile! : copies.createOpaque;
           receipt = await create.call(copies, name, payload);
         }
       } else {
@@ -1766,6 +1785,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(describe(error, "The work could not be closed."));
       throw new Error(describe(error, "The work could not be closed."));
     } finally {
+      detachedReportsRef.current.observeOccurrence(null);
       bindCopy(null, null);
       viewRef.current = null;
       installView(null);

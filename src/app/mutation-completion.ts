@@ -1,3 +1,4 @@
+import type { PublicationProjection } from "../../public/core-kit/experimental-client.js";
 import type { ConfirmedPublication, Currentness, FieldTarget, KeyedGroupedSumResult, SaveReceipt, SaveStatus, ScalarEdit, ViewWitness, WorkbookView } from "../contracts.js";
 import { UnknownOperationOutcomeError } from "../contracts.js";
 import { PublishedProjectionRecoveryError, SheetSessionError } from "../runtime/session.js";
@@ -11,7 +12,7 @@ type TrackedCommand = { witness: ViewWitness; dispatch(): Promise<ConfirmedPubli
 );
 export type MutationCommand = TrackedCommand
   | { kind: "cleanup"; witness: ViewWitness; dispatch(): Promise<WorkbookView> }
-  | { kind: "summary"; witness: ViewWitness; dispatch(): Promise<unknown> };
+  | { kind: "summary"; witness: ViewWitness; dispatch(): Promise<{ publication: PublicationProjection }> };
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
@@ -126,11 +127,12 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       }
       if (command.kind === "summary") {
         port.clearResults();
-        await command.dispatch();
+        const confirmed = await command.dispatch();
         published = true;
         port.endInitial(command.witness.occurrence);
         const next = await port.readView();
         const results = await port.readResults(next);
+        port.installHistory(confirmScalarHistory(before.history, next, confirmed.publication, true));
         port.installView(next);
         port.installResults(results);
         port.clearPreview();
@@ -153,7 +155,9 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         port.installHistory(command.kind === "history"
           ? confirmHistoryCommand(history, confirmed.view, confirmed.publication, command.direction)
           : confirmScalarHistory(history, confirmed.view, confirmed.publication, true));
-        await observePublication(confirmed.view, prior, command.witness.occurrence);
+        // Undo/Redo may legitimately remove or restore a saved definition.
+        // readResults reads the authoritative complete post-history inventory.
+        await observePublication(confirmed.view, command.kind === "history" ? null : prior, command.witness.occurrence);
         return completed({ kind: "published", focusTarget: command.kind === "history" && confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null });
       }
       port.setOutcome("idle");
