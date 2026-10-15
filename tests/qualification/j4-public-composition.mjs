@@ -19,8 +19,8 @@ const fixtureText = j4CanaryText;
 const fixture = Object.entries(fixtureText).sort(([a], [b]) => a.localeCompare(b)).map(([path, body]) => ({path, bytes: text(body)}));
 const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(fixtureText).sort())).digest('hex');
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
-const expectedCoreSourceCommit = 'd60fc65bc0e6b78ceab5ddeff9afbc241f42fc1e';
-const expectedCoreManifestSha256 = 'a374ba5d043b3e534f90ab1c34c5076bc8c05822eac3deddb737448d6af605b1';
+const expectedCoreSourceCommit = '16545c55e49dfb4de5b55fd46e2260fd82ff4a58';
+const expectedCoreManifestSha256 = '41f452f2d24d022e650124c27ad5bbc82865a1ee56f7bf86c5043228a31c07a7';
 const expectedPersistedDefinition = [{
   id: definitionId,
   orders: {schema: salesSchema, lookup_key_field: fields.salesCode, quantity_field: fields.quantity},

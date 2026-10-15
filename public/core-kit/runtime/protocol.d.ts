@@ -6,6 +6,7 @@ export type FieldTarget = {
 export type CollectionSummary = {
     id: string;
     key: string;
+    display_name: string;
     entity_count: number;
 };
 export type BootstrapProjection = {
@@ -45,10 +46,20 @@ export type CalculationProjection = {
 } | {
     status: "unavailable";
 };
+export type SemanticSubjectProjection = {
+    kind: string;
+    value: string | Record<string, string>;
+};
 export type DiagnosticProjection = {
     code: string;
     message: string;
     path: string;
+    subjects?: SemanticSubjectProjection[];
+    related_subjects?: SemanticSubjectProjection[];
+    facts?: Array<{
+        name: string;
+        value: string;
+    }>;
 };
 export type FieldProjection = {
     target: FieldTarget;
@@ -69,6 +80,7 @@ export type TableProjection = {
     columns: Array<{
         id: string;
         key: string;
+        display_name: string;
         field_type: string;
         dropdown_options?: string[];
     }>;
@@ -96,9 +108,16 @@ export type FieldExplanationProjection = {
     downstream_impacts: FieldTarget[];
     diagnostics: DiagnosticProjection[];
 };
+export type SchemaFieldTarget = {
+    schema: string;
+    field: string;
+};
 export type PublicationProjection = {
     base_revision: string;
     resulting_revision: string;
+    /** Stable schema presentation targets, including tables with no rows. */
+    schemas: string[];
+    schema_fields: SchemaFieldTarget[];
     entities: string[];
     fields: FieldTarget[];
     affected_calculations: FieldTarget[];
@@ -111,7 +130,7 @@ export type ProjectExport = {
     revision: string;
     bytes: ArrayBuffer;
 };
-/** Opaque canonical-v1 path/byte entries from the Rust storage codec. */
+/** Opaque canonical path/byte entries from Rust; named/v3 occurrences use v3. */
 export type CanonicalProjectFile = {
     path: string;
     bytes: ArrayBuffer;
@@ -157,11 +176,24 @@ export type DuplicateCollectionProjection = {
     publication: PublicationProjection;
     collection: CollectionSummary;
 };
+export type NameFailure = {
+    reason: string;
+    inputs: Array<{
+        kind: "table";
+    } | {
+        kind: "column";
+        index: number;
+        schema: string | null;
+    }>;
+    subjects: SemanticSubjectProjection[];
+    effective_name: string | null;
+};
 export type FailureProjection = {
     code: string;
     message: string;
     current_revision: string;
     diagnostics: DiagnosticProjection[];
+    name_failures?: NameFailure[];
 };
 export type TrackerCommand = {
     type: "paste_cells";

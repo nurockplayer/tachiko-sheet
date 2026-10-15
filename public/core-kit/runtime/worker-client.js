@@ -96,6 +96,7 @@ export class WorkerDesignerClient {
     async duplicateCollection(expectedRevision, collection, name) {
         return expectResponse("duplicated", await this.#command({ type: "duplicate_collection", expected_revision: expectedRevision, collection, name }));
     }
+    /** Return complete entity and schema presentation invalidation from Rust. */
     async trackerCommand(request) {
         return expectResponse("published", await this.#command(request));
     }

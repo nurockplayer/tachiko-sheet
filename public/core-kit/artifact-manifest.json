@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "d60fc65bc0e6b78ceab5ddeff9afbc241f42fc1e",
+  "sourceCommit": "16545c55e49dfb4de5b55fd46e2260fd82ff4a58",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -47,11 +47,11 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "0f243a4762d7bcf5edfc24f1f7110ba12bc54616b2b4a022a891d81a4a18128e"
+      "sha256": "d5257c7979b0b9fd5751ded85f47984cbb89caaf3236c7ef74b250dc842ec783"
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "dc78c4cfc8f8edd63722cb082954025c25a8f5898adbf01f422d63263bdd8290"
+      "sha256": "4a4b6a57b84c754e640c103932f9ed889c2097051dfe2c89a8ec23eee9a7624e"
     },
     {
       "path": "experimental-client.d.ts",
@@ -59,7 +59,7 @@
     },
     {
       "path": "experimental-client.js",
-      "sha256": "dc117ed7ab28c4722e392c5c070c1eaa26596a9a22c7c33a2f63bf495e7119d4"
+      "sha256": "bd53c548b64db958ea78efe421141b5056a089921c1541b1d29c63f22b043391"
     },
     {
       "path": "experimental-client.worker.d.ts",
@@ -75,7 +75,7 @@
     },
     {
       "path": "host/project-transfer.js",
-      "sha256": "a16611056c03a0912e69e73e912a9db2481897365c71456e39e43ac032262d8c"
+      "sha256": "8b489f3a7ca1c5a814ddd1754b746592a0bc11d0d13a6434c41586c137257531"
     },
     {
       "path": "notices/LICENSE-APACHE",
@@ -111,7 +111,7 @@
     },
     {
       "path": "runtime/protocol.d.ts",
-      "sha256": "7b3c86f5cce90395c71bb6e2ac060126ab6fc5af152f7532173649731d946dee"
+      "sha256": "869ae6ddbe9c4d763ee2071dd0bf64c52c22538f065fb5fc7d1e2edd88d9f903"
     },
     {
       "path": "runtime/protocol.js",
@@ -127,11 +127,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "523bb14954fdf8ff72aefa4f6962d485d44f5531d0821f144580d2ed0e3f0563"
+      "sha256": "facd3465a4b946d1327e176f93b39c3b02a3b129f8715671acca47e9d82bb82f"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "d31196add79f99596a0d6080f00ef84e5d84aa1183e30b166d31d14c1103a616"
+      "sha256": "73c9cf3b935b18332bb63f1095cfe6adb902ccd301c9a18db0f1ed87b5d00ea0"
     },
     {
       "path": "runtime/worker-runtime.d.ts",
