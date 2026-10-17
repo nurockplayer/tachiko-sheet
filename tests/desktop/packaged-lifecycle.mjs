@@ -17,6 +17,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { boundedText } from "../../scripts/desktop-evidence.mjs";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -59,10 +60,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ---- process lifecycle -------------------------------------------------------
 
-function appPids() {
+function appPids(strict = false) {
   try {
     return execFileSync("pgrep", ["-f", executable], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
-  } catch {
+  } catch (error) {
+    if (strict && error.status !== 1) throw error;
     return [];
   }
 }
@@ -778,6 +780,8 @@ for (const folder of webkitData) await rm(folder, { recursive: true, force: true
 
 const results = [];
 let pid;
+let directResult;
+let lifecycleError;
 try {
   await namedTableJourney();
   if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
@@ -864,7 +868,7 @@ try {
     pid = undefined;
     results.push({ name, format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
   }
-  console.log(JSON.stringify({
+  directResult = {
     case: "desktop packaged lifecycle (native runtime)",
     journeys: { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
@@ -873,9 +877,30 @@ try {
     macos: execFileSync("sw_vers", ["-productVersion"], { encoding: "utf8" }).trim(),
     timingsMs: timings,
     results,
-  }, null, 2));
+  };
+  console.log(JSON.stringify(directResult, null, 2));
+} catch (error) {
+  lifecycleError = error;
+  throw error;
 } finally {
-  if (pid && appPids().includes(pid)) execFileSync("kill", [pid]);
-  if (process.env.DESKTOP_KEEP_LOG) await writeFile(process.env.DESKTOP_KEEP_LOG, await hostLog());
-  await rm(work, { recursive: true, force: true });
+  const cleanupErrors = [];
+  // Preserve the runner's existing PID ownership: never kill unrelated apps.
+  try {
+    if (pid && appPids().includes(pid)) execFileSync("kill", [pid]);
+    for (let attempt = 0; attempt < 50 && appPids(true).length; attempt++) await sleep(100);
+    assert.deepEqual(appPids(true), [], "no E2E app process remains after cleanup");
+  } catch (error) { cleanupErrors.push(error); }
+  try {
+    if (process.env.DESKTOP_KEEP_LOG) await writeFile(process.env.DESKTOP_KEEP_LOG, boundedText(await hostLog()));
+  } catch (error) { cleanupErrors.push(error); }
+  try { await rm(work, { recursive: true, force: true }); }
+  catch (error) { cleanupErrors.push(error); }
+  if (process.env.DESKTOP_DIRECT_RESULT) await writeFile(process.env.DESKTOP_DIRECT_RESULT, JSON.stringify({
+    ...directResult,
+    schema: "sheet-desktop-direct-result-v1",
+    status: !lifecycleError && directResult?.status === "PASS" && !cleanupErrors.length ? "PASS" : "FAIL",
+    error: lifecycleError ? boundedText(lifecycleError.stack).slice(-16384) : null,
+    cleanup: { status: cleanupErrors.length ? "FAIL" : "PASS", errors: cleanupErrors.map(error => boundedText(error.stack).slice(-16384)) },
+  }, null, 2));
+  if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "desktop lifecycle cleanup failed");
 }
