@@ -42,6 +42,7 @@
     "build:desktop": "node scripts/copy-example-fixture.mjs && vite build --mode desktop && node scripts/finish-desktop-dist.mjs dist-desktop && node scripts/check-dist.mjs dist-desktop",
     "desktop:build": "CI=true tauri build --target aarch64-apple-darwin",
     "desktop:dev": "tauri dev",
+    "test:desktop-evidence": "node --test tests/desktop/desktop-evidence.test.mjs",
     "test:desktop-host": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "desktop:build:e2e": "tauri build --target aarch64-apple-darwin --bundles app --features e2e --config src-tauri/tauri.e2e.conf.json",
     "acceptance:desktop": "node tests/desktop/packaged-lifecycle.mjs",

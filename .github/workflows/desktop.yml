@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: never
+      EVIDENCE_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      EVIDENCE_PR_BASE: ${{ github.event.pull_request.base.sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -40,6 +42,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Initialize bounded desktop evidence
+        id: evidence-init
+        run: node scripts/desktop-evidence.mjs init
+
       - name: Install Rust
         run: |
           rustup toolchain install 1.97.1 --profile minimal --target aarch64-apple-darwin
@@ -51,6 +57,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Desktop evidence fixtures
+        run: pnpm test:desktop-evidence
+
       - name: Desktop host unit tests
         run: pnpm test:desktop-host
 
@@ -60,18 +69,62 @@ jobs:
       - name: Build the packaged app and DMG
         run: pnpm desktop:build
 
+      # Stage production bytes before the E2E build overwrites shared Cargo outputs.
+      - name: Stage production DMG and bundled identity
+        id: production-evidence
+        run: node scripts/desktop-evidence.mjs production
+
       - name: Build the packaged e2e variant
         run: pnpm desktop:build:e2e
 
+      - name: Capture the separate packaged E2E identity
+        run: node scripts/desktop-evidence.mjs e2e-identity
+
       - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
+        id: lifecycle
         # The runner's display is small; keep the whole window on screen.
         env:
           TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
         run: |
           system_profiler SPDisplaysDataType | grep -i resolution || true
-          caffeinate -dimu node tests/desktop/packaged-lifecycle.mjs "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet E2E.app"
+          node scripts/desktop-evidence.mjs lifecycle
 
-      - name: Record artifact identity
-        run: |
-          shasum -a 256 "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/"*.dmg "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet.app/Contents/MacOS/tachiko-sheet-desktop"
-          codesign -dv "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Tachiko Sheet.app" 2>&1 | grep -E "Identifier|Signature"
+      - name: Recheck each staged production file and hash
+        if: ${{ always() && steps.production-evidence.outcome == 'success' }}
+        id: verify-production
+        run: node scripts/desktop-evidence.mjs verify-production
+
+      - name: Retain production engineering package (14 days)
+        if: ${{ always() && steps.verify-production.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-macos-production-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            desktop-evidence/production/Tachiko-Sheet.dmg
+            desktop-evidence/production/identity.json
+            desktop-evidence/production/ENGINEERING-NOTICE.txt
+
+      - name: Check each bounded lifecycle evidence file
+        if: ${{ always() && steps.evidence-init.outcome == 'success' }}
+        id: verify-e2e
+        env:
+          EVIDENCE_LIFECYCLE_OUTCOME: ${{ steps.lifecycle.outcome }}
+        run: node scripts/desktop-evidence.mjs verify-e2e
+
+      - name: Retain E2E engineering evidence (14 days)
+        if: ${{ always() && steps.verify-e2e.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-macos-e2e-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            desktop-evidence/e2e/run.json
+            desktop-evidence/e2e/identity.json
+            desktop-evidence/e2e/lifecycle.json
+            desktop-evidence/e2e/direct-result.json
+            desktop-evidence/e2e/stdout-stderr.log
+            desktop-evidence/e2e/host.log
+            desktop-evidence/e2e/diagnostics.json

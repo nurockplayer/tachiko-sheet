@@ -86,3 +86,32 @@ Number columns, at most 8,406 data rows and 25,218 logical cells (including
 missing cells). Byte/XML/ZIP limits and unsupported-feature checks also apply.
 Capacity formulas, Date/Boolean columns, constraints, saved definitions and
 Dedup are excluded from the enlarged profile. Work still owns admission.
+
+## Retained CI engineering evidence
+
+The macOS workflow retains two repository-visible Actions artifacts for **14 days**,
+with run ID and attempt in their names. `sheet-macos-production-<run>-<attempt>`
+contains the production DMG, `identity.json` and an engineering notice. Production
+bytes and bundled identity are staged before the separate E2E build shares Cargo
+outputs; the staged DMG hash is checked again before upload. The manifest binds
+actual checkout commit/tree, available PR head/base, run/event, resolved native
+Work/kit identity, bundled version/executable hash, Mach-O architecture and
+signature verification. A pull-request merge checkout is distinct from its head.
+
+`sheet-macos-e2e-evidence-<run>-<attempt>` contains the separate test-app identity,
+run identity, direct lifecycle result, actual process exit/signal and cleanup
+result, bounded combined stdout/stderr and host-log tails, and selected error
+messages. Build-blocked execution says `BLOCKED` / `NOT RUN`; printed PASS alone
+cannot establish success. No E2E executable, profiles, downloads or temporary
+workspace is retained. These artifacts are engineering evidence, not permanent
+distribution, signing/notarization, or #50's physical/human qualification.
+
+For an exact-candidate readback, download both artifacts from the intended Actions
+run/attempt before expiry. Compare manifest checkout/tree and PR/run identities
+with GitHub, recompute the DMG SHA-256 and size, then mount the downloaded DMG
+read-only and inspect its contained app's Info.plist, executable SHA-256,
+`lipo -archs`, and `codesign --verify --deep --strict` / `codesign -dv --verbose=4`
+against the production manifest. Independently verify the E2E identity and final
+process/direct-result/cleanup agreement. Archive digests or manifests alone do
+not qualify the contained app; the separate Finder, native-panel, IME/AT and
+human walkthrough obligations remain.
