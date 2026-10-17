@@ -122,31 +122,34 @@ jobs:
           **繁體中文提醒：**這是 Apple Silicon Mac 專用的實驗性預覽版，尚未通過 Apple 公證。第一次開啟可能被 Gatekeeper 阻擋；請先確認下載來源與上面的 SHA-256，再自行決定是否允許開啟。這不是正式穩定版，請保留原始檔案備份，並歡迎透過 GitHub Issues 回報問題。
           RELEASE_NOTES
 
-      - name: Upload and read back release assets while still a draft
+      - name: Verify existing draft release assets and digest
         shell: bash
         run: |
           set -euo pipefail
-          p="${RUNNER_TEMP}/sheet-release"
-          gh release create "$TAG" \
-            "$p/Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" \
-            "$p/SHA256SUMS.txt" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --target "$SOURCE_SHA" \
-            --title "Tachiko Sheet v0.1.0-preview.1 — macOS Experimental Preview" \
-            --notes-file "$p/RELEASE_NOTES.md" --draft --prerelease
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-            | jq -e --arg sha "$SOURCE_SHA" '.draft == true and .prerelease == true and .target_commitish == $sha and
-             ([.assets[].name] | sort) == (["SHA256SUMS.txt", "Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg"] | sort)'
-          mkdir -p "$p/readback"
-          gh release download "$TAG" --repo "${GITHUB_REPOSITORY}" \
-            --pattern 'Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg' --dir "$p/readback"
-          printf '%s  %s\n' "$DMG_SHA256" "$p/readback/Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" | sha256sum --check -
+          gh api "repos/${GITHUB_REPOSITORY}/releases/416050512" \
+            | jq -e --arg sha "$SOURCE_SHA" --arg digest "sha256:$DMG_SHA256" '
+              .id == 416050512 and .tag_name == "v0.1.0-preview.1" and
+              .draft == true and .prerelease == true and
+              .target_commitish == $sha and
+              (.assets | length) == 2 and
+              any(.assets[]; .name == "Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" and
+                .size == 4679130 and .digest == $digest and .state == "uploaded") and
+              any(.assets[]; .name == "SHA256SUMS.txt" and .state == "uploaded")'
+          gh api "repos/${GITHUB_REPOSITORY}/releases/416050512" \
+            --jq '.body' | grep -F "$DMG_SHA256"
+          echo "Draft assets present; exact original source has been independently revalidated in earlier steps"
 
-      - name: Publish Pre-release only after checks pass
+      - name: Publish the verified draft as GitHub Pre-release
         shell: bash
         run: |
           set -euo pipefail
-          gh release edit "$TAG" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/416050512" \
+            -F draft=false -F prerelease=true \
+            | jq -e --arg sha "$SOURCE_SHA" '
+              .id == 416050512 and .draft == false and .prerelease == true and
+              .tag_name == "v0.1.0-preview.1" and .target_commitish == $sha'
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-            | jq -e --arg sha "$SOURCE_SHA" '.draft == false and .prerelease == true and .target_commitish == $sha and (.assets | length) == 2'
+            | jq -e --arg sha "$SOURCE_SHA" --arg digest "sha256:$DMG_SHA256" '
+              .draft == false and .prerelease == true and .target_commitish == $sha and
+              any(.assets[]; .name == "Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" and .digest == $digest)'
           echo "PUBLIC PRE-RELEASE: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
