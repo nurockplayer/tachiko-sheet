@@ -149,7 +149,7 @@ try {
   const currentBranch = await git(['branch', '--show-current']);
   summary.identity.candidate = await candidateIdentity();
   const seedHashes = {
-    'tests/product/web-save-closure-current.mjs': 'f4370ac5cc87f3d5882c17470f7e0401283ba0d644ef79fc33c51f545e251e61',
+    'tests/product/web-save-closure-current.mjs': '1acb4f5746a5e76e556d8da2052b6771fed6bcd1dbb5bbece78fb81827b2f717',
     'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
     'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
   };

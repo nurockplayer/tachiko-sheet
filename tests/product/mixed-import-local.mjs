@@ -93,7 +93,7 @@ async function importSource(page, file) {
     // Explicit confirmation through the ordinary type controls.
     await types.nth(c).selectOption(type);
   }
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await ready(page);
 }
 
@@ -169,7 +169,7 @@ async function refusedImport(page, file, label) {
   const refusal = page.getByRole("alert");
   await dialog.or(refusal).first().waitFor();
   if (await dialog.count()) {
-    await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
     await refusal.first().waitFor();
     const text = (await refusal.allTextContents()).join(" ");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -224,7 +224,7 @@ try {
       await review.or(page.getByRole("alert")).first().waitFor();
       if (await review.count()) {
         await review.locator("select").nth(1).selectOption("number");
-        await review.getByRole("button", { name: "Import candidate", exact: true }).click();
+        await review.getByRole("button", { name: "Import file", exact: true }).click();
         await review.getByRole("alert").waitFor();
         assert.match(await review.getByRole("alert").textContent(), /column could not be converted to Number/);
         await review.getByRole("button", { name: "Cancel", exact: true }).click();

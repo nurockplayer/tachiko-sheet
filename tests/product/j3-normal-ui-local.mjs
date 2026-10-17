@@ -45,7 +45,7 @@ async function importWithTypes(page, file, { numbers = true } = {}) {
     await selectors.nth(count - 1).selectOption("number");
     await dialog.locator("select").nth(count - 2).selectOption("number");
   }
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
 }
 
@@ -63,7 +63,7 @@ async function download(page, format, destination) {
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
   assert.match(await dialog.textContent(), /file has been prepared/i);
-  const ledgerPanel = page.getByRole("region", { name: "Source fidelity ledger", exact: true, includeHidden: true });
+  const ledgerPanel = page.getByRole("region", { name: "Import & export changes and warnings", exact: true, includeHidden: true });
   assert.equal(await ledgerPanel.getByRole("heading", { name: "Changes and warnings", exact: true, includeHidden: true }).count(), 1,
     "prepared export findings use a neutral heading and an export-inclusive accessible label");
   const exportedFindings = await ledgerPanel.locator(".ts-ledger li").allTextContents();
@@ -133,7 +133,7 @@ try {
   assert.equal(longCandidateMetrics.columns, 12, "long real candidate exposes all 12 column choices");
   assert.ok(longCandidateMetrics.scrollHeight > longCandidateMetrics.clientHeight, `long candidate overflows its review scroller: ${JSON.stringify(longCandidateMetrics)}`);
   await dialog.locator("select").first().selectOption("number");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   const importAlert = dialog.getByRole("alert");
   await importAlert.waitFor();
   assert.match(await importAlert.textContent(), /import was not applied/i);
@@ -159,7 +159,7 @@ try {
   assert.ok(shortImportScroll.scrollHeight > shortImportScroll.clientHeight, `short Import uses parent scrolling: ${JSON.stringify(shortImportScroll)}`);
   assert.equal(shortImportScroll.overflowY, "auto");
   assert.equal(shortImportScroll.contentOverflowY, "visible", "short Import exposes content to parent scrolling");
-  const importAction = dialog.getByRole("button", { name: "Import candidate", exact: true });
+  const importAction = dialog.getByRole("button", { name: "Import file", exact: true });
   await dialog.locator("select").first().focus();
   // Column choices, then the "Import details" disclosure, then the actions.
   for (let index = 0; index < 14; index += 1) await page.keyboard.press("Tab");
@@ -193,7 +193,7 @@ try {
   await writeFile(correctedNumberCsv, "value\nnot-a-number\n", "utf8");
   dialog = await choose(page, correctedNumberCsv);
   await dialog.locator("select").first().selectOption("number");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   const correctedImportAlert = dialog.getByRole("alert");
   await correctedImportAlert.waitFor();
   assert.equal(await page.getByRole("alert").count(), 1, "failed Import exposes one accessible alert");
@@ -202,7 +202,7 @@ try {
   assert.ok(specificImportFailure.length > 0, "failed Import retains a recovery explanation");
   assert.notEqual(specificImportFailure, "The import was not applied. Your source selection is still available.", "candidate shows the specific parent recovery detail in place of the generic Shell fallback");
   await dialog.locator("select").first().selectOption("text");
-  await dialog.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
   await page.getByTestId("project-ready").waitFor();
   assert.equal(await page.getByRole("alert").count(), 0, "successful corrected Import clears the stale failure alert");
