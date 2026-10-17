@@ -1,0 +1,152 @@
+name: Publish v0.1.0-preview.1 experimental macOS prerelease
+
+on:
+  push:
+    branches:
+      - release/v0.1.0-preview.1-publish
+    paths:
+      - .github/workflows/publish-preview-v0.1.0.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-v0.1.0-preview.1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify exact Mac DMG, create GitHub pre-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v0.1.0-preview.1
+      SOURCE_SHA: c082616e5674f8321dbc9c86371ae090937510a3
+      SOURCE_TREE: 54ca6bc347c0e088d5047f7a906cb06e6f548668
+      WORK_SHA: abc2be6c5813771ea7b6c5b4a3292e9c72396b33
+      DMG_SHA256: a2cd77805db3727a04a5beb8a35ee72915b27d624b1536d7726759f1f08c99f6
+      ARTIFACT_RUN: '39064809682'
+      ARTIFACT_ID: '12113292097'
+      ARTIFACT_NAME: sheet-macos-production-39064809682-1
+    steps:
+      - name: Verify qualified source, successful upstream run, existing release absence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = "nurockplayer/tachiko-sheet"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ARTIFACT_RUN}" \
+            | jq -e --arg sha "$SOURCE_SHA" '.head_sha == $sha and .status == "completed" and .conclusion == "success" and .run_attempt == 1 and .event == "push"'
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" \
+            | jq -e --arg name "$ARTIFACT_NAME" '.name == $name and .expired == false and .workflow_run.id == 39064809682'
+          gh api "repos/${GITHUB_REPOSITORY}/git/commits/${SOURCE_SHA}" \
+            | jq -e --arg tree "$SOURCE_TREE" '.tree.sha == $tree'
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite"
+            exit 1
+          fi
+
+      - name: Download exact retained native production artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/sheet-release/source"
+          gh run download "${ARTIFACT_RUN}" --repo "${GITHUB_REPOSITORY}" \
+            --name "${ARTIFACT_NAME}" --dir "${RUNNER_TEMP}/sheet-release/source"
+          find "${RUNNER_TEMP}/sheet-release/source" -type f -printf '%P\n' | sort
+          test "$(find "${RUNNER_TEMP}/sheet-release/source" -type f | wc -l)" -eq 3
+          test -f "${RUNNER_TEMP}/sheet-release/source/Tachiko-Sheet.dmg"
+          test -f "${RUNNER_TEMP}/sheet-release/source/identity.json"
+          test -f "${RUNNER_TEMP}/sheet-release/source/ENGINEERING-NOTICE.txt"
+
+      - name: Independently verify package bytes, source and ad-hoc identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="${RUNNER_TEMP}/sheet-release/source"
+          test "$(stat -c%s "$src/Tachiko-Sheet.dmg")" -eq 4679130
+          printf '%s  %s\n' "$DMG_SHA256" "$src/Tachiko-Sheet.dmg" | sha256sum --check -
+          jq -e \
+            --arg sha "$SOURCE_SHA" --arg tree "$SOURCE_TREE" --arg work "$WORK_SHA" --arg checksum "$DMG_SHA256" \
+            '.schema == "sheet-desktop-production-v1" and
+             .source.checkoutCommit == $sha and .source.checkoutTree == $tree and
+             .source.github.runId == "39064809682" and .source.github.runAttempt == "1" and
+             .source.github.repository == "nurockplayer/tachiko-sheet" and
+             .work.nativeResolvedCommit == $work and .work.kitSourceCommit == $work and
+             .app.kind == "production" and .app.bundleId == "dev.tachiko.sheet" and
+             .app.architectures == ["arm64"] and .app.signature.verification == "PASS" and
+             .app.signature.status == "ad-hoc; not notarized" and
+             .dmg.file == "Tachiko-Sheet.dmg" and .dmg.sha256 == $checksum and .dmg.bytes == 4679130' \
+            "$src/identity.json"
+          test "$(grep -Ec 'not notarized' "$src/ENGINEERING-NOTICE.txt")" -ge 1
+          cp "$src/Tachiko-Sheet.dmg" "${RUNNER_TEMP}/sheet-release/Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg"
+          (cd "${RUNNER_TEMP}/sheet-release" && sha256sum "Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" > SHA256SUMS.txt)
+
+      - name: Write clear, limited-scope release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/sheet-release/RELEASE_NOTES.md" <<'RELEASE_NOTES'
+          # Tachiko Sheet v0.1.0-preview.1 — macOS Experimental Preview
+
+          **Early testing only. Not a production-ready release.**
+
+          This is the Apple Silicon (arm64) macOS desktop build of Tachiko Sheet, using the same Sheet interface as the Web preview and the native Tachiko Work Rust calculation engine. It was built from the exact source revision `c082616e5674f8321dbc9c86371ae090937510a3` and previously qualified in GitHub Actions [run 39064809682](https://github.com/nurockplayer/tachiko-sheet/actions/runs/39064809682).
+
+          ## Download
+          Download **Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg** below and drag the app to Applications. Intended for technically comfortable volunteer testers using Apple Silicon Macs only. Intel Macs are not supported by this build.
+
+          **Important: not Apple-notarized.** This build is ad-hoc signed, without a Developer ID signature or Apple notarization. macOS Gatekeeper may block opening it. If you trust the source and have verified the published SHA-256, you can review the macOS notice and choose **Open Anyway** in **System Settings → Privacy & Security**. Do not disable Gatekeeper system-wide.
+
+          ## What to try
+          - Create/open an example workbook, edit values and observe updated results and reports.
+          - Import a supported CSV/XLSX file, navigate the grid and test Undo/Redo.
+          - Save a local copy, quit fully, relaunch, reopen and try an export.
+
+          ## Known limitations
+          - This is an **experimental build**, without completed human Finder, native file-panel, Japanese IME, VoiceOver or accessibility acceptance for the exact distributed DMG.
+          - Native `.ro` Open support, native menu **Open…**, Finder file associations and automatic updates are not claimed.
+          - Work saved in the macOS app's local WebKit profile is **not synchronized** with the Web version or Chrome.
+          - Some CSV/XLSX features and data shapes are unsupported; review import/export warnings carefully and keep a backup of original files.
+          - This release is **not signed/notarized for ordinary public distribution**. It is a limited GitHub testing preview, not an official general-availability launch.
+
+          ## Verification and feedback
+          DMG SHA-256: `a2cd77805db3727a04a5beb8a35ee72915b27d624b1536d7726759f1f08c99f6`
+
+          A `SHA256SUMS.txt` is attached. You can compare locally using `shasum -a 256 Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg`.
+
+          Please report reproducible issues, macOS version, steps to reproduce and screenshots (without personal data) at [GitHub Issues](https://github.com/nurockplayer/tachiko-sheet/issues). The project separately tracks remaining desktop acceptance in [#50](https://github.com/nurockplayer/tachiko-sheet/issues/50).
+
+          ---
+          **繁體中文提醒：**這是 Apple Silicon Mac 專用的實驗性預覽版，尚未通過 Apple 公證。第一次開啟可能被 Gatekeeper 阻擋；請先確認下載來源與上面的 SHA-256，再自行決定是否允許開啟。這不是正式穩定版，請保留原始檔案備份，並歡迎透過 GitHub Issues 回報問題。
+          RELEASE_NOTES
+
+      - name: Upload and read back release assets while still a draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          p="${RUNNER_TEMP}/sheet-release"
+          gh release create "$TAG" \
+            "$p/Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" \
+            "$p/SHA256SUMS.txt" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "$SOURCE_SHA" \
+            --title "Tachiko Sheet v0.1.0-preview.1 — macOS Experimental Preview" \
+            --notes-file "$p/RELEASE_NOTES.md" --draft --prerelease
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            | jq -e --arg sha "$SOURCE_SHA" '.draft == true and .prerelease == true and .target_commitish == $sha and
+             ([.assets[].name] | sort) == (["SHA256SUMS.txt", "Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg"] | sort)'
+          mkdir -p "$p/readback"
+          gh release download "$TAG" --repo "${GITHUB_REPOSITORY}" \
+            --pattern 'Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg' --dir "$p/readback"
+          printf '%s  %s\n' "$DMG_SHA256" "$p/readback/Tachiko-Sheet-v0.1.0-preview.1-macos-arm64.dmg" | sha256sum --check -
+
+      - name: Publish Pre-release only after checks pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            | jq -e --arg sha "$SOURCE_SHA" '.draft == false and .prerelease == true and .target_commitish == $sha and (.assets | length) == 2'
+          echo "PUBLIC PRE-RELEASE: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
