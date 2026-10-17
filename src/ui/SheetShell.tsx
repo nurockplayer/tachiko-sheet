@@ -2501,7 +2501,7 @@ export function SheetShell(props: SheetShellProps) {
     const preview = interop?.cleanupPreview ?? null;
     return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-interop">
       <h2 className="ts-content-heading">Import &amp; export</h2>
-      <section className="ts-interop-section" aria-label="Source fidelity ledger">
+      <section className="ts-interop-section" aria-label="Import & export changes and warnings">
         <h3 className="ts-content-heading">Changes and warnings</h3>
         {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}
       </section>
@@ -2620,7 +2620,7 @@ export function SheetShell(props: SheetShellProps) {
     const missingDefinitionIds = missingJ4DefinitionIds;
     const hasConfiguredSummary = Boolean(j4Catalog || j4Results.length > 0 || j4DefinitionIds.length > 0);
     return <div role="tabpanel" id={panelId("summary")} aria-labelledby={tabId("summary")} className={`ts-panel ${hasConfiguredSummary ? "ts-summary-panel" : "ts-brief"}`}>
-      <section className={hasConfiguredSummary ? "ts-summary-binding" : "ts-card"} aria-label="Cross-table summary binding">
+      <section className={hasConfiguredSummary ? "ts-summary-binding" : "ts-card"} aria-label="Cross-table summary setup">
         <h2 className={hasConfiguredSummary ? "ts-content-heading" : "ts-h2"}>Cross-table summary</h2>
         <p className="ts-subtle">Choose the tables and columns to calculate your summary.</p>
         {!j4Catalog ? <button type="button" className="ts-button" onClick={() => void prepare()} disabled={controlsLocked || j4Pending}>{j4Pending ? "Loading names…" : "Choose tables and fields"}</button> : <>
@@ -2792,7 +2792,7 @@ export function SheetShell(props: SheetShellProps) {
               {result.groups.map((group) => <div key={group.category}><dt>{group.category}</dt><dd>{group.value}</dd></div>)}
               <div className="ts-report-currentness"><dt>Results</dt><dd>{currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}</dd></div>
             </dl>
-            <p className="ts-subtle ts-report-output-note">This {report.type} report renders the complete current summary. It does not store a separate copy of the values.</p>
+            <p className="ts-subtle ts-report-output-note">This {report.type} report shows the complete current summary. It does not store a separate copy of the values.</p>
             {result.groups.length === 0 ? <p role="status">No groups in the current result.</p> : null}
             <div role="region" aria-label="Report chart" tabIndex={0} className="ts-report-scroll"><ReportCanvas key={reportRenderKey} canvasRef={reportCanvasRef} report={report} groups={result.groups} onRenderState={onReportRenderState} /></div>
             {!reportCanvasReady ? <p role="status">The current report image could not be rendered. PNG export is unavailable.</p> : null}
@@ -3080,7 +3080,7 @@ export function SheetShell(props: SheetShellProps) {
             })()}
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
-          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import candidate</button></div>
+          <div className="ts-dialog-actions"><button type="button" className="ts-button" onClick={cancelImport} disabled={importPending}>Cancel</button><button ref={importRetryButtonRef} type="button" className="ts-button ts-button--primary" data-autofocus={interop.importInspection.source.ledger.length ? undefined : "true"} onClick={() => void importCandidate()} disabled={controlsLocked || importPending} aria-busy={importPending}>Import file</button></div>
         </Modal>
       ) : null}
       {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload} dismissDisabled={busy}>

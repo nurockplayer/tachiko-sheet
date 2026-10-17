@@ -83,7 +83,7 @@ for (const mode of ['published', 'known', 'unknown', 'refused']) {
       if (command === 'cleanup') {
         await homeImportInput(p);
         await p.locator('input[type=file][accept*=".csv"]').setInputFiles({ name: 'trim.csv', mimeType: 'text/csv', buffer: Buffer.from('item,amount\n Tea ,4\n Train ,12\n') });
-        await button(p, 'Import candidate').click(); await ready(p);
+        await button(p, 'Import file').click(); await ready(p);
         await p.getByRole('tab', { name: 'Import & export', exact: true }).click();
         await button(p, 'Preview trimming spaces').click(); await p.getByTestId('cleanup-preview').waitFor();
       } else {

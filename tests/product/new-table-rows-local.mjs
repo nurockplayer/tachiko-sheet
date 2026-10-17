@@ -311,7 +311,7 @@ try {
   const csv = path.join(work, "import.csv"); await writeFile(csv, "Item,Amount\nTea,2\n");
   await (await homeImportInput(page)).setInputFiles(csv);
   const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  await importDialog.getByRole("button", { name: "Import candidate", exact: true }).click(); await ready(page);
+  await importDialog.getByRole("button", { name: "Import file", exact: true }).click(); await ready(page);
   assert.equal(await entry(page).count(), 0); await page.getByText("Adding and deleting rows is available only in native tables. This table does not support it.", { exact: true }).waitFor();
   await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);

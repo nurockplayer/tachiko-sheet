@@ -20,7 +20,7 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
   "Date mapped to Gregorian YYYY-MM-DD; source serial identity is adapter-only":
     "Dates use Gregorian YYYY-MM-DD rather than spreadsheet date numbers. Keep the source file for its original date numbers.",
   "Source scalar converted using the explicitly selected column type; original source remains available.":
-    "The cell value was converted using the column type you chose. The original source remains available.",
+    "The cell value was converted using the column type you chose. The original source is still available.",
   "CSV exports selected-sheet scalar values only. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.":
     "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.",
 });

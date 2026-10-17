@@ -362,7 +362,7 @@ async function importSource(file) {
     return true;
   `);
   await timed("import", () => evaluate(`
-    click(await waitFor(() => button("Import candidate", dialog("Review import preview")), "enabled Import candidate"));
+    click(await waitFor(() => button("Import file", dialog("Review import preview")), "enabled Import file"));
     await waitFor(() => ready() && grid()?.querySelector("tbody tr.ts-row"), "imported grid", 240000);
     return true;
   `, 300_000));
@@ -521,7 +521,7 @@ async function refusedImport(content, name) {
     input.dispatchEvent(new Event("change", { bubbles: true }));
     const outcome = await waitFor(() => dialog("Review import preview") || document.querySelector('[role="alert"]'), "refusal");
     if (outcome.getAttribute("role") === "dialog") {
-      click(button("Import candidate", outcome));
+      click(button("Import file", outcome));
       await waitFor(() => document.querySelector('[role="alert"]'), "refusal alert");
       const text = [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(" ");
       click(button("Cancel", dialog("Review import preview")));

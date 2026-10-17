@@ -232,7 +232,7 @@ try {
 
   page = await fresh();
   await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({ name: "source.csv", mimeType: "text/csv", buffer: Buffer.from("Item,Amount\n A ,2\nB,3\n") });
-  await page.getByRole("button", { name: "Import candidate", exact: true }).click();
+  await page.getByRole("button", { name: "Import file", exact: true }).click();
   await ready(page);
   const imported = await download(page, "imported.ro", /imported spreadsheet file and its import information, changes and warnings/);
   assert.equal(archiveEntries(imported.bytes).some(entry => /source|ledger|report/.test(entry.name)), false, "package contains no Sheet attachments");
