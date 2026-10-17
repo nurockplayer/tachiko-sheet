@@ -51,6 +51,7 @@ test('stages immutable production bytes and keeps the separately built E2E ident
   assert.notEqual(production.app.bundleId, e2e.bundleId);
   assert.notEqual(production.app.executableSha256, e2e.executableSha256);
   assert.equal(production.app.signature.verification, 'PASS');
+  assert.match(await readFile(path.join(f.directory, 'ENGINEERING-NOTICE.txt'), 'utf8'), /^Engineering Desktop Preview: ad-hoc signed, not notarized\./m);
   assert.equal(production.source.checkoutCommit, commit);
   assert.notEqual(production.source.checkoutCommit, production.source.github.prHead);
   assert.equal(production.source.github.runAttempt, '2');
@@ -129,7 +130,7 @@ test('outer runner retains actual nonzero exit despite printed PASS and requires
   });
   assert.equal((await run(successfulDirect, 1)).status, 'FAIL');
   assert.equal(requested.command, 'caffeinate');
-  assert.ok(requested.options.timeoutMs > 10 * 60 * 1000, 'must not inherit the generic 10-minute timeout');
+  assert.equal(requested.options.timeoutMs, 45 * 60 * 1000, 'unchanged 45-minute GitHub job remains the controlling total bound');
   await rm(path.join(directory, 'direct-result.json'));
   assert.equal((await run(null, 0)).status, 'FAIL');
   assert.equal((await run({ ...successfulDirect, cleanup: { status: 'FAIL' } }, 0)).status, 'FAIL');
@@ -161,6 +162,30 @@ test('retained diagnostic tails are bounded', () => {
   const value = boundedText('x'.repeat(OUTPUT_LIMIT * 2));
   assert.equal(Buffer.byteLength(value), OUTPUT_LIMIT);
   assert.ok(Buffer.byteLength(boundedText('雪'.repeat(OUTPUT_LIMIT))) <= OUTPUT_LIMIT);
+});
+
+test('mixed three- and four-byte tails remain valid UTF-8 within the byte cap', () => {
+  const boundaryCases = [
+    { input: '雪'.repeat(OUTPUT_LIMIT) + 'xx', expectedBytes: 262142 },
+    { input: '😀'.repeat(OUTPUT_LIMIT) + 'x', expectedBytes: 262141 },
+    { input: '😀'.repeat(OUTPUT_LIMIT) + 'xx', expectedBytes: 262142 },
+  ];
+  for (const { input, expectedBytes } of boundaryCases) {
+    const tail = boundedText(input);
+    assert.equal(Buffer.byteLength(tail), expectedBytes);
+    assert.ok(input.endsWith(tail), 'tail must retain complete original codepoints');
+    assert.ok(!tail.includes('\uFFFD'), 'valid input must not acquire replacement characters');
+  }
+  for (const repeated of ['雪', '😀', '雪😀', '😀雪']) {
+    for (const suffix of ['', 'x', 'xx', 'xxx', '雪x', '😀xx']) {
+      const input = repeated.repeat(OUTPUT_LIMIT) + suffix;
+      const tail = boundedText(input);
+      assert.ok(Buffer.byteLength(tail) <= OUTPUT_LIMIT, `${repeated} + ${suffix} exceeds byte cap`);
+      assert.ok(input.endsWith(tail), `${repeated} + ${suffix} split a codepoint`);
+      assert.ok(tail.endsWith(suffix), 'most recent text must be retained');
+      assert.ok(!tail.includes('\uFFFD'));
+    }
+  }
 });
 
 test('workflow preserves gates, timeouts, permissions and exact narrow upload paths', async () => {

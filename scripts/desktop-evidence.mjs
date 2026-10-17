@@ -13,14 +13,17 @@ const evidenceRoot = path.join(root, 'desktop-evidence');
 const bundleRoot = path.join(root, 'src-tauri/target/aarch64-apple-darwin/release/bundle');
 export const productionFiles = ['Tachiko-Sheet.dmg', 'identity.json', 'ENGINEERING-NOTICE.txt'];
 export const lifecycleFiles = ['run.json', 'identity.json', 'lifecycle.json', 'direct-result.json', 'stdout-stderr.log', 'host.log', 'diagnostics.json'];
-export const engineeringNotice = `Repository-visible CI engineering artifact; retained for 14 days from upload.\nUnsigned Desktop Preview: ad-hoc signed, not notarized. This is not a qualified public release.\nE2E lifecycle evidence concerns a distinct test app, not this production DMG's Finder, native panels, IME, accessibility or human walkthrough.\nBundled third-party notices remain inside the app. Download and inspect this exact DMG before making package qualification claims.\n`;
+export const engineeringNotice = `Repository-visible CI engineering artifact; retained for 14 days from upload.\nEngineering Desktop Preview: ad-hoc signed, not notarized. This is not a qualified public release.\nE2E lifecycle evidence concerns a distinct test app, not this production DMG's Finder, native panels, IME, accessibility or human walkthrough.\nBundled third-party notices remain inside the app. Download and inspect this exact DMG before making package qualification claims.\n`;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
 const writeJson = (file, value) => writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
 export function boundedText(value) {
-  const text = Buffer.from(String(value)).subarray(-OUTPUT_LIMIT).toString();
-  // A UTF-8 tail may start mid-codepoint; its replacement must not exceed the cap.
-  return Buffer.byteLength(text) > OUTPUT_LIMIT ? text.slice(1) : text;
+  const bytes = Buffer.from(String(value));
+  let start = Math.max(0, bytes.length - OUTPUT_LIMIT);
+  // Decode only complete UTF-8 codepoints; replacement characters can expand
+  // a truncated prefix beyond the byte limit.
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
+  return bytes.subarray(start).toString();
 }
 
 export function macCommand(command, args) {
@@ -145,7 +148,7 @@ export async function runLifecycle(directory = path.join(evidenceRoot, 'e2e'), c
   let execution;
   try {
     execution = await capture('caffeinate', ['-dimu', process.execPath, 'tests/desktop/packaged-lifecycle.mjs', path.join(bundleRoot, 'macos/Tachiko Sheet E2E.app')], {
-      cwd: root, timeoutMs: 35 * 60 * 1000, maxOutputBytes: OUTPUT_LIMIT, signal: cancellation.signal,
+      cwd: root, timeoutMs: 45 * 60 * 1000, maxOutputBytes: OUTPUT_LIMIT, signal: cancellation.signal,
       env: { DESKTOP_DIRECT_RESULT: path.join(directory, 'direct-result.json'), DESKTOP_KEEP_LOG: path.join(directory, 'host.log') },
     });
   } catch (error) {
