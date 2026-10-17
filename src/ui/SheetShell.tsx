@@ -552,6 +552,7 @@ export function SheetShell(props: SheetShellProps) {
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const deletePendingFocusRef = useRef<HTMLHeadingElement | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyForClose, setCopyForClose] = useState(false);
   const [closeSaveAttempted, setCloseSaveAttempted] = useState(false);
@@ -652,6 +653,7 @@ export function SheetShell(props: SheetShellProps) {
   const copyNameInputRef = useRef<HTMLInputElement | null>(null);
   const copyParentMessageAtAttemptRef = useRef<string | null>(message);
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const downloadPendingFocusRef = useRef<HTMLHeadingElement | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const onReportDraftChangeRef = useRef(props.onReportDraftChange);
@@ -1708,6 +1710,7 @@ export function SheetShell(props: SheetShellProps) {
 
   async function deleteCopy(): Promise<void> {
     if (!deleteSelection || !onDeleteCopy || deletePending || controlsLocked) return;
+    deletePendingFocusRef.current?.focus();
     setDeletePending(true); setDeleteError(null);
     try {
       await onDeleteCopy(deleteSelection);
@@ -2991,7 +2994,7 @@ export function SheetShell(props: SheetShellProps) {
         return created;
       }} onSuccess={() => setNewTableOpen(false)} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
       {deleteName !== null ? <Modal variant="close" label="Delete copy" onCancel={cancelDelete} dismissDisabled={deletePending}>
-        <div className="ts-dialog-intro"><h2 className="ts-h2">Delete “{deleteName}”?</h2><p>This deletes the saved copy from this device. It cannot be undone.</p></div>
+        <div className="ts-dialog-intro"><h2 ref={deletePendingFocusRef} className="ts-h2" tabIndex={deletePending || deleteError !== null ? 0 : -1}>Delete “{deleteName}”?</h2><p>This deletes the saved copy from this device. It cannot be undone.</p></div>
         {deleteError ? <p role="alert" className="ts-dialog-error">{deleteError}</p> : null}
         <div className="ts-dialog-actions">
           <button type="button" className="ts-button" data-autofocus="true" onClick={cancelDelete} disabled={deletePending}>Cancel</button>
@@ -3085,7 +3088,7 @@ export function SheetShell(props: SheetShellProps) {
       ) : null}
       {downloadFormat ? <Modal variant="review" label="Confirm download" onCancel={cancelDownload} dismissDisabled={busy}>
         <div className="ts-dialog-intro">
-          <h2 className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat === "ro" ? "work file (.ro)" : downloadFormat.toUpperCase()}</h2>
+          <h2 ref={downloadPendingFocusRef} className="ts-h2" tabIndex={0} data-autofocus="true">Review and download {downloadFormat === "ro" ? "work file (.ro)" : downloadFormat.toUpperCase()}</h2>
           <p>The file has been prepared. {hostCopy.exportConsent}</p>
           {downloadFormat === "ro" ? <p>Includes tables, values, formulas and summaries. Downloading does not save a copy on this device or allow unsaved work to close.</p> : null}
         </div>
@@ -3097,7 +3100,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
         <div className="ts-dialog-actions">
           <button type="button" className="ts-button" disabled={busy} onClick={cancelDownload}>Cancel</button>
-          <button type="button" className="ts-button ts-button--primary" disabled={busy} onClick={() => { void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button>
+          <button type="button" className="ts-button ts-button--primary" disabled={busy} onClick={() => { downloadPendingFocusRef.current?.focus(); void onDownload(downloadFormat).then(() => cancelDownload(), () => cancelDownload()); }}>Download</button>
         </div>
       </Modal> : null}
       {closeOpen && !copyOpen && !savedClose ? (() => {

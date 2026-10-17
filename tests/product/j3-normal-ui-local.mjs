@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { assertReviewReachable, clickReviewAction } from "./review-dialog-reachability.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
@@ -56,6 +57,7 @@ async function preview(page, name) {
 }
 
 async function download(page, format, destination) {
+  const viewport = page.viewportSize();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   const cancelledDownload = page.waitForEvent("download", { timeout: 250 }).then(() => false).catch(() => true);
   const trigger = page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true });
@@ -70,7 +72,8 @@ async function download(page, format, destination) {
   assert.ok(exportedFindings.length > 0, "prepared export publishes its findings in the panel");
   if (format === "csv") assert.match(exportedFindings.join(" "), /Formulas, formatting, and other sheets are not kept/,
     "CSV export losses appear under the neutral panel label");
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await assertReviewReachable(page, dialog, format, true);
+  await clickReviewAction(page, dialog, "Cancel");
   await dialog.waitFor({ state: "detached" });
   assert.equal(await ledgerPanel.isVisible(), true, "the export-inclusive label remains after cancellation");
   assert.deepEqual(await ledgerPanel.locator(".ts-ledger li").allTextContents(), exportedFindings,
@@ -85,12 +88,14 @@ async function download(page, format, destination) {
   assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), `Prepare ${format.toUpperCase()}`);
   const downloaded = page.waitForEvent("download");
   await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
-  await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();
+  await assertReviewReachable(page, dialog, format);
+  await clickReviewAction(page, dialog, "Download");
   await (await downloaded).saveAs(destination);
   await dialog.waitFor({ state: "detached" });
   assert.equal(await ledgerPanel.isVisible(), true, "the export-inclusive label remains after download");
   assert.deepEqual(await ledgerPanel.locator(".ts-ledger li").allTextContents(), exportedFindings,
     "downloading retains the prepared export ledger");
+  await page.setViewportSize(viewport);
 }
 
 const profile = await mkdtemp(path.join(tmpdir(), "tachiko-sheet-j3-profile-"));

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
+import { assertReviewReachable } from "./review-dialog-reachability.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -370,9 +371,9 @@ try {
   const downloadReview = page.getByRole("dialog", { name: "Confirm download", exact: true });
   const downloadPanel = await downloadReview.boundingBox();
   assert.equal(Math.round(downloadPanel.width), 600, "download review uses the approved desktop panel width");
-  assert.equal(Math.round(downloadPanel.height), 360, "download review retains its approved content frame");
+  assert.ok(downloadPanel.height > 0 && downloadPanel.height <= 982 - 48, "content-sized download review stays within the available desktop viewport");
   assert.equal(Math.round(downloadPanel.x), 456);
-  assert.equal(Math.round(downloadPanel.y), 311);
+  assert.equal(Math.round(downloadPanel.y), Math.round((982 - downloadPanel.height) / 2), "content-sized download review stays vertically centered");
   const downloadMaterial = await downloadReview.evaluate((element) => {
     const style = getComputedStyle(element);
     return { radius: style.borderRadius, border: style.borderColor, shadow: style.boxShadow };
@@ -393,6 +394,7 @@ try {
   assert.equal(downloadActions[1].x + downloadActions[1].width - Math.round(downloadPanel.x), 577);
   assert.equal(downloadActions[1].width, 120);
   assert.equal(downloadActions[0].height, 32);
+  await assertReviewReachable(page, downloadReview, "j4-desktop-xlsx", [[1512, 982]]);
 
   const cancelledDesktopDownload = page.waitForEvent("download", { timeout: 250 }).then(() => false).catch(() => true);
   await downloadReview.getByRole("button", { name: "Cancel", exact: true }).click();

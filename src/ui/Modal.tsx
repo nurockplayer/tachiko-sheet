@@ -39,10 +39,10 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
     const last = nodes[nodes.length - 1];
     if (!first || !last) return;
     const active = root.ownerDocument.activeElement;
-    if (event.shiftKey && (active === first || !root.contains(active))) {
+    if (event.shiftKey && (active === root || active === first || !root.contains(active))) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && active === last) {
+    } else if (!event.shiftKey && (active === root || active === last)) {
       event.preventDefault();
       first.focus();
     }
@@ -52,7 +52,9 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
     <div
       className="ts-modal-backdrop"
       onMouseDown={(event) => {
-        if (!dismissDisabled && event.target === event.currentTarget) onCancel();
+        if (event.target !== event.currentTarget) return;
+        if (dismissDisabled) event.preventDefault();
+        else onCancel();
       }}
     >
       <div
@@ -61,6 +63,7 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
         role="dialog"
         aria-modal="true"
         aria-label={label}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         {children}

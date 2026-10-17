@@ -17,6 +17,7 @@ export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }:
 }) {
   const id = useId();
   const serial = useRef(1);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [columns, setColumns] = useState<Array<NewTableColumn & { id: number }>>([{ id: 0, name: "A", field_type: "text" }]);
   const [pending, setPending] = useState(false);
@@ -31,6 +32,8 @@ export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }:
   async function create() {
     if (pendingRef.current) return;
     pendingRef.current = true;
+    // The activated action is about to be disabled; keep Tab inside Modal.
+    nameInputRef.current?.focus();
     setPending(true);
     clearErrors();
     try {
@@ -45,7 +48,7 @@ export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }:
   }
   return <Modal label="New table" variant="save" onCancel={onCancel} dismissDisabled={pending}>
     <div className="ts-dialog-intro"><h2 className="ts-h2">New table</h2><p className="ts-subtle">Choose a name and columns for your table. Nothing is saved until you choose Save a copy.</p></div>
-    <div className="ts-dialog-field"><label className="ts-field-label" htmlFor={`${id}-name`}>Table name</label><input id={`${id}-name`} className="ts-text-input" data-autofocus="true" value={name} readOnly={pending} aria-invalid={refusals?.table.length ? true : undefined} aria-describedby={refusals?.table.length ? `${id}-table-error` : undefined} onChange={event => { clearErrors(); setName(event.currentTarget.value); }} /></div>
+    <div className="ts-dialog-field"><label className="ts-field-label" htmlFor={`${id}-name`}>Table name</label><input ref={nameInputRef} id={`${id}-name`} className="ts-text-input" data-autofocus="true" value={name} readOnly={pending} aria-invalid={refusals?.table.length ? true : undefined} aria-describedby={refusals?.table.length ? `${id}-table-error` : undefined} onChange={event => { clearErrors(); setName(event.currentTarget.value); }} /></div>
     {refusals?.table.length ? <p id={`${id}-table-error`} className="ts-dialog-error" role="alert">{refusals.table.join(" ")}</p> : null}
     <div className="ts-dialog-scroll ts-new-columns" aria-label="Columns">
       {columns.map((column, index) => <div key={column.id} className="ts-new-column">

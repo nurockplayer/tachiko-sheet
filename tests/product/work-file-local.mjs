@@ -10,6 +10,8 @@ import { openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 import { archiveEntries, developmentalArchive } from "./work-file-archive.mjs";
 import { independentOracle, releaseSourceFiles as sourceFiles } from "./work-file-oracle.mjs";
 import { salesCatalogText } from "../../scripts/sales-catalog-source.mjs";
+import { assertReviewReachable, clickReviewAction } from "./review-dialog-reachability.mjs";
+import { installRowObserver, tabToDialogAction, assertPendingDialogFocus } from "./pending-dialog-focus.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name an acceptance build."); process.exit(78); }
@@ -27,6 +29,7 @@ async function fresh() {
   });
   contexts.push(context);
   await installDistRoutes(context, dist);
+  await installRowObserver(context);
   const page = context.pages()[0] ?? await context.newPage();
   page.setDefaultTimeout(10_000);
   await page.goto(LOCAL_ORIGIN);
@@ -54,17 +57,58 @@ async function prepare(page) {
   assert.match(await dialog.textContent(), /Downloading does not save a copy/);
   return dialog;
 }
-async function download(page, file, omissionPattern) {
-  const dialog = await prepare(page);
+async function download(page, file, omissionPattern, holdAcknowledgement = false) {
+  const viewport = page.viewportSize();
+  let dialog = await prepare(page);
   if (omissionPattern) assert.match(await dialog.getByRole("list", { name: "Not included in this file" }).textContent(), omissionPattern);
   else assert.equal(await dialog.getByRole("list", { name: "Not included in this file" }).count(), 0, "absent attachments generate no losses");
+  await assertReviewReachable(page, dialog, file.replace(/\.ro$/, ""), holdAcknowledgement || ["sales-first.ro", "imported.ro"].includes(file));
   const pending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Download", exact: true }).click();
+  if (holdAcknowledgement) {
+    await page.locator(".ts-modal-backdrop").click({ position: { x: 1, y: 1 } });
+    await dialog.waitFor({ state: "detached" });
+    const trigger = page.getByRole("button", { name: "Download work file (.ro)", exact: true });
+    await page.waitForFunction(() => document.activeElement?.textContent === "Download work file (.ro)");
+    assert.equal(await trigger.evaluate(node => node === document.activeElement), true, "ordinary backdrop Cancel restores the download trigger");
+    dialog = await prepare(page);
+    const action = dialog.getByRole("button", { name: "Download", exact: true });
+    await tabToDialogAction(page, dialog, action);
+    const before = await page.evaluate(() => window.__rowEvidence.workers.flatMap(worker => worker.requests).length);
+    let downloads = 0;
+    const onDownload = () => { downloads += 1; };
+    page.on("download", onDownload);
+    await page.evaluate(() => { window.__rowEvidence.holdNextMutationReply = "bootstrap"; });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__rowEvidence.heldReplies?.length === 1);
+    try {
+      await assertPendingDialogFocus(page, dialog, "ro-download");
+      const held = await page.evaluate(() => window.__rowEvidence.heldReplies);
+      assert.equal(held.length, 1);
+      assert.equal(held[0].status, "ok");
+      assert.equal(held[0].response.type, "bootstrap", "hold the actual core currentness acknowledgement");
+      assert.equal(downloads, 0, "no download before authoritative currentness acknowledgement");
+    } finally {
+      await page.evaluate(() => {
+        const [data] = window.__rowEvidence.heldReplies.splice(0);
+        window.__rowEvidence.liveWorker.dispatchEvent(new MessageEvent("message", { data }));
+      });
+    }
+    await pending;
+    await dialog.waitFor({ state: "detached" }); await ready(page);
+    assert.equal(downloads, 1, "pending keys cannot duplicate the ordinary file download");
+    page.off("download", onDownload);
+    const after = await page.evaluate(offset => ({ held: window.__rowEvidence.heldReplies.length, requests: window.__rowEvidence.workers.flatMap(worker => worker.requests).slice(offset) }), before);
+    assert.equal(after.held, 0);
+    assert.equal(after.requests.filter(message => message.request?.type === "bootstrap").length, 1, "one actual currentness read, no replay");
+    assert.equal(after.requests.filter(message => message.request?.type === "query_table").length, 1);
+    results.push("pending-download-natural-keyboard-bidirectional-focus-same-real-ack");
+  } else await clickReviewAction(page, dialog, "Download");
   const downloaded = await pending;
   assert.match(downloaded.suggestedFilename(), /\.ro$/);
   assert.equal(await downloaded.failure(), null);
   await downloaded.saveAs(path.join(profileRoot, file));
   await dialog.waitFor({ state: "detached" });
+  await page.setViewportSize(viewport);
   return { path: path.join(profileRoot, file), bytes: await readFile(path.join(profileRoot, file)) };
 }
 async function open(page, file) {
@@ -100,7 +144,7 @@ try {
   await openReleasePlanExample(page);
   const impactId = `cell:${expected.entity}:${expected.impact}`;
   await edit(page, impactId, 4);
-  const first = await download(page, "release-first.ro");
+  const first = await download(page, "release-first.ro", undefined, true);
   await independentOracle(page, first, sourceFiles, { entity: expected.entity, field: expected.impact, value: 4 });
   assert.equal(await page.locator('[data-work-dirty="true"]').count(), 1);
   assert.doesNotMatch(await page.getByTestId("save-status").textContent(), /Saved on this device/);
