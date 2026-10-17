@@ -93,7 +93,9 @@ The macOS workflow retains two repository-visible Actions artifacts for **14 day
 with run ID and attempt in their names. `sheet-macos-production-<run>-<attempt>`
 contains the production DMG, `identity.json` and an engineering notice. Production
 bytes and bundled identity are staged before the separate E2E build shares Cargo
-outputs; the staged DMG hash is checked again before upload. The manifest binds
+outputs; the staged DMG hash is checked again and the production artifact is
+uploaded before the E2E build. A retained production artifact does not imply that
+the whole CI run or lifecycle passed. The manifest binds
 actual checkout commit/tree, available PR head/base, run/event, resolved native
 Work/kit identity, bundled version/executable hash, Mach-O architecture and
 signature verification. A pull-request merge checkout is distinct from its head.
@@ -102,7 +104,8 @@ signature verification. A pull-request merge checkout is distinct from its head.
 run identity, direct lifecycle result, actual process exit/signal and cleanup
 result, bounded combined stdout/stderr and host-log tails, and selected error
 messages. Build-blocked execution says `BLOCKED` / `NOT RUN`; printed PASS alone
-cannot establish success. No E2E executable, profiles, downloads or temporary
+cannot establish success. An external hard kill can prevent final E2E evidence
+from being written or uploaded. No E2E executable, profiles, downloads or temporary
 workspace is retained. These artifacts are engineering evidence, not permanent
 distribution, signing/notarization, or #50's physical/human qualification.
 

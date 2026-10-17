@@ -74,21 +74,6 @@ jobs:
         id: production-evidence
         run: node scripts/desktop-evidence.mjs production
 
-      - name: Build the packaged e2e variant
-        run: pnpm desktop:build:e2e
-
-      - name: Capture the separate packaged E2E identity
-        run: node scripts/desktop-evidence.mjs e2e-identity
-
-      - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
-        id: lifecycle
-        # The runner's display is small; keep the whole window on screen.
-        env:
-          TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
-        run: |
-          system_profiler SPDisplaysDataType | grep -i resolution || true
-          node scripts/desktop-evidence.mjs lifecycle
-
       - name: Recheck each staged production file and hash
         if: ${{ always() && steps.production-evidence.outcome == 'success' }}
         id: verify-production
@@ -105,6 +90,21 @@ jobs:
             desktop-evidence/production/Tachiko-Sheet.dmg
             desktop-evidence/production/identity.json
             desktop-evidence/production/ENGINEERING-NOTICE.txt
+
+      - name: Build the packaged e2e variant
+        run: pnpm desktop:build:e2e
+
+      - name: Capture the separate packaged E2E identity
+        run: node scripts/desktop-evidence.mjs e2e-identity
+
+      - name: Packaged app lifecycle (Sales + 8,406 x 3 CSV/XLSX, full quit and relaunch)
+        id: lifecycle
+        # The runner's display is small; keep the whole window on screen.
+        env:
+          TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
+        run: |
+          system_profiler SPDisplaysDataType | grep -i resolution || true
+          node scripts/desktop-evidence.mjs lifecycle
 
       - name: Check each bounded lifecycle evidence file
         if: ${{ always() && steps.evidence-init.outcome == 'success' }}

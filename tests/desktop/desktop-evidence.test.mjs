@@ -194,7 +194,19 @@ test('workflow preserves gates, timeouts, permissions and exact narrow upload pa
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /timeout-minutes: 45/);
   for (const gate of ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm test:desktop-host', 'pnpm test:desktop-parity', 'pnpm desktop:build', 'pnpm desktop:build:e2e', 'node scripts/desktop-evidence.mjs lifecycle']) assert.ok(workflow.includes(gate), gate);
-  assert.ok(workflow.indexOf('mjs production') < workflow.indexOf('run: pnpm desktop:build:e2e'));
+  const retentionOrder = [
+    'run: node scripts/desktop-evidence.mjs production',
+    'run: node scripts/desktop-evidence.mjs verify-production',
+    'name: Retain production engineering package (14 days)',
+    'run: pnpm desktop:build:e2e',
+    'node scripts/desktop-evidence.mjs lifecycle',
+  ];
+  for (let index = 1; index < retentionOrder.length; index++) {
+    const before = workflow.indexOf(retentionOrder[index - 1]);
+    const after = workflow.indexOf(retentionOrder[index]);
+    assert.ok(before >= 0 && after > before,
+      `production retention must finish before E2E work: ${retentionOrder[index - 1]} precedes ${retentionOrder[index]}`);
+  }
   assert.ok(workflow.indexOf('mjs e2e-identity') < workflow.indexOf('mjs lifecycle'));
   assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 2);
   assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 2);
