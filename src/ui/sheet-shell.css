@@ -1759,8 +1759,9 @@ body { margin: 0; }
 .ts-modal--save { min-height: min(360px, calc(100dvh - 48px)); }
 
 .ts-modal--review {
-  height: 360px;
-  overflow: hidden;
+  height: auto;
+  min-height: min(360px, calc(100dvh - 48px));
+  overflow-y: auto;
 }
 
 .ts-modal--import {
@@ -1820,7 +1821,12 @@ body { margin: 0; }
   overscroll-behavior: contain;
 }
 
-.ts-modal--review .ts-dialog-scroll { margin-top: 56px; }
+.ts-modal--review .ts-dialog-scroll {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+  margin-top: 56px;
+}
 
 .ts-modal--import .ts-import-columns { gap: 20px; }
 
@@ -2175,7 +2181,20 @@ body { margin: 0; }
   }
 }
 
+/* Compact reviews use the same natural reflow as short viewports. */
+@media (max-width: 599px) {
+  .ts-modal--review { min-height: 0; }
+  .ts-modal--review .ts-dialog-intro { gap: 12px; }
+  .ts-modal--review .ts-dialog-scroll {
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+    margin-top: 8px;
+  }
+}
+
 @media (max-height: 639px) {
+  .ts-modal--review { min-height: 0; }
   .ts-modal--import,
   .ts-modal--review {
     height: auto;

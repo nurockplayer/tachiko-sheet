@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { LOCAL_ORIGIN, installDistRoutes } from './dist-routes.mjs';
 import { waitForColdHome, openReleasePlanExample } from './home-entry.mjs';
+import { tabToDialogAction, assertPendingDialogFocus } from './pending-dialog-focus.mjs';
 const dist = process.env.WORK_DIST ?? 'dist';
 if (!dist) throw new Error('BLOCKED: WORK_DIST must name a production build');
 const work = await mkdtemp(path.join(tmpdir(), 'sheet185-'));
@@ -200,10 +201,17 @@ const cases = {
     const d = p.getByRole('dialog', { name: 'Delete copy', exact: true });
     const expected = await edit(b, 97); await button(b, 'Save').click(); await saved(b);
     const before = await records(b);
-    await button(d, 'Delete').click();
+    await tabToDialogAction(p, d, button(d, 'Delete'));
+    await p.keyboard.press('Enter');
     await p.waitForFunction(() => !document.querySelector('[role=dialog][aria-label="Delete copy"]') || document.querySelector('[role=dialog][aria-label="Delete copy"] [role=alert]'));
     assert.deepEqual(await records(p), before, 'stale Home cannot delete the newer save');
     await d.getByRole('alert').filter({ hasText: 'This copy changed in another window. Refresh Home and try again.' }).waitFor();
+    assert.equal(await d.evaluate(node => node.contains(document.activeElement)), true, 'refused Delete keeps its focus destination inside');
+    for (const key of ['Shift+Tab', ...Array(8).fill('Tab'), ...Array(8).fill('Shift+Tab')]) {
+      await p.keyboard.press(key);
+      assert.equal(await d.evaluate(node => node.contains(document.activeElement)), true, `refused Delete ${key} stays inside including immediate reverse and wraparound`);
+    }
+    assert.deepEqual(await records(p), before, 'refusal focus traversal cannot mutate either copy store');
     await button(d, 'Cancel').click();
     await p.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await p.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Open saved Q4', 'refreshed Home restores focus after refusal');
@@ -327,6 +335,37 @@ const cases = {
     assert.equal((await projection(p)).rows.find(r => r.id === draft.row).fields.find(f => f.target.field === draft.field).stored.value, 89);
     await button(p, 'Close project').click(); await button(d, 'Save').click(); await waitForColdHome(p);
     await open(p, 'Q4'); await oracle(p, 'Q4', draft);
+  },
+  async pendingDeleteFocus(p) {
+    await seed(p); await copy(p, 'Keep'); await close(p);
+    const before = await records(p);
+    const trigger = button(p, 'Delete saved Q4');
+    await trigger.click();
+    const d = p.getByRole('dialog', { name: 'Delete copy', exact: true });
+    await p.locator('.ts-modal-backdrop').click({ position: { x: 1, y: 1 } });
+    await d.waitFor({ state: 'detached' });
+    await p.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Delete saved Q4');
+    assert.deepEqual(await records(p), before, 'ordinary backdrop Cancel preserves every copy');
+    await trigger.click();
+    await tabToDialogAction(p, d, button(d, 'Delete'));
+    await deferSaveCompletion(p);
+    await p.keyboard.press('Enter');
+    await p.waitForFunction(() => typeof window.__saveEvidence.heldCompletion === 'function');
+    const committed = await records(p);
+    try {
+      for (const store of Object.keys(committed)) assert.deepEqual(committed[store], before[store].filter(record => record.name !== 'Q4'), 'real transaction deletes only the selected copy before acknowledgement');
+      const requests = await p.evaluate(() => window.__saveEvidence.requests.length);
+      await assertPendingDialogFocus(p, d, 'delete-copy');
+      assert.equal(await p.evaluate(() => typeof window.__saveEvidence.heldCompletion), 'function', 'the same real completion is still held');
+      assert.equal(await p.evaluate(() => window.__saveEvidence.requests.length), requests, 'pending activation cannot operate the background work');
+      assert.deepEqual(await records(p), committed, 'pending traversal and activation preserve all other records');
+    } finally {
+      await p.evaluate(() => window.__releaseSaveCompletion());
+    }
+    await d.waitFor({ state: 'detached' }); await waitForColdHome(p);
+    assert.equal(await button(p, 'Open saved Q4').count(), 0);
+    assert.equal(await button(p, 'Open saved Keep').count(), 1);
+    assert.deepEqual(await records(p), committed, 'releasing the same completion performs no second mutation');
   },
   async lastDeleteFocus(p) {
     await seed(p); await close(p);

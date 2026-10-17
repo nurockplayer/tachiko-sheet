@@ -12,6 +12,7 @@ import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
 import { runNewTableRound6Cases } from "./new-table-round6-cases.mjs";
 import { runNewTableRound4Cases } from "./new-table-round4-cases.mjs";
 import { runNewTableRepairCases } from "./new-table-repair-cases.mjs";
+import { tabToDialogAction, assertPendingDialogFocus } from "./pending-dialog-focus.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -184,14 +185,68 @@ async function independentOracle(page, reopened) {
   assert.deepEqual(separate.rows, reopened.rows, "independent saved-byte admission agrees with every reopened core field and ID");
   return { rows: reopened.rows, columns: reopened.columns };
 }
+async function pendingCreateFocus(page) {
+  const trigger = page.getByRole("button", { name: "New table", exact: true });
+  await trigger.click();
+  await page.locator(".ts-modal-backdrop").click({ position: { x: 1, y: 1 } });
+  await dialog(page).waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "New table");
+  assert.equal(await trigger.evaluate(node => node === document.activeElement), true, "ordinary backdrop Cancel returns to the New table trigger");
+  await page.getByRole("button", { name: "New table", exact: true }).click();
+  const d = dialog(page);
+  const name = d.getByLabel("Table name", { exact: true });
+  await name.fill("Pending_focus");
+  const action = d.getByRole("button", { name: "Create table", exact: true });
+  await tabToDialogAction(page, d, action);
+  const count = () => page.evaluate(() => window.__rowEvidence.workers.flatMap(worker => worker.requests).filter(message => message.request?.type === "new_table").length);
+  const before = await count();
+  await page.evaluate(() => { window.__rowEvidence.holdNextMutationReply = "new_table"; });
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__rowEvidence.heldReplies?.length === 1);
+  try {
+    assert.equal(await name.evaluate(node => node === document.activeElement), true, "pending Create retains a usable readonly name focus target");
+    assert.equal(await name.evaluate(node => node.readOnly), true);
+    assert.equal(await d.getByLabel("Column 1 name", { exact: true }).evaluate(node => node.readOnly), true);
+    assert.equal(await d.getByLabel("Column 1 type", { exact: true }).isDisabled(), true);
+    await assertPendingDialogFocus(page, d, "new-table");
+    const columnName = d.getByLabel("Column 1 name", { exact: true });
+    await columnName.click();
+    assert.equal(await columnName.evaluate(node => node === document.activeElement), true, "pending input mousedown still focuses the clicked child");
+    assert.equal(await columnName.inputValue(), "A");
+    await name.press("X");
+    assert.equal(await name.inputValue(), "Pending_focus", "pending typing cannot change the submitted table name");
+    const held = await page.evaluate(() => window.__rowEvidence.heldReplies);
+    assert.equal(held.length, 1);
+    assert.equal(held[0].status, "ok");
+    assert.equal(held[0].response.type, "opened", "withheld acknowledgement is the actual successful core creation");
+    assert.equal(await count(), before + 1, "pending keys never dispatch a second creation");
+  } finally {
+    // Deliver this actual reply once even if an assertion fails; never replay.
+    await page.evaluate(() => {
+      const [data] = window.__rowEvidence.heldReplies.splice(0);
+      window.__rowEvidence.liveWorker.dispatchEvent(new MessageEvent("message", { data }));
+    });
+  }
+  await d.waitFor({ state: "detached" }); await ready(page);
+  const table = await projection(page);
+  assert.equal(table.native_table_profile, true);
+  assert.equal(table.rows.length, 0, "one ordinary empty native table is opened");
+  assert.deepEqual(table.columns.map(column => [column.key, column.field_type]), [["a", "text"]]);
+  assert.equal(await page.getByTestId("save-status").textContent(), "Not saved yet");
+  assert.equal(await count(), before + 1, "completion never replays creation");
+  assert.equal(await page.evaluate(() => window.__rowEvidence.heldReplies.length), 0);
+  checks.push("pending-create-natural-keyboard-bidirectional-focus-one-real-ack");
+  await closeWithoutSave(page);
+}
 try {
   let page = await start();
+  if (process.env.TABLE_ROWS_PENDING_FOCUS || !Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key))) await pendingCreateFocus(page);
   if (process.env.TABLE_ROWS_ROUND6_CASE) await runNewTableRound6Cases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROUND4_CASE) await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
   let oracle;
-  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
+  if (!process.env.TABLE_ROWS_PENDING_FOCUS && !process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
   await page.getByRole("button", { name: "New table", exact: true }).waitFor();
   const homeEntry = page.getByRole("region", { name: "Other ways to start", exact: true });
   assert.equal(await homeEntry.locator(".ts-home-other-row").first().locator("strong").textContent(), "New table");
@@ -370,7 +425,7 @@ try {
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
   await closeWithoutSave(page);
   }
-  if (!process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
+  if (!process.env.TABLE_ROWS_PENDING_FOCUS && !process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
     await runNewTableRound6Cases({ page, ready, projection, checks });
     await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
     await runNewTableRepairCases({ page, ready, projection, checks });
