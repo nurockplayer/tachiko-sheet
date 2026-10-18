@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // Batch 3: real production UI/core, delaying or losing actual transport replies.
 import assert from "node:assert/strict";
 
@@ -39,7 +40,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
     await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   }
   async function fillEntry(table, invalid = false) {
-    for (const column of table.columns) await entry().locator(`[data-entry-field="${column.id}"]`).fill(column.field_type === "number" ? invalid ? "abc" : "6" : "ROOT-PROBE");
+    for (const column of table.columns) await fillDraftCell(page, entry().locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? invalid ? "abc" : "6" : "ROOT-PROBE");
   }
   async function release() {
     await page.waitForFunction(() => window.__rowEvidence.heldReplies?.length > 0);
@@ -110,19 +111,19 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
     R3: async () => {
       await sales(); const before = await projection(page); await fillEntry(before, true);
       await page.evaluate(() => { window.__rowEvidence.holdNextMutationReply = "insert_row"; });
-      await entry().getByRole("button", { name: "Add", exact: true }).click();
+      await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
       await page.waitForFunction(() => window.__rowEvidence.heldReplies?.length > 0);
       const destination = page.getByRole("button", { name: "Appearance", exact: true });
       await destination.focus(); await release(); await ready(page);
-      await page.getByRole("alert").filter({ hasText: /not a finite Number/ }).waitFor();
+      await page.getByRole("alert").filter({ hasText: /needs a number/ }).waitFor();
       assert.equal(await destination.evaluate(node => node === document.activeElement), true, "late refusal must not focus an entry field over newer intent");
       assert.deepEqual(await projection(page), before, "real core refusal publishes nothing");
-      assert.equal(await entry().locator('input[aria-invalid="true"]').inputValue(), "abc", "draft and field error remain");
+      assert.equal(await entry().locator('[aria-invalid="true"]').locator(".ts-cell-value").textContent(), "abc", "draft and field error remain");
     },
     "R4-row": async () => {
       await sales(); const before = await projection(page); await fillEntry(before);
       await page.evaluate(() => { window.__rowEvidence.loseNextMutationReply = "insert_row"; });
-      await entry().getByRole("button", { name: "Add", exact: true }).click();
+      await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
       await recoverSales("insert_row", before.revision, table => assert.equal(table.rows.length, before.rows.length + 1));
     },
     "R4-scalar": async () => {
@@ -136,7 +137,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
     },
     "R4-history": async () => {
       await sales(); const before = await projection(page); await fillEntry(before);
-      await entry().getByRole("button", { name: "Add", exact: true }).click(); await ready(page);
+      await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready(page);
       await page.evaluate(() => { window.__rowEvidence.loseNextMutationReply = "undo"; });
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       await recoverSales("undo", before.revision, table => assert.deepEqual(table.rows, before.rows));

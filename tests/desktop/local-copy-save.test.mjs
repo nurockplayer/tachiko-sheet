@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "../product/grid-row-entry-driver.mjs";
 // Host regression: the production desktop composition, real IndexedDB, and
 // native Rust runtime. Only Tauri IPC is bridged to the existing frame harness.
 // This complements (and does not replace) the packaged WebKit lifecycle.
@@ -128,9 +129,9 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     await dialog.getByLabel("Column 3 type", { exact: true }).selectOption("number");
     await dialog.getByRole("button", { name: "Create table", exact: true }).click(); await ready(page);
     for (const [name, value] of [["Item Name (Text)", "Tea"], ["項目 (Text)", "飲食"], ["Amount (Number)", "4.5"]]) {
-      await page.getByLabel(`New row ${name}`, { exact: true }).fill(value);
+      await fillDraftCell(page, page.getByLabel(`New row ${name}`, { exact: true }), value);
     }
-    await page.locator(".ts-entry-row").getByRole("button", { name: "Add", exact: true }).click(); await ready(page);
+    await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready(page);
     const initial = await snapshot(page);
     assert.equal(initial.name, "My Expenses");
     assert.deepEqual(initial.columns, ["Item Name", "項目", "Amount"]);

@@ -427,13 +427,16 @@ describe("SheetShell static rendering", () => {
     expect(otherWays.indexOf("<strong>New table</strong>")).toBeLessThan(otherWays.indexOf("<strong>Open a Tachiko work file</strong>"));
   });
 
-  it("keeps the row-entry draft in a presentational footer outside the data rows", () => {
+  it("renders a navigable client-only draft row inside the grid", () => {
     const view = makeView();
     view.table.native_table_profile = true;
     const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
     const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
-    expect(body).not.toContain("ts-entry-row");
-    expect(markup).toContain('<tfoot aria-label="Add row entry" role="presentation"><tr role="presentation" class="ts-entry-row"');
+    expect(body).toContain("ts-entry-row");
+    expect(markup).not.toContain("<tfoot");
+    expect(markup).toContain('aria-label="New row"');
+    expect(markup).toContain(">Add row</button>");
+    expect(markup).toContain(">Discard</button>");
   });
 
   it("reserves windowed scroll height outside the table and leaves small tables intrinsic", () => {

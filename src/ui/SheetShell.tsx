@@ -43,7 +43,7 @@ import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
 import { NewTableDialog } from "./NewTableDialog.js";
-import { RowEntry, type RowDraft } from "./RowEntry.js";
+import { DRAFT_ROW, draftKeyAction, draftRefusal, firstMissingDraftColumn, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -543,8 +543,8 @@ export function SheetShell(props: SheetShellProps) {
   const [newTableOpen, setNewTableOpen] = useState(false);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
-  const [rowError, setRowError] = useState<{ message: string; fields?: string[]; allowFocus?: () => boolean } | null>(null);
-  const rowDraftActive = rowDraft !== null && Object.values(rowDraft.values).some((value) => value !== "");
+  const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
+  const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || Object.values(rowDraft.values).some((value) => value !== ""));
   const rowCommandPendingRef = useRef(false);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
   const [deleteSelection, setDeleteSelection] = useState<SavedCopySummary | null>(null);
@@ -754,17 +754,21 @@ export function SheetShell(props: SheetShellProps) {
 
   const table = view?.table ?? null;
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
+  const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow);
+  const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
   const gridOrder = useMemo(() => {
     if (!table) return [] as GridPosition[];
     const tableCols = tableColumns(table);
-    return table.rows.flatMap((row) => {
+    const order = table.rows.flatMap((row) => {
       const entity = rowEntity(row);
       return tableCols.map((column) => ({
         entity,
         field: column.id,
       }));
     });
-  }, [table]);
+    if (hasDraftRow) order.push(...tableCols.map(column => ({ entity: DRAFT_ROW, field: column.id })));
+    return order;
+  }, [table, hasDraftRow]);
   const gridWindowed = (table?.rows.length ?? 0) > GRID_WINDOW_THRESHOLD;
   const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName), [interop?.metadata, importedSourceName]);
   const rowIndexByEntity = useMemo(() => {
@@ -779,7 +783,7 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (!table || !collectionIdentity) return;
     const previous = focusedProjectionRef.current;
-    const rows = table.rows.map(rowEntity);
+    const rows = [...table.rows.map(rowEntity), ...(hasDraftRow ? [DRAFT_ROW] : [])];
     const fields = columns.map(column => column.id);
     focusedProjectionRef.current = { identity: collectionIdentity, rows, fields };
     if (previous?.identity !== collectionIdentity) {
@@ -787,8 +791,15 @@ export function SheetShell(props: SheetShellProps) {
       lastCellRef.current = null;
       return;
     }
-    setFocusedKey(current => survivingFocusedKey(current, previous, { rows, fields }));
-  }, [collectionIdentity, table, columns]);
+    setFocusedKey(current => {
+      // Preserve the established data-row fallback when a published row is
+      // removed. The draft becomes the fallback only for an empty table.
+      const dataRows = table.rows.map(rowEntity);
+      if (hasDraftRow && dataRows.length === 0 && current && !current.startsWith(`${DRAFT_ROW}\u0000`) && fields[0]) return cellKey(DRAFT_ROW, fields[0]);
+      const nextRows = current?.startsWith(`${DRAFT_ROW}\u0000`) || dataRows.length === 0 ? rows : dataRows;
+      return survivingFocusedKey(current, previous, { rows: nextRows, fields });
+    });
+  }, [collectionIdentity, table, columns, hasDraftRow]);
 
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
@@ -1022,7 +1033,7 @@ export function SheetShell(props: SheetShellProps) {
     window.addEventListener("keydown", onHistoryKeyDown);
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
   }, [controlsLocked, currentness, historyInteractionLocked, localHistory, onHistory, props.appearancePreference, view]);
-  const cellDraftActive = editor !== null && editor.value !== editor.original;
+  const cellDraftActive = editor !== null && editor.entity !== DRAFT_ROW && editor.value !== editor.original;
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   const draftActive =
     cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
@@ -1198,7 +1209,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function beginEdit(entity: string, field: FieldProjection | null, seed?: string): void {
     if (!field || !field.editable_scalar || controlsLocked) return;
-    if (editor && editor.value !== editor.original && (editor.entity !== entity || editor.field !== field.target.field)) {
+    if (editor && editor.entity !== DRAFT_ROW && editor.value !== editor.original && (editor.entity !== entity || editor.field !== field.target.field)) {
       setLocalError("Apply or cancel the value you are editing before you edit another cell.");
       focusCell(editor.entity, editor.field);
       return;
@@ -1217,8 +1228,31 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
+  function changeRowDraft(field: string, value: string): void {
+    if (!view || !table || controlsLocked || rowCommandPendingRef.current) return;
+    setRowError(null);
+    setRowDraft(current => ({
+      occurrence: view.occurrence, collection: table.collection.id,
+      needsReview: current?.occurrence === view.occurrence && current.collection === table.collection.id ? current.needsReview : undefined,
+      values: { ...(current?.occurrence === view.occurrence && current.collection === table.collection.id ? current.values : {}), [field]: value },
+    }));
+  }
+
+  function beginDraftEdit(column: TableColumn, seed?: string): void {
+    if (!hasDraftRow || controlsLocked || currentness !== "current" || rowCommandPendingRef.current || refuseWhileCellDraft("editing the new row")) return;
+    const kind = column.field_type;
+    if (kind !== "text" && kind !== "number" && kind !== "date" && kind !== "boolean") return;
+    const original = boundRowDraft?.values[column.id] ?? "";
+    selectEditorValueOnFocusRef.current = seed === undefined;
+    focusRejectedEditorRef.current = null;
+    setEditor({ entity: DRAFT_ROW, field: column.id, kind, original, value: seed ?? original });
+    if (seed !== undefined) changeRowDraft(column.id, seed);
+  }
+
   function cancelEdit(): void {
+    if (controlsLocked || rowCommandPendingRef.current) return;
     const cancelled = editor;
+    if (cancelled?.entity === DRAFT_ROW) changeRowDraft(cancelled.field, cancelled.original);
     setEditor(null);
     setLocalError(null);
     if (cancelled) focusCell(cancelled.entity, cancelled.field);
@@ -1300,16 +1334,23 @@ export function SheetShell(props: SheetShellProps) {
     focusCell(target.entity, target.field);
   }
 
-  function submitEditor(): void {
-    void commitEditor();
-  }
-
   async function commitEditor(): Promise<boolean> {
-    if (!editor || commitPending || controlsLocked) return false;
+    if (!editor || commitPending || controlsLocked || rowCommandPendingRef.current) return false;
+    if (editor.entity === DRAFT_ROW) {
+      setEditor(null);
+      return true;
+    }
     const field = currentEditorField(editor);
     if (!field) {
       setEditor(null);
       return false;
+    }
+    // Accepting an unchanged editor is navigation, not a Work mutation. Work
+    // truthfully refuses no-op edits, which must not strand Enter/Tab here.
+    if (editor.value === editor.original) {
+      setEditor(null);
+      setLocalError(null);
+      return true;
     }
     let edit: Parameters<SheetShellProps["onCommit"]>[2];
     if (editor.kind === "boolean") {
@@ -1377,12 +1418,21 @@ export function SheetShell(props: SheetShellProps) {
     field: FieldProjection | null,
     position: GridPosition,
   ): void {
-    if (isComposingEvent(event)) return;
-    const editable = Boolean(field?.editable_scalar) && !controlsLocked;
+    if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
+    const draft = entity === DRAFT_ROW;
+    const editable = (draft || Boolean(field?.editable_scalar)) && !controlsLocked;
+    if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
+      event.preventDefault();
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.shiftKey) moveFocus(event, position, -columns.length);
+      else void addRow();
+      return;
+    }
     if (event.key === "Enter" || event.key === "F2") {
       if (!editable) return;
       event.preventDefault();
-      beginEdit(entity, field);
+      if (draft) beginDraftEdit(columns.find(column => column.id === position.field)!);
+      else beginEdit(entity, field);
       return;
     }
     if (event.key === "Tab") {
@@ -1406,28 +1456,31 @@ export function SheetShell(props: SheetShellProps) {
       !event.altKey
     ) {
       event.preventDefault();
-      beginEdit(entity, field, event.key);
+      if (draft) beginDraftEdit(columns.find(column => column.id === position.field)!, event.key);
+      else beginEdit(entity, field, event.key);
     }
   }
 
   function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
-    if (isComposingEvent(event)) return;
+    if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     // Keep editor input and caret keys from being reinterpreted by the cell grid.
     event.stopPropagation();
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submitEditor();
-      return;
-    }
     if (event.key === "Escape") {
       event.preventDefault();
       cancelEdit();
       return;
     }
-    if (event.key === "Tab" && editor) {
+    if ((event.key === "Enter" || event.key === "Tab") && editor) {
       event.preventDefault();
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const position = { entity: editor.entity, field: editor.field };
-      const step = event.shiftKey ? -1 : 1;
+      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id);
+      if (editor.entity === DRAFT_ROW && action === "publish") {
+        setEditor(null);
+        void addRow();
+        return;
+      }
+      const step = (event.shiftKey ? -1 : 1) * (event.key === "Enter" ? columns.length : 1);
       const intent = completionIntent();
       void commitEditor().then((accepted) => {
         if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => moveFocus(event, position, step));
@@ -1664,7 +1717,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!view || controlsLocked || currentness !== "current" || saveStatus === "saving" || modalInteractionOpen && !forClose) return;
     if (!boundCopyName) { openCopyDialog(forClose); return; }
     if (!onSave || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft) {
-      setLocalError("Finish or clear the unfinished changes before saving.");
+      setLocalError(rowDraftActive ? "Add or discard the new row first." : "Finish or clear the unfinished changes before saving.");
       return;
     }
     const witness = { occurrence: view.occurrence, revision: view.revision };
@@ -1724,7 +1777,7 @@ export function SheetShell(props: SheetShellProps) {
     const name = copyName.trim();
     if (name === "" || copyPending || controlsLocked) return;
     if (rowDraftActive) {
-      setCopyError("Add or clear the unfinished row before creating a copy.");
+      setCopyError("Add or discard the new row first.");
       return;
     }
     if (hasInvalidReportDraft) {
@@ -1822,16 +1875,37 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   useEffect(() => {
-    if ((view && rowDraft && rowDraft.occurrence !== view.occurrence) || (!view && currentness === "current")) {
+    if ((view && rowDraft && (rowDraft.occurrence !== view.occurrence || rowDraft.collection !== view.table.collection.id)) || (!view && currentness === "current")) {
       setRowDraft(null);
       setRowError(null);
     }
-  }, [view?.occurrence, currentness, rowDraft]);
+  }, [view?.occurrence, view?.table.collection.id, currentness, rowDraft]);
+
+  function discardRowDraft(): void {
+    if (controlsLocked || cellDraftActive || rowCommandPendingRef.current) return;
+    if (editor?.entity === DRAFT_ROW) setEditor(null);
+    setRowDraft(null);
+    setRowError(null);
+    if (columns[0]) focusDraftAfterRender(columns[0].id, completionIntent());
+  }
+
+  function focusDraftAfterRender(field: string, intent: ReturnType<typeof completionIntent>): void {
+    requestAnimationFrame(() => {
+      if (completionMayUpdateUi(intent)) withAppFocus(() => focusCell(DRAFT_ROW, field));
+    });
+  }
 
   async function addRow(): Promise<void> {
-    if (!view || !witness || !onInsertRow || controlsLocked || rowCommandPendingRef.current || cellDraftActive || rowDraft?.needsReview) return;
+    if (!view || !witness || !onInsertRow || controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || rowDraft?.needsReview || props.appearancePreference.getSnapshot().composing) return;
     const draft = rowDraft?.occurrence === view.occurrence && rowDraft.collection === table?.collection.id
       ? rowDraft : { occurrence: view.occurrence, collection: view.table.collection.id, values: {} };
+    const missing = firstMissingDraftColumn(columns, draft.values);
+    if (missing) {
+      setRowError({ message: `Add ${names.column(view.table.collection.id, missing.id) ?? missing.display_name} to add this row.`, fields: [missing.id], missing: true });
+      setEditor(null);
+      focusDraftAfterRender(missing.id, completionIntent());
+      return;
+    }
     const initializers = [];
     for (const column of columns) {
       const raw = Object.hasOwn(draft.values, column.id) ? draft.values[column.id] ?? "" : "";
@@ -1845,7 +1919,7 @@ export function SheetShell(props: SheetShellProps) {
         initializers.push({ field: column.id, input: scalarEditOf(column.field_type, raw) });
       } else return;
     }
-    if (editor && editor.value === editor.original) setEditor(null);
+    if (editor?.entity === DRAFT_ROW || (editor && editor.value === editor.original)) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
     setCommitPending(true);
@@ -1855,16 +1929,18 @@ export function SheetShell(props: SheetShellProps) {
       if (result.kind === "confirmed") {
         // Inputs are locked during dispatch. Clear only this submitted draft.
         setRowDraft((current) => current === rowDraft ? null : current);
+        if (columns[0]) focusDraftAfterRender(columns[0].id, intent);
       } else if (result.kind === "refused") {
-        const matchingType = columns.filter((column) => column.field_type === result.fieldType);
-        const matchingValue = matchingType.filter((column) => result.message.includes(`'${draft.values[column.id] ?? ""}'`));
-        setRowError({ message: result.message, fields: (matchingValue.length ? matchingValue : matchingType).map((column) => column.id), allowFocus: () => completionMayUpdateUi(intent) });
+        const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => names.column(view.table.collection.id, column.id) ?? column.display_name);
+        setRowError(refusal);
+        if (refusal.fields?.[0]) focusDraftAfterRender(refusal.fields[0], intent);
       } else {
         setRowDraft({ ...draft, needsReview: true });
         setRowError({ message: "The row request needs review. Refresh to check its outcome; it has not been retried." });
       }
-    } catch (error) {
-      setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") });
+    } catch {
+      setRowDraft({ ...draft, needsReview: true });
+      setRowError({ message: "The row request could not be confirmed. Refresh to check its outcome before adding another row." });
     } finally {
       rowCommandPendingRef.current = false;
       setCommitPending(false);
@@ -1872,7 +1948,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function deleteRow(): Promise<void> {
-    if (!view || !witness || !selectedEntity || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
+    if (!view || !witness || !selectedEntity || selectedEntity === DRAFT_ROW || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
@@ -2241,7 +2317,7 @@ export function SheetShell(props: SheetShellProps) {
       return !result || result.diagnostics.length > 0;
     });
     const gridTable = (
-      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 : undefined}>
+      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 + Number(hasDraftRow) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
@@ -2253,18 +2329,11 @@ export function SheetShell(props: SheetShellProps) {
             ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
             : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
             : table.rows.map((row, index) => renderRow(row, index))}
+          {hasDraftRow ? <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? table.rows.length + 2 : undefined}>
+            <th scope="row" className="ts-row-head" aria-label="New row">+</th>
+            {columns.map(column => renderCell(null, DRAFT_ROW, column))}
+          </tr> : null}
         </tbody>
-        {table.native_table_profile && onInsertRow ? <tfoot aria-label="Add row entry" role="presentation"><RowEntry
-            columns={columns} names={columns.map((column) => names.column(table.collection.id, column.id) ?? column.display_name)}
-            values={rowDraft && rowDraft.occurrence === view?.occurrence && rowDraft.collection === table.collection.id ? rowDraft.values : {}}
-            disabled={controlsLocked || cellDraftActive || currentness !== "current"}
-            needsReview={rowDraft?.needsReview === true}
-            error={rowError}
-            onChange={(field, value) => {
-              setRowError(null);
-              setRowDraft((current) => ({ occurrence: view!.occurrence, collection: table.collection.id, needsReview: current?.occurrence === view!.occurrence && current.collection === table.collection.id ? current.needsReview : undefined, values: { ...(current?.occurrence === view!.occurrence && current.collection === table.collection.id ? current.values : {}), [field]: value } }));
-            }} onAdd={() => void addRow()} onClear={() => { setRowDraft(null); setRowError(null); }}
-          /></tfoot> : null}
       </table>
     );
     return (
@@ -2289,12 +2358,18 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
+        {hasDraftRow ? <div className="ts-entry-actions">
+          <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
+          <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive} onClick={discardRowDraft}>Discard</button>
+          {rowDraftActive ? <span className="ts-hint">{rowDraft?.needsReview ? "Review the row, then discard this draft before adding another." : "Add or discard the new row first."}</span> : null}
+          {rowError ? <span className="ts-row-error" id="ts-row-error" role="alert">{rowError.message}</span> : null}
+        </div> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {onInsertRow && onRemoveRows ? table.native_table_profile ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} onClick={() => void deleteRow()}>Delete row</button>
           <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
         </div> : <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
-        {rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
+        {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>
           {hasResults ? resultsHidden ? <button ref={resultsShowButtonRef} type="button" className="ts-button ts-results-show" onClick={() => setResultsHidden(false)}>Show results</button> : <>
             <ResultsPane
@@ -2348,13 +2423,15 @@ export function SheetShell(props: SheetShellProps) {
     return pinned;
   }
 
-  function renderCell(row: TableRow, entity: string, column: TableColumn): ReactNode {
+  function renderCell(row: TableRow | null, entity: string, column: TableColumn): ReactNode {
     if (!view) return null;
-    const field = fieldForColumn(row, column.id);
-    const display = fieldDisplay(field);
+    const draft = entity === DRAFT_ROW;
+    const field = row ? fieldForColumn(row, column.id) : null;
+    const raw = boundRowDraft?.values[column.id] ?? "";
+    const display = draft ? { text: column.field_type === "boolean" && raw !== "" ? raw === "true" ? "Yes" : raw === "false" ? "No" : raw : raw, tone: "plain", title: null } : fieldDisplay(field);
     const key = cellKey(entity, column.id);
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
-    const editable = Boolean(field?.editable_scalar) && !controlsLocked;
+    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(field?.editable_scalar)) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
@@ -2367,6 +2444,10 @@ export function SheetShell(props: SheetShellProps) {
         }}
         className={classes.join(" ")}
         data-testid={`cell:${entity}:${column.id}`}
+        data-entry-field={draft ? column.id : undefined}
+        aria-label={draft ? `New row ${names.column(table!.collection.id, column.id) ?? column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
+        aria-invalid={draft && !rowError?.missing && rowError?.fields?.includes(column.id) ? true : undefined}
+        aria-describedby={draft && rowError?.fields?.includes(column.id) ? editing ? "ts-row-error" : `ts-draft-message-${column.id}` : undefined}
         data-work-occurrence={view.occurrence}
         data-work-revision={view.revision}
         data-work-entity={entity}
@@ -2376,7 +2457,7 @@ export function SheetShell(props: SheetShellProps) {
         aria-readonly={!editable}
         title={display.title ?? undefined}
         onClick={() => setSelectedEntity(entity)}
-        onDoubleClick={() => beginEdit(entity, field)}
+        onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, field)}
         onFocus={() => {
           setSelectedEntity(entity);
           setFocusedKey(key);
@@ -2388,14 +2469,18 @@ export function SheetShell(props: SheetShellProps) {
           <input
             className="ts-cell-input"
             aria-label="Edit cell"
+            aria-describedby={draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : undefined}
+            placeholder={draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
             aria-busy={commitPending}
             data-testid="cell-editor"
             disabled={controlsLocked}
             value={editor.value}
             ref={focusEditorInput}
             onDoubleClick={(event) => event.stopPropagation()}
+            onBlur={() => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); }}
             onChange={(event) => {
               const value = event.currentTarget.value;
+              if (draft) changeRowDraft(column.id, value);
               setLocalError(null);
               setEditor((previous) => (previous ? { ...previous, value } : previous));
             }}
@@ -2404,6 +2489,7 @@ export function SheetShell(props: SheetShellProps) {
         ) : (
           <span className="ts-cell-value">{display.text}</span>
         )}
+        {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
       </td>
     );
   }
@@ -2411,7 +2497,7 @@ export function SheetShell(props: SheetShellProps) {
   function isFirstCell(entity: string, column: TableColumn): boolean {
     if (!table) return false;
     const firstRow = table.rows[0];
-    if (!firstRow) return false;
+    if (!firstRow) return entity === DRAFT_ROW && columns[0]?.id === column.id;
     return rowEntity(firstRow) === entity && columns[0]?.id === column.id;
   }
 
@@ -2825,6 +2911,10 @@ export function SheetShell(props: SheetShellProps) {
             </select>
           </div>
         </nav>
+        {rowDraftActive && tab !== "table" ? <div className="ts-entry-actions">
+          <span className="ts-hint">Add or discard the new row first.</span>
+          <button type="button" className="ts-button" disabled={controlsLocked} onClick={() => { setTab("table"); if (columns[0]) focusDraftAfterRender(columns[0].id, completionIntent()); }}>Review new row</button>
+        </div> : null}
         {controlsLocked ? (
           <p className="ts-hint" id={lockNoteId} role="note">
             {currentness === "unknown" ? "The current work is not confirmed. Use Refresh to recheck it before editing." : "An operation is in progress; editing is disabled until it finishes."}
@@ -3029,6 +3119,7 @@ export function SheetShell(props: SheetShellProps) {
               }}
             />
           </div>
+          {rowDraftActive ? <p className="ts-hint">Add or discard the new row first. Cancel to return to your draft.</p> : null}
           {copyError ? (
             <p className="ts-dialog-error" id={copyErrorId} role="alert">
               {copyError}

@@ -198,8 +198,19 @@ try {
   await waitCell(productCode, "UNDO-B");
   await undo.click();
   await waitCell(productCode, "UNDO-A");
+  const unchangedDispatches = await publicationCount();
   await page.getByTestId(productCode).dblclick();
-  await editor().fill("UNDO-A");
+  await editor().press("Enter");
+  await editor().waitFor({ state: "hidden" });
+  assert.equal(await publicationCount(), unchangedDispatches, "unchanged Enter navigates without a mutation");
+  assert.equal(await redo.isDisabled(), false, "unchanged navigation preserves Redo");
+  // Submit a differently spelled but equal Number to retain the real Work
+  // NoChange refusal oracle even though unchanged editors now only navigate.
+  const equalNumber = page.locator('table[aria-label="Table"] tbody tr').first().locator("td").last();
+  const numericValue = (await equalNumber.locator(".ts-cell-value").textContent()).trim();
+  assert.ok(Number.isFinite(Number(numericValue)));
+  await equalNumber.dblclick();
+  await editor().fill(numericValue + ".0");
   await editor().press("Enter");
   await page.getByRole("alert").waitFor();
   await editor().press("Escape");

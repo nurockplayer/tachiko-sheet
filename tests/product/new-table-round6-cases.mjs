@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // Round 6: projection-driven roving focus over actual production/core history.
 import assert from "node:assert/strict";
 
@@ -25,9 +26,9 @@ export async function runNewTableRound6Cases({ page, ready, projection, checks }
     await dialog.getByRole("button", { name: "Create table", exact: true }).click();
     await dialog.waitFor({ state: "detached" }); await settle();
     for (let row = 0; row < count; row++) {
-      await entry().nth(0).fill(`left${row}`);
-      await entry().nth(1).fill(`right${row}`);
-      await page.locator(".ts-entry-row").getByRole("button", { name: "Add", exact: true }).click();
+      await fillDraftCell(page, entry().nth(0), `left${row}`);
+      await fillDraftCell(page, entry().nth(1), `right${row}`);
+      await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
       await settle();
     }
     return projection(page);
@@ -73,7 +74,7 @@ export async function runNewTableRound6Cases({ page, ready, projection, checks }
         const after = await projection(page);
         assert.deepEqual(after.rows.map(r => r.id), before.rows.filter(r => r.id !== removed.id).map(r => r.id), "actual projection removes only the intended row");
         if (kind === "delete-only") {
-          assert.equal(await page.locator('td[data-testid^="cell:"][tabindex="0"]').count(), 0);
+          assert.equal(await page.locator('tr:not(.ts-entry-row) td[data-testid^="cell:"][tabindex="0"]').count(), 0);
           assert.equal(await entry().first().evaluate(e => e.tabIndex), 0, "empty table exposes its first Add-row field to Tab");
           if (!newer) assert.equal(await entry().first().evaluate(e => e === document.activeElement), true, "deleting the only row focuses Add-row");
         } else {

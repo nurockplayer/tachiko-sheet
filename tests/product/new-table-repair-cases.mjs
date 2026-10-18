@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // Repair-batch 2 regressions over the production UI and real Worker/WASM.
 // Faults only withhold real replies or completion frames; no fabricated state.
 import assert from "node:assert/strict";
@@ -93,8 +94,8 @@ export async function runNewTableRepairCases({ page, ready, projection, checks }
         const before = await projection(page);
         assert.equal(await page.getByTestId("sales-tip").getAttribute("data-tip-state"), "try-it");
         if (operation === "insert") {
-          for (const column of before.columns) await entry().locator(`[data-entry-field="${column.id}"]`).fill(column.field_type === "number" ? "6" : "ROW-PROBE");
-          await entry().getByRole("button", { name: "Add", exact: true }).click();
+          for (const column of before.columns) await fillDraftCell(page, entry().locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? "6" : "ROW-PROBE");
+          await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
         } else {
           await page.getByTestId(`cell:${before.rows.at(-1).id}:${before.columns[0].id}`).focus();
           await page.getByRole("button", { name: "Delete row", exact: true }).click();
