@@ -2173,6 +2173,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
     if (!view || !table?.native_table_profile || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    if (!(kind === "add" ? onAddColumn : kind === "rename" ? onRenameColumn : onRemoveColumn)) return;
     const column = columns.find(item => item.id === field);
     if (kind !== "add" && !column) return;
     if (editor) setEditor(null);
@@ -2565,7 +2566,7 @@ export function SheetShell(props: SheetShellProps) {
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
             {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={names.column(table.collection.id, column.id) ?? column.display_name}>
-              <div className="ts-column-heading"><span className="ts-col-head" tabIndex={table.native_table_profile ? 0 : undefined} onDoubleClick={event => openColumnDialog("rename", event.currentTarget, column.id)} onKeyDown={event => {
+              <div className="ts-column-heading"><span className="ts-col-head" tabIndex={table.native_table_profile && onRenameColumn ? 0 : undefined} onDoubleClick={event => openColumnDialog("rename", event.currentTarget, column.id)} onKeyDown={event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               }}>{names.column(table.collection.id, column.id) ?? column.display_name}</span>
               {table.native_table_profile && onRenameColumn ? <>

@@ -1,4 +1,4 @@
-import { columnSavePreflightDecision } from "./application/column-save-preflight.js";
+import { COLUMN_SAVE_UNAVAILABLE, columnSavePreflightDecision } from "./application/column-save-preflight.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
@@ -1549,6 +1549,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     command: () => ReturnType<SheetRuntime["insertRow"]>,
     checkColumnSave = false,
   ): Promise<RowCommandOutcome> {
+    if (checkColumnSave && !copies.createWorkFile) return Promise.resolve({ kind: "refused", message: COLUMN_SAVE_UNAVAILABLE });
     if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before making this change." });
     const live = viewRef.current;
     if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
@@ -2105,9 +2106,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onNewTable={newTable}
           onPasteCells={pasteCells}
           onInsertRow={insertRow}
-          onAddColumn={addColumn}
-          onRenameColumn={renameColumn}
-          onRemoveColumn={removeColumn}
+          // Column authoring needs the portable writer to save its result;
+          // reader-only/rollback hosts do not offer it.
+          onAddColumn={copies.createWorkFile ? addColumn : undefined}
+          onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
+          onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onRemoveRows={removeRows}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
