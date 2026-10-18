@@ -427,6 +427,18 @@ describe("SheetShell static rendering", () => {
     expect(otherWays.indexOf("<strong>New table</strong>")).toBeLessThan(otherWays.indexOf("<strong>Open a Tachiko work file</strong>"));
   });
 
+  it("offers column authoring only when the host can save its result", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const withWriter = render({ view, onAddColumn: async () => ({ kind: "confirmed" }), onRenameColumn: async () => ({ kind: "confirmed" }), onRemoveColumn: async () => ({ kind: "confirmed" }) });
+    expect(withWriter).toContain('data-column-action="+ column"');
+    expect(withWriter).toContain("Column actions for ");
+    // Reader-only/rollback hosts pass no column handlers: no controls and no focusable header.
+    const readerOnly = render({ view });
+    expect(readerOnly).not.toContain("data-column-action");
+    expect(readerOnly).not.toContain('class="ts-col-head" tabindex="0"');
+  });
+
   it("renders a navigable client-only draft row inside the grid", () => {
     const view = makeView();
     view.table.native_table_profile = true;

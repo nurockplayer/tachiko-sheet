@@ -42,7 +42,7 @@ async function save(p) {
 }
 async function run(name, action) {
   if (process.env.MUTATION_CASE && name !== process.env.MUTATION_CASE) return;
-  const context = await chromium.launchPersistentContext(path.join(root, name), { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === '1' ? { args: ['--single-process'] } : {}) });
+  const context = await chromium.launchPersistentContext(path.join(root, name), { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === '1' ? { args: ['--single-process'] } : {}) });
   try {
     await installDistRoutes(context, dist);
     await context.addInitScript(() => {

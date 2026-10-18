@@ -68,6 +68,7 @@ export type ScalarEdit =
   | { kind: "date"; value: string };
 
 export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean" };
+export type ColumnInitializer = { entity: string; input: ScalarEdit };
 export type RowInitializer = { field: string; input: ScalarEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
@@ -81,6 +82,9 @@ export interface SheetRuntime {
   newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
   pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<ConfirmedPublication>;
+  addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<ConfirmedPublication>;
+  renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
+  removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
@@ -318,6 +322,9 @@ export interface SheetShellProps {
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<RowCommandOutcome>;
   onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<RowCommandOutcome>;
+  onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<RowCommandOutcome>;
+  onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
+  onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;

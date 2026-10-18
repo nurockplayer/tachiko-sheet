@@ -43,6 +43,8 @@ import { ClipboardRefusal, decodeTsv, encodeTsv, pasteRefusal, rectangle, routeP
 import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
+import { ColumnDialog } from "./ColumnDialog.js";
+import { columnFill, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
 import { DRAFT_ROW, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
@@ -408,6 +410,9 @@ export function SheetShell(props: SheetShellProps) {
     workFileOmissions = [],
     onNewTable,
     onInsertRow,
+    onAddColumn,
+    onRenameColumn,
+    onRemoveColumn,
     onPasteCells,
     onRemoveRows,
     onOpenExample,
@@ -542,6 +547,10 @@ export function SheetShell(props: SheetShellProps) {
   const [localError, setLocalError] = useState<string | null>(null);
   const [salesEntryOutcome, setSalesEntryOutcome] = useState<SalesEntryOutcome | null>(null);
   const [compactHomeLayout, setCompactHomeLayout] = useState(false);
+  const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
+  const [columnAnnouncement, setColumnAnnouncement] = useState<string | null>(null);
+  const columnTriggerRef = useRef<HTMLElement | null>(null);
+  const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
   const [newTableOpen, setNewTableOpen] = useState(false);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
@@ -1037,7 +1046,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = deleteName !== null || newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = columnDialog !== null || deleteName !== null || newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -1160,7 +1169,7 @@ export function SheetShell(props: SheetShellProps) {
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   const draftActive =
     cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
-    (newTableOpen && newTableDraftActive);
+    (newTableOpen && newTableDraftActive) || columnDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -2159,6 +2168,53 @@ export function SheetShell(props: SheetShellProps) {
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
   }
 
+  const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  useEffect(() => { setColumnDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
+
+  function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
+    if (!view || !table?.native_table_profile || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    if (!(kind === "add" ? onAddColumn : kind === "rename" ? onRenameColumn : onRemoveColumn)) return;
+    const column = columns.find(item => item.id === field);
+    if (kind !== "add" && !column) return;
+    if (editor) setEditor(null);
+    columnTriggerRef.current = trigger;
+    setColumnAnnouncement(null);
+    const base = { ...witness!, collection: table.collection.key, rowEntities: table.rows.map(rowEntity) };
+    setColumnDialog(kind === "add" ? { ...base, kind } : { ...base, kind, field: column!.id, name: column!.display_name });
+  }
+
+  function finishColumnDialog(confirmed = false, restoreFocus = true, focusInside = false): void {
+    const state = columnDialog;
+    // Tab/selection inside the pending modal does not choose a destination
+    // outside it. Return focus when that same-occurrence dialog still owns it;
+    // preserve the captured intent guard for any newer external destination.
+    const stillOwnsFocus = focusInside && state?.occurrence === liveOccurrenceRef.current;
+    const intent = confirmed && !stillOwnsFocus ? columnFocusIntentRef.current ?? completionIntent() : completionIntent();
+    setColumnDialog(null);
+    if (confirmed && state) {
+      setCellSelection(null);
+      setColumnAnnouncement(state.kind === "add" ? "Column added. Existing rows were filled." : state.kind === "rename" ? "Column renamed." : "Column removed. Undo restores it.");
+    }
+    if (restoreFocus) requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent)) return;
+      const trigger = columnTriggerRef.current;
+      const fallback = gridScrollRef.current?.querySelector<HTMLElement>(".ts-column-overflow > summary, td[tabindex='0']");
+      withAppFocus(() => (trigger?.isConnected ? trigger : fallback)?.focus());
+    });
+    columnFocusIntentRef.current = null;
+  }
+
+  async function submitColumn(draft: ColumnDraft) {
+    const state = columnDialog;
+    if (!state || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return { kind: "refused" as const, message: "Finish the current input before changing columns." };
+    columnFocusIntentRef.current = completionIntent();
+    if (state.kind === "rename" && onRenameColumn) return onRenameColumn(state, state.collection, state.field, draft.name);
+    if (state.kind === "remove" && onRemoveColumn) return onRemoveColumn(state, state.collection, state.field);
+    const input = columnFill(draft);
+    if (state.kind === "add" && onAddColumn && (input || state.rowEntities.length === 0)) return onAddColumn(state, state.collection, draft.name, draft.fieldType, state.rowEntities.map(entity => ({ entity, input: input! })));
+    return { kind: "refused" as const, message: "Choose a fill value before adding this column." };
+  }
+
   function renderHome(): ReactNode {
     const recoveryLocked = currentness === "unknown";
     const startupLocked = props.startupUnavailable === true;
@@ -2509,7 +2565,39 @@ export function SheetShell(props: SheetShellProps) {
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column) => <th key={column.id} scope="col" className="ts-col-head">{names.column(table.collection.id, column.id) ?? column.display_name}</th>)}
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={names.column(table.collection.id, column.id) ?? column.display_name}>
+              <div className="ts-column-heading"><span className="ts-col-head" tabIndex={table.native_table_profile && onRenameColumn ? 0 : undefined} onDoubleClick={event => openColumnDialog("rename", event.currentTarget, column.id)} onKeyDown={event => {
+                if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
+              }}>{names.column(table.collection.id, column.id) ?? column.display_name}</span>
+              {table.native_table_profile && onRenameColumn ? <>
+                <details className="ts-column-overflow" onToggle={event => {
+                  const disclosure = event.currentTarget;
+                  if (!disclosure.open) return;
+                  if (columnChangesBlocked) { disclosure.open = false; return; }
+                  gridScrollRef.current?.querySelectorAll<HTMLDetailsElement>(".ts-column-overflow[open]").forEach(other => { if (other !== disclosure) other.open = false; });
+                }} onBlur={event => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
+                }} onKeyDown={event => {
+                  if (event.key !== "Escape" || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || !event.currentTarget.open) return;
+                  event.preventDefault(); event.stopPropagation();
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
+                }}>
+                  <summary role="button" aria-label={`Column actions for ${column.display_name}`} aria-disabled={columnChangesBlocked} tabIndex={columnChangesBlocked ? -1 : 0} data-column-action="…" onClick={event => {
+                    if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
+                  }} />
+                  <div className="ts-command-menu">
+                    {(["rename", ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      openColumnDialog(kind, trigger, column.id);
+                    }} />)}
+                  </div>
+                </details>
+                {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
+              </> : null}</div>
+            </th>)}
           </tr>
         </thead>
         <tbody>
@@ -2556,6 +2644,7 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
+        <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
         <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && !clipboardMessage.refused ? clipboardMessage.text : null}</p>
         {clipboardMessage?.refused ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
@@ -3285,6 +3374,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
+      {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={(confirmed, focusInside) => finishColumnDialog(confirmed, confirmed, focusInside)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
       {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {
         const generation = focusIntentRef.current;
         const created = await onNewTable(name, columns);

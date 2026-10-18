@@ -193,7 +193,7 @@ class FakeClient {
       return hook();
     }
     this.#requireRevision(request.expected_revision);
-    if (request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows") return this.#publish(IMPACT);
+    if (request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows" || request.type === "add_column" || request.type === "rename_column" || request.type === "remove_column") return this.#publish(IMPACT);
     const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
     if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);
     const base = this.#revision;
@@ -1558,6 +1558,15 @@ describe("native table and row adapter", () => {
     expect(client.calls.trackerCommand[1]).toMatchObject({ entities: ["e1"] });
   });
 
+  it("snapshots every column initializer by entity before dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    const inputs = [{ entity: "e1", input: { kind: "number" as const, input: "4" } }];
+    const pending = runtime.addColumn(witnessOf(view), COLLECTION.key, "Extra", "number", inputs);
+    inputs[0]!.entity = "other"; inputs[0]!.input.input = "9"; inputs.push(inputs[0]!);
+    await pending;
+    expect(client.calls.trackerCommand[0]).toMatchObject({ initializers: [{ entity: "e1", input: { kind: "number", input: "4" } }] });
+  });
+
   it("snapshots every paste row before serialized dispatch, including a null append anchor", async () => {
     const { runtime, client, view } = await opened();
     const rows = [["1", "TRUE"], ["2", "FALSE"]];
@@ -1567,10 +1576,13 @@ describe("native table and row adapter", () => {
     expect(client.calls.trackerCommand[0]).toMatchObject({ type: "paste_cells", start_entity: null, rows: [["1", "TRUE"], ["2", "FALSE"]] });
   });
 
-  for (const type of ["insert_row", "paste_cells", "remove_table_rows"] as const) {
+  for (const type of ["insert_row", "paste_cells", "remove_table_rows", "add_column", "rename_column", "remove_column"] as const) {
     const invoke = (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) => type === "insert_row"
       ? runtime.insertRow(witnessOf(view), COLLECTION.key, initializers)
       : type === "paste_cells" ? runtime.pasteCells(witnessOf(view), COLLECTION.key, "e1", "f1", [["", "TRUE"], ["1,300", "10/19/2026"]])
+      : type === "add_column" ? runtime.addColumn(witnessOf(view), COLLECTION.key, " New ", "number", [{ entity: "e1", input: { kind: "number", input: "1,300" } }])
+      : type === "rename_column" ? runtime.renameColumn(witnessOf(view), COLLECTION.key, "f1", " New ")
+      : type === "remove_column" ? runtime.removeColumn(witnessOf(view), COLLECTION.key, "f1")
       : runtime.removeRows(witnessOf(view), COLLECTION.key, ["e1"]);
 
     it(`${type}: returns only a coherent publication and passes every explicit input unchanged`, async () => {
@@ -1579,8 +1591,9 @@ describe("native table and row adapter", () => {
       expect(confirmed.publication.base_revision).toBe(view.revision);
       expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
       expect(confirmed.view.occurrence).toBe(view.occurrence);
+      expect(confirmed.view.requiresPortableSave).toBe(["add_column", "rename_column", "remove_column"].includes(type) ? true : undefined);
       expect(client.calls.trackerCommand[0]).toEqual({ type, expected_revision: view.revision, collection: COLLECTION.key,
-        ...(type === "insert_row" ? { initializers } : type === "paste_cells" ? { start_entity: "e1", start_field: "f1", rows: [["", "TRUE"], ["1,300", "10/19/2026"]] } : { entities: ["e1"] }) });
+        ...(type === "insert_row" ? { initializers } : type === "paste_cells" ? { start_entity: "e1", start_field: "f1", rows: [["", "TRUE"], ["1,300", "10/19/2026"]] } : type === "add_column" ? { name: " New ", field_type: "number", initializers: [{ entity: "e1", input: { kind: "number", input: "1,300" } }] } : type === "rename_column" ? { field: "f1", name: " New " } : type === "remove_column" ? { field: "f1" } : { entities: ["e1"] }) });
     });
 
     it(`${type}: refuses stale witnesses without dispatch`, async () => {
@@ -1603,7 +1616,7 @@ describe("native table and row adapter", () => {
       await expect(invoke(runtime, view)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
       expect(client.calls.trackerCommand).toHaveLength(1);
-      expect(await runtime.read()).toEqual(view);
+      expect(await runtime.read()).toEqual({ ...view, ...(["add_column", "rename_column", "remove_column"].includes(type) ? { requiresPortableSave: true } : {}) });
     });
 
     it(`${type}: discards a late reply after close`, async () => {

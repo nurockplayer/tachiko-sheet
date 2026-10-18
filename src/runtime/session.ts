@@ -31,6 +31,7 @@ import {
   type ScalarEdit,
   type NewTableColumn,
   type RowInitializer,
+  type ColumnInitializer,
   type SheetRuntime,
   type ImportedWorkbook,
   type KeyedGroupedSumBindingCatalog,
@@ -573,6 +574,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   function confirmedMutation(
     witness: ViewWitness,
     command: (client: PublicClient, revision: string) => Promise<PublicationProjection>,
+    authoredSchema = false,
   ) {
     return enqueue(async () => {
       const live = requireWitness(witness);
@@ -587,11 +589,17 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
+          // A lost schema acknowledgement may already have introduced display
+          // names. The existing v3 writer preserves either possible outcome.
+          if (authoredSchema) requiresPortableSave = true;
           active = null;
           residentCollection = live.collection;
         }
         throw error;
       }
+      // Schema authoring can introduce display names that v1/v2 cannot encode.
+      // Reuse New table's portable-save route, including after Undo or recovery.
+      if (authoredSchema) requiresPortableSave = true;
       if (publication.base_revision !== live.revision) {
         active = null;
         residentCollection = live.collection;
@@ -646,6 +654,28 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const command = capability(client.trackerCommand, "cell paste");
       return command.call(client, { type: "paste_cells", expected_revision: revision, collection, start_entity: startEntity, start_field: startField, rows: inputs });
     });
+  }
+
+  function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]) {
+    const inputs = initializers.map(({ entity, input }) => ({ entity, input: { ...input } }));
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "column addition");
+      return command.call(client, { type: "add_column", expected_revision: revision, collection, name, field_type: fieldType, initializers: inputs });
+    }, true);
+  }
+
+  function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "column rename");
+      return command.call(client, { type: "rename_column", expected_revision: revision, collection, field, name });
+    }, true);
+  }
+
+  function removeColumn(witness: ViewWitness, collection: string, field: string) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "column removal");
+      return command.call(client, { type: "remove_column", expected_revision: revision, collection, field });
+    }, true);
   }
 
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
@@ -1037,7 +1067,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, pasteCells, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, pasteCells, addColumn, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };

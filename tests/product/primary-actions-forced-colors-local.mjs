@@ -14,7 +14,7 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const mapping = JSON.parse(await readFile(path.join(root, "docs/design/interface-profile-v1-mapping.json"), "utf8"));
 const profileDir = await mkdtemp(path.join(tmpdir(), "tachiko-primary-colors-"));
-const context = await chromium.launchPersistentContext(profileDir, { headless: true, viewport: { width: 1280, height: 800 }, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
+const context = await chromium.launchPersistentContext(profileDir, { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), viewport: { width: 1280, height: 800 }, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
 await installDistRoutes(context, dist);
 const page = context.pages()[0] ?? await context.newPage();
 page.setDefaultTimeout(10000);
