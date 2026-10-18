@@ -36,7 +36,11 @@ export async function runWindowedDraftCases({ page, ready, projection, checks })
     assert.equal(table.native_table_profile, true, "core admits the real native fixture");
     assert.equal(table.rows.length, 205);
     const grid = page.getByRole("grid", { name: "Table", exact: true });
-    assert.equal(await grid.getAttribute("aria-rowcount"), "207", "footer is outside the grid row count");
+    assert.equal(await grid.getAttribute("aria-rowcount"), "207", "draft counts as a grid row; feedback does not");
+    assert.equal(await grid.locator("tbody .ts-entry-row").count(), 0, "published row readers never see the draft");
+    assert.equal(await grid.locator("tfoot").getAttribute("role"), "rowgroup");
+    assert.equal(await grid.locator("tfoot .ts-entry-row").getAttribute("aria-rowindex"), "207");
+    assert.equal(await grid.getByRole("row", { name: "New row", exact: true }).count(), 1, "draft remains a real accessible grid row");
     assert.ok(await grid.locator("tbody .ts-row").count() < 205, "rows are actually windowed");
     const entry = page.locator(".ts-entry-row [data-entry-field]");
     // Starting at the ordinary first-cell tab stop, arrows cross the window

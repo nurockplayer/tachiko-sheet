@@ -437,8 +437,8 @@ try {
   await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   const salesBefore = await projection(page);
-  assert.equal(await page.locator('.ts-grid tbody tr:not(.ts-entry-row)').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
-  assert.equal(await page.locator('.ts-grid tbody .ts-entry-row').count(), 1);
+  assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
+  assert.equal(await page.locator('.ts-grid tfoot .ts-entry-row').count(), 1);
   assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), salesBefore.rows.length + 2, "accessible grid includes header, published rows and the client-only draft");
   assert.equal(salesBefore.native_table_profile, true, "the current Sales example is a native table accepted by core");
   for (const column of salesBefore.columns) {

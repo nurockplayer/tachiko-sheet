@@ -432,9 +432,12 @@ describe("SheetShell static rendering", () => {
     view.table.native_table_profile = true;
     const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
     const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
-    expect(body).toContain("ts-entry-row");
+    expect(body).not.toContain("ts-entry-row");
     const footer = markup.slice(markup.indexOf("<tfoot"), markup.indexOf("</tfoot>"));
-    expect(footer).toContain('role="presentation"');
+    expect(footer).toContain('<tfoot role="rowgroup"');
+    expect(footer).toContain('class="ts-entry-row"');
+    expect(footer).toContain('role="presentation" class="ts-entry-feedback"');
+    expect(footer.indexOf('class="ts-entry-row"')).toBeLessThan(footer.indexOf('class="ts-entry-actions"'));
     expect(footer).toContain(`colSpan="${tableColumns(view.table).length + 1}"`);
     expect(footer).toContain('class="ts-entry-actions"');
     expect(markup.indexOf("<tfoot")).toBeGreaterThan(markup.indexOf("</tbody>"));

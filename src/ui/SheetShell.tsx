@@ -1507,9 +1507,9 @@ export function SheetShell(props: SheetShellProps) {
       if (editor.entity === DRAFT_ROW) {
         if (action === "leave") {
           if (mayPublish) showMissingRowHint();
-          const body = event.currentTarget.closest("tbody");
+          const row = event.currentTarget.closest("tr");
           setEditor(null);
-          if (body) focusAfterGridCells(body);
+          if (row) focusAfterDraftRow(row);
           return;
         }
         if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -1536,10 +1536,10 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
-  function focusAfterGridCells(body: HTMLTableSectionElement): void {
+  function focusAfterDraftRow(row: HTMLTableRowElement): void {
     const candidates = shellRef.current?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? [];
     const next = Array.from(candidates).find(node =>
-      !body.contains(node) && (body.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+      !row.contains(node) && (row.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
       node.tabIndex >= 0 && !node.matches(":disabled") && !node.closest("[inert]") && node.getClientRects().length > 0,
     );
     if (next) withAppFocus(() => next.focus());
@@ -2402,13 +2402,13 @@ export function SheetShell(props: SheetShellProps) {
             ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
             : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
             : table.rows.map((row, index) => renderRow(row, index))}
-          {hasDraftRow ? <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? table.rows.length + 2 : undefined}>
+        </tbody>
+        {hasDraftRow ? <tfoot role="rowgroup" className="ts-entry-footer">
+          <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? table.rows.length + 2 : undefined}>
             <th scope="row" className="ts-row-head" aria-label="New row">+</th>
             {columns.map(column => renderCell(null, DRAFT_ROW, column))}
-          </tr> : null}
-        </tbody>
-        {hasDraftRow ? <tfoot role="presentation" className="ts-entry-footer">
-          <tr role="presentation"><td role="presentation" colSpan={columns.length + 1}>
+          </tr>
+          <tr role="presentation" className="ts-entry-feedback"><td role="presentation" colSpan={columns.length + 1}>
             <div className="ts-entry-actions">
               <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
               <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive} onClick={discardRowDraft}>Discard</button>

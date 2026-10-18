@@ -2731,7 +2731,7 @@ body { margin: 0; }
 .ts-draft-cell-message { display: block; white-space: normal; margin-top: 4px; font-size: 12px; }
 
 /* Entry feedback travels with the draft, outside the grid's cell row count. */
-.ts-grid .ts-entry-footer td { padding: 0; border: 0; white-space: normal; overflow: visible; }
+.ts-grid .ts-entry-feedback td { padding: 0; border: 0; white-space: normal; overflow: visible; }
 .ts-entry-footer .ts-entry-actions {
   position: sticky;
   left: 0;
