@@ -103,7 +103,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
           };
     case "boolean":
       return {
-        text: stored.value ? "true" : "false",
+        text: booleanText(stored.value),
         tone: field.formula ? "computed" : "plain",
         title: formulaTitle(field),
       };
@@ -138,7 +138,7 @@ export function seedTextOf(field: FieldProjection): string {
       case "text":
         return stored.value;
       case "boolean":
-        return stored.value ? "true" : "false";
+        return booleanText(stored.value);
       case "date":
         return stored.value;
       case "reference":
@@ -170,4 +170,9 @@ export function parseBooleanDraft(raw: string): boolean | null {
   if (normalized === "true") return true;
   if (normalized === "false") return false;
   return null;
+}
+
+/** Shared spelling for boolean facts and the draft preview. */
+export function booleanText(value: boolean): string {
+  return value ? "true" : "false";
 }

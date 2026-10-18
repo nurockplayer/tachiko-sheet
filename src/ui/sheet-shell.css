@@ -2729,3 +2729,14 @@ body { margin: 0; }
 .ts-results-heading { position: relative; }
 
 .ts-draft-cell-message { display: block; white-space: normal; margin-top: 4px; font-size: 12px; }
+
+/* Entry feedback travels with the draft, outside the grid's cell row count. */
+.ts-grid .ts-entry-footer td { padding: 0; border: 0; white-space: normal; overflow: visible; }
+.ts-entry-footer .ts-entry-actions {
+  position: sticky;
+  left: 0;
+  width: fit-content;
+  max-width: min(100%, calc(100vw - 48px));
+  box-sizing: border-box;
+  padding: 6px 8px;
+}

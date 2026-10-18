@@ -9,6 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
+import { runWindowedDraftCases } from "./grid-row-entry-window-cases.mjs";
 import { runDraftTabAmendmentCases } from "./grid-row-entry-amendment-cases.mjs";
 import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
 import { runNewTableRound6Cases } from "./new-table-round6-cases.mjs";
@@ -377,7 +378,7 @@ try {
       const itemDraft = entry(page).getByLabel('New row Item (Text)', { exact: true });
       await itemDraft.press("F2"); await page.getByTestId("cell-editor").fill("cancel me"); await page.getByTestId("cell-editor").press("Escape");
       assert.equal(await itemDraft.locator(".ts-cell-value").textContent(), "Refused draft");
-      assert.equal(await entry(page).getByLabel('New row Paid (Yes/No)', { exact: true }).locator(".ts-cell-value").textContent(), "No");
+      assert.equal(await entry(page).getByLabel('New row Paid (Yes/No)', { exact: true }).locator(".ts-cell-value").textContent(), "false");
       checks.push("incomplete-draft-no-publication-blur-return-preserves-values-visible-guards-cell-escape");
     }
   }
@@ -498,6 +499,7 @@ try {
     await runNewTableRepairCases({ page, ready, projection, checks });
     await runNewTableRootCauseCases({ page, ready, projection, checks });
     await runDraftTabAmendmentCases({ page, ready, projection, checks });
+    await runWindowedDraftCases({ page, ready, projection, checks });
   }
   await terminate();
   const result = { status: "PASS", dist: path.resolve(dist), checks, processes, screenshots, oracle };

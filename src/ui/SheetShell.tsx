@@ -46,7 +46,7 @@ import { NewTableDialog } from "./NewTableDialog.js";
 import { DRAFT_ROW, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
-import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { booleanText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
   cellKey,
   fieldForColumn,
@@ -837,6 +837,21 @@ export function SheetShell(props: SheetShellProps) {
     }
   });
 
+  useLayoutEffect(() => {
+    const scroller = gridScrollRef.current;
+    const row = scroller?.querySelector<HTMLElement>(".ts-entry-row");
+    const footer = scroller?.querySelector<HTMLElement>(".ts-entry-footer");
+    if (!scroller || !row || !footer || !row.contains(document.activeElement)) return;
+    const port = scroller.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    const delta = focusRevealScrollDelta(
+      { top: rowRect.top, bottom: footerRect.bottom },
+      { top: port.top + scroller.clientTop, bottom: port.top + scroller.clientTop + scroller.clientHeight },
+    );
+    if (delta !== 0) scroller.scrollTop += delta;
+  }, [focusedKey, editor?.entity, rowDraftActive, rowError, tab]);
+
   useEffect(() => () => {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
   }, []);
@@ -1490,9 +1505,9 @@ export function SheetShell(props: SheetShellProps) {
       if (editor.entity === DRAFT_ROW) {
         if (action === "leave") {
           showMissingRowHint();
-          const grid = event.currentTarget.closest("table");
+          const body = event.currentTarget.closest("tbody");
           setEditor(null);
-          if (grid) focusAfterGrid(grid);
+          if (body) focusAfterGridCells(body);
           return;
         }
         if (action === "edit") {
@@ -1515,10 +1530,10 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
-  function focusAfterGrid(grid: HTMLTableElement): void {
+  function focusAfterGridCells(body: HTMLTableSectionElement): void {
     const candidates = shellRef.current?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? [];
     const next = Array.from(candidates).find(node =>
-      !grid.contains(node) && (grid.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+      !body.contains(node) && (body.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
       node.tabIndex >= 0 && !node.matches(":disabled") && !node.closest("[inert]") && node.getClientRects().length > 0,
     );
     if (next) withAppFocus(() => next.focus());
@@ -2380,6 +2395,16 @@ export function SheetShell(props: SheetShellProps) {
             {columns.map(column => renderCell(null, DRAFT_ROW, column))}
           </tr> : null}
         </tbody>
+        {hasDraftRow ? <tfoot role="presentation" className="ts-entry-footer">
+          <tr role="presentation"><td role="presentation" colSpan={columns.length + 1}>
+            <div className="ts-entry-actions">
+              <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
+              <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive} onClick={discardRowDraft}>Discard</button>
+              {rowDraftActive ? <span className="ts-hint">{rowDraft?.needsReview ? "Review the row, then discard this draft before adding another." : "Press Enter to add this row."}</span> : null}
+              {rowError ? <span className="ts-row-error" id="ts-row-error" role="alert">{rowError.message}</span> : null}
+            </div>
+          </td></tr>
+        </tfoot> : null}
       </table>
     );
     return (
@@ -2404,12 +2429,6 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
-        {hasDraftRow ? <div className="ts-entry-actions">
-          <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
-          <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive} onClick={discardRowDraft}>Discard</button>
-          {rowDraftActive ? <span className="ts-hint">{rowDraft?.needsReview ? "Review the row, then discard this draft before adding another." : "Press Enter to add this row."}</span> : null}
-          {rowError ? <span className="ts-row-error" id="ts-row-error" role="alert">{rowError.message}</span> : null}
-        </div> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {onInsertRow && onRemoveRows ? table.native_table_profile ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button>
@@ -2474,7 +2493,8 @@ export function SheetShell(props: SheetShellProps) {
     const draft = entity === DRAFT_ROW;
     const field = row ? fieldForColumn(row, column.id) : null;
     const raw = boundRowDraft?.values[column.id] ?? "";
-    const display = draft ? { text: column.field_type === "boolean" && raw !== "" ? raw === "true" ? "Yes" : raw === "false" ? "No" : raw : raw, tone: "plain", title: null } : fieldDisplay(field);
+    const draftBoolean = column.field_type === "boolean" ? parseBooleanDraft(raw) : null;
+    const display = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : fieldDisplay(field);
     const key = cellKey(entity, column.id);
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(field?.editable_scalar)) && !controlsLocked;

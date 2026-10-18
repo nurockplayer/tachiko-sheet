@@ -433,7 +433,11 @@ describe("SheetShell static rendering", () => {
     const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
     const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
     expect(body).toContain("ts-entry-row");
-    expect(markup).not.toContain("<tfoot");
+    const footer = markup.slice(markup.indexOf("<tfoot"), markup.indexOf("</tfoot>"));
+    expect(footer).toContain('role="presentation"');
+    expect(footer).toContain(`colSpan="${tableColumns(view.table).length + 1}"`);
+    expect(footer).toContain('class="ts-entry-actions"');
+    expect(markup.indexOf("<tfoot")).toBeGreaterThan(markup.indexOf("</tbody>"));
     expect(markup).toContain('aria-label="New row"');
     expect(markup).toContain(">Add row</button>");
     expect(markup).toContain(">Discard</button>");

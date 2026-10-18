@@ -8,7 +8,7 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   const add = () => draftActions(page).getByRole("button", { name: "Add row", exact: true });
   const requests = () => page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length);
   const focused = cell => cell.evaluate(node => node === document.activeElement);
-  const outsideGrid = () => page.evaluate(() => !document.activeElement?.closest('table[aria-label="Table"]'));
+  const outsideGrid = () => page.evaluate(() => !document.activeElement?.closest(".ts-entry-row"));
   const settleFocus = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   async function create(title, columns) {
     await page.getByRole("button", { name: "New table", exact: true }).click();
@@ -34,6 +34,9 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
     const original = page.viewportSize();
     for (const [name, width] of [["desktop", 1440], ["compact", 390]]) {
       await page.setViewportSize({ width, height: 900 });
+      if (state === "inline-refusal") {
+        await page.locator('.ts-entry-row [aria-invalid="true"]').evaluate(node => node.scrollIntoView({ block: "nearest", inline: "nearest" }));
+      }
       await page.screenshot({ path: `${directory}/${state}-${name}.png`, fullPage: true });
     }
     if (original) await page.setViewportSize(original);
@@ -78,7 +81,7 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   assert.equal(await requests(), noInserts);
   assert.deepEqual(await projection(page), empty);
   assert.equal(await entry().first().locator(".ts-cell-value").textContent(), "Retained");
-  assert.equal(await entry().last().locator(".ts-cell-value").textContent(), "No");
+  assert.equal(await entry().last().locator(".ts-cell-value").textContent(), "false", "draft boolean uses the published spelling");
   await entry().last().press("Enter");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "New row Amount (Number)");
   assert.equal(await requests(), noInserts, "only Enter redirects incomplete input; it still cannot publish");
@@ -95,9 +98,11 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   const added = await projection(page);
   const names = new Map(added.columns.map(column => [column.id, column.key]));
   assert.deepEqual(added.rows.map(row => Object.fromEntries(row.fields.map(field => [names.get(field.target.field), field.stored.value]))), [{ item: "Retained", amount: 12, paid: false }]);
+  assert.equal(await page.locator("tbody .ts-row td").last().locator(".ts-cell-value").textContent(), "false", "published and draft boolean spellings match");
   await capture("after-add");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
   assert.deepEqual((await projection(page)).rows, empty.rows);
   checks.push("amendment-refusal-correction-preserves-other-values-add-undo-and-eight-review-screens");
   await close();
+
 }
