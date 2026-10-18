@@ -85,8 +85,13 @@ const cases = [
       const input = await entry(page, key); await replace(input, value);
       assert.equal(await dispatches(page), count, "draft typing dispatches no Execute");
       assert.deepEqual(await state(page), before, "draft leaves authoritative revision/bytes unchanged");
+      const destination = await cell(page, key).evaluate(node => {
+        const field = node.dataset.testid.split(":").at(-1);
+        return [...(node.parentElement.nextElementSibling?.querySelectorAll("td") ?? [])].find(cell => cell.dataset.testid?.endsWith(":" + field))?.dataset.testid ?? node.dataset.testid;
+      });
       await published(page, input, key, value);
-      assert.equal(await focused(cell(page, key)), true, "Enter returns focus to originating cell");
+      await page.waitForFunction(id => document.activeElement?.dataset.testid === id, destination);
+      assert.equal(await page.getByTestId(destination).evaluate(node => node === document.activeElement), true, "Enter accepts and moves down in the same column");
       assert.notEqual((await state(page)).revision, before.revision);
     }
   }],
@@ -151,6 +156,31 @@ const cases = [
     input = await entry(page, "friction", "Enter"); await replace(input, "12");
     await published(page, input, "friction", "12", "Shift+Tab");
     assert.equal(await focused(cell(page, "impact")), true);
+  }],
+  ["accepted and unchanged boundary edits keep the originating cell when no move exists", async (page) => {
+    const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
+    assert.equal(await page.locator(".ts-entry-row").count(), 0, "non-native fixture has no draft destination");
+    const edges = [
+      ["Shift+Enter", rows.first().locator("td").first()],
+      ["Shift+Tab", rows.first().locator("td").first()],
+      ["Enter", rows.last().locator("td").last()],
+      ["Tab", rows.last().locator("td").last()],
+    ];
+    for (const [index, [key, target]] of edges.entries()) {
+      const before = await state(page), count = await dispatches(page);
+      const value = `Boundary ${index}`;
+      await target.dblclick(); await editor(page).fill(value); await editor(page).press(key);
+      await editor(page).waitFor({ state: "hidden" });
+      await page.waitForFunction(id => document.activeElement?.dataset.testid === id, await target.getAttribute("data-testid"));
+      assert.equal(await focused(target), true, `${key} at the boundary keeps origin focus`);
+      assert.equal((await target.textContent()).trim(), value);
+      assert.equal(await dispatches(page), count + 1, "boundary edit publishes exactly once");
+      assert.notEqual((await state(page)).revision, before.revision);
+      await target.press("F2"); await editor(page).press(key);
+      await editor(page).waitFor({ state: "hidden" });
+      assert.equal(await focused(target), true, "unchanged boundary edit also keeps origin focus");
+      assert.equal(await dispatches(page), count + 1, "unchanged edit dispatches nothing");
+    }
   }],
   ["invalid numeric/boolean retain full drafts and never move focus or publish", async (page) => {
     for (const [key, value] of [["impact", "not a number"], ["confirmed", "maybe"]]) {
@@ -243,7 +273,9 @@ const cases = [
     await editor(page).waitFor({ state: "hidden" });
     assert.equal(await dispatches(page), count + 1, "the retained draft still publishes exactly once");
     // #158: the notes draft kept through that refusal is rebound to the new
-    // revision (its notes did not change) and applies.
+    // revision (its notes did not change) and applies. Enter now selects the
+    // next row, so explicitly return to the notes draft's owning row.
+    await cell(page, "impact").focus();
     await page.getByRole("tab", { name: "Brief", exact: true }).click();
     assert.equal(await page.getByRole("textbox", { name: "Decision notes", exact: true }).inputValue(), "Other notes");
     await page.getByRole("button", { name: "Apply notes", exact: true }).click();
@@ -307,15 +339,17 @@ const cases = [
     await page.locator('.ts-report-canvas[data-report-ready="true"]').waitFor();
   }],
 ];
-let browser;
-try { browser = await chromium.launch({ headless: true,
+const launchOptions = { headless: true,
   ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}),
   ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}),
-}); } catch (error) { console.error("BLOCKED: Chromium launch failed.", error.message); process.exit(78); }
+};
 let failures = 0;
 let blocked = 0;
-try {
-  for (const [name, run] of cases) {
+for (const [name, run] of cases) {
+    // Single-process Chromium exits with its final context; own one browser per case.
+    let browser;
+    try { browser = await chromium.launch(launchOptions); }
+    catch (error) { console.error("BLOCKED: Chromium launch failed.", error.message); process.exit(78); }
     const context = await browser.newContext();
     let fixtureReady = false;
     try {
@@ -328,8 +362,7 @@ try {
     } catch (error) {
       if (fixtureReady) failures++; else blocked++;
       console.error(JSON.stringify({ case: name, status: fixtureReady ? "FAIL" : "BLOCKED", error: error.message }));
-    } finally { await context.close(); }
-  }
-} finally { await browser.close(); }
+    } finally { await context.close(); await browser.close(); }
+}
 console.log(JSON.stringify({ suite: "cell-editing-regression", cases: cases.length, failures, blocked }));
 process.exitCode = blocked ? 78 : failures ? 1 : 0;

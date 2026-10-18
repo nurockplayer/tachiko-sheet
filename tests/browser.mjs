@@ -91,7 +91,9 @@ if(process.argv.includes('--canary')){
 }
 const humanCases=[
  ['M1-01 linked views and restart durability',async env=>{
-  let {page}=env;const initial=await snapshot(page);await edit(page,'3');await shown(page,cell(expected.priority),8);await notes(page);
+  let {page}=env;const initial=await snapshot(page);await edit(page,'3');await shown(page,cell(expected.priority),8);
+  // Enter moves down; select the row whose linked Table/Brief facts this journey checks.
+  await page.getByTestId(cell(expected.impact)).focus();await notes(page);
   const confirmed=await snapshot(page);
   await page.getByRole('tab',{name:'Table',exact:true}).click();const sheet=await rendered(page,'table');
   await page.getByRole('tab',{name:'Brief',exact:true}).click();const brief=await rendered(page,'brief');

@@ -27,6 +27,9 @@ async function edit(page, value) {
   await editor.press("Enter");
   await page.getByTestId(impactId).filter({ hasText: String(value) }).waitFor();
   await page.waitForFunction(() => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
+  // Enter selects the next row. This lane deliberately tests returning to the
+  // edited cell when Close is cancelled, so make that prior focus explicit.
+  await page.getByTestId(impactId).focus();
 }
 
 async function unsaved(page, value) {

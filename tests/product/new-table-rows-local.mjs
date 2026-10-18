@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #184: normal UI over a production-style build and unchanged real Worker/WASM.
 // The observer below only copies real public replies; it never supplies results.
 import assert from "node:assert/strict";
@@ -8,6 +9,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
+import { runWindowedDraftCases } from "./grid-row-entry-window-cases.mjs";
+import { runDraftTabAmendmentCases } from "./grid-row-entry-amendment-cases.mjs";
 import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
 import { runNewTableRound6Cases } from "./new-table-round6-cases.mjs";
 import { runNewTableRound4Cases } from "./new-table-round4-cases.mjs";
@@ -147,15 +150,15 @@ function values(table) {
   return table.rows.map(row => Object.fromEntries(row.fields.map(field => [cols.get(field.target.field), field.stored?.value])));
 }
 async function fillRow(page, { item, amount, paid }) {
-  await entry(page).getByLabel('New row Item (Text)', { exact: true }).fill(item);
-  await entry(page).getByLabel('New row Amount (Number)', { exact: true }).fill(String(amount));
-  await entry(page).getByLabel('New row Paid (Yes/No)', { exact: true }).selectOption(String(paid));
+  await fillDraftCell(page, entry(page).getByLabel('New row Item (Text)', { exact: true }), item);
+  await fillDraftCell(page, entry(page).getByLabel('New row Amount (Number)', { exact: true }), String(amount));
+  await fillDraftCell(page, entry(page).getByLabel('New row Paid (Yes/No)', { exact: true }), String(paid));
 }
 async function add(page, row) {
   await fillRow(page, row); const previous = (await projection(page)).rows.length;
-  await entry(page).getByRole("button", { name: "Add", exact: true }).click(); await ready(page);
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready(page);
   assert.equal((await projection(page)).rows.length, previous + 1);
-  assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).inputValue(), "");
+  assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).locator(".ts-cell-value").textContent(), "");
 }
 async function closeWithoutSave(page) {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
@@ -281,17 +284,50 @@ try {
   await capture(page, "dialog");
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await d.waitFor({ state: "detached" }); await ready(page);
   assert.equal((await projection(page)).rows.length, 0);
-  assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isDisabled(), true);
+  assert.equal(await draftActions(page).getByRole("button", { name: "Add row", exact: true }).isEnabled(), true);
   await page.getByText("Nothing is saved until you choose Save a copy.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Keep editing", exact: true }).click();
   checks.push("new-default-column-add-remove-empty-and-duplicate-core-refusals-unsaved-close");
 
-  await add(page, { ...expected[0], amount: 3 }); await add(page, expected[1]); await add(page, expected[2]);
+  // #207: ArrowDown off the last published row starts three consecutive
+  // keyboard-only inserts. Only the setup anchor uses the pointer action.
+  await add(page, { item: "Anchor", amount: 0, paid: false });
+  const anchor = await projection(page);
+  await page.getByTestId(`cell:${anchor.rows[0].id}:${anchor.columns[0].id}`).focus();
+  await page.keyboard.press("ArrowDown");
+  const draftFirst = entry(page).locator("[data-entry-field]").first();
+  assert.equal(await draftFirst.evaluate(node => node === document.activeElement), true);
+  const keyboardRows = [{ ...expected[0], amount: 3 }, expected[1], expected[2]];
+  for (const [index, row] of keyboardRows.entries()) {
+    await page.keyboard.type(row.item); await page.keyboard.press("Tab");
+    await page.keyboard.type(String(row.amount)); await page.keyboard.press("Tab");
+    await page.keyboard.type(String(row.paid)); await page.keyboard.press("Enter");
+    await ready(page);
+    await page.waitForFunction(() => document.activeElement?.matches('.ts-entry-row [data-entry-field]'));
+    assert.deepEqual(values(await projection(page)), [{ item: "Anchor", amount: 0, paid: false }, ...keyboardRows.slice(0, index + 1)]);
+    assert.equal(await draftFirst.evaluate(node => node === document.activeElement), true, "success focuses the fresh first draft cell");
+  }
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
+  assert.deepEqual(values(await projection(page)), [{ item: "Anchor", amount: 0, paid: false }, ...keyboardRows.slice(0, 2)], "Undo removes the keyboard insert");
+  await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready(page);
+  await page.getByTestId(`cell:${anchor.rows[0].id}:${anchor.columns[0].id}`).focus();
+  await page.getByRole("button", { name: "Delete row", exact: true }).click(); await ready(page);
+  assert.deepEqual(values(await projection(page)), keyboardRows);
+  checks.push("grid-arrowdown-three-consecutive-keyboard-inserts-order-types-undo-redo");
   let table = await projection(page); const tea = table.rows.find(row => row.fields.some(field => field.stored?.value === "Tea")); const amount = table.columns.find(col => col.key === "amount");
   const cell = page.getByTestId(`cell:${tea.id}:${amount.id}`);
   await cell.dblclick(); await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("4.5"); await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Enter"); await ready(page);
   table = await projection(page); assert.deepEqual(values(table), expected);
+  const nextAmount = page.getByTestId(`cell:${table.rows[1].id}:${amount.id}`);
+  await page.waitForFunction(id => document.activeElement?.dataset.testid === id, `cell:${table.rows[1].id}:${amount.id}`);
+  assert.equal(await nextAmount.evaluate(node => node === document.activeElement), true, "Enter accepts and moves down in data cells");
+  await nextAmount.press("F2"); await page.getByTestId("cell-editor").press("Shift+Enter"); await ready(page);
+  await page.waitForFunction(id => document.activeElement?.dataset.testid === id, `cell:${tea.id}:${amount.id}`);
+  const lastAmount = page.getByTestId(`cell:${table.rows.at(-1).id}:${amount.id}`);
+  await lastAmount.press("F2"); await page.getByTestId("cell-editor").press("Enter"); await ready(page);
+  await page.waitForFunction(id => document.activeElement?.dataset.entryField === id, amount.id);
+  checks.push("data-cell-enter-down-shift-enter-up-last-row-enters-draft");
   const train = table.rows.find(row => row.fields.some(field => field.stored?.value === "Train")); const item = table.columns.find(col => col.key === "item");
   await page.getByTestId(`cell:${train.id}:${item.id}`).dblclick();
   assert.equal(await page.getByRole("textbox", { name: "Edit cell", exact: true }).inputValue(), "Train", "deleting from an unchanged editor must not leave a hidden editor locking Undo");
@@ -305,22 +341,52 @@ try {
   for (const raw of ["abc", ""]) {
     const before = await projection(page);
     await fillRow(page, { item: "Refused draft", amount: raw, paid: false });
-    await entry(page).getByRole("button", { name: "Add", exact: true }).click();
-    await page.getByRole("alert").filter({ hasText: /not a finite Number/ }).waitFor(); await ready(page);
-    assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).inputValue(), raw);
-    assert.equal(await entry(page).getByLabel('New row Item (Text)', { exact: true }).inputValue(), "Refused draft");
-    assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).getAttribute("aria-invalid"), "true");
+    const requestsBefore = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length);
+    await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: raw === "abc" ? /Amount needs a number/ : /Add Amount/ }).waitFor(); await ready(page);
+    assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).locator(".ts-cell-value").textContent(), raw);
+    assert.equal(await entry(page).getByLabel('New row Item (Text)', { exact: true }).locator(".ts-cell-value").textContent(), "Refused draft");
+    assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).getAttribute("aria-invalid"), raw === "abc" ? "true" : null);
     assert.deepEqual(await projection(page), before, "refused row publishes nothing; empty Number never becomes zero");
-    const receipt = await page.evaluate(() => { const w = window.__rowEvidence.workers[0]; const request = w.requests.filter(message => message.request?.type === "insert_row").at(-1); return { request: request.request, reply: w.replies.find(reply => reply.id === request.id) }; });
-    assert.equal(receipt.reply.status, "error"); assert.equal(receipt.reply.error.code, "invalid_number");
-    assert.equal(receipt.reply.error.current_revision, before.revision); assert.equal(receipt.request.initializers.length, 3); assert.equal(receipt.request.initializers[1].input.input, raw);
-    if (raw === "abc") await capture(page, "refusal");
+    if (raw === "abc") {
+      const receipt = await page.evaluate(() => { const w = window.__rowEvidence.workers[0]; const request = w.requests.filter(message => message.request?.type === "insert_row").at(-1); return { request: request.request, reply: w.replies.find(reply => reply.id === request.id) }; });
+      assert.equal(receipt.reply.status, "error"); assert.equal(receipt.reply.error.code, "invalid_number");
+      assert.equal(receipt.reply.error.current_revision, before.revision); assert.equal(receipt.request.initializers.length, 3); assert.equal(receipt.request.initializers[1].input.input, raw);
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "New row Amount (Number)");
+      assert.equal(await entry(page).getByLabel('New row Amount (Number)', { exact: true }).evaluate(node => node === document.activeElement), true, "refusal focuses the offending cell");
+      await capture(page, "refusal");
+      // Correct just that cell and publish via last-cell Tab. Every other value survives.
+      await page.keyboard.press("F2"); await page.getByTestId("cell-editor").fill("7");
+      await page.getByTestId("cell-editor").press("Tab"); await page.keyboard.press("F2"); await page.getByTestId("cell-editor").press("Tab"); await ready(page);
+      assert.deepEqual(values(await projection(page)), [...expected, { item: "Refused draft", amount: 7, paid: false }]);
+      await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
+      assert.deepEqual(values(await projection(page)), expected);
+      checks.push("invalid-number-corrected-in-place-other-draft-values-kept-last-cell-tab-undo");
+    } else {
+      assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), requestsBefore, "incomplete draft never dispatches");
+      await page.getByRole("button", { name: "Appearance", exact: true }).focus();
+      await entry(page).getByLabel('New row Amount (Number)', { exact: true }).focus();
+      assert.deepEqual(await projection(page), before, "leaving and returning cannot publish incomplete input");
+      assert.equal(await entry(page).getByLabel('New row Item (Text)', { exact: true }).locator(".ts-cell-value").textContent(), "Refused draft");
+      assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true);
+      assert.equal(await page.getByRole("button", { name: "Delete row", exact: true }).isDisabled(), true);
+      await page.getByText("Press Enter to add this row.", { exact: true }).waitFor();
+      await page.keyboard.press("Control+Z");
+      await page.getByRole("alert").filter({ hasText: "Add or discard the new row first." }).waitFor();
+      assert.deepEqual(await projection(page), before, "blocked Undo announces its reason without publishing");
+      // Escape restores only the active value, retaining the other draft cells.
+      const itemDraft = entry(page).getByLabel('New row Item (Text)', { exact: true });
+      await itemDraft.press("F2"); await page.getByTestId("cell-editor").fill("cancel me"); await page.getByTestId("cell-editor").press("Escape");
+      assert.equal(await itemDraft.locator(".ts-cell-value").textContent(), "Refused draft");
+      assert.equal(await entry(page).getByLabel('New row Paid (Yes/No)', { exact: true }).locator(".ts-cell-value").textContent(), "false");
+      checks.push("incomplete-draft-no-publication-blur-return-preserves-values-visible-guards-cell-escape");
+    }
   }
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   const copyDialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
   assert.equal(await copyDialog.getByRole("button", { name: "Create copy", exact: true }).isDisabled(), true);
   await copyDialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await entry(page).getByRole("button", { name: "Clear", exact: true }).click();
+  await draftActions(page).getByRole("button", { name: "Discard", exact: true }).click();
   // Last-field Enter during composition cannot publish a row.
   await fillRow(page, { item: "IME draft", amount: 9, paid: true });
   const last = entry(page).getByLabel('New row Paid (Yes/No)', { exact: true });
@@ -331,8 +397,8 @@ try {
   await last.dispatchEvent("keydown", { key: "Enter", keyCode: 13, repeat: true }); await ready(page);
   assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), beforeRepeat, "held Enter cannot insert repeated rows");
   assert.deepEqual(values(await projection(page)), expected);
-  await entry(page).getByRole("button", { name: "Clear", exact: true }).click();
-  checks.push("invalid-and-empty-number-core-refusal-kept-draft-no-publication-save-guard-ime-enter");
+  await draftActions(page).getByRole("button", { name: "Discard", exact: true }).click();
+  checks.push("invalid-number-core-refusal-empty-number-presence-kept-draft-no-publication-save-guard-ime-enter");
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   const copy = page.getByRole("dialog", { name: "Save a copy", exact: true });
@@ -345,7 +411,7 @@ try {
   oracle = await independentOracle(page, reopened);
   checks.push("save-full-process-exit-same-profile-home-reopen-fixed-value-independent-core-oracle");
   // The reopened native flag must still expose the actual row actions.
-  await entry(page).getByRole("button", { name: "Add", exact: true }).waitFor();
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).waitFor();
   // Download/Open .ro preserves this authored table through the normal UI too.
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   await page.getByRole("button", { name: "Download work file (.ro)", exact: true }).click();
@@ -373,12 +439,12 @@ try {
   const salesBefore = await projection(page);
   assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
   assert.equal(await page.locator('.ts-grid tfoot .ts-entry-row').count(), 1);
-  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), salesBefore.rows.length + 1, "accessible grid rows contain only the header and actual data");
+  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), salesBefore.rows.length + 2, "accessible grid includes header, published rows and the client-only draft");
   assert.equal(salesBefore.native_table_profile, true, "the current Sales example is a native table accepted by core");
   for (const column of salesBefore.columns) {
-    await entry(page).locator(`[data-entry-field="${column.id}"]`).fill(column.field_type === "number" ? "6" : column.key === "category" ? "ROW-PROBE" : "ROW-PROBE-CODE");
+    await fillDraftCell(page, entry(page).locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? "6" : column.key === "category" ? "ROW-PROBE" : "ROW-PROBE-CODE");
   }
-  await entry(page).getByRole("button", { name: "Add", exact: true }).click(); await ready(page);
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready(page);
   const salesAdded = await projection(page); assert.equal(salesAdded.rows.length, salesBefore.rows.length + 1);
   const inserted = salesAdded.rows.find(row => !salesBefore.rows.some(old => old.id === row.id));
   await page.getByTestId(`cell:${inserted.id}:${salesBefore.columns[0].id}`).focus();
@@ -388,16 +454,18 @@ try {
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready(page); assert.deepEqual((await projection(page)).rows, salesBefore.rows);
   checks.push("import-release-actions-unavailable-sales-native-insert-delete-undo-redo-supported");
   await closeWithoutSave(page);
-  // Date has no synthesized today value; blank Date is a real core refusal.
+  // Date has no synthesized today value; blank Date stays unpublished.
   await page.getByRole("button", { name: "New table", exact: true }).click();
   d = dialog(page); await d.getByLabel("Table name", { exact: true }).fill("Dates");
   await d.getByLabel("Column 1 name", { exact: true }).fill("When"); await d.getByLabel("Column 1 type", { exact: true }).selectOption("date");
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await ready(page);
-  const dateInput = entry(page).getByLabel("New row When (Date)", { exact: true }); assert.equal(await dateInput.inputValue(), "");
+  const dateInput = entry(page).getByLabel("New row When (Date)", { exact: true }); assert.equal(await dateInput.locator(".ts-cell-value").textContent(), "");
   const blankDateView = await projection(page);
-  await entry(page).getByRole("button", { name: "Add", exact: true }).click(); await page.getByRole("alert").waitFor(); await ready(page);
-  assert.deepEqual(await projection(page), blankDateView); assert.equal(await dateInput.getAttribute("aria-invalid"), "true");
-  await dateInput.fill("2026-10-14"); await dateInput.press("Enter"); await ready(page);
+  const blankDateRequests = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length);
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready(page);
+  assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), blankDateRequests, "untouched Date cannot dispatch");
+  assert.deepEqual(await projection(page), blankDateView); assert.equal(await dateInput.getAttribute("aria-invalid"), null);
+  await fillDraftCell(page, dateInput, "2026-10-14"); await dateInput.press("Enter"); await ready(page);
   assert.deepEqual(values(await projection(page)), [{ when: "2026-10-14" }]);
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   const dateCopy = page.getByRole("dialog", { name: "Save a copy", exact: true });
@@ -405,23 +473,29 @@ try {
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   await closeWithoutSave(page); await page.getByRole("button", { name: "Open saved Dates copy", exact: true }).click(); await ready(page);
   assert.deepEqual(values(await projection(page)), [{ when: "2026-10-14" }]);
-  checks.push("date-no-today-default-empty-refusal-explicit-last-field-enter-opaque-save-reopen");
-  await entry(page).getByLabel("New row When (Date)", { exact: true }).fill("2026-10-15");
+  checks.push("date-no-today-default-empty-presence-guard-explicit-last-field-enter-opaque-save-reopen");
+  await fillDraftCell(page, entry(page).getByLabel("New row When (Date)", { exact: true }), "2026-10-15");
   await page.evaluate(() => { window.__rowEvidence.loseNextInsertReply = true; });
-  await entry(page).getByRole("button", { name: "Add", exact: true }).click();
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.match(await page.getByTestId("operation-outcome").textContent(), /Outcome needs review/);
   await page.locator(".ts-home").getByRole("button", { name: "Refresh", exact: true }).click(); await ready(page);
   assert.deepEqual(values(await projection(page)).sort((a, b) => a.when.localeCompare(b.when)), [{ when: "2026-10-14" }, { when: "2026-10-15" }], "the lost reply's row was published exactly once");
   const retained = entry(page).getByLabel("New row When (Date)", { exact: true });
-  assert.equal(await retained.inputValue(), "2026-10-15");
-  assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isDisabled(), true);
+  assert.equal(await retained.locator(".ts-cell-value").textContent(), "2026-10-15");
+  assert.equal(await draftActions(page).getByRole("button", { name: "Add row", exact: true }).isDisabled(), true);
   const count = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length);
-  await retained.fill("2026-10-16"); await retained.press("Enter");
-  assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isDisabled(), true, "editing a retained uncertain draft cannot unlock replay");
+  await fillDraftCell(page, retained, "2026-10-16"); await retained.press("Enter");
+  assert.equal(await draftActions(page).getByRole("button", { name: "Add row", exact: true }).isDisabled(), true, "editing a retained uncertain draft cannot unlock replay");
   assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), count);
-  await entry(page).getByRole("button", { name: "Clear", exact: true }).click();
-  assert.equal(await entry(page).getByRole("button", { name: "Add", exact: true }).isEnabled(), true);
+  await retained.press("Tab");
+  const discardReview = draftActions(page).getByRole("button", { name: "Discard", exact: true });
+  assert.equal(await discardReview.evaluate(node => node === document.activeElement), true, "needs-review cell Tab skips disabled Add row and reaches Discard");
+  await retained.press("F2"); await page.getByTestId("cell-editor").press("Tab");
+  assert.equal(await discardReview.evaluate(node => node === document.activeElement), true, "needs-review editor Tab accepts locally and reaches Discard");
+  assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), count, "neither needs-review Tab path replays insert_row");
+  await discardReview.click();
+  assert.equal(await draftActions(page).getByRole("button", { name: "Add row", exact: true }).isEnabled(), true);
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
   await closeWithoutSave(page);
   }
@@ -430,12 +504,19 @@ try {
     await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
     await runNewTableRepairCases({ page, ready, projection, checks });
     await runNewTableRootCauseCases({ page, ready, projection, checks });
+    await runDraftTabAmendmentCases({ page, ready, projection, checks });
+    await runWindowedDraftCases({ page, ready, projection, checks });
   }
   await terminate();
   const result = { status: "PASS", dist: path.resolve(dist), checks, processes, screenshots, oracle };
   await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, oracle: oracle ? "all rows, values and stable IDs verified" : "not exercised in focused repair run", evidence }));
 } catch (cause) {
   console.error(cause);
+  if (context?.pages()[0]) {
+    const failedPage = context.pages()[0];
+    console.error(JSON.stringify(await failedPage.evaluate(() => ({ active: document.activeElement?.outerHTML.slice(0, 1000), editors: [...document.querySelectorAll('[data-testid="cell-editor"]')].map(input => input.outerHTML), alerts: [...document.querySelectorAll('[role="alert"]')].map(node => node.textContent) }))));
+    await failedPage.screenshot({ path: path.join(evidence, "failure.png"), fullPage: true });
+  }
   await writeFile(path.join(evidence, "failure.json"), JSON.stringify({ status: "FAIL", error: String(cause), checks, processes }, null, 2));
   process.exitCode = 1;
 } finally { await terminate(); }

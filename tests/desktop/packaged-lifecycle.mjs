@@ -233,7 +233,7 @@ async function visibleTable(name) {
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, name);
   select.dispatchEvent(new Event("change", { bubbles: true }));
   await waitFor(() => select.value === name && current() && grid()?.querySelector("tbody tr"), "table " + name);
-  return [...grid().querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
+  return [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
 }
 async function resultRows() {
   click(await waitFor(() => tab("Cross-table summary"), "summary tab"));
@@ -559,7 +559,7 @@ async function salesJourney() {
     await visibleTable("catalog");
     const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
     const price = headers.indexOf("price");
-    const row = [...grid().querySelectorAll("tbody tr")].find((r) => r.textContent.includes("PEN"));
+    const row = [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].find((r) => r.textContent.includes("PEN"));
     dblclick(row.querySelectorAll("td")[price]);
     fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "250");
     press(textbox("Edit cell"), "Enter");
@@ -658,7 +658,7 @@ async function salesJourney() {
   const inFlight = await evaluate(`
     await visibleTable("catalog");
     const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
-    const row = [...grid().querySelectorAll("tbody tr")].find((r) => r.textContent.includes("PEN"));
+    const row = [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].find((r) => r.textContent.includes("PEN"));
     dblclick(row.querySelectorAll("td")[headers.indexOf("price")]);
     fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "300");
     press(textbox("Edit cell"), "Enter");
@@ -706,9 +706,14 @@ async function namedTableJourney() {
     click(button("Create table", form));
     await waitFor(() => !dialog("New table") && current(), "named table");
     for (const [index, value] of ["Tea", "飲食", "4.5"].entries()) {
-      fill(textbox("New row " + ${JSON.stringify(labels)}[index] + (index === 2 ? " (Number)" : " (Text)")), value);
+      const cell = [...document.querySelectorAll(".ts-entry-row [data-entry-field]")][index];
+      cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      const input = await waitFor(() => document.querySelector('[data-testid="cell-editor"]'), "draft cell editor");
+      fill(input, value);
+      cell.focus();
+      await waitFor(() => !document.querySelector('[data-testid="cell-editor"]'), "draft retained");
     }
-    click(button("Add", document.querySelector(".ts-entry-row")));
+    click(button("Add row", document.querySelector(".ts-entry-actions")));
     await waitFor(() => current() && grid()?.querySelector("tbody tr.ts-row"), "new row");
     return true;
   `);

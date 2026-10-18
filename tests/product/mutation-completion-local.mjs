@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #189 characterization: normal production controls + real Worker/WASM replies.
 // Faults discard a real acknowledgement/observation; no semantic reply is invented.
 import assert from 'node:assert/strict';
@@ -112,10 +113,10 @@ for (const mode of ['published', 'known', 'unknown', 'refused']) {
         const entry = p.locator('.ts-entry-row');
         for (const col of before.columns) {
           const input = entry.locator(`[data-entry-field="${col.id}"]`);
-          if (col.field_type === 'number') await input.fill(mode === 'refused' ? 'abc' : '5');
-          else await input.fill('NEW');
+          if (col.field_type === 'number') await fillDraftCell(p, input, mode === 'refused' ? 'abc' : '5');
+          else await fillDraftCell(p, input, 'NEW');
         }
-        await button(entry, 'Add').click();
+        await button(draftActions(p), 'Add row').click();
       }
       if (command === 'delete') { await p.getByTestId(`cell:${before.rows[0].id}:${before.columns[0].id}`).focus(); await button(p, 'Delete row').click(); }
       if (['undo', 'redo'].includes(command)) await button(p, command === 'undo' ? 'Undo' : 'Redo').click();
@@ -144,7 +145,7 @@ for (const mode of ['published', 'known', 'unknown', 'refused']) {
           assert.equal((await table(p)).revision, before.revision, 'trusted refusal preserves revision');
           assert.equal(await (command === 'summary' ? p.locator('[data-testid^="j4-result-"]') : p.getByTestId('results-pane').locator('.ts-result-card')).count(), 1, 'refusal restores summary');
           if (command === 'scalar') assert.equal(await p.getByRole('textbox', { name: 'Edit cell', exact: true }).inputValue(), 'abc');
-          if (command === 'insert') assert.equal(await p.locator('.ts-entry-row [aria-invalid=true]').first().inputValue(), 'abc');
+          if (command === 'insert') assert.equal(await p.locator('.ts-entry-row [aria-invalid=true]').first().locator(".ts-cell-value").textContent(), 'abc');
           return;
         }
         assert.notEqual((await table(p)).revision, before.revision);
@@ -179,7 +180,7 @@ for (const mode of ['published', 'known', 'unknown']) await run(`new-table-${mod
   await p.waitForFunction(() => document.activeElement?.matches('.ts-entry-row [data-entry-field]'));
   assert.equal(await unload(p), true); await save(p); await close(p);
   await button(p, 'Open saved characterized').click(); await ready(p);
-  await p.locator('.ts-entry-row input').fill('Tea'); await button(p.locator('.ts-entry-row'), 'Add').click(); await ready(p);
+  await fillDraftCell(p, p.locator('.ts-entry-row [data-entry-field]').first(), 'Tea'); await button(draftActions(p), 'Add row').click(); await ready(p);
   assert.equal(await unload(p), true); await button(p, 'Save').click();
   await p.getByTestId('save-status').filter({ hasText: 'Saved on this device' }).waitFor(); assert.equal(await unload(p), false);
 });
@@ -217,9 +218,9 @@ for (const mode of ['published', 'known', 'unknown']) await run(`work-file-origi
   });
   await p.getByTestId('open-work-file').setInputFiles({ name: 'source.ro', mimeType: 'application/octet-stream', buffer: Buffer.from(bytes) }); await ready(p);
   const before = await table(p), inserts = await count(p, 'insert_row');
-  const entry = p.locator('.ts-entry-row'); await entry.locator('input').fill('4');
+  const entry = p.locator('.ts-entry-row'); await fillDraftCell(p, entry.locator('[data-entry-field]').first(), '4');
   if (mode !== 'published') await p.evaluate(mode => { window.__completion.arm = { type: 'insert_row', mode }; }, mode);
-  await button(entry, 'Add').click();
+  await button(draftActions(p), 'Add row').click();
   if (mode !== 'published') {
     await p.getByRole('heading', { name: 'Refresh required', exact: true }).waitFor();
     assert.equal(await p.getByTestId('currentness').getAttribute('data-currentness'), 'unknown');
@@ -240,7 +241,7 @@ for (const mode of ['published', 'known', 'unknown']) await run(`work-file-origi
   assert.equal(after.rows[0].fields.find(field => field.target.field === after.columns[0].id).stored.value, 4);
   assert.equal(await unload(p), true, 'confirmed publication still needs a durable Save');
   // Recovery retains the row draft for review; explicitly discard it before Save.
-  if (mode !== 'published') await button(p.locator('.ts-entry-row'), 'Clear').click();
+  if (mode !== 'published') await button(draftActions(p), 'Discard').click();
   await save(p);
   const kind = await p.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const r = indexedDB.open('tachiko-sheet-local-copies', 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

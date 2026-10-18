@@ -1,3 +1,4 @@
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #195: normal production UI and a separate public core-client persistence oracle.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -95,14 +96,14 @@ try {
   assert.equal(await page.locator('#ts-active-table option:checked').textContent(), 'My Expenses');
   const expected = [['Tea','飲食',4], ['Train','交通',3]];
   for (const values of expected) {
-    for (let i=0; i<3; i++) await page.locator('.ts-entry-row').getByLabel(`New row ${labels[i]} (${i===2?'Number':'Text'})`, {exact:true}).fill(String(values[i]));
+    for (let i=0; i<3; i++) await fillDraftCell(page, page.locator('.ts-entry-row').getByLabel(`New row ${labels[i]} (${i===2?'Number':'Text'})`, {exact:true}), String(values[i]));
     if (values[0] === 'Train') await page.evaluate(() => { window.__names.loseAfterInsert = true; });
-    await page.locator('.ts-entry-row').getByRole('button', {name:'Add',exact:true}).click();
+    await draftActions(page).getByRole('button', {name:'Add row',exact:true}).click();
     if (values[0] === 'Train') {
       await page.getByRole('heading',{name:'Refresh required',exact:true}).waitFor();
       assert.equal(await page.getByRole('button',{name:'Save a copy',exact:true}).count(),0);
       await page.getByRole('button',{name:'Refresh',exact:true}).click(); await ready(page);
-      await page.locator('.ts-entry-row').getByRole('button',{name:'Clear',exact:true}).click();
+      await draftActions(page).getByRole('button',{name:'Discard',exact:true}).click();
       const inserts = await page.evaluate(()=>window.__names.requests.filter(r=>r.request?.type==='insert_row').length);
       assert.equal(inserts,2,'recovery observes the published row without replaying insertion');
     } else await ready(page);

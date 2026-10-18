@@ -398,6 +398,7 @@ const cases = [
       await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("grid-change");
       await page.keyboard.press("Enter");
       await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "grid-change", `[data-testid="cell:${expected.entity}:${expected.notes}"]`);
+      await notesCell.focus(); // Enter moved to the next row; inspect A's retained notes.
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "brief-draft");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
@@ -416,6 +417,7 @@ const cases = [
       await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("rebased-A-notes");
       await page.keyboard.press("Enter");
       await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "rebased-A-notes", `[data-testid="cell:${expected.entity}:${expected.notes}"]`);
+      await notesCell.focus();
       await page.getByRole("tab", { name: "Brief", exact: true }).click();
       assert.equal(await notes.inputValue(), "brief-draft more");
       assert.equal(await page.getByRole("button", { name: "Apply notes", exact: true }).isDisabled(), true);
