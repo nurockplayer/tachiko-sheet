@@ -117,7 +117,11 @@ async function unchangedPaste(text, message) {
   const before = await projection(), beforeRequests = (await commands()).length;
   const history = await page.getByRole("button", { name: "Undo", exact: true }).getAttribute("disabled");
   await cell(before, 0, 0).click(); await paste(cell(before, 0, 0), text);
-  await status().filter({ hasText: message }).waitFor();
+  const refusal = status().filter({ hasText: message });
+  await refusal.waitFor();
+  assert.equal(await refusal.getAttribute("role"), "alert", "paste refusal is announced assertively");
+  assert.equal(await refusal.getAttribute("aria-live"), "assertive");
+  assert.match(await refusal.getAttribute("class"), /ts-dialog-error/);
   assert.deepEqual(await projection(), before, "whole refusal leaves revision and every value unchanged");
   assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).getAttribute("disabled"), history);
   return (await commands()).length - beforeRequests;
@@ -150,6 +154,7 @@ try {
   assert.equal(await page.locator('.ts-cell--range-selected').count(), 6);
   const expectedCopy = '"Tea\tleaf\nfresh"\t4.5\ttrue\nTrain\t12\tfalse';
   assert.equal(await copy(cell(table, 1, 2)), expectedCopy);
+  assert.equal(await status().filter({ hasText: "Copied 2 rows." }).getAttribute("role"), "status", "copy remains polite");
   await capture("selection");
   await page.keyboard.press("Escape"); assert.equal(await page.locator('.ts-cell--range-selected').count(), 0);
   await cell(table, 0, 0).click(); await cell(table, 1, 2).click({ modifiers: ["Shift"] });
@@ -178,6 +183,7 @@ try {
   await page.evaluate(text => navigator.clipboard.writeText(text), external);
   await page.keyboard.press(`${commandKey}+v`); await ready();
   await status().filter({ hasText: "Updated 3 rows" }).waitFor();
+  assert.equal(await status().filter({ hasText: "Updated 3 rows" }).getAttribute("role"), "status", "success remains polite");
   table = await projection(); assert.deepEqual(values(table), pasted);
   assert.equal((await commands()).length, requestCount + 1, "one paste dispatch");
   assert.equal((await commands()).at(-1).start_entity, baseline.rows[0].fields[0].target.entity, "selection top-left, despite focus at bottom-right");
@@ -190,7 +196,27 @@ try {
   checks.push("2 native Cmd/Ctrl+V overwrites two rows and appends one in one command; exact one Undo/Redo");
 
   assert.equal(await unchangedPaste("bad\tabc\ttrue", /needs a number/), 1);
+  const numberRefusal = status().filter({ hasText: /needs a number/ });
+  await cell(table, 0, 1).click(); await page.keyboard.press("ArrowDown");
+  await numberRefusal.waitFor(); // focus-only navigation must not dismiss it
+  for (const colorScheme of ["light", "dark"]) {
+    await page.emulateMedia({ forcedColors: "active", colorScheme });
+    const paint = await numberRefusal.evaluate(node => {
+      const style = getComputedStyle(node), bounds = node.getBoundingClientRect();
+      return { color: style.color, background: style.backgroundColor, border: style.borderTopStyle, width: bounds.width, height: bounds.height };
+    });
+    assert.ok(paint.width > 0 && paint.height > 0, "refusal remains visible in forced colors");
+    assert.notEqual(paint.color, paint.background, "forced colors keeps readable error text");
+    assert.equal(paint.border, "solid", "forced colors retains the notice border");
+  }
+  await page.emulateMedia({ forcedColors: "none", colorScheme: "light" });
   await capture("refusal");
+  await copy(cell(table, 1, 1));
+  assert.equal(await page.locator('.ts-clipboard-status[role="alert"]:visible').count(), 0, "next clipboard action clears refusal");
+  await unchangedPaste("bad\tabc\ttrue", /needs a number/);
+  await cell(table, 0, 0).press("F2");
+  assert.equal(await page.locator('.ts-clipboard-status[role="alert"]:visible').count(), 0, "starting an edit clears refusal");
+  await page.getByTestId("cell-editor").press("Escape");
   for (const text of ["bad\t1,300\ttrue", "bad\t$5\ttrue", "bad\t\ttrue"]) await unchangedPaste(text, /needs a number/);
   checks.push("3 invalid Number, locale, currency and blank Number refused by Work; no revision/history change");
   for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/], ['"unclosed', /unfinished quote/], ['"x"tail', /malformed quotes/], [Array(129).fill("a\t1\ttrue").join("\n"), /128-row/]]) {
@@ -199,6 +225,7 @@ try {
   // Refusals must not add even an invisible history entry.
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).rows, baseline.rows);
+  assert.equal(await page.locator('.ts-clipboard-status[role="alert"]:visible').count(), 0, "changed grid revision clears refusal");
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).rows, table.rows);
   assert.equal(await page.locator('table[aria-label="Table"] td[aria-invalid="true"]').count(), 0, "type-only refusal never invents a cell attribution");
