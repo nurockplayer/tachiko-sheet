@@ -2745,3 +2745,21 @@ body { margin: 0; }
 .ts-cell--range-selected { background: color-mix(in srgb, var(--ts-accent, #2563eb) 14%, var(--ts-surface, white)); box-shadow: inset 0 0 0 1px var(--ts-accent, #2563eb); }
 .ts-clipboard-status:empty { display: none; }
 @media (forced-colors: active) { .ts-cell--range-selected { outline: 1px solid Highlight; background: Highlight; color: HighlightText; } }
+
+/* Keep label text separate from header actions for export/readback consumers. */
+.ts-column-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ts-grid-head);
+  color: var(--ts-grid-header-foreground);
+}
+.ts-column-heading { display: flex; align-items: center; gap: 8px; }
+.ts-column-header .ts-col-head { position: static; display: block; min-width: 48px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.ts-column-actions { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.ts-column-actions .ts-button { min-height: 24px; padding: 1px 5px; font-size: 11px; }
+.ts-column-header .ts-col-head:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.ts-column-status:empty { display: none; }
+.ts-column-actions [data-column-action]::before { content: attr(data-column-action); }
+
+@media (max-width: 700px) { .ts-column-actions .ts-button { min-height: 44px; } }

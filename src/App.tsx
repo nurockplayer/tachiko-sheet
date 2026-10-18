@@ -33,6 +33,7 @@ import {
   type ScalarEdit,
   type NewTableColumn,
   type RowInitializer,
+  type ColumnInitializer,
   type RowCommandOutcome,
   type SheetRuntime,
   type ViewWitness,
@@ -1546,12 +1547,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     witness: ViewWitness,
     command: () => ReturnType<SheetRuntime["insertRow"]>,
   ): Promise<RowCommandOutcome> {
-    if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before changing rows." });
+    if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before making this change." });
     const live = viewRef.current;
     if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
       setOutcome("idle");
       end();
-      return Promise.resolve({ kind: "refused", message: "This row draft belongs to an older view. Refresh before adding it." });
+      return Promise.resolve({ kind: "refused", message: "This change belongs to an older view. Refresh before trying again." });
     }
     return mutationCompletion.run<RowCommandOutcome>({ kind: "rows", witness, dispatch: command }, result => {
       if (result.kind === "published") return { kind: "confirmed" };
@@ -1566,6 +1567,18 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
+  }
+
+  function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]) {
+    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers));
+  }
+
+  function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
+    return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name));
+  }
+
+  function removeColumn(witness: ViewWitness, collection: string, field: string) {
+    return changeRows(witness, () => runtime.removeColumn(witness, collection, field));
   }
 
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
@@ -2074,6 +2087,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onNewTable={newTable}
           onPasteCells={pasteCells}
           onInsertRow={insertRow}
+          onAddColumn={addColumn}
+          onRenameColumn={renameColumn}
+          onRemoveColumn={removeColumn}
           onRemoveRows={removeRows}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
