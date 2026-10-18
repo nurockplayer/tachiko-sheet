@@ -157,6 +157,31 @@ const cases = [
     await published(page, input, "friction", "12", "Shift+Tab");
     assert.equal(await focused(cell(page, "impact")), true);
   }],
+  ["accepted and unchanged boundary edits keep the originating cell when no move exists", async (page) => {
+    const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
+    assert.equal(await page.locator(".ts-entry-row").count(), 0, "non-native fixture has no draft destination");
+    const edges = [
+      ["Shift+Enter", rows.first().locator("td").first()],
+      ["Shift+Tab", rows.first().locator("td").first()],
+      ["Enter", rows.last().locator("td").last()],
+      ["Tab", rows.last().locator("td").last()],
+    ];
+    for (const [index, [key, target]] of edges.entries()) {
+      const before = await state(page), count = await dispatches(page);
+      const value = `Boundary ${index}`;
+      await target.dblclick(); await editor(page).fill(value); await editor(page).press(key);
+      await editor(page).waitFor({ state: "hidden" });
+      await page.waitForFunction(id => document.activeElement?.dataset.testid === id, await target.getAttribute("data-testid"));
+      assert.equal(await focused(target), true, `${key} at the boundary keeps origin focus`);
+      assert.equal((await target.textContent()).trim(), value);
+      assert.equal(await dispatches(page), count + 1, "boundary edit publishes exactly once");
+      assert.notEqual((await state(page)).revision, before.revision);
+      await target.press("F2"); await editor(page).press(key);
+      await editor(page).waitFor({ state: "hidden" });
+      assert.equal(await focused(target), true, "unchanged boundary edit also keeps origin focus");
+      assert.equal(await dispatches(page), count + 1, "unchanged edit dispatches nothing");
+    }
+  }],
   ["invalid numeric/boolean retain full drafts and never move focus or publish", async (page) => {
     for (const [key, value] of [["impact", "not a number"], ["confirmed", "maybe"]]) {
       const before = await state(page); const count = await dispatches(page);

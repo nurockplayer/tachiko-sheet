@@ -64,7 +64,7 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   await capture("empty-draft");
   const empty = await projection(page), noInserts = await requests();
   await fillDraftCell(page, entry().nth(0), "Retained");
-  await fillDraftCell(page, entry().nth(2), "false");
+  await fillDraftCell(page, entry().nth(2), " FaLsE ");
   await entry().first().press("F2");
   await page.getByText("Press Enter to add this row.", { exact: true }).waitFor();
   assert.equal(await page.getByText("Add or discard the new row first.", { exact: true }).count(), 0, "ordinary entry uses positive hint copy");
@@ -103,6 +103,22 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
   assert.deepEqual((await projection(page)).rows, empty.rows);
   checks.push("amendment-refusal-correction-preserves-other-values-add-undo-and-eight-review-screens");
+  await close();
+
+  await create("Boolean normalization", [["Paid", "boolean"]]);
+  const beforeBoolean = await requests();
+  await fillDraftCell(page, entry().first(), "maybe");
+  await entry().first().press("Enter");
+  await draftActions(page).getByRole("alert").filter({ hasText: "Add Paid to add this row." }).waitFor();
+  assert.equal(await requests(), beforeBoolean, "non-boolean text stays incomplete without dispatch");
+  assert.equal((await projection(page)).rows.length, 0);
+  await fillDraftCell(page, entry().first(), " TRUE ");
+  assert.equal(await entry().first().locator(".ts-cell-value").textContent(), "true");
+  await entry().first().press("Tab"); await ready(page);
+  await page.waitForFunction(() => document.activeElement?.matches('.ts-entry-row [data-entry-field]'));
+  assert.equal(await requests(), beforeBoolean + 1, "normalized boolean last-cell Tab publishes exactly once");
+  assert.deepEqual((await projection(page)).rows.map(row => row.fields[0].stored), [{ kind: "boolean", value: true }]);
+  checks.push("review-p2-normalized-boolean-preview-readiness-typed-publication-invalid-kept");
   await close();
 
 }

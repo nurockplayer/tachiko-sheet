@@ -488,7 +488,13 @@ try {
   await fillDraftCell(page, retained, "2026-10-16"); await retained.press("Enter");
   assert.equal(await draftActions(page).getByRole("button", { name: "Add row", exact: true }).isDisabled(), true, "editing a retained uncertain draft cannot unlock replay");
   assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), count);
-  await draftActions(page).getByRole("button", { name: "Discard", exact: true }).click();
+  await retained.press("Tab");
+  const discardReview = draftActions(page).getByRole("button", { name: "Discard", exact: true });
+  assert.equal(await discardReview.evaluate(node => node === document.activeElement), true, "needs-review cell Tab skips disabled Add row and reaches Discard");
+  await retained.press("F2"); await page.getByTestId("cell-editor").press("Tab");
+  assert.equal(await discardReview.evaluate(node => node === document.activeElement), true, "needs-review editor Tab accepts locally and reaches Discard");
+  assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), count, "neither needs-review Tab path replays insert_row");
+  await discardReview.click();
   assert.equal(await draftActions(page).getByRole("button", { name: "Add row", exact: true }).isEnabled(), true);
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
   await closeWithoutSave(page);

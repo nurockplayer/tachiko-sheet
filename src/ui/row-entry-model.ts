@@ -1,4 +1,5 @@
 import type { WorkbookView } from "../contracts.js";
+import { parseBooleanDraft } from "./field-display.js";
 
 type Column = WorkbookView["table"]["columns"][number];
 export interface RowDraft { occurrence: string; collection: string; values: Record<string, string>; needsReview?: boolean }
@@ -19,13 +20,13 @@ export function draftReadiness(columns: Column[], values: Record<string, string>
 /** Presence only: Work remains the authority for scalar validity. */
 export function firstMissingDraftColumn(columns: Column[], values: Record<string, string>): Column | undefined {
   return columns.find(column => column.field_type === "boolean"
-    ? values[column.id] !== "true" && values[column.id] !== "false"
+    ? parseBooleanDraft(values[column.id] ?? "") === null
     : column.field_type !== "text" && (values[column.id] ?? "").trim() === "");
 }
 
-export function draftKeyAction(key: string, shift: boolean, last: boolean, readiness: DraftReadiness): "publish" | "edit" | "leave" | "next" | "previous" | null {
+export function draftKeyAction(key: string, shift: boolean, last: boolean, readiness: DraftReadiness, mayPublish = true): "publish" | "edit" | "leave" | "next" | "previous" | null {
   if (key === "Enter") return shift ? "previous" : readiness === "untouched" ? "edit" : "publish";
-  if (key === "Tab") return shift ? "previous" : !last ? "next" : readiness === "complete" ? "publish" : "leave";
+  if (key === "Tab") return shift ? "previous" : !last ? "next" : readiness === "complete" && mayPublish ? "publish" : "leave";
   return null;
 }
 

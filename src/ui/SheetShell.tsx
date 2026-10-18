@@ -1342,16 +1342,17 @@ export function SheetShell(props: SheetShellProps) {
     setHistoryFocusRequest(settledRequest);
   }
 
-  function moveFocus(event: ReactKeyboardEvent<HTMLElement>, position: GridPosition, step: number): void {
+  function moveFocus(event: ReactKeyboardEvent<HTMLElement>, position: GridPosition, step: number): boolean {
     const index = gridOrder.findIndex((item) => item.entity === position.entity && item.field === position.field);
-    if (index < 0) return;
+    if (index < 0) return false;
     const next = index + step;
-    if (next < 0 || next >= gridOrder.length) return;
+    if (next < 0 || next >= gridOrder.length) return false;
     const target = gridOrder[next];
-    if (!target) return;
+    if (!target) return false;
     event.preventDefault();
     setSelectedEntity(target.entity);
     focusCell(target.entity, target.field);
+    return true;
   }
 
   async function commitEditor(): Promise<boolean> {
@@ -1442,13 +1443,14 @@ export function SheetShell(props: SheetShellProps) {
     const draft = entity === DRAFT_ROW;
     const editable = (draft || Boolean(field?.editable_scalar)) && !controlsLocked;
     if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
-      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) { event.preventDefault(); return; }
-      const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}));
+      const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
+      const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}), mayPublish);
       if (action === "leave") {
-        showMissingRowHint();
-        // Keep the native Tab destination. Only Enter redirects missing input.
+        if (mayPublish) showMissingRowHint();
+        // Keep the native Tab destination even when publication is blocked.
         return;
       }
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) { event.preventDefault(); return; }
       event.preventDefault();
       if (action === "previous") moveFocus(event, position, -columns.length);
       else if (action === "edit") beginDraftEdit(columns.find(column => column.id === position.field)!);
@@ -1499,17 +1501,18 @@ export function SheetShell(props: SheetShellProps) {
     }
     if ((event.key === "Enter" || event.key === "Tab") && editor) {
       event.preventDefault();
-      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const position = { entity: editor.entity, field: editor.field };
-      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}));
+      const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
+      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}), mayPublish);
       if (editor.entity === DRAFT_ROW) {
         if (action === "leave") {
-          showMissingRowHint();
+          if (mayPublish) showMissingRowHint();
           const body = event.currentTarget.closest("tbody");
           setEditor(null);
           if (body) focusAfterGridCells(body);
           return;
         }
+        if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
         if (action === "edit") {
           // Empty Enter accepts this editor but cannot author an empty row.
           setEditor(null);
@@ -1522,10 +1525,13 @@ export function SheetShell(props: SheetShellProps) {
           return;
         }
       }
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const step = (event.shiftKey ? -1 : 1) * (event.key === "Enter" ? columns.length : 1);
       const intent = completionIntent();
       void commitEditor().then((accepted) => {
-        if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => moveFocus(event, position, step));
+        if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => {
+          if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
+        });
       });
     }
   }
@@ -1955,8 +1961,13 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
+  // Tab and publication must agree about whether a request can be dispatched.
+  function rowInsertBlocked(): boolean {
+    return controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || rowDraft?.needsReview === true || props.appearancePreference.getSnapshot().composing;
+  }
+
   async function addRow(redirectMissing = false): Promise<void> {
-    if (!view || !witness || !onInsertRow || controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || rowDraft?.needsReview || props.appearancePreference.getSnapshot().composing) return;
+    if (!view || !witness || !onInsertRow || rowInsertBlocked()) return;
     const draft = rowDraft?.occurrence === view.occurrence && rowDraft.collection === table?.collection.id
       ? rowDraft : { occurrence: view.occurrence, collection: view.table.collection.id, values: {} };
     if (!hasDraftInput(draft.values)) return;
@@ -1970,11 +1981,12 @@ export function SheetShell(props: SheetShellProps) {
     for (const column of columns) {
       const raw = Object.hasOwn(draft.values, column.id) ? draft.values[column.id] ?? "" : "";
       if (column.field_type === "boolean") {
-        if (raw !== "true" && raw !== "false") {
+        const parsed = parseBooleanDraft(raw);
+        if (parsed === null) {
           setRowError({ message: "Choose Yes or No before adding this row.", fields: [column.id] });
           return;
         }
-        initializers.push({ field: column.id, input: { kind: "boolean" as const, value: raw === "true" } });
+        initializers.push({ field: column.id, input: { kind: "boolean" as const, value: parsed } });
       } else if (column.field_type === "text" || column.field_type === "number" || column.field_type === "date") {
         initializers.push({ field: column.id, input: scalarEditOf(column.field_type, raw) });
       } else return;

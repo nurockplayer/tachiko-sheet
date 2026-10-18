@@ -41,6 +41,25 @@ describe("in-grid draft row intent", () => {
     expect(draftKeyAction("Tab", true, true, readiness)).toBe("previous");
     expect(draftReadiness(columns, { number: "0", date: "2026-10-19", boolean: "false" })).toBe("complete");
   });
+  it("leaves complete drafts when publication is blocked, including needs-review or pending states", () => {
+    const readiness = draftReadiness(columns, { number: "0", date: "2026-10-19", boolean: "false" });
+    expect(readiness).toBe("complete");
+    expect(draftKeyAction("Tab", false, true, readiness, false)).toBe("leave");
+    expect(draftKeyAction("Tab", false, true, readiness, true)).toBe("publish");
+    expect(draftKeyAction("Tab", true, true, readiness, false)).toBe("previous");
+  });
+  it("uses the shared boolean parser for readiness, including case and surrounding whitespace", () => {
+    const booleanColumns = [columns[3]!];
+    for (const boolean of [" TRUE ", " FaLsE ", "true", "false"]) {
+      expect(firstMissingDraftColumn(booleanColumns, { boolean })).toBeUndefined();
+      expect(draftReadiness(booleanColumns, { boolean })).toBe("complete");
+    }
+    for (const boolean of ["yes", "0", "maybe", "  "]) {
+      expect(firstMissingDraftColumn(booleanColumns, { boolean })?.id).toBe("boolean");
+      expect(draftReadiness(booleanColumns, { boolean })).toBe("incomplete");
+    }
+    expect(draftReadiness(booleanColumns, { boolean: "" })).toBe("untouched");
+  });
   it("maps only an unambiguous refusal and never displays raw engine details", () => {
     const name = (column: typeof columns[number]) => column.display_name;
     expect(draftRefusal(columns, {}, "number", "Details: invalid_number", name)).toEqual({ message: "Price needs a number.", fields: ["number"] });
