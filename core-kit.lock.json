@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "abc2be6c5813771ea7b6c5b4a3292e9c72396b33",
+  "sourceCommit": "3d071dafc3166cd490b9ac03a67a7f4ec5dbafcf",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "a98552ac69c9a33005f89d72b997a9b3afc0409937b217947e23e93e95ebe38f",
+  "artifactManifestSha256": "a1c0a40798d541b620d6afe1a6bfd6671622ab39026d87ab00e2eb1596a721d7",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/199#issuecomment-6200958431",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/215#issuecomment-6256396104",
   "qualificationArtifactReview": {
-    "sourceCommit": "abc2be6c5813771ea7b6c5b4a3292e9c72396b33",
-    "artifactManifestSha256": "a98552ac69c9a33005f89d72b997a9b3afc0409937b217947e23e93e95ebe38f",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/199#issuecomment-6201033802"
+    "sourceCommit": "3d071dafc3166cd490b9ac03a67a7f4ec5dbafcf",
+    "artifactManifestSha256": "a1c0a40798d541b620d6afe1a6bfd6671622ab39026d87ab00e2eb1596a721d7",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/215#issuecomment-6256396104"
   },
-  "notes": "Exact producer authorized by #199; two unchanged-exporter builds by the writer and an independent lead reproduction from a clean Work checkout all match in all 25 files (manifest a98552ac). Product acceptance and the candidate review are separate."
+  "notes": "Exact producer authorized by #215; the unchanged-exporter writer build and the prior independent lead build from clean detached Work checkouts match in all 25 files (manifest a1c0a407). The existing lead build receipt supplies acquisition and independent reproduction provenance; writer proof is in docs/215-kit-handback.md. Product acceptance and the candidate review are separate."
 }

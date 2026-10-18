@@ -196,6 +196,13 @@ export type FailureProjection = {
     name_failures?: NameFailure[];
 };
 export type TrackerCommand = {
+    type: "edit_cells";
+    expected_revision: string;
+    edits: Array<{
+        target: FieldTarget;
+        input: ScalarEditInput;
+    }>;
+} | {
     type: "paste_cells";
     expected_revision: string;
     collection: string;
