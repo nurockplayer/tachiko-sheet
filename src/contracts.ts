@@ -69,11 +69,12 @@ export type ScalarEdit =
 
 export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean" };
 export type ColumnInitializer = { entity: string; input: ScalarEdit };
+export type CellEdit = { target: FieldTarget; input: ScalarEdit };
 export type RowInitializer = { field: string; input: ScalarEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
   | { kind: "confirmed" }
-  | { kind: "refused"; message: string; fieldType?: string }
+  | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string }
   | { kind: "recovery" };
 
 export interface SheetRuntime {
@@ -81,6 +82,7 @@ export interface SheetRuntime {
   prepare(): Promise<void>;
   newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
+  editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
   pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<ConfirmedPublication>;
   addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
@@ -320,6 +322,7 @@ export interface SheetShellProps {
   workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;
+  onEditCells?(witness: ViewWitness, edits: CellEdit[]): Promise<RowCommandOutcome>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<RowCommandOutcome>;
   onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<RowCommandOutcome>;
   onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<RowCommandOutcome>;

@@ -22,6 +22,7 @@ import type {
 } from "../application/appearance-preference.js";
 import type {
   Currentness,
+  CellEdit,
   FieldTarget,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
@@ -414,6 +415,7 @@ export function SheetShell(props: SheetShellProps) {
     onRenameColumn,
     onRemoveColumn,
     onPasteCells,
+    onEditCells,
     onRemoveRows,
     onOpenExample,
     onOpenSaved,
@@ -872,17 +874,33 @@ export function SheetShell(props: SheetShellProps) {
       announceClipboard("Pasted into the new row. Press Enter or choose Add row to add it.");
       return;
     }
-    if (!onPasteCells) { announceClipboard("Pasting is not available in this view.", true); return; }
+    if (route.kind === "edit" ? !onEditCells : !onPasteCells) { announceClipboard("Pasting is not available in this view.", true); return; }
     const anchor = table.rows[start.row];
     if (!anchor || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
+    const edits: CellEdit[] = [];
+    if (route.kind === "edit") {
+      for (const [r, values] of route.rows.entries()) {
+        for (const [c, raw] of values.entries()) {
+          const column = columns[start.column + c]!;
+          const field = fieldForColumn(table.rows[start.row + r]!, column.id)!;
+          const kind = column.field_type;
+          if (kind === "boolean") edits.push({ target: field.target, input: { kind, value: raw === "true" } });
+          else if (kind === "text" || kind === "number" || kind === "date") edits.push({ target: field.target, input: scalarEditOf(kind, raw) });
+          else { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
+        }
+      }
+    }
     const intent = completionIntent();
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
-    void onPasteCells(witness, table.collection.key, rowEntity(anchor), columns[start.column]!.id, route.rows).then(result => {
+    const publish = route.kind === "edit"
+      ? () => onEditCells!(witness, edits)
+      : () => onPasteCells!(witness, table.collection.key, rowEntity(anchor), columns[start.column]!.id, route.rows);
+    void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
       announceClipboard(result.kind === "confirmed" ? `Updated ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
-        : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType)
+        : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
         : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed");
     }, () => {
       if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) announceClipboard("The paste could not be confirmed. Refresh to check it before pasting again.", true);
