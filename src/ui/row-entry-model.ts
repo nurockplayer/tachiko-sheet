@@ -5,6 +5,17 @@ export interface RowDraft { occurrence: string; collection: string; values: Reco
 // UI-only identity; never sent as an entity to Work.
 export const DRAFT_ROW = "sheet:draft-row";
 
+export type DraftReadiness = "untouched" | "incomplete" | "complete";
+
+export function hasDraftInput(values: Record<string, string>): boolean {
+  return Object.values(values).some(value => value !== "");
+}
+
+export function draftReadiness(columns: Column[], values: Record<string, string>): DraftReadiness {
+  if (!hasDraftInput(values)) return "untouched";
+  return firstMissingDraftColumn(columns, values) ? "incomplete" : "complete";
+}
+
 /** Presence only: Work remains the authority for scalar validity. */
 export function firstMissingDraftColumn(columns: Column[], values: Record<string, string>): Column | undefined {
   return columns.find(column => column.field_type === "boolean"
@@ -12,9 +23,9 @@ export function firstMissingDraftColumn(columns: Column[], values: Record<string
     : column.field_type !== "text" && (values[column.id] ?? "").trim() === "");
 }
 
-export function draftKeyAction(key: string, shift: boolean, last: boolean): "publish" | "next" | "previous" | null {
-  if (key === "Enter") return shift ? "previous" : "publish";
-  if (key === "Tab") return shift ? "previous" : last ? "publish" : "next";
+export function draftKeyAction(key: string, shift: boolean, last: boolean, readiness: DraftReadiness): "publish" | "edit" | "leave" | "next" | "previous" | null {
+  if (key === "Enter") return shift ? "previous" : readiness === "untouched" ? "edit" : "publish";
+  if (key === "Tab") return shift ? "previous" : !last ? "next" : readiness === "complete" ? "publish" : "leave";
   return null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftKeyAction, draftRefusal, firstMissingDraftColumn } from "./row-entry-model.js";
+import { draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn } from "./row-entry-model.js";
 const columns = [
   { id: "text", key: "text", display_name: "Item", field_type: "text" },
   { id: "number", key: "number", display_name: "Price", field_type: "number" },
@@ -15,12 +15,31 @@ describe("in-grid draft row intent", () => {
     expect(firstMissingDraftColumn(columns, { number: "1", date: "2026-10-19" })?.id).toBe("boolean");
   });
   it("publishes only explicit forward Enter or last-cell Tab", () => {
-    expect(draftKeyAction("Enter", false, false)).toBe("publish");
-    expect(draftKeyAction("Tab", false, true)).toBe("publish");
-    expect(draftKeyAction("Tab", false, false)).toBe("next");
-    expect(draftKeyAction("Tab", true, true)).toBe("previous");
-    expect(draftKeyAction("Enter", true, true)).toBe("previous");
-    for (const key of ["Escape", "blur", "ArrowDown"]) expect(draftKeyAction(key, false, true)).toBeNull();
+    expect(draftKeyAction("Enter", false, false, "complete")).toBe("publish");
+    expect(draftKeyAction("Tab", false, true, "complete")).toBe("publish");
+    expect(draftKeyAction("Tab", false, false, "complete")).toBe("next");
+    expect(draftKeyAction("Tab", true, true, "complete")).toBe("previous");
+    expect(draftKeyAction("Enter", true, true, "complete")).toBe("previous");
+    for (const key of ["Escape", "blur", "ArrowDown"]) expect(draftKeyAction(key, false, true, "complete")).toBeNull();
+  });
+  it("never publishes an untouched all-Text row, including explicitly empty inputs", () => {
+    const textColumns = [columns[0]!];
+    const untouched: Record<string, string>[] = [{}, { text: "" }];
+    for (const values of untouched) {
+      const readiness = draftReadiness(textColumns, values);
+      expect(readiness).toBe("untouched");
+      expect(draftKeyAction("Enter", false, true, readiness)).toBe("edit");
+      expect(draftKeyAction("Tab", false, true, readiness)).toBe("leave");
+    }
+    expect(draftReadiness(textColumns, { text: "hello" })).toBe("complete");
+  });
+  it("lets incomplete Tab leave but keeps Enter as an explicit completion attempt", () => {
+    const readiness = draftReadiness(columns, { text: "Tea" });
+    expect(readiness).toBe("incomplete");
+    expect(draftKeyAction("Tab", false, true, readiness)).toBe("leave");
+    expect(draftKeyAction("Enter", false, true, readiness)).toBe("publish");
+    expect(draftKeyAction("Tab", true, true, readiness)).toBe("previous");
+    expect(draftReadiness(columns, { number: "0", date: "2026-10-19", boolean: "false" })).toBe("complete");
   });
   it("maps only an unambiguous refusal and never displays raw engine details", () => {
     const name = (column: typeof columns[number]) => column.display_name;

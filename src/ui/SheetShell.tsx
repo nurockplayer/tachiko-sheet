@@ -43,7 +43,7 @@ import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
 import { NewTableDialog } from "./NewTableDialog.js";
-import { DRAFT_ROW, draftKeyAction, draftRefusal, firstMissingDraftColumn, type RowDraft } from "./row-entry-model.js";
+import { DRAFT_ROW, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -544,7 +544,7 @@ export function SheetShell(props: SheetShellProps) {
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
-  const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || Object.values(rowDraft.values).some((value) => value !== ""));
+  const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
   const rowCommandPendingRef = useRef(false);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
   const [deleteSelection, setDeleteSelection] = useState<SavedCopySummary | null>(null);
@@ -1020,6 +1020,11 @@ export function SheetShell(props: SheetShellProps) {
       const focusInShell = focusedElement instanceof Node && shell.contains(focusedElement);
       if (!((targetInShell && (focusInShell || neutralFocus)) || (neutralTarget && neutralFocus))) return;
       if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
+      if (rowDraftActive && !modalInteractionOpen && historyCommandForKey(event, target, props.appearancePreference.getSnapshot().composing || controlsLocked, focusedElement)) {
+        event.preventDefault();
+        setLocalError("Add or discard the new row first.");
+        return;
+      }
       const direction = historyCommandForKey(
         event,
         target,
@@ -1032,7 +1037,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     window.addEventListener("keydown", onHistoryKeyDown);
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
-  }, [controlsLocked, currentness, historyInteractionLocked, localHistory, onHistory, props.appearancePreference, view]);
+  }, [controlsLocked, currentness, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view]);
   const cellDraftActive = editor !== null && editor.entity !== DRAFT_ROW && editor.value !== editor.original;
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   const draftActive =
@@ -1422,10 +1427,17 @@ export function SheetShell(props: SheetShellProps) {
     const draft = entity === DRAFT_ROW;
     const editable = (draft || Boolean(field?.editable_scalar)) && !controlsLocked;
     if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) { event.preventDefault(); return; }
+      const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}));
+      if (action === "leave") {
+        showMissingRowHint();
+        // Keep the native Tab destination. Only Enter redirects missing input.
+        return;
+      }
       event.preventDefault();
-      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.shiftKey) moveFocus(event, position, -columns.length);
-      else void addRow();
+      if (action === "previous") moveFocus(event, position, -columns.length);
+      else if (action === "edit") beginDraftEdit(columns.find(column => column.id === position.field)!);
+      else void addRow(event.key === "Enter");
       return;
     }
     if (event.key === "Enter" || event.key === "F2") {
@@ -1474,11 +1486,26 @@ export function SheetShell(props: SheetShellProps) {
       event.preventDefault();
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const position = { entity: editor.entity, field: editor.field };
-      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id);
-      if (editor.entity === DRAFT_ROW && action === "publish") {
-        setEditor(null);
-        void addRow();
-        return;
+      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}));
+      if (editor.entity === DRAFT_ROW) {
+        if (action === "leave") {
+          showMissingRowHint();
+          const grid = event.currentTarget.closest("table");
+          setEditor(null);
+          if (grid) focusAfterGrid(grid);
+          return;
+        }
+        if (action === "edit") {
+          // Empty Enter accepts this editor but cannot author an empty row.
+          setEditor(null);
+          withAppFocus(() => focusCell(DRAFT_ROW, editor.field));
+          return;
+        }
+        if (action === "publish") {
+          setEditor(null);
+          void addRow(event.key === "Enter");
+          return;
+        }
       }
       const step = (event.shiftKey ? -1 : 1) * (event.key === "Enter" ? columns.length : 1);
       const intent = completionIntent();
@@ -1486,6 +1513,23 @@ export function SheetShell(props: SheetShellProps) {
         if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => moveFocus(event, position, step));
       });
     }
+  }
+
+  function focusAfterGrid(grid: HTMLTableElement): void {
+    const candidates = shellRef.current?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? [];
+    const next = Array.from(candidates).find(node =>
+      !grid.contains(node) && (grid.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+      node.tabIndex >= 0 && !node.matches(":disabled") && !node.closest("[inert]") && node.getClientRects().length > 0,
+    );
+    if (next) withAppFocus(() => next.focus());
+  }
+
+  function showMissingRowHint(): TableColumn | undefined {
+    const values = boundRowDraft?.values ?? {};
+    if (!hasDraftInput(values) || !table) return undefined;
+    const missing = firstMissingDraftColumn(columns, values);
+    if (missing) setRowError({ message: `Add ${names.column(table.collection.id, missing.id) ?? missing.display_name} to add this row.`, fields: [missing.id], missing: true });
+    return missing;
   }
 
   // An unapplied cell value is never published implicitly. Anything else that
@@ -1532,7 +1576,7 @@ export function SheetShell(props: SheetShellProps) {
   async function selectCollection(next: string): Promise<void> {
     if (!witness || next === view?.table.collection.key) return;
     if (cellDraftActive || rowDraftActive) {
-      setLocalError("Apply or cancel the unfinished input before switching tables.");
+      setLocalError(rowDraftActive ? "Add or discard the new row first." : "Apply or cancel the unfinished input before switching tables.");
       if (editor) focusCell(editor.entity, editor.field);
       return;
     }
@@ -1886,6 +1930,7 @@ export function SheetShell(props: SheetShellProps) {
     if (editor?.entity === DRAFT_ROW) setEditor(null);
     setRowDraft(null);
     setRowError(null);
+    setLocalError(null);
     if (columns[0]) focusDraftAfterRender(columns[0].id, completionIntent());
   }
 
@@ -1895,15 +1940,15 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
-  async function addRow(): Promise<void> {
+  async function addRow(redirectMissing = false): Promise<void> {
     if (!view || !witness || !onInsertRow || controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || rowDraft?.needsReview || props.appearancePreference.getSnapshot().composing) return;
     const draft = rowDraft?.occurrence === view.occurrence && rowDraft.collection === table?.collection.id
       ? rowDraft : { occurrence: view.occurrence, collection: view.table.collection.id, values: {} };
-    const missing = firstMissingDraftColumn(columns, draft.values);
+    if (!hasDraftInput(draft.values)) return;
+    const missing = showMissingRowHint();
     if (missing) {
-      setRowError({ message: `Add ${names.column(view.table.collection.id, missing.id) ?? missing.display_name} to add this row.`, fields: [missing.id], missing: true });
       setEditor(null);
-      focusDraftAfterRender(missing.id, completionIntent());
+      if (redirectMissing) focusDraftAfterRender(missing.id, completionIntent());
       return;
     }
     const initializers = [];
@@ -1924,6 +1969,7 @@ export function SheetShell(props: SheetShellProps) {
     const intent = completionIntent();
     setCommitPending(true);
     setRowError(null);
+    setLocalError(null);
     try {
       const result = await onInsertRow(witness, view.table.collection.key, initializers);
       if (result.kind === "confirmed") {
@@ -2216,7 +2262,7 @@ export function SheetShell(props: SheetShellProps) {
           type="button"
           className="ts-button ts-history-command"
           onClick={(event) => void requestHistory("undo", event.currentTarget)}
-          disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
         >
           Undo
@@ -2225,7 +2271,7 @@ export function SheetShell(props: SheetShellProps) {
           type="button"
           className="ts-button ts-history-command"
           onClick={(event) => void requestHistory("redo", event.currentTarget)}
-          disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
         >
           Redo
@@ -2265,8 +2311,8 @@ export function SheetShell(props: SheetShellProps) {
         <details className="ts-command-overflow">
           <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
           <div className="ts-command-menu">
-            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
-            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
             {closeButton("ts-button ts-button--ghost")}
           </div>
         </details>
@@ -2361,12 +2407,12 @@ export function SheetShell(props: SheetShellProps) {
         {hasDraftRow ? <div className="ts-entry-actions">
           <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
           <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive} onClick={discardRowDraft}>Discard</button>
-          {rowDraftActive ? <span className="ts-hint">{rowDraft?.needsReview ? "Review the row, then discard this draft before adding another." : "Add or discard the new row first."}</span> : null}
+          {rowDraftActive ? <span className="ts-hint">{rowDraft?.needsReview ? "Review the row, then discard this draft before adding another." : "Press Enter to add this row."}</span> : null}
           {rowError ? <span className="ts-row-error" id="ts-row-error" role="alert">{rowError.message}</span> : null}
         </div> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {onInsertRow && onRemoveRows ? table.native_table_profile ? <div className="ts-actions ts-row-actions ts-table-row-actions">
-          <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} onClick={() => void deleteRow()}>Delete row</button>
+          <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button>
           <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
         </div> : <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
@@ -2906,7 +2952,7 @@ export function SheetShell(props: SheetShellProps) {
         <nav className="ts-work-context" aria-label="Workbook actions">
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
-            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} disabled={controlsLocked || cellDraftActive || rowDraftActive}>
+            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || cellDraftActive || rowDraftActive}>
               {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.display_name}</option>)}
             </select>
           </div>

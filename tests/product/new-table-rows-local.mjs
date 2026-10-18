@@ -9,6 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
+import { runDraftTabAmendmentCases } from "./grid-row-entry-amendment-cases.mjs";
 import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
 import { runNewTableRound6Cases } from "./new-table-round6-cases.mjs";
 import { runNewTableRound4Cases } from "./new-table-round4-cases.mjs";
@@ -368,7 +369,10 @@ try {
       assert.equal(await entry(page).getByLabel('New row Item (Text)', { exact: true }).locator(".ts-cell-value").textContent(), "Refused draft");
       assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true);
       assert.equal(await page.getByRole("button", { name: "Delete row", exact: true }).isDisabled(), true);
-      await page.getByText("Add or discard the new row first.", { exact: true }).waitFor();
+      await page.getByText("Press Enter to add this row.", { exact: true }).waitFor();
+      await page.keyboard.press("Control+Z");
+      await page.getByRole("alert").filter({ hasText: "Add or discard the new row first." }).waitFor();
+      assert.deepEqual(await projection(page), before, "blocked Undo announces its reason without publishing");
       // Escape restores only the active value, retaining the other draft cells.
       const itemDraft = entry(page).getByLabel('New row Item (Text)', { exact: true });
       await itemDraft.press("F2"); await page.getByTestId("cell-editor").fill("cancel me"); await page.getByTestId("cell-editor").press("Escape");
@@ -456,7 +460,9 @@ try {
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await ready(page);
   const dateInput = entry(page).getByLabel("New row When (Date)", { exact: true }); assert.equal(await dateInput.locator(".ts-cell-value").textContent(), "");
   const blankDateView = await projection(page);
-  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await page.getByRole("alert").waitFor(); await ready(page);
+  const blankDateRequests = await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length);
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready(page);
+  assert.equal(await page.evaluate(() => window.__rowEvidence.workers[0].requests.filter(message => message.request?.type === "insert_row").length), blankDateRequests, "untouched Date cannot dispatch");
   assert.deepEqual(await projection(page), blankDateView); assert.equal(await dateInput.getAttribute("aria-invalid"), null);
   await fillDraftCell(page, dateInput, "2026-10-14"); await dateInput.press("Enter"); await ready(page);
   assert.deepEqual(values(await projection(page)), [{ when: "2026-10-14" }]);
@@ -491,6 +497,7 @@ try {
     await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
     await runNewTableRepairCases({ page, ready, projection, checks });
     await runNewTableRootCauseCases({ page, ready, projection, checks });
+    await runDraftTabAmendmentCases({ page, ready, projection, checks });
   }
   await terminate();
   const result = { status: "PASS", dist: path.resolve(dist), checks, processes, screenshots, oracle };
