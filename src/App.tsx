@@ -1564,6 +1564,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.insertRow(witness, collection, initializers));
   }
 
+  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
+    return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
+  }
+
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
     return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
   }
@@ -2068,6 +2072,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onNewTable={newTable}
+          onPasteCells={pasteCells}
           onInsertRow={insertRow}
           onRemoveRows={removeRows}
           onOpenExample={openExample}

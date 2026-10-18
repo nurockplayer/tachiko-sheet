@@ -640,6 +640,14 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
+    const inputs = rows.map(row => [...row]);
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "cell paste");
+      return command.call(client, { type: "paste_cells", expected_revision: revision, collection, start_entity: startEntity, start_field: startField, rows: inputs });
+    });
+  }
+
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
     const targets = [...entities];
     return confirmedMutation(witness, (client, revision) => {
@@ -1029,7 +1037,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, pasteCells, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };
