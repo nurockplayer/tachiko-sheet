@@ -80,6 +80,7 @@ export interface SheetRuntime {
   prepare(): Promise<void>;
   newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
+  pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
@@ -315,6 +316,7 @@ export interface SheetShellProps {
   workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;
+  onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<RowCommandOutcome>;
   onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
   onOpenExample(): Promise<void>;

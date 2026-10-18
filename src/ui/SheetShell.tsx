@@ -39,6 +39,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
+import { ClipboardRefusal, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
 import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
@@ -407,6 +408,7 @@ export function SheetShell(props: SheetShellProps) {
     workFileOmissions = [],
     onNewTable,
     onInsertRow,
+    onPasteCells,
     onRemoveRows,
     onOpenExample,
     onOpenSaved,
@@ -565,6 +567,8 @@ export function SheetShell(props: SheetShellProps) {
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean } | null>(null);
+  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
   const gridRowHeightRef = useRef(32);
@@ -776,6 +780,105 @@ export function SheetShell(props: SheetShellProps) {
     table?.rows.forEach((row, index) => indices.set(rowEntity(row), index));
     return indices;
   }, [table]);
+
+  function address(position: GridPosition): CellAddress {
+    return { row: rowIndexByEntity.get(position.entity) ?? -1, column: columns.findIndex(column => column.id === position.field) };
+  }
+  const clipboardIdentityRef = useRef(collectionIdentity);
+  clipboardIdentityRef.current = collectionIdentity;
+  const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
+  const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
+  useEffect(() => { setCellSelection(null); setClipboardMessage(null); }, [collectionIdentity]);
+
+  // Focus/selection alone does not dismiss a refusal. A different projection or
+  // an explicit edit does; ordinary copy/paste actions replace the announcement.
+  useEffect(() => {
+    setClipboardMessage(current => current?.refused ? null : current);
+  }, [view?.revision]);
+
+  function announceClipboard(text: string, refused = false): void {
+    setClipboardMessage({ text, refused });
+  }
+
+  function extendSelection(anchor: GridPosition, end: GridPosition): void {
+    if (!view || !collectionIdentity || anchor.entity === DRAFT_ROW || end.entity === DRAFT_ROW) return;
+    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
+    focusCell(end.entity, end.field);
+  }
+
+  function clipboardPosition(target: EventTarget | null): GridPosition | null {
+    if (!(target instanceof Element) || target.closest('input, textarea, [contenteditable="true"]')) return null;
+    const cell = target.closest<HTMLElement>('td[data-work-field]');
+    return cell?.dataset.workEntity && cell.dataset.workField ? { entity: cell.dataset.workEntity, field: cell.dataset.workField } : null;
+  }
+
+  function copyGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+    setClipboardMessage(null);
+    const position = clipboardPosition(event.target);
+    if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
+    event.preventDefault();
+    const point = address(position);
+    const area = position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point);
+    const rows = area ? table.rows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldDisplay(fieldForColumn(row, column.id)).text))
+      : [[boundRowDraft?.values[position.field] ?? ""]];
+    try {
+      if (!event.clipboardData) throw new Error("No clipboard data");
+      event.clipboardData.setData("text/plain", encodeTsv(rows));
+      announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`);
+    } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
+  }
+
+  function pasteGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+    setClipboardMessage(null);
+    const position = clipboardPosition(event.target);
+    // Input/textarea paste stays with the native text editor and caret.
+    if (!position || !view || !witness || !table) return;
+    event.preventDefault();
+    if (props.appearancePreference.getSnapshot().composing) return;
+    let decoded: string[][];
+    try {
+      if (!event.clipboardData || !Array.from(event.clipboardData.types).includes("text/plain")) {
+        announceClipboard("The clipboard has no plain text to paste. Copy cells or text and try again.", true); return;
+      }
+      decoded = decodeTsv(event.clipboardData.getData("text/plain"));
+    } catch (error) { announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
+    const draft = position.entity === DRAFT_ROW;
+    const at = address(position);
+    const start = draft ? { row: table.rows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
+    const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
+      blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
+      pendingDraft: rowDraftActive, start, rowCount: table.rows.length, columnTypes: columns.map(column => column.field_type),
+      editable: (r, c) => {
+        const row = table.rows[r], column = columns[c];
+        const field = row && column ? fieldForColumn(row, column.id) : null;
+        return Boolean(field?.editable_scalar && !field.formula);
+      },
+    });
+    if (route.kind === "refused") { announceClipboard(route.message, true); return; }
+    if (route.kind === "draft") {
+      const values = { ...boundRowDraft?.values };
+      route.rows[0]!.forEach((value, index) => { values[columns[start.column + index]!.id] = value; });
+      setRowDraft({ occurrence: view.occurrence, collection: table.collection.id, values });
+      setRowError(null); setLocalError(null);
+      announceClipboard("Pasted into the new row. Press Enter or choose Add row to add it.");
+      return;
+    }
+    if (!onPasteCells) { announceClipboard("Pasting is not available in this view.", true); return; }
+    const anchor = table.rows[start.row];
+    if (!anchor || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
+    const intent = completionIntent();
+    if (editor && editor.value === editor.original) setEditor(null);
+    rowCommandPendingRef.current = true;
+    setCommitPending(true); setLocalError(null); setClipboardMessage(null);
+    void onPasteCells(witness, table.collection.key, rowEntity(anchor), columns[start.column]!.id, route.rows).then(result => {
+      if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
+      announceClipboard(result.kind === "confirmed" ? `Updated ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
+        : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType)
+        : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed");
+    }, () => {
+      if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) announceClipboard("The paste could not be confirmed. Refresh to check it before pasting again.", true);
+    }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
+  }
 
   // Reconcile roving state from every installed projection, independently of
   // mutation completion or DOM focus intent. Retain the prior order through a
@@ -1234,6 +1337,7 @@ export function SheetShell(props: SheetShellProps) {
       focusCell(editor.entity, editor.field);
       return;
     }
+    setClipboardMessage(null);
     const original = seedTextOf(field);
     selectEditorValueOnFocusRef.current = seed === undefined;
     focusRejectedEditorRef.current = null;
@@ -1250,6 +1354,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function changeRowDraft(field: string, value: string): void {
     if (!view || !table || controlsLocked || rowCommandPendingRef.current) return;
+    setClipboardMessage(null);
     setRowError(null);
     setRowDraft(current => ({
       occurrence: view.occurrence, collection: table.collection.id,
@@ -1262,6 +1367,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!hasDraftRow || controlsLocked || currentness !== "current" || rowCommandPendingRef.current || refuseWhileCellDraft("editing the new row")) return;
     const kind = column.field_type;
     if (kind !== "text" && kind !== "number" && kind !== "date" && kind !== "boolean") return;
+    setClipboardMessage(null);
     const original = boundRowDraft?.values[column.id] ?? "";
     selectEditorValueOnFocusRef.current = seed === undefined;
     focusRejectedEditorRef.current = null;
@@ -1441,6 +1547,14 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
+    if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      const next = stepAddress(address(position), event.key, table?.rows.length ?? 0, columns.length);
+      const row = table?.rows[next.row], column = columns[next.column];
+      if (row && column) { event.preventDefault(); extendSelection(boundSelection?.anchor ?? position, { entity: rowEntity(row), field: column.id }); }
+      return;
+    }
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "F2"].includes(event.key)) setCellSelection(null);
     const editable = (draft || Boolean(field?.editable_scalar)) && !controlsLocked;
     if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
       const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
@@ -1948,6 +2062,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function discardRowDraft(): void {
     if (controlsLocked || cellDraftActive || rowCommandPendingRef.current) return;
+    setClipboardMessage(null);
     if (editor?.entity === DRAFT_ROW) setEditor(null);
     setRowDraft(null);
     setRowError(null);
@@ -2390,7 +2505,7 @@ export function SheetShell(props: SheetShellProps) {
       return !result || result.diagnostics.length > 0;
     });
     const gridTable = (
-      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 + Number(hasDraftRow) : undefined}>
+      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 + Number(hasDraftRow) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
@@ -2441,6 +2556,8 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
+        <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && !clipboardMessage.refused ? clipboardMessage.text : null}</p>
+        {clipboardMessage?.refused ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {onInsertRow && onRemoveRows ? table.native_table_profile ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button>
@@ -2511,6 +2628,9 @@ export function SheetShell(props: SheetShellProps) {
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(field?.editable_scalar)) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
+    const coordinate = address({ entity, field: column.id });
+    const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
+    if (rangeSelected) classes.push("ts-cell--range-selected");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
     return (
@@ -2529,12 +2649,21 @@ export function SheetShell(props: SheetShellProps) {
         data-work-occurrence={view.occurrence}
         data-work-revision={view.revision}
         data-work-entity={entity}
+        data-work-field={column.id}
         data-work-currentness={currentness}
         tabIndex={focusedKey === key || (!focusedKey && isFirstCell(entity, column)) ? 0 : -1}
-        aria-selected={entity === selectedEntity}
+        aria-selected={Boolean(rangeSelected) || (!selectionRectangle && focusedKey === key)}
         aria-readonly={!editable}
         title={display.title ?? undefined}
-        onClick={() => setSelectedEntity(entity)}
+        onMouseDown={(event) => { if (event.shiftKey && !draft && !editor) event.preventDefault(); }}
+        onClick={(event) => {
+          if ((event.target as Element).closest("input")) return;
+          setSelectedEntity(entity);
+          if (event.shiftKey && !draft && focusedKey) {
+            const [priorEntity, priorField] = focusedKey.split("\u0000");
+            if (priorEntity && priorField && priorEntity !== DRAFT_ROW) extendSelection(boundSelection?.anchor ?? { entity: priorEntity, field: priorField }, { entity, field: column.id });
+          } else { setCellSelection(null); focusCell(entity, column.id); }
+        }}
         onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, field)}
         onFocus={() => {
           setSelectedEntity(entity);
@@ -2558,6 +2687,7 @@ export function SheetShell(props: SheetShellProps) {
             onBlur={() => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); }}
             onChange={(event) => {
               const value = event.currentTarget.value;
+              setClipboardMessage(null);
               if (draft) changeRowDraft(column.id, value);
               setLocalError(null);
               setEditor((previous) => (previous ? { ...previous, value } : previous));

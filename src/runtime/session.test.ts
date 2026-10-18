@@ -193,7 +193,7 @@ class FakeClient {
       return hook();
     }
     this.#requireRevision(request.expected_revision);
-    if (request.type === "insert_row" || request.type === "remove_table_rows") return this.#publish(IMPACT);
+    if (request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows") return this.#publish(IMPACT);
     const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
     if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);
     const base = this.#revision;
@@ -1558,9 +1558,19 @@ describe("native table and row adapter", () => {
     expect(client.calls.trackerCommand[1]).toMatchObject({ entities: ["e1"] });
   });
 
-  for (const type of ["insert_row", "remove_table_rows"] as const) {
+  it("snapshots every paste row before serialized dispatch, including a null append anchor", async () => {
+    const { runtime, client, view } = await opened();
+    const rows = [["1", "TRUE"], ["2", "FALSE"]];
+    const pending = runtime.pasteCells(witnessOf(view), COLLECTION.key, null, "f1", rows);
+    rows[0]![0] = "changed"; rows.push(["extra"]);
+    await pending;
+    expect(client.calls.trackerCommand[0]).toMatchObject({ type: "paste_cells", start_entity: null, rows: [["1", "TRUE"], ["2", "FALSE"]] });
+  });
+
+  for (const type of ["insert_row", "paste_cells", "remove_table_rows"] as const) {
     const invoke = (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) => type === "insert_row"
       ? runtime.insertRow(witnessOf(view), COLLECTION.key, initializers)
+      : type === "paste_cells" ? runtime.pasteCells(witnessOf(view), COLLECTION.key, "e1", "f1", [["", "TRUE"], ["1,300", "10/19/2026"]])
       : runtime.removeRows(witnessOf(view), COLLECTION.key, ["e1"]);
 
     it(`${type}: returns only a coherent publication and passes every explicit input unchanged`, async () => {
@@ -1570,7 +1580,7 @@ describe("native table and row adapter", () => {
       expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
       expect(confirmed.view.occurrence).toBe(view.occurrence);
       expect(client.calls.trackerCommand[0]).toEqual({ type, expected_revision: view.revision, collection: COLLECTION.key,
-        ...(type === "insert_row" ? { initializers } : { entities: ["e1"] }) });
+        ...(type === "insert_row" ? { initializers } : type === "paste_cells" ? { start_entity: "e1", start_field: "f1", rows: [["", "TRUE"], ["1,300", "10/19/2026"]] } : { entities: ["e1"] }) });
     });
 
     it(`${type}: refuses stale witnesses without dispatch`, async () => {

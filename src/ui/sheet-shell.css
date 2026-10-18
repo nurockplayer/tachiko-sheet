@@ -2740,3 +2740,8 @@ body { margin: 0; }
   box-sizing: border-box;
   padding: 6px 8px;
 }
+
+/* Clipboard selection follows the existing focus/accent palette. */
+.ts-cell--range-selected { background: color-mix(in srgb, var(--ts-accent, #2563eb) 14%, var(--ts-surface, white)); box-shadow: inset 0 0 0 1px var(--ts-accent, #2563eb); }
+.ts-clipboard-status:empty { display: none; }
+@media (forced-colors: active) { .ts-cell--range-selected { outline: 1px solid Highlight; background: Highlight; color: HighlightText; } }

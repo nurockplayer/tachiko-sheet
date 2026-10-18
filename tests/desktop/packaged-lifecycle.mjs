@@ -706,11 +706,18 @@ async function namedTableJourney() {
     click(button("Create table", form));
     await waitFor(() => !dialog("New table") && current(), "named table");
     for (const [index, value] of ["Tea", "飲食", "4.5"].entries()) {
-      const cell = [...document.querySelectorAll(".ts-entry-row [data-entry-field]")][index];
-      cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      const input = await waitFor(() => document.querySelector('[data-testid="cell-editor"]'), "draft cell editor");
+      // The new table may re-render its draft row after "current" settles, so
+      // look the cell up afresh and repeat the double-click until it edits.
+      const draftCell = () => [...document.querySelectorAll(".ts-entry-row [data-entry-field]")][index];
+      const input = await waitFor(() => {
+        const editor = document.querySelector('[data-testid="cell-editor"]');
+        if (editor) return editor;
+        const cell = draftCell();
+        if (cell?.getAttribute("aria-readonly") === "false") cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        return null;
+      }, "draft cell editor");
       fill(input, value);
-      cell.focus();
+      draftCell().focus();
       await waitFor(() => !document.querySelector('[data-testid="cell-editor"]'), "draft retained");
     }
     click(button("Add row", document.querySelector(".ts-entry-actions")));
