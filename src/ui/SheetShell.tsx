@@ -2193,7 +2193,7 @@ export function SheetShell(props: SheetShellProps) {
     if (restoreFocus) requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent)) return;
       const trigger = columnTriggerRef.current;
-      const fallback = gridScrollRef.current?.querySelector<HTMLElement>(".ts-column-header button, td[tabindex='0']");
+      const fallback = gridScrollRef.current?.querySelector<HTMLElement>(".ts-column-overflow > summary, td[tabindex='0']");
       withAppFocus(() => (trigger?.isConnected ? trigger : fallback)?.focus());
     });
     columnFocusIntentRef.current = null;
@@ -2560,15 +2560,38 @@ export function SheetShell(props: SheetShellProps) {
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className="ts-column-header" aria-label={names.column(table.collection.id, column.id) ?? column.display_name}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={names.column(table.collection.id, column.id) ?? column.display_name}>
               <div className="ts-column-heading"><span className="ts-col-head" tabIndex={table.native_table_profile ? 0 : undefined} onDoubleClick={event => openColumnDialog("rename", event.currentTarget, column.id)} onKeyDown={event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               }}>{names.column(table.collection.id, column.id) ?? column.display_name}</span>
-              {table.native_table_profile && onRenameColumn ? <span className="ts-column-actions">
-                <button type="button" className="ts-button ts-button--ghost" aria-label={`Rename ${column.display_name}`} disabled={columnChangesBlocked} onClick={event => openColumnDialog("rename", event.currentTarget, column.id)} data-column-action="Rename" />
-                {onRemoveColumn ? <button type="button" className="ts-button ts-button--ghost" aria-label={`Remove ${column.display_name}`} disabled={columnChangesBlocked} onClick={event => openColumnDialog("remove", event.currentTarget, column.id)} data-column-action="Remove" /> : null}
-                {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
-              </span> : null}</div>
+              {table.native_table_profile && onRenameColumn ? <>
+                <details className="ts-column-overflow" onToggle={event => {
+                  const disclosure = event.currentTarget;
+                  if (!disclosure.open) return;
+                  if (columnChangesBlocked) { disclosure.open = false; return; }
+                  gridScrollRef.current?.querySelectorAll<HTMLDetailsElement>(".ts-column-overflow[open]").forEach(other => { if (other !== disclosure) other.open = false; });
+                }} onBlur={event => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
+                }} onKeyDown={event => {
+                  if (event.key !== "Escape" || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || !event.currentTarget.open) return;
+                  event.preventDefault(); event.stopPropagation();
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
+                }}>
+                  <summary role="button" aria-label={`Column actions for ${column.display_name}`} aria-disabled={columnChangesBlocked} tabIndex={columnChangesBlocked ? -1 : 0} data-column-action="…" onClick={event => {
+                    if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
+                  }} />
+                  <div className="ts-command-menu">
+                    {(["rename", ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      openColumnDialog(kind, trigger, column.id);
+                    }} />)}
+                  </div>
+                </details>
+                {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
+              </> : null}</div>
             </th>)}
           </tr>
         </thead>

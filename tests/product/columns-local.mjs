@@ -81,11 +81,12 @@ async function stop() {
   assert.equal(exists(pid), false, "owned browser process exited before restart");
   processes.at(-1).exitObserved = true; context = pid = undefined;
 }
-async function capture(label) {
+async function capture(label, reveal) {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    if (reveal) await reveal.scrollIntoViewIfNeeded();
     const file = path.join(screens, `${label}-${width}x900.png`);
-    await page.screenshot({ path: file, fullPage: true }); screenshots.push(file);
+    await page.screenshot({ path: file, fullPage: true }); if (!screenshots.includes(file)) screenshots.push(file);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
 }
@@ -113,6 +114,16 @@ async function close() {
 }
 const dialog = name => page.getByRole("dialog", { name, exact: true });
 async function cancel(name) { await dialog(name).getByRole("button", { name: "Cancel", exact: true }).click(); }
+async function assertFocused(target, message) {
+  await page.waitForFunction(node => node === document.activeElement, await target.elementHandle());
+  assert.equal(await target.evaluate(n => n === document.activeElement), true, message);
+}
+const columnActions = name => page.getByRole("button", { name: `Column actions for ${name}`, exact: true });
+async function chooseColumnAction(name, action) {
+  await page.getByRole("columnheader", { name, exact: true }).hover();
+  await columnActions(name).click();
+  await page.getByRole("button", { name: `${action}…`, exact: true }).click();
+}
 async function add(name, type = "text", fill) {
   await page.getByRole("button", { name: "+ column", exact: true }).click();
   const d = dialog("Add column");
@@ -172,12 +183,12 @@ try {
   assert.deepEqual((await projection()).rows, baseline.rows);
   checks.push("2 invalid raw fill and real stale-revision refusal leave all rows, schema, revision and history unchanged");
 
-  await page.getByRole("button", { name: "Remove Amount", exact: true }).click(); await capture("remove-confirmation");
+  await chooseColumnAction("Amount", "Remove"); await capture("remove-confirmation");
   await submit("Remove column"); await dialog("Remove column").waitFor({ state: "detached" });
   assert.deepEqual((await projection()).columns, baseline.columns.slice(0, 1));
   await history("Undo"); assert.deepEqual((await projection()).columns, baseline.columns); assert.deepEqual((await projection()).rows, baseline.rows);
-  await page.getByRole("button", { name: "Remove Amount", exact: true }).click(); await submit("Remove column");
-  await page.getByRole("button", { name: "Remove Item", exact: true }).click(); await submit("Remove column");
+  await chooseColumnAction("Amount", "Remove"); await submit("Remove column");
+  await chooseColumnAction("Item", "Remove"); await submit("Remove column");
   await dialog("Remove column").getByRole("alert").filter({ hasText: "Keep at least one" }).waitFor();
   assert.equal((await projection()).columns.length, 1); await cancel("Remove column");
   await history("Undo"); assert.deepEqual((await projection()).rows, baseline.rows);
@@ -212,7 +223,51 @@ try {
   const price = table.columns.find(col => col.key === "price"); assert.ok(price);
   const resultTable = () => page.getByRole("table", { name: "Sales by product values", exact: true });
   const resultsBefore = await resultTable().innerText();
-  const header = page.locator('.ts-col-head').filter({ hasText: /^price$/ }); await header.focus(); await header.press("F2");
+  const labels = table.columns.map(c => c.display_name);
+  assert.deepEqual(await page.locator('.ts-col-head').allTextContents(), labels);
+  assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels], "frozen header readback excludes every disclosure/action label");
+  await page.mouse.move(0, 0);
+  for (const column of table.columns) assert.equal(await columnActions(column.display_name).evaluate(n => getComputedStyle(n).opacity), column.id === price.id ? "1" : "0", "only the focused column is revealed at rest");
+  const categoryHeader = page.getByRole("columnheader", { name: "category", exact: true });
+  const beforeHover = await categoryHeader.locator('.ts-col-head').boundingBox();
+  await categoryHeader.hover(); assert.equal(await columnActions("category").evaluate(n => getComputedStyle(n).opacity), "1");
+  assert.deepEqual(await categoryHeader.locator('.ts-col-head').boundingBox(), beforeHover, "revealing the button never shifts its label");
+  await page.mouse.move(0, 0); await capture("headers-rest");
+  for (const name of labels) assert.equal(await columnActions(name).evaluate(n => getComputedStyle(n).opacity), name === "price" ? "1" : "0");
+  await page.setViewportSize({ width: 390, height: 900 });
+  for (const name of labels) assert.equal(await columnActions(name).evaluate(n => getComputedStyle(n).opacity), "1", "compact disclosures remain discoverable without hover");
+  const compactGrid = await page.locator('.ts-grid-scroll').evaluate(n => ({ width: n.clientWidth, content: n.scrollWidth }));
+  assert.ok(compactGrid.content <= compactGrid.width + 1, "compact Sales headers retain the qualified grid width");
+  const compactAdd = await page.getByRole("button", { name: "+ column", exact: true }).boundingBox();
+  assert.ok(compactAdd && compactAdd.x >= 0 && compactAdd.x + compactAdd.width <= 390, "+ column stays reachable without horizontal scrolling");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const header = page.locator('.ts-col-head').filter({ hasText: /^price$/ });
+  await header.focus(); await header.press("F2"); await dialog("Rename column").waitFor(); await page.keyboard.press("Escape");
+  await dialog("Rename column").waitFor({ state: "detached" });
+  await assertFocused(header, "F2 cancel returns to the header label");
+  await header.dblclick(); await dialog("Rename column").waitFor(); await cancel("Rename column");
+  const actions = columnActions("price"), disclosure = actions.locator('..');
+  await actions.focus(); await actions.press("Enter");
+  assert.equal(await disclosure.getAttribute("open"), "");
+  await page.keyboard.press("Tab"); assert.equal(await page.getByRole("button", { name: "Rename…", exact: true }).evaluate(n => n === document.activeElement), true);
+  await page.keyboard.press("Tab"); assert.equal(await page.getByRole("button", { name: "Remove…", exact: true }).evaluate(n => n === document.activeElement), true);
+  await page.keyboard.press("Escape"); assert.equal(await disclosure.getAttribute("open"), null);
+  await assertFocused(actions, "Escape returns to the disclosure button");
+  await actions.press("Space"); assert.equal(await disclosure.getAttribute("open"), "");
+  await capture("column-menu-open", disclosure.locator('.ts-command-menu'));
+  await actions.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
+  d = dialog("Rename column"); await d.waitFor(); await page.keyboard.press("Escape"); await d.waitFor({ state: "detached" });
+  await assertFocused(actions, "Rename dialog cancel returns to the closed disclosure");
+  assert.equal(await disclosure.getAttribute("open"), null);
+  await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
+  await dialog("Remove column").waitFor(); await cancel("Remove column"); await dialog("Remove column").waitFor({ state: "detached" });
+  await assertFocused(actions, "Remove dialog cancel returns to the closed disclosure");
+  await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+  assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).evaluate(n => n === document.activeElement), true, "Tab exits the disclosure without a trap");
+  assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
+  assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
+  checks.push("column disclosure: stable clean header text; hover/focused-column/compact discovery; Enter/Space open; Tab reaches Rename/Remove and exits; Escape and dialog cancellation return focus");
+  await chooseColumnAction("price", "Rename");
   d = dialog("Rename column"); await d.getByLabel("Column name", { exact: true }).fill("Unit price"); await capture("rename");
   // Composition must not submit/cancel prematurely.
   const nameInput = d.getByLabel("Column name", { exact: true }); await nameInput.dispatchEvent("compositionstart");
@@ -228,7 +283,7 @@ try {
   assert.equal(await page.getByRole("region", { name: "Report chart", exact: true }).locator("canvas").count(), 1);
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   // Summary binding removal is refused by the real Work engine.
-  const beforeRef = await projection(); await page.getByRole("button", { name: "Remove Unit price", exact: true }).click(); await submit("Remove column");
+  const beforeRef = await projection(); await chooseColumnAction("Unit price", "Remove"); await submit("Remove column");
   await dialog("Remove column").getByRole("alert").filter({ hasText: "used by a formula or cross-table summary" }).waitFor();
   assert.deepEqual(await projection(), beforeRef); await capture("referenced-refusal"); await cancel("Remove column");
   await saveCopy("Renamed Sales"); const saved = await projection(); await stop(); await start();
@@ -258,7 +313,7 @@ try {
   assert.equal(await appearance.evaluate(n => n === document.activeElement), true);
   checks.push("pending schema dialog keeps Tab inside and defers Escape; newer toolbar focus survives completion");
 
-  table = await projection(); await page.getByRole("button", { name: "Rename Pending", exact: true }).click();
+  table = await projection(); await chooseColumnAction("Pending", "Rename");
   d = dialog("Rename column"); await d.getByLabel("Column name", { exact: true }).fill("Uncertain");
   await page.evaluate(() => { window.__columnEvidence.loseReply = true; });
   await d.getByRole("button", { name: "Rename column", exact: true }).click();
