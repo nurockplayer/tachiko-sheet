@@ -39,7 +39,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { ClipboardRefusal, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
 import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
@@ -841,7 +841,7 @@ export function SheetShell(props: SheetShellProps) {
         announceClipboard("The clipboard has no plain text to paste. Copy cells or text and try again.", true); return;
       }
       decoded = decodeTsv(event.clipboardData.getData("text/plain"));
-    } catch (error) { announceClipboard(explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
+    } catch (error) { announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: table.rows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;

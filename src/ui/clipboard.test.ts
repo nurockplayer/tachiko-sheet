@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipboardBoolean, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type PasteContext } from "./clipboard.js";
+import { PASTE_MAX_ROWS, clipboardBoolean, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type PasteContext } from "./clipboard.js";
 
 describe("quoted TSV", () => {
   it.each([
@@ -70,5 +70,21 @@ describe("selection and refusal presentation", () => {
     expect(pasteRefusal("core refusal", "number")).toMatch(/12 or 12.5/);
     expect(pasteRefusal("core refusal", "date")).toMatch(/YYYY-MM-DD/);
     expect(pasteRefusal("core refusal")).toBe("core refusal");
+  });
+});
+
+describe("bounded clipboard decoding", () => {
+  it("accepts exactly the row bound, with or without one final separator", () => {
+    const block = Array.from({ length: PASTE_MAX_ROWS }, (_, i) => `r${i}\tx`).join("\n");
+    expect(decodeTsv(block)).toHaveLength(PASTE_MAX_ROWS);
+    expect(decodeTsv(`${block}\n`)).toHaveLength(PASTE_MAX_ROWS);
+  });
+  it("refuses one row past the bound before materializing the rest", () => {
+    const huge = Array.from({ length: 50_000 }, (_, i) => `r${i}`).join("\n");
+    expect(() => decodeTsv(huge)).toThrow(/128-row limit/);
+    expect(() => decodeTsv(Array.from({ length: PASTE_MAX_ROWS + 1 }, () => "a").join("\n"))).toThrow(/128-row limit/);
+  });
+  it("refuses oversized text before scanning it", () => {
+    expect(() => decodeTsv("a".repeat(11), PASTE_MAX_ROWS, 10)).toThrow(/too large/);
   });
 });

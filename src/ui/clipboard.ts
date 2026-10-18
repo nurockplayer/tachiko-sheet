@@ -11,7 +11,14 @@ export function stepAddress(at: CellAddress, key: string, rows: number, columns:
 export function encodeTsv(rows: readonly (readonly string[])[]): string {
   return rows.map((row, index) => row.map(value => (/[\t\r\n"]/.test(value) || (index === rows.length - 1 && rows.length > 1 && row.length === 1 && value === "")) ? `"${value.replaceAll('"', '""')}"` : value).join("\t")).join("\n");
 }
-export function decodeTsv(text: string): string[][] {
+/** Work's native paste bound; larger blocks are refused before they are materialized. */
+export const PASTE_MAX_ROWS = 128;
+export const PASTE_MAX_CHARS = 1_048_576;
+const TOO_MANY_ROWS = `The pasted block exceeds the ${PASTE_MAX_ROWS}-row limit. Nothing was pasted.`;
+/** A plain-language refusal of the clipboard text itself; shown as written. */
+export class ClipboardRefusal extends Error {}
+export function decodeTsv(text: string, maxRows = PASTE_MAX_ROWS, maxChars = PASTE_MAX_CHARS): string[][] {
+  if (text.length > maxChars) throw new ClipboardRefusal("The pasted text is too large to paste here. Nothing was pasted.");
   const rows: string[][] = [];
   let row: string[] = [], field = "", quoted = false, closed = false, start = true, endedRecord = false;
   for (let i = 0; i < text.length; i++) {
@@ -25,7 +32,7 @@ export function decodeTsv(text: string): string[][] {
       continue;
     }
     if (ch === '"') {
-      if (!start || closed) throw new Error("The pasted text has malformed quotes. Use a rectangular block of tab-separated cells.");
+      if (!start || closed) throw new ClipboardRefusal("The pasted text has malformed quotes. Use a rectangular block of tab-separated cells.");
       quoted = true; start = false; continue;
     }
     if (ch === "\t" || ch === "\n" || ch === "\r") {
@@ -33,15 +40,17 @@ export function decodeTsv(text: string): string[][] {
       if (ch !== "\t") {
         if (ch === "\r" && text[i + 1] === "\n") i++;
         rows.push(row); row = []; endedRecord = true;
+        if (rows.length > maxRows) throw new ClipboardRefusal(TOO_MANY_ROWS);
       }
       continue;
     }
-    if (closed) throw new Error("The pasted text has malformed quotes. Use a rectangular block of tab-separated cells.");
+    if (closed) throw new ClipboardRefusal("The pasted text has malformed quotes. Use a rectangular block of tab-separated cells.");
     field += ch; start = false;
   }
-  if (quoted) throw new Error("The pasted text has an unfinished quote. Nothing was pasted.");
+  if (quoted) throw new ClipboardRefusal("The pasted text has an unfinished quote. Nothing was pasted.");
   // Ignore exactly one final record separator, not any deliberate blank rows.
   if (!endedRecord) { row.push(field); rows.push(row); }
+  if (rows.length > maxRows) throw new ClipboardRefusal(TOO_MANY_ROWS);
   return rows;
 }
 export function clipboardBoolean(value: string, type: string): string {
