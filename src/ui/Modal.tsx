@@ -7,8 +7,8 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const target =
-      root.querySelector<HTMLElement>("[data-autofocus]") ?? focusableElements(root)[0] ?? null;
+    const preferred = root.querySelector<HTMLElement>("[data-autofocus]");
+    const target = preferred && !preferred.matches(":disabled") ? preferred : focusableElements(root)[0] ?? root;
     target?.focus();
   }, []);
 
@@ -37,7 +37,11 @@ export function Modal({ label, onCancel, children, variant = "review", dismissDi
     const nodes = focusableElements(root);
     const first = nodes[0];
     const last = nodes[nodes.length - 1];
-    if (!first || !last) return;
+    if (!first || !last) {
+      event.preventDefault();
+      root.focus();
+      return;
+    }
     const active = root.ownerDocument.activeElement;
     if (event.shiftKey && (active === root || active === first || !root.contains(active))) {
       event.preventDefault();
@@ -77,5 +81,5 @@ function focusableElements(root: HTMLElement): HTMLElement[] {
     root.querySelectorAll<HTMLElement>(
       "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary, [tabindex]:not([tabindex='-1'])",
     ),
-  );
+  ).filter(node => !node.matches(":disabled"));
 }

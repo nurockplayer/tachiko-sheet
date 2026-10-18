@@ -62,7 +62,7 @@ export async function assertPendingDialogFocus(page, dialog, label) {
       if (target !== "title") {
         assert.equal(await dialog.evaluate((node, direction) => {
           const targets = Array.from(node.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary, [tabindex]:not([tabindex='-1'])"));
-          return document.activeElement === (direction === "Tab" ? targets[0] : targets.at(-1));
+          return document.activeElement === (targets.length === 0 ? node : direction === "Tab" ? targets[0] : targets.at(-1));
         }, direction), true, `${label}: ${direction} from the root reaches the proper descendant edge`);
       }
     }

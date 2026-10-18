@@ -1,6 +1,7 @@
 // #212: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +9,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
+import { j4CanaryText } from "../fixtures/j4-catalog-sales.mjs";
+import { assertPendingDialogFocus, tabToDialogAction } from "./pending-dialog-focus.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -35,7 +38,11 @@ async function start() {
   assert.ok(Number.isInteger(pid) && pid > 0); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
   await context.addInitScript(() => {
-    window.__columnEvidence = { records: [] };
+    window.__columnEvidence = { records: [], hostWrites: 0 };
+    for (const method of ["put", "add", "delete", "clear"]) {
+      const original = IDBObjectStore.prototype[method];
+      IDBObjectStore.prototype[method] = function (...args) { window.__columnEvidence.hostWrites++; return original.apply(this, args); };
+    }
     const Original = window.Worker;
     window.Worker = class extends Original {
       constructor(...args) {
@@ -47,6 +54,9 @@ async function start() {
           this.record.replies.push(structuredClone(event.data));
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
           const request = this.record.requests.find(request => request.id === event.data.id);
+          if (window.__columnEvidence.holdExport && request?.kind === "export_portable_ro") {
+            window.__columnEvidence.holdExport = false; window.__columnEvidence.heldExport = event.data; event.stopImmediatePropagation(); return;
+          }
           if (["add_column", "rename_column", "remove_column"].includes(request?.request?.type) && event.data.response?.type === "published") {
             if (window.__columnEvidence.loseReply) {
               window.__columnEvidence.loseReply = false;
@@ -299,8 +309,17 @@ try {
   // Hold a real schema acknowledgement: all keyboard paths stay in the dialog,
   // then a newer focus destination wins over the completion's old trigger.
   d = await add("Pending", "text", "kept");
-  await page.evaluate(() => { window.__columnEvidence.holdReply = true; });
+  const beforePreflight = (await commands()).length;
+  const beforeWrites = await page.evaluate(() => window.__columnEvidence.hostWrites);
+  await page.evaluate(() => { window.__columnEvidence.holdExport = true; window.__columnEvidence.holdReply = true; });
   await d.getByRole("button", { name: "Add column", exact: true }).click();
+  await page.waitForFunction(() => !!window.__columnEvidence.heldExport);
+  assert.equal((await commands()).length, beforePreflight, "no column command is sent before portable export succeeds");
+  assert.equal(await page.getByRole("button", { name: "Save", exact: true }).isDisabled(), true, "the operation lock covers preflight");
+  await d.getByLabel("Column name", { exact: true }).press("Enter");
+  assert.equal((await commands()).length, beforePreflight, "a second submit cannot slip into preflight");
+  assert.equal(await page.evaluate(() => window.__columnEvidence.hostWrites), beforeWrites, "preflight writes no local copy");
+  await page.evaluate(() => { const e = window.__columnEvidence, data = e.heldExport; e.heldExport = null; e.worker.dispatchEvent(new MessageEvent("message", { data })); });
   await page.waitForFunction(() => !!window.__columnEvidence.held);
   for (let i = 0; i < 4; i++) {
     await page.keyboard.press(i % 2 ? "Shift+Tab" : "Tab");
@@ -313,6 +332,25 @@ try {
   assert.equal(await appearance.evaluate(n => n === document.activeElement), true);
   checks.push("pending schema dialog keeps Tab inside and defers Escape; newer toolbar focus survives completion");
 
+  const beforeRemoval = await projection();
+  await chooseColumnAction("Pending", "Remove");
+  d = dialog("Remove column");
+  await assertFocused(d.getByRole("button", { name: "Cancel", exact: true }), "removal initially focuses Cancel");
+  await page.keyboard.press("Shift+Tab"); assert.equal(await d.evaluate(n => n.contains(document.activeElement)), true, "initial reverse Tab stays inside");
+  await page.evaluate(() => { window.__columnEvidence.holdReply = true; });
+  const removeAction = d.getByRole("button", { name: "Remove column", exact: true });
+  await tabToDialogAction(page, d, removeAction); await page.keyboard.press("Enter");
+  await page.waitForFunction(() => !!window.__columnEvidence.held);
+  const removalCount = (await commands()).length;
+  await assertPendingDialogFocus(page, d, "column-remove");
+  assert.equal((await commands()).length, removalCount, "pending removal activation never dispatches another command");
+  assert.equal(await d.evaluate(n => n === document.activeElement), true, "empty pending tab order remains on the modal root");
+  await page.evaluate(() => { const e = window.__columnEvidence, data = e.held; e.held = null; e.worker.dispatchEvent(new MessageEvent("message", { data })); });
+  await ready(); await d.waitFor({ state: "detached" });
+  await assertFocused(columnActions(beforeRemoval.columns[0].display_name), "held removal returns to a surviving header disclosure");
+  await history("Undo"); assert.deepEqual((await projection()).columns, beforeRemoval.columns); assert.deepEqual((await projection()).rows, beforeRemoval.rows);
+  checks.push("held removal: initial Cancel; repeated pending Tab/Shift+Tab stay on root with no enabled descendants; one dispatch; completion returns to surviving header; Undo restores exact state");
+
   table = await projection(); await chooseColumnAction("Pending", "Rename");
   d = dialog("Rename column"); await d.getByLabel("Column name", { exact: true }).fill("Uncertain");
   await page.evaluate(() => { window.__columnEvidence.loseReply = true; });
@@ -322,6 +360,54 @@ try {
   await page.locator('.ts-home').getByRole("button", { name: "Refresh", exact: true }).click(); await ready();
   assert.equal((await commands()).length, unknownCount); assert.ok((await projection()).columns.some(c => c.display_name === "Uncertain"));
   checks.push("unknown rename is dispatched once; Refresh observes the real publication without retry");
+
+  await close();
+  const capacityFolder = path.join(work, "native-capacity"); await mkdir(path.join(capacityFolder, "entities"), { recursive: true });
+  const schema = JSON.parse(j4CanaryText["schemas.json"])[0]; schema.key = "capacity";
+  const manifest = JSON.parse(j4CanaryText["manifest.json"]); manifest.document.title = "Native capacity 129";
+  await writeFile(path.join(capacityFolder, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  await writeFile(path.join(capacityFolder, "schemas.json"), JSON.stringify([schema], null, 2) + "\n");
+  const shards = Object.fromEntries([..."0123456789abcdef"].map(key => [key, ""]));
+  for (let i = 0; i < 129; i++) {
+    const id = `40000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+    shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${i}`, schema: schema.id,
+      fields: { [schema.fields[0].id]: { kind: "text", value: `p${i}` }, [schema.fields[1].id]: { kind: "number", value: i } } }) + "\n";
+  }
+  for (const [shard, text] of Object.entries(shards)) await writeFile(path.join(capacityFolder, "entities", `${shard}.jsonl`), text);
+  await page.getByTestId("open-project").setInputFiles(capacityFolder); await ready();
+  table = await projection(); assert.equal(table.native_table_profile, true); assert.equal(table.rows.length, 129);
+  await saveCopy("Capacity before columns");
+  const capacityBefore = await projection(), countBefore = (await commands()).length;
+  const writesBefore = await page.evaluate(() => window.__columnEvidence.hostWrites);
+  const refusal = "Column changes aren't available for this work yet, because it couldn't then be saved. Nothing was changed.";
+  for (const kind of ["Add", "Rename", "Remove"]) {
+    if (kind === "Add") d = await add("Blocked", "text", "unchanged");
+    else {
+      await chooseColumnAction(table.columns[0].display_name, kind); d = dialog(`${kind} column`);
+      if (kind === "Rename") await d.getByLabel("Column name", { exact: true }).fill("Blocked");
+    }
+    await submit(`${kind} column`); await d.getByRole("alert").filter({ hasText: refusal }).waitFor();
+    assert.equal(await d.getByRole("alert").innerText(), refusal);
+    assert.deepEqual(await projection(), capacityBefore, "preflight refusal changes no schema, values or revision");
+    assert.equal((await commands()).length, countBefore, "preflight failure dispatches no column mutation");
+    assert.equal(await page.evaluate(() => window.__columnEvidence.hostWrites), writesBefore, "refusal creates or updates no copy");
+    assert.equal(await d.evaluate(n => n.contains(document.activeElement)), true);
+    await cancel(`${kind} column`);
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  }
+  await page.getByRole("button", { name: "Refresh", exact: true }).click(); await ready();
+  assert.deepEqual(await projection(), capacityBefore, "a fresh authoritative read confirms every refusal left the work unchanged");
+  assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true, "preflights create no history entry");
+  // A real scalar edit makes the following bound Save perform a durable write.
+  await cell(table, 0, 1).dblclick(); const capacityEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await capacityEditor.fill("777"); await capacityEditor.press("Enter"); await ready();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await saveCopy("Capacity after refused columns"); const savedCapacity = await projection();
+  await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after refused columns", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
+  assert.equal(values(await projection())[0][1], 777);
+  checks.push("129-row native capacity: all three column actions refuse portable preflight with exact copy, no dispatch/publication/host write/flag change; scalar edit, bound Save and Save a copy still succeed; full restart/reopen retains exact state");
 
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };

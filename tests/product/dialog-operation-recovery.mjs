@@ -25,7 +25,7 @@ let context;
 
 try {
   context = await chromium.launchPersistentContext(profile, {
-    headless: true,
+    headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}),
     ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}),
   });
   await installDistRoutes(context, dist);

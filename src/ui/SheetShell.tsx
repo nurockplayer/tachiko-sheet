@@ -2182,9 +2182,13 @@ export function SheetShell(props: SheetShellProps) {
     setColumnDialog(kind === "add" ? { ...base, kind } : { ...base, kind, field: column!.id, name: column!.display_name });
   }
 
-  function finishColumnDialog(confirmed = false, restoreFocus = true): void {
+  function finishColumnDialog(confirmed = false, restoreFocus = true, focusInside = false): void {
     const state = columnDialog;
-    const intent = confirmed ? columnFocusIntentRef.current ?? completionIntent() : completionIntent();
+    // Tab/selection inside the pending modal does not choose a destination
+    // outside it. Return focus when that same-occurrence dialog still owns it;
+    // preserve the captured intent guard for any newer external destination.
+    const stillOwnsFocus = focusInside && state?.occurrence === liveOccurrenceRef.current;
+    const intent = confirmed && !stillOwnsFocus ? columnFocusIntentRef.current ?? completionIntent() : completionIntent();
     setColumnDialog(null);
     if (confirmed && state) {
       setCellSelection(null);
@@ -3369,7 +3373,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={confirmed => finishColumnDialog(confirmed, confirmed)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
+      {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={(confirmed, focusInside) => finishColumnDialog(confirmed, confirmed, focusInside)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
       {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {
         const generation = focusIntentRef.current;
         const created = await onNewTable(name, columns);

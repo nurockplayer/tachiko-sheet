@@ -1,3 +1,4 @@
+import { columnSavePreflightDecision } from "./application/column-save-preflight.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
@@ -1546,6 +1547,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function changeRows(
     witness: ViewWitness,
     command: () => ReturnType<SheetRuntime["insertRow"]>,
+    checkColumnSave = false,
   ): Promise<RowCommandOutcome> {
     if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before making this change." });
     const live = viewRef.current;
@@ -1554,11 +1556,27 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       end();
       return Promise.resolve({ kind: "refused", message: "This change belongs to an older view. Refresh before trying again." });
     }
-    return mutationCompletion.run<RowCommandOutcome>({ kind: "rows", witness, dispatch: command }, result => {
+    const apply = () => mutationCompletion.run<RowCommandOutcome>({ kind: "rows", witness, dispatch: command }, result => {
       if (result.kind === "published") return { kind: "confirmed" };
       if (result.kind === "refused") return result;
       return { kind: "recovery" };
     }, end);
+    if (!checkColumnSave) return apply();
+    return (async () => {
+      // begin() owns the operation lock throughout export and dispatch. This
+      // dry run writes no host state and supplies no Save receipt/status.
+      let exportedRevision: string | null = null;
+      try { exportedRevision = (await runtime.exportWorkFile(witness)).revision; }
+      catch { /* Every portable-export failure refuses before publication. */ }
+      const decision = columnSavePreflightDecision(witness, viewRef.current, exportedRevision);
+      if (!decision.allowed) {
+        setOutcome("idle");
+        end();
+        return { kind: "refused", message: decision.message };
+      }
+      // The adapter rechecks the witness inside its serialized mutation queue.
+      return apply();
+    })();
   }
 
   function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
@@ -1570,15 +1588,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]) {
-    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers));
+    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers), true);
   }
 
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
-    return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name));
+    return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), true);
   }
 
   function removeColumn(witness: ViewWitness, collection: string, field: string) {
-    return changeRows(witness, () => runtime.removeColumn(witness, collection, field));
+    return changeRows(witness, () => runtime.removeColumn(witness, collection, field), true);
   }
 
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {

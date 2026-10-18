@@ -20,7 +20,7 @@ const hostedOrigin = process.env.CAPACITY_ORIGIN ?? null;
 const expectedIndex = hostedOrigin ? await expectedIndexSha256() : null;
 const hostedCandidate = hostedOrigin ? await assertHostedCandidate(hostedOrigin, expectedIndex) : null;
 const oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
-const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+const launchOptions = { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const ROWS = 8406;
 const EDITS = [
   [0, 0, '000-edited-雪,"first"'],

@@ -8,7 +8,7 @@ export function ColumnDialog({ state, onSubmit, onCancel, onComplete, composing 
   state: ColumnDialogState;
   onSubmit(draft: ColumnDraft): Promise<RowCommandOutcome>;
   onCancel(): void;
-  onComplete(confirmed: boolean): void;
+  onComplete(confirmed: boolean, focusInside: boolean): void;
   composing(): boolean;
 }) {
   const [draft, setDraft] = useState(() => initialColumnDraft(state));
@@ -16,7 +16,7 @@ export function ColumnDialog({ state, onSubmit, onCancel, onComplete, composing 
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const title = state.kind === "add" ? "Add column" : state.kind === "rename" ? "Rename column" : "Remove column";
   function change(update: Partial<ColumnDraft>) { setDraft(current => ({ ...current, ...update })); setError(null); }
   async function submit() {
@@ -25,15 +25,16 @@ export function ColumnDialog({ state, onSubmit, onCancel, onComplete, composing 
       setError("Choose a fill value for every existing row before adding this column."); return;
     }
     pendingRef.current = true;
-    (nameRef.current ?? headingRef.current)?.focus();
+    if (state.kind === "remove") cancelRef.current?.closest<HTMLElement>(".ts-modal")?.focus();
+    else nameRef.current?.focus();
     setPending(true); setError(null);
     try {
       const result = await onSubmit(draft);
       if (result.kind === "refused") setError(columnRefusal(result.message, result.fieldType));
-      else onComplete(result.kind === "confirmed");
+      else onComplete(result.kind === "confirmed", Boolean(cancelRef.current?.closest(".ts-modal")?.contains(document.activeElement)));
     } catch {
       // A thrown transport/application outcome is never a retryable refusal.
-      onComplete(false);
+      onComplete(false, false);
     } finally { pendingRef.current = false; setPending(false); }
   }
   return <Modal label={title} variant={state.kind === "remove" ? "close" : "save"} dismissDisabled={pending} onCancel={onCancel}>
@@ -42,7 +43,7 @@ export function ColumnDialog({ state, onSubmit, onCancel, onComplete, composing 
         event.preventDefault(); void submit();
       }
     }}>
-      <div className="ts-dialog-intro"><h2 ref={state.kind === "remove" ? headingRef : undefined} tabIndex={state.kind === "remove" ? -1 : undefined} data-autofocus={state.kind === "remove" ? true : undefined} className="ts-h2">{title}</h2>
+      <div className="ts-dialog-intro"><h2 className="ts-h2">{title}</h2>
         <p className="ts-subtle">{state.kind === "remove" ? `Remove “${state.name}” and its values from ${state.rowEntities.length} existing ${state.rowEntities.length === 1 ? "row" : "rows"}? One Undo restores the column and its values.` : "Update this table. Nothing is saved until you choose Save."}</p></div>
       {state.kind !== "remove" ? <label className="ts-dialog-field"><span className="ts-field-label">Column name</span><input ref={nameRef} className="ts-text-input" data-autofocus="true" value={draft.name} readOnly={pending} onChange={event => change({ name: event.currentTarget.value })} /></label> : null}
       {state.kind === "add" ? <>
@@ -51,7 +52,7 @@ export function ColumnDialog({ state, onSubmit, onCancel, onComplete, composing 
           <p className="ts-hint">{draft.fieldType === "text" ? "An empty fill sets every existing row to empty text. " : "Choose the fill value explicitly. "}This sets existing rows only; it is not a default for future rows.</p></> : null}
       </> : null}
       {error ? <p className="ts-dialog-error" role="alert">{error}</p> : null}
-      <div className="ts-dialog-actions"><button type="button" className="ts-button" disabled={pending} onClick={onCancel}>Cancel</button><button type="button" className="ts-button ts-button--primary" disabled={pending} aria-busy={pending} onClick={() => void submit()}>{pending ? "Working…" : title}</button></div>
+      <div className="ts-dialog-actions"><button ref={cancelRef} data-autofocus={state.kind === "remove" ? true : undefined} type="button" className="ts-button" disabled={pending} onClick={onCancel}>Cancel</button><button type="button" className="ts-button ts-button--primary" disabled={pending} aria-busy={pending} onClick={() => void submit()}>{pending ? "Working…" : title}</button></div>
     </div>
   </Modal>;
 }
