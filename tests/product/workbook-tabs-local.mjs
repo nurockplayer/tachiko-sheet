@@ -17,7 +17,7 @@ const work = await mkdtemp(path.join(tmpdir(), "sheet219-"));
 const profile = path.join(work, "profile");
 await mkdir(path.join(out, "screens"), { recursive: true });
 // The real producer admits at most four XLSX sheets. Long supported names
-// exercise overflow on desktop too; collision names use a separate import.
+// exercise overflow at narrow widths; collision names use a separate import.
 const names = Array.from({ length: 4 }, (_, i) => "地域別受注明細".repeat(5).slice(0, 28) + (i + 1));
 const fixture = path.join(work, "many-tables.xlsx");
 // Expand an existing valid XLSX template, replacing only its workbook/sheets.
@@ -198,6 +198,9 @@ try {
   await tabs().nth(1 - salesIndex).click(); await selected(salesIndex);
   await page.getByRole("alert").filter({ hasText: "Apply or cancel the current draft" }).waitFor();
   assert.equal(await notes.inputValue(), "retained notes draft");
+  await picker().selectOption(await picker().locator("option").nth(1 - salesIndex).getAttribute("value"));
+  await selected(salesIndex);
+  assert.equal(await notes.inputValue(), "retained notes draft", "the select uses the same draft guard");
   await notes.fill("Keep this note"); await tabs().nth(1 - salesIndex).click(); await selected(1 - salesIndex);
   checks.push("notes field retains editor and blocks switching until draft cleared");
   await close();
@@ -228,12 +231,16 @@ try {
   await picker().selectOption(await picker().locator("option").last().getAttribute("value")); await selected(names.length - 1);
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });
-    await page.waitForFunction(() => {
+    await page.waitForFunction(width => {
       const strip = document.querySelector('[aria-label="Tables"]');
       const active = strip.querySelector('[aria-selected="true"]').getBoundingClientRect();
       const port = strip.getBoundingClientRect();
-      return strip.scrollWidth > strip.clientWidth && strip.scrollLeft > 0 && active.left >= port.left - 1 && active.right <= port.right + 1;
-    });
+      const overflow = strip.scrollWidth > strip.clientWidth;
+      // Font metrics may let four sheets fit on a wide desktop. Whenever
+      // they overflow, the select must reveal the last tab without a click.
+      return (width !== 390 || overflow) && (!overflow || strip.scrollLeft > 0) &&
+        active.left >= port.left - 1 && active.right <= port.right + 1;
+    }, width);
   }
   await capture("many-tables");
   await tabs().last().focus(); await page.keyboard.press("Home"); await selected(0);

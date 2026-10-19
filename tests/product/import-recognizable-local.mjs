@@ -5,15 +5,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { launchIsolatedBrowser } from "./isolated-browser.mjs";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const messyCsv = path.join(root, "acceptance", "j3-interop", "fixtures", "messy.csv");
-const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+const launchOptions = { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 
-const browser = await chromium.launch(launchOptions);
+const browser = await launchIsolatedBrowser(chromium, launchOptions);
 try {
   const context = await browser.newContext();
   await installDistRoutes(context, dist);

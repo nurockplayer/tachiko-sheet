@@ -6,6 +6,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { launchIsolatedBrowser } from "./isolated-browser.mjs";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { openFolder, waitForColdHome } from "./home-entry.mjs";
 
@@ -3994,7 +3995,7 @@ async function auditNotice(context, profile) {
 }
 
 async function main() {
-  const browser = await chromium.launch(launchOptions);
+  const browser = await launchIsolatedBrowser(chromium, launchOptions);
   try {
     const context = await browser.newContext({ viewport: { width: 1024, height: 900 }, deviceScaleFactor: 1 });
     const page = await context.newPage();
