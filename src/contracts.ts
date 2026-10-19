@@ -116,6 +116,7 @@ export interface SheetRuntime {
   previewCleanup(witness: ViewWitness, operation: CleanupOperation): Promise<CleanupPreview>;
   commitCleanup(witness: ViewWitness, previewId: string): Promise<WorkbookView>;
   exportSpreadsheet(witness: ViewWitness, metadata: InteropMetadata, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
+  exportNativeTables(witness: ViewWitness, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
   validateImportedProject(files: readonly CanonicalProjectFile[], metadata: InteropMetadata): Promise<void>;
   close(): Promise<void>;
 }

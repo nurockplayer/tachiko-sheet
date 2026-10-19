@@ -11,6 +11,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     inspectImportedProject(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
     openImportedProject(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
     exportSpreadsheet(expectedRevision: string, metadata: InteropMetadata, format: SpreadsheetFormat, collection: string): Promise<SpreadsheetExport>;
+    exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeTrackerSpreadsheet(expectedRevision: string, presentation: NativeTrackerExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeBudgetSpreadsheet(expectedRevision: string, presentation: NativeBudgetExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     previewCleanup(expectedRevision: string, operation: CleanupOperation): Promise<CleanupPreview>;

@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "3d071dafc3166cd490b9ac03a67a7f4ec5dbafcf",
+  "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -13,9 +13,13 @@
     "bootstrap",
     "inspectProject",
     "openProject",
+    "openImportedProject",
     "closeProject",
     "queryTable",
     "queryFields",
+    "explainField",
+    "createKeyedGroupedSum",
+    "queryKeyedGroupedSum",
     "editNumber",
     "editText",
     "editBoolean",
@@ -36,11 +40,14 @@
     "exportSpreadsheet",
     "exportNativeTrackerSpreadsheet",
     "exportNativeBudgetSpreadsheet",
+    "exportNativeTablesSpreadsheet",
     "previewCleanup",
     "commitCleanup",
     "copyFormula",
     "newTracker",
     "newBudget",
+    "newTable",
+    "duplicateCollection",
     "trackerCommand",
     "openLocalDocument"
   ],
@@ -51,11 +58,11 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "2d5ca856eda577a8d5d4f0da7f0229755067eec8d9cf67840a03f313eb3ee8dc"
+      "sha256": "44db5a240b613e755ad34746b679ecd53261918f220444bc7dd62726d63dcb5b"
     },
     {
       "path": "experimental-client.d.ts",
-      "sha256": "aa4d5309e39008e07712ce525e7c07e2b85311d16e0617159e27c16da4d70198"
+      "sha256": "60b3aa9c35f8a5753e91d024b3483f21df5c3e45e0a80f36a1c185baa182ae37"
     },
     {
       "path": "experimental-client.js",
@@ -95,7 +102,7 @@
     },
     {
       "path": "runtime/client.d.ts",
-      "sha256": "beecf184ca568cae750daf0676b041951cba1c77a065ce4398a8b8664eb46397"
+      "sha256": "4bd166087dad85e4b67cc036a6d8aa60e3cd6800f4376af4328a3b59f21a85f9"
     },
     {
       "path": "runtime/client.js",
@@ -103,7 +110,7 @@
     },
     {
       "path": "runtime/interop-protocol.d.ts",
-      "sha256": "4c688f28a390cd05d50a8a4e3673335905f8e5f576e373a9a5906466dc37014e"
+      "sha256": "43fa356263fb148c9088ebd0ba8880976516d8573e327d3a837430d045b13e00"
     },
     {
       "path": "runtime/interop-protocol.js",
@@ -127,11 +134,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "facd3465a4b946d1327e176f93b39c3b02a3b129f8715671acca47e9d82bb82f"
+      "sha256": "e366b31d8ebfcffc31c7690fd4df8c3608859799cc44b86d3d654fc28390dfaa"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "73c9cf3b935b18332bb63f1095cfe6adb902ccd301c9a18db0f1ed87b5d00ea0"
+      "sha256": "481b6e79a381da80efdad3a6c28ab90d248900e517cf234b54324345347b8f52"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

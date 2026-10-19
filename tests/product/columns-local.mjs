@@ -320,8 +320,9 @@ try {
   assert.deepEqual((await projection()).columns, saved.columns); assert.deepEqual((await projection()).rows, saved.rows);
   assert.equal(await resultTable().innerText(), resultsBefore);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  assert.equal(await page.getByRole("button", { name: "Prepare CSV", exact: true }).isDisabled(), true);
-  checks.push("3 Sales price rename retains field/key, Sales by product, Cross-table summary and chart; Save a copy → process exit → restart → reopen retains exact schema/results; CSV/XLSX unavailable for native examples (existing product boundary)");
+  // #225 makes native CSV/XLSX available; native-export-local proves the downloaded contents.
+  assert.equal(await page.getByRole("button", { name: "Prepare CSV", exact: true }).isEnabled(), true);
+  checks.push("3 Sales price rename retains field/key, Sales by product, Cross-table summary and chart; Save a copy → process exit → restart → reopen retains exact schema/results; native CSV/XLSX preparation available (#225)");
   checks.push("4 real saved-summary binding removal refusal leaves schema, rows and revision unchanged");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   // Hold a real schema acknowledgement: all keyboard paths stay in the dialog,

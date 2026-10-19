@@ -1030,6 +1030,22 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function exportNativeTables(witness: ViewWitness, collection: string, format: SpreadsheetFormat) {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      if (live.collection !== collection) {
+        throw new SheetSessionError("stale-witness", "The selected table changed before export. Prepare it again.");
+      }
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      const exportTables = capability(client.exportNativeTablesSpreadsheet, "native table export");
+      const exported = await afterUsable(expected, dispatch(kit, () =>
+        exportTables.call(client, live.revision, collection, format)));
+      requireCurrentProjectionRevision(live.revision, exported.revision, "prepared export");
+      return exported;
+    });
+  }
+
   function validateImportedProject(files: readonly CanonicalProjectFile[], metadata: InteropMetadata): Promise<void> {
     return enqueue(async () => {
       const { kit, client } = await loadKitOnce();
@@ -1078,6 +1094,6 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     prepare,
     newTable, insertRow, editCells, pasteCells, addColumn, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
-    inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
+    inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
 }

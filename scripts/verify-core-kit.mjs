@@ -13,6 +13,22 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // #225 / PR #226 inventory repair. Independent lead reproduction receipt;
+    // writer byte identity and clean detached source proof: docs/225-kit-handback.md.
+    sourceCommit: '353c6e948b78eeee07f6e77bd350a54070c1c280',
+    artifactManifestSha256: 'a680af0a7f230b84e735fa2075360362c510139b49d5021f0101498c0d1268c3',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6273009850',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6273009850',
+  },
+  {
+    // #225 producer. Independent lead reproduction receipt; writer byte identity
+    // and clean detached source proof are recorded in docs/225-kit-handback.md.
+    sourceCommit: '4e6b2c9d6aec069a0f5291fa0a1298d9fa095b6f',
+    artifactManifestSha256: 'fd7d2655b53655a8022ecd0bcba0f8cd80dac43bc8fb1f7a59d3c68868abe180',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6267426558',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6267426558',
+  },
+  {
     // #215 producer. The existing lead receipt records acquisition and the
     // independent build; the writer's byte-identity proof is in docs/215-kit-handback.md.
     sourceCommit: '3d071dafc3166cd490b9ac03a67a7f4ec5dbafcf',

@@ -1,4 +1,5 @@
 import { projectTransferFromEntries, projectTransferFromFiles, type CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
+import type { SpreadsheetExport, SpreadsheetFormat } from "./runtime/interop-protocol.ts";
 import { DesignerRuntimeError, type DesignerClient } from "./runtime/client.ts";
 import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, ProjectExport } from "./runtime/protocol.ts";
 export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
@@ -11,6 +12,7 @@ export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v
  * and the vendored kit makes that stronger contract explicit for consumers.
  */
 export interface ExperimentalDesignerClient extends DesignerClient {
+    exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
     openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection>;
     exportCanonicalTree(expectedRevision: string): Promise<CanonicalTreeExport>;

@@ -133,6 +133,11 @@ export type SpreadsheetOperation = {
     format: SpreadsheetFormat;
     collection: string;
 } | {
+    type: "export_native_tables";
+    expected_revision: string;
+    collection: string;
+    format: SpreadsheetFormat;
+} | {
     type: "export_native_tracker";
     expected_revision: string;
     presentation: NativeTrackerExportPresentation;

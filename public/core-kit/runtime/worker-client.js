@@ -69,6 +69,12 @@ export class WorkerDesignerClient {
             throw new Error("Expected spreadsheet export.");
         return reply.export;
     }
+    async exportNativeTablesSpreadsheet(expectedRevision, collection, format) {
+        const reply = await this.#spreadsheet({ type: "export_native_tables", expected_revision: expectedRevision, collection, format });
+        if (reply.status !== "spreadsheet_exported")
+            throw new Error("Expected native tables spreadsheet export.");
+        return reply.export;
+    }
     async exportNativeTrackerSpreadsheet(expectedRevision, presentation, format) {
         const reply = await this.#spreadsheet({ type: "export_native_tracker", expected_revision: expectedRevision, presentation, format });
         if (reply.status !== "spreadsheet_exported")
