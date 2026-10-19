@@ -63,6 +63,8 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
     assert.match(ledger, /Calculated summary values are not included/);
     assert.match(ledger, /Reports and charts are not included/);
     assert.doesNotMatch(ledger, /keyed-grouped-sum/i);
+    // A selected-table CSV does not contain every summary source table, so the copy must not claim it.
+    assert.doesNotMatch(ledger, /contains the source tables used by the summary/i);
   }
   if (cancel) {
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -181,7 +183,7 @@ try {
   ]);
   // CSV must follow the selected second table rather than workbook order.
   await page.getByLabel("Table", { exact: true }).selectOption("sales"); await ready(page);
-  assert.deepEqual(await prepare(page,"csv"), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
+  assert.deepEqual(await prepare(page,"csv",{sales:true}), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
   checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review");
   console.log(JSON.stringify({status:"PASS",checks,downloads,output}));
 } finally {

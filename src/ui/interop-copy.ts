@@ -6,7 +6,7 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
   "Keyed-grouped-sum definitions are excluded; retain the Tachiko source to preserve bindings.":
     "Summary settings are not included. Save a copy of your work to keep the summary and its table connections.",
   "Keyed-grouped-sum calculated results are excluded; no calculated snapshots are emitted.":
-    "Calculated summary values are not included. The file contains the source tables used by the summary.",
+    "Calculated summary values are not included.",
   "Reports and charts are excluded; this export contains native source tables only.":
     "Reports and charts are not included. Only the source tables are exported.",
   "CSV exports scalar lexical values only: typing and formatting are lost, and missing values cannot be distinguished from empty Text. Formula-leading Text or headers are refused; use typed XLSX.":
