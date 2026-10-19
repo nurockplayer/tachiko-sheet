@@ -243,6 +243,16 @@ try {
     }, width);
   }
   await capture("many-tables");
+  // Long names truncate at a readable width; the full name stays available.
+  const widths = await tabs().evaluateAll(nodes => nodes.map(node => ({
+    width: node.getBoundingClientRect().width, em: parseFloat(getComputedStyle(node).fontSize),
+    title: node.title, text: node.textContent, ellipsis: getComputedStyle(node).textOverflow,
+  })));
+  for (const tab of widths) {
+    assert.ok(tab.width <= tab.em * 14 + 1, `table tab stays at most 14em wide: ${JSON.stringify(tab)}`);
+    assert.equal(tab.title, tab.text, "a truncated table tab keeps its full name as a tooltip");
+    assert.equal(tab.ellipsis, "ellipsis");
+  }
   await tabs().last().focus(); await page.keyboard.press("Home"); await selected(0);
   await page.waitForFunction(() => document.querySelector('[aria-label="Tables"] [role="tab"]') === document.activeElement);
   await page.keyboard.press("End"); await selected(names.length - 1);

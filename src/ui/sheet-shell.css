@@ -1018,6 +1018,9 @@ body { margin: 0; }
 }
 
 /* Modes precede the active workspace; actual table tabs follow it. */
+/* Long imported sheet names stay readable without taking the whole strip;
+   the full name remains in the tooltip and accessible name. */
+.ts-table-tab { flex: none; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ts-workspace {
   display: flex;
   flex-direction: column;

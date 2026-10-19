@@ -3363,7 +3363,7 @@ export function SheetShell(props: SheetShellProps) {
               const name = names.table(collection.id) ?? collection.display_name;
               return <button key={collection.key} type="button" role="tab" id={tableTabId(collection.key)}
                 aria-label={tableTabName(name, index, view.collections.length)} aria-selected={active} aria-controls="ts-table-workspace"
-                tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-tab--active" : "ts-tab"}
+                tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-table-tab ts-tab--active" : "ts-tab ts-table-tab"} title={name}
                 onClick={() => void selectCollection(collection.key)}>{name}</button>;
             })}
           </div>
