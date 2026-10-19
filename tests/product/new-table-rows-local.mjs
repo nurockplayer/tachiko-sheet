@@ -245,15 +245,15 @@ async function pendingCreateFocus(page) {
 try {
   let page = await start();
   // Focused diagnostic selectors run only their requested cases.
-  const focusedCase = Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key)) || process.env.TABLE_ROWS_PENDING_FOCUS;
+  const focusedCase = Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key)) || Boolean(process.env.TABLE_ROWS_PENDING_FOCUS) || Boolean(process.env.TABLE_ROWS_DRAFT_READINESS);
   if (process.env.TABLE_ROWS_DRAFT_READINESS || !focusedCase) await runCreateDraftReadinessCases({ page, projection, checks, closeWithoutSave });
-  if (process.env.TABLE_ROWS_PENDING_FOCUS || !Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key))) await pendingCreateFocus(page);
+  if (process.env.TABLE_ROWS_PENDING_FOCUS || !focusedCase) await pendingCreateFocus(page);
   if (process.env.TABLE_ROWS_ROUND6_CASE) await runNewTableRound6Cases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROUND4_CASE) await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
   let oracle;
-  if (!process.env.TABLE_ROWS_PENDING_FOCUS && !process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
+  if (!focusedCase) {
   await page.getByRole("button", { name: "New table", exact: true }).waitFor();
   const homeEntry = page.getByRole("region", { name: "Other ways to start", exact: true });
   assert.equal(await homeEntry.locator(".ts-home-other-row").first().locator("strong").textContent(), "New table");
@@ -503,7 +503,7 @@ try {
   checks.push("unknown-insert-refresh-once-keeps-draft-edit-cannot-unlock-replay-explicit-clear");
   await closeWithoutSave(page);
   }
-  if (!process.env.TABLE_ROWS_PENDING_FOCUS && !process.env.TABLE_ROWS_REPAIR_CASE && !process.env.TABLE_ROWS_ROOT_CASE && !process.env.TABLE_ROWS_ROUND4_CASE && !process.env.TABLE_ROWS_ROUND6_CASE) {
+  if (!focusedCase) {
     await runNewTableRound6Cases({ page, ready, projection, checks });
     await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
     await runNewTableRepairCases({ page, ready, projection, checks });
