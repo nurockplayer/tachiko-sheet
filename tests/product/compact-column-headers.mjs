@@ -1,6 +1,38 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 
+async function touchTarget(control, label) {
+  await control.scrollIntoViewIfNeeded();
+  const hit = await control.evaluate(node => {
+    const rect = node.getBoundingClientRect();
+    const header = node.closest("th").getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const pseudo = getComputedStyle(node, "::after");
+    const transform = new DOMMatrixReadOnly(pseudo.transform === "none" ? undefined : pseudo.transform);
+    const width = parseFloat(pseudo.width);
+    const height = parseFloat(pseudo.height);
+    // Absolute pseudo-elements use the control's padding box, then transform.
+    const pseudoLeft = rect.left + parseFloat(style.borderLeftWidth) + parseFloat(pseudo.left) + transform.e;
+    const pseudoTop = rect.top + parseFloat(style.borderTopWidth) + parseFloat(pseudo.top) + transform.f;
+    const target = {
+      left: Math.min(rect.left, pseudoLeft), top: Math.min(rect.top, pseudoTop),
+      right: Math.max(rect.right, pseudoLeft + width), bottom: Math.max(rect.bottom, pseudoTop + height),
+    };
+    const points = [[target.left + 1, target.top + 1], [target.left + 2, (target.top + target.bottom) / 2], [target.right - 1, target.bottom - 1]];
+    const hits = points.map(([x, y]) => ({ x, y, target: document.elementFromPoint(x, y)?.outerHTML.slice(0, 200), reachable: node.contains(document.elementFromPoint(x, y)) }));
+    const below = document.elementFromPoint(rect.right - 2, header.bottom + 2);
+    return {
+      width: target.right - target.left, height: target.bottom - target.top,
+      target, header: header.toJSON(), hits, reachable: hits.every(hit => hit.reachable),
+      contained: target.left >= header.left && target.right <= header.right && target.top >= header.top && target.bottom <= header.bottom,
+      bodyBelow: Boolean(below && !node.contains(below) && below.closest("tbody, tfoot")),
+    };
+  });
+  assert.ok(hit.width >= 44 && hit.height >= 28 && hit.reachable, `${label}: reachable >=44x28px target: ${JSON.stringify(hit)}`);
+  assert.ok(hit.contained && hit.bodyBelow, `${label}: target stays inside its own header and leaves the first row tappable: ${JSON.stringify(hit)}`);
+  return hit;
+}
+
 // #218: measure real headers, including the final + column control, rather
 // than mirroring the CSS layout. Exercise both the fitted catalog and sales'
 // horizontally scrolling grid through the normal Appearance/table controls.
@@ -22,35 +54,6 @@ export async function assertCompactColumnHeaders(page, screens) {
     await page.locator(".ts-appearance-profile-option").filter({ hasText: profile }).click();
     await page.locator(".ts-appearance-density-option").filter({ hasText: density }).click();
     await page.keyboard.press("Escape");
-  }
-  async function touchTarget(control, label) {
-    await control.scrollIntoViewIfNeeded();
-    const hit = await control.evaluate(node => {
-      const rect = node.getBoundingClientRect();
-      const header = node.closest("th")?.getBoundingClientRect();
-      const pseudo = getComputedStyle(node, "::after");
-      const width = Math.max(rect.width, parseFloat(pseudo.minWidth), parseFloat(pseudo.width));
-      const height = Math.max(rect.height, parseFloat(pseudo.height));
-      const top = rect.top + rect.height / 2 - height / 2;
-      const left = rect.right - width;
-      const points = [[left + 1, top + 1], [left + 2, top + height / 2], [rect.right - 1, top + height - 1]];
-      const hits = points.map(([x, y]) => ({ x, y, target: document.elementFromPoint(x, y)?.outerHTML.slice(0, 200), reachable: node.contains(document.elementFromPoint(x, y)) }));
-      // A tap just below the header must reach the first data row, not this control.
-      const below = header ? document.elementFromPoint(rect.right - 2, header.bottom + 2) : null;
-      return {
-        width, height, reachable: hits.every(hit => hit.reachable), hits,
-        contained: Boolean(header) && top >= header.top - 0.5 && top + height <= header.bottom + 0.5,
-        bodyBelow: Boolean(below && !node.contains(below) && below.closest("tbody, tfoot")),
-        styles: (() => {
-          const label = node.closest("th")?.querySelector(".ts-col-head");
-          const ls = label ? getComputedStyle(label) : null;
-          return { label: ls && { position: ls.position, zIndex: ls.zIndex, transform: ls.transform, opacity: ls.opacity }, pseudo: { position: pseudo.position, zIndex: pseudo.zIndex, left: pseudo.left, right: pseudo.right, width: pseudo.width } };
-        })(),
-      };
-    });
-    assert.ok(hit.width >= 44 && hit.height >= 24 && hit.reachable, `${label} has a reachable touch area at least 44px wide and 24px tall: ${JSON.stringify(hit)}`);
-    assert.ok(hit.contained && hit.bodyBelow, `${label} touch area stays inside the header; the first row stays tappable: ${JSON.stringify(hit)}`);
-    return hit;
   }
   for (const profile of profiles) {
     for (const density of densities) {
@@ -118,5 +121,81 @@ export async function assertCompactColumnHeaders(page, screens) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await choose("Tachiko", "Compact");
   await selectTable("catalog");
+  return observations;
+}
+
+// A native many-column table must reach the real Work New table path. No DOM
+// columns or semantic replies are injected to manufacture this geometry.
+export async function assertManyColumnHeaders(page, screens) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  if (await page.locator('[data-testid="project-ready"]').count()) {
+    await page.getByRole("button", { name: "Close project", exact: true }).click();
+    const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+    if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  }
+  await page.getByRole("button", { name: "New table", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New table", exact: true });
+  await dialog.getByLabel("Table name", { exact: true }).fill("Twenty columns");
+  for (let i = 1; i < 20; i++) await dialog.getByRole("button", { name: "Add column", exact: true }).click();
+  await dialog.getByRole("button", { name: "Create table", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".ts-column-header").length === 20);
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  const headers = page.locator(".ts-column-header");
+  const text = await page.locator('.ts-grid th[scope="col"]').allTextContents();
+  const observations = [];
+  for (const profile of ["Tachiko", "Familiar Spreadsheet", "Minimal-Focus"]) {
+    for (const density of ["Compact", "Comfortable"]) {
+      await page.getByRole("button", { name: "Appearance", exact: true }).click();
+      await page.locator(".ts-appearance-profile-option").filter({ hasText: profile }).click();
+      await page.locator(".ts-appearance-density-option").filter({ hasText: density }).click();
+      await page.keyboard.press("Escape");
+      const desktop = await page.locator(".ts-grid thead").evaluate(node => node.getBoundingClientRect().height);
+      await page.setViewportSize({ width: 390, height: 844 });
+      for (const forcedColors of ["none", "active"]) {
+        await page.emulateMedia({ forcedColors });
+        const label = `${profile}/${density}/${forcedColors}/20 columns`;
+        const compact = await page.locator(".ts-grid thead").evaluate(node => node.getBoundingClientRect().height);
+        assert.ok(compact <= 36 && Math.abs(compact - desktop) <= 2, `${label}: header stays one line`);
+        assert.deepEqual(await page.locator('.ts-grid th[scope="col"]').allTextContents(), text);
+        const controls = [];
+        for (let index = 0; index < 20; index++) {
+          const header = headers.nth(index);
+          // Centre each header in the existing scroll viewport, clear of the
+          // sticky row-number gutter, before probing both adjacent boundaries.
+          await header.evaluate(node => node.scrollIntoView({ block: "nearest", inline: "center" }));
+          for (const control of await header.locator("summary, .ts-column-add").all()) controls.push(await touchTarget(control, `${label}/${index}`));
+          const edges = await header.evaluate(node => {
+            const rect = node.getBoundingClientRect();
+            return [rect.left + 1, rect.right - 1].map(x => {
+              const hit = document.elementFromPoint(x, rect.top + rect.height / 2);
+              return { x, ownHeader: hit?.closest("th") === node, hit: hit?.outerHTML.slice(0, 150) };
+            });
+          });
+          assert.ok(edges.every(edge => edge.ownHeader), `${label}/${index}: header edges never hit another column: ${JSON.stringify(edges)}`);
+          if ([0, 10, 19].includes(index)) {
+            const action = header.locator("summary");
+            await action.click();
+            const menu = header.locator(".ts-command-menu");
+            const visible = await menu.evaluate(node => {
+              const rect = node.getBoundingClientRect();
+              const scroll = node.closest(".ts-grid-scroll").getBoundingClientRect();
+              return rect.left >= Math.max(0, scroll.left) && rect.right <= Math.min(innerWidth, scroll.right) && rect.top >= scroll.top && rect.bottom <= Math.min(innerHeight, scroll.bottom) && [...node.querySelectorAll("button")].every(button => {
+                const box = button.getBoundingClientRect();
+                return box.width >= 44 && box.height >= 44 && button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+              });
+            });
+            assert.ok(visible, `${label}/${index}: first/middle/last menus fit and their actions receive input`);
+            if (profile === "Tachiko" && density === "Compact" && forcedColors === "none") await page.screenshot({ path: path.join(screens, `many-columns-menu-${index}-390x844.png`) });
+            await menu.getByRole("button", { name: "Rename…", exact: true }).click();
+            await page.getByRole("dialog", { name: "Rename column", exact: true }).waitFor();
+            await page.keyboard.press("Escape");
+          }
+        }
+        observations.push({ profile, density, forcedColors, desktop, compact, controls });
+      }
+      await page.emulateMedia({ forcedColors: "none" });
+      await page.setViewportSize({ width: 1440, height: 900 });
+    }
+  }
   return observations;
 }

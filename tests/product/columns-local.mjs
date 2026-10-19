@@ -11,7 +11,7 @@ import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
 import { j4CanaryText } from "../fixtures/j4-catalog-sales.mjs";
 import { assertPendingDialogFocus, tabToDialogAction } from "./pending-dialog-focus.mjs";
-import { assertCompactColumnHeaders } from "./compact-column-headers.mjs";
+import { assertCompactColumnHeaders, assertManyColumnHeaders } from "./compact-column-headers.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -412,6 +412,10 @@ try {
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
   assert.equal(values(await projection())[0][1], 777);
   checks.push("129-row native capacity: all three column actions refuse portable preflight with exact copy, no dispatch/publication/host write/flag change; scalar edit, bound Save and Save a copy still succeed; full restart/reopen retains exact state");
+
+  const manyHeaders = await assertManyColumnHeaders(page, screens);
+  await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));
+  checks.push("218 repair: real 20-column native table; every >=44x28px control stays inside its own header; every left/right header edge resolves to its own content; first/middle/last menus fully usable at 390x844 across all profiles/densities and forced colors");
 
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };

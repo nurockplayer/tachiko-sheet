@@ -1241,7 +1241,9 @@ body { margin: 0; }
   font-variant-numeric: tabular-nums;
   table-layout: fixed;
   width: 100%;
-  min-width: 1024px;
+  /* Fixed layout must reserve a label plus header actions per column instead
+     of dividing 1024px into arbitrarily narrow columns. */
+  min-width: max(1024px, calc(48px + var(--ts-grid-column-count) * 144px));
 }
 
 .ts-grid th,
@@ -2777,7 +2779,13 @@ body { margin: 0; }
 .ts-column-heading [data-column-action]::before { content: attr(data-column-action); }
 
 @media (pointer: coarse), (hover: none), (max-width: 700px) {
+  /* The fitted 2/3-column example has smaller padding and an icon-only add
+     control at compact width; 104px per column still fits its widest header. */
+  .ts-table-composition--sales-catalog .ts-grid { min-width: calc(44px + var(--ts-grid-column-count) * 104px); }
   .ts-column-heading { gap: 4px; }
+  /* Even a short label such as I reserves the space used by the disclosure's
+     widened target; extra column width alone does not grow a flex label. */
+  .ts-column-header .ts-col-head { min-width: 16px; }
   .ts-column-overflow > summary { position: relative; opacity: 1; pointer-events: auto; }
   /* Widen the hit area into the label, but keep it vertically inside the
      one-line header so taps on the first data row still reach its cells.
