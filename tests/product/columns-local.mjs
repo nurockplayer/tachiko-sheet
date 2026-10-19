@@ -11,12 +11,13 @@ import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
 import { j4CanaryText } from "../fixtures/j4-catalog-sales.mjs";
 import { assertPendingDialogFocus, tabToDialogAction } from "./pending-dialog-focus.mjs";
+import { assertCompactColumnHeaders, assertManyColumnHeaders } from "./compact-column-headers.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
 const work = await mkdtemp(path.join(tmpdir(), "sheet212-"));
 const evidence = process.env.COLUMNS_OUT ?? "/tmp/sheet212-checks";
-const screens = path.join(evidence, "screens");
+const screens = process.env.COLUMNS_SCREENS ?? path.join(evidence, "screens");
 await mkdir(screens, { recursive: true });
 const checks = [], processes = [], screenshots = [];
 const profile = path.join(work, "profile");
@@ -130,12 +131,23 @@ async function assertFocused(target, message) {
 }
 const columnActions = name => page.getByRole("button", { name: `Column actions for ${name}`, exact: true });
 async function chooseColumnAction(name, action) {
+  if (await page.locator(".ts-column-toolbar").count()) {
+    const index = (await page.locator(".ts-col-head").allTextContents()).indexOf(name);
+    assert.ok(index >= 0);
+    await page.locator(".ts-grid tbody tr.ts-row").first().locator(".ts-cell").nth(index).focus();
+    await page.getByRole("button", { name: "Column", exact: true }).click();
+    await page.getByRole("button", { name: `${action} “${name}”…`, exact: true }).click();
+    return;
+  }
   await page.getByRole("columnheader", { name, exact: true }).hover();
   await columnActions(name).click();
   await page.getByRole("button", { name: `${action}…`, exact: true }).click();
 }
 async function add(name, type = "text", fill) {
-  await page.getByRole("button", { name: "+ column", exact: true }).click();
+  if (await page.locator(".ts-column-toolbar").count()) {
+    await page.getByRole("button", { name: "Column", exact: true }).click();
+    await page.getByRole("button", { name: "Add column…", exact: true }).click();
+  } else await page.getByRole("button", { name: "+ column", exact: true }).click();
   const d = dialog("Add column");
   await d.getByLabel("Column name", { exact: true }).fill(name);
   await d.getByLabel("Column type", { exact: true }).selectOption(type);
@@ -245,12 +257,14 @@ try {
   await page.mouse.move(0, 0); await capture("headers-rest");
   for (const name of labels) assert.equal(await columnActions(name).evaluate(n => getComputedStyle(n).opacity), name === "price" ? "1" : "0");
   await page.setViewportSize({ width: 390, height: 900 });
-  for (const name of labels) assert.equal(await columnActions(name).evaluate(n => getComputedStyle(n).opacity), "1", "compact disclosures remain discoverable without hover");
+  await page.locator(".ts-column-toolbar > summary").waitFor();
+  assert.equal(await page.locator(".ts-column-header summary, .ts-column-header button").count(), 0, "compact header actions move to one Column disclosure below the grid");
   const compactGrid = await page.locator('.ts-grid-scroll').evaluate(n => ({ width: n.clientWidth, content: n.scrollWidth }));
   assert.ok(compactGrid.content <= compactGrid.width + 1, "compact Sales headers retain the qualified grid width");
-  const compactAdd = await page.getByRole("button", { name: "+ column", exact: true }).boundingBox();
-  assert.ok(compactAdd && compactAdd.x >= 0 && compactAdd.x + compactAdd.width <= 390, "+ column stays reachable without horizontal scrolling");
+  const compactColumn = await page.getByRole("button", { name: "Column", exact: true }).boundingBox();
+  assert.ok(compactColumn && compactColumn.x >= 0 && compactColumn.x + compactColumn.width <= 390, "Column stays reachable outside the horizontal grid scrollport");
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator(".ts-column-header summary").first().waitFor();
   const header = page.locator('.ts-col-head').filter({ hasText: /^price$/ });
   await header.focus(); await header.press("F2"); await dialog("Rename column").waitFor(); await page.keyboard.press("Escape");
   await dialog("Rename column").waitFor({ state: "detached" });
@@ -264,7 +278,8 @@ try {
   await page.keyboard.press("Escape"); assert.equal(await disclosure.getAttribute("open"), null);
   await assertFocused(actions, "Escape returns to the disclosure button");
   await actions.press("Space"); assert.equal(await disclosure.getAttribute("open"), "");
-  await capture("column-menu-open", disclosure.locator('.ts-command-menu'));
+  const desktopMenuScreenshot = path.join(screens, "column-menu-open-1440x900.png");
+  await page.screenshot({ path: desktopMenuScreenshot }); screenshots.push(desktopMenuScreenshot);
   await actions.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
   d = dialog("Rename column"); await d.waitFor(); await page.keyboard.press("Escape"); await d.waitFor({ state: "detached" });
   await assertFocused(actions, "Rename dialog cancel returns to the closed disclosure");
@@ -277,6 +292,9 @@ try {
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
   assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
   checks.push("column disclosure: stable clean header text; hover/focused-column/compact discovery; Enter/Space open; Tab reaches Rename/Remove and exits; Escape and dialog cancellation return focus");
+  const compactHeaders = await assertCompactColumnHeaders(page, screens);
+  await writeFile(path.join(evidence, "compact-headers.json"), JSON.stringify(compactHeaders, null, 2));
+  checks.push("218: labels-only compact headers; viewport-contained Column menu targets the focused column at 320/375/390 across all profiles/densities and forced colors; desktop hover/focus actions unchanged");
   await chooseColumnAction("price", "Rename");
   d = dialog("Rename column"); await d.getByLabel("Column name", { exact: true }).fill("Unit price"); await capture("rename");
   // Composition must not submit/cancel prematurely.
@@ -380,7 +398,9 @@ try {
   const capacityBefore = await projection(), countBefore = (await commands()).length;
   const writesBefore = await page.evaluate(() => window.__columnEvidence.hostWrites);
   const refusal = "Column changes aren't available for this work yet, because it couldn't then be saved. Nothing was changed.";
-  for (const kind of ["Add", "Rename", "Remove"]) {
+  for (const width of [1440, 320]) for (const kind of ["Add", "Rename", "Remove"]) {
+    await page.setViewportSize({ width, height: width === 320 ? 844 : 900 });
+    await page.locator(width === 320 ? ".ts-column-toolbar > summary" : ".ts-column-header summary").first().waitFor();
     if (kind === "Add") d = await add("Blocked", "text", "unchanged");
     else {
       await chooseColumnAction(table.columns[0].display_name, kind); d = dialog(`${kind} column`);
@@ -393,8 +413,11 @@ try {
     assert.equal(await page.evaluate(() => window.__columnEvidence.hostWrites), writesBefore, "refusal creates or updates no copy");
     assert.equal(await d.evaluate(n => n.contains(document.activeElement)), true);
     await cancel(`${kind} column`);
+    if (width === 320) await assertFocused(page.locator(".ts-column-toolbar > summary"), "portable-preflight refusal cancellation returns to Column");
     await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator(".ts-column-header summary").first().waitFor();
   await page.getByRole("button", { name: "Refresh", exact: true }).click(); await ready();
   assert.deepEqual(await projection(), capacityBefore, "a fresh authoritative read confirms every refusal left the work unchanged");
   assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true, "preflights create no history entry");
@@ -407,7 +430,11 @@ try {
   await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after refused columns", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
   assert.equal(values(await projection())[0][1], 777);
-  checks.push("129-row native capacity: all three column actions refuse portable preflight with exact copy, no dispatch/publication/host write/flag change; scalar edit, bound Save and Save a copy still succeed; full restart/reopen retains exact state");
+  checks.push("129-row native capacity: all three column actions refuse portable preflight through desktop headers and compact Column menu with exact copy, no dispatch/publication/host write/flag change; scalar edit, bound Save and Save a copy still succeed; full restart/reopen retains exact state");
+
+  const manyHeaders = await assertManyColumnHeaders(page, screens);
+  await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));
+  checks.push("218 root-cause design: real 20-column native table with long first name; focused middle rename, last removal and add at 320/375/390; focus returns to Column; draft guard; labels-only headers across all profiles/densities and forced colors");
 
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };
