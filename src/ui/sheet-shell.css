@@ -1241,9 +1241,7 @@ body { margin: 0; }
   font-variant-numeric: tabular-nums;
   table-layout: fixed;
   width: 100%;
-  /* Fixed layout must reserve a label plus header actions per column instead
-     of dividing 1024px into arbitrarily narrow columns. */
-  min-width: max(1024px, calc(48px + var(--ts-grid-column-count) * 144px));
+  min-width: 1024px;
 }
 
 .ts-grid th,
@@ -2762,7 +2760,7 @@ body { margin: 0; }
   background: var(--ts-grid-head);
   color: var(--ts-grid-header-foreground);
 }
-.ts-column-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
+.ts-column-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; min-height: 24px; }
 .ts-column-header .ts-col-head { position: static; z-index: auto; display: block; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ts-column-overflow { position: relative; flex: none; }
 .ts-column-overflow > summary { min-width: 28px; min-height: 24px; opacity: 0; pointer-events: none; }
@@ -2773,34 +2771,20 @@ body { margin: 0; }
 .ts-grid .ts-column-header:has(.ts-column-overflow[open]) { z-index: 4; }
 .ts-column-overflow .ts-command-menu { min-width: 128px; }
 .ts-column-overflow .ts-command-menu .ts-button { text-align: left; }
-.ts-column-add { position: relative; flex: none; min-height: 24px; padding: 1px 5px; font-size: 11px; }
+.ts-column-add { flex: none; min-height: 24px; padding: 1px 5px; font-size: 11px; }
 .ts-column-header .ts-col-head:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .ts-column-status:empty { display: none; }
 .ts-column-heading [data-column-action]::before { content: attr(data-column-action); }
 
-@media (pointer: coarse), (hover: none), (max-width: 700px) {
-  .ts-column-heading { gap: 4px; }
-  /* Even a short label such as I reserves the space used by the disclosure's
-     widened target; extra column width alone does not grow a flex label. */
-  .ts-column-header .ts-col-head { min-width: 16px; }
-  .ts-column-overflow > summary { position: relative; opacity: 1; pointer-events: auto; }
-  /* Widen the hit area into the label, but keep it vertically inside the
-     one-line header so taps on the first data row still reach its cells.
-     28px tall exceeds the 24px WCAG 2.5.8 minimum. */
-  .ts-column-overflow > summary::after,
-  .ts-column-add::after,
-  .ts-column-add[data-ts-held]:not(:disabled)::after { content: ""; position: absolute; inset: auto -1px auto auto; top: 50%; transform: translateY(-50%); width: 100%; min-width: 44px; height: 28px; border: 0; pointer-events: auto; z-index: 1; }
-  /* Keep the shared held-state cue on the visual button, not its hit area. */
-  .ts-column-add[data-ts-held]:not(:disabled) { box-shadow: inset 0 0 0 2px currentColor; }
-  .ts-column-overflow[open] .ts-command-menu { top: 48px; }
-  .ts-column-header:nth-child(2) .ts-column-overflow[open] .ts-command-menu { left: 0; right: auto; }
-  .ts-column-overflow .ts-button { min-height: 44px; }
+.ts-column-toolbar > summary { min-width: 72px; min-height: 44px; opacity: 1; pointer-events: auto; font-size: 14px; line-height: 20px; }
+.ts-column-toolbar[open] .ts-command-menu {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  right: auto;
+  width: min(280px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  white-space: normal;
 }
-
-@media (max-width: 700px) {
-  .ts-grid .ts-column-header { padding-inline: 4px; }
-  /* The accessible name stays "+ column"; the compact visual leaves room
-     for the last column's label and a separate, nonoverlapping touch target. */
-  .ts-column-add { width: 44px; padding-inline: 0; }
-  .ts-column-heading .ts-column-add::before { content: "+"; }
-}
+.ts-column-toolbar .ts-command-menu .ts-button { min-height: 44px; white-space: normal; overflow-wrap: anywhere; }

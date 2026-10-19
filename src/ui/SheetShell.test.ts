@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { AppearancePreferenceController, AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
@@ -437,6 +437,24 @@ describe("SheetShell static rendering", () => {
     const readerOnly = render({ view });
     expect(readerOnly).not.toContain("data-column-action");
     expect(readerOnly).not.toContain('class="ts-col-head" tabindex="0"');
+  });
+
+  it("offers one compact Column menu with column handlers alone and no interactive headers", () => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+    try {
+      const view = makeView();
+      view.table.native_table_profile = true;
+      const markup = render({ view, onAddColumn: async () => ({ kind: "confirmed" }), onRenameColumn: async () => ({ kind: "confirmed" }), onRemoveColumn: async () => ({ kind: "confirmed" }) });
+      const header = markup.slice(markup.indexOf("<thead>"), markup.indexOf("</thead>"));
+      expect(header).not.toMatch(/<button|<summary|tabindex=/);
+      expect(markup).toContain('aria-label="Column"');
+      expect(markup).toContain("Rename “title”…");
+      expect(markup).toContain("Remove “title”…");
+      expect(markup).toContain("Add column…");
+      expect(render({ view })).not.toContain('aria-label="Column"');
+      view.table.native_table_profile = false;
+      expect(render({ view, onAddColumn: async () => ({ kind: "confirmed" }) })).not.toContain('aria-label="Column"');
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("renders a navigable client-only draft row inside the grid", () => {
