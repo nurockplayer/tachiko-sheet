@@ -33,7 +33,7 @@ describe("paste routing", () => {
     expect(clipboardBoolean("yes", "boolean")).toBe("yes");
   });
   it.each([
-    [context({ native: false }), block, /imported/],
+    [context({ native: false }), block, /Imported tables can't gain rows by paste/ ],
     [context({ blocked: true }), block, /current edit/],
     [context({ pendingDraft: true }), block, /discard/],
     [context(), [["a"], ["b", "c"]], /different widths/],
@@ -46,6 +46,39 @@ describe("paste routing", () => {
     [context({ start: { row: -1, column: 0 } }), [["a"]], /current cell/],
   ] as const)("refuses whole blocks", (ctx, values, message) => {
     expect(routePaste(values as string[][], ctx)).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
+  });
+  it("routes imported overwrites to edit, using all existing rows beyond native row 128", () => {
+    expect(routePaste(block.slice(0, 2), context({ native: false }))).toEqual({ kind: "edit", rows: [["a", "1,300", "true"], ["b", "", "false"]] });
+    expect(routePaste([["", "10/19/2026"]], context({ native: false, rowCount: 200, start: { row: 199, column: 0 }, columnTypes: ["number", "date"] })))
+      .toEqual({ kind: "edit", rows: [["", "10/19/2026"]] });
+    expect(routePaste([["4"]], context({ native: false, start: { row: 1, column: 1 } }))).toEqual({ kind: "edit", rows: [["4"]] });
+  });
+  it("refuses imported appends, blocked, ragged, wide and any non-editable target before dispatch", () => {
+    for (const overrides of [{ rowCount: 0 }, { start: { row: 2, column: 0 } }, { draft: true }]) {
+      expect(routePaste([["a"]], context({ native: false, ...overrides }))).toEqual({ kind: "refused", message: "Imported tables can't gain rows by paste. Nothing was pasted." });
+    }
+    for (const [overrides, rows, message] of [
+      [{ blocked: true }, [["a"]], /current edit/],
+      [{ pendingDraft: true }, [["a"]], /discard/],
+      [{}, [["a"], ["b", "c"]], /different widths/],
+      [{}, [["a", "b", "c", "d"]], /too wide/],
+      [{ editable: (r: number, c: number) => !(r === 1 && c === 2) }, block.slice(0, 2), /non-editable/],
+    ] as const) expect(routePaste(rows as string[][], context({ native: false, ...overrides }))).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
+  });
+  it("bounds imported edits at 1,024 cells without imposing that count bound on native paste", () => {
+    const rows = Array.from({ length: 128 }, () => Array(8).fill("a"));
+    const ctx = context({ native: false, rowCount: 128, columnTypes: Array(9).fill("text") });
+    expect(routePaste(rows, ctx).kind).toBe("edit");
+    rows[0]!.push("a"); // ragged refusal still wins
+    expect(routePaste(rows, ctx).kind).toBe("refused");
+    rows.forEach(row => { if (row.length === 8) row.push("a"); });
+    expect(routePaste(rows, ctx)).toMatchObject({ kind: "refused", message: expect.stringContaining("1,024-cell") });
+    expect(routePaste(rows, { ...ctx, native: true }).kind).toBe("publish");
+  });
+  it("accepts only exact Boolean tokens for typed imported edits", () => {
+    for (const value of ["yes", " TRUE ", "", "0"]) expect(routePaste([[value]], context({ native: false, columnTypes: ["boolean"] })))
+      .toMatchObject({ kind: "refused", message: expect.stringContaining("true or false") });
+    expect(routePaste([["FaLsE"]], context({ native: false, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [["false"]] });
   });
   it("fills a partial draft without publishing or losing existing draft permission", () => {
     expect(routePaste([["2", "TRUE"]], context({ draft: true, pendingDraft: true, start: { row: 2, column: 1 } })))
@@ -70,6 +103,7 @@ describe("selection and refusal presentation", () => {
     expect(pasteRefusal("core refusal", "number")).toMatch(/12 or 12.5/);
     expect(pasteRefusal("core refusal", "date")).toMatch(/YYYY-MM-DD/);
     expect(pasteRefusal("core refusal")).toBe("core refusal");
+    expect(pasteRefusal("private bridge limit", undefined, "request_too_large")).toBe("The pasted text is too large to paste here. Nothing was pasted.");
   });
 });
 

@@ -16,7 +16,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date" };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -184,7 +184,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       if (command.kind !== "rows") port.setMessage(message);
       const failure = (error as { failure?: { code?: string } })?.failure;
       const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
-      return completed({ kind: "refused", message, ...(command.kind === "rows" ? { fieldType } : {}) });
+      return completed({ kind: "refused", message, ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code } : {}) });
     } finally {
       // App's base finally/end ran in this continuation. A caller awaiting
       // this seam before end adds a microtask and can render the value with

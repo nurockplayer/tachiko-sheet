@@ -1,6 +1,7 @@
-// #210: ordinary grid events with the real pinned Worker/WASM. Observations
+// #210 / #217: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -23,7 +24,7 @@ const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false
 const status = () => page.locator('.ts-clipboard-status');
 const entry = () => page.locator('.ts-entry-row');
 const projection = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.tables).at(-1));
-const commands = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.requests).filter(message => message.request?.type === "paste_cells").map(message => message.request));
+const commands = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.requests).filter(message => ["paste_cells", "edit_cells"].includes(message.request?.type)).map(message => message.request));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
 async function start() {
@@ -49,7 +50,7 @@ async function start() {
           this.record.replies.push(structuredClone(event.data));
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
           const request = this.record.requests.find(request => request.id === event.data.id);
-          if (request?.request?.type === "paste_cells" && event.data.response?.type === "published") {
+          if (["paste_cells", "edit_cells"].includes(request?.request?.type) && event.data.response?.type === "published") {
             if (window.__clipboardEvidence.loseReply) {
               window.__clipboardEvidence.loseReply = false;
               event.stopImmediatePropagation();
@@ -295,14 +296,87 @@ try {
   checks.push("unknown paste outcome: one real publication, Refresh observes without retry");
 
   await close();
-  const csv = path.join(work, "import.csv"); await writeFile(csv, "Item,Amount\nTea,2\nTrain,3\n");
+  const csv = new URL("../../acceptance/j3-interop/fixtures/messy.csv", import.meta.url).pathname;
   await (await homeImportInput(page)).setInputFiles(csv);
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await preview.getByRole("button", { name: "Import file", exact: true }).click(); await ready();
   table = await projection(); assert.equal(Boolean(table.native_table_profile), false);
-  assert.equal(await unchangedPaste("other\t5", /Pasting into imported tables is not available yet; copy works/), 0);
-  await select(table, 2, 2); assert.equal(await copy(cell(table, 1, 1)), "Tea\t2\nTrain\t3");
-  checks.push("6 imported-table paste plain refusal; copy exact displayed values works");
+  const importedBaseline = table;
+  assert.deepEqual(values(table), [[" PEN ", 3, 200], ["NOTE", 2, 500], [" PEN ", 3, 200]]);
+  await select(table, 2, 3);
+  assert.equal(await copy(cell(table, 1, 2)), " PEN \t3\t200\nNOTE\t2\t500", "imported copy remains exact");
+  const importedCount = (await commands()).length;
+  await paste(cell(table, 1, 2), "Coffee\t6.5\t20\nBus\t3\t40");
+  const importedSuccess = status().filter({ hasText: "Updated 2 rows. Save to keep these changes." });
+  await importedSuccess.waitFor();
+  assert.equal(await importedSuccess.getAttribute("role"), "status");
+  table = await projection();
+  const importedPasted = [["Coffee", 6.5, 20], ["Bus", 3, 40], [" PEN ", 3, 200]];
+  assert.deepEqual(values(table), importedPasted);
+  assert.equal((await commands()).length, importedCount + 1);
+  const importedCommand = (await commands()).at(-1);
+  assert.equal(importedCommand.type, "edit_cells");
+  assert.equal(importedCommand.edits.length, 6);
+  assert.deepEqual(importedCommand.edits[0], { target: importedBaseline.rows[0].fields.find(field => field.target.field === table.columns[0].id).target, input: { kind: "text", value: "Coffee" } });
+  assert.deepEqual(importedCommand.edits[1].input, { kind: "number", input: "6.5" });
+  assert.equal(await page.evaluate(() => window.__clipboardEvidence.records.reduce((sum, record) => sum + record.replies.filter(reply =>
+    reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0)), 1, "one imported publication receipt");
+  assert.equal(await cell(table, 1, 2).evaluate(node => node === document.activeElement), true, "paste preserves focused cell");
+  await capture("imported-paste");
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, importedBaseline.rows, "one Undo restores every original value and identity");
+  await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, table.rows);
+  checks.push("217.1 imported 2x3 at selection top-left: one edit_cells, one publication, one Undo/Redo and preserved focus");
+
+  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,300\t2", "bad\t$5\t2", "bad\t\t2"]) {
+    assert.equal(await unchangedPaste(text, /needs a number/), 1);
+  }
+  await capture("imported-refusal");
+  assert.equal(await unchangedPaste("雪".repeat(23_000), /too large/), 1, "UTF-8 request byte limit refuses in Work without truncation");
+  assert.deepEqual((await commands()).at(-1).edits[0].input, { kind: "text", value: "雪".repeat(23_000) });
+  for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/]]) {
+    assert.equal(await unchangedPaste(text, message), 0);
+  }
+  // Anchor the overflow at the actual final row; do not rely on a size-only check.
+  await cell(table, 2, 0).click();
+  const appendCount = (await commands()).length, beforeAppend = await projection();
+  await paste(cell(table, 2, 0), "a\t1\t2\nb\t3\t4");
+  await status().filter({ hasText: "Imported tables can't gain rows by paste. Nothing was pasted." }).waitFor();
+  assert.equal((await commands()).length, appendCount);
+  assert.deepEqual(await projection(), beforeAppend);
+  // Every refusal must leave the original single-paste history unit on top.
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, importedBaseline.rows);
+  await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, table.rows);
+  assert.equal(await page.locator('td[aria-invalid="true"]').count(), 0, "type-only error never invents a target");
+  checks.push("217.2–3 invalid Number and oversized UTF-8 request refused whole; ragged/wide/append never dispatch; history unchanged");
+
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const importedSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
+  await importedSave.getByRole("textbox", { name: "Copy name", exact: true }).fill("Imported clipboard saved");
+  await importedSave.getByRole("button", { name: "Create copy", exact: true }).click();
+  await importedSave.waitFor({ state: "detached" });
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  const importedSaved = await projection();
+  await stop(); await start();
+  await page.getByRole("button", { name: "Open saved Imported clipboard saved", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, importedSaved.rows);
+  assert.deepEqual(values(await projection()), importedPasted);
+  const expectedExport = [["item", "quantity", "price"], ...importedPasted.map(row => row.map(String))];
+  for (const format of ["csv", "xlsx"]) {
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    const downloaded = page.waitForEvent("download");
+    await consent.getByRole("button", { name: "Download", exact: true }).click();
+    const destination = path.join(evidence, `imported-pasted.${format}`);
+    await (await downloaded).saveAs(destination);
+    await consent.waitFor({ state: "detached" });
+    execFileSync("python3", ["-I", new URL("./clipboard-export-oracle.py", import.meta.url).pathname, destination, JSON.stringify(expectedExport)], { stdio: "inherit" });
+  }
+  checks.push("217.4 Save a copy → full process exit → same-profile restart/reopen preserves values/identities; supported CSV and typed XLSX exports match every cell");
   await close(); await openReleasePlanExample(page); await ready();
   table = await projection();
   const calculated = table.rows.flatMap((row, r) => table.columns.flatMap((column, c) => {

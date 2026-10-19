@@ -34,6 +34,7 @@ import {
   type ScalarEdit,
   type NewTableColumn,
   type RowInitializer,
+  type CellEdit,
   type ColumnInitializer,
   type RowCommandOutcome,
   type SheetRuntime,
@@ -1584,6 +1585,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.insertRow(witness, collection, initializers));
   }
 
+  function editCells(witness: ViewWitness, edits: CellEdit[]) {
+    return changeRows(witness, () => runtime.editCells(witness, edits));
+  }
+
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
@@ -2104,6 +2109,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onNewTable={newTable}
+          onEditCells={editCells}
           onPasteCells={pasteCells}
           onInsertRow={insertRow}
           // Column authoring needs the portable writer to save its result;

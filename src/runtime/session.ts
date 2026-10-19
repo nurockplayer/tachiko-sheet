@@ -31,6 +31,7 @@ import {
   type ScalarEdit,
   type NewTableColumn,
   type RowInitializer,
+  type CellEdit,
   type ColumnInitializer,
   type SheetRuntime,
   type ImportedWorkbook,
@@ -648,6 +649,14 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function editCells(witness: ViewWitness, edits: CellEdit[]) {
+    const inputs = edits.map(({ target, input }) => ({ target: { ...target }, input: { ...input } }));
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "cell edits");
+      return command.call(client, { type: "edit_cells", expected_revision: revision, edits: inputs });
+    });
+  }
+
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
     const inputs = rows.map(row => [...row]);
     return confirmedMutation(witness, (client, revision) => {
@@ -1067,7 +1076,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, pasteCells, addColumn, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, validateImportedProject, close,
   };
