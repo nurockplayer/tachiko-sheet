@@ -651,6 +651,7 @@ export function SheetShell(props: SheetShellProps) {
   const copyNameId = useId();
   const copyErrorId = useId();
   const exportUnavailableId = useId();
+  const spreadsheetDraftLockId = useId();
   const closeSaveUnavailableId = useId();
   const copyNameDescriptionBaseId = useId();
   const lockNoteId = useId();
@@ -1224,6 +1225,9 @@ export function SheetShell(props: SheetShellProps) {
   }, [controlsLocked, currentness, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view]);
   const cellDraftActive = editor !== null && editor.entity !== DRAFT_ROW && editor.value !== editor.original;
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
+  // Downloads snapshot the published revision, so unpublished drafts block them.
+  const spreadsheetDraftLocked = cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
     cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
     (newTableOpen && newTableDraftActive) || columnDialog !== null;
@@ -3048,10 +3052,11 @@ export function SheetShell(props: SheetShellProps) {
         <p className="ts-subtle">Prepare a file from your current work. Review what it includes and any changes or warnings before downloading.</p>
         <div className="ts-row-actions">
           <button type="button" className="ts-button" disabled={workFileDownloadLocked} aria-describedby={workFileUnavailableReason ? workFileReasonId : undefined} onClick={(event) => void prepareDownload("ro", event.currentTarget)}>Download work file (.ro)</button>
-          <button type="button" className="ts-button" disabled={controlsLocked} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
-          <button type="button" className="ts-button" disabled={controlsLocked} aria-describedby={!interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
+          <button type="button" className="ts-button" disabled={spreadsheetDownloadLocked} aria-describedby={spreadsheetDraftLocked ? spreadsheetDraftLockId : !interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
+          <button type="button" className="ts-button" disabled={spreadsheetDownloadLocked} aria-describedby={spreadsheetDraftLocked ? spreadsheetDraftLockId : !interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
         </div>
         {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
+        {spreadsheetDraftLocked ? <p className="ts-hint" id={spreadsheetDraftLockId}>Finish or cancel unfinished edits before preparing a CSV or XLSX download.</p> : null}
         {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV downloads the active table. XLSX downloads all supported tables. Summaries and charts are not included. {view.openedFromWorkFile && !workFileUnavailableReason ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>

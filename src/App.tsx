@@ -1488,7 +1488,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setInterop((current) => ({ importInspection: null, metadata: null, ledger: [], cleanupPreview: null, ...current, downloadStatus: "idle", downloadError: null }));
     try {
       if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
-      if (format === "ro" && (currentness !== "current" || draftDirtyRef.current || reportDraftDirtyRef.current)) {
+      // Any download snapshots the published revision; unpublished edits would be silently missing.
+      if (currentness !== "current" || draftDirtyRef.current || reportDraftDirtyRef.current) {
         throw new Error("Finish or cancel unfinished edits and wait for the values before preparing a download.");
       }
       const exported = format === "ro"

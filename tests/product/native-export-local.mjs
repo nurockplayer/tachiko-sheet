@@ -122,6 +122,22 @@ try {
   ]}]);
   checks.push("new-table CSV exact lexical values; XLSX exact text/number/boolean values and types; acknowledgement/cancel/focus");
 
+  // Downloads snapshot the published revision: an unfinished new-row draft blocks them.
+  await page.getByRole("tab",{name:"Table",exact:true}).click();
+  await fillDraftCell(page, page.locator(".ts-entry-row").getByLabel("New row Item (Text)", { exact: true }), "Unfinished");
+  await page.getByRole("tab",{name:"Import & export",exact:true}).click();
+  for (const name of ["Prepare CSV","Prepare XLSX"]) {
+    const button=page.getByRole("button",{name,exact:true});
+    assert.equal(await button.isDisabled(),true,`${name} is unavailable while a draft is unpublished`);
+    const reason=await button.evaluate(node=>document.getElementById(node.getAttribute("aria-describedby")??"")?.textContent??"");
+    assert.match(reason, /unfinished edits/i, `${name} explains why it is unavailable`);
+  }
+  await page.getByRole("tab",{name:"Table",exact:true}).click();
+  await draftActions(page).getByRole("button",{name:"Discard",exact:true}).click();
+  await page.getByRole("tab",{name:"Import & export",exact:true}).click();
+  for (const name of ["Prepare CSV","Prepare XLSX"]) assert.equal(await page.getByRole("button",{name,exact:true}).isEnabled(),true,`${name} returns after the draft is discarded`);
+  checks.push("unpublished new-row draft blocks CSV/XLSX preparation with an associated reason; Discard restores it");
+
   // A normal Text cell may contain formula-leading text, which CSV refuses.
   await page.getByRole("tab",{name:"Table",exact:true}).click();
   const cell=page.locator('table[aria-label="Table"] tbody tr.ts-row').first().locator("td").first();
