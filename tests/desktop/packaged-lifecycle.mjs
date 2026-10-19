@@ -705,14 +705,10 @@ async function namedTableJourney() {
     type.dispatchEvent(new Event("change", { bubbles: true }));
     click(button("Create table", form));
     await waitFor(() => !dialog("New table") && current(), "named table");
-    // current() precedes the post-Create animation-frame focus handoff.
-    // Observe that handoff before any gesture; focusing it ourselves would
-    // conceal the race. The ready cell is looked up afresh after rendering.
-    await waitFor(() => {
-      const first = document.querySelector(".ts-entry-row [data-entry-field]");
-      return current() && first?.getAttribute("aria-readonly") === "false" &&
-        first?.getAttribute("data-work-currentness") === "current" && document.activeElement === first;
-    }, "Create table draft focus handoff");
+    // Packaged WebKit pauses requestAnimationFrame for an unfocused or occluded
+    // window, so the post-Create focus handoff may not run here. Wait only for
+    // state that does not depend on animation frames; the Web lane
+    // (create-draft-readiness-cases) asserts the handoff itself.
     for (const [index, value] of ["Tea", "飲食", "4.5"].entries()) {
       const draftCell = () => [...document.querySelectorAll(".ts-entry-row [data-entry-field]")][index];
       const cell = await waitFor(() => {
@@ -726,10 +722,8 @@ async function namedTableJourney() {
       if (!identity || field !== cell.dataset.workField) throw new Error("draft cell identity missing");
       dblclick(cell); // one complete mouse sequence, outside every wait predicate
       const input = await waitFor(() => document.querySelector('[data-testid="cell-editor"]'), "draft cell editor");
-      // Let any queued focus work run before asserting the surviving editor.
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       if (!input.isConnected || input.closest("td")?.dataset.testid !== identity ||
-          input.closest("td")?.dataset.workField !== field || document.activeElement !== input) {
+          input.closest("td")?.dataset.workField !== field) {
         throw new Error("single double-click did not retain the intended draft-cell editor: " + identity);
       }
       fill(input, value);
