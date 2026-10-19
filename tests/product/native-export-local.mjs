@@ -70,7 +70,9 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await dialog.waitFor({ state: "detached" });
     assert.equal(downloads.length, count);
-    await trigger.evaluate(node => { if (node !== document.activeElement) throw new Error("Cancel must return focus"); });
+    // Focus returns on the next animation frame; wait for it rather than racing it.
+    await page.waitForFunction(element => element === document.activeElement, await trigger.elementHandle(), { timeout: 5000 })
+      .catch(() => { throw new Error("Cancel must return focus to the Prepare button"); });
     return;
   }
   const downloaded = page.waitForEvent("download");
