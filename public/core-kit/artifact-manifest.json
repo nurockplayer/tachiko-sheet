@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "4e6b2c9d6aec069a0f5291fa0a1298d9fa095b6f",
+  "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -13,9 +13,13 @@
     "bootstrap",
     "inspectProject",
     "openProject",
+    "openImportedProject",
     "closeProject",
     "queryTable",
     "queryFields",
+    "explainField",
+    "createKeyedGroupedSum",
+    "queryKeyedGroupedSum",
     "editNumber",
     "editText",
     "editBoolean",
@@ -36,11 +40,14 @@
     "exportSpreadsheet",
     "exportNativeTrackerSpreadsheet",
     "exportNativeBudgetSpreadsheet",
+    "exportNativeTablesSpreadsheet",
     "previewCleanup",
     "commitCleanup",
     "copyFormula",
     "newTracker",
     "newBudget",
+    "newTable",
+    "duplicateCollection",
     "trackerCommand",
     "openLocalDocument"
   ],
@@ -51,7 +58,7 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "7745c04cfd3e7e928fcdc818b39afc98d006e394039363213175a05809cdfe37"
+      "sha256": "44db5a240b613e755ad34746b679ecd53261918f220444bc7dd62726d63dcb5b"
     },
     {
       "path": "experimental-client.d.ts",

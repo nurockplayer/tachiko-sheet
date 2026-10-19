@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "4e6b2c9d6aec069a0f5291fa0a1298d9fa095b6f",
+  "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "fd7d2655b53655a8022ecd0bcba0f8cd80dac43bc8fb1f7a59d3c68868abe180",
+  "artifactManifestSha256": "a680af0a7f230b84e735fa2075360362c510139b49d5021f0101498c0d1268c3",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6267426558",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6273009850",
   "qualificationArtifactReview": {
-    "sourceCommit": "4e6b2c9d6aec069a0f5291fa0a1298d9fa095b6f",
-    "artifactManifestSha256": "fd7d2655b53655a8022ecd0bcba0f8cd80dac43bc8fb1f7a59d3c68868abe180",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6267426558"
+    "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
+    "artifactManifestSha256": "a680af0a7f230b84e735fa2075360362c510139b49d5021f0101498c0d1268c3",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6273009850"
   },
-  "notes": "Exact producer authorized by #225; the unchanged-exporter writer build and the prior independent lead build from clean detached Work checkouts match in all 25 files (manifest fd7d2655). The existing lead build receipt supplies acquisition and independent reproduction provenance; writer proof is in docs/225-kit-handback.md. Product acceptance and the candidate review are separate."
+  "notes": "Exact producer authorized by #225 / PR #226 round-2 inventory repair (Work #548/#549); the unchanged-exporter writer build and the prior independent lead build from clean detached Work checkouts match in all 25 files (manifest a680af0a). The existing lead build receipt supplies acquisition and independent reproduction provenance; writer proof is in docs/225-kit-handback.md. Product acceptance and the candidate review are separate."
 }
