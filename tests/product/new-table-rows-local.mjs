@@ -244,7 +244,9 @@ async function pendingCreateFocus(page) {
 }
 try {
   let page = await start();
-  await runCreateDraftReadinessCases({ page, projection, checks, closeWithoutSave });
+  // Focused diagnostic selectors run only their requested cases.
+  const focusedCase = Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key)) || process.env.TABLE_ROWS_PENDING_FOCUS;
+  if (process.env.TABLE_ROWS_DRAFT_READINESS || !focusedCase) await runCreateDraftReadinessCases({ page, projection, checks, closeWithoutSave });
   if (process.env.TABLE_ROWS_PENDING_FOCUS || !Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key))) await pendingCreateFocus(page);
   if (process.env.TABLE_ROWS_ROUND6_CASE) await runNewTableRound6Cases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
