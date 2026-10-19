@@ -2760,8 +2760,8 @@ body { margin: 0; }
   background: var(--ts-grid-head);
   color: var(--ts-grid-header-foreground);
 }
-.ts-column-heading { display: flex; align-items: center; gap: 8px; }
-.ts-column-header .ts-col-head { position: static; display: block; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.ts-column-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
+.ts-column-header .ts-col-head { position: static; display: block; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ts-column-overflow { position: relative; flex: none; }
 .ts-column-overflow > summary { min-width: 28px; min-height: 24px; opacity: 0; pointer-events: none; }
 .ts-column-header:hover .ts-column-overflow > summary,
@@ -2771,17 +2771,30 @@ body { margin: 0; }
 .ts-grid .ts-column-header:has(.ts-column-overflow[open]) { z-index: 4; }
 .ts-column-overflow .ts-command-menu { min-width: 128px; }
 .ts-column-overflow .ts-command-menu .ts-button { text-align: left; }
-.ts-column-add { flex: none; min-height: 24px; padding: 1px 5px; font-size: 11px; }
+.ts-column-add { position: relative; flex: none; min-height: 24px; padding: 1px 5px; font-size: 11px; }
 .ts-column-header .ts-col-head:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .ts-column-status:empty { display: none; }
 .ts-column-heading [data-column-action]::before { content: attr(data-column-action); }
 
 @media (pointer: coarse), (hover: none), (max-width: 700px) {
-  .ts-column-overflow > summary { opacity: 1; pointer-events: auto; min-width: 44px; min-height: 44px; }
-  .ts-column-overflow .ts-button, .ts-column-add { min-height: 44px; }
+  .ts-column-heading { gap: 4px; }
+  .ts-column-overflow > summary { position: relative; opacity: 1; pointer-events: auto; }
+  /* Extend into the label and below the header, without adding a layout row.
+     Keeping the top edge inside the scroller avoids clipping the hit area. */
+  .ts-column-overflow > summary::after,
+  .ts-column-add::after,
+  .ts-column-add[data-ts-held]:not(:disabled)::after { content: ""; position: absolute; inset: -1px -1px auto auto; width: 100%; min-width: 44px; height: 44px; border: 0; pointer-events: auto; }
+  /* Keep the shared held-state cue on the visual button, not its hit area. */
+  .ts-column-add[data-ts-held]:not(:disabled) { box-shadow: inset 0 0 0 2px currentColor; }
+  .ts-column-overflow[open] .ts-command-menu { top: 48px; }
+  .ts-column-header:nth-child(2) .ts-column-overflow[open] .ts-command-menu { left: 0; right: auto; }
+  .ts-column-overflow .ts-button { min-height: 44px; }
 }
 
 @media (max-width: 700px) {
-  .ts-column-header:has(.ts-column-overflow) .ts-column-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
-  .ts-column-add { grid-column: 1 / -1; justify-self: end; }
+  .ts-grid .ts-column-header { padding-inline: 4px; }
+  /* The accessible name stays "+ column"; the compact visual leaves room
+     for the last column's label and a separate, nonoverlapping touch target. */
+  .ts-column-add { width: 44px; padding-inline: 0; }
+  .ts-column-heading .ts-column-add::before { content: "+"; }
 }

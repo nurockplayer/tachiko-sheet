@@ -11,6 +11,7 @@ import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
 import { j4CanaryText } from "../fixtures/j4-catalog-sales.mjs";
 import { assertPendingDialogFocus, tabToDialogAction } from "./pending-dialog-focus.mjs";
+import { assertCompactColumnHeaders } from "./compact-column-headers.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -277,6 +278,9 @@ try {
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
   assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
   checks.push("column disclosure: stable clean header text; hover/focused-column/compact discovery; Enter/Space open; Tab reaches Rename/Remove and exits; Escape and dialog cancellation return focus");
+  const compactHeaders = await assertCompactColumnHeaders(page, screens);
+  await writeFile(path.join(evidence, "compact-headers.json"), JSON.stringify(compactHeaders, null, 2));
+  checks.push("218: catalog/sales headers stay within 2px of desktop and <=36px across all profiles/densities and forced colors; 44px touch areas and open menus remain usable at 390px");
   await chooseColumnAction("price", "Rename");
   d = dialog("Rename column"); await d.getByLabel("Column name", { exact: true }).fill("Unit price"); await capture("rename");
   // Composition must not submit/cancel prematurely.

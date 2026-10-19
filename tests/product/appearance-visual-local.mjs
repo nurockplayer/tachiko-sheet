@@ -12,7 +12,7 @@ import { openFolder, waitForColdHome } from "./home-entry.mjs";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const key = "tachiko-sheet:appearance-preference:v2";
-const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+const launchOptions = { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const profiles = [
   { id: "tachiko", label: "Tachiko", chrome: "porcelain" },
   { id: "familiar-spreadsheet", label: "Familiar Spreadsheet", chrome: "structured" },

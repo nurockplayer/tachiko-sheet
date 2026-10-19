@@ -2613,7 +2613,7 @@ export function SheetShell(props: SheetShellProps) {
                     }} />)}
                   </div>
                 </details>
-                {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
+                {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" title="+ column" data-column-action="+ column" /> : null}
               </> : null}</div>
             </th>)}
           </tr>
