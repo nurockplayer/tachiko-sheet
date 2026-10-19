@@ -2761,7 +2761,7 @@ body { margin: 0; }
   color: var(--ts-grid-header-foreground);
 }
 .ts-column-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
-.ts-column-header .ts-col-head { position: static; display: block; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-column-header .ts-col-head { position: static; z-index: auto; display: block; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ts-column-overflow { position: relative; flex: none; }
 .ts-column-overflow > summary { min-width: 28px; min-height: 24px; opacity: 0; pointer-events: none; }
 .ts-column-header:hover .ts-column-overflow > summary,
@@ -2779,11 +2779,12 @@ body { margin: 0; }
 @media (pointer: coarse), (hover: none), (max-width: 700px) {
   .ts-column-heading { gap: 4px; }
   .ts-column-overflow > summary { position: relative; opacity: 1; pointer-events: auto; }
-  /* Extend into the label and below the header, without adding a layout row.
-     Keeping the top edge inside the scroller avoids clipping the hit area. */
+  /* Widen the hit area into the label, but keep it vertically inside the
+     one-line header so taps on the first data row still reach its cells.
+     28px tall exceeds the 24px WCAG 2.5.8 minimum. */
   .ts-column-overflow > summary::after,
   .ts-column-add::after,
-  .ts-column-add[data-ts-held]:not(:disabled)::after { content: ""; position: absolute; inset: -1px -1px auto auto; width: 100%; min-width: 44px; height: 44px; border: 0; pointer-events: auto; }
+  .ts-column-add[data-ts-held]:not(:disabled)::after { content: ""; position: absolute; inset: auto -1px auto auto; top: 50%; transform: translateY(-50%); width: 100%; min-width: 44px; height: 28px; border: 0; pointer-events: auto; z-index: 1; }
   /* Keep the shared held-state cue on the visual button, not its hit area. */
   .ts-column-add[data-ts-held]:not(:disabled) { box-shadow: inset 0 0 0 2px currentColor; }
   .ts-column-overflow[open] .ts-command-menu { top: 48px; }

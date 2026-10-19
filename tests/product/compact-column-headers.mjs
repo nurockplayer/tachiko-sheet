@@ -27,15 +27,29 @@ export async function assertCompactColumnHeaders(page, screens) {
     await control.scrollIntoViewIfNeeded();
     const hit = await control.evaluate(node => {
       const rect = node.getBoundingClientRect();
+      const header = node.closest("th")?.getBoundingClientRect();
       const pseudo = getComputedStyle(node, "::after");
       const width = Math.max(rect.width, parseFloat(pseudo.minWidth), parseFloat(pseudo.width));
-      const targetHeight = Math.max(rect.height, parseFloat(pseudo.height));
+      const height = Math.max(rect.height, parseFloat(pseudo.height));
+      const top = rect.top + rect.height / 2 - height / 2;
       const left = rect.right - width;
-      const points = [[left + 1, rect.top + 1], [rect.right - 1, rect.top + targetHeight - 1]];
+      const points = [[left + 1, top + 1], [left + 2, top + height / 2], [rect.right - 1, top + height - 1]];
       const hits = points.map(([x, y]) => ({ x, y, target: document.elementFromPoint(x, y)?.outerHTML.slice(0, 200), reachable: node.contains(document.elementFromPoint(x, y)) }));
-      return { width, height: targetHeight, reachable: hits.every(hit => hit.reachable), hits };
+      // A tap just below the header must reach the first data row, not this control.
+      const below = header ? document.elementFromPoint(rect.right - 2, header.bottom + 2) : null;
+      return {
+        width, height, reachable: hits.every(hit => hit.reachable), hits,
+        contained: Boolean(header) && top >= header.top - 0.5 && top + height <= header.bottom + 0.5,
+        bodyBelow: Boolean(below && !node.contains(below) && below.closest("tbody, tfoot")),
+        styles: (() => {
+          const label = node.closest("th")?.querySelector(".ts-col-head");
+          const ls = label ? getComputedStyle(label) : null;
+          return { label: ls && { position: ls.position, zIndex: ls.zIndex, transform: ls.transform, opacity: ls.opacity }, pseudo: { position: pseudo.position, zIndex: pseudo.zIndex, left: pseudo.left, right: pseudo.right, width: pseudo.width } };
+        })(),
+      };
     });
-    assert.ok(hit.width >= 44 && hit.height >= 44 && hit.reachable, `${label} has a reachable 44px touch area: ${JSON.stringify(hit)}`);
+    assert.ok(hit.width >= 44 && hit.height >= 24 && hit.reachable, `${label} has a reachable touch area at least 44px wide and 24px tall: ${JSON.stringify(hit)}`);
+    assert.ok(hit.contained && hit.bodyBelow, `${label} touch area stays inside the header; the first row stays tappable: ${JSON.stringify(hit)}`);
     return hit;
   }
   for (const profile of profiles) {
@@ -65,15 +79,16 @@ export async function assertCompactColumnHeaders(page, screens) {
           const add = page.getByRole("button", { name: "+ column", exact: true });
           await touchTarget(add, `${label}/add`);
           const addRect = await add.boundingBox();
-          await page.mouse.click(addRect.x + addRect.width - 2, addRect.y + 42);
+          // Click the widened part beside the visual, still inside the header.
+          await page.mouse.click(addRect.x + addRect.width - 42, addRect.y + addRect.height / 2);
           await page.getByRole("dialog", { name: "Add column", exact: true }).waitFor();
           await page.keyboard.press("Escape");
           const actions = page.locator(".ts-column-overflow > summary");
           for (const [index, action] of (await actions.all()).entries()) {
             await touchTarget(action, `${label}/disclosure`);
-            // Click the extended part below the visual, using ordinary input.
+            // Click the widened part beside the visual, using ordinary input.
             const rect = await action.boundingBox();
-            await page.mouse.click(rect.x + rect.width - 2, rect.y + 42);
+            await page.mouse.click(rect.x + rect.width - 42, rect.y + rect.height / 2);
             const disclosure = action.locator("..");
             assert.equal(await disclosure.getAttribute("open"), "", `${label}: extended target opens disclosure`);
             const menu = disclosure.locator(".ts-command-menu");

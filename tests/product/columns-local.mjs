@@ -280,7 +280,7 @@ try {
   checks.push("column disclosure: stable clean header text; hover/focused-column/compact discovery; Enter/Space open; Tab reaches Rename/Remove and exits; Escape and dialog cancellation return focus");
   const compactHeaders = await assertCompactColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "compact-headers.json"), JSON.stringify(compactHeaders, null, 2));
-  checks.push("218: catalog/sales headers stay within 2px of desktop and <=36px across all profiles/densities and forced colors; 44px touch areas and open menus remain usable at 390px");
+  checks.push("218: catalog/sales headers stay within 2px of desktop and <=36px across all profiles/densities and forced colors; header touch areas are at least 44px wide and stay inside the header so the first row stays tappable; open menus keep 44px actions at 390px");
   await chooseColumnAction("price", "Rename");
   d = dialog("Rename column"); await d.getByLabel("Column name", { exact: true }).fill("Unit price"); await capture("rename");
   // Composition must not submit/cancel prematurely.
