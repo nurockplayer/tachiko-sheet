@@ -125,10 +125,59 @@ async function canceledKey(target, key, extra = {}) {
     element.dispatchEvent(event); return event.defaultPrevented;
   }, { key, extra });
 }
+async function assertPanelReachability() {
+  const samples = [];
+  for (const [width, height] of [[320, 300], [320, 450], [360, 640], [1440, 900]]) {
+    await page.setViewportSize({ width, height });
+    for (const name of ["Table", "Cross-table summary", "Report", "Brief", "Import & export"]) {
+      await mode(name).click();
+      const panel = page.locator(`#${await mode(name).getAttribute("aria-controls")}`);
+      await panel.waitFor();
+      const controls = panel.locator('button:visible:enabled, input:visible:enabled, select:visible:enabled, textarea:visible:enabled, summary:visible, a[href]:visible');
+      const count = await controls.count();
+      for (let i = 0; i < count; i++) {
+        // Real Playwright actionability performs scrolling and hit testing;
+        // trial keeps the current work and every mode's configuration intact.
+        const control = controls.nth(i);
+        if (await control.evaluate(node => node.matches('.ts-column-overflow > summary') && getComputedStyle(node).opacity === "0")) {
+          // Desktop column actions are intentionally revealed by header hover.
+          await control.locator('xpath=ancestor::th').hover();
+        }
+        await control.click({ trial: true, timeout: 5000 });
+      }
+      const end = panel.locator('p:visible').last();
+      if (await end.count()) {
+        await end.scrollIntoViewIfNeeded();
+        assert.equal(await end.evaluate(node => {
+          const r = node.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, (Math.max(0, r.top) + Math.min(innerHeight, r.bottom)) / 2);
+          return r.bottom > 0 && r.top < innerHeight && (hit === node || node.contains(hit));
+        }), true, `${width}x${height} ${name}: final text is visible and unobstructed`);
+      }
+      const geometry = await panel.evaluate(node => {
+        const panel = node.getBoundingClientRect();
+        const views = document.querySelector('[aria-label="Workbook views"]').getBoundingClientRect();
+        const tables = document.querySelector('[aria-label="Tables"]').getBoundingClientRect();
+        return { viewsBottom: views.bottom, panelTop: panel.top, panelBottom: panel.bottom, tablesTop: tables.top,
+          documentHeight: document.documentElement.scrollHeight, viewportHeight: innerHeight };
+      });
+      assert.ok(geometry.viewsBottom <= geometry.panelTop + 1 && geometry.panelBottom <= geometry.tablesTop + 1,
+        `${width}x${height} ${name}: chrome does not overlap the panel: ${JSON.stringify(geometry)}`);
+      if (height <= 440) assert.ok(geometry.documentHeight > height, "short workbook uses document scrolling");
+      samples.push({ width, height, mode: name, controls: count, ...geometry });
+      if (height <= 450) await page.screenshot({ path: path.join(out, "screens", `reachable-${name.replaceAll(/[^a-z0-9]+/gi, "-")}-${width}x${height}.png`) });
+    }
+  }
+  await writeFile(path.join(out, "panel-reachability.json"), JSON.stringify(samples, null, 2));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mode("Table").click();
+  checks.push("all five modes: pointer-actionable controls, unobstructed final content and non-overlapping chrome at 320x300, 320x450, 360x640 and 1440x900");
+}
 try {
   await start();
   await button("Open sales example").click(); await ready();
   assert.equal(await tabs().count(), 2);
+  await assertPanelReachability();
   const labels = await picker().locator("option").allTextContents();
   assert.deepEqual(await tabs().allTextContents(), labels, "tab order follows workbook/select order");
   await capture("few-tables");
