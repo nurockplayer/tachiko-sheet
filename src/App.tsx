@@ -312,6 +312,21 @@ function describe(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function describeExportRefusal(error: unknown): string {
+  // Public runtime failures carry located diagnostics. Do not expose the
+  // transport error/code in place of the actual reason the file was refused.
+  const failure = (error as { failure?: { code?: string; diagnostics?: Array<{ path: string; message: string }> } } | null)?.failure;
+  if (failure?.code === "stale_revision") {
+    return "The work changed before the file was prepared. Refresh the work and prepare it again.";
+  }
+  if (failure?.code === "native_tables_export_refused") {
+    const details = failure.diagnostics?.map((diagnostic) =>
+      `${diagnostic.path ? `${diagnostic.path}: ` : ""}${diagnostic.message}`).join(" ");
+    return `This file cannot be prepared.${details ? ` ${details}` : " The current tables are not supported by this format."}`;
+  }
+  return describe(error, "The export could not be prepared for review.");
+}
+
 async function opaqueSnapshotDigest(bytes: ArrayBuffer): Promise<string> {
   if (!globalThis.crypto?.subtle) throw new Error("This device cannot verify the project copy.");
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
@@ -1468,9 +1483,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     if (blockUnknownOpenRecovery()) return false;
     const live = viewRef.current;
     const metadata = interop?.metadata;
-    if (!live || (format !== "ro" && !metadata) || !begin()) return false;
+    if (!live || !begin()) return false;
     setMessage(null);
-    setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
+    setInterop((current) => ({ importInspection: null, metadata: null, ledger: [], cleanupPreview: null, ...current, downloadStatus: "idle", downloadError: null }));
     try {
       if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
       if (format === "ro" && (currentness !== "current" || draftDirtyRef.current || reportDraftDirtyRef.current)) {
@@ -1478,7 +1493,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       const exported = format === "ro"
         ? await runtime.exportWorkFile(witnessOf(live))
-        : await runtime.exportSpreadsheet(witnessOf(live), metadata!, format);
+        : metadata
+          ? await runtime.exportSpreadsheet(witnessOf(live), metadata, format)
+          : await runtime.exportNativeTables(witnessOf(live), live.table.collection.key, format);
       preparedDownloadRef.current = {
         format, occurrence: live.occurrence, revision: exported.revision,
         collectionId: live.table.collection.id, bytes: exported.bytes.slice(0),
@@ -1490,7 +1507,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     } catch (error) {
       preparedDownloadRef.current = null;
       setOutcome("idle");
-      const detail = describe(error, "The export could not be prepared for review.");
+      const detail = describeExportRefusal(error);
       setInterop((current) => current ? { ...current, downloadStatus: "failed", downloadError: detail } : current);
       setMessage(detail); return false;
     } finally { end(); }

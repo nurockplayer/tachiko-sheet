@@ -163,15 +163,14 @@ try {
   const download = page.getByRole("region", { name: "Download spreadsheet", exact: true });
   for (const label of ["Prepare CSV", "Prepare XLSX"]) {
     const button = download.getByRole("button", { name: label, exact: true });
-    assert.equal(await button.isDisabled(), true);
+    assert.equal(await button.isEnabled(), true);
     const explanation = await button.getAttribute("aria-describedby");
     assert.ok(explanation, `${label} has an accessible explanation`);
     const reason = page.locator(`[id="${explanation}"]`);
     assert.equal(await reason.isVisible(), true, "explanation is visible beside the controls");
-    assert.match(await reason.textContent(), /only for work opened from an imported spreadsheet/);
-    assert.match(await reason.textContent(), /Examples cannot be downloaded in these formats yet/);
+    assert.match(await reason.textContent(), /CSV downloads the active table/);
   }
-  results.push("unavailable-export-visible-and-associated");
+  results.push("native-export-available-with-associated-scope-copy");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await edit(page, expected.editedImpact);
 
