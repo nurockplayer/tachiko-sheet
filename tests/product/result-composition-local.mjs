@@ -242,7 +242,10 @@ try {
   }));
   assert.equal(briefRows[0].height, 32, "ordinary linked facts retain the exact approved 32px row pitch");
   assert.ok(briefRows[1].height > briefRows[0].height, `long CJK values grow their own row instead of being clipped: ${JSON.stringify(briefRows.slice(0, 2))}`);
-  assert.equal((await page.getByRole("tabpanel", { name: "Brief", exact: true }).getByText("Apply notes to the open work. Saving a copy is a separate action.").count()), 1);
+  const briefPanel = page.getByRole("tabpanel", { name: "Brief", exact: true });
+  assert.equal(await briefPanel.getByText("This work has no notes column. Brief shows the linked facts for the selected row.", { exact: true }).count(), 1);
+  assert.equal(await briefPanel.locator("textarea").count(), 0, "work without notes has no disabled editor");
+  assert.equal(await briefPanel.getByRole("button", { name: "Apply notes", exact: true }).count(), 0);
   await saveScreenshot(page, "brief-desktop.png");
 
   await page.setViewportSize({ width: 360, height: 640 });
@@ -299,10 +302,10 @@ try {
   const longFact = page.getByRole("table", { name: "Linked facts", exact: true }).locator("tbody tr").nth(1);
   await longFact.scrollIntoViewIfNeeded();
   const longFactReachability = await assertInScrollport(longFact, shortBrief, "long CJK Brief row at 320×450");
-  const applyNotes = shortBrief.getByRole("button", { name: "Apply notes", exact: true });
-  await applyNotes.scrollIntoViewIfNeeded();
-  const notesReachability = await assertInScrollport(applyNotes, shortBrief, "Brief Apply notes at 320×450");
-  await saveScreenshot(page, "brief-phone-notes.png", false);
+  const explanation = shortBrief.getByText("This work has no notes column. Brief shows the linked facts for the selected row.", { exact: true });
+  await explanation.scrollIntoViewIfNeeded();
+  const explanationReachability = await assertInScrollport(explanation, shortBrief, "Brief explanation at 320×450");
+  await saveScreenshot(page, "brief-phone-facts.png", false);
 
   const profileLabels = ["Tachiko", "Familiar Spreadsheet", "Minimal-Focus"];
   const densityLabels = ["Compact", "Comfortable"];
@@ -352,7 +355,7 @@ try {
     return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
   })), "all three legal notice links are reachable by page scrolling at phone height");
   await saveScreenshot(page, "notices-phone.png", false);
-  if (evidenceDir) await writeFile(path.join(evidenceDir, "composition-observations.json"), JSON.stringify({ actualGroups: actual, reportCategories: reportRows, reportTypography, briefRows, briefDesktopColumns, briefCompactColumns, summaryGeometry, emptyReportGeometry, reportGeometry, reportSequence, shortHeight: { lastSummaryRow, finalBinding, exportReachability, removeReachability, longFactReachability, notesReachability }, observations, notices: { ...noticeBox, workbookBottom } }, null, 2));
+  if (evidenceDir) await writeFile(path.join(evidenceDir, "composition-observations.json"), JSON.stringify({ actualGroups: actual, reportCategories: reportRows, reportTypography, briefRows, briefDesktopColumns, briefCompactColumns, summaryGeometry, emptyReportGeometry, reportGeometry, reportSequence, shortHeight: { lastSummaryRow, finalBinding, exportReachability, removeReachability, longFactReachability, explanationReachability }, observations, notices: { ...noticeBox, workbookBottom } }, null, 2));
   console.log(JSON.stringify({ status: "PASS", fixture: { sheets: 2, groups: categories.length, longCategoryLength: categories[1].length }, views: observations.length, viewportSamples: [[1512, 982], [834, 1194], [512, 900], [360, 640], [320, 640], [320, 450]], width512Label: "effective-width layout proxy only; not actual browser zoom evidence", shortHeight: "actual panel scroll reachability checked for all three views at 320×450", evidence: evidenceDir ?? null }));
   await context.close();
   context = undefined;

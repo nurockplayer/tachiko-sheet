@@ -544,7 +544,7 @@ describe("SheetShell static rendering", () => {
     expect(commandsStart).toBeLessThan(viewsStart);
   });
 
-  it("keeps Table before the stable footer and reserves the secondary slot after it", () => {
+  it("places Views above the workspace and table tabs in the stable footer", () => {
     const markup = render({ view: makeView(), currentness: "pending", dirty: true, outcome: "pending" });
     const headerStart = markup.indexOf("ts-workbook-head");
     const contextStart = markup.indexOf("ts-work-context", headerStart);
@@ -555,8 +555,9 @@ describe("SheetShell static rendering", () => {
     expect(panelStart).toBeGreaterThan(contextStart);
     expect(footerStart).toBeGreaterThan(panelStart);
     expect(markup.indexOf("ts-workbook-table-slot")).toBeLessThan(footerStart);
-    expect(markup.indexOf("ts-workbook-secondary-slot")).toBeGreaterThan(footerStart);
-    expect(markup.slice(footerStart)).toContain('aria-label="Workbook views"');
+    expect(markup.indexOf("ts-workbook-secondary-slot")).toBeLessThan(footerStart);
+    expect(markup.indexOf('aria-label="Workbook views"')).toBeLessThan(panelStart);
+    expect(markup.slice(footerStart)).toContain('aria-label="Tables"');
     expect(markup.slice(footerStart)).toContain("Work:");
     expect(markup.slice(footerStart)).toContain("Values:");
     expect(markup.slice(footerStart)).toContain('data-testid="operation-outcome"');

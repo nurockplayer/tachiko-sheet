@@ -6,6 +6,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { launchIsolatedBrowser } from "./isolated-browser.mjs";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { openFolder, waitForColdHome } from "./home-entry.mjs";
 
@@ -1083,7 +1084,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
   for (const viewName of ["Table", "Cross-table summary", "Report", "Brief", "Import & export"]) {
     await page.getByRole("tab", { name: viewName, exact: true }).click();
     const layout = await page.evaluate(() => {
-      const panel = document.querySelector('[role="tabpanel"]');
+      const panel = document.querySelector('.ts-panel[role="tabpanel"]');
       const tableScrollOwner = panel?.querySelector(".ts-table-composition");
       const scrollOwner = tableScrollOwner ?? panel;
       const footer = document.querySelector(".ts-workspace-footer");
@@ -1151,7 +1152,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
         panelClientHeight: scrollOwner?.clientHeight ?? null,
         panelScrollHeight: scrollOwner?.scrollHeight ?? null,
         panelOverflowY: scrollOwner ? getComputedStyle(scrollOwner).overflowY : "missing",
-        scrollOwner: tableScrollOwner ? ".ts-table-composition" : '[role="tabpanel"]',
+        scrollOwner: tableScrollOwner ? ".ts-table-composition" : '.ts-panel[role="tabpanel"]',
         panelClientWidth: panel?.clientWidth ?? null,
         panelScrollWidth: panel?.scrollWidth ?? null,
         panelBackground: panelStyle?.backgroundColor ?? null,
@@ -1182,8 +1183,19 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
     if (viewName !== "Table") evidence(layout.panelScrollWidth <= layout.panelClientWidth + 1,
       `${label} keeps the view panel within the viewport width`, layout);
     if (width === 320 && viewName === "Brief") {
-      evidence(layout.panelScrollHeight > layout.panelClientHeight,
-        `${label} scrolls the long Brief content inside its panel`, layout);
+      // #219 removes the disabled editor from work without notes. Its content
+      // can now fit; verify the actual final content is reachable either way.
+      const brief = page.locator('.ts-brief-panel');
+      const applyNotes = brief.getByRole("button", { name: "Apply notes", exact: true });
+      const end = await applyNotes.count() ? applyNotes : brief.locator("p").last();
+      await end.scrollIntoViewIfNeeded();
+      const bounds = await end.evaluate(node => {
+        const item = node.getBoundingClientRect();
+        const panel = node.closest('.ts-brief-panel').getBoundingClientRect();
+        return { top: item.top, bottom: item.bottom, panelTop: panel.top, panelBottom: panel.bottom };
+      });
+      evidence(bounds.top >= bounds.panelTop - 1 && bounds.bottom <= bounds.panelBottom + 1,
+        `${label} reaches the final Brief content inside its panel`, bounds);
     }
     if (viewName === "Import & export") {
       const legalNotice = await page.evaluate(() => {
@@ -1565,7 +1577,8 @@ async function auditTallGridLayoutOnly(page) {
       const panel = document.querySelector(".ts-panel");
       const grid = document.querySelector(".ts-grid-scroll");
       const footer = document.querySelector(".ts-workspace-footer");
-      const tabs = document.querySelector('[role="tablist"][aria-label="Workbook views"]');
+      const views = document.querySelector('[role="tablist"][aria-label="Workbook views"]');
+      const tabs = document.querySelector('[role="tablist"][aria-label="Tables"]');
       const status = document.querySelector(".ts-workbook-status");
       const notices = document.querySelector(".ts-notices");
       const rect = (element) => element?.getBoundingClientRect();
@@ -1573,6 +1586,7 @@ async function auditTallGridLayoutOnly(page) {
       const gridRect = rect(grid);
       const footerRect = rect(footer);
       const tabsRect = rect(tabs);
+      const viewsRect = rect(views);
       const statusRect = rect(status);
       const noticesRect = rect(notices);
       const gridStyle = grid ? getComputedStyle(grid) : null;
@@ -1585,6 +1599,7 @@ async function auditTallGridLayoutOnly(page) {
         viewportHeight: innerHeight,
         pageWidth: document.documentElement.scrollWidth,
         pageHeight: document.documentElement.scrollHeight,
+        panelTop: panelRect?.top ?? null,
         panelBottom: panelRect?.bottom ?? null,
         panelClientHeight: panel?.clientHeight ?? null,
         panelScrollHeight: panel?.scrollHeight ?? null,
@@ -1602,6 +1617,8 @@ async function auditTallGridLayoutOnly(page) {
         footerBottom: footerRect?.bottom ?? null,
         tabsTop: tabsRect?.top ?? null,
         tabsBottom: tabsRect?.bottom ?? null,
+        viewsTop: viewsRect?.top ?? null,
+        viewsBottom: viewsRect?.bottom ?? null,
         statusTop: statusRect?.top ?? null,
         statusBottom: statusRect?.bottom ?? null,
         noticesTop: noticesRect?.top ?? null,
@@ -1616,10 +1633,10 @@ async function auditTallGridLayoutOnly(page) {
       `${label} reaches the grid's own vertical scrollbar`, layout);
     evidence(layout.gridHeight >= Math.min(168, layout.panelBottom - layout.gridTop),
       `${label} keeps the 168px grid floor when available space permits`, layout);
-    evidence(layout.tabsTop >= 0 && layout.tabsBottom <= height && layout.statusTop >= 0 && layout.statusBottom <= height,
-      `${label} keeps Views and status visible`, layout);
-    evidence(layout.tabsTop >= layout.panelBottom - 1 && layout.statusTop >= layout.tabsBottom - 1 && layout.noticesTop >= layout.footerBottom - 1,
-      `${label} keeps the panel, Views, status, and legal notices in a non-overlapping sequence`, layout);
+    evidence(layout.viewsTop >= 0 && layout.viewsBottom <= height && layout.tabsTop >= 0 && layout.tabsBottom <= height && layout.statusTop >= 0 && layout.statusBottom <= height,
+      `${label} keeps Views, table tabs and status visible`, layout);
+    evidence(layout.viewsBottom <= layout.panelTop + 1 && layout.tabsTop >= layout.panelBottom - 1 && layout.statusTop >= layout.tabsBottom - 1 && layout.noticesTop >= layout.footerBottom - 1,
+      `${label} keeps Views, the panel, table tabs, status, and legal notices in a non-overlapping sequence`, layout);
     evidence(layout.noticesTop >= 0 && layout.noticesBottom <= height,
       `${label} keeps legal notices visible`, layout);
     if (width === 320) {
@@ -3994,7 +4011,7 @@ async function auditNotice(context, profile) {
 }
 
 async function main() {
-  const browser = await chromium.launch(launchOptions);
+  const browser = await launchIsolatedBrowser(chromium, launchOptions);
   try {
     const context = await browser.newContext({ viewport: { width: 1024, height: 900 }, deviceScaleFactor: 1 });
     const page = await context.newPage();

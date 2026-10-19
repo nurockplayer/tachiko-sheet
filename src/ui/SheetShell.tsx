@@ -41,6 +41,7 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { ClipboardRefusal, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
 import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
@@ -459,6 +460,7 @@ export function SheetShell(props: SheetShellProps) {
   } = props;
   const heldPointerOwnerRef = useRef<SharedButtonPointerOwner | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const tableTabsRef = useRef<HTMLDivElement | null>(null);
 
   const [appearanceSnapshot, setAppearanceSnapshot] = useState(() =>
     props.appearancePreference.getSnapshot(),
@@ -1031,6 +1033,23 @@ export function SheetShell(props: SheetShellProps) {
     observer.observe(scroller);
     return () => observer.disconnect();
   }, [gridWindowed, tab, collectionIdentity]);
+
+  useLayoutEffect(() => {
+    const strip = tableTabsRef.current;
+    const active = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!strip || !active) return;
+    // Scroll this strip only, without moving the grid or the document.
+    const reveal = () => {
+      const port = strip.getBoundingClientRect();
+      const item = active.getBoundingClientRect();
+      if (item.left < port.left) strip.scrollLeft -= port.left - item.left;
+      else if (item.right > port.right) strip.scrollLeft += item.right - port.right;
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [view?.table.collection.key, view?.collections, tab, compactColumnActions]);
 
   const selectedRow = useMemo(() => {
     if (!table) return null;
@@ -1755,19 +1774,35 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
-  async function selectCollection(next: string): Promise<void> {
-    if (!witness || next === view?.table.collection.key) return;
+  async function selectCollection(next: string): Promise<boolean> {
+    if (!witness || next === view?.table.collection.key) return false;
+    if (props.appearancePreference.getSnapshot().composing) {
+      setLocalError("Finish composing the current input before switching tables.");
+      return false;
+    }
+    if (controlsLocked || currentness !== "current" || rowCommandPendingRef.current) {
+      setLocalError(currentness === "unknown"
+        ? "The current work is not confirmed. Use Refresh to recheck it before editing."
+        : "An operation is in progress; editing is disabled until it finishes.");
+      return false;
+    }
+    if (anyNotesDraft || hasInvalidReportDraft) {
+      setLocalError("Apply or cancel the current draft before switching tables.");
+      return false;
+    }
     if (cellDraftActive || rowDraftActive) {
       setLocalError(rowDraftActive ? "Add or discard the new row first." : "Apply or cancel the unfinished input before switching tables.");
       if (editor) focusCell(editor.entity, editor.field);
-      return;
+      return false;
     }
     if (editor && editor.value === editor.original) setEditor(null);
     setLocalError(null);
     try {
       await onSelectCollection(witness, next);
+      return true;
     } catch (error) {
       setLocalError(explain(error, "Could not switch to that table."));
+      return false;
     }
   }
 
@@ -2883,7 +2918,11 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function renderBriefPanel(): ReactNode {
-    if (!view || !selectedRow) return null;
+    if (!view) return null;
+    if (!selectedRow) return <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief-panel">
+      <h1 className="ts-content-heading">Brief</h1>
+      <p className="ts-empty">Add a row in Table to see its linked facts here.</p>
+    </div>;
     const entity = rowEntity(selectedRow);
     const tableCols = tableColumns(view.table);
     const rowNumber = table ? table.rows.indexOf(selectedRow) + 1 : null;
@@ -2904,7 +2943,7 @@ export function SheetShell(props: SheetShellProps) {
               columns={tableCols}
             />
           </section>
-          <section className="ts-brief-notes" aria-label="Decision notes">
+          {notesField ? <section className="ts-brief-notes" aria-label="Decision notes">
             <h2 className="ts-content-heading">Decision notes</h2>
             <p className="ts-subtle">
               Apply notes to the open work. Saving a copy is a separate action.
@@ -2957,7 +2996,7 @@ export function SheetShell(props: SheetShellProps) {
                 </>
               ) : <span className="ts-hint">{notesDirty ? "Unapplied notes draft" : "No unapplied notes"}</span>}
             </div>
-          </section>
+          </section> : <p className="ts-subtle">This work has no notes column. Brief shows the linked facts for the selected row.</p>}
         </div>
       </div>
     );
@@ -3292,6 +3331,14 @@ export function SheetShell(props: SheetShellProps) {
             </select>
           </div>
         </nav>
+        <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
+          <span className="ts-views-label" aria-hidden="true">Views</span>
+          <button type="button" role="tab" id={tabId("table")} aria-selected={tab === "table"} aria-controls={panelId("table")} tabIndex={tab === "table" ? 0 : -1} className={tab === "table" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("table")}>Table</button>
+          <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
+          <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
+          <button type="button" role="tab" id={tabId("brief")} aria-selected={tab === "brief"} aria-controls={panelId("brief")} tabIndex={tab === "brief" ? 0 : -1} className={tab === "brief" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("brief")}>Brief</button>
+          <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
+        </div>
         {rowDraftActive && tab !== "table" ? <div className="ts-entry-actions">
           <span className="ts-hint">Add or discard the new row first.</span>
           <button type="button" className="ts-button" disabled={controlsLocked} onClick={() => { setTab("table"); if (columns[0]) focusDraftAfterRender(columns[0].id, completionIntent()); }}>Review new row</button>
@@ -3301,25 +3348,69 @@ export function SheetShell(props: SheetShellProps) {
             {currentness === "unknown" ? "The current work is not confirmed. Use Refresh to recheck it before editing." : "An operation is in progress; editing is disabled until it finishes."}
           </p>
         ) : null}
-        <div className="ts-workbook-panel-slot ts-workbook-table-slot">
-          {tab === "table" ? renderTablePanel() : null}
+        <div className="ts-workspace" role="tabpanel" id="ts-table-workspace" tabIndex={-1} aria-labelledby={tableTabId(view.table.collection.key)} onKeyDown={onWorkspaceTableKeyDown}>
+          <div className="ts-workbook-panel-slot ts-workbook-table-slot">
+            {tab === "table" ? renderTablePanel() : null}
+          </div>
+          <div className="ts-workbook-panel-slot ts-workbook-secondary-slot">
+            {tab === "table" ? null : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
+          </div>
         </div>
         <footer className="ts-workspace-footer">
-          <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
-            <span className="ts-views-label" aria-hidden="true">Views</span>
-            <button type="button" role="tab" id={tabId("table")} aria-selected={tab === "table"} aria-controls={panelId("table")} tabIndex={tab === "table" ? 0 : -1} className={tab === "table" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("table")}>Table</button>
-            <button type="button" role="tab" id={tabId("summary")} aria-selected={tab === "summary"} aria-controls={panelId("summary")} tabIndex={tab === "summary" ? 0 : -1} className={tab === "summary" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("summary")}>Cross-table summary</button>
-            <button type="button" role="tab" id={tabId("report")} aria-selected={tab === "report"} aria-controls={panelId("report")} tabIndex={tab === "report" ? 0 : -1} className={tab === "report" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("report")}>Report</button>
-            <button type="button" role="tab" id={tabId("brief")} aria-selected={tab === "brief"} aria-controls={panelId("brief")} tabIndex={tab === "brief" ? 0 : -1} className={tab === "brief" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("brief")}>Brief</button>
-            <button type="button" role="tab" id={tabId("interop")} aria-selected={tab === "interop"} aria-controls={panelId("interop")} tabIndex={tab === "interop" ? 0 : -1} className={tab === "interop" ? "ts-tab ts-tab--active" : "ts-tab"} onClick={() => selectTab("interop")}>Import & export</button>
+          <div ref={tableTabsRef} className="ts-tabs" role="tablist" aria-label="Tables" onKeyDown={onTableTabsKeyDown}>
+            {view.collections.map((collection, index) => {
+              const active = collection.key === view.table.collection.key;
+              const name = names.table(collection.id) ?? collection.display_name;
+              return <button key={collection.key} type="button" role="tab" id={tableTabId(collection.key)}
+                aria-label={tableTabName(name, index, view.collections.length)} aria-selected={active} aria-controls="ts-table-workspace"
+                tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-table-tab ts-tab--active" : "ts-tab ts-table-tab"} title={name}
+                onClick={() => void selectCollection(collection.key)}>{name}</button>;
+            })}
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}</div>
         </footer>
-        <div className="ts-workbook-panel-slot ts-workbook-secondary-slot">
-          {tab === "table" ? null : tab === "summary" ? renderSummaryPanel() : tab === "report" ? renderReportPanel() : tab === "brief" ? renderBriefPanel() : renderInteropPanel()}
-        </div>
       </div>
     );
+  }
+
+  function tableTabId(key: string): string { return `ts-table-tab-${encodeURIComponent(key)}`; }
+
+  async function switchTableAt(index: number, focusTab: boolean): Promise<void> {
+    const collection = view?.collections[index];
+    const origin = document.activeElement;
+    if (!collection || !await selectCollection(collection.key)) return;
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(tableTabId(collection.key));
+      if (target?.getAttribute("aria-selected") !== "true") return;
+      // Do not overtake a newer focus destination while the Worker replies.
+      if (focusTab && document.activeElement === origin) target.focus({ preventScroll: true });
+      else if (!focusTab && origin && !origin.isConnected && document.activeElement === document.body) {
+        document.getElementById("ts-table-workspace")?.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  function onTableTabsKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (!view || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
+    const index = view.collections.findIndex(collection => tableTabId(collection.key) === (event.target as HTMLElement).id);
+    if (index < 0) return;
+    const next = tableTabIndex(event.key, index, view.collections.length);
+    if (next === null) return;
+    event.preventDefault();
+    void switchTableAt(next, true);
+  }
+
+  function onWorkspaceTableKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (!view || !isTableSwitchShortcut(event) || event.defaultPrevented || isComposingEvent(event) ||
+      props.appearancePreference.getSnapshot().composing || editor !== null || modalInteractionOpen) return;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+    const index = view.collections.findIndex(collection => collection.key === view.table.collection.key);
+    const next = tableTabIndex(event.key, index, view.collections.length);
+    if (next === null) return;
+    event.preventDefault();
+    void switchTableAt(next, false);
   }
 
   function onTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {

@@ -1017,9 +1017,17 @@ body { margin: 0; }
   border-top: 1px solid var(--ts-line);
 }
 
-/* Keep native focus order aligned with the active workspace: Table controls
-   precede the shared footer; secondary view controls follow it. Flex order
-   keeps the active panel visually above that stable footer in either slot. */
+/* Modes precede the active workspace; actual table tabs follow it. */
+/* Long imported sheet names stay readable without taking the whole strip;
+   the full name remains in the tooltip and accessible name. */
+.ts-table-tab { flex: none; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
 .ts-workbook-panel-slot {
   order: 1;
   flex: 1 1 0;
@@ -2788,3 +2796,27 @@ body { margin: 0; }
   white-space: normal;
 }
 .ts-column-toolbar .ts-command-menu .ts-button { min-height: 44px; white-space: normal; overflow-wrap: anywhere; }
+
+/* Below the space needed for chrome plus a usable workspace, scroll the
+   document. A zero-height flex slot must never paint controls under chrome.
+   Keep the grid's own bounded scrollport for windowed rows and wide columns. */
+@media (max-height: 440px) {
+  .ts-app-root:has(> .ts-app[data-view="workbook"]) {
+    height: auto;
+    min-height: 100dvh;
+  }
+  .ts-app[data-view="workbook"] { height: auto; flex: none; }
+  .ts-workbook,
+  .ts-workspace,
+  .ts-workbook-panel-slot { flex: none; }
+  .ts-workbook-panel-slot { overflow: visible; }
+  .ts-workbook-panel-slot > .ts-panel { height: auto; overflow: visible; flex: none; }
+  .ts-table-composition { flex: none; overflow: visible; }
+  .ts-work-region > .ts-grid-scroll,
+  .ts-table-composition--sales-catalog .ts-work-region > .ts-grid-scroll {
+    flex: none;
+    min-height: 168px;
+    max-height: max(168px, 65dvh);
+  }
+  .ts-results-pane { max-height: none; overflow: visible; }
+}
