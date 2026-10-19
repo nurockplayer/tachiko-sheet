@@ -1,6 +1,7 @@
 // #210 / #217: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
 import assert from "node:assert/strict";
+import { runImportedClipboardCases } from "./clipboard-imported-cases.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -403,6 +404,7 @@ try {
   const missingData = await cell(await projection(), 0, 0).evaluate(node => node.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true })));
   assert.equal(missingData, false); await status().filter({ hasText: "no plain text" }).waitFor();
   checks.push("raw Date refusal with YYYY-MM-DD guidance; valid Date paste; missing clipboard data plain refusal");
+  await runImportedClipboardCases({ page, work, ready, close, projection, commands, values, cell, paste, status, unchangedPaste, checks });
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };
   await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, evidence }));

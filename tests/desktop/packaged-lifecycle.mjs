@@ -705,17 +705,33 @@ async function namedTableJourney() {
     type.dispatchEvent(new Event("change", { bubbles: true }));
     click(button("Create table", form));
     await waitFor(() => !dialog("New table") && current(), "named table");
+    // current() precedes the post-Create animation-frame focus handoff.
+    // Observe that handoff before any gesture; focusing it ourselves would
+    // conceal the race. The ready cell is looked up afresh after rendering.
+    await waitFor(() => {
+      const first = document.querySelector(".ts-entry-row [data-entry-field]");
+      return current() && first?.getAttribute("aria-readonly") === "false" &&
+        first?.getAttribute("data-work-currentness") === "current" && document.activeElement === first;
+    }, "Create table draft focus handoff");
     for (const [index, value] of ["Tea", "飲食", "4.5"].entries()) {
-      // The new table may re-render its draft row after "current" settles, so
-      // look the cell up afresh and repeat the double-click until it edits.
       const draftCell = () => [...document.querySelectorAll(".ts-entry-row [data-entry-field]")][index];
-      const input = await waitFor(() => {
-        const editor = document.querySelector('[data-testid="cell-editor"]');
-        if (editor) return editor;
-        const cell = draftCell();
-        if (cell?.getAttribute("aria-readonly") === "false") cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-        return null;
-      }, "draft cell editor");
+      const cell = await waitFor(() => {
+        const candidate = draftCell();
+        return current() && candidate?.getAttribute("aria-readonly") === "false" &&
+          candidate?.getAttribute("data-work-currentness") === "current" &&
+          !document.querySelector('[data-testid="cell-editor"]') && candidate;
+      }, "editable draft cell " + index);
+      const identity = cell.dataset.testid;
+      const field = cell.dataset.entryField;
+      if (!identity || field !== cell.dataset.workField) throw new Error("draft cell identity missing");
+      dblclick(cell); // one complete mouse sequence, outside every wait predicate
+      const input = await waitFor(() => document.querySelector('[data-testid="cell-editor"]'), "draft cell editor");
+      // Let any queued focus work run before asserting the surviving editor.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      if (!input.isConnected || input.closest("td")?.dataset.testid !== identity ||
+          input.closest("td")?.dataset.workField !== field || document.activeElement !== input) {
+        throw new Error("single double-click did not retain the intended draft-cell editor: " + identity);
+      }
       fill(input, value);
       draftCell().focus();
       await waitFor(() => !document.querySelector('[data-testid="cell-editor"]'), "draft retained");

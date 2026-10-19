@@ -1,3 +1,4 @@
+import { runCreateDraftReadinessCases } from "./create-draft-readiness-cases.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #184: normal UI over a production-style build and unchanged real Worker/WASM.
 // The observer below only copies real public replies; it never supplies results.
@@ -243,6 +244,7 @@ async function pendingCreateFocus(page) {
 }
 try {
   let page = await start();
+  await runCreateDraftReadinessCases({ page, projection, checks, closeWithoutSave });
   if (process.env.TABLE_ROWS_PENDING_FOCUS || !Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key))) await pendingCreateFocus(page);
   if (process.env.TABLE_ROWS_ROUND6_CASE) await runNewTableRound6Cases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
