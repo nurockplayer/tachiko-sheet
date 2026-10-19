@@ -1017,9 +1017,14 @@ body { margin: 0; }
   border-top: 1px solid var(--ts-line);
 }
 
-/* Keep native focus order aligned with the active workspace: Table controls
-   precede the shared footer; secondary view controls follow it. Flex order
-   keeps the active panel visually above that stable footer in either slot. */
+/* Modes precede the active workspace; actual table tabs follow it. */
+.ts-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
 .ts-workbook-panel-slot {
   order: 1;
   flex: 1 1 0;
