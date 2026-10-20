@@ -6,14 +6,14 @@ import path from "node:path";
 import { homeImportInput } from "./home-entry.mjs";
 
 export async function runImportedClipboardCases({ page, work, ready, close, projection, commands, values, cell, paste, status, unchangedPaste, checks }) {
-  async function importFile(file, types) {
+  async function importFile(file, types, expectedNative) {
     await (await homeImportInput(page)).setInputFiles(file);
     const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
     for (const [index, type] of types.entries()) await preview.locator("select").nth(index).selectOption(type);
     await preview.getByRole("button", { name: "Import file", exact: true }).click();
     await preview.waitFor({ state: "detached" }); await ready();
     const table = await projection();
-    assert.equal(Boolean(table.native_table_profile), false, "fixture is imported, never a native-table substitute");
+    assert.equal(Boolean(table.native_table_profile), expectedNative, "consume the real fixture projection, independent of import origin");
     assert.deepEqual(table.columns.map(column => column.field_type), types);
     return table;
   }
@@ -34,7 +34,7 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
   const fixtures = path.join(work, "capacity-paste-fixtures");
   execFileSync("python3", ["-I", new URL("../../acceptance/capacity-8406/oracle.py", import.meta.url).pathname, "generate", fixtures], { stdio: "inherit" });
   page.setDefaultTimeout(60_000);
-  const baseline = await importFile(path.join(fixtures, "source-8406.csv"), ["text", "text", "text"]);
+  const baseline = await importFile(path.join(fixtures, "source-8406.csv"), ["text", "text", "text"], true);
   assert.equal(baseline.rows.length, 8406);
   const start = 8000;
   await page.evaluate(index => {
@@ -68,7 +68,7 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
 
   const typedCsv = path.join(work, "imported-paste-types.csv");
   await writeFile(typedCsv, "Item,Paid,When\nfirst,false,2026-10-01\nsecond,true,2026-10-02\nuntouched,false,2026-10-03\n");
-  const typedBaseline = await importFile(typedCsv, ["text", "boolean", "date"]);
+  const typedBaseline = await importFile(typedCsv, ["text", "boolean", "date"], false);
   assert.deepEqual(values(typedBaseline), [["first", false, "2026-10-01"], ["second", true, "2026-10-02"], ["untouched", false, "2026-10-03"]]);
   await cell(typedBaseline, 0, 0).click();
   const typedCount = (await commands()).length;

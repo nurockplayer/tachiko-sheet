@@ -1,3 +1,4 @@
+import { observeTableProjections, observedTable } from "./table-projection-observer.mjs";
 // Sheet #150 consumer acceptance: 8,406 x 3 synthetic Text rows through the
 // built product's normal UI only (Home file input, cell editor, Undo/Redo,
 // Save a copy, full browser termination, reopen and browser downloads). An
@@ -44,6 +45,7 @@ async function start(profile) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   // CAPACITY_ORIGIN runs the same journey against a hosted candidate.
   if (!hostedOrigin) await installDistRoutes(context, dist);
+  await observeTableProjections(context);
   const page = await context.newPage();
   page.setDefaultTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -74,7 +76,12 @@ const current = (page) => page.waitForFunction(() =>
   document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
 
 async function rowCount(page) {
+  const projection = await observedTable(page);
+  assert.equal(projection.native_table_profile, true, "Text/Number fixture is structurally native");
+  assert.equal(await grid(page).locator(".ts-entry-row").count(), 0, "no draft at or above the insertion gate");
+  await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
   const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1;
+  assert.equal(declared, projection.rows.length, "ARIA data rows match stored records, excluding drafts");
   const rendered = await grid(page).locator("tbody tr.ts-row").count();
   assert.ok(rendered < 400, `large table renders a window, not ${rendered} rows`);
   return declared;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeExportRefusal,
   clearRecoveryOccurrenceContext,
   confirmedReportSource,
   noResidentRecoveryState,
@@ -426,5 +427,19 @@ describe("#189 completion provenance and Save admission", () => {
       expect(settledSaveStatus(previous, "r", "r", true)).toBe("not-saved");
       expect(settledSaveStatus(previous, "r", "r", false)).toBe("saved");
     }
+  });
+});
+
+
+describe("spreadsheet export refusal", () => {
+  it("explains the imported-layout refusal without offering an automatic fallback", () => {
+    const failure = { code: "imported_spreadsheet_export_refused", diagnostics: [{ path: "workbook", message: "wire detail" }] };
+    const before = structuredClone(failure);
+    expect(describeExportRefusal({ failure })).toBe("This table changed in ways the original workbook layout can't represent, so it can't be downloaded in that layout. Your work is unchanged.");
+    expect(failure).toEqual(before);
+  });
+  it("retains stale and unknown failure handling", () => {
+    expect(describeExportRefusal({ failure: { code: "stale_revision" } })).toContain("Refresh");
+    expect(describeExportRefusal(new Error("new failure"))).toContain("new failure");
   });
 });

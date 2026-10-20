@@ -1,4 +1,7 @@
 /** Clipboard transport and grid geometry only; Work owns value validation. */
+import { nativeInsertionFits, nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
+
+export const NATIVE_INSERTION_LIMIT_MESSAGE = "This table has reached the 128-row limit for adding rows here.";
 export interface CellAddress { row: number; column: number }
 export interface CellRectangle { top: number; left: number; bottom: number; right: number }
 export function rectangle(anchor: CellAddress, end: CellAddress): CellRectangle {
@@ -72,11 +75,14 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if (row < 0 || column < 0) return refuse("Select a current cell before pasting.");
   if (column + width > context.columnTypes.length) return refuse("The pasted block is too wide for this table. Nothing was pasted.");
   if (!context.native && (context.draft || row + rows.length > context.rowCount)) return refuse("Imported tables can't gain rows by paste. Nothing was pasted.");
-  if (!context.native && rows.length * width > EDIT_CELLS_MAX) return refuse("The pasted block exceeds the 1,024-cell limit. Nothing was pasted.");
+  const insideExistingRows = !context.draft && row + rows.length <= context.rowCount;
+  if (insideExistingRows && rows.length * width > EDIT_CELLS_MAX) return refuse("The pasted block exceeds the 1,024-cell limit. Nothing was pasted.");
+  if (!insideExistingRows && !nativeInsertionFits(context.rowCount, Math.max(1, row + rows.length - context.rowCount))) {
+    return refuse(nativeInsertionLimitReached(context.rowCount) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
+  }
   if (context.draft) {
     if (rows.length !== 1) return refuse("Paste one row into the new row. To paste several rows, select a table cell first.");
   } else {
-    if (context.native && row + rows.length > 128) return refuse("Pasting would exceed the 128-row limit. Nothing was pasted.");
     if (row + rows.length > context.rowCount && (column !== 0 || width !== context.columnTypes.length)) return refuse("To append rows, paste from the first column and include every column. Nothing was pasted.");
     for (let r = row; r < Math.min(context.rowCount, row + rows.length); r++) {
       for (let c = column; c < column + width; c++) {
@@ -86,8 +92,8 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   }
   // edit_cells carries typed booleans, so only the clipboard's exact tokens
   // can be represented. Numeric/date parsing remains entirely with Work.
-  if (!context.native && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
-  return { kind: context.draft ? "draft" : context.native ? "publish" : "edit", rows: rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!))) };
+  if (insideExistingRows && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
+  return { kind: context.draft ? "draft" : insideExistingRows ? "edit" : "publish", rows: rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!))) };
 }
 /** A type-only core refusal cannot reliably identify one cell in a block. */
 export function pasteRefusal(message: string, fieldType?: string, refusalCode?: string): string {

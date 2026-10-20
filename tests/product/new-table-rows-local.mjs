@@ -437,8 +437,12 @@ try {
   await (await homeImportInput(page)).setInputFiles(csv);
   const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await importDialog.getByRole("button", { name: "Import file", exact: true }).click(); await ready(page);
-  assert.equal(await entry(page).count(), 0); await page.getByText("Adding and deleting rows is available only in native tables. This table does not support it.", { exact: true }).waitFor();
-  await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
+  const imported = await projection(page);
+  assert.equal(imported.native_table_profile, true, "imported Text/Number is structurally native");
+  assert.equal(imported.rows.length, 1, "the draft is not a stored record");
+  assert.equal(await entry(page).count(), 1);
+  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), 3, "one header, one record and one draft");
+  await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(Boolean((await projection(page)).native_table_profile), false, "Release plan stays non-native"); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   const salesBefore = await projection(page);
   assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");

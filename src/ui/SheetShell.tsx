@@ -40,7 +40,8 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { ClipboardRefusal, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
 import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
@@ -792,7 +793,8 @@ export function SheetShell(props: SheetShellProps) {
 
   const table = view?.table ?? null;
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
-  const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow);
+  const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(table.rows.length));
+  const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
   const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
   const gridOrder = useMemo(() => {
     if (!table) return [] as GridPosition[];
@@ -2746,6 +2748,7 @@ export function SheetShell(props: SheetShellProps) {
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
         <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && !clipboardMessage.refused ? clipboardMessage.text : null}</p>
         {clipboardMessage?.refused ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
+        {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {table.native_table_profile && ((onInsertRow && onRemoveRows) || (compactColumnActions && hasColumnActions)) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           {onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
@@ -3018,7 +3021,7 @@ export function SheetShell(props: SheetShellProps) {
       <h2 className="ts-content-heading">Import &amp; export</h2>
       <section className="ts-interop-section" aria-label="Import & export changes and warnings">
         <h3 className="ts-content-heading">Changes and warnings</h3>
-        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}
+        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}
       </section>
       <section className="ts-interop-section" aria-label="Cleanup preview">
         <h3 className="ts-content-heading">Cleanup</h3>
@@ -3644,13 +3647,13 @@ export function SheetShell(props: SheetShellProps) {
               const ledger = interop.importInspection.source.ledger;
               const attention = ledger.filter((finding) => finding.blocking || !INFORMATIONAL_FINDINGS.has(finding.category));
               return <>
-                {attention.length ? <ul className="ts-ledger" aria-label="Import preview changes and warnings">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
+                {attention.length ? <ul className="ts-ledger" aria-label="Import preview changes and warnings">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
               </>;
             })()}
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportChoice((current) => chooseImportType(current, importSuggestions, sheetIndex, columnIndex, nextType)); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {(() => {
               const notes = interop.importInspection.source.ledger.filter((finding) => !finding.blocking && INFORMATIONAL_FINDINGS.has(finding.category));
-              return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message)}</li>)}</ul></details> : null;
+              return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code)}</li>)}</ul></details> : null;
             })()}
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
@@ -3667,7 +3670,7 @@ export function SheetShell(props: SheetShellProps) {
           {downloadFormat === "ro" ? downloadOmissions.length > 0 ? <>
             <h3 className="ts-content-heading">Not included in this file</h3>
             <ul className="ts-ledger" aria-label="Not included in this file">{downloadOmissions.map((omission) => <li key={omission} data-loss-category="lossy_on_export">{omission}</li>)}</ul>
-          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
+          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
         </div>
         <div className="ts-dialog-actions">
           <button type="button" className="ts-button" disabled={busy} onClick={cancelDownload}>Cancel</button>

@@ -1,3 +1,4 @@
+import { observeTableProjections, observedTable } from "./table-projection-observer.mjs";
 // Sheet #160 consumer acceptance: large mixed Text/Number shapes through the
 // built product's normal UI only (Home file input, cell editor, Undo/Redo,
 // Save a copy, full browser termination, reopen and browser downloads). An
@@ -17,7 +18,7 @@ import { collectWindowedRows } from "./windowed-table-collector.mjs";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
 const oracle = path.join(root, "acceptance", "mixed-import", "oracle.py");
-const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+const launchOptions = { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 // Opt-in slow-rendering regression: apply on every page, including reopen.
 const cpuRate = Number(process.env.MIXED_CPU_THROTTLE ?? 1);
 assert.ok(Number.isFinite(cpuRate) && cpuRate >= 1, "MIXED_CPU_THROTTLE must be a finite rate >= 1");
@@ -37,6 +38,7 @@ let context;
 async function start(profile) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
+  await observeTableProjections(context);
   const page = await context.newPage();
   if (cpuRate > 1) {
     const cdp = await context.newCDPSession(page);
@@ -70,7 +72,12 @@ const current = (page) => page.waitForFunction(() =>
   document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false");
 
 async function rowCount(page) {
+  const projection = await observedTable(page);
+  assert.equal(projection.native_table_profile, true, "Text/Number fixture is structurally native");
+  assert.equal(await grid(page).locator(".ts-entry-row").count(), 0, "no draft at or above the insertion gate");
+  await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
   const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1;
+  assert.equal(declared, projection.rows.length, "ARIA data rows match stored records, excluding drafts");
   const rendered = await grid(page).locator("tbody tr.ts-row").count();
   assert.ok(rendered < 400, `large table renders a window, not ${rendered} rows`);
   return declared;

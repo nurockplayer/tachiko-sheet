@@ -14,6 +14,10 @@ const metadata: InteropMetadata = {
 };
 const witness = (view: ViewWitness): ViewWitness => ({ occurrence: view.occurrence, revision: view.revision });
 
+class FakeDesignerRuntimeError extends Error {
+  constructor(readonly failure: { code: string; diagnostics: Array<{ path: string; message: string }> }) { super("Refused"); }
+}
+
 async function setup() {
   let revision = "r1";
   let scope = "occurrence-1";
@@ -32,6 +36,7 @@ async function setup() {
     },
   };
   const kit = {
+    DesignerRuntimeError: FakeDesignerRuntimeError,
     createExperimentalDesignerClient: () => client,
     preflightCanonicalProjectEntries: () => undefined,
     projectTransferFromEntries: () => new ArrayBuffer(0),
@@ -45,6 +50,20 @@ async function setup() {
     setExportedRevision: (next: string) => { exportedRevision = next; },
   };
 }
+
+it("preserves an imported-layout refusal, its metadata and resident work without native fallback", async () => {
+  const { runtime, first, client } = await setup();
+  const originalMetadata = structuredClone(metadata);
+  const error = new FakeDesignerRuntimeError({ code: "imported_spreadsheet_export_refused", diagnostics: [{ path: "workbook", message: "Foreign mapping" }] });
+  let importedCalls = 0;
+  client.exportSpreadsheet = async () => { importedCalls++; throw error; };
+  // The fake client intentionally has no native export capability: any silent
+  // fallback would replace this exact error with a missing-capability failure.
+  await assert.rejects(runtime.exportSpreadsheet(witness(first), metadata, "csv"), candidate => candidate === error);
+  assert.equal(importedCalls, 1);
+  assert.deepEqual(await runtime.read(), first);
+  assert.deepEqual(metadata, originalMetadata);
+});
 
 it("exports the selected second table by stable schema ID, not metadata order or display key", async () => {
   const { runtime, first, calls } = await setup();

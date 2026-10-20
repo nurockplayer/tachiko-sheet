@@ -179,7 +179,7 @@ async function verifySelectedDownload(page, format, selectedTable, salesQuantity
   const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await consent.waitFor();
   if (format === "csv") {
-    const csvLossMessage = "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.";
+    const csvLossMessage = "CSV includes only cell values from the selected sheet. Blank cells and empty text both become empty CSV cells. Formulas, formatting, and other sheets are not kept; keep the source work.";
     const csvLossRows = consent.getByRole("list", { name: "Export changes and warnings", exact: true })
       .getByRole("listitem").filter({ hasText: csvLossMessage });
     assert.deepEqual(await csvLossRows.allTextContents(), [

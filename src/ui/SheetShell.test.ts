@@ -512,6 +512,17 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain(">Discard</button>");
   });
 
+  it.each([127, 128, 205, 8406])("offers drafts only below the insertion gate (%i stored rows)", count => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows = Array.from({ length: count }, (_, i) => ({ ...view.table.rows[0]!, id: `row-${i}`, key: `row-${i}` }));
+    const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
+    expect(markup.includes('aria-label="New row"')).toBe(count < 128);
+    expect(markup.includes("This table has reached the 128-row limit for adding rows here.")).toBe(count >= 128);
+    if (count > 200) expect(markup).toContain(`aria-rowcount="${count + 1}"`);
+    expect(view.table.rows).toHaveLength(count);
+  });
+
   it("reserves windowed scroll height outside the table and leaves small tables intrinsic", () => {
     const view = makeView();
     const seed = view.table.rows[0]!;
