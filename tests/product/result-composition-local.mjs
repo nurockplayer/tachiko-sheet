@@ -227,7 +227,8 @@ try {
   await facts.waitFor();
   assert.deepEqual(await facts.locator("thead th").allTextContents(), ["Field", "Value"]);
   const firstFact = facts.locator("tbody tr").nth(1);
-  assert.equal((await firstFact.locator("th").textContent()).trim(), "column_2");
+  // Brief facts use the same imported heading as the grid header for this field.
+  assert.equal((await firstFact.locator("th").textContent()).trim(), "category");
   assert.equal((await firstFact.locator("td").textContent()).trim(), categories[1]);
   assert.equal(await firstFact.locator("td").getAttribute("data-work-currentness"), "current");
   assert.ok(await firstFact.locator("td").getAttribute("data-work-entity"));
