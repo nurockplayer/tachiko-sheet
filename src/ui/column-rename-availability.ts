@@ -1,13 +1,14 @@
 import type { InteropMetadata, WorkbookView } from "../contracts.js";
 import { tableColumns } from "./projection-access.js";
-import { sourceNames } from "./source-names.js";
+import { sourceNames, supportsExplicitDisplayNames } from "./source-names.js";
 
 // Work #560: https://github.com/nurockplayer/tachiko-work/issues/560
-// Remove the imported-heading gate when the pin exposes explicit display-name
-// presence. Do not guess that presence from the flattened display name or key.
-export function canRenameColumns(table: WorkbookView["table"] | null, metadata: InteropMetadata | null): boolean {
+// Only rollback kits without explicit display-name presence need the old
+// imported-heading gate. Do not infer capability or presence from spelling.
+export function canRenameColumns(table: WorkbookView["table"] | null, metadata: InteropMetadata | null, explicitDisplayNames = supportsExplicitDisplayNames): boolean {
   if (!table?.native_table_profile) return false;
-  const names = sourceNames(metadata, null);
+  if (explicitDisplayNames) return true;
+  const names = sourceNames(metadata, null, null, false);
   return !tableColumns(table).some(column => names.column(table.collection.id, column.id) !== null);
 }
 

@@ -13,7 +13,7 @@ describe("source names", () => {
     expect(names.title).toBe("january-sales.csv");
     expect(names.table("s1")).toBe("january-sales");
     expect(names.column("s1", "s1-f0")).toBe("item");
-    expect(names.column("s1", "s1-f1")).toBe("quantity");
+    expect(names.column("s1", "s1-f1")).toBe(" quantity ");
     expect(names.column("s1", "s1-f2")).toBeNull();
   });
 
@@ -24,5 +24,50 @@ describe("source names", () => {
     expect(names.column("b", "b-f0")).toBeNull();
     expect(names.table("missing")).toBeNull();
     expect(sourceNames(null, "x.csv").title).toBeNull();
+  });
+});
+
+describe("Work explicit display-name presence", () => {
+  const current = (explicit = false, name = "Current item"): import("../contracts.js").WorkbookView["table"] => ({
+    revision: "r1", collection: { id: "s1", key: "sheet", display_name: "Sheet", entity_count: 0 }, rows: [],
+    native_table_profile: true,
+    columns: [
+      { id: "s1-f1", key: "column_2", display_name: "Amount", field_type: "number", required: false },
+      { id: "s1-f0", key: "column_1", display_name: name, field_type: "text", required: false, ...(explicit ? { display_name_explicit: true as const } : {}) },
+    ],
+  });
+  const imported = () => metadata(sheet("s1", "Sheet", true, ["Item", "Quantity"]));
+
+  it("joins by stable field ID and replaces metadata only for explicit current names", () => {
+    expect(sourceNames(imported(), null, current(true), true).column("s1", "s1-f0")).toBe("Current item");
+    expect(sourceNames(imported(), null, current(false), true).column("s1", "s1-f0")).toBe("Item");
+    expect(sourceNames(imported(), null, current(true), true).column("s1", "s1-f1")).toBe("Quantity");
+  });
+  it("keeps an explicit generated-key spelling and exact explicit text", () => {
+    for (const name of ["column_1", "  Current item  "]) {
+      expect(sourceNames(imported(), null, current(true, name), true).column("s1", "s1-f0")).toBe(name);
+    }
+  });
+  it("falls back to the current name for a missing metadata field without inventing foreign matches", () => {
+    const missing = metadata(sheet("s1", "Sheet", true, []));
+    expect(sourceNames(missing, null, current(true), true).column("s1", "s1-f0")).toBe("Current item");
+    expect(sourceNames(missing, null, current(false), true).column("s1", "s1-f0")).toBe("Current item");
+    expect(sourceNames(missing, null, current(true), true).column("foreign", "s1-f0")).toBeNull();
+  });
+  it("keeps a blank or whitespace imported heading identifiable through the projected name", () => {
+    for (const heading of ["", "   "]) {
+      const blank = metadata(sheet("s1", "Sheet", true, [heading, "Quantity"]));
+      expect(sourceNames(blank, null, current(false, "column_1"), true).column("s1", "s1-f0")).toBe("column_1");
+      expect(sourceNames(blank, null, current(true, "Renamed"), true).column("s1", "s1-f0")).toBe("Renamed");
+    }
+    const spaced = metadata(sheet("s1", "Sheet", true, ["  Item  ", "Quantity"]));
+    expect(sourceNames(spaced, null, current(false), true).column("s1", "s1-f0")).toBe("  Item  ");
+  });
+  it("uses current projections for non-imported tables", () => {
+    expect(sourceNames(null, null, current(false), true).column("s1", "s1-f0")).toBe("Current item");
+  });
+  it("keeps metadata precedence when the capability marker is absent", () => {
+    expect(sourceNames(imported(), null, current(true), false).column("s1", "s1-f0")).toBe("Item");
+    expect(sourceNames(null, null, current(true), false).column("s1", "s1-f0")).toBe("Current item");
   });
 });

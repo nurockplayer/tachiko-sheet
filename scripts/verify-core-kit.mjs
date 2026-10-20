@@ -13,6 +13,13 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // #227 Rename: separate clean detached writer/lead builds; docs/227-rename-kit-handback.md.
+    sourceCommit: '4e51942a6b8c83bb691bef4308b264d9104a18a5',
+    artifactManifestSha256: 'd4c4bb7da05f906075bd93ecb99c1a4b64d348d0ed7130f3ce1b5f37c2a111b8',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/227#issuecomment-6292194963',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/227#issuecomment-6292194963',
+  },
+  {
     // #228 successor: independent clean writer/lead builds; docs/228-kit-handback.md.
     sourceCommit: '375da29f7c67ed74bace7d214ef23716d2e2237b',
     artifactManifestSha256: '43910ca78d2ac037215770a97f0bf4dc88d4114bbfa6b2ce5e64c868ddd075e3',

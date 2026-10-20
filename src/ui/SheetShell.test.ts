@@ -511,7 +511,7 @@ describe("SheetShell static rendering", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
-  it.each([false, true])("gates Rename affordances without changing Add/Remove (compact=%s)", compact => {
+  it.each([false, true])("offers imported Rename without changing Add/Remove (compact=%s)", compact => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
     try {
       const view = makeView();
@@ -523,8 +523,8 @@ describe("SheetShell static rendering", () => {
         columns: [{ field_id: view.table.columns[0]!.id, name: "Original heading", width: null }], rows: [],
       }] } } });
       expect(native).toContain("Rename");
-      expect(imported).not.toContain("Rename");
-      expect(imported).not.toContain('class="ts-col-head" tabindex="0"');
+      expect(imported).toContain("Rename");
+      expect(imported.includes('class="ts-col-head" tabindex="0"')).toBe(!compact);
       if (compact) {
         for (const markup of [native, imported]) {
           expect(markup).toContain("Add column…");
