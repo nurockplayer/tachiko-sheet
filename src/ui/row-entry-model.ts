@@ -1,5 +1,5 @@
-import type { WorkbookView } from "../contracts.js";
-import { parseBooleanDraft } from "./field-display.js";
+import type { RowInitializer, WorkbookView } from "../contracts.js";
+import { parseBooleanDraft, scalarEditOf } from "./field-display.js";
 
 type Column = WorkbookView["table"]["columns"][number];
 export interface RowDraft { occurrence: string; collection: string; values: Record<string, string>; needsReview?: boolean }
@@ -19,9 +19,26 @@ export function draftReadiness(columns: Column[], values: Record<string, string>
 
 /** Presence only: Work remains the authority for scalar validity. */
 export function firstMissingDraftColumn(columns: Column[], values: Record<string, string>): Column | undefined {
-  return columns.find(column => column.field_type === "boolean"
+  return columns.find(column => column.required && (column.field_type === "boolean"
     ? parseBooleanDraft(values[column.id] ?? "") === null
-    : column.field_type !== "text" && (values[column.id] ?? "").trim() === "");
+    : column.field_type !== "text" && (values[column.id] ?? "").trim() === ""));
+}
+
+/** Explicit inputs only: Work owns omission/blank semantics and value validity. */
+export function draftInitializers(columns: Column[], values: Record<string, string>): RowInitializer[] | null {
+  const initializers: RowInitializer[] = [];
+  for (const column of columns) {
+    const raw = Object.hasOwn(values, column.id) ? values[column.id] ?? "" : "";
+    if (!column.required && raw === "") continue;
+    if (column.field_type === "boolean") {
+      const value = parseBooleanDraft(raw);
+      if (value === null) return null;
+      initializers.push({ field: column.id, input: { kind: "boolean", value } });
+    } else if (column.field_type === "text" || column.field_type === "number" || column.field_type === "date") {
+      initializers.push({ field: column.id, input: scalarEditOf(column.field_type, raw) });
+    } else return null;
+  }
+  return initializers;
 }
 
 export function draftKeyAction(key: string, shift: boolean, last: boolean, readiness: DraftReadiness, mayPublish = true): "publish" | "edit" | "leave" | "next" | "previous" | null {

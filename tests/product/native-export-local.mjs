@@ -12,6 +12,7 @@ import { waitForColdHome } from "./home-entry.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 import { runBlankDisplayCases } from "./blank-display-cases.mjs";
 import { runImportedExportRefusalCases } from "./imported-export-refusal-cases.mjs";
+import { runOptionalEditEntryCases } from "./optional-edit-entry-cases.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) throw new Error("BLOCKED: WORK_DIST must name the built product");
@@ -206,6 +207,7 @@ try {
   await close(page);
   await runBlankDisplayCases(page, { output, close, checks });
   await runImportedExportRefusalCases(page, { close, prepare, downloads, checks });
+  await runOptionalEditEntryCases(page, { close, checks });
   console.log(JSON.stringify({status:"PASS",checks,downloads,output}));
 } finally {
   if(context) await context.close();

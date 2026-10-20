@@ -49,7 +49,7 @@ import { isComposingEvent } from "./composition-event.js";
 import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
-import { DRAFT_ROW, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
+import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
 import { booleanText, cellDisplay, fieldClipboardText, fieldDisplay, type FieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
@@ -64,6 +64,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
+import { cellEditSlot, cellEditorUnchanged, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
@@ -888,8 +889,8 @@ export function SheetShell(props: SheetShellProps) {
       pendingDraft: rowDraftActive, start, rowCount: table.rows.length, columnTypes: columns.map(column => column.field_type),
       editable: (r, c) => {
         const row = table.rows[r], column = columns[c];
-        const field = row && column ? fieldForColumn(row, column.id) : null;
-        return Boolean(field?.editable_scalar && !field.formula);
+        const slot = row && column ? cellEditSlot(row, column) : null;
+        return Boolean(slot && !slot.formula);
       },
     });
     if (route.kind === "refused") { announceClipboard(route.message, true); return; }
@@ -909,14 +910,14 @@ export function SheetShell(props: SheetShellProps) {
       for (const [r, values] of route.rows.entries()) {
         for (const [c, raw] of values.entries()) {
           const column = columns[start.column + c]!;
-          const field = fieldForColumn(table.rows[start.row + r]!, column.id)!;
-          const kind = column.field_type;
-          if (kind === "boolean") edits.push({ target: field.target, input: { kind, value: raw === "true" } });
-          else if (kind === "text" || kind === "number" || kind === "date") edits.push({ target: field.target, input: scalarEditOf(kind, raw) });
-          else { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
+          const slot = cellEditSlot(table.rows[start.row + r]!, column);
+          if (!slot || slot.formula) { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
+          const edit = pastedCellEdit(slot, raw);
+          if (edit) edits.push(edit);
         }
       }
     }
+    if (route.kind === "edit" && edits.length === 0) { announceClipboard("The pasted cells are unchanged."); return; }
     const intent = completionIntent();
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
@@ -1404,23 +1405,24 @@ export function SheetShell(props: SheetShellProps) {
     [onCommit, witness],
   );
 
-  function beginEdit(entity: string, field: FieldProjection | null, seed?: string): void {
-    if (!field || !field.editable_scalar || controlsLocked) return;
-    if (editor && editor.entity !== DRAFT_ROW && editor.value !== editor.original && (editor.entity !== entity || editor.field !== field.target.field)) {
+  function beginEdit(entity: string, fieldId: string, seed?: string): void {
+    const slot = currentEditorSlot({ entity, field: fieldId });
+    if (!slot || controlsLocked) return;
+    if (editor && editor.entity !== DRAFT_ROW && editor.value !== editor.original && (editor.entity !== entity || editor.field !== slot.target.field)) {
       setLocalError("Apply or cancel the value you are editing before you edit another cell.");
       focusCell(editor.entity, editor.field);
       return;
     }
     setClipboardMessage(null);
-    const original = seedTextOf(field);
+    const original = slot.original;
     selectEditorValueOnFocusRef.current = seed === undefined;
     focusRejectedEditorRef.current = null;
     setLocalError(null);
     setSelectedEntity(entity);
     setEditor({
       entity,
-      field: field.target.field,
-      kind: field.editable_scalar,
+      field: slot.target.field,
+      kind: slot.kind,
       value: seed === undefined ? original : seed,
       original,
     });
@@ -1541,14 +1543,14 @@ export function SheetShell(props: SheetShellProps) {
       setEditor(null);
       return true;
     }
-    const field = currentEditorField(editor);
-    if (!field) {
+    const slot = currentEditorSlot(editor);
+    if (!slot) {
       setEditor(null);
       return false;
     }
     // Accepting an unchanged editor is navigation, not a Work mutation. Work
     // truthfully refuses no-op edits, which must not strand Enter/Tab here.
-    if (editor.value === editor.original) {
+    if (cellEditorUnchanged(slot, editor.original, editor.value)) {
       setEditor(null);
       setLocalError(null);
       return true;
@@ -1565,7 +1567,7 @@ export function SheetShell(props: SheetShellProps) {
       edit = scalarEditOf(editor.kind, editor.value);
     }
     const intent = completionIntent();
-    const accepted = await runCommit(field.target, edit, () => {
+    const accepted = await runCommit(slot.target, edit, () => {
       focusRejectedEditorRef.current = intent;
     });
     if (accepted) {
@@ -1616,7 +1618,6 @@ export function SheetShell(props: SheetShellProps) {
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
     entity: string,
-    field: FieldProjection | null,
     position: GridPosition,
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
@@ -1629,7 +1630,7 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "F2"].includes(event.key)) setCellSelection(null);
-    const editable = (draft || Boolean(field?.editable_scalar)) && !controlsLocked;
+    const editable = (draft || Boolean(currentEditorSlot(position))) && !controlsLocked;
     if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
       const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
       const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}), mayPublish);
@@ -1649,7 +1650,7 @@ export function SheetShell(props: SheetShellProps) {
       if (!editable) return;
       event.preventDefault();
       if (draft) beginDraftEdit(columns.find(column => column.id === position.field)!);
-      else beginEdit(entity, field);
+      else beginEdit(entity, position.field);
       return;
     }
     if (event.key === "Tab") {
@@ -1674,7 +1675,7 @@ export function SheetShell(props: SheetShellProps) {
     ) {
       event.preventDefault();
       if (draft) beginDraftEdit(columns.find(column => column.id === position.field)!, event.key);
-      else beginEdit(entity, field, event.key);
+      else beginEdit(entity, position.field, event.key);
     }
   }
 
@@ -2136,11 +2137,11 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
-  function currentEditorField(state: EditorState): FieldProjection | null {
+  function currentEditorSlot(state: GridPosition): CellEditSlot | null {
     if (!table) return null;
     const row = table.rows.find((candidate) => rowEntity(candidate) === state.entity);
-    if (!row) return null;
-    return fieldForColumn(row, state.field);
+    const column = columns.find(candidate => candidate.id === state.field);
+    return row && column ? cellEditSlot(row, column) : null;
   }
 
   useEffect(() => {
@@ -2182,20 +2183,8 @@ export function SheetShell(props: SheetShellProps) {
       if (redirectMissing) focusDraftAfterRender(missing.id, completionIntent());
       return;
     }
-    const initializers = [];
-    for (const column of columns) {
-      const raw = Object.hasOwn(draft.values, column.id) ? draft.values[column.id] ?? "" : "";
-      if (column.field_type === "boolean") {
-        const parsed = parseBooleanDraft(raw);
-        if (parsed === null) {
-          setRowError({ message: "Choose Yes or No before adding this row.", fields: [column.id] });
-          return;
-        }
-        initializers.push({ field: column.id, input: { kind: "boolean" as const, value: parsed } });
-      } else if (column.field_type === "text" || column.field_type === "number" || column.field_type === "date") {
-        initializers.push({ field: column.id, input: scalarEditOf(column.field_type, raw) });
-      } else return;
-    }
+    const initializers = draftInitializers(columns, draft.values);
+    if (!initializers) return;
     if (editor?.entity === DRAFT_ROW || (editor && editor.value === editor.original)) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
@@ -2833,13 +2822,12 @@ export function SheetShell(props: SheetShellProps) {
   function renderCell(row: TableRow | null, entity: string, column: TableColumn): ReactNode {
     if (!view) return null;
     const draft = entity === DRAFT_ROW;
-    const field = row ? fieldForColumn(row, column.id) : null;
     const raw = boundRowDraft?.values[column.id] ?? "";
     const draftBoolean = column.field_type === "boolean" ? parseBooleanDraft(raw) : null;
     const display: FieldDisplay = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : cellDisplay(row!, column);
     const key = cellKey(entity, column.id);
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
-    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(field?.editable_scalar)) && !controlsLocked;
+    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && cellEditSlot(row, column))) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
     const coordinate = address({ entity, field: column.id });
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
@@ -2879,13 +2867,13 @@ export function SheetShell(props: SheetShellProps) {
             if (priorEntity && priorField && priorEntity !== DRAFT_ROW) extendSelection(boundSelection?.anchor ?? { entity: priorEntity, field: priorField }, { entity, field: column.id });
           } else { setCellSelection(null); focusCell(entity, column.id); }
         }}
-        onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, field)}
+        onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
         onFocus={() => {
           setSelectedEntity(entity);
           setFocusedKey(key);
           lastCellRef.current = cellRefs.current.get(key) ?? null;
         }}
-        onKeyDown={(event) => onCellKeyDown(event, entity, field, { entity, field: column.id })}
+        onKeyDown={(event) => onCellKeyDown(event, entity, { entity, field: column.id })}
       >
         {editing && editor ? (
           <input
