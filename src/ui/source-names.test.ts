@@ -14,7 +14,7 @@ describe("source names", () => {
     expect(names.table("s1")).toBe("january-sales");
     expect(names.column("s1", "s1-f0")).toBe("item");
     expect(names.column("s1", "s1-f1")).toBe(" quantity ");
-    expect(names.column("s1", "s1-f2")).toBe("");
+    expect(names.column("s1", "s1-f2")).toBeNull();
   });
 
   it("uses worksheet names for XLSX and falls back when unknown or headerless", () => {
@@ -53,6 +53,15 @@ describe("Work explicit display-name presence", () => {
     expect(sourceNames(missing, null, current(true), true).column("s1", "s1-f0")).toBe("Current item");
     expect(sourceNames(missing, null, current(false), true).column("s1", "s1-f0")).toBe("Current item");
     expect(sourceNames(missing, null, current(true), true).column("foreign", "s1-f0")).toBeNull();
+  });
+  it("keeps a blank or whitespace imported heading identifiable through the projected name", () => {
+    for (const heading of ["", "   "]) {
+      const blank = metadata(sheet("s1", "Sheet", true, [heading, "Quantity"]));
+      expect(sourceNames(blank, null, current(false, "column_1"), true).column("s1", "s1-f0")).toBe("column_1");
+      expect(sourceNames(blank, null, current(true, "Renamed"), true).column("s1", "s1-f0")).toBe("Renamed");
+    }
+    const spaced = metadata(sheet("s1", "Sheet", true, ["  Item  ", "Quantity"]));
+    expect(sourceNames(spaced, null, current(false), true).column("s1", "s1-f0")).toBe("  Item  ");
   });
   it("uses current projections for non-imported tables", () => {
     expect(sourceNames(null, null, current(false), true).column("s1", "s1-f0")).toBe("Current item");

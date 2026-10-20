@@ -45,8 +45,9 @@ export function sourceNames(
       const sheet = sheets.get(collectionId);
       const metadataName = sheet?.has_header ? sheet.columns.find(column => column.field_id === fieldId)?.name : null;
       // With the qualified rule, keep the metadata spelling exactly as export
-      // does. Older kits retain their historical trimmed-label fallback.
-      const imported = explicitDisplayNames ? metadataName : label(metadataName);
+      // does, except that a blank heading keeps the projected-name fallback so
+      // the column stays identifiable. Older kits keep the trimmed label.
+      const imported = explicitDisplayNames ? (metadataName?.trim() ? metadataName : null) : label(metadataName);
       return imported ?? current?.display_name ?? null;
     },
   };
