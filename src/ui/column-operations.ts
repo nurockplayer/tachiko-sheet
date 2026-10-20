@@ -26,10 +26,10 @@ export function columnFill(draft: ColumnDraft): ScalarEdit | null {
 /** Final dispatch guard uses the current table/metadata, even for an older dialog. */
 export async function submitColumnIntent(state: ColumnDialogState, draft: ColumnDraft, context:
   Pick<SheetShellProps, "onAddColumn" | "onRenameColumn" | "onRemoveColumn"> & {
-    table: WorkbookView["table"] | null; metadata: InteropMetadata | null;
+    table: WorkbookView["table"] | null; metadata: InteropMetadata | null; explicitDisplayNames?: boolean;
   }): Promise<RowCommandOutcome> {
   if (state.kind === "rename") {
-    if (!canRenameColumns(context.table, context.metadata)) return { kind: "refused", message: IMPORTED_RENAME_UNAVAILABLE };
+    if (!canRenameColumns(context.table, context.metadata, context.explicitDisplayNames)) return { kind: "refused", message: IMPORTED_RENAME_UNAVAILABLE };
     if (context.onRenameColumn) return context.onRenameColumn(state, state.collection, state.field, draft.name);
   }
   if (state.kind === "remove" && context.onRemoveColumn) return context.onRemoveColumn(state, state.collection, state.field);

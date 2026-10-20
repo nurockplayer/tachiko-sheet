@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "375da29f7c67ed74bace7d214ef23716d2e2237b",
+  "sourceCommit": "4e51942a6b8c83bb691bef4308b264d9104a18a5",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -24,6 +24,7 @@
     "editText",
     "clearField",
     "setColumnRequiredness",
+    "columnDisplayNameExplicit",
     "editBoolean",
     "editDate",
     "updateFormula",
@@ -60,11 +61,11 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "3d3159d3d250f5588311e7a81bcc492acb9fea9d2c4db1ec4bcf93af71330b03"
+      "sha256": "64ed5e8fd47f4fe97ab9c5ffde6ec9eb8dc4ac7dd328d903980282e85c41ee20"
     },
     {
       "path": "experimental-client.d.ts",
-      "sha256": "5e1633faa5dafab2fc769ed84010eed2eb3a08732dc715f7e4c6547d00aa3ff4"
+      "sha256": "af2e847c76acee9bfd2fe22610c8ff55f46471dd17c4eed574dd5b5a9d10f5e3"
     },
     {
       "path": "experimental-client.js",
@@ -120,7 +121,7 @@
     },
     {
       "path": "runtime/protocol.d.ts",
-      "sha256": "418d0c2eccc7337a400d316ebf07bbe570b2d83907852fb6858d005214836467"
+      "sha256": "12e730e7fa8fadf6dff22264183e3688ffdc64a4ec7ad7d21a4780cc76e0402f"
     },
     {
       "path": "runtime/protocol.js",
@@ -140,7 +141,7 @@
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "2f137f2160a65c67dfbdd6b6d9502037a9c09bc76247712ce3410572f462cdb8"
+      "sha256": "44bd2c1337b758386dc5693ac8393396f47ffc5b6d325f785ac0fea3b29d57a8"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

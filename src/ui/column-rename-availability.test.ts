@@ -13,15 +13,20 @@ const metadata = (): InteropMetadata => ({ version: 1, sheets: [{
   columns: [{ field_id: "f", name: "Item", width: null }], rows: [],
 }] });
 
-describe("Work #560 temporary Rename availability", () => {
+describe("Work #560 capability and rollback Rename availability", () => {
+  it("enables imported native Rename with the marker, preserving native eligibility", () => {
+    expect(canRenameColumns(table(), metadata(), true)).toBe(true);
+    expect(canRenameColumns({ ...table(), native_table_profile: false }, metadata(), true)).toBe(false);
+    expect(canRenameColumns(null, metadata(), true)).toBe(false);
+  });
   it("blocks the whole table if sourceNames supplies any current field heading", () => {
     const current = table();
     current.columns.push({ ...current.columns[0]!, id: "added", key: "added", display_name: "Added" });
-    expect(canRenameColumns(current, metadata())).toBe(false);
+    expect(canRenameColumns(current, metadata(), false)).toBe(false);
     current.columns[0]!.display_name = "Explicit-looking name";
-    expect(canRenameColumns(current, metadata())).toBe(false);
+    expect(canRenameColumns(current, metadata(), false)).toBe(false);
     current.columns[0]!.display_name = current.columns[0]!.key;
-    expect(canRenameColumns(current, metadata())).toBe(false);
+    expect(canRenameColumns(current, metadata(), false)).toBe(false);
   });
   it("keeps native non-imported Rename and rejects non-native or absent tables", () => {
     expect(canRenameColumns(table(), null)).toBe(true);
@@ -35,7 +40,7 @@ describe("Work #560 temporary Rename availability", () => {
     if (kind === "other field") sheet.columns[0]!.field_id = "foreign";
     if (kind === "headerless") sheet.has_header = false;
     if (kind === "blank heading") sheet.columns[0]!.name = " \t ";
-    expect(canRenameColumns(table(), incoming)).toBe(true);
+    expect(canRenameColumns(table(), incoming, false)).toBe(true);
   });
   it("matches the existing legacy column projection fallback", () => {
     const current = table();
@@ -44,7 +49,7 @@ describe("Work #560 temporary Rename availability", () => {
       target: { entity: "e", field: "f" }, address: "f", stored: { kind: "text", value: "x" },
       formula: null, calculated: null, diagnostics: [], editable_scalar: "text",
     }] }];
-    expect(canRenameColumns(current, metadata())).toBe(false);
+    expect(canRenameColumns(current, metadata(), false)).toBe(false);
   });
 });
 
@@ -57,11 +62,16 @@ describe("column dialog dispatch guard", () => {
     onRemoveColumn: vi.fn(async () => ({ kind: "confirmed" as const })),
   });
   it("refuses a stale open Rename dialog using the current metadata, without dispatch", async () => {
-    const context = { table: table(), metadata: null as InteropMetadata | null, ...handlers() };
+    const context = { table: table(), metadata: null as InteropMetadata | null, explicitDisplayNames: false, ...handlers() };
     expect(canRenameColumns(context.table, context.metadata)).toBe(true);
     context.metadata = metadata();
     expect(await submitColumnIntent(state, draft, context)).toEqual({ kind: "refused", message: IMPORTED_RENAME_UNAVAILABLE });
     for (const handler of [context.onRenameColumn, context.onAddColumn, context.onRemoveColumn]) expect(handler).not.toHaveBeenCalled();
+  });
+  it("dispatches imported Rename when explicit presence is supported", async () => {
+    const context = { table: table(), metadata: metadata(), explicitDisplayNames: true, ...handlers() };
+    expect(await submitColumnIntent(state, draft, context)).toEqual({ kind: "confirmed" });
+    expect(context.onRenameColumn).toHaveBeenCalledExactlyOnceWith(state, "table", "f", draft.name);
   });
   it("keeps native non-imported Rename's exact witness, target and raw name", async () => {
     const context = { table: table(), metadata: null, ...handlers() };

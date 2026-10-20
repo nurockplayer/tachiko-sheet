@@ -806,7 +806,12 @@ export function SheetShell(props: SheetShellProps) {
 
   const table = view?.table ?? null;
   const renameAvailable = Boolean(onRenameColumn && canRenameColumns(table, interop?.metadata ?? null));
-  const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
+  const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName, table), [interop?.metadata, importedSourceName, table]);
+  // Resolve labels once for every consumer. IDs, keys and canonical projections
+  // remain untouched; this array is presentation only.
+  const columns = useMemo(() => table ? tableColumns(table).map(column => ({
+    ...column, display_name: names.column(table.collection.id, column.id) ?? column.display_name,
+  })) : [], [table, names]);
   const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(table.rows.length));
   const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
   const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
@@ -824,7 +829,6 @@ export function SheetShell(props: SheetShellProps) {
     return order;
   }, [table, hasDraftRow]);
   const gridWindowed = (table?.rows.length ?? 0) > GRID_WINDOW_THRESHOLD;
-  const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName), [interop?.metadata, importedSourceName]);
   const rowIndexByEntity = useMemo(() => {
     const indices = new Map<string, number>();
     table?.rows.forEach((row, index) => indices.set(rowEntity(row), index));
@@ -1808,7 +1812,7 @@ export function SheetShell(props: SheetShellProps) {
     const values = boundRowDraft?.values ?? {};
     if (!hasDraftInput(values) || !table) return undefined;
     const missing = firstMissingDraftColumn(columns, values);
-    if (missing) setRowError({ message: `Add ${names.column(table.collection.id, missing.id) ?? missing.display_name} to add this row.`, fields: [missing.id], missing: true });
+    if (missing) setRowError({ message: `Add ${missing.display_name} to add this row.`, fields: [missing.id], missing: true });
     return missing;
   }
 
@@ -2288,7 +2292,7 @@ export function SheetShell(props: SheetShellProps) {
         setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
           previousEntities: view.table.rows.map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
       } else if (result.kind === "refused") {
-        const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => names.column(view.table.collection.id, column.id) ?? column.display_name);
+        const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
         setRowError(refusal);
         if (refusal.fields?.[0]) focusDraftAfterRender(refusal.fields[0], intent);
       } else {
@@ -2388,7 +2392,7 @@ export function SheetShell(props: SheetShellProps) {
         !canChangeRequiredness(table, field) || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
     const column = columns.find(item => item.id === field)!;
     const required = !column.required;
-    const displayName = names.column(table.collection.id, field) ?? column.display_name;
+    const displayName = column.display_name;
     const count = currentness === "current" ? completeBlankCount(table, field, witness.revision) : null;
     const intent = completionIntent();
     setColumnAnnouncement(null);
@@ -2745,7 +2749,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!table) return null;
     const hasColumnActions = Boolean(onAddColumn || renameAvailable || onRemoveColumn || onSetColumnRequiredness);
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
-    const focusedColumnName = focusedColumn ? names.column(table.collection.id, focusedColumn.id) ?? focusedColumn.display_name : "";
+    const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const hasResults = j4DefinitionIds.length > 0;
     const visibleSalesTip = hasResults && !resultsHidden && salesEntryTip?.occurrence === view?.occurrence
       ? salesEntryTip
@@ -2759,10 +2763,10 @@ export function SheetShell(props: SheetShellProps) {
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={names.column(table.collection.id, column.id) ?? column.display_name}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name}>
               <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
-              } : undefined}>{names.column(table.collection.id, column.id) ?? column.display_name}</span>
+              } : undefined}>{column.display_name}</span>
               {!compactColumnActions && table.native_table_profile && (renameAvailable || onAddColumn || onRemoveColumn || (onSetColumnRequiredness && canChangeRequiredness(table, column.id))) ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
@@ -2963,7 +2967,7 @@ export function SheetShell(props: SheetShellProps) {
         className={classes.join(" ")}
         data-testid={`cell:${entity}:${column.id}`}
         data-entry-field={draft ? column.id : undefined}
-        aria-label={draft ? `New row ${names.column(table!.collection.id, column.id) ?? column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
+        aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
         aria-description={draft ? undefined : display.description}
         aria-invalid={draft && !rowError?.missing && rowError?.fields?.includes(column.id) ? true : undefined}
         aria-describedby={draft && rowError?.fields?.includes(column.id) ? editing ? "ts-row-error" : `ts-draft-message-${column.id}` : undefined}
@@ -3037,7 +3041,6 @@ export function SheetShell(props: SheetShellProps) {
       <p className="ts-empty">Add a row in Table to see its linked facts here.</p>
     </div>;
     const entity = rowEntity(selectedRow);
-    const tableCols = tableColumns(view.table);
     const rowNumber = table ? table.rows.indexOf(selectedRow) + 1 : null;
     return (
       <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief-panel">
@@ -3053,7 +3056,7 @@ export function SheetShell(props: SheetShellProps) {
               revision={view.revision}
               currentness={currentness}
               row={selectedRow}
-              columns={tableCols}
+              columns={columns}
             />
           </section>
           {notesField ? <section className="ts-brief-notes" aria-label="Decision notes">
