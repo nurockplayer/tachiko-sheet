@@ -666,11 +666,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]) {
-    const inputs = initializers.map(({ entity, input }) => ({ entity, input: { ...input } }));
+  function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required = true) {
+    const inputs = initializers?.map(({ entity, input }) => ({ entity, input: { ...input } }));
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.trackerCommand, "column addition");
-      return command.call(client, { type: "add_column", expected_revision: revision, collection, name, field_type: fieldType, initializers: inputs });
+      return command.call(client, { type: "add_column", expected_revision: revision, collection, name, field_type: fieldType, required, ...(inputs ? { initializers: inputs } : {}) });
+    }, true);
+  }
+
+  function setColumnRequiredness(witness: ViewWitness, collection: string, field: string, required: boolean) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "column requiredness");
+      return command.call(client, { type: "set_column_requiredness", expected_revision: revision, collection, field, required });
     }, true);
   }
 
@@ -1093,7 +1100,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

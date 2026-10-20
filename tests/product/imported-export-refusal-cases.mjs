@@ -42,6 +42,7 @@ export async function runImportedExportRefusalCases(page, { close, prepare, down
     await page.getByRole("button", { name: "+ column", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Add column", exact: true });
     await dialog.getByLabel("Column name", { exact: true }).fill(name);
+    await dialog.getByLabel("Fill existing rows", { exact: true }).check();
     await dialog.getByLabel(/^Fill all/).fill(fill);
     await dialog.getByRole("button", { name: "Add column", exact: true }).click();
     await dialog.waitFor({ state: "detached" }); await ready();

@@ -76,6 +76,17 @@ describe("mutation completion boundaries", () => {
     expect(result.kind).toBe("refused"); expect(h.state.view).toEqual(view());
     expect(h.state.definitionIds).toEqual(["d1"]); expect(h.state.savedRevision).toBe("r0"); expect(h.recovery).toBeNull();
   });
+  it.each(["no_change", "edit_rejected"])("requiredness %s retains exact history, saved state and view", async code => {
+    const h = harness();
+    const prior = structuredClone(h.state);
+    const failure = Object.assign(new Error(code), { failure: { code } });
+    const outcome = await h.completion.run({ kind: "rows", witness, dispatch: async () => { throw failure; } });
+    expect(outcome).toMatchObject({ kind: "refused", refusalCode: code });
+    expect(h.state).toEqual(prior);
+    expect(h.dirty).toBe(false);
+    expect(h.effects.some(effect => effect.startsWith("history:"))).toBe(false);
+    expect(h.recovery).toBeNull();
+  });
   it("keeps the existing history refusal recovery policy", async () => {
     const h = harness();
     await h.completion.run({ kind: "history", direction: "undo", witness, dispatch: async () => { throw new Error("refused"); } });

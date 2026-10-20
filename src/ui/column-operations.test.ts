@@ -19,7 +19,7 @@ describe("column intent", () => {
     expect(columnFill({ name: "t", fieldType: "text", fill: "" })).toEqual({ kind: "text", value: "" });
   });
   it("opens a fresh fill choice and keeps rename text verbatim", () => {
-    expect(initialColumnDraft({ kind: "rename", occurrence: "o", revision: "r", collection: "c", rowEntities: ["e"], field: "f", name: "  Price  " })).toEqual({ name: "  Price  ", fieldType: "text", fill: "" });
+    expect(initialColumnDraft({ kind: "rename", occurrence: "o", revision: "r", collection: "c", rowEntities: ["e"], field: "f", name: "  Price  " })).toEqual({ name: "  Price  ", fieldType: "text", fill: "", required: false, fillExisting: false });
   });
   it("translates authoritative refusal evidence", () => {
     expect(columnRefusal("schema field 'x' is still referenced by a formula or saved definition")).toMatch(/used by a formula or cross-table summary/);

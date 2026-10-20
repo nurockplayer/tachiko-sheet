@@ -193,7 +193,7 @@ class FakeClient {
       return hook();
     }
     this.#requireRevision(request.expected_revision);
-    if (request.type === "edit_cells" || request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows" || request.type === "add_column" || request.type === "rename_column" || request.type === "remove_column") return this.#publish(IMPACT);
+    if (request.type === "edit_cells" || request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows" || request.type === "add_column" || request.type === "set_column_requiredness" || request.type === "rename_column" || request.type === "remove_column") return this.#publish(IMPACT);
     const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
     if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);
     const base = this.#revision;
@@ -1589,12 +1589,13 @@ describe("native table and row adapter", () => {
 
   const edits = [{ target: { entity: "e1", field: "f1" }, input: { kind: "number" as const, input: "1,300" } },
     { target: { entity: "e2", field: "f2" }, input: { kind: "boolean" as const, value: false } }];
-  for (const type of ["edit_cells", "insert_row", "paste_cells", "remove_table_rows", "add_column", "rename_column", "remove_column"] as const) {
+  for (const type of ["edit_cells", "insert_row", "paste_cells", "remove_table_rows", "add_column", "set_column_requiredness", "rename_column", "remove_column"] as const) {
     const invoke = (runtime: ReturnType<typeof createSheetRuntime>, view: WorkbookView) => type === "insert_row"
       ? runtime.insertRow(witnessOf(view), COLLECTION.key, initializers)
       : type === "edit_cells" ? runtime.editCells(witnessOf(view), edits)
       : type === "paste_cells" ? runtime.pasteCells(witnessOf(view), COLLECTION.key, "e1", "f1", [["", "TRUE"], ["1,300", "10/19/2026"]])
       : type === "add_column" ? runtime.addColumn(witnessOf(view), COLLECTION.key, " New ", "number", [{ entity: "e1", input: { kind: "number", input: "1,300" } }])
+      : type === "set_column_requiredness" ? runtime.setColumnRequiredness(witnessOf(view), COLLECTION.key, "f1", false)
       : type === "rename_column" ? runtime.renameColumn(witnessOf(view), COLLECTION.key, "f1", " New ")
       : type === "remove_column" ? runtime.removeColumn(witnessOf(view), COLLECTION.key, "f1")
       : runtime.removeRows(witnessOf(view), COLLECTION.key, ["e1"]);
@@ -1605,9 +1606,9 @@ describe("native table and row adapter", () => {
       expect(confirmed.publication.base_revision).toBe(view.revision);
       expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
       expect(confirmed.view.occurrence).toBe(view.occurrence);
-      expect(confirmed.view.requiresPortableSave).toBe(["add_column", "rename_column", "remove_column"].includes(type) ? true : undefined);
+      expect(confirmed.view.requiresPortableSave).toBe(["add_column", "set_column_requiredness", "rename_column", "remove_column"].includes(type) ? true : undefined);
       expect(client.calls.trackerCommand[0]).toEqual({ type, expected_revision: view.revision, ...(type === "edit_cells" ? {} : { collection: COLLECTION.key }),
-        ...(type === "edit_cells" ? { edits } : type === "insert_row" ? { initializers } : type === "paste_cells" ? { start_entity: "e1", start_field: "f1", rows: [["", "TRUE"], ["1,300", "10/19/2026"]] } : type === "add_column" ? { name: " New ", field_type: "number", initializers: [{ entity: "e1", input: { kind: "number", input: "1,300" } }] } : type === "rename_column" ? { field: "f1", name: " New " } : type === "remove_column" ? { field: "f1" } : { entities: ["e1"] }) });
+        ...(type === "edit_cells" ? { edits } : type === "insert_row" ? { initializers } : type === "paste_cells" ? { start_entity: "e1", start_field: "f1", rows: [["", "TRUE"], ["1,300", "10/19/2026"]] } : type === "add_column" ? { name: " New ", field_type: "number", required: true, initializers: [{ entity: "e1", input: { kind: "number", input: "1,300" } }] } : type === "set_column_requiredness" ? { field: "f1", required: false } : type === "rename_column" ? { field: "f1", name: " New " } : type === "remove_column" ? { field: "f1" } : { entities: ["e1"] }) });
     });
 
     it(`${type}: refuses stale witnesses without dispatch`, async () => {
@@ -1631,7 +1632,7 @@ describe("native table and row adapter", () => {
       await expect(invoke(runtime, view)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
       expect(client.calls.trackerCommand).toHaveLength(1);
-      expect(await runtime.read()).toEqual({ ...view, ...(["add_column", "rename_column", "remove_column"].includes(type) ? { requiresPortableSave: true } : {}) });
+      expect(await runtime.read()).toEqual({ ...view, ...(["add_column", "set_column_requiredness", "rename_column", "remove_column"].includes(type) ? { requiresPortableSave: true } : {}) });
     });
 
     it(`${type}: discards a late reply after close`, async () => {

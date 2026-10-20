@@ -68,7 +68,7 @@ export type ScalarEdit =
   | { kind: "boolean"; value: boolean }
   | { kind: "date"; value: string };
 
-export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean" };
+export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean"; required?: boolean };
 export type ColumnInitializer = { entity: string; input: ScalarEdit };
 export type CellEdit = { target: FieldTarget; input: ScalarEdit | { kind: "clear" } };
 export type RowInitializer = { field: string; input: ScalarEdit };
@@ -85,7 +85,8 @@ export interface SheetRuntime {
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
   pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
-  addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<ConfirmedPublication>;
+  addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<ConfirmedPublication>;
+  setColumnRequiredness(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
   removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
@@ -327,7 +328,8 @@ export interface SheetShellProps {
   onEditCells?(witness: ViewWitness, edits: CellEdit[]): Promise<RowCommandOutcome>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
   onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<RowCommandOutcome>;
-  onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<RowCommandOutcome>;
+  onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<RowCommandOutcome>;
+  onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;

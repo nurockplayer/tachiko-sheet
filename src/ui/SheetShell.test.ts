@@ -475,6 +475,24 @@ describe("SheetShell static rendering", () => {
     expect(readerOnly).not.toContain('class="ts-col-head" tabindex="0"');
   });
 
+  it.each([false, true])("requiredness actions follow native Text/Number declarations (compact=%s)", compact => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
+    try {
+      const view = makeView();
+      view.table.native_table_profile = true;
+      const onSetColumnRequiredness = async () => ({ kind: "confirmed" as const });
+      for (const type of ["text", "number", "date", "boolean"]) {
+        for (const column of view.table.columns) { column.field_type = type; column.required = false; }
+        const markup = render({ view, onSetColumnRequiredness });
+        expect(markup.includes("Require a value")).toBe(type === "text" || type === "number");
+      }
+      for (const column of view.table.columns) { column.field_type = "text"; column.required = true; }
+      expect(render({ view, onSetColumnRequiredness })).toContain("Allow blanks");
+      view.table.native_table_profile = false;
+      expect(render({ view, onSetColumnRequiredness })).not.toContain("Allow blanks");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("offers one compact Column menu with column handlers alone and no interactive headers", () => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
     try {

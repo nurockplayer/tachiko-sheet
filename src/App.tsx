@@ -1615,8 +1615,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
 
-  function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]) {
-    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers), true);
+  function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required = true) {
+    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers, required), true);
+  }
+
+  function setColumnRequiredness(witness: ViewWitness, collection: string, field: string, required: boolean) {
+    return changeRows(witness, () => runtime.setColumnRequiredness(witness, collection, field, required), true);
   }
 
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
@@ -2137,6 +2141,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // Column authoring needs the portable writer to save its result;
           // reader-only/rollback hosts do not offer it.
           onAddColumn={copies.createWorkFile ? addColumn : undefined}
+          onSetColumnRequiredness={copies.createWorkFile ? setColumnRequiredness : undefined}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onRemoveRows={removeRows}

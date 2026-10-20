@@ -112,7 +112,7 @@ export async function runNewTableRepairCases({ page, ready, projection, checks }
       const add = dialog().getByRole("button", { name: "Add column", exact: true });
       await add.click(); await add.click();
       await dialog().getByRole("button", { name: "Remove column 2", exact: true }).click(); await add.click();
-      const names = await dialog().locator(".ts-new-column input").evaluateAll(inputs => inputs.map(input => input.value));
+      const names = await dialog().getByRole("textbox", { name: /^Column \d+ name$/ }).evaluateAll(inputs => inputs.map(input => input.value));
       assert.equal(new Set(names).size, names.length, "remove/add defaults remain unique");
       await create(); await ready(page);
       assert.equal((await projection(page)).columns.length, 3, "unique headers reach the real creation boundary");

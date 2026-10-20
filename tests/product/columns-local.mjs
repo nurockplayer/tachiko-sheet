@@ -151,6 +151,7 @@ async function add(name, type = "text", fill) {
   const d = dialog("Add column");
   await d.getByLabel("Column name", { exact: true }).fill(name);
   await d.getByLabel("Column type", { exact: true }).selectOption(type);
+  if (type === "text" || type === "number") await d.getByLabel("Required", { exact: true }).check();
   if (fill !== undefined) {
     const input = d.getByLabel(/^Fill all/);
     if (type === "boolean") await input.selectOption(fill); else await input.fill(fill);
@@ -287,7 +288,7 @@ try {
   await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
   await dialog("Remove column").waitFor(); await cancel("Remove column"); await dialog("Remove column").waitFor({ state: "detached" });
   await assertFocused(actions, "Remove dialog cancel returns to the closed disclosure");
-  await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+  await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
   assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).evaluate(n => n === document.activeElement), true, "Tab exits the disclosure without a trap");
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
   assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
