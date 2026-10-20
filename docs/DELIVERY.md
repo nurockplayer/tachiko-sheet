@@ -5,7 +5,7 @@ The operating mode is called **Stewarded Continuous Delivery (SCD)**; see the
 This document remains Sheet's local delivery authority. Sharing the name does
 not import upstream permissions or change the existing clauses below.
 
-Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-23 Sol-led amendment in #77 supersedes the 2026-09-22 Astra-led amendment in #73, the 2026-09-12 Terra single-lead amendment and the 2026-09-20 Oracle-only routing amendment.
+Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by ChatGPT Steward under #1. It changes the old *client planning* dispatch limits, not Tachiko Work semantic authority or upstream delivery policy. The 2026-09-26 **Dual-Lead SCD** amendment in #116 adds an Opus-led mode while preserving the 2026-09-23 Sol-led mode from #77; it supersedes prior wording that required Sol to lead every Sheet lane. The earlier 2026-09-22 Astra-led amendment in #73, 2026-09-12 Terra single-lead amendment and 2026-09-20 Oracle-only routing amendment remain superseded.
 
 Operational procedures, failure-handling patterns and merge checklists are collected in [`SCD-OPERATIONS-PLAYBOOK.md`](SCD-OPERATIONS-PLAYBOOK.md). That document is guidance only: it does not add authority or gates, and live #1/#2 plus this DELIVERY policy and the active Issue/PR always take precedence.
 
@@ -15,21 +15,42 @@ Upstream Product Constitution, foundational principles and relevant Accepted sem
 
 ChatGPT Steward owns product scope, specifications, acceptance outcomes and material acceptance decisions. The **Mission Lead** is delegated **Sheet delivery stewardship**: sequence work, verify evidence, record qualified Ready decisions, integrate and merge eligible Sheet PRs. This is not power to invent missing semantic contracts, change product goals, waive acceptance, or turn implementation-authored tests into independent acceptance. Other roles follow actual global configuration, not old repo-specific model mappings.
 
-**Sol-led amendment (2026-09-23 / #77):** exactly one GPT-6 Sol Mission Lead/session is active after the transition is merged, recorded in #2 with exact branch/HEAD and writer ownership. Confirm previous writers have stopped or explicitly transferred before takeover. Sol is the sole Sheet coordinator/integrator and the highest engineering decision authority inside already-settled product/specification/semantic/storage/acceptance boundaries. GPT-6 Luna supplies bounded implementation and unit-test capacity.
+**Dual-Lead SCD amendment (2026-09-26 / #116):** Sheet supports two first-class lead modes. Every new production lane records exactly one of `LEAD_MODE=OPUS` or `LEAD_MODE=SOL` in #2 and the owning Issue/PR before production mutation. The new Opus-led mode does **not** replace or deprecate Sol-led delivery. Absence of an explicit new-mode record does not authorize an implicit takeover; the current handoff remains authoritative.
 
-### Sol-led serial delivery, Astra advice and Oracle review
+A lead-mode transfer requires exact branch/HEAD and writer state, explicit release or transfer of the prior lead/writer, preservation of unresolved findings and acceptance state, and durable updates to #2 plus the owning Issue/PR before further mutation. Do not switch modes merely because another model is preferred in general.
 
-Default to one production implementation lane at a time. There is one Sol Mission Lead and one active production writer/worktree for the current package. Luna receives one settled package at a time. A second production package starts only after the current package is merged/closed, explicitly blocked and released, or ownership is durably transferred. Read-only research, CI, Astra consultation, Oracle review and ChatGPT stewardship may overlap only when they create no competing writer.
+### Dual-lead serial delivery, Astra advice and Oracle review
+
+Default to one production implementation lane at a time. There is one selected Mission Lead and one active production writer/worktree for the current package. GPT-6 Luna normally receives one settled implementation/test package at a time. A second production package starts only after the current package is merged/closed, explicitly blocked and released, or ownership is durably transferred. Read-only research, CI, Astra consultation, Sol engineering review in Opus-led mode, Oracle review and ChatGPT stewardship may overlap only when they create no competing writer.
+
+#### `LEAD_MODE=OPUS`
+
+Use by default for UI/UX, visual systems, frontend composition, information hierarchy, product polish, first-use flows and design-system implementation when the concrete lane benefits materially from Claude Opus 5.5 judgment.
+
+- **Mission Lead:** Claude Opus 5.5 / Claude Code.
+- **Production writer:** GPT-6 Luna, one bounded writer/worktree at a time unless ownership is explicitly transferred.
+- **Engineering reviewer:** GPT-6 Sol, read-only on the candidate while reviewing. Sol checks engineering correctness, state/lifecycle behavior, architecture and Work/Sheet boundaries, plausible regressions, accessibility risks, test/gate completeness and integration hazards; it does not silently redirect product scope while serving as reviewer.
+- **Final independent reviewer:** Oracle latest Extra High on the exact Final Candidate HEAD, read-only and independent of candidate construction.
+
+Opus owns sequencing, decomposition, product/UI implementation direction, bounded technical tradeoffs inside accepted authority, Luna worker briefs, repair-batch disposition, Final Candidate declaration and merge execution after all gates pass. Findings from Sol or Oracle return to the Opus lead for disposition; bounded repairs normally return to Luna. Opus cannot independently change Mission scope, Accepted Tachiko Work semantics/storage/authorization contracts, Steward-owned acceptance outcomes, explicit HOLDs or founder/external/public/commercial gates.
+
+#### `LEAD_MODE=SOL`
+
+Preserve the proven #77 process for architecture, state/storage/runtime correctness, cross-repository contracts, concurrency/races, trust/security boundaries, infrastructure, CI/release mechanics and difficult integration/reconciliation, or whenever the owning authority explicitly selects it.
+
+- **Mission Lead / engineering integrator:** GPT-6 Sol.
+- **Production writer:** GPT-6 Luna, one bounded writer/worktree at a time unless ownership is explicitly transferred.
+- **Final independent reviewer:** Oracle latest Extra High on the exact Final Candidate HEAD, read-only and independent of candidate construction.
 
 Sol owns sequencing, decomposition, architecture/implementation strategy, bounded technical tradeoffs, worker packages, repair-batch decisions, integration, Final Candidate declaration and protected merge execution after all gates pass. Sol does not need founder approval for ordinary engineering choices already inside accepted authority. It cannot independently change Mission scope, Accepted Tachiko Work semantics/storage/authorization contracts, Steward-owned acceptance outcomes, explicit HOLDs or founder/external/public/commercial gates.
 
-For each material engineering choice, record a compact decision on the owning Issue/PR: problem/context, chosen approach, key rationale/tradeoff, relevant rejected alternative, and rollback/reversal path when material. This is durable reporting, not an approval gate.
+For each material engineering choice, the selected Mission Lead records a compact decision on the owning Issue/PR: problem/context, chosen approach, key rationale/tradeoff, relevant rejected alternative, and rollback/reversal path when material. This is durable reporting, not an approval gate.
 
-Follow live #1's mandatory Astra and conditional Pro escalation triggers before freezing an architecture decision or assigning implementation. Obtain any required Astra consultation before the decision is frozen or work assigned, and any required Pro consultation before implementation; if required Pro is unavailable, record HOLD with the exact unresolved question. Outside those binding triggers, Sol may request bounded read-only **Astra** advice for a genuinely difficult problem, high-risk architecture choice or unclear cross-boundary design. Astra receives no writer/integrator/merge ownership and cannot change accepted product/semantic/acceptance authority. If consulted, record the useful advice and Sol's final disposition. Sol remains the final engineering decision-maker. Do not invoke Astra for routine implementation or mechanical repair.
+Follow live #1's mandatory Astra and conditional Pro escalation triggers before freezing an architecture decision or assigning implementation. Obtain any required Astra consultation before the decision is frozen or work assigned, and any required Pro consultation before implementation; if required Pro is unavailable, record HOLD with the exact unresolved question. Outside those binding triggers, the selected Mission Lead may request bounded read-only **Astra** advice for a genuinely difficult problem, high-risk architecture choice or unclear cross-boundary design. Astra receives no writer/integrator/merge ownership and cannot change accepted product/semantic/acceptance authority. If consulted, record the useful advice and the selected lead's disposition. In `LEAD_MODE=SOL`, Sol remains the engineering decision-maker; in `LEAD_MODE=OPUS`, Sol is the engineering reviewer and Opus owns disposition inside accepted authority. Do not invoke Astra for routine implementation or mechanical repair.
 
 At a stable Final Candidate, use a fresh independent exact-HEAD **Oracle latest Extra High** review. The default execution transport is the qualified **ego-lite → Oracle** path; transport is configuration, not authority. Run deterministic and required hosted gates first. Verify the requested/effective reviewer identity and **Extra High** effort fail-closed before granting review credit; unknown provenance or transport/session failure is REVIEW_INCOMPLETE, not PASS. Oracle is read-only and must not have participated in the candidate's design, implementation or acceptance/evidence preparation. Required merge verdict: `No blocking findings.` Oracle does not promote Ready, clear HOLD, write code or merge. GPT-6 Pro is separately authorized architecture/judgment capacity, not an implicit Oracle fallback. A material commit after the receipt invalidates it.
 
-Record meaningful GitHub stages on the owning Issue/PR: INTAKE, PLAN/DECISION, IMPLEMENTED, VALIDATED, `FINAL_CANDIDATE <sha>`, ORACLE REVIEW and MERGED/BLOCKED/HANDOFF. Keep #2 as the concise recoverable state. After qualified closeout Sol re-reads live authority/ownership and continues the next genuinely Ready serial successor without waiting for a founder prompt.
+Record meaningful GitHub stages on the owning Issue/PR: INTAKE, PLAN/DECISION, IMPLEMENTED, VALIDATED, `FINAL_CANDIDATE <sha>`, ORACLE REVIEW and MERGED/BLOCKED/HANDOFF. Keep #2 as the concise recoverable state. After qualified closeout the selected Mission Lead re-reads live authority/ownership and continues the next genuinely Ready serial successor without waiting for a founder prompt.
 
 ## Three-level SCD loop and Final Candidate
 
@@ -75,7 +96,7 @@ For **tachiko-sheet only**, the lead may execute a merge when all of these are p
 - normal GitHub protections and review requirements permit the merge, without admin bypass, force push, fabricated approval or blanket auto-approve;
 - the recorded head still matches immediately before merging.
 
-Execution of a reviewed merge by the coordinator is not independent approval. **Oracle remains read-only and never performs the GitHub merge; Sol/Conductor executes the merge only after the fresh Oracle receipt and every deterministic/hosted gate are valid for the exact recorded HEAD.** Lead-authored code still needs another reviewer. After merging, verify the integrated main at the affected boundary, reconcile any surviving review debt, update #2 and continue. Closing a child never closes #1. Final product/release acceptance and permission to close #1 remain founder/Steward-owned. No automatic publication, purchases, signing-account enrollment, credential provisioning or terms acceptance follows from PR merge authority.
+Execution of a reviewed merge by the coordinator is not independent approval. **Oracle remains read-only and never performs the GitHub merge; the recorded Mission Lead (or a separately recorded non-authoring mechanical integrator) executes the merge only after the fresh Oracle receipt and every deterministic/hosted gate are valid for the exact recorded HEAD.** Lead-authored code still needs another reviewer. After merging, verify the integrated main at the affected boundary, reconcile any surviving review debt, update #2 and continue. Closing a child never closes #1. Final product/release acceptance and permission to close #1 remain founder/Steward-owned. No automatic publication, purchases, signing-account enrollment, credential provisioning or terms acceptance follows from PR merge authority.
 
 ## Upstream boundary
 
