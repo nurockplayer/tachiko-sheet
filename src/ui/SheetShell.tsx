@@ -47,7 +47,7 @@ import { historyCommandForKey } from "./history-keyboard.js";
 import { Modal } from "./Modal.js";
 import { isComposingEvent } from "./composition-event.js";
 import { ColumnDialog } from "./ColumnDialog.js";
-import { columnFill, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
+import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
 import { DRAFT_ROW, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
@@ -64,6 +64,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
+import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
 import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
@@ -792,6 +793,7 @@ export function SheetShell(props: SheetShellProps) {
   }, [view]);
 
   const table = view?.table ?? null;
+  const renameAvailable = Boolean(onRenameColumn && canRenameColumns(table, interop?.metadata ?? null));
   const columns = useMemo(() => (table ? tableColumns(table) : []), [table]);
   const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(table.rows.length));
   const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
@@ -2271,7 +2273,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
     if (!view || !table?.native_table_profile || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
-    if (!(kind === "add" ? onAddColumn : kind === "rename" ? onRenameColumn : onRemoveColumn)) return;
+    if (!(kind === "add" ? onAddColumn : kind === "rename" ? renameAvailable : onRemoveColumn)) return;
     const column = columns.find(item => item.id === field);
     if (kind !== "add" && !column) return;
     if (editor) setEditor(null);
@@ -2306,11 +2308,7 @@ export function SheetShell(props: SheetShellProps) {
     const state = columnDialog;
     if (!state || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return { kind: "refused" as const, message: columnChangeReason };
     columnFocusIntentRef.current = completionIntent();
-    if (state.kind === "rename" && onRenameColumn) return onRenameColumn(state, state.collection, state.field, draft.name);
-    if (state.kind === "remove" && onRemoveColumn) return onRemoveColumn(state, state.collection, state.field);
-    const input = columnFill(draft);
-    if (state.kind === "add" && onAddColumn && (input || state.rowEntities.length === 0)) return onAddColumn(state, state.collection, draft.name, draft.fieldType, state.rowEntities.map(entity => ({ entity, input: input! })));
-    return { kind: "refused" as const, message: "Choose a fill value before adding this column." };
+    return submitColumnIntent(state, draft, { table, metadata: interop?.metadata ?? null, onRenameColumn, onRemoveColumn, onAddColumn });
   }
 
   function renderHome(): ReactNode {
@@ -2650,7 +2648,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
-    const hasColumnActions = Boolean(onAddColumn || onRenameColumn || onRemoveColumn);
+    const hasColumnActions = Boolean(onAddColumn || renameAvailable || onRemoveColumn);
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? names.column(table.collection.id, focusedColumn.id) ?? focusedColumn.display_name : "";
     const hasResults = j4DefinitionIds.length > 0;
@@ -2667,10 +2665,10 @@ export function SheetShell(props: SheetShellProps) {
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
             {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={names.column(table.collection.id, column.id) ?? column.display_name}>
-              <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && table.native_table_profile && onRenameColumn ? 0 : undefined} onDoubleClick={!compactColumnActions ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions ? event => {
+              <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{names.column(table.collection.id, column.id) ?? column.display_name}</span>
-              {!compactColumnActions && table.native_table_profile && onRenameColumn ? <>
+              {!compactColumnActions && table.native_table_profile && onRenameColumn && (renameAvailable || onAddColumn || onRemoveColumn) ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
                   if (!disclosure.open) return;
@@ -2688,7 +2686,7 @@ export function SheetShell(props: SheetShellProps) {
                     if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
                   }} />
                   <div className="ts-command-menu">
-                    {(["rename", ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
+                    {([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                       disclosure.open = false;
@@ -2768,7 +2766,7 @@ export function SheetShell(props: SheetShellProps) {
               if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
             }}>Column</summary>
             <div className="ts-command-menu">
-              {([...(onAddColumn ? ["add"] : []), ...(onRenameColumn ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+              {([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                 disclosure.open = false;

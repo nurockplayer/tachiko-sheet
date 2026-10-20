@@ -493,6 +493,35 @@ describe("SheetShell static rendering", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it.each([false, true])("gates Rename affordances without changing Add/Remove (compact=%s)", compact => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
+    try {
+      const view = makeView();
+      view.table.native_table_profile = true;
+      const props = { view, onAddColumn: async () => ({ kind: "confirmed" as const }), onRenameColumn: async () => ({ kind: "confirmed" as const }), onRemoveColumn: async () => ({ kind: "confirmed" as const }) };
+      const native = render(props);
+      const imported = render({ ...props, interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [{
+        schema_id: view.table.collection.id, name: "Sheet", has_header: true,
+        columns: [{ field_id: view.table.columns[0]!.id, name: "Original heading", width: null }], rows: [],
+      }] } } });
+      expect(native).toContain("Rename");
+      expect(imported).not.toContain("Rename");
+      expect(imported).not.toContain('class="ts-col-head" tabindex="0"');
+      if (compact) {
+        for (const markup of [native, imported]) {
+          expect(markup).toContain("Add column…");
+          expect(markup).toContain("Remove “");
+        }
+      } else {
+        expect(native).toContain('class="ts-col-head" tabindex="0"');
+        for (const markup of [native, imported]) {
+          expect(markup).toContain('data-column-action="+ column"');
+          expect(markup).toContain('data-column-action="Remove…"');
+        }
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("renders a navigable client-only draft row inside the grid", () => {
     const view = makeView();
     view.table.native_table_profile = true;

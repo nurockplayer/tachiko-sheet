@@ -13,33 +13,62 @@ export async function runImportedExportRefusalCases(page, { close, prepare, down
   await preview.waitFor({ state: "detached" }); await ready();
   assert.equal((await page.evaluate(() => window.__exportEvidence.table)).native_table_profile, true);
 
-  async function rename(to) {
-    await page.getByRole("tab", { name: "Table", exact: true }).click();
-    const header = page.getByRole("columnheader").nth(1);
-    await header.locator(".ts-col-head").dblclick();
-    const dialog = page.getByRole("dialog", { name: "Rename column", exact: true });
-    await dialog.getByLabel("Column name", { exact: true }).fill(to);
-    await dialog.getByRole("button", { name: "Rename column", exact: true }).click();
-    await dialog.waitFor({ state: "detached" }); await ready();
-    assert.equal((await page.evaluate(() => window.__exportEvidence.table)).columns[0].display_name, to);
-  }
-  await rename("Current item");
-  const draft = page.locator(".ts-entry-row");
-  console.log(JSON.stringify({ issue228: "imported-heading-observation",
-    projected: (await page.evaluate(() => window.__exportEvidence.table)).columns[0].display_name,
-    header: await page.getByRole("columnheader").nth(1).getAttribute("aria-label"),
-    draft: await draft.locator("[data-entry-field]").first().getAttribute("aria-label"),
-  }));
-  await fillDraftCell(page, draft.locator("[data-entry-field]").nth(0), "Coffee");
-  await fillDraftCell(page, draft.locator("[data-entry-field]").nth(1), "3");
-  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready();
-  assert.deepEqual(await prepare(page, "csv"), [["Current item", "Amount"], ["Tea", "2"], ["Coffee", "3"]], "current heading and appended record reach the actual CSV");
-  const ledger = await page.locator(".ts-ledger").textContent();
-  assert.match(ledger, /The current column heading/);
-  assert.match(ledger, /New columns and rows are added at the end with default formatting/);
+  const renameRequests = () => page.evaluate(() => window.__exportEvidence.requests.filter(item => item.request?.type === "rename_column").length);
+  const renameBefore = await renameRequests();
+  const heading = page.locator(".ts-col-head").first();
+  assert.equal(await heading.getAttribute("tabindex"), null, "imported heading has no Rename tab stop");
+  await heading.dblclick();
+  for (const key of ["Enter", "F2"]) await heading.dispatchEvent("keydown", { key, bubbles: true });
+  assert.equal(await page.getByRole("dialog", { name: "Rename column", exact: true }).count(), 0);
+  const disclosure = page.locator(".ts-column-overflow > summary").first();
+  await disclosure.click();
+  assert.equal(await page.getByRole("button", { name: "Rename…", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Remove…", exact: true }).isEnabled(), true);
+  await disclosure.press("Escape");
+  assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).isEnabled(), true);
+  await page.setViewportSize({ width: 390, height: 900 });
+  const compact = page.getByRole("button", { name: "Column", exact: true });
+  await compact.click();
+  assert.equal(await page.getByRole("button", { name: /^Rename/ }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Add column…", exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: /^Remove “/ }).isEnabled(), true);
+  await compact.press("Escape");
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.getByRole("button", { name: "+ column", exact: true }).waitFor();
+  assert.equal(await renameRequests(), renameBefore, "every gated entry point dispatches no Rename");
 
-  // A formula-leading current heading cannot be represented safely as CSV.
-  await rename("=Current item");
+  async function add(name, fill) {
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
+    await page.getByRole("button", { name: "+ column", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add column", exact: true });
+    await dialog.getByLabel("Column name", { exact: true }).fill(name);
+    await dialog.getByLabel(/^Fill all/).fill(fill);
+    await dialog.getByRole("button", { name: "Add column", exact: true }).click();
+    await dialog.waitFor({ state: "detached" }); await ready();
+    assert.ok((await page.evaluate(() => window.__exportEvidence.table)).columns.some(column => column.display_name === name));
+  }
+  // Rename of a surviving imported header is intentionally unreachable until
+  // Work #560. A new explicit field heading is still supported by the import
+  // export contract and exercises current headers without client-side guesses.
+  await add("Current item", "Kept");
+  const draft = page.locator(".ts-entry-row");
+  await fillDraftCell(page, draft.getByLabel("New row Item (Text)", { exact: true }), "Coffee");
+  await fillDraftCell(page, draft.getByLabel("New row Amount (Number)", { exact: true }), "3");
+  await fillDraftCell(page, draft.getByLabel("New row Current item (Text)", { exact: true }), "Added");
+  await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready();
+  // The new explicit name collides with a historical metadata heading. Work
+  // allocates the emitted heading and reports imported_current_header, keeping
+  // the original disclosure oracle reachable without renaming an import.
+  await add("Item", "Collision");
+  const expected = [["Item", "Amount", "Current item", "Item (2)"], ["Tea", "2", "Kept", "Collision"], ["Coffee", "3", "Added", "Collision"]];
+  assert.deepEqual(await prepare(page, "csv"), expected, "explicit added heading and appended record reach the actual CSV");
+  const ledger = await page.locator(".ts-ledger").textContent();
+  assert.match(ledger, /The current column heading "Item" will download as "Item \(2\)"/);
+  assert.match(ledger, /New columns and rows are added at the end with default formatting/);
+  const baseline = await page.evaluate(() => structuredClone(window.__exportEvidence.table));
+
+  // An explicit formula-leading new heading cannot be represented safely as CSV.
+  await add("=Refused heading", "Unchanged");
   const before = await page.evaluate(() => structuredClone(window.__exportEvidence.table));
   const savedBefore = await page.getByTestId("save-status").textContent();
   const count = downloads.length;
@@ -63,8 +92,10 @@ export async function runImportedExportRefusalCases(page, { close, prepare, down
   assert.deepEqual(await page.evaluate(() => window.__exportEvidence.table), before, "every stored value, ID and revision survives refusal");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
-  assert.equal((await page.evaluate(() => window.__exportEvidence.table)).columns[0].display_name, "Current item", "refusal does not consume an Undo action");
-  assert.deepEqual(await prepare(page, "csv"), [["Current item", "Amount"], ["Tea", "2"], ["Coffee", "3"]], "repair by Undo retains the original metadata route");
-  checks.push("#228 real imported structure/current heading CSV; located Work refusal with plain copy; metadata review/work/save/history preserved; no native fallback; Undo and retry");
+  const undone = await page.evaluate(() => window.__exportEvidence.table);
+  assert.deepEqual(undone.columns, baseline.columns, "refusal does not consume the Add-column Undo action");
+  assert.deepEqual(undone.rows, baseline.rows, "Undo restores every baseline value and identity");
+  assert.deepEqual(await prepare(page, "csv"), expected, "repair by Undo retains the original metadata route");
+  checks.push("#228 imported Rename gated at headings/keyboard/tab stop/desktop and compact menu; explicit Add-column heading/structure CSV; real refusal; metadata review/work/save/history preserved; no fallback; Undo/retry");
   await close(page);
 }
