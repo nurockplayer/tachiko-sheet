@@ -1,5 +1,6 @@
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { ScalarEdit } from "../contracts.js";
+import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 
 /** Visual tone of a rendered fact. Never a semantic judgement about the value. */
 export type FieldTone = "plain" | "computed" | "warning" | "muted" | "reference";
@@ -10,6 +11,8 @@ export interface FieldDisplay {
   tone: FieldTone;
   /** Extra explanation for a tooltip, never part of the fact text. */
   title: string | null;
+  description?: "Blank" | "Empty text";
+  emptyTextMarker?: boolean;
 }
 
 export const EMPTY_TEXT = "Empty";
@@ -17,8 +20,7 @@ export const UNAVAILABLE_TEXT = "Unavailable";
 export const CALCULATION_FAILED_TEXT = "Calculation failed";
 export const REFERENCE_TEXT = "→ reference";
 
-// Plain blanks read as blank, like any spreadsheet; the distinction between a
-// missing value and stored empty text stays available in the tooltip.
+// A missing projection is not evidence of a canonical blank.
 const NOT_LOADED: FieldDisplay = {
   text: "",
   tone: "muted",
@@ -30,9 +32,14 @@ const NOT_LOADED: FieldDisplay = {
  * core-calculated results, explicit failure/unavailable states and missing
  * projections each stay distinguishable.
  */
-export function fieldDisplay(field: FieldProjection | null | undefined): FieldDisplay {
+export function fieldDisplay(field: FieldProjection | null | undefined, required = true): FieldDisplay {
   if (!field) return NOT_LOADED;
+  if (field.blank === true) return BLANK_DISPLAY;
   const base = baseDisplay(field);
+  if (!field.formula && !field.calculated && field.stored?.kind === "text" && field.stored.value === "") {
+    base.description = "Empty text";
+    if (!required) { base.text = '""'; base.emptyTextMarker = true; }
+  }
   const diagnostic = field.diagnostics?.[0];
   if (diagnostic) {
     const canonicalText = !field.formula && field.stored?.kind === "text" ? field.stored.value : null;
@@ -48,6 +55,21 @@ export function fieldDisplay(field: FieldProjection | null | undefined): FieldDi
     };
   }
   return base;
+}
+
+const BLANK_DISPLAY: FieldDisplay = { text: "", tone: "muted", title: "Blank", description: "Blank" };
+
+/** Sparse table fields are joined by ID; only producer presence metadata marks a blank. */
+export function cellDisplay(row: TableRow, column: TableColumn): FieldDisplay {
+  if (row.blank_fields?.includes(column.id)) return BLANK_DISPLAY;
+  return fieldDisplay(fieldForColumn(row, column.id), column.required);
+}
+
+/** Copy authoritative values, independently of display markers, tooltips or warnings. */
+export function fieldClipboardText(field: FieldProjection | null | undefined): string {
+  if (!field || field.blank === true) return "";
+  if (field.calculated) return field.calculated.status === "value" ? formatNumber(field.calculated.value) : "";
+  return seedTextOf(field);
 }
 
 function baseDisplay(field: FieldProjection): FieldDisplay {

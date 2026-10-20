@@ -19,7 +19,8 @@ import {
   shouldPublishAppearanceCompositionEnd,
   SheetShell,
 } from "./SheetShell.js";
-import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { cellDisplay, fieldClipboardText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { encodeTsv } from "./clipboard.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
 const entityA = "entity-a";
@@ -174,6 +175,41 @@ function chipText(markup: string, testId: string): string | null {
 }
 
 describe("fieldDisplay", () => {
+  it("uses explicit presence and requiredness, never rendered emptiness", () => {
+    const empty = projected(entityA, "c-title", { kind: "text", value: "" });
+    expect(fieldDisplay(empty, false)).toMatchObject({ text: '""', description: "Empty text", emptyTextMarker: true });
+    expect(fieldDisplay(empty, true)).toMatchObject({ text: "", description: "Empty text" });
+    expect(fieldDisplay(empty, true).emptyTextMarker).toBeUndefined();
+    expect(fieldDisplay(projected(entityA, "c-title", null, { blank: true }))).toMatchObject({ text: "", description: "Blank" });
+    expect(fieldDisplay(projected(entityA, "c-title", null)).description).toBeUndefined();
+    expect(fieldDisplay(null).description).toBeUndefined();
+    for (const stored of [{ kind: "text", value: " " }, { kind: "number", value: 0 }, { kind: "boolean", value: false }] as const) {
+      expect(fieldDisplay(projected(entityA, "c-title", stored), false).emptyTextMarker).toBeUndefined();
+      expect(fieldClipboardText(projected(entityA, "c-title", stored))).toBe(String(stored.value));
+    }
+  });
+
+  it("joins sparse fields and blank IDs by identity, including entirely blank rows", () => {
+    const view = makeView();
+    const column = { ...view.table.columns[0]!, required: false };
+    const row = { ...view.table.rows[0]!, fields: [projected(entityA, "another-field", { kind: "text", value: "present" })], blank_fields: [column.id] };
+    expect(cellDisplay(row, column)).toMatchObject({ text: "", description: "Blank" });
+    expect(cellDisplay({ ...row, fields: [] }, column).description).toBe("Blank");
+    expect(cellDisplay({ ...row, blank_fields: undefined }, column).description).toBeUndefined();
+    expect(cellDisplay({ ...row, blank_fields: [], fields: [projected(entityA, column.id, { kind: "text", value: "" })] }, column).text).toBe('""');
+  });
+
+  it("serializes values independently from empty-text decoration and diagnostics", () => {
+    const empty = projected(entityA, "c-title", { kind: "text", value: "" });
+    const blank = projected(entityA, "c-title", null, { blank: true });
+    const diagnostic = projected(entityA, "c-title", { kind: "text", value: "" }, { diagnostics: [{ code: "warning", message: "Attention", path: "title" }] });
+    expect(fieldDisplay(empty, false).text).toBe('""');
+    expect(encodeTsv([[fieldClipboardText(blank), fieldClipboardText(empty), fieldClipboardText(diagnostic)]])).toBe("\t\t");
+    expect(fieldClipboardText(null)).toBe("");
+    expect(fieldClipboardText(projected(entityA, "c-priority", { kind: "number", value: 1 }, { formula: { source: "1 + 2" }, calculated: { status: "value", value: 3 } }))).toBe("3");
+    expect(fieldClipboardText(projected(entityA, "c-priority", null, { calculated: { status: "unavailable" } }))).toBe("");
+  });
+
   it("renders stored scalars and references without deriving meaning", () => {
     expect(fieldDisplay(projected(entityA, "c-impact", { kind: "number", value: 5 }))).toEqual({
       text: "5",
@@ -833,6 +869,38 @@ describe("SheetShell static rendering", () => {
   it("renders cells from the field order when the projection has no columns", () => {
     const markup = render({ view: makeView({ columns: false }) });
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).not.toBe(null);
+  });
+
+  it("describes blanks and empty Text while decorating only optional stored empty Text", () => {
+    const view = makeView();
+    view.table.columns = [
+      { id: "optional", key: "optional", display_name: "Optional", field_type: "text", required: false },
+      { id: "required", key: "required", display_name: "Required", field_type: "text", required: true },
+      { id: "date", key: "date", display_name: "Date", field_type: "date", required: false },
+      { id: "boolean", key: "boolean", display_name: "Paid", field_type: "boolean", required: false },
+    ];
+    view.table.rows = [
+      { id: entityA, key: "a", blank_fields: ["optional", "date", "boolean"], fields: [projected(entityA, "required", { kind: "text", value: "" })] },
+      { id: entityB, key: "b", fields: [projected(entityB, "optional", { kind: "text", value: "" }), projected(entityB, "required", { kind: "text", value: "" })] },
+    ];
+    const markup = render({ view });
+    const marker = cellMarkup(markup, `cell:${entityB}:optional`)!;
+    expect(marker).toContain('ts-cell--empty-text');
+    expect(marker).toContain('aria-description="Empty text"');
+    expect(marker).not.toContain('title="Empty text"');
+    expect(marker).toContain('<span class="ts-cell-value" aria-hidden="true">&quot;&quot;</span>');
+    for (const id of ["optional", "date", "boolean"]) {
+      const blank = cellMarkup(markup, `cell:${entityA}:${id}`)!;
+      expect(blank).toContain('aria-description="Blank"');
+      expect(blank).not.toContain('title="Blank"');
+      expect(textOf(blank)).toBe("");
+      expect(blank).not.toContain('ts-cell--empty-text');
+    }
+    const required = cellMarkup(markup, `cell:${entityB}:required`)!;
+    expect(required).toContain('aria-description="Empty text"');
+    expect(required).not.toContain('ts-cell--empty-text');
+    expect(textOf(required)).toBe("");
+    expect(cellMarkup(markup, `cell:${entityB}:date`)).not.toContain('aria-description="Blank"');
   });
 
   it("renders diagnostic long Latin and CJK cells with complete combined titles", () => {

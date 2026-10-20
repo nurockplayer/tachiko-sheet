@@ -51,7 +51,7 @@ import { NewTableDialog } from "./NewTableDialog.js";
 import { DRAFT_ROW, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
-import { booleanText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { booleanText, cellDisplay, fieldClipboardText, fieldDisplay, type FieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
   cellKey,
   fieldForColumn,
@@ -853,7 +853,7 @@ export function SheetShell(props: SheetShellProps) {
     event.preventDefault();
     const point = address(position);
     const area = position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point);
-    const rows = area ? table.rows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldDisplay(fieldForColumn(row, column.id)).text))
+    const rows = area ? table.rows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldClipboardText(fieldForColumn(row, column.id))))
       : [[boundRowDraft?.values[position.field] ?? ""]];
     try {
       if (!event.clipboardData) throw new Error("No clipboard data");
@@ -2835,13 +2835,14 @@ export function SheetShell(props: SheetShellProps) {
     const field = row ? fieldForColumn(row, column.id) : null;
     const raw = boundRowDraft?.values[column.id] ?? "";
     const draftBoolean = column.field_type === "boolean" ? parseBooleanDraft(raw) : null;
-    const display = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : fieldDisplay(field);
+    const display: FieldDisplay = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : cellDisplay(row!, column);
     const key = cellKey(entity, column.id);
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(field?.editable_scalar)) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
     const coordinate = address({ entity, field: column.id });
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
+    if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
@@ -2856,6 +2857,7 @@ export function SheetShell(props: SheetShellProps) {
         data-testid={`cell:${entity}:${column.id}`}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${names.column(table!.collection.id, column.id) ?? column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
+        aria-description={draft ? undefined : display.description}
         aria-invalid={draft && !rowError?.missing && rowError?.fields?.includes(column.id) ? true : undefined}
         aria-describedby={draft && rowError?.fields?.includes(column.id) ? editing ? "ts-row-error" : `ts-draft-message-${column.id}` : undefined}
         data-work-occurrence={view.occurrence}
@@ -2866,7 +2868,7 @@ export function SheetShell(props: SheetShellProps) {
         tabIndex={focusedKey === key || (!focusedKey && isFirstCell(entity, column)) ? 0 : -1}
         aria-selected={Boolean(rangeSelected) || (!selectionRectangle && focusedKey === key)}
         aria-readonly={!editable}
-        title={display.title ?? undefined}
+        title={display.title === display.description ? undefined : display.title ?? undefined}
         onMouseDown={(event) => { if (event.shiftKey && !draft && !editor) event.preventDefault(); }}
         onClick={(event) => {
           if ((event.target as Element).closest("input")) return;
@@ -2907,7 +2909,7 @@ export function SheetShell(props: SheetShellProps) {
             onKeyDown={onEditorKeyDown}
           />
         ) : (
-          <span className="ts-cell-value">{display.text}</span>
+          <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}
         {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
       </td>

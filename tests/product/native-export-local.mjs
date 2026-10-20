@@ -10,6 +10,7 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
+import { runBlankDisplayCases } from "./blank-display-cases.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) throw new Error("BLOCKED: WORK_DIST must name the built product");
@@ -187,6 +188,8 @@ try {
   await page.getByLabel("Table", { exact: true }).selectOption("sales"); await ready(page);
   assert.deepEqual(await prepare(page,"csv",{sales:true}), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
   checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review");
+  await close(page);
+  await runBlankDisplayCases(page, { output, close, checks });
   console.log(JSON.stringify({status:"PASS",checks,downloads,output}));
 } finally {
   if(context) await context.close();
