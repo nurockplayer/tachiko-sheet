@@ -67,6 +67,7 @@ import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
+import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
@@ -418,6 +419,7 @@ export function SheetShell(props: SheetShellProps) {
     onNewTable,
     onInsertRow,
     onAddColumn,
+    onSetColumnRequiredness,
     onRenameColumn,
     onRemoveColumn,
     onPasteCells,
@@ -2370,7 +2372,7 @@ export function SheetShell(props: SheetShellProps) {
     setColumnDialog(null);
     if (confirmed && state) {
       setCellSelection(null);
-      setColumnAnnouncement(state.kind === "add" ? "Column added. Existing rows were filled." : state.kind === "rename" ? "Column renamed." : "Column removed. Undo restores it.");
+      setColumnAnnouncement(state.kind === "add" ? "Column added." : state.kind === "rename" ? "Column renamed." : "Column removed. Undo restores it.");
     }
     if (restoreFocus) requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent)) return;
@@ -2379,6 +2381,22 @@ export function SheetShell(props: SheetShellProps) {
       withAppFocus(() => (trigger?.isConnected ? trigger : fallback)?.focus());
     });
     columnFocusIntentRef.current = null;
+  }
+
+  async function changeRequiredness(field: string, trigger: HTMLElement) {
+    if (!view || !table || !witness || !onSetColumnRequiredness ||
+        !canChangeRequiredness(table, field) || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    const column = columns.find(item => item.id === field)!;
+    const required = !column.required;
+    const displayName = names.column(table.collection.id, field) ?? column.display_name;
+    const count = currentness === "current" ? completeBlankCount(table, field, witness.revision) : null;
+    const intent = completionIntent();
+    setColumnAnnouncement(null);
+    const result = await onSetColumnRequiredness(witness, table.collection.key, field, required);
+    if (intent.occurrence !== liveOccurrenceRef.current) return;
+    if (result.kind === "confirmed") setColumnAnnouncement(required ? `${displayName} now requires a value. Undo restores it.` : `${displayName} now allows blanks. Undo restores it.`);
+    else if (result.kind === "refused") setColumnAnnouncement(required ? requirednessRefusal(result.message, count, displayName) : result.message);
+    requestAnimationFrame(() => { if (completionMayUpdateUi(intent) && trigger.isConnected) withAppFocus(() => trigger.focus()); });
   }
 
   async function submitColumn(draft: ColumnDraft) {
@@ -2725,7 +2743,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
-    const hasColumnActions = Boolean(onAddColumn || renameAvailable || onRemoveColumn);
+    const hasColumnActions = Boolean(onAddColumn || renameAvailable || onRemoveColumn || onSetColumnRequiredness);
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? names.column(table.collection.id, focusedColumn.id) ?? focusedColumn.display_name : "";
     const hasResults = j4DefinitionIds.length > 0;
@@ -2745,7 +2763,7 @@ export function SheetShell(props: SheetShellProps) {
               <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{names.column(table.collection.id, column.id) ?? column.display_name}</span>
-              {!compactColumnActions && table.native_table_profile && onRenameColumn && (renameAvailable || onAddColumn || onRemoveColumn) ? <>
+              {!compactColumnActions && table.native_table_profile && (renameAvailable || onAddColumn || onRemoveColumn || (onSetColumnRequiredness && canChangeRequiredness(table, column.id))) ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
                   if (!disclosure.open) return;
@@ -2769,6 +2787,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       openColumnDialog(kind, trigger, column.id);
                     }} />)}
+                    {onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      void changeRequiredness(column.id, trigger);
+                    }} /> : null}
                   </div>
                 </details>
                 {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
@@ -2849,6 +2873,12 @@ export function SheetShell(props: SheetShellProps) {
                 disclosure.open = false;
                 openColumnDialog(kind, trigger, focusedColumn.id);
               }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>)}
+              {onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                disclosure.open = false;
+                void changeRequiredness(focusedColumn.id, trigger);
+              }}>{focusedColumn.required ? "Allow blanks" : "Require a value"}</button> : null}
             </div>
           </details> : null}
           {onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span> : null}

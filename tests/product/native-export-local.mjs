@@ -10,6 +10,7 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
+import { runOptionalColumnsCases } from "./optional-columns-cases.mjs";
 import { runBlankDisplayCases } from "./blank-display-cases.mjs";
 import { runImportedExportRefusalCases } from "./imported-export-refusal-cases.mjs";
 import { runClearCellsCases } from "./clear-cells-cases.mjs";
@@ -206,6 +207,7 @@ try {
   assert.deepEqual(await prepare(page,"csv",{sales:true}), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
   checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review");
   await close(page);
+  await runOptionalColumnsCases(page, { close, checks, output });
   await runBlankDisplayCases(page, { output, close, checks });
   await runImportedExportRefusalCases(page, { close, prepare, downloads, checks });
   await runOptionalEditEntryCases(page, { close, checks });

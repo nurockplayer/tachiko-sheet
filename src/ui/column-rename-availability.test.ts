@@ -50,7 +50,7 @@ describe("Work #560 temporary Rename availability", () => {
 
 describe("column dialog dispatch guard", () => {
   const state: ColumnDialogState = { kind: "rename", occurrence: "o", revision: "r1", collection: "table", rowEntities: ["e"], field: "f", name: "Item" };
-  const draft = { name: "Current item", fieldType: "text" as const, fill: "fill" };
+  const draft = { name: "Current item", fieldType: "text" as const, fill: "fill", required: true };
   const handlers = () => ({
     onRenameColumn: vi.fn(async () => ({ kind: "confirmed" as const })),
     onAddColumn: vi.fn(async () => ({ kind: "confirmed" as const })),
@@ -73,7 +73,7 @@ describe("column dialog dispatch guard", () => {
     const context = { table: table(), metadata: metadata(), ...handlers() };
     const add: ColumnDialogState = { kind: "add", occurrence: "o", revision: "r1", collection: "table", rowEntities: ["e"] };
     expect(await submitColumnIntent(add, draft, context)).toEqual({ kind: "confirmed" });
-    expect(context.onAddColumn).toHaveBeenCalledExactlyOnceWith(add, "table", draft.name, "text", [{ entity: "e", input: { kind: "text", value: "fill" } }]);
+    expect(context.onAddColumn).toHaveBeenCalledExactlyOnceWith(add, "table", draft.name, "text", [{ entity: "e", input: { kind: "text", value: "fill" } }], true);
     const remove: ColumnDialogState = { ...state, kind: "remove" };
     expect(await submitColumnIntent(remove, draft, context)).toEqual({ kind: "confirmed" });
     expect(context.onRemoveColumn).toHaveBeenCalledExactlyOnceWith(remove, "table", "f");

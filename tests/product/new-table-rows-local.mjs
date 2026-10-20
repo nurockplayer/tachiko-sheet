@@ -294,6 +294,7 @@ try {
   await d.getByLabel("Column 2 name", { exact: true }).fill("Amount"); await d.getByLabel("Column 2 type", { exact: true }).selectOption("number");
   await d.getByRole("button", { name: "Add column", exact: true }).click();
   await d.getByLabel("Column 3 name", { exact: true }).fill("Paid"); await d.getByLabel("Column 3 type", { exact: true }).selectOption("boolean");
+  await d.getByLabel("Column 2 Required", { exact: true }).check();
   await capture(page, "dialog");
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await d.waitFor({ state: "detached" }); await ready(page);
   assert.equal((await projection(page)).rows.length, 0);

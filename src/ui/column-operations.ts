@@ -1,13 +1,14 @@
 import type { InteropMetadata, NewTableColumn, RowCommandOutcome, ScalarEdit, SheetShellProps, ViewWitness, WorkbookView } from "../contracts.js";
+import { newColumnInput } from "./column-requiredness.js";
 import { canRenameColumns, IMPORTED_RENAME_UNAVAILABLE } from "./column-rename-availability.js";
 
 export type ColumnDialogState = ViewWitness & { collection: string; rowEntities: string[] } & (
   | { kind: "add" }
   | { kind: "rename" | "remove"; field: string; name: string }
 );
-export interface ColumnDraft { name: string; fieldType: NewTableColumn["field_type"]; fill: string }
+export interface ColumnDraft { name: string; fieldType: NewTableColumn["field_type"]; fill: string; required?: boolean; fillExisting?: boolean }
 export function initialColumnDraft(state: ColumnDialogState): ColumnDraft {
-  return { name: state.kind === "add" ? "" : state.name, fieldType: "text", fill: "" };
+  return { name: state.kind === "add" ? "" : state.name, fieldType: "text", fill: "", required: false, fillExisting: false };
 }
 /** Presence/choice only. Work owns parsing, name admission and dependency checks. */
 export function fillChoiceRequired(type: NewTableColumn["field_type"], rowCount: number, fill: string): boolean {
@@ -32,9 +33,11 @@ export async function submitColumnIntent(state: ColumnDialogState, draft: Column
     if (context.onRenameColumn) return context.onRenameColumn(state, state.collection, state.field, draft.name);
   }
   if (state.kind === "remove" && context.onRemoveColumn) return context.onRemoveColumn(state, state.collection, state.field);
-  const input = columnFill(draft);
-  if (state.kind === "add" && context.onAddColumn && (input || state.rowEntities.length === 0)) {
-    return context.onAddColumn(state, state.collection, draft.name, draft.fieldType, state.rowEntities.map(entity => ({ entity, input: input! })));
+  const required = newColumnInput({ name: draft.name, field_type: draft.fieldType, required: draft.required }).required!;
+  const needsFill = required || draft.fillExisting === true;
+  const input = needsFill ? columnFill(draft) : null;
+  if (state.kind === "add" && context.onAddColumn && (!needsFill || input || state.rowEntities.length === 0)) {
+    return context.onAddColumn(state, state.collection, draft.name, draft.fieldType, needsFill ? state.rowEntities.map(entity => ({ entity, input: input! })) : undefined, required);
   }
   return { kind: "refused", message: "Choose a fill value before adding this column." };
 }

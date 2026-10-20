@@ -62,7 +62,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       const dispatched = (await requests("new_table")).slice(before);
       assert.equal(dispatched.length, 1, "Create dispatches exactly once");
       assert.equal(dispatched[0].request.name, " Expenses ", "table name reaches Work exactly as typed");
-      assert.deepEqual(dispatched[0].request.columns, [{ name: " Item ", field_type: "text" }], "column names reach Work exactly as typed");
+      assert.deepEqual(dispatched[0].request.columns, [{ name: " Item ", field_type: "text", required: false }], "column names reach Work exactly as typed");
       assert.equal(await dialog().count(), 0, "padded valid names create successfully in the real core");
       await ready(page);
       const table = await projection(page);
@@ -148,7 +148,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       const add = dialog().getByRole("button", { name: "Add column", exact: true });
       await add.click(); await add.click();
       await dialog().getByRole("button", { name: "Remove column 2", exact: true }).click(); await add.click();
-      assert.deepEqual(await dialog().locator(".ts-new-column input").evaluateAll(inputs => inputs.map(i => i.value)), ["A", "C", "B"]);
+      assert.deepEqual(await dialog().getByRole("textbox", { name: /^Column \d+ name$/ }).evaluateAll(inputs => inputs.map(i => i.value)), ["A", "C", "B"]);
       await dialog().getByRole("button", { name: "Create table", exact: true }).click(); await dialog().waitFor({ state: "detached" }); await ready(page);
       assert.deepEqual((await projection(page)).columns.map(c => c.key).sort(), ["a", "b", "c"]);
       await cleanup(); await openDialog("Only_name");
