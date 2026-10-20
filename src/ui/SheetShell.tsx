@@ -2395,7 +2395,7 @@ export function SheetShell(props: SheetShellProps) {
     const result = await onSetColumnRequiredness(witness, table.collection.key, field, required);
     if (intent.occurrence !== liveOccurrenceRef.current) return;
     if (result.kind === "confirmed") setColumnAnnouncement(required ? `${displayName} now requires a value. Undo restores it.` : `${displayName} now allows blanks. Undo restores it.`);
-    else if (result.kind === "refused") setColumnAnnouncement(required ? requirednessRefusal(result.message, count, displayName) : result.message);
+    else if (result.kind === "refused") setColumnAnnouncement(required ? requirednessRefusal(result.message, result.refusalCode, count, displayName) : result.message);
     requestAnimationFrame(() => { if (completionMayUpdateUi(intent) && trigger.isConnected) withAppFocus(() => trigger.focus()); });
   }
 

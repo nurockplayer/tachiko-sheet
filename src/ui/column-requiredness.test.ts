@@ -49,9 +49,11 @@ describe("column requiredness intent", () => {
     const emptyText = table(); emptyText.rows[0]!.blank_fields = [];
     emptyText.rows[0]!.fields = [{ target: { entity: "e", field: "f" }, stored: { kind: "text", value: "" } }] as typeof emptyText.rows[0]["fields"];
     expect(completeBlankCount(emptyText, "f", "r")).toBe(0);
-    expect(requirednessRefusal("blank values", null, "Price")).not.toMatch(/\d/);
-    expect(requirednessRefusal("blank values", 3, "Price")).toBe("3 rows in Price are blank. Fill them before requiring a value.");
-    expect(requirednessRefusal("semantic command was rejected: field 'row.field/column' does not exist", 2, "Extra")).toBe("2 rows in Extra are blank. Fill them before requiring a value.");
-    expect(requirednessRefusal("Stale revision", 3, "Price")).toBe("Stale revision");
+    expect(requirednessRefusal("blank values", "edit_rejected", null, "Price")).toBe("blank values");
+    expect(requirednessRefusal("blank values", "edit_rejected", 3, "Price")).toBe("3 rows in Price are blank. Fill them before requiring a value.");
+    expect(requirednessRefusal("semantic command was rejected: field 'row.field/column' does not exist", "edit_rejected", 1, "Extra")).toBe("1 row in Extra is blank. Fill it before requiring a value.");
+    expect(requirednessRefusal("semantic command was rejected: field 'row.field/column' does not exist", "edit_rejected", 0, "Extra")).toBe("semantic command was rejected: field 'row.field/column' does not exist");
+    expect(requirednessRefusal("Stale revision", "stale_revision", 3, "Price")).toBe("Stale revision");
+    expect(requirednessRefusal("This change belongs to an older view. Refresh before trying again.", undefined, 3, "Price")).toBe("This change belongs to an older view. Refresh before trying again.");
   });
 });
