@@ -1160,3 +1160,23 @@ describe("work-file entry and Save availability", () => {
     expect(markup).toContain(reason);
   });
 });
+
+
+describe("native insertion limit presentation", () => {
+  it("removes the draft and Add row at 128 stored records and exposes the limit as a status", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const row = view.table.rows[0]!;
+    const record = (id: string) => ({ ...row, id, fields: row.fields.map(field => ({ ...field, target: { ...field.target, entity: id } })) });
+    view.table.rows = Array.from({ length: 127 }, (_, index) => record(`row-${index}`));
+    const before = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
+    expect(before).toContain('class="ts-entry-row"');
+    expect(before).toContain('>Add row</button>');
+    expect(before).not.toContain('ts-native-insertion-limit');
+    view.table.rows.push(record("inserted"));
+    const after = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
+    expect(after).not.toContain('class="ts-entry-row"');
+    expect(after).not.toContain('>Add row</button>');
+    expect(after).toContain('class="ts-hint ts-native-insertion-limit" role="status">This table has reached the 128-row limit for adding rows here.</p>');
+  });
+});

@@ -41,6 +41,7 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { rowInsertFocusTarget } from "./row-insert-focus.js";
 import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
 import { historyCommandForKey } from "./history-keyboard.js";
@@ -584,6 +585,13 @@ export function SheetShell(props: SheetShellProps) {
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
   const rowCommandPendingRef = useRef(false);
+  const [rowInsertFocus, setRowInsertFocus] = useState<{
+    intent: ReturnType<typeof completionIntent>;
+    collection: string;
+    revision: string;
+    previousEntities: string[];
+    field: string;
+  } | null>(null);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
   const [deleteSelection, setDeleteSelection] = useState<SavedCopySummary | null>(null);
   const deleteName = deleteSelection?.name ?? null;
@@ -2167,6 +2175,23 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
+  useLayoutEffect(() => {
+    if (!rowInsertFocus) return;
+    const request = rowInsertFocus;
+    if (!completionMayUpdateUi(request.intent) || table?.collection.id !== request.collection) {
+      setRowInsertFocus(null);
+      return;
+    }
+    // Wait for the confirmed projection and unlocked cells, rather than using
+    // the pre-insert render's draft/row inventory in an animation callback.
+    if (!view || view.revision === request.revision || commitPending || props.busy || currentness !== "current") return;
+    setRowInsertFocus(null);
+    const target = rowInsertFocusTarget(table, hasDraftRow, request.previousEntities, request.field);
+    requestAnimationFrame(() => {
+      if (target && completionMayUpdateUi(request.intent)) withAppFocus(() => focusCell(target.entity, target.field));
+    });
+  }, [rowInsertFocus, view, table, hasDraftRow, commitPending, props.busy, currentness]);
+
   // Tab and publication must agree about whether a request can be dispatched.
   function rowInsertBlocked(): boolean {
     return controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || rowDraft?.needsReview === true || props.appearancePreference.getSnapshot().composing;
@@ -2188,6 +2213,8 @@ export function SheetShell(props: SheetShellProps) {
     if (editor?.entity === DRAFT_ROW || (editor && editor.value === editor.original)) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
+    const submittedField = editor?.entity === DRAFT_ROW ? editor.field
+      : focusedKey?.startsWith(`${DRAFT_ROW}\u0000`) ? focusedKey.split("\u0000")[1] : undefined;
     setCommitPending(true);
     setRowError(null);
     setLocalError(null);
@@ -2196,7 +2223,8 @@ export function SheetShell(props: SheetShellProps) {
       if (result.kind === "confirmed") {
         // Inputs are locked during dispatch. Clear only this submitted draft.
         setRowDraft((current) => current === rowDraft ? null : current);
-        if (columns[0]) focusDraftAfterRender(columns[0].id, intent);
+        setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
+          previousEntities: view.table.rows.map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
       } else if (result.kind === "refused") {
         const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => names.column(view.table.collection.id, column.id) ?? column.display_name);
         setRowError(refusal);
