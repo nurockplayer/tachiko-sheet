@@ -35,6 +35,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type PasteCellInput,
   type ColumnInitializer,
   type RowCommandOutcome,
   type SheetRuntime,
@@ -312,12 +313,15 @@ function describe(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function describeExportRefusal(error: unknown): string {
+export function describeExportRefusal(error: unknown): string {
   // Public runtime failures carry located diagnostics. Do not expose the
   // transport error/code in place of the actual reason the file was refused.
   const failure = (error as { failure?: { code?: string; diagnostics?: Array<{ path: string; message: string }> } } | null)?.failure;
   if (failure?.code === "stale_revision") {
     return "The work changed before the file was prepared. Refresh the work and prepare it again.";
+  }
+  if (failure?.code === "imported_spreadsheet_export_refused") {
+    return "This table changed in ways the original workbook layout can't represent, so it can't be downloaded in that layout. Your work is unchanged.";
   }
   if (failure?.code === "native_tables_export_refused") {
     const details = failure.diagnostics?.map((diagnostic) =>
@@ -1607,7 +1611,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.editCells(witness, edits));
   }
 
-  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
+  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
 

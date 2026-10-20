@@ -301,12 +301,14 @@ try {
   await (await homeImportInput(page)).setInputFiles(csv);
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await preview.getByRole("button", { name: "Import file", exact: true }).click(); await ready();
-  table = await projection(); assert.equal(Boolean(table.native_table_profile), false);
+  table = await projection(); assert.equal(table.native_table_profile, true, "imported optional Text/Number is structurally native");
   const importedBaseline = table;
   assert.deepEqual(values(table), [[" PEN ", 3, 200], ["NOTE", 2, 500], [" PEN ", 3, 200]]);
   await select(table, 2, 3);
   assert.equal(await copy(cell(table, 1, 2)), " PEN \t3\t200\nNOTE\t2\t500", "imported copy remains exact");
   const importedCount = (await commands()).length;
+  const importedPublicationsBefore = await page.evaluate(() => window.__clipboardEvidence.records.reduce((sum, record) => sum + record.replies.filter(reply =>
+    reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0));
   await paste(cell(table, 1, 2), "Coffee\t6.5\t20\nBus\t3\t40");
   const importedSuccess = status().filter({ hasText: "Updated 2 rows. Save to keep these changes." });
   await importedSuccess.waitFor();
@@ -321,7 +323,7 @@ try {
   assert.deepEqual(importedCommand.edits[0], { target: importedBaseline.rows[0].fields.find(field => field.target.field === table.columns[0].id).target, input: { kind: "text", value: "Coffee" } });
   assert.deepEqual(importedCommand.edits[1].input, { kind: "number", input: "6.5" });
   assert.equal(await page.evaluate(() => window.__clipboardEvidence.records.reduce((sum, record) => sum + record.replies.filter(reply =>
-    reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0)), 1, "one imported publication receipt");
+    reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0)), importedPublicationsBefore + 1, "one imported publication receipt");
   assert.equal(await cell(table, 1, 2).evaluate(node => node === document.activeElement), true, "paste preserves focused cell");
   await capture("imported-paste");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
@@ -342,17 +344,24 @@ try {
   // Anchor the overflow at the actual final row; do not rely on a size-only check.
   await cell(table, 2, 0).click();
   const appendCount = (await commands()).length, beforeAppend = await projection();
-  await paste(cell(table, 2, 0), "a\t1\t2\nb\t3\t4");
-  await status().filter({ hasText: "Imported tables can't gain rows by paste. Nothing was pasted." }).waitFor();
+  await paste(cell(table, 2, 0), "a\t1\nb\t3");
+  await status().filter({ hasText: "To append rows, paste from the first column and include every column. Nothing was pasted." }).waitFor();
   assert.equal((await commands()).length, appendCount);
   assert.deepEqual(await projection(), beforeAppend);
+  // Structural native classification also admits a complete appended row.
+  await paste(cell(table, 2, 0), "a\t1\t2\nb\t3\t4");
+  await status().filter({ hasText: "Updated 2 rows" }).waitFor();
+  assert.equal((await commands()).at(-1).type, "paste_cells");
+  assert.deepEqual(values(await projection()), [...importedPasted.slice(0, 2), ["a", 1, 2], ["b", 3, 4]]);
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, table.rows, "one Undo removes the append and restores its overwritten row");
   // Every refusal must leave the original single-paste history unit on top.
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).rows, importedBaseline.rows);
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).rows, table.rows);
   assert.equal(await page.locator('td[aria-invalid="true"]').count(), 0, "type-only error never invents a target");
-  checks.push("217.2–3 invalid Number and oversized UTF-8 request refused whole; ragged/wide/append never dispatch; history unchanged");
+  checks.push("217.2–3 invalid Number and oversized UTF-8 request refused whole; ragged/wide/partial append never dispatch; structural native full append is one Undo; history unchanged");
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   const importedSave = page.getByRole("dialog", { name: "Save a copy", exact: true });
@@ -397,7 +406,7 @@ try {
   await dates.getByRole("button", { name: "Create table", exact: true }).click(); await ready();
   await draftFirst().focus(); await paste(draftFirst(), "2026-10-19"); await draftFirst().press("Enter"); await ready();
   assert.equal(await unchangedPaste("10/19/2026", /YYYY-MM-DD/), 1);
-  assert.equal((await commands()).at(-1).rows[0][0], "10/19/2026", "raw Date string reached Work unchanged");
+  assert.equal((await commands()).at(-1).edits[0].input.value, "10/19/2026", "raw Date string reached Work unchanged");
   const dateTable = await projection();
   await paste(cell(dateTable, 0, 0), "2026-10-20"); await status().filter({ hasText: "Updated 1 row" }).waitFor();
   assert.deepEqual(values(await projection()), [["2026-10-20"]]);

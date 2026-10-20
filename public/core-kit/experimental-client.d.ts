@@ -1,7 +1,7 @@
 import { projectTransferFromEntries, projectTransferFromFiles, type CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 import type { SpreadsheetExport, SpreadsheetFormat } from "./runtime/interop-protocol.ts";
 import { DesignerRuntimeError, type DesignerClient } from "./runtime/client.ts";
-import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, ProjectExport } from "./runtime/protocol.ts";
+import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, ProjectExport, FieldTarget, PublicationProjection } from "./runtime/protocol.ts";
 export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
 /**
  * Public client surface exposed by the experimental kit.
@@ -12,6 +12,10 @@ export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v
  * and the vendored kit makes that stronger contract explicit for consumers.
  */
 export interface ExperimentalDesignerClient extends DesignerClient {
+    /** Explicit absence for one optional native Text/Number slot. */
+    clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
+    /** Strengthening refuses while any entity lacks a value; never fills or coerces. */
+    setColumnRequiredness(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
     exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
     openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection>;
@@ -36,4 +40,4 @@ export declare function createExperimentalDesignerClient(): ExperimentalDesigner
 export { DesignerRuntimeError, projectTransferFromEntries, projectTransferFromFiles, };
 export type { DesignerClient };
 export type { CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
-export type { BootstrapProjection, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, DiagnosticProjection, FailureProjection, FieldBatchProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, OpenedProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";
+export type { BootstrapProjection, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, DiagnosticProjection, FailureProjection, FieldBatchProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, ScalarEditInput, TrackerCommand, OpenedProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";

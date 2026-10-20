@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
+  "sourceCommit": "375da29f7c67ed74bace7d214ef23716d2e2237b",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -22,6 +22,8 @@
     "queryKeyedGroupedSum",
     "editNumber",
     "editText",
+    "clearField",
+    "setColumnRequiredness",
     "editBoolean",
     "editDate",
     "updateFormula",
@@ -58,11 +60,11 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "44db5a240b613e755ad34746b679ecd53261918f220444bc7dd62726d63dcb5b"
+      "sha256": "3d3159d3d250f5588311e7a81bcc492acb9fea9d2c4db1ec4bcf93af71330b03"
     },
     {
       "path": "experimental-client.d.ts",
-      "sha256": "60b3aa9c35f8a5753e91d024b3483f21df5c3e45e0a80f36a1c185baa182ae37"
+      "sha256": "5e1633faa5dafab2fc769ed84010eed2eb3a08732dc715f7e4c6547d00aa3ff4"
     },
     {
       "path": "experimental-client.js",
@@ -102,7 +104,7 @@
     },
     {
       "path": "runtime/client.d.ts",
-      "sha256": "4bd166087dad85e4b67cc036a6d8aa60e3cd6800f4376af4328a3b59f21a85f9"
+      "sha256": "df7af27be28cb6f71c1777f5cdc478a9eab6bff9f449c21d73567765ed63589f"
     },
     {
       "path": "runtime/client.js",
@@ -118,7 +120,7 @@
     },
     {
       "path": "runtime/protocol.d.ts",
-      "sha256": "8aa2dd853140aaee31946b1f7d2243e62b776982cba493b24bffde122b84fdf7"
+      "sha256": "418d0c2eccc7337a400d316ebf07bbe570b2d83907852fb6858d005214836467"
     },
     {
       "path": "runtime/protocol.js",
@@ -134,11 +136,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "e366b31d8ebfcffc31c7690fd4df8c3608859799cc44b86d3d654fc28390dfaa"
+      "sha256": "10d05912423cf1005260597c8420dcb5f5d121170c9a1f0d690097a6df9591dd"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "481b6e79a381da80efdad3a6c28ab90d248900e517cf234b54324345347b8f52"
+      "sha256": "2f137f2160a65c67dfbdd6b6d9502037a9c09bc76247712ce3410572f462cdb8"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

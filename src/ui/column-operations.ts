@@ -1,4 +1,5 @@
-import type { NewTableColumn, ScalarEdit, ViewWitness } from "../contracts.js";
+import type { InteropMetadata, NewTableColumn, RowCommandOutcome, ScalarEdit, SheetShellProps, ViewWitness, WorkbookView } from "../contracts.js";
+import { canRenameColumns, IMPORTED_RENAME_UNAVAILABLE } from "./column-rename-availability.js";
 
 export type ColumnDialogState = ViewWitness & { collection: string; rowEntities: string[] } & (
   | { kind: "add" }
@@ -19,6 +20,23 @@ export function columnFill(draft: ColumnDraft): ScalarEdit | null {
     case "boolean": return draft.fill === "yes" ? { kind: "boolean", value: true } : draft.fill === "no" ? { kind: "boolean", value: false } : null;
     case "text": return { kind: "text", value: draft.fill };
   }
+}
+
+/** Final dispatch guard uses the current table/metadata, even for an older dialog. */
+export async function submitColumnIntent(state: ColumnDialogState, draft: ColumnDraft, context:
+  Pick<SheetShellProps, "onAddColumn" | "onRenameColumn" | "onRemoveColumn"> & {
+    table: WorkbookView["table"] | null; metadata: InteropMetadata | null;
+  }): Promise<RowCommandOutcome> {
+  if (state.kind === "rename") {
+    if (!canRenameColumns(context.table, context.metadata)) return { kind: "refused", message: IMPORTED_RENAME_UNAVAILABLE };
+    if (context.onRenameColumn) return context.onRenameColumn(state, state.collection, state.field, draft.name);
+  }
+  if (state.kind === "remove" && context.onRemoveColumn) return context.onRemoveColumn(state, state.collection, state.field);
+  const input = columnFill(draft);
+  if (state.kind === "add" && context.onAddColumn && (input || state.rowEntities.length === 0)) {
+    return context.onAddColumn(state, state.collection, draft.name, draft.fieldType, state.rowEntities.map(entity => ({ entity, input: input! })));
+  }
+  return { kind: "refused", message: "Choose a fill value before adding this column." };
 }
 export function columnRefusal(message: string, fieldType?: string): string {
   if (fieldType === "number") return "Enter a number for the existing rows, such as 12.5. Nothing was changed.";

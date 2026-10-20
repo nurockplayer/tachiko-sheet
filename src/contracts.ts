@@ -4,6 +4,7 @@ import type {
   CollectionSummary,
   FieldBatchProjection,
   FieldTarget,
+  PasteCellInput,
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
@@ -33,7 +34,7 @@ export type {
   SpreadsheetFormat,
 } from "../public/core-kit/runtime/interop-protocol.js";
 
-export type { CanonicalProjectFile, CanonicalTreeExport, FieldTarget };
+export type { CanonicalProjectFile, CanonicalTreeExport, FieldTarget, PasteCellInput };
 export type CoreKit = typeof import("../public/core-kit/experimental-client.js");
 export type KitLoader = () => Promise<CoreKit>;
 
@@ -83,7 +84,7 @@ export interface SheetRuntime {
   newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
-  pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<ConfirmedPublication>;
+  pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
   addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
   removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
@@ -324,7 +325,7 @@ export interface SheetShellProps {
   workFileOmissions?: string[];
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;
   onEditCells?(witness: ViewWitness, edits: CellEdit[]): Promise<RowCommandOutcome>;
-  onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]): Promise<RowCommandOutcome>;
+  onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
   onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<RowCommandOutcome>;
   onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[]): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;

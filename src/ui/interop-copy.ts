@@ -3,6 +3,10 @@ import type { FidelityFinding } from "../../public/core-kit/runtime/interop-prot
 /** Display copy only. The original finding, category and blocking flag stay
  * unchanged for import/export decisions, saved copies and diagnostic evidence. */
 const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
+  "CSV cannot distinguish an absent optional Text value from present empty Text; both export as an empty field. Retain the Tachiko source to preserve presence.":
+    "CSV cannot preserve the difference between blank cells and empty text; both export as empty cells.",
+  "CSV exports scalar lexical values only: typing and formatting are lost. Formula-leading Text or headers are refused; use typed XLSX.":
+    "CSV includes text values without column types or formatting. Text or headings that could be read as formulas are refused; use XLSX to keep types.",
   "Keyed-grouped-sum definitions are excluded; retain the Tachiko source to preserve bindings.":
     "Summary settings are not included. Save a copy of your work to keep the summary and its table connections.",
   "Keyed-grouped-sum calculated results are excluded; no calculated snapshots are emitted.":
@@ -19,6 +23,8 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
     "The sheet’s cell positions and your column types were accepted. Exported formulas use absolute cell references.",
   "Export is rebuilt from current stable identities and authoritative values. Formula references use current absolute worksheet coordinates; deleted rows are omitted.":
     "The file uses current values. Formula references use current absolute cell addresses; deleted rows are left out.",
+  "Surviving source columns and rows retain source order and identity-bound presentation. Added columns and rows append in current canonical order with default presentation; removed columns and deleted rows are omitted. Blank optional values are empty cells.":
+    "Existing columns and rows keep their original order and formatting. New columns and rows are added at the end with default formatting. Removed columns and rows are left out. Blank cells stay empty.",
   "Unknown package part has no declared semantic mapping":
     "This file contains a part that Tachiko cannot read.",
   "Shared, empty, array or dynamic formula is safe-disabled; cached value is not semantic truth":
@@ -31,6 +37,8 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
     "The cell value was converted using the column type you chose. The original source is still available.",
   "CSV exports selected-sheet scalar values only. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.":
     "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.",
+  "CSV exports selected-sheet scalar values only. Blank and present empty Text both become empty CSV fields. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.":
+    "CSV includes only cell values from the selected sheet. Blank cells and empty text both become empty CSV cells. Formulas, formatting, and other sheets are not kept; keep the source work.",
 });
 
 const CATEGORY_WORDING: Record<FidelityFinding["category"], string> = {
@@ -45,9 +53,16 @@ export function findingCategoryLabel(category: FidelityFinding["category"]): str
   return CATEGORY_WORDING[category];
 }
 
-export function findingMessage(message: string): string {
+export function findingMessage(message: string, code?: string): string {
   // Exact producer wording is required for a translation. A new/changed
   // warning remains verbatim rather than inheriting an inaccurate promise.
+  if (code === "imported_spreadsheet_unrepresentable") {
+    return `The original workbook layout cannot represent this table. ${message}`;
+  }
+  if (code === "imported_current_header") {
+    const header = /^Current header ("(?:[^"\\]|\\.)*") exports as ("(?:[^"\\]|\\.)*"); the source header was ("(?:[^"\\]|\\.)*")\.$/.exec(message);
+    if (header) return `The current column heading ${header[1]} will download as ${header[2]}. The original heading was ${header[3]}.`;
+  }
   if (/^Saved keyed-grouped-sum definition .+ and its calculated results are excluded\.$/.test(message)) {
     return "The saved summary and its calculated values are not included. Save a copy of your work to keep them.";
   }

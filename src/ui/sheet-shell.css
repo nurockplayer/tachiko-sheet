@@ -1338,6 +1338,12 @@ body { margin: 0; }
   font-style: italic;
 }
 
+/* Optional stored empty Text has a quiet marker at the existing row pitch. */
+.ts-cell--empty-text .ts-cell-value {
+  color: var(--ts-ink-soft);
+  font-style: normal;
+}
+
 .ts-cell--reference .ts-cell-value {
   color: var(--ts-text-reference);
   text-decoration: underline dotted;

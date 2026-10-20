@@ -21,7 +21,7 @@ describe("quoted TSV", () => {
   });
 });
 const context = (overrides: Partial<PasteContext> = {}): PasteContext => ({ native: true, draft: false, blocked: false, pendingDraft: false,
-  start: { row: 0, column: 0 }, rowCount: 2, columnTypes: ["text", "number", "boolean"], editable: () => true, ...overrides });
+  start: { row: 0, column: 0 }, rowCount: 2, columnTypes: ["text", "number", "boolean"], columnRequired: [true, true, true], editable: () => true, ...overrides });
 const block = [["a", "1,300", "TRUE"], ["b", "", "false"], ["c", "$5", "FaLsE"]];
 describe("paste routing", () => {
   it("overwrites and appends one block; only exact Boolean tokens are case-folded", () => {
@@ -47,9 +47,9 @@ describe("paste routing", () => {
   ] as const)("refuses whole blocks", (ctx, values, message) => {
     expect(routePaste(values as string[][], ctx)).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
   });
-  it("routes imported overwrites to edit, using all existing rows beyond native row 128", () => {
+  it.each([false, true])("routes overwrites to edit beyond row 128 (native=%s)", native => {
     expect(routePaste(block.slice(0, 2), context({ native: false }))).toEqual({ kind: "edit", rows: [["a", "1,300", "true"], ["b", "", "false"]] });
-    expect(routePaste([["", "10/19/2026"]], context({ native: false, rowCount: 200, start: { row: 199, column: 0 }, columnTypes: ["number", "date"] })))
+    expect(routePaste([["", "10/19/2026"]], context({ native, rowCount: 200, start: { row: 199, column: 0 }, columnTypes: ["number", "date"] })))
       .toEqual({ kind: "edit", rows: [["", "10/19/2026"]] });
     expect(routePaste([["4"]], context({ native: false, start: { row: 1, column: 1 } }))).toEqual({ kind: "edit", rows: [["4"]] });
   });
@@ -65,20 +65,20 @@ describe("paste routing", () => {
       [{ editable: (r: number, c: number) => !(r === 1 && c === 2) }, block.slice(0, 2), /non-editable/],
     ] as const) expect(routePaste(rows as string[][], context({ native: false, ...overrides }))).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
   });
-  it("bounds imported edits at 1,024 cells without imposing that count bound on native paste", () => {
+  it.each([false, true])("bounds every existing-row edit at 1,024 cells (native=%s)", native => {
     const rows = Array.from({ length: 128 }, () => Array(8).fill("a"));
-    const ctx = context({ native: false, rowCount: 128, columnTypes: Array(9).fill("text") });
+    const ctx = context({ native, rowCount: 128, columnTypes: Array(9).fill("text") });
     expect(routePaste(rows, ctx).kind).toBe("edit");
     rows[0]!.push("a"); // ragged refusal still wins
     expect(routePaste(rows, ctx).kind).toBe("refused");
     rows.forEach(row => { if (row.length === 8) row.push("a"); });
     expect(routePaste(rows, ctx)).toMatchObject({ kind: "refused", message: expect.stringContaining("1,024-cell") });
-    expect(routePaste(rows, { ...ctx, native: true }).kind).toBe("publish");
+    expect(routePaste(rows, { ...ctx, native: true, rowCount: 127 }).kind).toBe("publish");
   });
-  it("accepts only exact Boolean tokens for typed imported edits", () => {
-    for (const value of ["yes", " TRUE ", "", "0"]) expect(routePaste([[value]], context({ native: false, columnTypes: ["boolean"] })))
+  it.each([false, true])("accepts only exact Boolean tokens for typed edits (native=%s)", native => {
+    for (const value of ["yes", " TRUE ", "", "0"]) expect(routePaste([[value]], context({ native, columnTypes: ["boolean"] })))
       .toMatchObject({ kind: "refused", message: expect.stringContaining("true or false") });
-    expect(routePaste([["FaLsE"]], context({ native: false, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [["false"]] });
+    expect(routePaste([["FaLsE"]], context({ native, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [["false"]] });
   });
   it("fills a partial draft without publishing or losing existing draft permission", () => {
     expect(routePaste([["2", "TRUE"]], context({ draft: true, pendingDraft: true, start: { row: 2, column: 1 } })))
@@ -86,10 +86,17 @@ describe("paste routing", () => {
   });
   it("permits exactly row 128 and a partial existing-row overwrite", () => {
     expect(routePaste([["a", "1", "true"]], context({ rowCount: 127, start: { row: 127, column: 0 } })).kind).toBe("publish");
-    expect(routePaste([["2"]], context({ start: { row: 1, column: 1 } }))).toEqual({ kind: "publish", rows: [["2"]] });
+    expect(routePaste([["2"]], context({ start: { row: 1, column: 1 } }))).toEqual({ kind: "edit", rows: [["2"]] });
+  });
+  it.each([128, 205, 8406])("refuses append and draft paste at %i stored rows while preserving existing-row edits", rowCount => {
+    for (const draft of [false, true]) {
+      expect(routePaste([["a", "1", "true"]], context({ rowCount, draft, start: { row: draft ? rowCount : rowCount - 1, column: 0 } })).kind).toBe(draft ? "refused" : "edit");
+    }
+    expect(routePaste([["a", "1", "true"], ["b", "2", "false"]], context({ rowCount, start: { row: rowCount - 1, column: 0 } })))
+      .toMatchObject({ kind: "refused", message: expect.stringContaining("128-row limit") });
   });
   it("passes raw Number and Date input to Work", () => {
-    expect(routePaste([["", "10/19/2026"]], context({ columnTypes: ["number", "date"] }))).toEqual({ kind: "publish", rows: [["", "10/19/2026"]] });
+    expect(routePaste([["", "10/19/2026"]], context({ columnTypes: ["number", "date"] }))).toEqual({ kind: "edit", rows: [["", "10/19/2026"]] });
   });
 });
 describe("selection and refusal presentation", () => {
@@ -120,5 +127,34 @@ describe("bounded clipboard decoding", () => {
   });
   it("refuses oversized text before scanning it", () => {
     expect(() => decodeTsv("a".repeat(11), PASTE_MAX_ROWS, 10)).toThrow(/too large/);
+  });
+});
+
+describe("append-paste presence encoding", () => {
+  const optional = context({ rowCount: 1, columnTypes: ["text", "number"], columnRequired: [false, false] });
+  it("clears only empty newly appended optional slots, preserving existing-row raw inputs", () => {
+    const rows = [["", ""], ["", ""]];
+    const original = structuredClone(rows);
+    expect(routePaste(rows, optional)).toEqual({ kind: "publish", rows: [["", ""], [{ kind: "clear" }, { kind: "clear" }]] });
+    expect(rows).toEqual(original);
+  });
+  it("preserves whitespace and zero rather than treating them as absence", () => {
+    expect(routePaste([["kept", "1"], [" ", "0"], ["", " "]], optional)).toEqual({ kind: "publish",
+      rows: [["kept", "1"], [" ", "0"], [{ kind: "clear" }, " "]] });
+  });
+  it("keeps required Text empty and forwards required Number/Date/Boolean empty input for atomic Work refusal", () => {
+    const ctx = context({ rowCount: 1, columnTypes: ["text", "number", "date", "boolean"], columnRequired: [true, true, true, true] });
+    expect(routePaste([["existing", "1", "2026-10-20", "TRUE"], ["", "", "", ""]], ctx))
+      .toEqual({ kind: "publish", rows: [["existing", "1", "2026-10-20", "true"], ["", "", "", ""]] });
+  });
+  it("preserves false as a value and does not invent optional Date/Boolean blank support", () => {
+    const ctx = context({ rowCount: 1, columnTypes: ["text", "number", "date", "boolean"], columnRequired: [false, false, false, false] });
+    expect(routePaste([["present", "1", "2026-10-20", "TRUE"], ["", "0", "", "FaLsE"]], ctx))
+      .toEqual({ kind: "publish", rows: [["present", "1", "2026-10-20", "true"], [{ kind: "clear" }, "0", "", "false"]] });
+  });
+  it("keeps existing-row edits and local draft paste as string input", () => {
+    expect(routePaste([["", ""]], optional)).toEqual({ kind: "edit", rows: [["", ""]] });
+    expect(routePaste([["", ""]], { ...optional, draft: true, start: { row: 1, column: 0 } }))
+      .toEqual({ kind: "draft", rows: [["", ""]] });
   });
 });

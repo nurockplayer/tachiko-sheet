@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample, homeImportInput } from "./home-entry.mjs";
+import { runInsertionLimitFocusCases } from "./grid-row-entry-limit-cases.mjs";
 import { runWindowedDraftCases } from "./grid-row-entry-window-cases.mjs";
 import { runDraftTabAmendmentCases } from "./grid-row-entry-amendment-cases.mjs";
 import { runNewTableRootCauseCases } from "./new-table-root-cause-cases.mjs";
@@ -50,6 +51,10 @@ async function start() {
     window.__rowEvidence = { workers: [] };
     const originalFrame = window.requestAnimationFrame.bind(window);
     window.requestAnimationFrame = callback => {
+      if (window.__rowEvidence.insertPublished && window.__rowEvidence.holdInsertFrames) {
+        (window.__rowEvidence.insertFrames ??= []).push(callback);
+        return -window.__rowEvidence.insertFrames.length;
+      }
       if (window.__rowEvidence.deletePublished && window.__rowEvidence.holdDeleteFrames) {
         (window.__rowEvidence.deleteFrames ??= []).push(callback);
         return -window.__rowEvidence.deleteFrames.length;
@@ -81,6 +86,9 @@ async function start() {
           if (window.__rowEvidence.loseNextCreateReply && request?.request?.type === "new_table" && (event.data.response?.type === "opened" || event.data.status === "error")) {
             window.__rowEvidence.loseNextCreateReply = false;
             this.dispatchEvent(new ErrorEvent("error", { message: "Controlled lost creation acknowledgement" }));
+          }
+          if (window.__rowEvidence.holdInsertFrames && request?.request?.type === "insert_row" && event.data.response?.type === "published") {
+            window.__rowEvidence.insertPublished = true;
           }
           if (window.__rowEvidence.holdDeleteFrames && request?.request?.type === "remove_table_rows" && event.data.response?.type === "published") {
             window.__rowEvidence.deletePublished = true;
@@ -245,11 +253,12 @@ async function pendingCreateFocus(page) {
 try {
   let page = await start();
   // Focused diagnostic selectors run only their requested cases.
-  const focusedCase = Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key)) || Boolean(process.env.TABLE_ROWS_PENDING_FOCUS) || Boolean(process.env.TABLE_ROWS_DRAFT_READINESS);
+  const focusedCase = Object.keys(process.env).some(key => /^TABLE_ROWS_(REPAIR|ROOT|ROUND4|ROUND6)_CASE$/.test(key)) || Boolean(process.env.TABLE_ROWS_PENDING_FOCUS) || Boolean(process.env.TABLE_ROWS_DRAFT_READINESS) || Boolean(process.env.TABLE_ROWS_LIMIT_FOCUS);
   if (process.env.TABLE_ROWS_DRAFT_READINESS || !focusedCase) await runCreateDraftReadinessCases({ page, projection, checks, closeWithoutSave });
   if (process.env.TABLE_ROWS_PENDING_FOCUS || !focusedCase) await pendingCreateFocus(page);
   if (process.env.TABLE_ROWS_ROUND6_CASE) await runNewTableRound6Cases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROOT_CASE) await runNewTableRootCauseCases({ page, ready, projection, checks });
+  if (process.env.TABLE_ROWS_LIMIT_FOCUS) await runInsertionLimitFocusCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_REPAIR_CASE) await runNewTableRepairCases({ page, ready, projection, checks });
   if (process.env.TABLE_ROWS_ROUND4_CASE) await runNewTableRound4Cases({ page, ready, projection, checks, capture: label => capture(page, label) });
   let oracle;
@@ -437,8 +446,12 @@ try {
   await (await homeImportInput(page)).setInputFiles(csv);
   const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await importDialog.getByRole("button", { name: "Import file", exact: true }).click(); await ready(page);
-  assert.equal(await entry(page).count(), 0); await page.getByText("Adding and deleting rows is available only in native tables. This table does not support it.", { exact: true }).waitFor();
-  await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
+  const imported = await projection(page);
+  assert.equal(imported.native_table_profile, true, "imported Text/Number is structurally native");
+  assert.equal(imported.rows.length, 1, "the draft is not a stored record");
+  assert.equal(await entry(page).count(), 1);
+  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), 3, "one header, one record and one draft");
+  await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(Boolean((await projection(page)).native_table_profile), false, "Release plan stays non-native"); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   const salesBefore = await projection(page);
   assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
@@ -510,6 +523,7 @@ try {
     await runNewTableRootCauseCases({ page, ready, projection, checks });
     await runDraftTabAmendmentCases({ page, ready, projection, checks });
     await runWindowedDraftCases({ page, ready, projection, checks });
+    await runInsertionLimitFocusCases({ page, ready, projection, checks });
   }
   await terminate();
   const result = { status: "PASS", dist: path.resolve(dist), checks, processes, screenshots, oracle };

@@ -147,8 +147,8 @@ class FakeClient {
       revision: this.#revision,
       collection: COLLECTION,
       columns: [
-        { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-        { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
+        { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+        { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
       ],
       rows: [
         {
@@ -425,7 +425,7 @@ function installCatalog(
   client: FakeClient,
   definitions: Array<{
     collection: CollectionSummary;
-    columns: Array<{ id: string; key: string; display_name?: string; field_type: string }>;
+    columns: Array<{ id: string; key: string; display_name?: string; field_type: string; required?: boolean }>;
     rows?: TableProjection["rows"];
   }>,
   revision = "r1",
@@ -448,7 +448,7 @@ function installCatalog(
     return {
       revision,
       collection: definition.collection,
-      columns: definition.columns.map(column => ({ ...column, display_name: column.key })),
+      columns: definition.columns.map(column => ({ ...column, required: true, display_name: column.key })),
       rows: definition.rows ?? [],
     };
   };
@@ -456,7 +456,7 @@ function installCatalog(
 
 function catalogTable(
   key: string,
-  columns: Array<{ id: string; key: string; display_name?: string; field_type: string }>,
+  columns: Array<{ id: string; key: string; display_name?: string; field_type: string; required?: boolean }>,
   entityCount = 0,
 ): { collection: CollectionSummary; columns: typeof columns; rows: TableProjection["rows"] } {
   return {
@@ -1088,29 +1088,29 @@ describe("createSheetRuntime", () => {
     {
       label: "selected table",
       definitions: [catalogTable("tasks", [
-        { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-        { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
-        { id: "f3", key: "when", display_name: "when", field_type: "date" },
+        { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+        { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
+        { id: "f3", key: "when", display_name: "when", field_type: "date", required: true },
       ])],
     },
     {
       label: "unrelated third table",
       definitions: [
         catalogTable("tasks", [
-          { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-          { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
+          { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+          { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
         ]),
-        catalogTable("inventory", [{ id: "f3", key: "received", display_name: "received", field_type: "date" }]),
+        catalogTable("inventory", [{ id: "f3", key: "received", display_name: "received", field_type: "date", required: true }]),
       ],
     },
     {
       label: "unrelated empty table schema",
       definitions: [
         catalogTable("tasks", [
-          { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-          { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
+          { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+          { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
         ]),
-        catalogTable("inventory", [{ id: "f3", key: "received", display_name: "received", field_type: "date" }]),
+        catalogTable("inventory", [{ id: "f3", key: "received", display_name: "received", field_type: "date", required: true }]),
       ],
     },
   ])("refuses Date schemas in the $label before producer Create", async ({ definitions }) => {
@@ -1138,8 +1138,8 @@ describe("createSheetRuntime", () => {
     const { client, runtime, view } = await opened();
     const queryTableBefore = client.calls.queryTable.length;
     installCatalog(client, [catalogTable("tasks", [
-      { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-      { id: "f2", key: "notes", display_name: "notes", field_type: "reference" },
+      { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+      { id: "f2", key: "notes", display_name: "notes", field_type: "reference", required: true },
     ])]);
     await runtime.createKeyedGroupedSum(witnessOf(view), {
       ordersCollection: "tasks",
@@ -1190,8 +1190,8 @@ describe("createSheetRuntime", () => {
         client.hooks.queryTable = async () => ({
           revision: "stale", collection: COLLECTION,
           columns: [
-            { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-            { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
+            { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+            { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
           ],
           rows: [],
         });
@@ -1213,8 +1213,8 @@ describe("createSheetRuntime", () => {
         client.hooks.queryTable = async (key) => {
           if (key === "inventory") throw new Error("unavailable table");
           return { revision: "r1", collection: COLLECTION, columns: [
-            { id: "f1", key: "impact", display_name: "impact", field_type: "number" },
-            { id: "f2", key: "notes", display_name: "notes", field_type: "text" },
+            { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
+            { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
           ], rows: [] };
         };
       },

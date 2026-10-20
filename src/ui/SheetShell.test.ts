@@ -19,7 +19,8 @@ import {
   shouldPublishAppearanceCompositionEnd,
   SheetShell,
 } from "./SheetShell.js";
-import { fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { cellDisplay, fieldClipboardText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { encodeTsv } from "./clipboard.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
 const entityA = "entity-a";
@@ -62,10 +63,10 @@ function projected(
 
 function makeView(options: { columns?: boolean; titleValue?: string; titleDiagnostic?: boolean } = {}): WorkbookView {
   const columns = [
-    { id: "c-title", key: "title", display_name: "title", field_type: "text" },
-    { id: "c-impact", key: "impact", display_name: "impact", field_type: "number" },
-    { id: "c-priority", key: "priority", display_name: "priority", field_type: "number" },
-    { id: "c-notes", key: "notes", display_name: "notes", field_type: "text" },
+    { id: "c-title", key: "title", display_name: "title", field_type: "text", required: true },
+    { id: "c-impact", key: "impact", display_name: "impact", field_type: "number", required: true },
+    { id: "c-priority", key: "priority", display_name: "priority", field_type: "number", required: true },
+    { id: "c-notes", key: "notes", display_name: "notes", field_type: "text", required: true },
   ];
   const rows = [
     {
@@ -174,6 +175,41 @@ function chipText(markup: string, testId: string): string | null {
 }
 
 describe("fieldDisplay", () => {
+  it("uses explicit presence and requiredness, never rendered emptiness", () => {
+    const empty = projected(entityA, "c-title", { kind: "text", value: "" });
+    expect(fieldDisplay(empty, false)).toMatchObject({ text: '""', description: "Empty text", emptyTextMarker: true });
+    expect(fieldDisplay(empty, true)).toMatchObject({ text: "", description: "Empty text" });
+    expect(fieldDisplay(empty, true).emptyTextMarker).toBeUndefined();
+    expect(fieldDisplay(projected(entityA, "c-title", null, { blank: true }))).toMatchObject({ text: "", description: "Blank" });
+    expect(fieldDisplay(projected(entityA, "c-title", null)).description).toBeUndefined();
+    expect(fieldDisplay(null).description).toBeUndefined();
+    for (const stored of [{ kind: "text", value: " " }, { kind: "number", value: 0 }, { kind: "boolean", value: false }] as const) {
+      expect(fieldDisplay(projected(entityA, "c-title", stored), false).emptyTextMarker).toBeUndefined();
+      expect(fieldClipboardText(projected(entityA, "c-title", stored))).toBe(String(stored.value));
+    }
+  });
+
+  it("joins sparse fields and blank IDs by identity, including entirely blank rows", () => {
+    const view = makeView();
+    const column = { ...view.table.columns[0]!, required: false };
+    const row = { ...view.table.rows[0]!, fields: [projected(entityA, "another-field", { kind: "text", value: "present" })], blank_fields: [column.id] };
+    expect(cellDisplay(row, column)).toMatchObject({ text: "", description: "Blank" });
+    expect(cellDisplay({ ...row, fields: [] }, column).description).toBe("Blank");
+    expect(cellDisplay({ ...row, blank_fields: undefined }, column).description).toBeUndefined();
+    expect(cellDisplay({ ...row, blank_fields: [], fields: [projected(entityA, column.id, { kind: "text", value: "" })] }, column).text).toBe('""');
+  });
+
+  it("serializes values independently from empty-text decoration and diagnostics", () => {
+    const empty = projected(entityA, "c-title", { kind: "text", value: "" });
+    const blank = projected(entityA, "c-title", null, { blank: true });
+    const diagnostic = projected(entityA, "c-title", { kind: "text", value: "" }, { diagnostics: [{ code: "warning", message: "Attention", path: "title" }] });
+    expect(fieldDisplay(empty, false).text).toBe('""');
+    expect(encodeTsv([[fieldClipboardText(blank), fieldClipboardText(empty), fieldClipboardText(diagnostic)]])).toBe("\t\t");
+    expect(fieldClipboardText(null)).toBe("");
+    expect(fieldClipboardText(projected(entityA, "c-priority", { kind: "number", value: 1 }, { formula: { source: "1 + 2" }, calculated: { status: "value", value: 3 } }))).toBe("3");
+    expect(fieldClipboardText(projected(entityA, "c-priority", null, { calculated: { status: "unavailable" } }))).toBe("");
+  });
+
   it("renders stored scalars and references without deriving meaning", () => {
     expect(fieldDisplay(projected(entityA, "c-impact", { kind: "number", value: 5 }))).toEqual({
       text: "5",
@@ -404,7 +440,7 @@ describe("projection access", () => {
     const columns = tableColumns(view.table);
     const notes = notesFieldFor(view.table.rows[0]!, columns);
     expect(notes?.target.field).toBe("c-notes");
-    expect(notesFieldFor(view.table.rows[0]!, [{ id: "other", key: "title", display_name: "title", field_type: "text" }])).toBe(null);
+    expect(notesFieldFor(view.table.rows[0]!, [{ id: "other", key: "title", display_name: "title", field_type: "text", required: true }])).toBe(null);
   });
 
   it("falls back to the row field order when no column list is projected", () => {
@@ -457,6 +493,35 @@ describe("SheetShell static rendering", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it.each([false, true])("gates Rename affordances without changing Add/Remove (compact=%s)", compact => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
+    try {
+      const view = makeView();
+      view.table.native_table_profile = true;
+      const props = { view, onAddColumn: async () => ({ kind: "confirmed" as const }), onRenameColumn: async () => ({ kind: "confirmed" as const }), onRemoveColumn: async () => ({ kind: "confirmed" as const }) };
+      const native = render(props);
+      const imported = render({ ...props, interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [{
+        schema_id: view.table.collection.id, name: "Sheet", has_header: true,
+        columns: [{ field_id: view.table.columns[0]!.id, name: "Original heading", width: null }], rows: [],
+      }] } } });
+      expect(native).toContain("Rename");
+      expect(imported).not.toContain("Rename");
+      expect(imported).not.toContain('class="ts-col-head" tabindex="0"');
+      if (compact) {
+        for (const markup of [native, imported]) {
+          expect(markup).toContain("Add column…");
+          expect(markup).toContain("Remove “");
+        }
+      } else {
+        expect(native).toContain('class="ts-col-head" tabindex="0"');
+        for (const markup of [native, imported]) {
+          expect(markup).toContain('data-column-action="+ column"');
+          expect(markup).toContain('data-column-action="Remove…"');
+        }
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("renders a navigable client-only draft row inside the grid", () => {
     const view = makeView();
     view.table.native_table_profile = true;
@@ -474,6 +539,17 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain('aria-label="New row"');
     expect(markup).toContain(">Add row</button>");
     expect(markup).toContain(">Discard</button>");
+  });
+
+  it.each([127, 128, 205, 8406])("offers drafts only below the insertion gate (%i stored rows)", count => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows = Array.from({ length: count }, (_, i) => ({ ...view.table.rows[0]!, id: `row-${i}`, key: `row-${i}` }));
+    const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
+    expect(markup.includes('aria-label="New row"')).toBe(count < 128);
+    expect(markup.includes("This table has reached the 128-row limit for adding rows here.")).toBe(count >= 128);
+    if (count > 200) expect(markup).toContain(`aria-rowcount="${count + 1}"`);
+    expect(view.table.rows).toHaveLength(count);
   });
 
   it("reserves windowed scroll height outside the table and leaves small tables intrinsic", () => {
@@ -574,8 +650,8 @@ describe("SheetShell static rendering", () => {
         ...view.table,
         collection: { ...view.table.collection, key: "catalog" },
         columns: [
-          { id: "sku", key: "code", display_name: "code", field_type: "text" },
-          { id: "cost", key: "price", display_name: "price", field_type: "number" },
+          { id: "sku", key: "code", display_name: "code", field_type: "text", required: true },
+          { id: "cost", key: "price", display_name: "price", field_type: "number", required: true },
         ],
         rows: [{
           id: "catalog-pen", key: "pen",
@@ -594,16 +670,16 @@ describe("SheetShell static rendering", () => {
     const catalogView: WorkbookView = {
       ...view,
       table: { ...view.table, collection: { id: "catalog-identity", key: "catalog", display_name: "catalog", entity_count: 1 }, columns: [
-        { id: "code-id", key: "code", display_name: "code", field_type: "text" },
-        { id: "category-id", key: "category", display_name: "category", field_type: "text" },
-        { id: "price-id", key: "price", display_name: "price", field_type: "number" },
+        { id: "code-id", key: "code", display_name: "code", field_type: "text", required: true },
+        { id: "category-id", key: "category", display_name: "category", field_type: "text", required: true },
+        { id: "price-id", key: "price", display_name: "price", field_type: "number", required: true },
       ] },
     };
     const marker = { occurrence: "occ-1", collectionId: "catalog-identity" };
     expect(salesCatalogLayoutEligible(catalogView, marker)).toBe(true);
     expect(salesCatalogLayoutEligible({ ...catalogView, occurrence: "replacement" }, marker)).toBe(false);
     expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, collection: { ...catalogView.table.collection, id: "other" } } }, marker)).toBe(false);
-    expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, columns: [...catalogView.table.columns, { id: "fourth", key: "note", display_name: "note", field_type: "text" }] } }, marker)).toBe(false);
+    expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, columns: [...catalogView.table.columns, { id: "fourth", key: "note", display_name: "note", field_type: "text", required: true }] } }, marker)).toBe(false);
   });
 
   it("renders linked Brief facts with the actual projection identity", () => {
@@ -835,6 +911,38 @@ describe("SheetShell static rendering", () => {
     expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).not.toBe(null);
   });
 
+  it("describes blanks and empty Text while decorating only optional stored empty Text", () => {
+    const view = makeView();
+    view.table.columns = [
+      { id: "optional", key: "optional", display_name: "Optional", field_type: "text", required: false },
+      { id: "required", key: "required", display_name: "Required", field_type: "text", required: true },
+      { id: "date", key: "date", display_name: "Date", field_type: "date", required: false },
+      { id: "boolean", key: "boolean", display_name: "Paid", field_type: "boolean", required: false },
+    ];
+    view.table.rows = [
+      { id: entityA, key: "a", blank_fields: ["optional", "date", "boolean"], fields: [projected(entityA, "required", { kind: "text", value: "" })] },
+      { id: entityB, key: "b", fields: [projected(entityB, "optional", { kind: "text", value: "" }), projected(entityB, "required", { kind: "text", value: "" })] },
+    ];
+    const markup = render({ view });
+    const marker = cellMarkup(markup, `cell:${entityB}:optional`)!;
+    expect(marker).toContain('ts-cell--empty-text');
+    expect(marker).toContain('aria-description="Empty text"');
+    expect(marker).not.toContain('title="Empty text"');
+    expect(marker).toContain('<span class="ts-cell-value" aria-hidden="true">&quot;&quot;</span>');
+    for (const id of ["optional", "date", "boolean"]) {
+      const blank = cellMarkup(markup, `cell:${entityA}:${id}`)!;
+      expect(blank).toContain('aria-description="Blank"');
+      expect(blank).not.toContain('title="Blank"');
+      expect(textOf(blank)).toBe("");
+      expect(blank).not.toContain('ts-cell--empty-text');
+    }
+    const required = cellMarkup(markup, `cell:${entityB}:required`)!;
+    expect(required).toContain('aria-description="Empty text"');
+    expect(required).not.toContain('ts-cell--empty-text');
+    expect(textOf(required)).toBe("");
+    expect(cellMarkup(markup, `cell:${entityB}:date`)).not.toContain('aria-description="Blank"');
+  });
+
   it("renders diagnostic long Latin and CJK cells with complete combined titles", () => {
     const values = [
       "Review partner brief and confirm ownership, launch timing, and rollback notes for the next release",
@@ -1050,5 +1158,25 @@ describe("work-file entry and Save availability", () => {
     expect(description).not.toBeNull();
     expect(markup).toContain(`id="${description![1]}"`);
     expect(markup).toContain(reason);
+  });
+});
+
+
+describe("native insertion limit presentation", () => {
+  it("removes the draft and Add row at 128 stored records and exposes the limit as a status", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const row = view.table.rows[0]!;
+    const record = (id: string) => ({ ...row, id, fields: row.fields.map(field => ({ ...field, target: { ...field.target, entity: id } })) });
+    view.table.rows = Array.from({ length: 127 }, (_, index) => record(`row-${index}`));
+    const before = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
+    expect(before).toContain('class="ts-entry-row"');
+    expect(before).toContain('>Add row</button>');
+    expect(before).not.toContain('ts-native-insertion-limit');
+    view.table.rows.push(record("inserted"));
+    const after = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
+    expect(after).not.toContain('class="ts-entry-row"');
+    expect(after).not.toContain('>Add row</button>');
+    expect(after).toContain('class="ts-hint ts-native-insertion-limit" role="status">This table has reached the 128-row limit for adding rows here.</p>');
   });
 });

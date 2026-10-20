@@ -1,3 +1,4 @@
+import { observeTableProjections, observedTable } from "./table-projection-observer.mjs";
 // Row-windowing edge cases on a real imported table larger than the window
 // threshold, through the normal UI:
 // a draft kept while scrolling away, density change geometry, Undo while the
@@ -13,7 +14,7 @@ import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
-const launchOptions = { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
+const launchOptions = { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) };
 const UNIQUE = 260;
 const DUPLICATES = 60;
 const work = await mkdtemp(path.join(tmpdir(), "tachiko-grid-window-"));
@@ -41,6 +42,7 @@ const browser = await chromium.launch(launchOptions);
 try {
   const context = await browser.newContext();
   await installDistRoutes(context, dist);
+  await observeTableProjections(context);
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.setDefaultTimeout(15_000);
@@ -53,7 +55,12 @@ try {
   assert.equal(await dialog.count(), 1, `import review opens: ${(await page.getByRole("alert").allTextContents()).join(" ")}`);
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-  assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES);
+  const imported = await observedTable(page);
+  assert.equal(imported.native_table_profile, true, "imported all-Text fixture is structurally native");
+  assert.equal(imported.rows.length, UNIQUE + DUPLICATES);
+  assert.equal(await grid(page).locator(".ts-entry-row").count(), 0);
+  await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
+  assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
   // A live draft survives scrolling far away and back.
   await rowAt(page, 5).locator("td").nth(1).dblclick();

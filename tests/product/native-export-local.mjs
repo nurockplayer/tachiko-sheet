@@ -10,6 +10,9 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
+import { runBlankDisplayCases } from "./blank-display-cases.mjs";
+import { runImportedExportRefusalCases } from "./imported-export-refusal-cases.mjs";
+import { runOptionalEditEntryCases } from "./optional-edit-entry-cases.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) throw new Error("BLOCKED: WORK_DIST must name the built product");
@@ -97,6 +100,20 @@ try {
   pid = (await cdp.send("SystemInfo.getProcessInfo")).processInfo.find(p => p.type === "browser")?.id;
   await cdp.detach(); assert.ok(Number.isInteger(pid), "owned browser PID required");
   await installDistRoutes(context, dist);
+  await context.addInitScript(() => {
+    window.__exportEvidence = { requests: [], replies: [], table: null };
+    const Original = window.Worker;
+    window.Worker = class extends Original {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", event => {
+          window.__exportEvidence.replies.push(structuredClone(event.data));
+          if (event.data.response?.type === "table") window.__exportEvidence.table = structuredClone(event.data.response.payload);
+        });
+      }
+      postMessage(message, ...args) { window.__exportEvidence.requests.push(structuredClone(message)); return super.postMessage(message, ...args); }
+    };
+  });
   const page = context.pages()[0]; page.setDefaultTimeout(10000);
   page.on("download", download => downloads.push(download.suggestedFilename()));
   await page.setViewportSize({ width: 1400, height: 1000 });
@@ -187,6 +204,10 @@ try {
   await page.getByLabel("Table", { exact: true }).selectOption("sales"); await ready(page);
   assert.deepEqual(await prepare(page,"csv",{sales:true}), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
   checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review");
+  await close(page);
+  await runBlankDisplayCases(page, { output, close, checks });
+  await runImportedExportRefusalCases(page, { close, prepare, downloads, checks });
+  await runOptionalEditEntryCases(page, { close, checks });
   console.log(JSON.stringify({status:"PASS",checks,downloads,output}));
 } finally {
   if(context) await context.close();

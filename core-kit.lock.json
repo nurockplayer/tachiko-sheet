@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
+  "sourceCommit": "375da29f7c67ed74bace7d214ef23716d2e2237b",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "a680af0a7f230b84e735fa2075360362c510139b49d5021f0101498c0d1268c3",
+  "artifactManifestSha256": "43910ca78d2ac037215770a97f0bf4dc88d4114bbfa6b2ce5e64c868ddd075e3",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6273009850",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/228#issuecomment-6288021040",
   "qualificationArtifactReview": {
-    "sourceCommit": "353c6e948b78eeee07f6e77bd350a54070c1c280",
-    "artifactManifestSha256": "a680af0a7f230b84e735fa2075360362c510139b49d5021f0101498c0d1268c3",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/225#issuecomment-6273009850"
+    "sourceCommit": "375da29f7c67ed74bace7d214ef23716d2e2237b",
+    "artifactManifestSha256": "43910ca78d2ac037215770a97f0bf4dc88d4114bbfa6b2ce5e64c868ddd075e3",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/228#issuecomment-6288021040"
   },
-  "notes": "Exact producer authorized by #225 / PR #226 round-2 inventory repair (Work #548/#549); the unchanged-exporter writer build and the prior independent lead build from clean detached Work checkouts match in all 25 files (manifest a680af0a). The existing lead build receipt supplies acquisition and independent reproduction provenance; writer proof is in docs/225-kit-handback.md. Product acceptance and the candidate review are separate."
+  "notes": "Exact producer authorized by #227/#228 (ADR-0045); independent clean detached writer and lead exports match byte for byte in all 25 files and SHA256SUMS. Lead reproduction receipt supplies acquisition provenance; writer proof is in docs/228-kit-handback.md. Product acceptance and independent candidate review remain separate."
 }

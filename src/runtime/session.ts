@@ -32,6 +32,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type PasteCellInput,
   type ColumnInitializer,
   type SheetRuntime,
   type ImportedWorkbook,
@@ -657,8 +658,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
-    const inputs = rows.map(row => [...row]);
+  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {
+    const inputs = rows.map(row => row.map(input => typeof input === "string" ? input : { ...input }));
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.trackerCommand, "cell paste");
       return command.call(client, { type: "paste_cells", expected_revision: revision, collection, start_entity: startEntity, start_field: startField, rows: inputs });
