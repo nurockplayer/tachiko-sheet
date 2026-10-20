@@ -1,4 +1,4 @@
-import { fieldDisplay } from "./field-display.js";
+import { cellDisplay } from "./field-display.js";
 import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 import type { SheetShellProps } from "../contracts.js";
 
@@ -24,21 +24,22 @@ export function BriefFacts({ entity, occurrence, revision, currentness, row, col
       <tbody>
         {columns.map((column) => {
           const field = fieldForColumn(row, column.id);
-          const display = fieldDisplay(field);
+          const display = cellDisplay(row, column);
           const numeric = field?.calculated?.status === "value" || field?.stored?.kind === "number";
           return (
             <tr className="ts-fact" key={column.id}>
               <th className="ts-fact-key" scope="row">{column.display_name}</th>
               <td
-                className={`ts-fact-value ts-cell--${display.tone}${numeric ? " ts-fact-value--numeric" : ""}`}
+                className={`ts-fact-value ts-cell--${display.tone}${numeric ? " ts-fact-value--numeric" : ""}${display.emptyTextMarker ? " ts-cell--empty-text" : ""}`}
                 data-testid={`brief:${entity}:${column.id}`}
                 data-work-occurrence={occurrence}
                 data-work-revision={revision}
                 data-work-entity={entity}
                 data-work-currentness={currentness}
-                title={display.title ?? undefined}
+                aria-description={display.description}
+                title={display.title === display.description ? undefined : display.title ?? undefined}
               >
-                {display.text}
+                <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
               </td>
             </tr>
           );

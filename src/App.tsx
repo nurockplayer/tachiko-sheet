@@ -35,6 +35,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type PasteCellInput,
   type ColumnInitializer,
   type RowCommandOutcome,
   type SheetRuntime,
@@ -1610,7 +1611,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.editCells(witness, edits));
   }
 
-  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: string[][]) {
+  function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
 

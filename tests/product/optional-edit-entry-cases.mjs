@@ -91,8 +91,57 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   assert.equal(pasted.rows[0].fields.find(field => field.target.field === ids[3]).stored.value, "Pasted");
   assert.deepEqual(pasted.rows[1].fields.find(field => field.target.field === ids[3]).stored, { kind: "text", value: "" }, "empty paste on a present Text keeps pre-PR behavior");
   assert.equal(await cell(1, 3).textContent(), '""');
+  // Linked facts must share the grid's column-aware presence rendering.
+  await cell(1, 3).click();
+  await page.getByRole("tab", { name: "Brief", exact: true }).click();
+  const emptyFact = page.getByTestId(`brief:${baseline.rows[1].id}:${ids[3]}`);
+  assert.equal(await emptyFact.textContent(), '""');
+  assert.equal(await emptyFact.getAttribute("aria-description"), "Empty text");
+  assert.equal(await emptyFact.locator(".ts-cell-value").getAttribute("aria-hidden"), "true");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await cell(0, 1).click();
+  await page.getByRole("tab", { name: "Brief", exact: true }).click();
+  const blankFact = page.getByTestId(`brief:${baseline.rows[0].id}:${ids[1]}`);
+  assert.equal(await blankFact.textContent(), "");
+  assert.equal(await blankFact.getAttribute("aria-description"), "Blank");
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
   await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
+  checks.push("Brief linked facts share grid optional empty-Text marker/accessibility and sparse blank rendering");
   checks.push("P1-a actual imported optional sparse slots: navigation/range selection; blank editor/no-op; exact typed target; atomic mixed blank/present paste; empty-on-blank unchanged; one-step Undo restores every blank/value/ID");
+
+  // One mixed overwrite/append request. Empty existing-row Text stays a raw
+  // value; only new optional slots carry explicit absence to paste_cells.
+  await cell(1, 0).click();
+  const beforeAppend = await projection();
+  const pasteCount = (await commands("paste_cells")).length;
+  const scalarBeforeAppend = (await commands("edit_scalar")).length;
+  const editsBeforeAppend = (await commands("edit_cells")).length;
+  const insertsBeforeAppend = (await commands("insert_row")).length;
+  await paste(cell(1, 0), "present\tkept\t2\tpresent-extra\nappended\t\t\t\nzero\t \t0\t");
+  await page.locator(".ts-clipboard-status").filter({ hasText: "Updated 3 rows" }).waitFor(); await ready();
+  assert.equal((await commands("paste_cells")).length, pasteCount + 1);
+  assert.equal((await commands("edit_scalar")).length, scalarBeforeAppend);
+  assert.equal((await commands("edit_cells")).length, editsBeforeAppend);
+  assert.equal((await commands("insert_row")).length, insertsBeforeAppend);
+  assert.deepEqual((await commands("paste_cells")).at(-1), { type: "paste_cells", expected_revision: beforeAppend.revision,
+    collection: baseline.collection.key, start_entity: baseline.rows[1].id, start_field: ids[0], rows: [
+      ["present", "kept", "2", "present-extra"],
+      ["appended", { kind: "clear" }, { kind: "clear" }, { kind: "clear" }],
+      ["zero", " ", "0", { kind: "clear" }],
+    ] });
+  const appended = await projection();
+  assert.equal(appended.rows.length, baseline.rows.length + 2);
+  for (const original of baseline.rows) assert.deepEqual(appended.rows.find(row => row.id === original.id), original);
+  const blankAppend = appended.rows.find(row => row.fields.some(field => field.target.field === ids[0] && field.stored?.value === "appended"));
+  assert.ok(blankAppend);
+  for (const i of [1, 2, 3]) await assertBlank(blankAppend, i);
+  const zeroAppend = appended.rows.find(row => row.fields.some(field => field.target.field === ids[0] && field.stored?.value === "zero"));
+  assert.ok(zeroAppend);
+  assert.deepEqual(zeroAppend.fields.find(field => field.target.field === ids[1]).stored, { kind: "text", value: " " });
+  assert.deepEqual(zeroAppend.fields.find(field => field.target.field === ids[2]).stored, { kind: "number", value: 0 });
+  await assertBlank(zeroAppend, 3);
+  await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
+  checks.push("append-paste real optional Text/Number blanks use explicit absence; existing records unchanged; whitespace/zero values preserved; one request and one Undo removes both appended records");
 
   const draft = () => page.locator(".ts-entry-row");
   const draftCell = index => draft().locator(`[data-entry-field="${ids[index]}"]`);

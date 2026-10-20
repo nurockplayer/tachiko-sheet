@@ -53,7 +53,7 @@ import { NewTableDialog } from "./NewTableDialog.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
-import { booleanText, cellDisplay, fieldClipboardText, fieldDisplay, type FieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { booleanText, cellDisplay, fieldClipboardText, type FieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
   cellKey,
   fieldForColumn,
@@ -138,7 +138,7 @@ function catalogPriceFocusTarget(view: WorkbookView): { entity: string; field: s
   if (priceColumns.length !== 1 || codeColumns.length !== 1) return null;
   const priceColumn = priceColumns[0]!;
   const codeColumn = codeColumns[0]!;
-  const penRows = view.table.rows.filter((row) => fieldDisplay(fieldForColumn(row, codeColumn.id)).text === "PEN");
+  const penRows = view.table.rows.filter((row) => cellDisplay(row, codeColumn).text === "PEN");
   if (penRows.length !== 1) return null;
   const row = penRows[0]!;
   const priceField = fieldForColumn(row, priceColumn.id);
@@ -894,7 +894,7 @@ export function SheetShell(props: SheetShellProps) {
     const start = draft ? { row: table.rows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
-      pendingDraft: rowDraftActive, start, rowCount: table.rows.length, columnTypes: columns.map(column => column.field_type),
+      pendingDraft: rowDraftActive, start, rowCount: table.rows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
       editable: (r, c) => {
         const row = table.rows[r], column = columns[c];
         const slot = row && column ? cellEditSlot(row, column) : null;

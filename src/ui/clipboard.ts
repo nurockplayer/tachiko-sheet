@@ -1,4 +1,5 @@
 /** Clipboard transport and grid geometry only; Work owns value validation. */
+import type { PasteCellInput } from "../contracts.js";
 import { nativeInsertionFits, nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 
 export const NATIVE_INSERTION_LIMIT_MESSAGE = "This table has reached the 128-row limit for adding rows here.";
@@ -62,10 +63,10 @@ export function clipboardBoolean(value: string, type: string): string {
 }
 export interface PasteContext {
   native: boolean; draft: boolean; blocked: boolean; pendingDraft: boolean;
-  start: CellAddress; rowCount: number; columnTypes: readonly string[];
+  start: CellAddress; rowCount: number; columnTypes: readonly string[]; columnRequired: readonly boolean[];
   editable(row: number, column: number): boolean;
 }
-export type PasteRoute = { kind: "refused"; message: string } | { kind: "draft" | "publish" | "edit"; rows: string[][] };
+export type PasteRoute = { kind: "refused"; message: string } | { kind: "draft" | "edit"; rows: string[][] } | { kind: "publish"; rows: PasteCellInput[][] };
 export function routePaste(rows: string[][], context: PasteContext): PasteRoute {
   const refuse = (message: string): PasteRoute => ({ kind: "refused", message });
   if (context.blocked) return refuse("Finish the current edit or operation before pasting.");
@@ -93,7 +94,17 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   // edit_cells carries typed booleans, so only the clipboard's exact tokens
   // can be represented. Numeric/date parsing remains entirely with Work.
   if (insideExistingRows && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
-  return { kind: context.draft ? "draft" : insideExistingRows ? "edit" : "publish", rows: rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!))) };
+  const normalized = rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!)));
+  if (context.draft || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
+  // Work 375da29f protocol.d.ts PasteCellInput + ADR-0045 §3: raw strings
+  // always set values; explicit clear expresses absence in paste_cells.
+  // Only newly appended optional Text/Number slots get that blank intent.
+  return { kind: "publish", rows: normalized.map((values, r) => values.map((value, c): PasteCellInput => {
+    const type = context.columnTypes[column + c];
+    return row + r >= context.rowCount && value === "" && context.columnRequired[column + c] === false && (type === "text" || type === "number")
+      ? { kind: "clear" } : value;
+  })) };
+
 }
 /** A type-only core refusal cannot reliably identify one cell in a block. */
 export function pasteRefusal(message: string, fieldType?: string, refusalCode?: string): string {
