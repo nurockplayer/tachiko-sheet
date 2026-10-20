@@ -13,6 +13,13 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // #228: separate clean detached writer/lead builds match; docs/228-kit-handback.md.
+    sourceCommit: 'd0198466f0f6c1c2cac144e30ad9a20de119d7e6',
+    artifactManifestSha256: 'b839f53f8196a182924e93a568fb4aa3bf305a83bf82215ec4dd6f1a38b4995a',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/228#issuecomment-6281604909',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/228#issuecomment-6281604909',
+  },
+  {
     // #225 / PR #226 inventory repair. Independent lead reproduction receipt;
     // writer byte identity and clean detached source proof: docs/225-kit-handback.md.
     sourceCommit: '353c6e948b78eeee07f6e77bd350a54070c1c280',

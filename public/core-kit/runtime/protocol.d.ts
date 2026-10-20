@@ -62,6 +62,8 @@ export type DiagnosticProjection = {
     }>;
 };
 export type FieldProjection = {
+    /** Absent stored value; omission means false. Empty Text is present. */
+    blank?: boolean;
     target: FieldTarget;
     address: string;
     stored: StoredValueProjection | null;
@@ -82,11 +84,14 @@ export type TableProjection = {
         key: string;
         display_name: string;
         field_type: string;
+        required: boolean;
         dropdown_options?: string[];
     }>;
+    /** fields contains present values only; blank_fields lists absent IDs in column order (omission means []). */
     rows: Array<{
         id: string;
         key: string;
+        blank_fields?: string[];
         fields: FieldProjection[];
     }>;
 };
@@ -208,7 +213,7 @@ export type TrackerCommand = {
     collection: string;
     start_entity: string | null;
     start_field: string;
-    rows: string[][];
+    rows: PasteCellInput[][];
 } | {
     type: "append_row";
     expected_revision: string;
@@ -236,10 +241,17 @@ export type TrackerCommand = {
     collection: string;
     name: string;
     field_type: string;
-    initializers: Array<{
+    required?: boolean;
+    initializers?: Array<{
         entity: string;
         input: ScalarEditInput;
     }>;
+} | {
+    type: "set_column_requiredness";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    required: boolean;
 } | {
     type: "rename_column";
     expected_revision: string;
@@ -256,6 +268,8 @@ export type TrackerCommand = {
     expected_revision: string;
 };
 export type ScalarEditInput = {
+    kind: "clear";
+} | {
     kind: "number";
     input: string;
 } | {
@@ -268,9 +282,13 @@ export type ScalarEditInput = {
     kind: "date";
     value: string;
 };
+/** Raw strings parse as the declared scalar type; only an explicit clear removes a value. */
+export type PasteCellInput = string | ScalarEditInput;
+/** required defaults to true; optional native authoring admits Text/Number only. */
 export type NewTableColumnInput = {
     name: string;
     field_type: string;
+    required?: boolean;
 };
 export type FormulaCopy = {
     source: FieldTarget;

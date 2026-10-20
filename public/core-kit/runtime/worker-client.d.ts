@@ -21,6 +21,8 @@ export declare class WorkerDesignerClient implements DesignerClient {
     duplicateCollection(expectedRevision: string, collection: string, name: string): Promise<DuplicateCollectionProjection>;
     /** Return complete entity and schema presentation invalidation from Rust. */
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
+    clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
+    setColumnRequiredness(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
     inspectProject(bytes: ArrayBuffer): Promise<OpenedProjection>;
     openProject(bytes: ArrayBuffer): Promise<OpenedProjection>;

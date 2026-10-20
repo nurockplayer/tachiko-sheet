@@ -62,10 +62,10 @@ function projected(
 
 function makeView(options: { columns?: boolean; titleValue?: string; titleDiagnostic?: boolean } = {}): WorkbookView {
   const columns = [
-    { id: "c-title", key: "title", display_name: "title", field_type: "text" },
-    { id: "c-impact", key: "impact", display_name: "impact", field_type: "number" },
-    { id: "c-priority", key: "priority", display_name: "priority", field_type: "number" },
-    { id: "c-notes", key: "notes", display_name: "notes", field_type: "text" },
+    { id: "c-title", key: "title", display_name: "title", field_type: "text", required: true },
+    { id: "c-impact", key: "impact", display_name: "impact", field_type: "number", required: true },
+    { id: "c-priority", key: "priority", display_name: "priority", field_type: "number", required: true },
+    { id: "c-notes", key: "notes", display_name: "notes", field_type: "text", required: true },
   ];
   const rows = [
     {
@@ -404,7 +404,7 @@ describe("projection access", () => {
     const columns = tableColumns(view.table);
     const notes = notesFieldFor(view.table.rows[0]!, columns);
     expect(notes?.target.field).toBe("c-notes");
-    expect(notesFieldFor(view.table.rows[0]!, [{ id: "other", key: "title", display_name: "title", field_type: "text" }])).toBe(null);
+    expect(notesFieldFor(view.table.rows[0]!, [{ id: "other", key: "title", display_name: "title", field_type: "text", required: true }])).toBe(null);
   });
 
   it("falls back to the row field order when no column list is projected", () => {
@@ -574,8 +574,8 @@ describe("SheetShell static rendering", () => {
         ...view.table,
         collection: { ...view.table.collection, key: "catalog" },
         columns: [
-          { id: "sku", key: "code", display_name: "code", field_type: "text" },
-          { id: "cost", key: "price", display_name: "price", field_type: "number" },
+          { id: "sku", key: "code", display_name: "code", field_type: "text", required: true },
+          { id: "cost", key: "price", display_name: "price", field_type: "number", required: true },
         ],
         rows: [{
           id: "catalog-pen", key: "pen",
@@ -594,16 +594,16 @@ describe("SheetShell static rendering", () => {
     const catalogView: WorkbookView = {
       ...view,
       table: { ...view.table, collection: { id: "catalog-identity", key: "catalog", display_name: "catalog", entity_count: 1 }, columns: [
-        { id: "code-id", key: "code", display_name: "code", field_type: "text" },
-        { id: "category-id", key: "category", display_name: "category", field_type: "text" },
-        { id: "price-id", key: "price", display_name: "price", field_type: "number" },
+        { id: "code-id", key: "code", display_name: "code", field_type: "text", required: true },
+        { id: "category-id", key: "category", display_name: "category", field_type: "text", required: true },
+        { id: "price-id", key: "price", display_name: "price", field_type: "number", required: true },
       ] },
     };
     const marker = { occurrence: "occ-1", collectionId: "catalog-identity" };
     expect(salesCatalogLayoutEligible(catalogView, marker)).toBe(true);
     expect(salesCatalogLayoutEligible({ ...catalogView, occurrence: "replacement" }, marker)).toBe(false);
     expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, collection: { ...catalogView.table.collection, id: "other" } } }, marker)).toBe(false);
-    expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, columns: [...catalogView.table.columns, { id: "fourth", key: "note", display_name: "note", field_type: "text" }] } }, marker)).toBe(false);
+    expect(salesCatalogLayoutEligible({ ...catalogView, table: { ...catalogView.table, columns: [...catalogView.table.columns, { id: "fourth", key: "note", display_name: "note", field_type: "text", required: true }] } }, marker)).toBe(false);
   });
 
   it("renders linked Brief facts with the actual projection identity", () => {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn } from "./row-entry-model.js";
 const columns = [
-  { id: "text", key: "text", display_name: "Item", field_type: "text" },
-  { id: "number", key: "number", display_name: "Price", field_type: "number" },
-  { id: "date", key: "date", display_name: "When", field_type: "date" },
-  { id: "boolean", key: "boolean", display_name: "Paid", field_type: "boolean" },
+  { id: "text", key: "text", display_name: "Item", field_type: "text", required: true },
+  { id: "number", key: "number", display_name: "Price", field_type: "number", required: true },
+  { id: "date", key: "date", display_name: "When", field_type: "date", required: true },
+  { id: "boolean", key: "boolean", display_name: "Paid", field_type: "boolean", required: true },
 ];
 describe("in-grid draft row intent", () => {
   it("requires scalar presence without validating Number or Date; empty Text, zero and false are input", () => {

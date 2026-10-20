@@ -21,6 +21,8 @@ export function tableColumns(table: WorkbookView["table"]): TableColumn[] {
     key: field.target.field,
     display_name: field.target.field,
     field_type: "unknown",
+    // Legacy display fallback: no evidence that this is an optional column.
+    required: true,
   }));
 }
 
