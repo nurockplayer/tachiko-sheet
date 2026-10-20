@@ -83,21 +83,20 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
     { target: target(0, 3), input: { kind: "text", value: "Pasted" } },
     { target: target(1, 1), input: { kind: "text", value: "updated" } },
     { target: target(1, 2), input: { kind: "number", input: "3" } },
-    { target: target(1, 3), input: { kind: "text", value: "" } },
+    { target: target(1, 3), input: { kind: "clear" } },
   ] });
   const pasted = await projection();
   await assertBlank(pasted.rows[0], 1);
   assert.equal(pasted.rows[0].fields.find(field => field.target.field === ids[2]).stored.value, 7);
   assert.equal(pasted.rows[0].fields.find(field => field.target.field === ids[3]).stored.value, "Pasted");
-  assert.deepEqual(pasted.rows[1].fields.find(field => field.target.field === ids[3]).stored, { kind: "text", value: "" }, "empty paste on a present Text keeps pre-PR behavior");
-  assert.equal(await cell(1, 3).textContent(), '""');
+  await assertBlank(pasted.rows[1], 3);
   // Linked facts must share the grid's column-aware presence rendering.
   await cell(1, 3).click();
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   const emptyFact = page.getByTestId(`brief:${baseline.rows[1].id}:${ids[3]}`);
-  assert.equal(await emptyFact.textContent(), '""');
-  assert.equal(await emptyFact.getAttribute("aria-description"), "Empty text");
-  assert.equal(await emptyFact.locator(".ts-cell-value").getAttribute("aria-hidden"), "true");
+  assert.equal(await emptyFact.textContent(), "");
+  assert.equal(await emptyFact.getAttribute("aria-description"), "Blank");
+  assert.equal(await emptyFact.locator(".ts-cell-value").getAttribute("aria-hidden"), null);
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await cell(0, 1).click();
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
@@ -106,7 +105,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   assert.equal(await blankFact.getAttribute("aria-description"), "Blank");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
-  checks.push("Brief linked facts share grid optional empty-Text marker/accessibility and sparse blank rendering");
+  checks.push("Brief linked facts share grid cleared optional Text accessibility and sparse blank rendering");
   checks.push("P1-a actual imported optional sparse slots: navigation/range selection; blank editor/no-op; exact typed target; atomic mixed blank/present paste; empty-on-blank unchanged; one-step Undo restores every blank/value/ID");
 
   // One mixed overwrite/append request. Empty existing-row Text stays a raw

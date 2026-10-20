@@ -70,7 +70,7 @@ export type ScalarEdit =
 
 export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean" };
 export type ColumnInitializer = { entity: string; input: ScalarEdit };
-export type CellEdit = { target: FieldTarget; input: ScalarEdit };
+export type CellEdit = { target: FieldTarget; input: ScalarEdit | { kind: "clear" } };
 export type RowInitializer = { field: string; input: ScalarEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =

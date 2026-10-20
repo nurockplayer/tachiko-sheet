@@ -8,7 +8,7 @@ const blank: TableRow = { id: "entity", key: "row", fields: [], blank_fields: ["
 describe("authoritative sparse edit slots", () => {
   it.each(["text", "number"])("addresses a blank %s by entity and field, without a FieldProjection", kind => {
     const slot = cellEditSlot(blank, column(kind))!;
-    expect(slot).toEqual({ target: { entity: "entity", field: "f" }, kind, original: "", blank: true, formula: false });
+    expect(slot).toEqual({ target: { entity: "entity", field: "f" }, kind, original: "", blank: true, formula: false, required: false });
     expect(pastedCellEdit(slot, kind === "text" ? "typed" : "0")).toEqual({ target: slot.target,
       input: kind === "text" ? { kind, value: "typed" } : { kind, input: "0" } });
   });
