@@ -115,15 +115,15 @@ async function select(table, rows, cols) {
   for (let c = 1; c < cols; c++) await page.keyboard.press("Shift+ArrowRight");
   for (let r = 1; r < rows; r++) await page.keyboard.press("Shift+ArrowDown");
 }
-async function unchangedPaste(text, message) {
+async function unchangedPaste(text, message, polite = false) {
   const before = await projection(), beforeRequests = (await commands()).length;
   const history = await page.getByRole("button", { name: "Undo", exact: true }).getAttribute("disabled");
   await cell(before, 0, 0).click(); await paste(cell(before, 0, 0), text);
   const refusal = status().filter({ hasText: message });
   await refusal.waitFor();
-  assert.equal(await refusal.getAttribute("role"), "alert", "paste refusal is announced assertively");
-  assert.equal(await refusal.getAttribute("aria-live"), "assertive");
-  assert.match(await refusal.getAttribute("class"), /ts-dialog-error/);
+  assert.equal(await refusal.getAttribute("role"), polite ? "status" : "alert", "paste refusal is announced");
+  assert.equal(await refusal.getAttribute("aria-live"), polite ? "polite" : "assertive");
+  if (!polite) assert.match(await refusal.getAttribute("class"), /ts-dialog-error/);
   assert.deepEqual(await projection(), before, "whole refusal leaves revision and every value unchanged");
   assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).getAttribute("disabled"), history);
   return (await commands()).length - beforeRequests;
@@ -219,8 +219,9 @@ try {
   await cell(table, 0, 0).press("F2");
   assert.equal(await page.locator('.ts-clipboard-status[role="alert"]:visible').count(), 0, "starting an edit clears refusal");
   await page.getByTestId("cell-editor").press("Escape");
-  for (const text of ["bad\t1,300\ttrue", "bad\t$5\ttrue", "bad\t\ttrue"]) await unchangedPaste(text, /needs a number/);
-  checks.push("3 invalid Number, locale, currency and blank Number refused by Work; no revision/history change");
+  for (const text of ["bad\t1,300\ttrue", "bad\t$5\ttrue"]) await unchangedPaste(text, /needs a number/);
+  assert.equal(await unchangedPaste("bad\t\ttrue", /This Number column needs a value in every row/, true), 0);
+  checks.push("3 invalid Number, locale and currency refused by Work; blank required Number refused locally; no revision/history change");
   for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/], ['"unclosed', /unfinished quote/], ['"x"tail', /malformed quotes/], [Array(129).fill("a\t1\ttrue").join("\n"), /128-row/]]) {
     assert.equal(await unchangedPaste(text, message), 0, "structural refusal never dispatches");
   }
@@ -332,9 +333,22 @@ try {
   assert.deepEqual((await projection()).rows, table.rows);
   checks.push("217.1 imported 2x3 at selection top-left: one edit_cells, one publication, one Undo/Redo and preserved focus");
 
-  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,300\t2", "bad\t$5\t2", "bad\t\t2"]) {
+  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,300\t2", "bad\t$5\t2"]) {
     assert.equal(await unchangedPaste(text, /needs a number/), 1);
   }
+  // #229: structurally native imported optional Number now clears explicitly.
+  const beforeClearPaste = await projection(), beforeClearRequests = (await commands()).length;
+  await cell(beforeClearPaste, 0, 0).click(); await paste(cell(beforeClearPaste, 0, 0), "bad\t\t2");
+  await status().filter({ hasText: "Updated 1 row" }).waitFor(); await ready();
+  assert.equal((await commands()).length, beforeClearRequests + 1);
+  assert.deepEqual((await commands()).at(-1).edits[1], { target: { entity: beforeClearPaste.rows[0].id, field: beforeClearPaste.columns[1].id }, input: { kind: "clear" } });
+  const afterClearPaste = await projection();
+  assert.ok(afterClearPaste.rows[0].blank_fields.includes(beforeClearPaste.columns[1].id));
+  assert.equal(afterClearPaste.rows[0].fields.some(field => field.target.field === beforeClearPaste.columns[1].id), false);
+  assert.deepEqual(afterClearPaste.rows.slice(1), beforeClearPaste.rows.slice(1));
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  assert.deepEqual((await projection()).rows, beforeClearPaste.rows, "one Undo restores optional Number presence and all other pasted inputs");
+  checks.push("229 imported native optional Number empty paste sends clear and one Undo restores presence and all values");
   await capture("imported-refusal");
   assert.equal(await unchangedPaste("雪".repeat(23_000), /too large/), 1, "UTF-8 request byte limit refuses in Work without truncation");
   assert.deepEqual((await commands()).at(-1).edits[0].input, { kind: "text", value: "雪".repeat(23_000) });

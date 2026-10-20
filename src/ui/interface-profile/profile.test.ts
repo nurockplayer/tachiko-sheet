@@ -402,7 +402,10 @@ describe("Interface Profile v1 closed contract", () => {
     const css = await readFile(new URL("../sheet-shell.css", import.meta.url), "utf8");
     const browser = await chromium.launch({
       headless: true,
-      ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}),
+      ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}),
+      // Single-process Chromium needs a startup window to finish launch in
+      // the sandbox; product lanes already use a persistent startup context.
+      ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"], ignoreDefaultArgs: ["--no-startup-window"] } : {}),
     });
     try {
       const page = await browser.newPage();

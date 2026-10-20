@@ -65,7 +65,8 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
-import { cellEditSlot, cellEditorUnchanged, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
+import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
+import { clearCellEdits } from "./clear-cells.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
@@ -611,7 +612,7 @@ export function SheetShell(props: SheetShellProps) {
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
-  const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean } | null>(null);
+  const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
@@ -843,8 +844,8 @@ export function SheetShell(props: SheetShellProps) {
     setClipboardMessage(current => current?.refused ? null : current);
   }, [view?.revision]);
 
-  function announceClipboard(text: string, refused = false): void {
-    setClipboardMessage({ text, refused });
+  function announceClipboard(text: string, refused = false, polite = false): void {
+    setClipboardMessage({ text, refused, polite });
   }
 
   function extendSelection(anchor: GridPosition, end: GridPosition): void {
@@ -920,8 +921,12 @@ export function SheetShell(props: SheetShellProps) {
           const column = columns[start.column + c]!;
           const slot = cellEditSlot(table.rows[start.row + r]!, column);
           if (!slot || slot.formula) { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
-          const edit = pastedCellEdit(slot, raw);
-          if (edit) edits.push(edit);
+          try {
+            const edit = pastedCellEdit(slot, raw, Boolean(table.native_table_profile));
+            if (edit) edits.push(edit);
+          } catch (error) {
+            announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here. Nothing was pasted."), true, true); return;
+          }
         }
       }
     }
@@ -937,10 +942,45 @@ export function SheetShell(props: SheetShellProps) {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
       announceClipboard(result.kind === "confirmed" ? `Updated ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
-        : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed");
+        : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed", edits.some(edit => edit.input.kind === "clear"));
     }, () => {
       if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) announceClipboard("The paste could not be confirmed. Refresh to check it before pasting again.", true);
     }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
+  }
+
+  async function publishClearEdits(edits: CellEdit[]): Promise<boolean> {
+    if (!view || !witness || !onEditCells) {
+      announceClipboard("Clearing cells is not available in this view.", true, true); return false;
+    }
+    if (!edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return true; }
+    const intent = completionIntent();
+    rowCommandPendingRef.current = true;
+    setCommitPending(true); setLocalError(null); setClipboardMessage(null);
+    try {
+      const result = await onEditCells(witness, edits);
+      if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return false;
+      announceClipboard(result.kind === "confirmed" ? `Cleared ${edits.length} cell${edits.length === 1 ? "" : "s"}. Save to keep these changes.`
+        : result.kind === "refused" ? result.message
+        : "The clear outcome needs review. Refresh to check it; the clear has not been retried.", result.kind !== "confirmed", true);
+      return result.kind === "confirmed";
+    } catch (error) {
+      if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) {
+        announceClipboard(explain(error, "The clear could not be confirmed. Refresh to check it before trying again."), true, true);
+      }
+      return false;
+    } finally { rowCommandPendingRef.current = false; setCommitPending(false); }
+  }
+
+  function clearGrid(position: GridPosition): void {
+    if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
+      announceClipboard("Finish the current edit or operation before clearing cells.", true, true); return;
+    }
+    if (!table) return;
+    const at = address(position);
+    try {
+      const edits = clearCellEdits(table.rows, columns, selectionRectangle ?? rectangle(at, at), Boolean(table.native_table_profile));
+      void publishClearEdits(edits);
+    } catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here."), true, true); }
   }
 
   // Reconcile roving state from every installed projection, independently of
@@ -1563,6 +1603,20 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       return true;
     }
+    if (editor.value === "" && table?.native_table_profile) {
+      let change: CellEdit | null;
+      try { change = emptyCellEdit(slot); }
+      catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "This cell needs a value."), true, true); return false; }
+      // Keep the existing required Text scalar path; optional clears use the
+      // atomic rows outcome so Work's formula refusal is shown verbatim.
+      if (change?.input.kind === "clear") {
+        const intent = completionIntent();
+        const accepted = await publishClearEdits([change]);
+        if (accepted) setEditor(null);
+        else focusRejectedEditorRef.current = intent;
+        return accepted;
+      }
+    }
     let edit: Parameters<SheetShellProps["onCommit"]>[2];
     if (editor.kind === "boolean") {
       const parsed = parseBooleanDraft(editor.value);
@@ -1581,6 +1635,7 @@ export function SheetShell(props: SheetShellProps) {
     if (accepted) {
       setEditor(null);
       setLocalError(null);
+      if (editor.value === "" && table?.native_table_profile) announceClipboard("Cleared 1 cell. Save to keep these changes.", false, true);
       // The publication may settle after the user has already chosen another
       // cell or control; never pull focus back from that newer choice.
       if (completionMayUpdateUi(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
@@ -1630,6 +1685,11 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    if ((event.key === "Delete" || event.key === "Backspace") && clipboardPosition(event.target)) {
+      event.preventDefault();
+      if (!draft && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) clearGrid(position);
+      return;
+    }
     if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
       const next = stepAddress(address(position), event.key, table?.rows.length ?? 0, columns.length);
@@ -2761,8 +2821,8 @@ export function SheetShell(props: SheetShellProps) {
                 : gridTable}
             </div>
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
-        <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && !clipboardMessage.refused ? clipboardMessage.text : null}</p>
-        {clipboardMessage?.refused ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
+        <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && (!clipboardMessage.refused || clipboardMessage.polite) ? clipboardMessage.text : null}</p>
+        {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {table.native_table_profile && ((onInsertRow && onRemoveRows) || (compactColumnActions && hasColumnActions)) ? <div className="ts-actions ts-row-actions ts-table-row-actions">

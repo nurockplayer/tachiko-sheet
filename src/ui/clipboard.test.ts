@@ -76,8 +76,9 @@ describe("paste routing", () => {
     expect(routePaste(rows, { ...ctx, native: true, rowCount: 127 }).kind).toBe("publish");
   });
   it.each([false, true])("accepts only exact Boolean tokens for typed edits (native=%s)", native => {
-    for (const value of ["yes", " TRUE ", "", "0"]) expect(routePaste([[value]], context({ native, columnTypes: ["boolean"] })))
+    for (const value of ["yes", " TRUE ", "0", ...(!native ? [""] : [])]) expect(routePaste([[value]], context({ native, columnTypes: ["boolean"] })))
       .toMatchObject({ kind: "refused", message: expect.stringContaining("true or false") });
+    if (native) expect(routePaste([[""]], context({ native, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [[""]] }); // requiredness pre-check refuses before dispatch
     expect(routePaste([["FaLsE"]], context({ native, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [["false"]] });
   });
   it("fills a partial draft without publishing or losing existing draft permission", () => {

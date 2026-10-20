@@ -93,7 +93,9 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   }
   // edit_cells carries typed booleans, so only the clipboard's exact tokens
   // can be represented. Numeric/date parsing remains entirely with Work.
-  if (insideExistingRows && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
+  // Native empty inputs are handled by the requiredness pre-check when the
+  // caller shapes edits; never convert empty Boolean text to false.
+  if (insideExistingRows && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !(context.native && value === "") && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
   const normalized = rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!)));
   if (context.draft || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
   // Work 375da29f protocol.d.ts PasteCellInput + ADR-0045 §3: raw strings
