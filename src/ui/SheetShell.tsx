@@ -2516,12 +2516,32 @@ export function SheetShell(props: SheetShellProps) {
     const menu = disclosure.querySelector<HTMLElement>(".ts-command-menu");
     if (!summary || !menu) return;
     const trigger = summary.getBoundingClientRect();
-    const bounds = menu.getBoundingClientRect();
     // A fixed menu escapes both the grid and the surrounding panel scroller.
     // Wrap long names and clamp above/below the trigger to the actual viewport.
-    menu.style.left = `${Math.max(16, Math.min(trigger.left, window.innerWidth - bounds.width - 16))}px`;
-    menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - bounds.height - 16))}px`;
+    // Place it horizontally first: wrapping, and therefore height, follows the
+    // width the menu actually takes at its final position.
+    const width = menu.getBoundingClientRect().width;
+    menu.style.left = `${Math.max(16, Math.min(trigger.left, window.innerWidth - width - 16))}px`;
+    const height = menu.getBoundingClientRect().height;
+    menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16))}px`;
   }
+
+  // The menu is measured while it is still settling (the filter editor, long
+  // names and line wrapping all arrive after the toggle event), so a one-shot
+  // measurement clamped a 400px menu to a viewport that could not hold it.
+  // Reposition whenever the open menu's size changes.
+  const columnToolbarObserverRef = useRef<ResizeObserver | null>(null);
+  function watchColumnToolbar(disclosure: HTMLDetailsElement | null): void {
+    columnToolbarObserverRef.current?.disconnect();
+    columnToolbarObserverRef.current = null;
+    if (!disclosure || typeof ResizeObserver === "undefined") return;
+    const menu = disclosure.querySelector<HTMLElement>(".ts-command-menu");
+    if (!menu) return;
+    const observer = new ResizeObserver(() => positionColumnToolbar(disclosure));
+    observer.observe(menu);
+    columnToolbarObserverRef.current = observer;
+  }
+  useEffect(() => () => watchColumnToolbar(null), []);
 
   function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
     if (!view || !table?.native_table_profile || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
@@ -3051,9 +3071,10 @@ export function SheetShell(props: SheetShellProps) {
         {(table.native_table_profile && onInsertRow && onRemoveRows) || (compactColumnActions && focusedColumn) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
-            if (!event.currentTarget.open) { setFilterDraft(null); return; }
+            if (!event.currentTarget.open) { watchColumnToolbar(null); setFilterDraft(null); return; }
             if (columnChangesBlocked) { event.currentTarget.open = false; return; }
             positionColumnToolbar(event.currentTarget);
+            watchColumnToolbar(event.currentTarget);
           }} onBlur={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
               event.currentTarget.open = false;
