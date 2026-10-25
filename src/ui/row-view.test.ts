@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { pastePastVisibleRows, rowViewFilterKeyAction, rowViewOrder } from "./row-view.js";
+import { pastePastVisibleRows, rowViewFilterKeyAction, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -91,6 +91,61 @@ describe("pastePastVisibleRows", () => {
     expect(pastePastVisibleRows(0, 2, 2)).toBe(false);
     expect(pastePastVisibleRows(1, 2, 2)).toBe(true);
     expect(pastePastVisibleRows(0, 3, 2)).toBe(true);
+  });
+});
+
+describe("rowViewPasteRefusal", () => {
+  it("refuses a paste past the last displayed row only while sorted or filtered", () => {
+    expect(rowViewPasteRefusal({}, 0, 2, 3)).toBe(null);
+    expect(rowViewPasteRefusal({}, 2, 2, 3)).toBe(null);
+    expect(rowViewPasteRefusal({ sort: { field: "c-name", direction: "asc" } }, 2, 2, 3))
+      .toBe("Clear the sort to paste past the last row.");
+    expect(rowViewPasteRefusal({ filter: { field: "c-name", text: "a" } }, 2, 2, 3))
+      .toBe("Clear the filter to paste past the visible rows.");
+    expect(rowViewPasteRefusal({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "a" } }, 2, 2, 3))
+      .toBe("Clear the sort and filter to paste past the visible rows.");
+  });
+
+  it("allows a paste that ends on the last displayed row", () => {
+    const settings = { sort: { field: "c-name", direction: "asc" as const }, filter: { field: "c-name", text: "a" } };
+    expect(rowViewPasteRefusal(settings, 0, 2, 2)).toBe(null);
+    expect(rowViewPasteRefusal(settings, 1, 2, 3)).toBe(null);
+  });
+
+  it("ignores a filter whose text is blank", () => {
+    expect(rowViewPasteRefusal({ filter: { field: "c-name", text: "   " } }, 2, 2, 3)).toBe(null);
+  });
+});
+
+describe("rowViewRecordForOccurrence", () => {
+  const installed = { occurrence: "occ-1", byCollection: { items: { sort: { field: "c-name", direction: "asc" as const } } } };
+
+  it("keeps settings while the projection is temporarily missing", () => {
+    expect(rowViewRecordForOccurrence(installed, undefined)).toBe(installed);
+    expect(rowViewRecordForOccurrence(installed, null)).toBe(installed);
+    expect(rowViewRecordForOccurrence(installed, "occ-1")).toBe(installed);
+  });
+
+  it("clears settings only for a different confirmed occurrence", () => {
+    expect(rowViewRecordForOccurrence(installed, "occ-2")).toEqual({ occurrence: "occ-2", byCollection: {} });
+    expect(rowViewRecordForOccurrence({ occurrence: null, byCollection: {} }, "occ-1")).toEqual({ occurrence: "occ-1", byCollection: {} });
+  });
+});
+
+describe("rowViewSettingsForColumns", () => {
+  it("drops settings that reference a removed column", () => {
+    const settings = { sort: { field: "c-name", direction: "asc" as const }, filter: { field: "c-price", text: "1" }, kept: new Set(["alpha"]) };
+    expect(rowViewSettingsForColumns(settings, new Set(["c-price"]))).toEqual({
+      sort: undefined, filter: { field: "c-price", text: "1" }, kept: new Set(["alpha"]),
+    });
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name"]))).toEqual({
+      sort: { field: "c-name", direction: "asc" }, filter: undefined, kept: undefined,
+    });
+  });
+
+  it("keeps settings through a rename, which leaves the id unchanged", () => {
+    const settings = { sort: { field: "c-name", direction: "asc" as const }, filter: { field: "c-price", text: "1" }, kept: new Set(["alpha"]) };
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name", "c-price"]))).toBe(settings);
   });
 });
 

@@ -76,7 +76,7 @@ import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { pastePastVisibleRows, rowViewFilterKeyAction, rowViewOrder, type RowViewSettings } from "./row-view.js";
+import { rowViewFilterKeyAction, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
@@ -98,11 +98,6 @@ interface EditorState {
 interface GridPosition {
   entity: string;
   field: string;
-}
-
-interface GridViewRecord {
-  occurrence: string | null;
-  byCollection: Record<string, RowViewSettings>;
 }
 
 interface PendingKeptRow {
@@ -610,7 +605,7 @@ export function SheetShell(props: SheetShellProps) {
   const [compactColumnActions, setCompactColumnActions] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse), (hover: none), (max-width: 700px)").matches);
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [columnAnnouncement, setColumnAnnouncement] = useState<string | null>(null);
-  const [gridViews, setGridViews] = useState<GridViewRecord>({ occurrence: null, byCollection: {} });
+  const [gridViews, setGridViews] = useState<RowViewRecord>({ occurrence: null, byCollection: {} });
   const [filterDraft, setFilterDraft] = useState<{ field: string; text: string } | null>(null);
   const [pendingKeptRow, setPendingKeptRow] = useState<PendingKeptRow | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
@@ -910,10 +905,29 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => { setCellSelection(null); setClipboardMessage(null); setFilterDraft(null); }, [collectionIdentity]);
 
   useEffect(() => {
-    const occurrence = view?.occurrence ?? null;
-    setGridViews((current) => current.occurrence === occurrence ? current : { occurrence, byCollection: {} });
-    setPendingKeptRow(null);
+    const occurrence = view?.occurrence;
+    // A missing projection (for example mid-Refresh) does not replace the
+    // work: keep its view settings until a different confirmed occurrence.
+    if (!occurrence) return;
+    setGridViews((current) => rowViewRecordForOccurrence(current, occurrence));
+    setPendingKeptRow((current) => current && current.occurrence === occurrence ? current : null);
   }, [view?.occurrence]);
+
+  // Removing a column invalidates its settings outright. Undo can restore the
+  // column, but it must not revive a filter the user never re-applied.
+  useEffect(() => {
+    if (!table || !view) return;
+    const occurrence = view.occurrence;
+    const collection = table.collection.key;
+    const columnIds = new Set(columns.map((column) => column.id));
+    setGridViews((current) => {
+      const settings = current.byCollection[collection];
+      if (current.occurrence !== occurrence || !settings) return current;
+      const next = rowViewSettingsForColumns(settings, columnIds);
+      if (next === settings) return current;
+      return { ...current, byCollection: { ...current.byCollection, [collection]: next } };
+    });
+  }, [columns, table, view]);
 
   useEffect(() => { setCellSelection(null); }, [filterSignature]);
 
@@ -1080,10 +1094,8 @@ export function SheetShell(props: SheetShellProps) {
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
-    if (!draft && gridSettings.filter && pastePastVisibleRows(start.row, decoded.length, displayRows.length)) {
-      announceClipboard("Clear the filter to paste past the visible rows.", true);
-      return;
-    }
+    const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, displayRows.length);
+    if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
       pendingDraft: rowDraftActive, start, rowCount: displayRows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
@@ -2950,7 +2962,6 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
-    const hasColumnActions = Boolean(onAddColumn || renameAvailable || onRemoveColumn || onSetColumnRequiredness);
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
@@ -2975,7 +2986,7 @@ export function SheetShell(props: SheetShellProps) {
               } : undefined}>{column.display_name}</span>
               {gridSettings.sort?.field === column.id ? <span className="ts-column-view-marker" aria-hidden="true" title={`Sorted ${gridSettings.sort.direction === "asc" ? "A to Z" : "Z to A"}${sortColumnName ? ` by ${sortColumnName}` : ""}`}>{gridSettings.sort.direction === "asc" ? "↑" : "↓"}</span> : null}
               {gridSettings.filter?.field === column.id ? <span className="ts-column-view-marker" aria-hidden="true" title={`Filtered by ${gridSettings.filter.text}`}>▽</span> : null}
-              {!compactColumnActions && table.native_table_profile && (renameAvailable || onAddColumn || onRemoveColumn || (onSetColumnRequiredness && canChangeRequiredness(table, column.id))) ? <>
+              {!compactColumnActions ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
                   if (!disclosure.open) { setFilterDraft(null); return; }
@@ -3010,13 +3021,13 @@ export function SheetShell(props: SheetShellProps) {
                     }} />
                     <button type="button" className="ts-button" aria-label="Filter…" data-column-action="Filter…" disabled={viewActionsBlocked} onClick={() => startGridFilter(column)} />
                     {renderFilterEditor(column)}
-                    {([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
+                    {table.native_table_profile ? ([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                       disclosure.open = false;
                       openColumnDialog(kind, trigger, column.id);
-                    }} />)}
-                    {onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
+                    }} />) : null}
+                    {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                       disclosure.open = false;
@@ -3024,7 +3035,7 @@ export function SheetShell(props: SheetShellProps) {
                     }} /> : null}
                   </div>
                 </details>
-                {index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
+                {table.native_table_profile && index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
               </> : null}</div>
             </th>)}
           </tr>
@@ -3083,9 +3094,9 @@ export function SheetShell(props: SheetShellProps) {
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
-        {table.native_table_profile && ((onInsertRow && onRemoveRows) || (compactColumnActions && hasColumnActions)) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
-          {onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
-          {compactColumnActions && hasColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
+        {(table.native_table_profile && onInsertRow && onRemoveRows) || (compactColumnActions && focusedColumn) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
+          {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
+          {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { setFilterDraft(null); return; }
             if (columnChangesBlocked) { event.currentTarget.open = false; return; }
             positionColumnToolbar(event.currentTarget);
@@ -3118,13 +3129,13 @@ export function SheetShell(props: SheetShellProps) {
               }}>Sort Z → A</button>
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={() => startGridFilter(focusedColumn)}>Filter…</button>
               {renderFilterEditor(focusedColumn)}
-              {([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+              {table.native_table_profile ? ([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                 disclosure.open = false;
                 openColumnDialog(kind, trigger, focusedColumn.id);
-              }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>)}
-              {onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+              }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>) : null}
+              {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                 disclosure.open = false;
@@ -3132,7 +3143,8 @@ export function SheetShell(props: SheetShellProps) {
               }}>{focusedColumn.required ? "Allow blanks" : "Require a value"}</button> : null}
             </div>
           </details> : null}
-          {onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span> : null}
+          {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
+            : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
         </div> : onInsertRow && onRemoveRows && !table.native_table_profile ? <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>

@@ -19,6 +19,12 @@ export interface RowViewSettings {
   kept?: ReadonlySet<string>;
 }
 
+/** View settings scoped to one work occurrence; the record survives a missing projection. */
+export interface RowViewRecord {
+  occurrence: string | null;
+  byCollection: Record<string, RowViewSettings>;
+}
+
 const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const NO_KEPT: ReadonlySet<string> = new Set();
 
@@ -33,6 +39,53 @@ interface SortableRow {
 /** True when the pasted block would run past the last row the filter shows. */
 export function pastePastVisibleRows(startRow: number, pastedRows: number, visibleRows: number): boolean {
   return startRow + pastedRows > visibleRows;
+}
+
+/**
+ * The publish/add-rows paste route addresses the stored order, so a paste that
+ * would extend past the displayed rows cannot carry display-order mapping.
+ * Refuse the whole paste whenever a sort or filter is active; null leaves the
+ * unsorted, unfiltered paste exactly as it was.
+ */
+export function rowViewPasteRefusal(
+  settings: Pick<RowViewSettings, "sort" | "filter">,
+  startRow: number,
+  pastedRows: number,
+  visibleRows: number,
+): string | null {
+  if (!pastePastVisibleRows(startRow, pastedRows, visibleRows)) return null;
+  const sorted = settings.sort !== undefined;
+  const filtered = (settings.filter?.text.trim() ?? "") !== "";
+  if (sorted && filtered) return "Clear the sort and filter to paste past the visible rows.";
+  if (sorted) return "Clear the sort to paste past the last row.";
+  if (filtered) return "Clear the filter to paste past the visible rows.";
+  return null;
+}
+
+/**
+ * Keep the installed view settings while a projection is temporarily missing.
+ * Only a different, confirmed occurrence (a replaced work) clears them.
+ */
+export function rowViewRecordForOccurrence(current: RowViewRecord, occurrence: string | null | undefined): RowViewRecord {
+  if (!occurrence || current.occurrence === occurrence) return current;
+  return { occurrence, byCollection: {} };
+}
+
+/**
+ * Drop settings that point at a column which no longer exists, so restoring
+ * the column (Undo) cannot silently revive a sort or filter. A renamed column
+ * keeps its id and therefore its settings.
+ */
+export function rowViewSettingsForColumns(settings: RowViewSettings, columnIds: ReadonlySet<string>): RowViewSettings {
+  const dropSort = settings.sort !== undefined && !columnIds.has(settings.sort.field);
+  const dropFilter = settings.filter !== undefined && !columnIds.has(settings.filter.field);
+  if (!dropSort && !dropFilter) return settings;
+  return {
+    ...settings,
+    sort: dropSort ? undefined : settings.sort,
+    filter: dropFilter ? undefined : settings.filter,
+    kept: dropFilter ? undefined : settings.kept,
+  };
 }
 
 export type RowViewFilterKeyAction = "apply" | "cancel" | null;
