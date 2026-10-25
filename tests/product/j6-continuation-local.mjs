@@ -6,6 +6,7 @@
 // Run through `pnpm acceptance:j6-continuation` so the production build exists.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -38,6 +39,17 @@ let server;
 let serverExit;
 let serverLog = "";
 let origin;
+// A cancelled run (Ctrl-C, a supervisor's SIGTERM) skips the async finally
+// below, so stop the owned children and drop the profile synchronously.
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, () => {
+    for (const owned of [child, server]) {
+      try { if (owned?.pid && owned.exitCode === null && owned.signalCode === null) owned.kill("SIGKILL"); } catch {}
+    }
+    try { rmSync(browserProfile, { recursive: true, force: true }); } catch {}
+    process.exit(code);
+  });
+}
 
 function stage(name, facts = {}) {
   stages.push({ stage: name, pid: processEvidence.at(-1)?.pid ?? null, at: new Date().toISOString(), ...facts });
@@ -152,7 +164,7 @@ async function startOwnedPersistentChromium() {
     throw blocked(`Chromium child process did not start: ${error === TIMED_OUT ? "no error event" : error.message}; ${stderr}`);
   }
   let port;
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (const deadline = Date.now() + timeout; Date.now() < deadline;) {
     if (spawnError || child.exitCode !== null || child.signalCode !== null) {
       throw blocked(`owned Chromium stopped before CDP startup: ${spawnError?.message ?? "process exited"}; ${stderr}`);
     }
