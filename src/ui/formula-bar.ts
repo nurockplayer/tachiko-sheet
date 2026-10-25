@@ -55,7 +55,7 @@ export function formulaBarState(input: {
   const field = fieldForColumn(row, column.id);
   const target = field?.target ?? { entity: input.focus.entity, field: column.id };
   const rowName = rowLabel(row, input.columns) || `Row ${index + 1}`;
-  const reason = !input.table.native_table_profile ? FORMULA_BAR_NON_NATIVE
+  const reason = !tableAdmitsFormulas(input.table) ? FORMULA_BAR_NON_NATIVE
     : !columnCanHoldFormula(field, column) ? FORMULA_BAR_COLUMN
     : input.currentness === "unknown" ? FORMULA_BAR_UNKNOWN
     : input.locked === true || input.currentness !== "current" ? FORMULA_BAR_LOCKED
@@ -86,6 +86,20 @@ export function boundFormulaDraft(state: FormulaBarState, draft: FormulaBarDraft
 
 export function formulaBarDraftValue(state: FormulaBarState, draft: FormulaBarDraft | null): string {
   return boundFormulaDraft(state, draft)?.value ?? state.source;
+}
+
+/**
+ * Work's native-table profile is a *scalar row authoring shape* check, not a
+ * stable table identity: one formula value makes it withdraw, even though Work
+ * keeps accepting formula updates on numeric and formula cells. A projected
+ * formula is Work's own evidence that this table admits formula authoring, so
+ * the bar trusts that instead of guessing a profile from column types. A
+ * tracker is never one, whatever its rows project.
+ */
+function tableAdmitsFormulas(table: WorkbookView["table"]): boolean {
+  if (table.tracker_profile === true) return false;
+  if (table.native_table_profile) return true;
+  return table.rows.some((row) => row.fields.some((field) => field.formula !== null));
 }
 
 function columnCanHoldFormula(field: TableRow["fields"][number] | null, column: TableColumn): boolean {

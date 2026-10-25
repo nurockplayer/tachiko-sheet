@@ -50,7 +50,8 @@ const formulaRow: TableRow = {
   key: "row-1",
   fields: [
     field("e1", "task", { kind: "text", value: "Reserve" }, null, "text"),
-    field("e1", "impact", { kind: "number", value: 10 }, { source: "min([task.qty], 4) + 1" }),
+    // Work projects a formula field with no stored scalar and no scalar kind.
+    field("e1", "impact", null, { source: "min([task.qty], 4) + 1" }),
   ],
 };
 const plainRow: TableRow = {
@@ -61,24 +62,36 @@ const plainRow: TableRow = {
     field("e2", "impact", { kind: "number", value: 3 }, null, "number"),
   ],
 };
+const scalarRow: TableRow = {
+  id: "row-3",
+  key: "row-3",
+  fields: [
+    field("e3", "task", { kind: "text", value: "Rent" }, null, "text"),
+    field("e3", "impact", { kind: "number", value: 3 }, null, "number"),
+  ],
+};
 const displayRows = [formulaRow, plainRow];
 
-function table(native = true): WorkbookView["table"] {
+function table(native = true, options: { rows?: TableRow[]; tracker?: boolean } = {}): WorkbookView["table"] {
   return {
     revision: "rev-1",
     collection: { id: "col-1", key: "plan", display_name: "Plan", entity_count: 2 },
     columns,
-    rows: displayRows,
+    rows: options.rows ?? displayRows,
     ...(native ? { native_table_profile: true } : {}),
+    ...(options.tracker === true ? { tracker_profile: true } : {}),
   };
 }
 
-function state(focus: { entity: string; field: string } | null, options: { native?: boolean; currentness?: "current" | "unknown"; locked?: boolean } = {}) {
+function state(
+  focus: { entity: string; field: string } | null,
+  options: { native?: boolean; currentness?: "current" | "unknown"; locked?: boolean; rows?: TableRow[]; tracker?: boolean } = {},
+) {
   return formulaBarState({
     viewIdentity: "occ-1\u0000rev-1",
-    table: table(options.native ?? true),
+    table: table(options.native ?? true, options),
     columns,
-    displayRows,
+    displayRows: options.rows ?? displayRows,
     focus,
     currentness: options.currentness ?? "current",
     ...(options.locked === undefined ? {} : { locked: options.locked }),
@@ -115,10 +128,28 @@ describe("formulaBarState", () => {
     expect(state(null).editable).toBe(false);
     expect(state({ entity: "e1", field: "task" }).editable).toBe(true);
     expect(state({ entity: "sheet:draft-row", field: "impact" }).reason).toBe(FORMULA_BAR_DRAFT_ROW);
-    expect(state({ entity: "e1", field: "impact" }, { native: false }).reason).toBe(FORMULA_BAR_NON_NATIVE);
+    expect(state({ entity: "e3", field: "impact" }, { native: false, rows: [scalarRow] }).reason).toBe(FORMULA_BAR_NON_NATIVE);
     expect(state({ entity: "e1", field: "impact" }, { currentness: "unknown" }).reason).toBe(FORMULA_BAR_UNKNOWN);
     expect(state({ entity: "e1", field: "impact" }, { locked: true }).reason).toBe(FORMULA_BAR_LOCKED);
     expect(state({ entity: "e1", field: "impact" }, { locked: true }).editable).toBe(false);
+  });
+
+  it("stays editable when a formula has withdrawn Work's row-authoring profile", () => {
+    // native_table_profile is a scalar row shape check, so Work drops it as
+    // soon as a row holds a formula. After a successful submit the focused
+    // formula cell must remain editable with no read-only reason.
+    const value = state({ entity: "e1", field: "impact" }, { native: false });
+    expect(value.source).toBe("min([task.qty], 4) + 1");
+    expect(value.editable).toBe(true);
+    expect(value.reason).toBeNull();
+    // A sibling numeric cell keeps Work's scalar kind and stays formula-capable.
+    const sibling = state({ entity: "e2", field: "impact" }, { native: false });
+    expect(sibling.editable).toBe(true);
+    expect(sibling.reason).toBeNull();
+  });
+
+  it("never treats a tracker as formula-capable, whatever its rows project", () => {
+    expect(state({ entity: "e1", field: "impact" }, { native: false, tracker: true }).reason).toBe(FORMULA_BAR_NON_NATIVE);
   });
 
   it("does not guess a formula for a column Work never projected", () => {
@@ -182,11 +213,20 @@ describe("FormulaBar", () => {
   });
 
   it("is read-only with its reason outside a native table", () => {
-    const bar = state({ entity: "e1", field: "impact" }, { native: false });
+    const bar = state({ entity: "e3", field: "impact" }, { native: false, rows: [scalarRow] });
     const html = render({ state: bar, draft: null, pending: false, error: null });
     expect(html).toContain("ts-formula-bar--readonly");
     expect(html).toContain("readonly");
     expect(html).toContain(FORMULA_BAR_NON_NATIVE);
+  });
+
+  it("stays editable after a formula submit withdrew Work's row-authoring profile", () => {
+    const bar = state({ entity: "e1", field: "impact" }, { native: false });
+    const html = render({ state: bar, draft: null, pending: false, error: null });
+    expect(html).toContain("min([task.qty], 4) + 1");
+    expect(html).toContain('placeholder="Enter a formula"');
+    expect(html).not.toContain("readonly");
+    expect(html).not.toContain(FORMULA_BAR_NON_NATIVE);
   });
 
   it("shows Work's refusal verbatim below the bar and keeps the draft", () => {
