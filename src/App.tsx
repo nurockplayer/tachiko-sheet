@@ -1581,7 +1581,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       return Promise.resolve({ kind: "refused", message: "This change belongs to an older view. Refresh before trying again." });
     }
     const apply = () => mutationCompletion.run<RowCommandOutcome>({ kind: "rows", witness, dispatch: command }, result => {
-      if (result.kind === "published") return { kind: "confirmed" };
+      if (result.kind === "published") return { kind: "confirmed", addedEntities: result.addedEntities };
       if (result.kind === "refused") return result;
       return { kind: "recovery" };
     }, end);

@@ -74,7 +74,7 @@ export type CellEdit = { target: FieldTarget; input: ScalarEdit | { kind: "clear
 export type RowInitializer = { field: string; input: ScalarEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
-  | { kind: "confirmed" }
+  | { kind: "confirmed"; addedEntities?: readonly string[] }
   | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string }
   | { kind: "recovery" };
 

@@ -76,7 +76,7 @@ import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { rowViewFilterKeyAction, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { rowViewBlockRows, rowViewDisplaySettings, rowViewFilterKeyAction, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsAfterProjection, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
@@ -98,14 +98,6 @@ interface EditorState {
 interface GridPosition {
   entity: string;
   field: string;
-}
-
-interface PendingKeptRow {
-  occurrence: string;
-  collection: string;
-  revision: string;
-  filter: string;
-  previousEntities: ReadonlySet<string>;
 }
 
 interface HistoryFocusRequest {
@@ -607,7 +599,6 @@ export function SheetShell(props: SheetShellProps) {
   const [columnAnnouncement, setColumnAnnouncement] = useState<string | null>(null);
   const [gridViews, setGridViews] = useState<RowViewRecord>({ occurrence: null, byCollection: {} });
   const [filterDraft, setFilterDraft] = useState<{ field: string; text: string } | null>(null);
-  const [pendingKeptRow, setPendingKeptRow] = useState<PendingKeptRow | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
   const [newTableOpen, setNewTableOpen] = useState(false);
@@ -856,22 +847,17 @@ export function SheetShell(props: SheetShellProps) {
       filter: rawGridSettings?.filter && rawGridSettings.filter.text.trim() && ids.has(rawGridSettings.filter.field)
         ? rawGridSettings.filter : undefined,
       kept: rawGridSettings?.kept,
+      pending: rawGridSettings?.pending,
     };
   }, [columns, rawGridSettings]);
   const filterSignature = gridSettings.filter ? `${gridSettings.filter.field}\u0000${gridSettings.filter.text}` : "";
   // A confirmed insertion becomes visible in the same render that installs the
   // new projection, so the existing focus request can find its cell. The
-  // effect below then records it as kept for later renders.
-  const pendingKeptEntities = useMemo(() => {
-    if (!pendingKeptRow || !view || !table) return undefined;
-    if (view.occurrence !== pendingKeptRow.occurrence || table.collection.key !== pendingKeptRow.collection
-      || filterSignature !== pendingKeptRow.filter || view.revision === pendingKeptRow.revision) return undefined;
-    return table.rows.map(rowEntity).filter((entity) => !pendingKeptRow.previousEntities.has(entity));
-  }, [filterSignature, pendingKeptRow, table, view]);
-  const displaySettings = useMemo<RowViewSettings>(() => {
-    if (!pendingKeptEntities?.length) return gridSettings;
-    return { ...gridSettings, kept: new Set([...(gridSettings.kept ?? []), ...pendingKeptEntities]) };
-  }, [gridSettings, pendingKeptEntities]);
+  // effect below then commits it as kept for later renders.
+  const displaySettings = useMemo<RowViewSettings>(
+    () => rowViewDisplaySettings(gridSettings, table?.rows ?? []),
+    [gridSettings, table],
+  );
   const displayRows = useMemo(
     () => table ? rowViewOrder(table.rows, columns, displaySettings) : [],
     [columns, displaySettings, table],
@@ -910,7 +896,6 @@ export function SheetShell(props: SheetShellProps) {
     // work: keep its view settings until a different confirmed occurrence.
     if (!occurrence) return;
     setGridViews((current) => rowViewRecordForOccurrence(current, occurrence));
-    setPendingKeptRow((current) => current && current.occurrence === occurrence ? current : null);
   }, [view?.occurrence]);
 
   // Removing a column invalidates its settings outright. Undo can restore the
@@ -965,15 +950,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function applyGridFilter(field: string, text: string): void {
-    const trimmed = text.trim();
-    updateGridSettings((current) => {
-      const unchanged = current.filter?.field === field && current.filter?.text === trimmed;
-      return {
-        ...current,
-        filter: trimmed ? { field, text: trimmed } : undefined,
-        kept: unchanged ? current.kept : undefined,
-      };
-    });
+    updateGridSettings((current) => rowViewSettingsForFilter(current, field, text));
     setFilterDraft(null);
   }
 
@@ -1026,18 +1003,13 @@ export function SheetShell(props: SheetShellProps) {
     </form>;
   }
 
+  // A waiting insertion becomes kept only when its row actually appears in
+  // this table's projection. A revision change alone does not consume it, and
+  // the state lives in the table's own settings, so another table cannot drop it.
   useEffect(() => {
-    if (!pendingKeptRow || !view || !table) return;
-    if (view.occurrence !== pendingKeptRow.occurrence || table.collection.key !== pendingKeptRow.collection
-      || filterSignature !== pendingKeptRow.filter) {
-      setPendingKeptRow(null);
-      return;
-    }
-    if (view.revision === pendingKeptRow.revision) return;
-    const added = table.rows.map(rowEntity).filter((entity) => !pendingKeptRow.previousEntities.has(entity));
-    if (added.length > 0) keepGridRows(added);
-    setPendingKeptRow(null);
-  }, [filterSignature, pendingKeptRow, table, view]);
+    if (!view || !table || !gridSettings.pending) return;
+    updateGridSettings((current) => rowViewSettingsAfterProjection(current, table.rows));
+  }, [gridSettings.pending, table, view]);
 
   // Focus/selection alone does not dismiss a refusal. A different projection or
   // an explicit edit does; ordinary copy/paste actions replace the announcement.
@@ -1118,11 +1090,12 @@ export function SheetShell(props: SheetShellProps) {
     const anchor = displayRows[start.row];
     if (!anchor || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
     const edits: CellEdit[] = [];
+    const blockRows = rowViewBlockRows(displayRows, start.row, route.rows.length);
     if (route.kind === "edit") {
       for (const [r, values] of route.rows.entries()) {
         for (const [c, raw] of values.entries()) {
           const column = columns[start.column + c]!;
-          const slot = cellEditSlot(displayRows[start.row + r]!, column);
+          const slot = cellEditSlot(blockRows[r]!, column);
           if (!slot || slot.formula) { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
           try {
             const edit = pastedCellEdit(slot, raw, Boolean(table.native_table_profile));
@@ -1134,7 +1107,7 @@ export function SheetShell(props: SheetShellProps) {
       }
     }
     if (route.kind === "edit" && edits.length === 0) { announceClipboard("The pasted cells are unchanged."); return; }
-    if (route.kind === "edit") keepGridRows(route.rows.map((_, r) => rowEntity(displayRows[start.row + r]!)));
+    if (route.kind === "edit") keepGridRows(blockRows.map(rowEntity));
     const intent = completionIntent();
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
@@ -1184,7 +1157,7 @@ export function SheetShell(props: SheetShellProps) {
     const area = selectionRectangle ?? rectangle(at, at);
     try {
       const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile));
-      keepGridRows(displayRows.slice(area.top, area.bottom + 1).map(rowEntity));
+      keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
       void publishClearEdits(edits);
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here."), true, true); }
   }
@@ -2502,10 +2475,12 @@ export function SheetShell(props: SheetShellProps) {
         setRowDraft((current) => current === rowDraft ? null : current);
         setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
           previousEntities: view.table.rows.map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
-        if (keepNewRow) setPendingKeptRow({
-          occurrence: view.occurrence, collection: view.table.collection.key,
-          revision: view.revision, filter: filterSignature, previousEntities,
-        });
+        // Recorded in that table's own settings: switching tables must not
+        // drop the wait for this insertion's projection.
+        if (keepNewRow) updateGridSettings((current) => ({ ...current, pending: {
+          previousEntities,
+          insertedEntities: result.addedEntities ? new Set(result.addedEntities) : undefined,
+        } }));
       } else if (result.kind === "refused") {
         const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
         setRowError(refusal);
@@ -3308,12 +3283,14 @@ export function SheetShell(props: SheetShellProps) {
       <p className="ts-empty">Add a row in Table to see its linked facts here.</p>
     </div>;
     const entity = rowEntity(selectedRow);
-    const rowNumber = table ? table.rows.indexOf(selectedRow) + 1 : null;
+    // The number follows the displayed order, like the Table tab. A row the
+    // filter hides has no displayed number.
+    const displayIndex = rowIndexByEntity.get(entity);
     return (
       <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief-panel">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
         <h1 className="ts-content-heading">Brief</h1>
-        <p className="ts-content-meta">Row {rowNumber} · same record as Table</p>
+        <p className="ts-content-meta">{displayIndex === undefined ? "Same record as Table" : `Row ${displayIndex + 1} · same record as Table`}</p>
         <div className="ts-brief-layout">
           <section className="ts-brief-facts" aria-labelledby="brief-facts-heading">
             <h2 className="ts-content-heading" id="brief-facts-heading">Linked facts</h2>

@@ -17,7 +17,7 @@ function harness() {
   const finish = () => { inFlight = false; effects.push("finish"); };
   let observed: KeyedGroupedSumResult[] = [];
   const port: MutationCompletionPort = {
-    state: () => state,
+    state: () => ({ ...state }),
     newTable: {
       close: async () => { effects.push("close"); },
       resetClosed() { effects.push("reset-closed"); state.view = null; state.history = emptyLocalHistory(); markers.initial = null; markers.changed = null; },
@@ -63,6 +63,15 @@ describe("mutation completion boundaries", () => {
     expect(h.state.definitionIds).toEqual([]); expect(h.state.currentness).toBe("current");
     expect(h.state.history).toMatchObject({ undoCount: 0, redoCount: 1, revision: "r1" });
     expect(h.recovery).toBeNull();
+  });
+  it("reports the entities a confirmed row publication added to the viewed table", async () => {
+    const h = harness();
+    h.state.definitionIds = [];
+    const after = view("r1");
+    after.table.rows = [{ id: "beta", key: "beta", fields: [] }];
+    const result = await h.completion.run({ kind: "rows", witness,
+      dispatch: async () => ({ view: after, publication: { base_revision: "r0", resulting_revision: "r1", entities: ["beta"], fields: [], schemas: [], schema_fields: [], affected_calculations: [] } }) });
+    expect(result).toMatchObject({ kind: "published", addedEntities: ["beta"] });
   });
   it("retains scalar input for review without fabricating known publication", async () => {
     const h = harness(); let dispatches = 0;
