@@ -1,6 +1,7 @@
 import type { WorkbookView } from "../contracts.js";
 import { seedTextOf } from "./field-display.js";
-import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
+import { notesFieldFor, tableColumns } from "./projection-access.js";
+import { rowSource } from "./row-source.js";
 
 /**
  * An unapplied Brief notes edit. It is applicable only while the committed
@@ -64,7 +65,7 @@ export function markNotesConflicts(drafts: NotesDraft[], view: WorkbookView | nu
   let changed = false;
   const next = drafts.flatMap((draft) => {
     if (draft.occurrence !== view.occurrence) return [draft];
-    const row = view.table.rows.find((candidate) => rowEntity(candidate) === draft.entity);
+    const row = rowSource(view.table).byEntity(draft.entity);
     const field = row ? notesFieldFor(row, columns) : null;
     if (!field) return [draft];
     const committed = seedTextOf(field);

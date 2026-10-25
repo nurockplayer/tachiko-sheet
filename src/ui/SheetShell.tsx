@@ -68,6 +68,7 @@ import {
   type TableRow,
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
+import { rowSource } from "./row-source.js";
 import { sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
@@ -148,7 +149,7 @@ function catalogPriceFocusTarget(view: WorkbookView): { entity: string; field: s
   if (priceColumns.length !== 1 || codeColumns.length !== 1) return null;
   const priceColumn = priceColumns[0]!;
   const codeColumn = codeColumns[0]!;
-  const penRows = view.table.rows.filter((row) => cellDisplay(row, codeColumn).text === "PEN");
+  const penRows = rowSource(view.table).allRowsForNow().filter((row) => cellDisplay(row, codeColumn).text === "PEN");
   if (penRows.length !== 1) return null;
   const row = penRows[0]!;
   const priceField = fieldForColumn(row, priceColumn.id);
@@ -865,7 +866,7 @@ export function SheetShell(props: SheetShellProps) {
       setSelectedEntity(null);
       return;
     }
-    const entities = view.table.rows.map(rowEntity);
+    const entities = rowSource(view.table).allRowsForNow().map(rowEntity);
     setSelectedEntity((previous) => (previous && entities.includes(previous) ? previous : entities[0] ?? null));
   }, [view]);
 
@@ -877,7 +878,7 @@ export function SheetShell(props: SheetShellProps) {
   const columns = useMemo(() => table ? tableColumns(table).map(column => ({
     ...column, display_name: names.column(table.collection.id, column.id) ?? column.display_name,
   })) : [], [table, names]);
-  const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(table.rows.length));
+  const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(rowSource(table).total));
   const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
   const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
   // View settings live only in React state, scoped to the current occurrence
@@ -898,7 +899,7 @@ export function SheetShell(props: SheetShellProps) {
   // A confirmed insertion is already in the installed projection, so its kept
   // entry is committed with the confirmation rather than by a later effect.
   const displayRows = useMemo(
-    () => table ? rowViewOrder(table.rows, columns, gridSettings) : [],
+    () => table ? rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings) : [],
     [columns, gridSettings, table],
   );
   const gridOrder = useMemo(() => {
@@ -1236,7 +1237,8 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (!table || !collectionIdentity) return;
     const previous = focusedProjectionRef.current;
-    const rows = [...table.rows.map(rowEntity), ...(hasDraftRow ? [DRAFT_ROW] : [])];
+    const dataRows = rowSource(table).allRowsForNow().map(rowEntity);
+    const rows = [...dataRows, ...(hasDraftRow ? [DRAFT_ROW] : [])];
     const fields = columns.map(column => column.id);
     focusedProjectionRef.current = { identity: collectionIdentity, rows, fields };
     if (previous?.identity !== collectionIdentity) {
@@ -1247,7 +1249,6 @@ export function SheetShell(props: SheetShellProps) {
     setFocusedKey(current => {
       // Preserve the established data-row fallback when a published row is
       // removed. The draft becomes the fallback only for an empty table.
-      const dataRows = table.rows.map(rowEntity);
       if (hasDraftRow && dataRows.length === 0 && current && !current.startsWith(`${DRAFT_ROW}\u0000`) && fields[0]) return cellKey(DRAFT_ROW, fields[0]);
       const nextRows = current?.startsWith(`${DRAFT_ROW}\u0000`) || dataRows.length === 0 ? rows : dataRows;
       return survivingFocusedKey(current, previous, { rows: nextRows, fields });
@@ -1365,8 +1366,8 @@ export function SheetShell(props: SheetShellProps) {
 
   const selectedRow = useMemo(() => {
     if (!table) return null;
-    const rows = table.rows;
-    return rows.find((row) => rowEntity(row) === selectedEntity) ?? rows[0] ?? null;
+    const source = rowSource(table);
+    return (selectedEntity === null ? undefined : source.byEntity(selectedEntity)) ?? source.rowAt(0) ?? null;
   }, [table, selectedEntity]);
   const notesField = useMemo(() => {
     if (!selectedRow) return null;
@@ -1774,7 +1775,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function formulaCellAt(position: GridPosition): boolean {
-    const row = table?.rows.find((candidate) => rowEntity(candidate) === position.entity);
+    const row = table ? rowSource(table).byEntity(position.entity) : undefined;
     const column = columns.find((candidate) => candidate.id === position.field);
     return Boolean(row && column && isFormulaCell(row, column));
   }
@@ -2813,7 +2814,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function currentEditorSlot(state: GridPosition): CellEditSlot | null {
     if (!table) return null;
-    const row = table.rows.find((candidate) => rowEntity(candidate) === state.entity);
+    const row = rowSource(table).byEntity(state.entity);
     const column = columns.find(candidate => candidate.id === state.field);
     return row && column ? cellEditSlot(row, column) : null;
   }
@@ -2890,7 +2891,7 @@ export function SheetShell(props: SheetShellProps) {
         // Inputs are locked during dispatch. Clear only this submitted draft.
         setRowDraft((current) => current === rowDraft ? null : current);
         setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
-          previousEntities: view.table.rows.map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
+          previousEntities: rowSource(view.table).allRowsForNow().map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
         // The new row is already in the installed projection. Keep it visible
         // under the active filter, in this table's own settings. A publication
         // that named no row keeps nothing.
@@ -2996,7 +2997,7 @@ export function SheetShell(props: SheetShellProps) {
     if (editor) setEditor(null);
     columnTriggerRef.current = trigger;
     setColumnAnnouncement(null);
-    const base = { ...witness!, collection: table.collection.key, rowEntities: table.rows.map(rowEntity) };
+    const base = { ...witness!, collection: table.collection.key, rowEntities: rowSource(table).allRowsForNow().map(rowEntity) };
     setColumnDialog(kind === "add" ? { ...base, kind } : { ...base, kind, field: column!.id, name: column!.display_name });
   }
 
@@ -3373,7 +3374,7 @@ export function SheetShell(props: SheetShellProps) {
             </span>
           ) : null}
           <span className="ts-workbook-row-count">
-            {table ? `${table.rows.length} rows · ${columns.length} columns` : ""}
+            {table ? `${rowSource(table).total} rows · ${columns.length} columns` : ""}
           </span>
         </div>
     );
@@ -3384,7 +3385,7 @@ export function SheetShell(props: SheetShellProps) {
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
-    const viewStatus = rowViewStatusText(columns, gridSettings, displayRows.length, table.rows.length);
+    const viewStatus = rowViewStatusText(columns, gridSettings, displayRows.length, rowSource(table).total);
     const sortColumnName = columns.find(column => column.id === gridSettings.sort?.field)?.display_name;
     const hasResults = j4DefinitionIds.length > 0;
     const visibleSalesTip = hasResults && !resultsHidden && salesEntryTip?.occurrence === view?.occurrence
@@ -3853,8 +3854,9 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderInteropPanel(): ReactNode {
     if (!view || !table) return null;
-    const allFields = table.rows.flatMap((row) => row.fields.filter((field) => field.editable_scalar === "text").map((field) => field.target));
-    const entities = table.rows.map(rowEntity);
+    const rows = rowSource(table).allRowsForNow();
+    const allFields = rows.flatMap((row) => row.fields.filter((field) => field.editable_scalar === "text").map((field) => field.target));
+    const entities = rows.map(rowEntity);
     const keyFields = columns.map((column) => column.id);
     const preview = interop?.cleanupPreview ?? null;
     return <div role="tabpanel" id={panelId("interop")} aria-labelledby={tabId("interop")} className="ts-panel ts-interop">
@@ -3877,7 +3879,7 @@ export function SheetShell(props: SheetShellProps) {
               <table className="ts-interop-targets" aria-label="Cleanup targets">
                 <thead><tr><th scope="col">Target</th></tr></thead>
                 <tbody>{preview.changes.map((change, index) => {
-                  const row = table.rows.findIndex((candidate) => rowEntity(candidate) === change.target.entity);
+                  const row = rowSource(table).indexOf(change.target.entity);
                   const column = columns.find((candidate) => candidate.id === change.target.field);
                   return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
                     <td>{`Row ${row + 1}, ${column?.display_name ?? change.target.field}`}</td>

@@ -20,6 +20,7 @@ import { LOCAL_COPIES_DB_NAME, LOCAL_COPIES_STORE } from "../host/local-copies.j
 import type { FieldProjection, PublicationProjection } from "../../public/core-kit/experimental-client.js";
 import { hashCanonicalFiles } from "./canonical-hash.js";
 import { applyResolvedProfile, resolveInterfaceProfile } from "../ui/interface-profile/index.js";
+import { rowSource } from "../ui/row-source.js";
 
 export interface AcceptanceRuntimeSnapshot {
   occurrence: string;
@@ -1464,7 +1465,7 @@ function columnId(view: WorkbookView, key: string): string | null {
 
 /** Target entity is the first actual table row that exposes all observed columns. */
 function selectTarget(view: WorkbookView): string {
-  for (const row of view.table.rows) {
+  for (const row of rowSource(view.table).allRowsForNow()) {
     const entity = row.fields[0]?.target.entity ?? row.id;
     const complete = OBSERVED_COLUMN_KEYS.every((key) => {
       const id = columnId(view, key);
