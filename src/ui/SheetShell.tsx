@@ -1786,6 +1786,12 @@ export function SheetShell(props: SheetShellProps) {
     const state = formulaState;
     if (!witness || !state.target || !state.editable || commitPending || controlsLocked || rowCommandPendingRef.current) return;
     if (refuseWhileCellDraft("editing a formula", false)) return;
+    // A first formula withdraws the native row profile, which would hide the
+    // entry row while its draft keeps blocking Save and Undo.
+    if (rowDraftActive) {
+      setLocalError("Add or discard the new row first.");
+      return;
+    }
     const source = formulaBarDraftValue(state, formulaDraft);
     if (source === state.source) {
       setFormulaDraft(null);
