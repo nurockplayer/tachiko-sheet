@@ -242,6 +242,8 @@ async function readCatalog(target) {
   await target.waitForFunction(() => document.querySelector("#ts-active-table")?.value === "catalog");
   const table = target.locator('table[aria-label="Table"]');
   await table.waitFor();
+  // The selector value changes before the Catalog projection replaces the previous table.
+  await target.waitForFunction(() => [...document.querySelectorAll('table[aria-label="Table"] th[scope="col"]')].some((head) => head.textContent?.trim() === "price"));
   const rows = await table.locator("tbody tr").evaluateAll((elements) => elements.map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim())));
   const witness = await target.locator('table[aria-label="Table"] tbody tr td[data-work-occurrence]').first().evaluate((element) => ({
     occurrence: element.getAttribute("data-work-occurrence"),
@@ -437,6 +439,7 @@ try {
   });
   const redoneHistory = await historyState(firstPage);
   assert.deepEqual(redoneHistory, { undoDisabled: false, redoDisabled: true }, "Redo restores the edited value and its Undo entry");
+  assert.equal(redone.catalog.witness.occurrence, openedCatalog.witness.occurrence, "Redo stays on the same occurrence");
   stages.at(-1).history = redoneHistory;
 
   phase = "save-copy";
@@ -475,6 +478,7 @@ try {
     results: [["NOTE", "1200"], ["PEN", "1000"]],
     reportTitle: "Sales by product",
   });
+  assert.equal(secondEdited.catalog.witness.occurrence, reopened.catalog.witness.occurrence, "second edit keeps the reopened occurrence");
   assert.notEqual(secondEdited.catalog.witness.revision, reopened.catalog.witness.revision, "second edit publishes a new revision");
   await saveInPlace(secondPage);
   stage("saved-update", { saveStatus: await secondPage.getByTestId("save-status").innerText(), witness: secondEdited.catalog.witness });
