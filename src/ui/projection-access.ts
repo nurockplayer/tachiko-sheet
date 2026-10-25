@@ -1,5 +1,6 @@
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { WorkbookView } from "../contracts.js";
+import { rowSource } from "./row-source.js";
 
 export type TableRow = WorkbookView["table"]["rows"][number];
 export type TableColumn = WorkbookView["table"]["columns"][number];
@@ -13,7 +14,7 @@ export { rowEntity } from "../contracts.js";
  */
 export function tableColumns(table: WorkbookView["table"]): TableColumn[] {
   if (table.columns.length > 0) return table.columns;
-  const first = table.rows[0];
+  const first = rowSource(table).rowAt(0);
   return (first?.fields ?? []).map((field) => ({
     id: field.target.field,
     key: field.target.field,

@@ -1,4 +1,5 @@
 import type { NewTableColumn, WorkbookView } from "../contracts.js";
+import { rowSource } from "./row-source.js";
 
 export const REQUIRED_HELP = "Required means a value must be present. Empty Text counts as present.";
 export const REQUIRED_TYPE_NOTE = "These columns currently need a value in every row.";
@@ -19,13 +20,15 @@ export function canChangeRequiredness(table: WorkbookView["table"] | null, field
 
 /** Counts are presentation evidence only, never a local admission decision. */
 export function completeBlankCount(table: WorkbookView["table"], field: string, revision: string): number | null {
-  if (table.revision !== revision || table.rows.length !== table.collection.entity_count ||
-      new Set(table.rows.map(row => row.id)).size !== table.collection.entity_count) return null;
+  // Whole-table evidence: every projected row must be present and coherent.
+  const rows = rowSource(table).allRowsForNow();
+  if (table.revision !== revision || rows.length !== table.collection.entity_count ||
+      new Set(rows.map(row => row.id)).size !== table.collection.entity_count) return null;
   // Missing blank_fields means [] in the public protocol. Each row must still
   // cover the target exactly once, with either a blank ID or a present field.
-  if (table.rows.some(row => Number((row.blank_fields ?? []).includes(field)) +
+  if (rows.some(row => Number((row.blank_fields ?? []).includes(field)) +
       row.fields.filter(value => value.target.field === field && value.target.entity === row.id && !value.blank).length !== 1)) return null;
-  return table.rows.filter(row => row.blank_fields?.includes(field)).length;
+  return rows.filter(row => row.blank_fields?.includes(field)).length;
 }
 
 export function requirednessRefusal(message: string, refusalCode: string | undefined, count: number | null, name: string): string {

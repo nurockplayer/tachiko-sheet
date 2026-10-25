@@ -2,6 +2,7 @@ import type { PublicationProjection } from "../../public/core-kit/experimental-c
 import type { NameFailure } from "../../public/core-kit/runtime/protocol.js";
 import type { ConfirmedPublication, Currentness, FieldTarget, KeyedGroupedSumResult, SaveReceipt, SaveStatus, ScalarEdit, ViewWitness, WorkbookView } from "../contracts.js";
 import { UnknownOperationOutcomeError, rowEntity } from "../contracts.js";
+import { rowSource } from "../ui/row-source.js";
 import { PublishedProjectionRecoveryError, SheetSessionError } from "../runtime/session.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, type LocalHistorySnapshot } from "../application/local-history.js";
 
@@ -67,8 +68,10 @@ export interface MutationCompletionPort {
 function addedEntityIds(before: WorkbookView | null, after: WorkbookView): readonly string[] | undefined {
   if (!before || before.occurrence !== after.occurrence
     || before.table.collection.key !== after.table.collection.key) return undefined;
-  const previous = new Set(before.table.rows.map(rowEntity));
-  return after.table.rows.map(rowEntity).filter(entity => !previous.has(entity));
+  // Comparing two whole projections: the added rows are only known from both
+  // complete entity sets.
+  const previous = new Set(rowSource(before.table).allRowsForNow().map(rowEntity));
+  return rowSource(after.table).allRowsForNow().map(rowEntity).filter(entity => !previous.has(entity));
 }
 function describe(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.length > 0 ? `${fallback} (Details: ${error.message})` : fallback;

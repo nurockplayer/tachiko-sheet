@@ -1,6 +1,7 @@
 import type { Currentness, FieldTarget, WorkbookView } from "../contracts.js";
 import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
 import { DRAFT_ROW } from "./row-entry-model.js";
+import { rowSource } from "./row-source.js";
 
 /** Presentation state for the one focused field instance; never a column rule. */
 export interface FormulaBarState {
@@ -58,7 +59,7 @@ export function formulaBarState(input: {
   // the projection, so the bar keeps editing it and says whose formula it is.
   const index = input.displayRows.findIndex((row) => rowEntity(row) === input.focus!.entity);
   const displayed = index >= 0 ? input.displayRows[index] : undefined;
-  const row = displayed ?? input.table.rows.find((candidate) => rowEntity(candidate) === input.focus!.entity);
+  const row = displayed ?? rowSource(input.table).byEntity(input.focus!.entity);
   if (!row) return empty;
   const field = fieldForColumn(row, column.id);
   const target = field?.target ?? { entity: input.focus.entity, field: column.id };
@@ -347,7 +348,7 @@ export function formulaBarDraftValue(state: FormulaBarState, draft: FormulaBarDr
 function tableAdmitsFormulas(table: WorkbookView["table"]): boolean {
   if (table.tracker_profile === true) return false;
   if (table.native_table_profile) return true;
-  return table.rows.some((row) => row.fields.some((field) => field.formula !== null));
+  return rowSource(table).allRowsForNow().some((row) => row.fields.some((field) => field.formula !== null));
 }
 
 function columnCanHoldFormula(field: TableRow["fields"][number] | null, column: TableColumn): boolean {
