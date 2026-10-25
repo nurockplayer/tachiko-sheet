@@ -197,7 +197,9 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         typeof failure?.message === "string" && failure.message.length > 0
         ? failure.message
         : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
-      if (command.kind !== "rows") port.setMessage(message);
+      // A formula refusal is shown in the formula bar beside the retained
+      // draft; the global banner would repeat Work's words a second time.
+      if (command.kind !== "rows" && !(command.kind === "scalar" && command.edit.kind === "formula")) port.setMessage(message);
       const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
       // Work may attach a 1-based character position to a formula refusal.
       // Sheet neither parses the source nor invents one when it is absent.
