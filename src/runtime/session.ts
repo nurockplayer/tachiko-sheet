@@ -247,6 +247,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       && ["no_project", "no_project_open"].includes((error as { failure?: { code?: string } }).failure?.code ?? "");
   }
 
+  function isUnsupportedProject(kit: CoreKit, error: unknown): boolean {
+    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
+      && (error as { failure?: { code?: string } }).failure?.code === "unsupported_project";
+  }
+
   async function dispatch<T>(kit: CoreKit, call: () => Promise<T>): Promise<T> {
     try {
       return await call();
@@ -797,9 +802,28 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      // Every persisted project is native v3: the explicit writer is the only
-      // opaque writer, so no legacy selector or refusal-driven fallback remains.
-      const project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
+      let project: OpaqueProjectExport;
+      try {
+        project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
+      } catch (error) {
+        assertUsable(expected);
+        // TEMPORARY fallback (remove at the next kit re-pin). At the pinned
+        // producer both v3 writers enforce the strict bounded Designer profile:
+        // `export_project_v3` and `export_portable_ro` call
+        // `ensure_document_profile(.., false)`, so a capacity document (a
+        // collection above MAX_TABLE_ROWS = 128, or a project above
+        // MAX_TOTAL_ENTITIES = 1024) is opened but cannot be written as v3.
+        // Work has no capacity-capable v3 writer yet. Until it ships one, only
+        // this opaque copy path retries Work's typed `unsupported_project`
+        // refusal with the legacy writer; every other refusal propagates and
+        // the `.ro` work-file path has no legacy carrier. Select on the typed
+        // code only, never on message text. Work evidence (source commit
+        // 4e51942a, packages/browser-client/runtime/src/lib.rs): the profile
+        // retry is open-only, "intentionally not an export or re-admission
+        // capability".
+        if (!isUnsupportedProject(kit, error)) throw error;
+        project = await afterUsable(expected, dispatch(kit, () => client.exportProject(live.revision)));
+      }
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
       return { revision: project.revision, bytes: project.bytes.slice(0) };
     });

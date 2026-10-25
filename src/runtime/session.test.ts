@@ -1347,7 +1347,32 @@ describe("Work file adapter admission and export", () => {
     await runtime.close();
   });
 
-  it.each(["unsupported_project", "stale_revision", "resource_limit", "invalid_project"])("propagates the v3 export refusal %s without retrying or inferring another writer", async (code) => {
+  // TEMPORARY, removed at the next kit re-pin with the runtime fallback: Work's
+  // v3 writers enforce the strict bounded profile (MAX_TABLE_ROWS = 128,
+  // MAX_TOTAL_ENTITIES = 1024), so an opaque copy retries the legacy writer on
+  // exactly this typed refusal and no other.
+  it("falls back to the legacy opaque writer only for a typed unsupported_project profile refusal", async () => {
+    const { runtime, client, view } = await opened();
+    const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValueOnce(new FakeDesignerRuntimeError("unsupported_project", view.revision));
+    const exported = await runtime.exportOpaque(witnessOf(view));
+    expect(explicit).toHaveBeenCalledExactlyOnceWith(view.revision);
+    expect(client.calls.exportProject).toEqual([view.revision]);
+    expect(Array.from(new Uint8Array(exported.bytes))).toEqual([7, 8, 9]); // The legacy writer's bytes.
+    expect(exported.revision).toBe(view.revision);
+    expect((await runtime.read()).requiresPortableSave).toBeUndefined();
+  });
+
+  it("reports the fallback writer's own refusal instead of retrying it", async () => {
+    const { runtime, client, view } = await opened();
+    const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValueOnce(new FakeDesignerRuntimeError("unsupported_project", view.revision));
+    const fallbackRefusal = new FakeDesignerRuntimeError("unsupported_project", view.revision);
+    const fallback = vi.spyOn(client, "exportProject").mockRejectedValueOnce(fallbackRefusal);
+    await expect(runtime.exportOpaque(witnessOf(view))).rejects.toBe(fallbackRefusal);
+    expect(explicit).toHaveBeenCalledExactlyOnceWith(view.revision);
+    expect(fallback).toHaveBeenCalledExactlyOnceWith(view.revision);
+  });
+
+  it.each(["stale_revision", "resource_limit", "invalid_project"])("propagates the v3 export refusal %s without retrying or inferring another writer", async (code) => {
     const { runtime, client, view } = await opened();
     const refusal = new FakeDesignerRuntimeError(code, view.revision);
     const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValue(refusal);

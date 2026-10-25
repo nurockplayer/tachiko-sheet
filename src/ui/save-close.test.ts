@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SheetShellProps, WorkbookView } from "../contracts.js";
-import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
+import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } from "./save-close.js";
 
 describe("Close after a copy", () => {
   const savedView = { occurrence: "work-a", revision: "r2" };
@@ -67,4 +67,28 @@ it("allows local Save for portable work and keeps a disabled-writer rollback rea
   expect(closeSaveUnavailableReason(ready, false)).toBeNull();
   expect(closeSaveUnavailableReason({ ...ready, workFileSaveUnavailableReason: "Download the work file to keep these changes." }, false))
     .toBe("Download the work file to keep these changes.");
+});
+
+describe("Save a copy failure reason", () => {
+  it("names Work's code and message instead of blaming the name", () => {
+    const message = "this canonical project is outside the bounded Designer profile: a collection exceeds the bounded maximum of 128 entities";
+    const reason = copyFailureReason("Capacity", {
+      failure: { code: "unsupported_project", message, current_revision: "resident/0", diagnostics: [] },
+    });
+    expect(reason).toContain("The copy “Capacity” was not created.");
+    expect(reason).toContain("unsupported_project");
+    expect(reason).toContain("bounded maximum of 128 entities");
+    expect(reason).not.toContain("name is still here");
+  });
+
+  it("keeps the duplicate-name hint only for a real name conflict", () => {
+    const conflict = new DOMException('A local copy named "Capacity" already exists.', "ConstraintError");
+    expect(copyFailureReason("Capacity", conflict)).toBe("The copy “Capacity” was not created. The name is still here; adjust it and try again.");
+  });
+
+  it("falls back to the error detail for anything else", () => {
+    expect(copyFailureReason("Capacity", new Error("Quota exceeded"))).toContain("(Details: Quota exceeded)");
+    expect(copyFailureReason("Capacity", undefined)).toBe("The copy “Capacity” was not created.");
+    expect(copyFailureReason("Capacity", { failure: { code: "unsupported_project" } })).toContain("did not describe the refusal");
+  });
 });

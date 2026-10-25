@@ -10,6 +10,30 @@ export function savedCloseIsConfirmed(
     state.view?.occurrence === savedView.occurrence && state.view.revision === savedView.revision;
 }
 
+/**
+ * The Save a copy dialog names why the copy was not created. A producer
+ * refusal is shown with Work's own code and message; the name hint belongs
+ * only to a real duplicate-name conflict. Keeping the reason next to the
+ * error is what stops the dialog from hiding a Work refusal behind "the name
+ * is still here", which invited pointless retries.
+ */
+export function copyFailureReason(name: string, error: unknown): string {
+  const failure = (error as { failure?: { code?: unknown; message?: unknown } } | null)?.failure;
+  if (failure && (typeof failure.code === "string" || typeof failure.message === "string")) {
+    const detail = typeof failure.message === "string" && failure.message.trim().length > 0
+      ? failure.message.trim() : "Work did not describe the refusal.";
+    const code = typeof failure.code === "string" && failure.code.length > 0 ? ` (${failure.code})` : "";
+    return `The copy “${name}” was not created. Work refused it${code}: ${detail}`;
+  }
+  if (error instanceof DOMException && error.name === "ConstraintError") {
+    return `The copy “${name}” was not created. The name is still here; adjust it and try again.`;
+  }
+  if (error instanceof Error && error.message.length > 0) {
+    return `The copy “${name}” was not created. (Details: ${error.message})`;
+  }
+  return `The copy “${name}” was not created.`;
+}
+
 /** Plain reason shown beside a disabled "Save a copy…" in the unsaved-work Close dialog. */
 export function closeSaveUnavailableReason(
   state: Pick<SheetShellProps, "saveStatus" | "currentness"> & { busy: boolean; workFileSaveUnavailableReason?: string | null },

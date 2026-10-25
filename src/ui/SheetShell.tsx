@@ -75,7 +75,7 @@ import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
-import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
+import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
@@ -2548,8 +2548,8 @@ export function SheetShell(props: SheetShellProps) {
     const intent = copyForClose ? closeSaveIntentRef.current : null;
     const closingView = intent && view ? { occurrence: view.occurrence, revision: view.revision, intent } : null;
     try {
-      const created = await onCreateCopy(name);
-      if (created) {
+      const outcome = await onCreateCopy(name);
+      if (outcome.saved) {
         savedCopyNamesInSessionRef.current.add(name);
         setCaptureCopyParentFailure(false);
         setCopyParentFailureMessage(null);
@@ -2559,10 +2559,14 @@ export function SheetShell(props: SheetShellProps) {
         if (closingView && closeSaveIntentRef.current === closingView.intent) setSavedClose({ ...closingView, name, phase: "clear-draft" });
         else saveCopyButtonRef.current?.focus();
       } else {
-        setCopyError(`The copy “${name}” was not created. The name is still here; adjust it and try again.`);
+        // The parent owns the truthful reason: a Work refusal names Work's
+        // code and message, and only a real duplicate name gets the hint.
+        setCopyError(outcome.reason);
       }
     } catch (error) {
-      setCopyError(explain(error, `The copy “${name}” was not created. The name is still here.`));
+      // A rejection is not evidence of a duplicate name; classify it like any
+      // other copy failure instead of repeating the name hint.
+      setCopyError(copyFailureReason(name, error));
     } finally {
       setCopyPending(false);
     }

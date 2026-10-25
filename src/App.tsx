@@ -36,6 +36,7 @@ import {
   type RowInitializer,
   type CellEdit,
   type CommitOutcome,
+  type CreateCopyOutcome,
   type PasteCellInput,
   type ColumnInitializer,
   type RowCommandOutcome,
@@ -51,6 +52,7 @@ import {
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
+import { copyFailureReason } from "./ui/save-close.js";
 import { useHostFiles } from "./host/host-files.js";
 import { COPY_CHANGED_MESSAGE, validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
 
@@ -1658,18 +1660,18 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) }, result => result.kind === "published" ? result.focusTarget : null, end);
   }
 
-  async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
-    if (blockUnknownOpenRecovery()) return false;
+  async function createCopy(name: string, expected?: SavedCopySummary): Promise<CreateCopyOutcome> {
+    if (blockUnknownOpenRecovery()) return { saved: false, reason: "The copy was not created. Refresh to confirm the open work, or close it, then try again." };
     if ((viewRef.current?.openedFromWorkFile || viewRef.current?.requiresPortableSave) && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
-      return false;
+      return { saved: false, reason: WORK_FILE_SAVE_UNAVAILABLE };
     }
-    if (!begin()) return false;
+    if (!begin()) return { saved: false, reason: "The copy was not created. Another operation is in progress; try again when it finishes." };
     const live = viewRef.current;
     if (!live) {
       end();
       setMessage("There is no open work to save.");
-      return false;
+      return { saved: false, reason: "There is no open work to save." };
     }
     saveInFlightRef.current = true;
     setMessage(null);
@@ -1727,13 +1729,18 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       void refreshCopies();
       const stillCurrent = mutationCompletion.save(live, snapshotRevision, receipt);
-      return expected ? stillCurrent : true;
+      // The replacement already wrote to the host; `stillCurrent` false means
+      // only that the open work moved on before the save could be confirmed,
+      // which is not a copy-store conflict.
+      return expected && !stillCurrent
+        ? { saved: false, reason: "The copy was saved, but this work changed before the save could be confirmed. Refresh to review it." }
+        : { saved: true };
     } catch (error) {
       markNotSaved();
       setSaveStatus("failed");
       setOutcome("idle");
       setMessage(error instanceof Error && error.message === COPY_CHANGED_MESSAGE ? COPY_CHANGED_MESSAGE : describe(error, "The copy could not be saved on this device."));
-      return false;
+      return { saved: false, reason: copyFailureReason(name, error) };
     } finally {
       saveInFlightRef.current = false;
       evaluateSavedStatus();
@@ -2158,7 +2165,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSave={async () => {
             const binding = boundCopyRef.current;
             if (!binding || binding.occurrence !== viewRef.current?.occurrence) return false;
-            return createCopy(binding.copy.name, binding.copy);
+            const outcome = await createCopy(binding.copy.name, binding.copy);
+            return outcome.saved;
           }}
           onDeleteCopy={copies.delete ? async (copy) => {
             const name = copy.name;
