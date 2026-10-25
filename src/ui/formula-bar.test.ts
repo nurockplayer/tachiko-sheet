@@ -12,13 +12,19 @@ import { FormulaBar } from "./FormulaBar.js";
 import {
   FORMULA_BAR_COLUMN,
   FORMULA_BAR_DRAFT_ROW,
+  FORMULA_BAR_DRAFT_ROW_HINT,
+  FORMULA_BAR_HIDDEN_ROW,
   FORMULA_BAR_LOCKED,
   FORMULA_BAR_NON_NATIVE,
   FORMULA_BAR_NO_CELL,
   FORMULA_BAR_UNKNOWN,
   boundFormulaDraft,
   formulaBarDraftValue,
+  formulaBarKeyAction,
   formulaBarState,
+  formulaReferenceInsertion,
+  formulaReferenceToken,
+  insertFormulaReference,
   isFormulaCell,
 } from "./formula-bar.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
@@ -85,13 +91,13 @@ function table(native = true, options: { rows?: TableRow[]; tracker?: boolean } 
 
 function state(
   focus: { entity: string; field: string } | null,
-  options: { native?: boolean; currentness?: "current" | "unknown"; locked?: boolean; rows?: TableRow[]; tracker?: boolean } = {},
+  options: { native?: boolean; currentness?: "current" | "unknown"; locked?: boolean; rows?: TableRow[]; tracker?: boolean; displayRows?: TableRow[] } = {},
 ) {
   return formulaBarState({
     viewIdentity: "occ-1\u0000rev-1",
     table: table(options.native ?? true, options),
     columns,
-    displayRows: options.rows ?? displayRows,
+    displayRows: options.displayRows ?? options.rows ?? displayRows,
     focus,
     currentness: options.currentness ?? "current",
     ...(options.locked === undefined ? {} : { locked: options.locked }),
@@ -278,5 +284,110 @@ describe("FormulaBar", () => {
     const bar = state({ entity: "e1", field: "impact" });
     expect(formulaBarDraftValue(bar, null)).toBe("min([task.qty], 4) + 1");
     expect(boundFormulaDraft(bar, { identity: bar.identity, value: "9" })).not.toBeNull();
+  });
+});
+
+describe("formula references", () => {
+  // The projection's keys are what Work resolves. An id, an entity id or a
+  // display name would be refused with MissingEntityKey.
+  const keyedRow: TableRow = { ...formulaRow, id: "internal-id", key: "entity-key" };
+  const keyedColumn: TableColumn = { ...impact, id: "impact-id", key: "impact-key" };
+
+  it("builds the token from the projection's keys, never an id", () => {
+    const token = formulaReferenceToken(keyedRow, keyedColumn);
+    expect(token).toBe("[entity-key.impact-key]");
+    for (const forbidden of ["internal-id", "e1", "impact-id", "Impact"]) expect(token).not.toContain(forbidden);
+  });
+
+  it("has no token without a projected key form", () => {
+    expect(formulaReferenceToken(null, keyedColumn)).toBeNull();
+    expect(formulaReferenceToken({ key: "  " }, keyedColumn)).toBeNull();
+    expect(formulaReferenceToken(keyedRow, { key: "" })).toBeNull();
+    // The new-row draft is not a projected instance.
+    expect(formulaReferenceInsertion({ barHasCaret: true, draft: true, row: keyedRow, column: keyedColumn })).toBeNull();
+  });
+
+  it("inserts at the caret, replacing the selection", () => {
+    expect(insertFormulaReference("1 + 2", "[r.c]", { start: 4, end: 5 })).toEqual({ value: "1 + [r.c]", caret: 9 });
+    expect(insertFormulaReference("sum()", "[r.c]", { start: 4, end: 4 })).toEqual({ value: "sum([r.c])", caret: 9 });
+    expect(insertFormulaReference("sum()", "[r.c]", null)).toEqual({ value: "sum()[r.c]", caret: 10 });
+    expect(insertFormulaReference("", "[r.c]", { start: 9, end: 9 })).toEqual({ value: "[r.c]", caret: 5 });
+  });
+
+  it("only edits the draft on a click, never the projected formula", () => {
+    const bar = state({ entity: "e1", field: "impact" });
+    const token = formulaReferenceInsertion({ barHasCaret: true, draft: false, row: keyedRow, column: keyedColumn });
+    expect(token).toBe("[entity-key.impact-key]");
+    const inserted = insertFormulaReference(bar.source, token!, { start: bar.source.length, end: bar.source.length });
+    // A click changes what the bar would submit; it commits nothing on its own.
+    expect(formulaBarDraftValue(bar, { identity: bar.identity, value: inserted.value }))
+      .toBe(`${bar.source}[entity-key.impact-key]`);
+    expect(bar.source).toBe("min([task.qty], 4) + 1");
+  });
+
+  it("inserts nothing unless the bar owns the caret", () => {
+    expect(formulaReferenceInsertion({ barHasCaret: false, draft: false, row: keyedRow, column: keyedColumn })).toBeNull();
+  });
+});
+
+describe("formulaBarKeyAction", () => {
+  const key = (overrides: Partial<{ key: string; repeat: boolean; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }>) =>
+    ({ key: "Enter", repeat: false, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...overrides });
+
+  it("applies on Enter and stays on the cell", () => {
+    expect(formulaBarKeyAction(key({}), true)).toEqual({ kind: "submit", then: "stay" });
+  });
+
+  it("applies a changed formula on Tab, then moves to the next or previous cell", () => {
+    expect(formulaBarKeyAction(key({ key: "Tab" }), true)).toEqual({ kind: "submit", then: "next" });
+    expect(formulaBarKeyAction(key({ key: "Tab", shiftKey: true }), true)).toEqual({ kind: "submit", then: "previous" });
+  });
+
+  it("leaves the bar cleanly on Tab when there is nothing to apply", () => {
+    // Focus returns to the cell, so the browser's own Tab destination can
+    // never bounce it back into the bar.
+    expect(formulaBarKeyAction(key({ key: "Tab" }), false)).toEqual({ kind: "cancel" });
+  });
+
+  it("cancels on Escape and ignores modified or repeated keys", () => {
+    expect(formulaBarKeyAction(key({ key: "Escape" }), true)).toEqual({ kind: "cancel" });
+    expect(formulaBarKeyAction(key({ ctrlKey: true }), true)).toBeNull();
+    expect(formulaBarKeyAction(key({ repeat: true }), true)).toBeNull();
+    expect(formulaBarKeyAction(key({ shiftKey: true }), true)).toBeNull();
+  });
+
+  it("keeps the row-draft hint and the hidden-row note exact", () => {
+    expect(FORMULA_BAR_DRAFT_ROW_HINT).toBe("Add or discard the new row first. Press Esc to cancel this formula.");
+    expect(FORMULA_BAR_HIDDEN_ROW).toBe("This row is hidden by the current filter or sort. Its formula can still be edited.");
+  });
+});
+
+describe("formula bar with a hidden bound row", () => {
+  it("stays editable on the same instance and names the row", () => {
+    // The focused row is filtered out of the displayed order but is still in
+    // the projection: the draft belongs to it and must remain editable.
+    const bar = state({ entity: "e1", field: "impact" }, { displayRows: [plainRow] });
+    expect(bar.editable).toBe(true);
+    expect(bar.reason).toBeNull();
+    expect(bar.note).toBe(FORMULA_BAR_HIDDEN_ROW);
+    expect(bar.label).toBe("Impact · Reserve");
+    expect(bar.source).toBe("min([task.qty], 4) + 1");
+    expect(bar.target).toEqual({ entity: "e1", field: "impact" });
+  });
+
+  it("still refuses a row that is no longer in the projection at all", () => {
+    const bar = state({ entity: "gone", field: "impact" }, { displayRows: [plainRow] });
+    expect(bar.editable).toBe(false);
+    expect(bar.reason).toBe(FORMULA_BAR_NO_CELL);
+    expect(bar.note).toBeNull();
+  });
+
+  it("renders the hidden-row note without turning the input read-only", () => {
+    const bar = state({ entity: "e1", field: "impact" }, { displayRows: [plainRow] });
+    const html = render({ state: bar, draft: { identity: bar.identity, value: "1 + 2" }, pending: false, error: null });
+    expect(html).toContain('value="1 + 2"');
+    expect(html).not.toContain("readonly");
+    expect(html).toContain(FORMULA_BAR_HIDDEN_ROW);
+    expect(html).not.toContain(FORMULA_BAR_NO_CELL);
   });
 });

@@ -33,7 +33,7 @@ export function FormulaBar(props: FormulaBarProps) {
           className="ts-formula-input"
           type="text"
           aria-label={state.label ? `Formula for ${state.label}` : "Formula"}
-          aria-describedby={[state.reason ? reasonId : null, props.error ? errorId : null].filter(Boolean).join(" ") || undefined}
+          aria-describedby={[state.reason || state.note ? reasonId : null, props.error ? errorId : null].filter(Boolean).join(" ") || undefined}
           placeholder={FORMULA_BAR_PLACEHOLDER}
           value={value}
           readOnly={!state.editable}
@@ -50,7 +50,7 @@ export function FormulaBar(props: FormulaBarProps) {
           with focus moved every row under the pointer between the two clicks
           of a double-click. One reserved line keeps the grid still. */}
       <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason">
-        {state.reason ?? ""}
+        {state.reason ?? state.note ?? ""}
       </p>
       {props.error ? (
         <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true">
