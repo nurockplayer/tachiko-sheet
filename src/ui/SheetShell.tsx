@@ -76,7 +76,7 @@ import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { pastePastVisibleRows, rowViewOrder, type RowViewSettings } from "./row-view.js";
+import { pastePastVisibleRows, rowViewFilterKeyAction, rowViewOrder, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
@@ -988,10 +988,23 @@ export function SheetShell(props: SheetShellProps) {
         value={draft.text}
         onChange={(event) => setFilterDraft({ field: column.id, text: event.currentTarget.value })}
         onKeyDown={(event) => {
-          if (event.key !== "Escape" || isComposingEvent(event)) return;
+          const action = rowViewFilterKeyAction({
+            key: event.key,
+            composing: isComposingEvent(event) || props.appearancePreference.getSnapshot().composing,
+            keyCode: event.nativeEvent.keyCode,
+          });
+          if (!action) {
+            // A composing Enter must neither apply nor fall through to the
+            // browser's implicit submission.
+            if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); }
+            return;
+          }
+          // Keep the key out of the disclosure's own handlers and stop the
+          // browser's implicit submission from applying twice.
           event.preventDefault();
           event.stopPropagation();
-          setFilterDraft(null);
+          if (action === "cancel") setFilterDraft(null);
+          else applyGridFilter(column.id, draft.text);
           close(event.currentTarget);
         }}
       />

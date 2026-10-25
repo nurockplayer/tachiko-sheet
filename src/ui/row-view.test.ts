@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { pastePastVisibleRows, rowViewOrder } from "./row-view.js";
+import { pastePastVisibleRows, rowViewFilterKeyAction, rowViewOrder } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -91,5 +91,18 @@ describe("pastePastVisibleRows", () => {
     expect(pastePastVisibleRows(0, 2, 2)).toBe(false);
     expect(pastePastVisibleRows(1, 2, 2)).toBe(true);
     expect(pastePastVisibleRows(0, 3, 2)).toBe(true);
+  });
+});
+
+describe("rowViewFilterKeyAction", () => {
+  it("applies on a typed Enter and cancels on Escape", () => {
+    expect(rowViewFilterKeyAction({ key: "Enter" })).toBe("apply");
+    expect(rowViewFilterKeyAction({ key: "Escape" })).toBe("cancel");
+  });
+
+  it("does nothing for an IME composition key", () => {
+    expect(rowViewFilterKeyAction({ key: "Enter", composing: true })).toBe(null);
+    expect(rowViewFilterKeyAction({ key: "Enter", keyCode: 229 })).toBe(null);
+    expect(rowViewFilterKeyAction({ key: "p" })).toBe(null);
   });
 });

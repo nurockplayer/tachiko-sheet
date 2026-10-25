@@ -35,6 +35,21 @@ export function pastePastVisibleRows(startRow: number, pastedRows: number, visib
   return startRow + pastedRows > visibleRows;
 }
 
+export type RowViewFilterKeyAction = "apply" | "cancel" | null;
+
+/**
+ * Keys for the Filter… input. Enter applies and Escape cancels, but an IME
+ * composition key (isComposing, or the 229 legacy keyCode) does neither.
+ * Enter is handled on the input itself: the menu's implicit form submission
+ * does not fire, although its Apply button still submits the form.
+ */
+export function rowViewFilterKeyAction(event: { key: string; composing?: boolean; keyCode?: number }): RowViewFilterKeyAction {
+  if (event.composing === true || event.keyCode === 229) return null;
+  if (event.key === "Enter") return "apply";
+  if (event.key === "Escape") return "cancel";
+  return null;
+}
+
 /**
  * Display order for one table: filter, then stable sort, then the original
  * order. Blank and empty-text cells sort last in both directions. The draft
