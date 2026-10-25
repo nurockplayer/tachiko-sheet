@@ -5,9 +5,7 @@ export type TableRow = WorkbookView["table"]["rows"][number];
 export type TableColumn = WorkbookView["table"]["columns"][number];
 
 /** Entity identity used by test markers and FieldTargets for one projected row. */
-export function rowEntity(row: TableRow): string {
-  return row.fields[0]?.target.entity ?? row.id;
-}
+export { rowEntity } from "../contracts.js";
 
 /**
  * Columns as projected by the core. When a projection carries no column list,

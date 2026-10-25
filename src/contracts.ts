@@ -62,6 +62,11 @@ export interface WorkbookView {
   table: TableProjection;
 }
 export interface ViewWitness { occurrence: string; revision: string }
+
+/** Entity identity of one projected row: the FieldTarget identity the grid and test markers use. */
+export function rowEntity(row: WorkbookView["table"]["rows"][number]): string {
+  return row.fields[0]?.target.entity ?? row.id;
+}
 export type ScalarEdit =
   | { kind: "number"; input: string }
   | { kind: "text"; value: string }
@@ -74,7 +79,7 @@ export type CellEdit = { target: FieldTarget; input: ScalarEdit | { kind: "clear
 export type RowInitializer = { field: string; input: ScalarEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
-  | { kind: "confirmed" }
+  | { kind: "confirmed"; addedEntities?: readonly string[] }
   | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string }
   | { kind: "recovery" };
 

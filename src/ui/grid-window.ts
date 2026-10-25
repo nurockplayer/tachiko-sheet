@@ -42,6 +42,27 @@ export function gridWindowAround(index: number, current: GridWindowRange, rowCou
 }
 
 /**
+ * Displayed rows kept mounted outside the window: the editor, selection, focus
+ * and pending focus. The first row is also pinned whenever the focused entity
+ * is not displayed (or nothing is focused), because the grid's tabIndex=0
+ * fallback is that row's first cell: a filter can hide the focused row, and an
+ * unmounted fallback would make Tab skip the whole grid.
+ */
+export function gridPinnedRows(
+  entities: readonly (string | null | undefined)[],
+  indexByEntity: ReadonlyMap<string, number>,
+  focusedEntity: string | null | undefined,
+): number[] {
+  const pinned: number[] = [];
+  for (const entity of entities) {
+    const index = entity ? indexByEntity.get(entity) : undefined;
+    if (index !== undefined) pinned.push(index);
+  }
+  if (!focusedEntity || !indexByEntity.has(focusedEntity)) pinned.push(0);
+  return pinned;
+}
+
+/**
  * Rendered rows in order: the window plus pinned rows (focused/editing/selected)
  * so a live editor or focused cell is never unmounted by scrolling. Gaps are
  * spacer rows whose height preserves the scroll geometry.

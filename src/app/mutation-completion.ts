@@ -1,6 +1,6 @@
 import type { PublicationProjection } from "../../public/core-kit/experimental-client.js";
 import type { ConfirmedPublication, Currentness, FieldTarget, KeyedGroupedSumResult, SaveReceipt, SaveStatus, ScalarEdit, ViewWitness, WorkbookView } from "../contracts.js";
-import { UnknownOperationOutcomeError } from "../contracts.js";
+import { UnknownOperationOutcomeError, rowEntity } from "../contracts.js";
 import { PublishedProjectionRecoveryError, SheetSessionError } from "../runtime/session.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, type LocalHistorySnapshot } from "../application/local-history.js";
 
@@ -14,7 +14,7 @@ export type MutationCommand = TrackedCommand
   | { kind: "cleanup"; witness: ViewWitness; dispatch(): Promise<WorkbookView> }
   | { kind: "summary"; witness: ViewWitness; dispatch(): Promise<{ publication: PublicationProjection }> };
 export type MutationCompletion =
-  | { kind: "published"; focusTarget: FieldTarget | null }
+  | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
   | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string };
 type RecoveryContext =
@@ -60,6 +60,13 @@ export interface MutationCompletionPort {
   recover(recovery: MutationRecovery): void;
   acceptSave(occurrence: string, receipt: SaveReceipt): void;
   newTable: NewTableCompletionPort;
+}
+/** Entities the confirmed view added to the viewed table since dispatch, in the grid's identity. */
+function addedEntityIds(before: WorkbookView | null, after: WorkbookView): readonly string[] | undefined {
+  if (!before || before.occurrence !== after.occurrence
+    || before.table.collection.key !== after.table.collection.key) return undefined;
+  const previous = new Set(before.table.rows.map(rowEntity));
+  return after.table.rows.map(rowEntity).filter(entity => !previous.has(entity));
 }
 function describe(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.length > 0 ? `${fallback} (Details: ${error.message})` : fallback;
@@ -158,7 +165,9 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         // Undo/Redo may legitimately remove or restore a saved definition.
         // readResults reads the authoritative complete post-history inventory.
         await observePublication(confirmed.view, command.kind === "history" ? null : prior, command.witness.occurrence);
-        return completed({ kind: "published", focusTarget: command.kind === "history" && confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null });
+        return completed({ kind: "published", focusTarget: command.kind === "history" && confirmed.publication.fields.length === 1 ? confirmed.publication.fields[0]! : null,
+          // Only a row command creates rows this seam can attribute to a table.
+          ...(command.kind === "rows" ? { addedEntities: addedEntityIds(before.view, confirmed.view) } : {}) });
       }
       port.setOutcome("idle");
       return completed({ kind: "published", focusTarget: null });

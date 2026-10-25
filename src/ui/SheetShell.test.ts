@@ -16,6 +16,7 @@ import {
   salesCatalogLayoutEligible,
   describeSavedCopyNameWhitespace,
   reportRenderResetKey,
+  rowViewStatusText,
   shouldPublishAppearanceCompositionEnd,
   SheetShell,
 } from "./SheetShell.js";
@@ -469,9 +470,14 @@ describe("SheetShell static rendering", () => {
     const withWriter = render({ view, onAddColumn: async () => ({ kind: "confirmed" }), onRenameColumn: async () => ({ kind: "confirmed" }), onRemoveColumn: async () => ({ kind: "confirmed" }) });
     expect(withWriter).toContain('data-column-action="+ column"');
     expect(withWriter).toContain("Column actions for ");
-    // Reader-only/rollback hosts pass no column handlers: no controls and no focusable header.
+    // Reader-only/rollback hosts pass no column handlers: view actions remain,
+    // but no authoring action and no focusable header.
     const readerOnly = render({ view });
-    expect(readerOnly).not.toContain("data-column-action");
+    expect(readerOnly).toContain('data-column-action="Sort A → Z"');
+    expect(readerOnly).toContain('data-column-action="Filter…"');
+    expect(readerOnly).not.toContain('data-column-action="+ column"');
+    expect(readerOnly).not.toContain('data-column-action="Rename…"');
+    expect(readerOnly).not.toContain('data-column-action="Remove…"');
     expect(readerOnly).not.toContain('class="ts-col-head" tabindex="0"');
   });
 
@@ -505,9 +511,17 @@ describe("SheetShell static rendering", () => {
       expect(markup).toContain("Rename “title”…");
       expect(markup).toContain("Remove “title”…");
       expect(markup).toContain("Add column…");
-      expect(render({ view })).not.toContain('aria-label="Column"');
+      // The Column menu is view-only at heart: it stays without handlers or
+      // native editing, but shows only sort and filter there.
+      const viewOnly = render({ view });
+      expect(viewOnly).toContain('aria-label="Column"');
+      expect(viewOnly).toContain("Sort A → Z");
+      expect(viewOnly).not.toContain("Add column…");
       view.table.native_table_profile = false;
-      expect(render({ view, onAddColumn: async () => ({ kind: "confirmed" }) })).not.toContain('aria-label="Column"');
+      const imported = render({ view, onAddColumn: async () => ({ kind: "confirmed" }) });
+      expect(imported).toContain('aria-label="Column"');
+      expect(imported).not.toContain("Add column…");
+      expect(imported).not.toContain("Remove “");
     } finally { vi.unstubAllGlobals(); }
   });
 
@@ -922,6 +936,57 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("Brief");
     expect(markup).not.toContain("brief:");
     expect(markup).not.toContain("Decision notes");
+  });
+
+  it("describes the client-only sort and filter status in one line", () => {
+    const columns = tableColumns(makeView().table);
+    expect(rowViewStatusText(columns, {}, 2, 2)).toBe(null);
+    expect(rowViewStatusText(columns, { sort: { field: "c-impact", direction: "desc" } }, 2, 2))
+      .toBe("Sorted by impact ↓");
+    expect(rowViewStatusText(columns, { filter: { field: "c-title", text: "alpha" } }, 12, 40))
+      .toBe("Showing 12 of 40 rows");
+    expect(rowViewStatusText(columns, {
+      sort: { field: "c-title", direction: "asc" },
+      filter: { field: "c-title", text: "alpha" },
+    }, 12, 40)).toBe("Sorted by title ↑ · Showing 12 of 40 rows");
+  });
+
+  it.each([false, true])("keeps sort and filter on a table without native editing (compact=%s)", compact => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
+    try {
+      const view = makeView();
+      view.table.native_table_profile = false;
+      const markup = render({
+        view,
+        onAddColumn: async () => ({ kind: "confirmed" }),
+        onRenameColumn: async () => ({ kind: "confirmed" }),
+        onRemoveColumn: async () => ({ kind: "confirmed" }),
+        onSetColumnRequiredness: async () => ({ kind: "confirmed" }),
+      });
+      expect(markup).toContain("Sort A → Z");
+      expect(markup).toContain("Sort Z → A");
+      expect(markup).toContain("Filter…");
+      // Schema and requiredness mutations stay native-only.
+      expect(markup).not.toContain("Add column…");
+      expect(markup).not.toContain('data-column-action="+ column"');
+      expect(markup).not.toContain('data-column-action="Rename…"');
+      expect(markup).not.toContain('data-column-action="Remove…"');
+      expect(markup).not.toContain("Rename “");
+      expect(markup).not.toContain("Remove “");
+      expect(markup).not.toContain("Require a value");
+      expect(markup).not.toContain("Allow blanks");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("keeps the stored row order and shows no view status without sort or filter", () => {
+    const view = makeView();
+    const markup = render({ view });
+    const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
+    expect(body.indexOf(`data-work-entity="${entityA}"`)).toBeLessThan(body.indexOf(`data-work-entity="${entityB}"`));
+    expect(markup).not.toContain('data-testid="row-view-status"');
+    expect(markup).not.toContain(">Clear sort</button>");
+    expect(markup).not.toContain(">Clear filter</button>");
+    expect(markup).not.toContain("ts-column-view-marker");
   });
 
   it("renders cells from the field order when the projection has no columns", () => {

@@ -7,8 +7,15 @@ import { emptyLocalHistory, observeLocalHistory } from "../../src/application/lo
 function view(revision = "r0"): WorkbookView {
   return { title: "Work", occurrence: "sales", revision, collections: [], table: { revision, collection: { key: "items", id: "items", entity_count: 0 }, columns: [], rows: [] } };
 }
+type Row = WorkbookView["table"]["rows"][number];
+/** A stored text value whose row id differs from the grid's entity identity. */
+function row(id: string, entity: string): Row {
+  return { id, key: id, fields: [{ target: { entity, field: "c-name" }, address: `tables/items/${entity}/c-name`,
+    stored: { kind: "text", value: entity }, formula: null, calculated: null, diagnostics: [], editable_scalar: "text" }] };
+}
 const witness = { occurrence: "sales", revision: "r0" };
-function harness() {
+/** `snapshot` reports state like App does, where each call is a fresh object. */
+function harness(snapshot = false) {
   const state: ReturnType<MutationCompletionPort["state"]> = { view: view(), history: { ...emptyLocalHistory(view()), undoCount: 1 }, currentness: "current", savedRevision: "r0", definitionIds: ["d1"], results: [] };
   let recovery: MutationRecovery | null = null, dirty = false, reads = 0;
   const effects: string[] = [];
@@ -17,7 +24,7 @@ function harness() {
   const finish = () => { inFlight = false; effects.push("finish"); };
   let observed: KeyedGroupedSumResult[] = [];
   const port: MutationCompletionPort = {
-    state: () => state,
+    state: () => snapshot ? { ...state } : state,
     newTable: {
       close: async () => { effects.push("close"); },
       resetClosed() { effects.push("reset-closed"); state.view = null; state.history = emptyLocalHistory(); markers.initial = null; markers.changed = null; },
@@ -63,6 +70,32 @@ describe("mutation completion boundaries", () => {
     expect(h.state.definitionIds).toEqual([]); expect(h.state.currentness).toBe("current");
     expect(h.state.history).toMatchObject({ undoCount: 0, redoCount: 1, revision: "r1" });
     expect(h.recovery).toBeNull();
+  });
+  it("reports the entities a confirmed row publication added, in the grid's identity", async () => {
+    const h = harness(true);
+    h.state.definitionIds = [];
+    h.state.view!.table.rows = [row("row-key-0", "entity-0")];
+    const after = view("r1");
+    after.table.rows = [row("row-key-0", "entity-0"), row("row-key-1", "entity-1")];
+    const result = await h.completion.run({ kind: "rows", witness,
+      dispatch: async () => ({ view: after, publication: { base_revision: "r0", resulting_revision: "r1", entities: ["entity-1"], fields: [], schemas: [], schema_fields: [], affected_calculations: [] } }) });
+    expect(result).toMatchObject({ kind: "published", addedEntities: ["entity-1"] });
+  });
+  it("reports no added entities for a scalar or history publication", async () => {
+    const after = () => {
+      const next = view("r1");
+      next.table.rows = [row("row-key-1", "entity-1")];
+      return next;
+    };
+    const publication = { base_revision: "r0", resulting_revision: "r1", entities: [], fields: [], schemas: [], schema_fields: [], affected_calculations: [] };
+    const scalar = harness(true);
+    scalar.state.definitionIds = [];
+    expect(await scalar.completion.run({ kind: "scalar", witness, edit: { kind: "number", input: "250" },
+      dispatch: async () => ({ view: after(), publication }) })).not.toHaveProperty("addedEntities");
+    const history = harness(true);
+    history.state.definitionIds = [];
+    expect(await history.completion.run({ kind: "history", direction: "undo", witness,
+      dispatch: async () => ({ view: after(), publication }) })).not.toHaveProperty("addedEntities");
   });
   it("retains scalar input for review without fabricating known publication", async () => {
     const h = harness(); let dispatches = 0;
