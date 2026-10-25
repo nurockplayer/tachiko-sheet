@@ -73,7 +73,7 @@ import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaReferenceInsertion, formulaSubmitHandoffOutcome, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaSubmitHandoff } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaHandoffSettlement, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -671,7 +671,12 @@ export function SheetShell(props: SheetShellProps) {
   const pendingFormulaHandoffRef = useRef<FormulaSubmitHandoff | null>(null);
   // The projection the grid was last asked to render, so a submit that
   // completes after React already rendered it can settle without a new render.
-  const renderedProjectionRef = useRef<{ viewKey: string; order: GridPosition[] }>({ viewKey: "", order: [] });
+  const renderedProjectionRef = useRef<FormulaHandoffGrid>({ viewKey: "", order: [], rowIndexByEntity: new Map(), windowed: false });
+  // A submit's continuation runs with the render that started it, whose focus
+  // helpers still describe the pre-commit window. It settles through this ref,
+  // which the newest render refreshes, so the destination lookup and the row
+  // reveal always speak about the same projection.
+  const settleFormulaHandoffRef = useRef<() => void>(() => {});
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
@@ -1254,9 +1259,13 @@ export function SheetShell(props: SheetShellProps) {
   }, [gridWindowed, collectionIdentity, tab, displayRows.length]);
 
   // A formula-submit handoff is decided against the projection this render
-  // displays, not the one the submit started from.
+  // displays, not the one the submit started from: the commit can reveal a row
+  // that no earlier window held.
   useLayoutEffect(() => {
-    renderedProjectionRef.current = { viewKey: viewKey ?? "", order: gridOrder };
+    renderedProjectionRef.current = { viewKey: viewKey ?? "", order: gridOrder, rowIndexByEntity, windowed: gridWindowed };
+    // This render's helpers own the handoff from now on, so a continuation
+    // that runs after this commit settles through them, not its own closure.
+    settleFormulaHandoffRef.current = settleFormulaHandoff;
     settleFormulaHandoff();
   });
 
@@ -1908,9 +1917,11 @@ export function SheetShell(props: SheetShellProps) {
     // resolve it from the projection the grid renders once the commit settles.
     if (position) {
       pendingFormulaHandoffRef.current = { position, then, viewKey: startingViewKey, generation, occurrence: intent.occurrence ?? "" };
-      // React may have rendered the commit's projection before this
-      // continuation ran; the layout effect retries after every render.
-      settleFormulaHandoff();
+      // Mark the handoff ready. This continuation belongs to the pre-submit
+      // render, whose row map and window the commit may have replaced, so it
+      // settles through the newest render's helpers; the layout effect retries
+      // after every render in case the commit's projection is still pending.
+      settleFormulaHandoffRef.current();
     }
     // If no cell took focus (none is displayed, e.g. a filter hides every row,
     // or the commit hid the destination, or a newer focus action cancelled the
@@ -1948,25 +1959,27 @@ export function SheetShell(props: SheetShellProps) {
    * may have hidden the bound row or moved it, so only the rendered order can
    * name the neighbour. With nothing displayed, focus stays in the bar.
    */
-  function settleFormulaHandoff(rendered = renderedProjectionRef.current): void {
+  function settleFormulaHandoff(): void {
     const handoff = pendingFormulaHandoffRef.current;
     if (!handoff) return;
-    const outcome = formulaSubmitHandoffOutcome({
+    const outcome = formulaHandoffSettlement({
       handoff,
       generation: focusIntentRef.current,
       occurrence: liveOccurrenceRef.current ?? "",
-      viewKey: rendered.viewKey,
-      order: rendered.order,
       draftEntity: DRAFT_ROW,
       // The DOM check also catches a modal that opened during the commit.
       modalOpen: modalInteractionOpen || document.querySelector('[aria-modal="true"]') !== null,
       focusOnBar: formulaHandoffOwnsFocus(),
+      rendered: renderedProjectionRef.current,
     });
     if (outcome.kind === "wait") return;
     pendingFormulaHandoffRef.current = null;
-    if (outcome.kind === "stop" || !outcome.destination) return;
+    if (outcome.kind === "stop") return;
     const destination = outcome.destination;
-    withAppFocus(() => focusCell(destination.entity, destination.field));
+    // The row index comes from the rendered order that named the destination,
+    // so a row the commit just revealed outside the mounted window is mounted
+    // before focus moves instead of being dropped.
+    withAppFocus(() => focusCell(destination.entity, destination.field, outcome.rowIndex));
   }
 
   /** The bar can hand focus back only to a cell the grid displays right now. */
@@ -1998,17 +2011,16 @@ export function SheetShell(props: SheetShellProps) {
     void submitFormula(action.then);
   }
 
-  function focusCell(entity: string, field: string): void {
+  function focusCell(entity: string, field: string, rowIndex: number | null = rowIndexByEntity.get(entity) ?? null): void {
     const node = cellRefs.current.get(cellKey(entity, field));
     if (node) {
       node.focus();
       return;
     }
     // A windowed row outside the rendered range: render it, then focus it.
-    const index = rowIndexByEntity.get(entity);
-    if (!gridWindowed || tab !== "table" || index === undefined) return;
+    if (!gridWindowed || tab !== "table" || rowIndex === null) return;
     pendingCellFocusRef.current = { entity, field, generation: focusIntentRef.current };
-    revealGridRow(index);
+    revealGridRow(rowIndex);
   }
 
   function syncGridWindow(): void {

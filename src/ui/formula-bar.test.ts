@@ -23,12 +23,17 @@ import {
   formulaBarDraftValue,
   formulaBarKeyAction,
   formulaBarState,
+  formulaHandoffSettlement,
+  formulaRefusalText,
   formulaSubmitHandoffOutcome,
   formulaReferenceInsertion,
   formulaReferenceToken,
   insertFormulaReference,
   isFormulaCell,
   positionedAfterFormulaSubmit,
+  type FormulaGridPosition,
+  type FormulaHandoffGrid,
+  type FormulaSubmitHandoff,
 } from "./formula-bar.js";
 import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 
@@ -255,14 +260,39 @@ describe("FormulaBar", () => {
     const bar = state({ entity: "e1", field: "impact" });
     const withoutError = render({ state: bar, draft: null, pending: false, error: null });
     const withError = render({ state: bar, draft: null, pending: false, error: { message: "Unexpected end of input.", position: 4 } });
-    // The refusal overlays the reason line inside one notes container. Taking
-    // it (and the input's reference to it) out must leave exactly the
-    // error-free bar, so it adds no line height for the grid to move.
+    // The refusal overlays the reason line inside one notes container, and its
+    // Details disclosure and popover are overlays too. Taking them (and the
+    // input's reference to the refusal) out must leave exactly the error-free
+    // bar, so none of them adds a line height for the grid to move.
     expect(withError).toContain('class="ts-formula-bar-notes"');
     const stripped = withError
       .replace(/<p class="ts-dialog-error[^>]*>[\s\S]*?<\/p>/, "")
+      .replace(/<button[^>]*>Details<\/button>/, "")
+      .replace(/<div class="ts-formula-bar-error-details"[\s\S]*?<\/div>/, "")
       .replace(/ aria-describedby="[^"]*-error"/, "");
     expect(stripped).toBe(withoutError);
+  });
+
+  it("keeps a truncated refusal readable without adding a line", () => {
+    // The fixed 18px line ellipsizes a long Work refusal. The whole text stays
+    // in the alert region and is the hover title, and Details opens it in an
+    // absolutely positioned popover that cannot move the grid.
+    const message = "Unexpected end of input: the call to sum( is missing its closing parenthesis before the end of the formula.";
+    const error = { message, position: 96 };
+    const html = render({ state: state({ entity: "e1", field: "impact" }), draft: null, pending: false, error });
+    const fullText = formulaRefusalText(error);
+    expect(fullText).toBe(`${message} (position 96)`);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain(fullText);
+    expect(html).toContain(`title="${fullText}"`);
+    expect(html).toContain('class="ts-formula-bar-details" aria-expanded="false"');
+    expect(html).toContain(">Details</button>");
+    expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*>Unexpected end of input[\s\S]*<\/div>/);
+    // A long popover scrolls inside itself, and its text is reachable from the
+    // keyboard, so it can never add scroll height under the grid.
+    expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*tabindex="0"/);
+    // Still inside the one reserved line, never a sibling block above the grid.
+    expect(html.indexOf('class="ts-formula-bar-notes"')).toBeLessThan(html.indexOf('class="ts-formula-bar-details"'));
   });
 
   it("shows Work's refusal verbatim below the bar and keeps the draft", () => {
@@ -518,6 +548,62 @@ describe("formulaSubmitHandoffOutcome", () => {
 
   it("stops when the open work was replaced during the commit", () => {
     expect(decide({ occurrence: "occ-2", viewKey: "occ-2\u0000r1" })).toEqual({ kind: "stop" });
+  });
+});
+
+describe("formulaHandoffSettlement", () => {
+  const fields = ["task", "impact"];
+  const orderOf = (entities: readonly string[]): FormulaGridPosition[] =>
+    entities.flatMap((entity) => fields.map((field) => ({ entity, field })));
+  const grid = (input: { entities: readonly string[]; viewKey?: string; windowed?: boolean }): FormulaHandoffGrid => ({
+    viewKey: input.viewKey ?? "occ-1\u0000r2",
+    order: orderOf(input.entities),
+    rowIndexByEntity: new Map(input.entities.map((entity, index) => [entity, index])),
+    windowed: input.windowed ?? true,
+  });
+  // The submit happened on e150.task while a filter hid that row, so the
+  // pre-submit grid displayed only rows 0-79 and its row map had no e150.
+  const handoff: FormulaSubmitHandoff = {
+    position: { entity: "e150", field: "task" },
+    then: "next",
+    viewKey: "occ-1\u0000r1",
+    generation: 3,
+    occurrence: "occ-1",
+  };
+  const settle = (rendered: FormulaHandoffGrid) => formulaHandoffSettlement({
+    handoff, generation: 3, occurrence: "occ-1", draftEntity: "draft", modalOpen: false, focusOnBar: true, rendered,
+  });
+
+  it("waits while the pre-submit window is still the rendered one", () => {
+    const preSubmit = grid({ entities: Array.from({ length: 80 }, (_, index) => `e${index + 1}`), viewKey: "occ-1\u0000r1" });
+    expect(preSubmit.rowIndexByEntity.has("e150")).toBe(false);
+    expect(settle(preSubmit)).toEqual({ kind: "wait" });
+  });
+
+  it("reveals a destination row the pre-submit window never displayed", () => {
+    // The commit's filter change reveals 300 rows. The neighbour is e150 at
+    // rendered row 149 — far outside the window captured before the commit,
+    // and a row the pre-submit row map could not name at all. The reveal index
+    // must therefore come from the same rendered grid that named it.
+    const rendered = grid({ entities: ["e1", ...Array.from({ length: 299 }, (_, index) => `e${index + 2}`)] });
+    expect(rendered.rowIndexByEntity.get("e150")).toBe(149);
+    expect(settle(rendered)).toEqual({
+      kind: "move",
+      destination: { entity: "e150", field: "impact" },
+      rowIndex: 149,
+    });
+  });
+
+  it("asks for no reveal when the grid mounts every row", () => {
+    expect(settle(grid({ entities: ["e150", "e151"], windowed: false }))).toEqual({
+      kind: "move",
+      destination: { entity: "e150", field: "impact" },
+      rowIndex: null,
+    });
+  });
+
+  it("stops when the rendered grid displays no cell", () => {
+    expect(settle(grid({ entities: [] }))).toEqual({ kind: "stop" });
   });
 });
 
