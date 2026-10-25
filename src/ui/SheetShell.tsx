@@ -65,6 +65,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { sourceNames } from "./source-names.js";
+import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
@@ -652,6 +653,7 @@ export function SheetShell(props: SheetShellProps) {
   const importTypes = chosenImportTypes(importChoice, importSuggestions);
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
+  const j4PresentationCatalog = useMemo(() => j4Catalog ? bindingCatalogNames(j4Catalog, interop?.metadata ?? null, importedSourceName) : null, [j4Catalog, interop?.metadata, importedSourceName]);
   const [j4Pending, setJ4Pending] = useState(false);
   const [reportRenderReady, setReportRenderReady] = useState(false);
   const [reportRenderReadyKey, setReportRenderReadyKey] = useState("unavailable");
@@ -3178,7 +3180,7 @@ export function SheetShell(props: SheetShellProps) {
   function renderSummaryPanel(): ReactNode {
     if (!view) return null;
     const liveWitness: ViewWitness = { occurrence: view.occurrence, revision: view.revision };
-    const collection = (key: string) => j4Catalog?.collections.find((candidate) => candidate.key === key) ?? null;
+    const collection = (key: string) => j4PresentationCatalog?.collections.find((candidate) => candidate.key === key) ?? null;
     const fields = (key: string) => collection(key)?.fields ?? [];
     const choose = (key: keyof KeyedGroupedSumBindingChoice, value: string) => {
       setJ4Binding((current) => {
@@ -3251,10 +3253,10 @@ export function SheetShell(props: SheetShellProps) {
         <p className="ts-subtle">Choose the tables and columns to calculate your summary.</p>
         {!j4Catalog ? <button type="button" className="ts-button" onClick={() => void prepare()} disabled={controlsLocked || j4Pending}>{j4Pending ? "Loading names…" : "Choose tables and fields"}</button> : <>
           <div className="ts-summary-fields">
-            {selector("Orders table", "ordersCollection", j4Catalog.collections)}
+            {selector("Orders table", "ordersCollection", j4PresentationCatalog?.collections ?? j4Catalog.collections)}
             {selector("Order lookup key", "orderLookupKeyField", fields(j4Binding?.ordersCollection ?? ""))}
             {selector("Order quantity", "orderQuantityField", fields(j4Binding?.ordersCollection ?? ""))}
-            {selector("Products table", "productsCollection", j4Catalog.collections)}
+            {selector("Products table", "productsCollection", j4PresentationCatalog?.collections ?? j4Catalog.collections)}
             {selector("Product key", "productKeyField", fields(j4Binding?.productsCollection ?? ""))}
             {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
             {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
