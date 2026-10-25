@@ -1865,7 +1865,24 @@ export function SheetShell(props: SheetShellProps) {
     setFormulaDraft(null);
     setFormulaRefusal(null);
     const destination = position ? positionedAfterSubmit(position, then) : null;
-    if (destination && !modalInteractionOpen) withAppFocus(() => focusCell(destination.entity, destination.field));
+    if (modalInteractionOpen) return;
+    if (destination) {
+      withAppFocus(() => focusCell(destination.entity, destination.field));
+      return;
+    }
+    // No displayed cell can take focus (e.g. a filter hides every row). The
+    // input was disabled during the commit, so hand focus back once it is
+    // enabled again instead of leaving it on the document body.
+    let frames = 0;
+    const refocusBar = () => {
+      const node = formulaInputRef.current;
+      if (node && !node.disabled) {
+        node.focus();
+        return;
+      }
+      if (++frames < 10) requestAnimationFrame(refocusBar);
+    };
+    requestAnimationFrame(refocusBar);
   }
 
   /**
