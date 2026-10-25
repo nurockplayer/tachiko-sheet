@@ -50,6 +50,7 @@ describe("rowSource", () => {
     expect(source.rows(3, 1)).toEqual([]);
     expect(source.rows(0, 0)).toEqual([]);
     expect(source.rows(0, -1)).toEqual([]);
+    expect(source.rows(-1, 2).map((candidate) => candidate.key)).toEqual(["alpha", "beta"]);
   });
 
   it("resolves entities to rows and back to their index", () => {
@@ -58,6 +59,7 @@ describe("rowSource", () => {
     expect(source.indexOf("beta")).toBe(1);
     expect(source.byEntity("missing")).toBeUndefined();
     expect(source.indexOf("missing")).toBe(-1);
+    expect(rowSource(table([row("alpha", "A"), row("alpha", "B")])).indexOf("alpha")).toBe(0);
   });
 
   it("identifies rows by their first FieldTarget entity", () => {
@@ -92,12 +94,14 @@ describe("rowSource", () => {
     expect(rowSource(projected)).not.toBe(rowSource(table([row("alpha", "A")])));
   });
 
-  it("keeps working after rows are replaced in place", () => {
+  it("follows a replaced rows array, including a rebuilt entity index", () => {
     const projected = table([row("alpha", "A")]);
     const source = rowSource(projected);
+    expect(source.byEntity("alpha")?.key).toBe("alpha");
     projected.rows = [row("beta", "B")];
     projected.collection.entity_count = 1;
     expect(source.total).toBe(1);
-    expect(source.byEntity("beta")?.key).toBe("beta");
+    expect(source.byEntity("alpha")).toBeUndefined();
+    expect(source.indexOf("beta")).toBe(0);
   });
 });
