@@ -21,7 +21,21 @@ const timeout = Number(process.env.J6_TIMEOUT_MS ?? 20000);
 const executable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? chromium.executablePath();
 const copyName = `j6-continuation-${Date.now()}-${process.pid}`;
 const evidencePath = path.resolve(process.env.J6_EVIDENCE ?? path.join(os.tmpdir(), `${copyName}.json`));
-const browserProfile = await mkdtemp(path.join(os.tmpdir(), "tachiko-j6-continuation-profile-"));
+// A cancelled run (Ctrl-C, a supervisor's SIGTERM) skips the async finally
+// below, so stop every owned child that has not exited and drop the profile
+// synchronously. Handlers precede the profile so no catchable signal leaks it.
+const ownedProcesses = new Set();
+let browserProfile;
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, () => {
+    for (const owned of ownedProcesses) {
+      try { if (owned.exitCode === null && owned.signalCode === null) owned.kill("SIGKILL"); } catch {}
+    }
+    try { if (browserProfile) rmSync(browserProfile, { recursive: true, force: true }); } catch {}
+    process.exit(code);
+  });
+}
+browserProfile = await mkdtemp(path.join(os.tmpdir(), "tachiko-j6-continuation-profile-"));
 const caseId = "j6-continuation-production-dist-undo-redo-process-restart";
 const stages = [];
 const processEvidence = [];
@@ -39,18 +53,6 @@ let server;
 let serverExit;
 let serverLog = "";
 let origin;
-// A cancelled run (Ctrl-C, a supervisor's SIGTERM) skips the async finally
-// below, so stop the owned children and drop the profile synchronously.
-for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
-  process.once(signal, () => {
-    for (const owned of [child, server]) {
-      try { if (owned?.pid && owned.exitCode === null && owned.signalCode === null) owned.kill("SIGKILL"); } catch {}
-    }
-    try { rmSync(browserProfile, { recursive: true, force: true }); } catch {}
-    process.exit(code);
-  });
-}
-
 function stage(name, facts = {}) {
   stages.push({ stage: name, pid: processEvidence.at(-1)?.pid ?? null, at: new Date().toISOString(), ...facts });
 }
@@ -90,6 +92,8 @@ async function startStaticServer() {
     env: { ...process.env, PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  ownedProcesses.add(server);
+  { const owned = server; owned.once("exit", () => ownedProcesses.delete(owned)); }
   serverLog = "";
   // Only a real exit proves termination; an error event (for example a failed
   // kill signal) must never be read as one. The persistent listener keeps a
@@ -147,6 +151,8 @@ async function startOwnedPersistentChromium() {
     "--use-mock-keychain", "--password-store=basic",
     "--window-size=1280,900", `--user-data-dir=${remoteProfile}`, "--remote-debugging-port=0", "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
+  ownedProcesses.add(child);
+  { const owned = child; owned.once("exit", () => ownedProcesses.delete(owned)); }
   let stderr = "";
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (chunk) => { stderr = (stderr + chunk).slice(-8000); });
