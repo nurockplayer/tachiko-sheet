@@ -44,7 +44,7 @@ const witness = { occurrence: "occ-1", revision: "rev-1" };
 
 describe("mutation completion formula refusal", () => {
   it("shows Work's refusal message verbatim with its position", async () => {
-    const { port, messages } = harness();
+    const { port } = harness();
     const result = await createMutationCompletion(port).run({
       kind: "scalar",
       witness,
@@ -52,7 +52,19 @@ describe("mutation completion formula refusal", () => {
       dispatch: async () => { throw refusal({ code: "invalid_formula", message: "Unexpected end of input.", position: 4 }); },
     });
     expect(result).toEqual({ kind: "refused", message: "Unexpected end of input.", position: 4 });
-    expect(messages.at(-1)).toBe("Unexpected end of input.");
+  });
+
+  it("keeps a formula refusal out of the global banner: the bar shows it", async () => {
+    const { port, messages } = harness();
+    await createMutationCompletion(port).run({
+      kind: "scalar",
+      witness,
+      edit: { kind: "formula", source: "1 +" },
+      dispatch: async () => { throw refusal({ code: "invalid_formula", message: "Unexpected end of input.", position: 4 }); },
+    });
+    // The run clears the banner itself; the refusal must not set it again.
+    expect(messages).not.toContain("Unexpected end of input.");
+    expect(messages.at(-1)).toBeNull();
   });
 
   it("adds no position when Work's refusal has none", async () => {

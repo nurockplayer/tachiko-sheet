@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 
@@ -70,7 +71,7 @@ import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarState, isFormulaCell, type FormulaBarDraft } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, positionedAfterFormulaSubmit, type FormulaBarDraft } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -1782,14 +1783,60 @@ export function SheetShell(props: SheetShellProps) {
     if (focusedPosition) withAppFocus(() => focusCell(focusedPosition.entity, focusedPosition.field));
   }
 
-  async function submitFormula(): Promise<void> {
+  /** The bar owns the caret and can take text; grid clicks then insert references. */
+  function formulaCaretInBar(): boolean {
+    const input = formulaInputRef.current;
+    return Boolean(input && !input.disabled && !input.readOnly && input.ownerDocument.activeElement === input);
+  }
+
+  /**
+   * A cell click while the bar holds the caret inserts that cell's reference
+   * token instead of moving focus or committing. The token comes from the
+   * projection alone; Sheet never parses or rewrites the formula text.
+   */
+  /** The bar owns the caret and this cell can name a Work address. */
+  function cellInsertsReference(row: TableRow | null, column: TableColumn, draft: boolean): boolean {
+    return formulaReferenceInsertion({
+      barHasCaret: formulaCaretInBar(), draft, row, column,
+      hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
+    }) !== null;
+  }
+
+  function insertReferenceFromCell(event: ReactMouseEvent<HTMLTableCellElement>, row: TableRow | null, column: TableColumn, draft: boolean): boolean {
+    // A second click of a double-click adds no second token.
+    if (event.button !== 0 || event.detail > 1) return false;
+    const input = formulaInputRef.current;
+    // A stub cell is drawn for every column, but only a projected field
+    // instance has an address Work can resolve.
+    const token = formulaReferenceInsertion({
+      barHasCaret: formulaCaretInBar(), draft, row, column,
+      hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
+    });
+    if (!token || !input) return false;
+    const current = formulaBarDraftValue(formulaState, formulaDraft);
+    const next = insertFormulaReference(current, token, {
+      start: input.selectionStart ?? current.length,
+      end: input.selectionEnd ?? current.length,
+    });
+    changeFormulaDraft(next.value);
+    // The input is disabled while a commit runs; the frame after it is back.
+    requestAnimationFrame(() => {
+      const node = formulaInputRef.current;
+      if (!node || node.disabled || node.readOnly) return;
+      node.focus();
+      node.setSelectionRange(next.caret, next.caret);
+    });
+    return true;
+  }
+
+  async function submitFormula(then: "stay" | "next" | "previous" = "stay"): Promise<void> {
     const state = formulaState;
     if (!witness || !state.target || !state.editable || commitPending || controlsLocked || rowCommandPendingRef.current) return;
     if (refuseWhileCellDraft("editing a formula", false)) return;
     // A first formula withdraws the native row profile, which would hide the
     // entry row while its draft keeps blocking Save and Undo.
     if (rowDraftActive) {
-      setLocalError("Add or discard the new row first.");
+      setLocalError(FORMULA_BAR_DRAFT_ROW_HINT);
       return;
     }
     const source = formulaBarDraftValue(state, formulaDraft);
@@ -1825,22 +1872,75 @@ export function SheetShell(props: SheetShellProps) {
     }
     setFormulaDraft(null);
     setFormulaRefusal(null);
-    if (position && !modalInteractionOpen) withAppFocus(() => focusCell(position.entity, position.field));
+    const destination = position ? positionedAfterSubmit(position, then) : null;
+    // Move focus only if the user has not put it somewhere else meanwhile:
+    // it is still on the bar, or was dropped to the body when the bar was
+    // disabled for the commit. An open modal keeps its own focus.
+    const focusStillOurs = () => {
+      if (document.querySelector('[aria-modal="true"]')) return false;
+      const active = document.activeElement;
+      return !active || active === document.body || active === formulaInputRef.current;
+    };
+    if (modalInteractionOpen || !focusStillOurs()) return;
+    if (destination) withAppFocus(() => focusCell(destination.entity, destination.field));
+    // If no cell took focus (none is displayed, e.g. a filter hides every row,
+    // or the commit hid the destination), hand focus back to the bar once it
+    // is enabled again. Anything other than the body means focus landed.
+    let frames = 0;
+    const refocusBar = () => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const node = formulaInputRef.current;
+      // A windowed destination is still being revealed; let it land first.
+      if (node && !node.disabled && pendingCellFocusRef.current === null) {
+        node.focus();
+        return;
+      }
+      if (++frames < 10) requestAnimationFrame(refocusBar);
+    };
+    requestAnimationFrame(refocusBar);
+  }
+
+  /**
+   * Tab leaves the bar through the grid's own displayed order, never a
+   * wrap-around, and never into the entry row: a first formula withdraws the
+   * native row profile the pre-commit order still lists, so that cell may be
+   * gone by the time focus moves. A filter can also hide the bound row, so a
+   * position the grid no longer displays falls back to the first or last
+   * displayed cell; with none, focus stays in the bar.
+   */
+  function positionedAfterSubmit(position: GridPosition, then: "stay" | "next" | "previous"): GridPosition | null {
+    return positionedAfterFormulaSubmit({ position, then, order: gridOrder, draftEntity: DRAFT_ROW });
+  }
+
+  /** The bar can hand focus back only to a cell the grid displays right now. */
+  function formulaCellIsDisplayed(position: GridPosition | null): boolean {
+    if (!position || !columns.some((column) => column.id === position.field)) return false;
+    if (position.entity === DRAFT_ROW) return hasDraftRow;
+    return rowIndexByEntity.has(position.entity);
   }
 
   function onFormulaKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     // The bar's input is not a cell editor; drop keys before the grid sees them.
     event.stopPropagation();
-    if (event.key === "Escape") {
-      event.preventDefault();
+    const changed = formulaBarDraftValue(formulaState, formulaDraft) !== formulaState.source;
+    const action = formulaBarKeyAction(event, changed);
+    if (!action) return;
+    if (action.kind === "cancel" && event.key === "Tab" && !formulaCellIsDisplayed(focusedPosition)) {
+      // Nothing to apply and no displayed cell to return to (a filter hides
+      // it): leave the native Tab so focus cannot stay stuck in the input.
+      setFormulaDraft(null);
+      setFormulaRefusal(null);
+      return;
+    }
+    event.preventDefault();
+    if (action.kind === "cancel") {
       cancelFormulaEdit();
       return;
     }
-    if (event.key === "Enter" && !event.repeat && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      event.preventDefault();
-      void submitFormula();
-    }
+    void submitFormula(action.then);
   }
 
   function focusCell(entity: string, field: string): void {
@@ -3493,9 +3593,24 @@ export function SheetShell(props: SheetShellProps) {
         aria-selected={Boolean(rangeSelected) || (!selectionRectangle && focusedKey === key)}
         aria-readonly={!editable}
         title={display.title === display.description ? undefined : display.title ?? undefined}
-        onMouseDown={(event) => { if (event.shiftKey && !draft && !editor) event.preventDefault(); }}
+        onMouseDown={(event) => {
+          // A press inside the cell's own editor belongs to that editor: its
+          // native caret placement must survive, and it inserts no reference.
+          if (cellEditorOwnsPointer(event.target as Element | null)) return;
+          // The bar owns the caret and the cell has an address: this click
+          // inserts its reference and never moves focus or commits. Cells
+          // without one (the entry row, stubs) keep their normal behaviour.
+          if (cellInsertsReference(row, column, draft)) {
+            event.preventDefault();
+            insertReferenceFromCell(event, row, column, draft);
+            return;
+          }
+          if (event.shiftKey && !draft && !editor) event.preventDefault();
+        }}
         onClick={(event) => {
-          if ((event.target as Element).closest("input")) return;
+          if (cellEditorOwnsPointer(event.target as Element | null)) return;
+          // The press above only inserted a reference; the bar keeps the caret.
+          if (cellInsertsReference(row, column, draft)) return;
           setSelectedEntity(entity);
           if (event.shiftKey && !draft && focusedKey) {
             const [priorEntity, priorField] = focusedKey.split("\u0000");
@@ -3506,7 +3621,7 @@ export function SheetShell(props: SheetShellProps) {
             else { setCellSelection(null); focusCell(entity, column.id); }
           } else { setCellSelection(null); focusCell(entity, column.id); }
         }}
-        onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
+        onDoubleClick={() => cellInsertsReference(row, column, draft) ? undefined : draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
         onFocus={() => {
           // The bar only ever shows the focused cell instance, so a draft for
           // another cell would become invisible while still holding the user's

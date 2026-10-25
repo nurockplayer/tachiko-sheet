@@ -12,6 +12,8 @@ export interface FormulaBarState {
   source: string;
   editable: boolean;
   reason: string | null;
+  /** A note that does not refuse editing, e.g. the bound row is hidden by a filter. */
+  note: string | null;
 }
 
 export interface FormulaBarDraft { identity: string; value: string }
@@ -19,6 +21,8 @@ export interface FormulaBarDraft { identity: string; value: string }
 export const FORMULA_BAR_PLACEHOLDER = "Enter a formula";
 export const FORMULA_BAR_NO_CELL = "Select a cell to see its formula.";
 export const FORMULA_BAR_DRAFT_ROW = "Add the row before editing its formula.";
+export const FORMULA_BAR_DRAFT_ROW_HINT = "Add or discard the new row first. Press Esc to cancel this formula.";
+export const FORMULA_BAR_HIDDEN_ROW = "This row is hidden by the current filter or sort. Its formula can still be edited.";
 export const FORMULA_BAR_NON_NATIVE = "Formula editing is available only in native tables. This table does not support it.";
 export const FORMULA_BAR_COLUMN = "This column cannot hold a formula.";
 export const FORMULA_BAR_UNKNOWN = "The current work is not confirmed. Use Refresh to recheck it before editing formulas.";
@@ -42,6 +46,7 @@ export function formulaBarState(input: {
     source: "",
     editable: false,
     reason: FORMULA_BAR_NO_CELL,
+    note: null,
   };
   if (!input.table || !input.focus) return empty;
   const column = input.columns.find((candidate) => candidate.id === input.focus!.field);
@@ -49,12 +54,15 @@ export function formulaBarState(input: {
   if (input.focus.entity === DRAFT_ROW) {
     return { ...empty, label: `${column.display_name} · New row`, reason: FORMULA_BAR_DRAFT_ROW };
   }
+  // A filter or sort can hide the focused row. Its instance still exists in
+  // the projection, so the bar keeps editing it and says whose formula it is.
   const index = input.displayRows.findIndex((row) => rowEntity(row) === input.focus!.entity);
-  const row = input.displayRows[index];
+  const displayed = index >= 0 ? input.displayRows[index] : undefined;
+  const row = displayed ?? input.table.rows.find((candidate) => rowEntity(candidate) === input.focus!.entity);
   if (!row) return empty;
   const field = fieldForColumn(row, column.id);
   const target = field?.target ?? { entity: input.focus.entity, field: column.id };
-  const rowName = rowLabel(row, input.columns) || `Row ${index + 1}`;
+  const rowName = rowLabel(row, input.columns) || (displayed ? `Row ${index + 1}` : "Hidden row");
   const reason = !tableAdmitsFormulas(input.table) ? FORMULA_BAR_NON_NATIVE
     : !columnCanHoldFormula(field, column) ? FORMULA_BAR_COLUMN
     : input.currentness === "unknown" ? FORMULA_BAR_UNKNOWN
@@ -67,7 +75,121 @@ export function formulaBarState(input: {
     source: field?.formula?.source ?? "",
     editable: reason === null,
     reason,
+    note: displayed ? null : FORMULA_BAR_HIDDEN_ROW,
   };
+}
+
+/**
+ * Work's reference token for one projected cell, from the projection's own
+ * keys — never a DOM id, an entity id or a display name. Work refuses ids with
+ * `MissingEntityKey`, and a rename only changes `display_name`.
+ *
+ * The same-row shorthand (`[.fieldKey]`) is not on this pin (Work #574), so
+ * every reference takes the full `[entityKey.fieldKey]` form.
+ */
+export function formulaReferenceToken(
+  row: { key: string } | null,
+  column: { key: string } | null,
+): string | null {
+  const entityKey = row?.key ?? "";
+  const fieldKey = column?.key ?? "";
+  if (!entityKey.trim() || !fieldKey.trim()) return null;
+  return `[${entityKey}.${fieldKey}]`;
+}
+
+/**
+ * What a click on a grid cell means while the formula bar holds the caret:
+ * a reference token to insert, or nothing (an ordinary click, a draft row, a
+ * stub cell, or a bar that is not in edit mode).
+ */
+export function formulaReferenceInsertion(input: {
+  /** The bar's input owns the caret and is editable. */
+  barHasCaret: boolean;
+  /** The clicked cell belongs to the new-row draft. */
+  draft: boolean;
+  row: { key: string } | null;
+  column: { key: string } | null;
+  /**
+   * The clicked row projects a field instance for this column. The grid also
+   * draws a stub cell for every column, but a cell Work never projected has
+   * no reference to give; only the projection can name an address.
+   */
+  hasProjectedField: boolean;
+}): string | null {
+  if (!input.barHasCaret || input.draft || !input.hasProjectedField) return null;
+  return formulaReferenceToken(input.row, input.column);
+}
+
+/**
+ * A pointer-down inside the cell's own scalar editor is that editor's: the
+ * native caret placement and text selection must survive, and no reference is
+ * inserted. `target` is only inspected through `closest`, so this stays a
+ * pure predicate.
+ */
+export function cellEditorOwnsPointer(target: { closest?: (selector: string) => unknown } | null): boolean {
+  return Boolean(target?.closest?.("input"));
+}
+
+/** A grid cell address; only identity matters for focus movement. */
+export interface FormulaGridPosition { entity: string; field: string }
+
+/**
+ * Tab/Shift+Tab after a successful formula submit lands on a cell the grid
+ * actually displays. A filter can hide the bound row, so a position missing
+ * from the displayed order falls back to the first (Tab) or last (Shift+Tab)
+ * visible cell; with nothing visible it returns null, which keeps focus in the
+ * bar instead of on a cell that is not mounted.
+ */
+export function positionedAfterFormulaSubmit(input: {
+  position: FormulaGridPosition;
+  then: "stay" | "next" | "previous";
+  /** Displayed cells in grid order; the new-row draft is last when present. */
+  order: readonly FormulaGridPosition[];
+  /** The new-row draft is never a submit destination. */
+  draftEntity: string;
+}): FormulaGridPosition | null {
+  if (input.then === "stay") return input.position;
+  const index = input.order.findIndex((item) => item.entity === input.position.entity && item.field === input.position.field);
+  if (index >= 0) {
+    const target = input.order[index + (input.then === "next" ? 1 : -1)];
+    return target && target.entity !== input.draftEntity ? target : input.position;
+  }
+  const visible = input.then === "next" ? input.order : [...input.order].reverse();
+  return visible.find((item) => item.entity !== input.draftEntity) ?? null;
+}
+
+/** Insert a token at the caret, replacing the selection; returns the caret after it. */
+export function insertFormulaReference(
+  value: string,
+  token: string,
+  selection: { start: number; end: number } | null,
+): { value: string; caret: number } {
+  const start = Math.min(Math.max(selection?.start ?? value.length, 0), value.length);
+  const end = Math.min(Math.max(selection?.end ?? start, start), value.length);
+  return { value: `${value.slice(0, start)}${token}${value.slice(end)}`, caret: start + token.length };
+}
+
+export type FormulaBarKeyAction =
+  | { kind: "cancel" }
+  | { kind: "submit"; then: "stay" | "next" | "previous" };
+
+/**
+ * Keys the bar owns while it has the caret. Tab applies a changed formula like
+ * Enter and moves on; with nothing to apply it leaves the bar without moving
+ * focus into the grid, so the browser's native Tab cannot bounce it back.
+ */
+export function formulaBarKeyAction(
+  event: { key: string; repeat: boolean; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean },
+  changed: boolean,
+): FormulaBarKeyAction | null {
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
+  if (event.key === "Escape") return { kind: "cancel" };
+  if (event.repeat) return null;
+  if (event.key === "Enter" && !event.shiftKey) return { kind: "submit", then: "stay" };
+  if (event.key === "Tab") return changed
+    ? { kind: "submit", then: event.shiftKey ? "previous" : "next" }
+    : { kind: "cancel" };
+  return null;
 }
 
 /** Work projected a formula for this field instance; Sheet never infers one. */
