@@ -6,8 +6,8 @@
 // Run through `pnpm acceptance:j6-continuation` so the production build exists.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { rmSync } from "node:fs";
-import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -35,7 +35,8 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
     process.exit(code);
   });
 }
-browserProfile = await mkdtemp(path.join(os.tmpdir(), "tachiko-j6-continuation-profile-"));
+// Synchronous, so no event-loop turn separates the directory from its cleanup path.
+browserProfile = mkdtempSync(path.join(os.tmpdir(), "tachiko-j6-continuation-profile-"));
 const caseId = "j6-continuation-production-dist-undo-redo-process-restart";
 const stages = [];
 const processEvidence = [];
