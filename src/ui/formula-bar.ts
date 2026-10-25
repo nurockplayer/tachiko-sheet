@@ -158,6 +158,64 @@ export function positionedAfterFormulaSubmit(input: {
   return visible.find((item) => item.entity !== input.draftEntity) ?? null;
 }
 
+/** A Tab/Shift+Tab/Enter handoff queued by a formula submit. */
+export interface FormulaSubmitHandoff {
+  /** The focused cell at submit time; the neighbour comes from the grid's order. */
+  position: FormulaGridPosition;
+  then: "stay" | "next" | "previous";
+  /** The projection displayed when the submit started; the handoff waits for a newer one. */
+  viewKey: string;
+  /** `focusIntent` generation at submit; a newer user focus action cancels the handoff. */
+  generation: number;
+  /** The occurrence the submit belonged to; a replaced workbook cancels the handoff. */
+  occurrence: string;
+}
+
+export type FormulaSubmitHandoffOutcome =
+  /** The commit's own projection has not rendered yet; keep the handoff queued. */
+  | { kind: "wait" }
+  /** Focus is no longer the commit's: stop without moving it. */
+  | { kind: "stop" }
+  | { kind: "move"; destination: FormulaGridPosition | null };
+
+/**
+ * Decide a queued formula-submit handoff against what the grid displays *now*.
+ * A commit can change a filter or sort, so the order captured before it is
+ * never a destination: the neighbour is resolved from the rendered order only
+ * once the commit's own projection has replaced the one it started from.
+ */
+export function formulaSubmitHandoffOutcome(input: {
+  handoff: FormulaSubmitHandoff;
+  /** Current `focusIntent` generation, bumped by any newer focus action. */
+  generation: number;
+  /** The open work's occurrence right now, or empty when nothing is open. */
+  occurrence: string;
+  /** The projection the grid displays right now, or empty when the workbook is gone. */
+  viewKey: string;
+  order: readonly FormulaGridPosition[];
+  draftEntity: string;
+  /** A modal owns focus and must keep it. */
+  modalOpen: boolean;
+  /** Focus is still on the bar, or was dropped to the body by its disabled input. */
+  focusOnBar: boolean;
+}): FormulaSubmitHandoffOutcome {
+  if (input.modalOpen || !input.focusOnBar) return { kind: "stop" };
+  if (input.handoff.generation !== input.generation) return { kind: "stop" };
+  if (input.handoff.occurrence !== input.occurrence) return { kind: "stop" };
+  // A replaced (recovery) or not-yet-rendered projection has no grid to land on.
+  if (input.viewKey === "") return { kind: "stop" };
+  if (input.viewKey === input.handoff.viewKey) return { kind: "wait" };
+  return {
+    kind: "move",
+    destination: positionedAfterFormulaSubmit({
+      position: input.handoff.position,
+      then: input.handoff.then,
+      order: input.order,
+      draftEntity: input.draftEntity,
+    }),
+  };
+}
+
 /** Insert a token at the caret, replacing the selection; returns the caret after it. */
 export function insertFormulaReference(
   value: string,

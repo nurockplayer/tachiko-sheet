@@ -8,7 +8,7 @@ import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, type Lo
 type ResultSnapshot = { definitionIds: string[]; results: KeyedGroupedSumResult[] };
 type TrackedCommand = { witness: ViewWitness; dispatch(): Promise<ConfirmedPublication> } & (
   | { kind: "scalar"; edit: ScalarEdit }
-  | { kind: "rows" }
+  | { kind: "rows"; retainedInput?: string }
   | { kind: "history"; direction: "undo" | "redo" }
 );
 export type MutationCommand = TrackedCommand
@@ -21,7 +21,8 @@ export type MutationCompletion =
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
-  | { kind: "rows" | "cleanup"; witness: ViewWitness }
+  | { kind: "rows"; witness: ViewWitness; retainedInput?: string }
+  | { kind: "cleanup"; witness: ViewWitness }
   | { kind: "summary"; witness?: ViewWitness };
 export interface MutationRecovery {
   kind: "known-publication-recovery" | "unknown-outcome";
@@ -84,11 +85,21 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.endInitial(occurrence);
       if (tracked) port.markSalesChanged(occurrence);
     }
-    const retainedInput = context.kind === "scalar" && kind === "unknown-outcome" ? JSON.stringify(context.edit) : undefined;
-    const message = kind === "known-publication-recovery" ? KNOWN_RECOVERY_MESSAGE
+    // Scalar edits and a duplicate's typed table name are the user's input: a
+    // recovery keeps them visible for review. Nothing is replayed.
+    const submittedName = context.kind === "rows" ? context.retainedInput : undefined;
+    const retainedInput = context.kind === "scalar"
+      ? (kind === "unknown-outcome" ? JSON.stringify(context.edit) : undefined)
+      : submittedName;
+    // The dialog that held the duplicate name closes on recovery, so both
+    // recovery kinds keep that name in the message the user reads instead.
+    const message = kind === "known-publication-recovery"
+      ? (submittedName === undefined ? KNOWN_RECOVERY_MESSAGE
+        : `${KNOWN_RECOVERY_MESSAGE} The duplicate was requested as “${submittedName}”.`)
       : command === "scalar" ? `The change was dispatched but its outcome is unknown. Refresh to re-read the work. Input retained for review: ${retainedInput}`
       : command === "cleanup" ? "The cleanup was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried."
       : command === "summary" ? "The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried."
+      : submittedName !== undefined ? `The duplicate request for “${submittedName}” was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried. Input retained for review: ${submittedName}`
       : `The ${context.kind === "history" ? context.direction : "row change"} request was dispatched but could not be confirmed. Refresh to re-read the work; it was not retried.`;
     port.recover({ kind, resetPreview: kind === "known-publication-recovery" || command === "cleanup", retainedInput, message });
     return { kind };

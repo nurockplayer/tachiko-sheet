@@ -23,6 +23,7 @@ import {
   formulaBarDraftValue,
   formulaBarKeyAction,
   formulaBarState,
+  formulaSubmitHandoffOutcome,
   formulaReferenceInsertion,
   formulaReferenceToken,
   insertFormulaReference,
@@ -250,6 +251,20 @@ describe("FormulaBar", () => {
     expect(readOnly).toContain(FORMULA_BAR_NON_NATIVE);
   });
 
+  it("reserves the refusal's line so showing it never moves the grid", () => {
+    const bar = state({ entity: "e1", field: "impact" });
+    const withoutError = render({ state: bar, draft: null, pending: false, error: null });
+    const withError = render({ state: bar, draft: null, pending: false, error: { message: "Unexpected end of input.", position: 4 } });
+    // The refusal overlays the reason line inside one notes container. Taking
+    // it (and the input's reference to it) out must leave exactly the
+    // error-free bar, so it adds no line height for the grid to move.
+    expect(withError).toContain('class="ts-formula-bar-notes"');
+    const stripped = withError
+      .replace(/<p class="ts-dialog-error[^>]*>[\s\S]*?<\/p>/, "")
+      .replace(/ aria-describedby="[^"]*-error"/, "");
+    expect(stripped).toBe(withoutError);
+  });
+
   it("shows Work's refusal verbatim below the bar and keeps the draft", () => {
     const bar = state({ entity: "e1", field: "impact" });
     const draft = { identity: bar.identity, value: "1 +" };
@@ -422,6 +437,87 @@ describe("positionedAfterFormulaSubmit", () => {
     // Only the draft row is left; it is still not a destination.
     expect(at({ entity: "gone", field: "impact" }, "next", order.slice(4))).toBeNull();
     expect(at({ entity: "gone", field: "impact" }, "previous", order.slice(4))).toBeNull();
+  });
+});
+
+describe("formulaSubmitHandoffOutcome", () => {
+  // Submit happened on e1.impact while the grid showed revision r1.
+  const handoff = (over: { then?: "stay" | "next" | "previous"; position?: { entity: string; field: string } } = {}) => ({
+    position: over.position ?? { entity: "e1", field: "impact" },
+    then: over.then ?? ("next" as const),
+    viewKey: "occ-1\u0000r1",
+    generation: 3,
+    occurrence: "occ-1",
+  });
+  const order = [
+    { entity: "e1", field: "task" }, { entity: "e1", field: "impact" },
+    { entity: "e2", field: "task" }, { entity: "e2", field: "impact" },
+  ];
+  const decide = (input: {
+    handoff?: ReturnType<typeof handoff>;
+    generation?: number;
+    occurrence?: string;
+    viewKey?: string;
+    order?: typeof order;
+    modalOpen?: boolean;
+    focusOnBar?: boolean;
+  } = {}) => formulaSubmitHandoffOutcome({
+    handoff: handoff(),
+    generation: 3,
+    occurrence: "occ-1",
+    viewKey: "occ-1\u0000r2",
+    order,
+    draftEntity: "draft",
+    modalOpen: false,
+    focusOnBar: true,
+    ...input,
+  });
+
+  it("waits until the commit's own projection has rendered", () => {
+    // The pre-commit order is not a destination: a filter or sort change can
+    // make its neighbour hidden or wrong.
+    expect(decide({ viewKey: "occ-1\u0000r1" })).toEqual({ kind: "wait" });
+  });
+
+  it("resolves the neighbour from the rendered order, not the pre-commit one", () => {
+    // The commit's new filter hid e1: Tab goes to the first displayed cell and
+    // Shift+Tab to the last, never to e1's old neighbour.
+    const filtered = [{ entity: "e2", field: "task" }, { entity: "e2", field: "impact" }];
+    expect(decide({ order: filtered })).toEqual({ kind: "move", destination: { entity: "e2", field: "task" } });
+    expect(decide({ order: filtered, handoff: handoff({ then: "previous" }) }))
+      .toEqual({ kind: "move", destination: { entity: "e2", field: "impact" } });
+  });
+
+  it("walks the rendered order and never lands on the entry row", () => {
+    expect(decide()).toEqual({ kind: "move", destination: { entity: "e2", field: "task" } });
+    const withDraft = [...order, { entity: "draft", field: "task" }];
+    expect(decide({ order: withDraft, handoff: handoff({ position: { entity: "e2", field: "impact" } }) }))
+      .toEqual({ kind: "move", destination: { entity: "e2", field: "impact" } });
+  });
+
+  it("keeps the bar's own cell after Enter once the projection rendered", () => {
+    expect(decide({ handoff: handoff({ then: "stay" }) }))
+      .toEqual({ kind: "move", destination: { entity: "e1", field: "impact" } });
+  });
+
+  it("stops when a newer focus action happened during the commit", () => {
+    expect(decide({ generation: 4 })).toEqual({ kind: "stop" });
+  });
+
+  it("stops while a modal owns focus", () => {
+    expect(decide({ modalOpen: true })).toEqual({ kind: "stop" });
+  });
+
+  it("stops when focus is no longer the commit's", () => {
+    expect(decide({ focusOnBar: false })).toEqual({ kind: "stop" });
+  });
+
+  it("stops when the workbook's projection is gone", () => {
+    expect(decide({ viewKey: "" })).toEqual({ kind: "stop" });
+  });
+
+  it("stops when the open work was replaced during the commit", () => {
+    expect(decide({ occurrence: "occ-2", viewKey: "occ-2\u0000r1" })).toEqual({ kind: "stop" });
   });
 });
 
