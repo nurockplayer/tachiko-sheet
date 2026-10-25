@@ -41,13 +41,10 @@ export function rowSource(table: WorkbookView["table"]): RowSource {
 }
 
 function inMemoryRows(table: WorkbookView["table"]): RowSource {
-  let indexed: { rows: readonly TableRow[]; length: number; positions: Map<string, number> } | null = null;
-  const indexOf = (entity: string): number => {
-    if (!indexed || indexed.rows !== table.rows || indexed.length !== table.rows.length) {
-      indexed = { rows: table.rows, length: table.rows.length, positions: entityIndex(table.rows) };
-    }
-    return indexed.positions.get(entity) ?? -1;
-  };
+  // Lookups search the live rows, exactly as the call sites did before, so a
+  // reused or mutated projection can never answer from a stale index. Window
+  // bookkeeping arrives with Work's window API (A-04).
+  const indexOf = (entity: string): number => table.rows.findIndex((row) => rowEntity(row) === entity);
   return {
     get total() {
       return table.rows.length;
@@ -67,14 +64,4 @@ function inMemoryRows(table: WorkbookView["table"]): RowSource {
     loaded: () => true,
     allRowsForNow: () => table.rows,
   };
-}
-
-/** First position wins if a projection ever repeats an entity. */
-function entityIndex(rows: readonly TableRow[]): Map<string, number> {
-  const index = new Map<string, number>();
-  rows.forEach((row, position) => {
-    const entity = rowEntity(row);
-    if (!index.has(entity)) index.set(entity, position);
-  });
-  return index;
 }

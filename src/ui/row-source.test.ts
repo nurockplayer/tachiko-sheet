@@ -104,4 +104,13 @@ describe("rowSource", () => {
     expect(source.byEntity("alpha")).toBeUndefined();
     expect(source.indexOf("beta")).toBe(0);
   });
+
+  it("answers lookups from the live rows after an in-place reorder", () => {
+    const projected = table([row("alpha", "A"), row("beta", "B")]);
+    const source = rowSource(projected);
+    expect(source.indexOf("alpha")).toBe(0);
+    projected.rows.reverse();
+    expect(source.indexOf("alpha")).toBe(1);
+    expect(source.byEntity("alpha")?.key).toBe("alpha");
+  });
 });
