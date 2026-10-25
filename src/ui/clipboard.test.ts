@@ -81,6 +81,12 @@ describe("paste routing", () => {
     if (native) expect(routePaste([[""]], context({ native, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [[""]] }); // requiredness pre-check refuses before dispatch
     expect(routePaste([["FaLsE"]], context({ native, columnTypes: ["boolean"] }))).toEqual({ kind: "edit", rows: [["false"]] });
   });
+  it("sends a blocked Work formula to the formula bar with the same refusal", () => {
+    expect(routePaste([["1"]], context({ editable: () => false, formula: () => true })))
+      .toEqual({ kind: "refused", message: "Edit the formula in the formula bar." });
+    expect(routePaste([["1"]], context({ editable: () => false, formula: () => false })))
+      .toEqual({ kind: "refused", message: "The pasted block includes a calculated or non-editable cell. Nothing was pasted." });
+  });
   it("fills a partial draft without publishing or losing existing draft permission", () => {
     expect(routePaste([["2", "TRUE"]], context({ draft: true, pendingDraft: true, start: { row: 2, column: 1 } })))
       .toEqual({ kind: "draft", rows: [["2", "true"]] });

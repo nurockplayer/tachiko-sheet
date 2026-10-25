@@ -1128,6 +1128,68 @@ body { margin: 0; }
   min-width: 0;
   flex: 1 1 auto;
 }
+
+/* Formula bar: one dense row for the focused cell instance only, never a column rule. */
+.ts-formula-bar {
+  order: 0;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ts-formula-bar-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 28px;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  overflow: hidden;
+}
+.ts-formula-fx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  border-right: 1px solid var(--ts-line);
+  background: var(--ts-surface-sunken);
+  color: var(--ts-ink-soft);
+  font: italic 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: none;
+}
+.ts-formula-cell {
+  flex: 0 1 34%;
+  min-width: 96px;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-right: 1px solid var(--ts-line);
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ts-formula-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--ts-ink);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ts-formula-input:focus { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
+.ts-formula-input:disabled { color: var(--ts-ink-soft); }
+.ts-formula-bar--readonly .ts-formula-input { color: var(--ts-ink-soft); }
+.ts-formula-bar-reason { padding: 0 2px; }
+.ts-formula-bar-error { font-size: 12px; }
+.ts-formula-bar-position { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ts-cell--formula { cursor: default; }
 .ts-results-pane {
   order: 2;
   display: flex;

@@ -49,7 +49,8 @@ export type SheetSessionErrorCode =
   | "closed"
   | "stale-witness"
   | "session-replaced"
-  | "incoherent-reply";
+  | "incoherent-reply"
+  | "capability-missing";
 
 /**
  * A local refusal or an invalidated reply. Nothing here claims a semantic
@@ -316,6 +317,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         return client.editBoolean(expectedRevision, target, edit.value);
       case "date":
         return client.editDate(expectedRevision, target, edit.value);
+      case "formula": {
+        const updateFormula = client.updateFormula;
+        if (updateFormula === undefined) {
+          throw new SheetSessionError("capability-missing", "The installed public core kit does not provide updateFormula.");
+        }
+        return updateFormula.call(client, expectedRevision, target, edit.source);
+      }
     }
   }
 

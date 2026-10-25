@@ -185,7 +185,7 @@ declare global {
 
 type PublicClient = ReturnType<CoreKit["createExperimentalDesignerClient"]>;
 
-const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate"]);
+const EDIT_METHODS = new Set(["editNumber", "editText", "editBoolean", "editDate", "updateFormula"]);
 const PUBLICATION_METHODS = new Set([...EDIT_METHODS, "commitCleanup", "trackerCommand"]);
 const OBSERVED_COLUMN_KEYS = ["impact", "priority", "notes"] as const;
 const ACCEPTANCE_HARNESS_VERSION = "j4-scalar-edit-requery-fault-v2";

@@ -72,10 +72,15 @@ describe("native empty intent and atomic clear request shaping", () => {
   });
   it("refuses calculated, read-only and unknown slots even among blanks", () => {
     const col = column("text");
-    for (const row of [{ id: "e", key: "e", fields: [] }, { ...present(col), fields: present(col).fields.map(f => ({ ...f, editable_scalar: null })) },
-      { ...present(col), fields: present(col).fields.map(f => ({ ...f, formula: { source: "1" } })) }]) {
+    for (const row of [{ id: "e", key: "e", fields: [] }, { ...present(col), fields: present(col).fields.map(f => ({ ...f, editable_scalar: null })) }]) {
       expect(() => clearCellEdits([row], [col], one, true)).toThrow(/non-editable/);
     }
+  });
+  it("sends a Work formula to the formula bar instead of clearing it", () => {
+    const col = column("number");
+    const formulaRow = { ...present(col, 4), fields: present(col, 4).fields.map(f => ({ ...f, formula: { source: "1 + 2" } })) };
+    expect(() => clearCellEdits([formulaRow], [col], one, true)).toThrow("Edit the formula in the formula bar.");
+    expect(() => emptyCellEdit(cellEditSlot(formulaRow, col)!)).toThrow("Edit the formula in the formula bar.");
   });
   it("counts the whole rectangle before omitting blanks and never chunks past 1,024", () => {
     const cols = Array.from({ length: 9 }, (_, i) => column("text", false, String(i)));

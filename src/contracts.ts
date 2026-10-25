@@ -67,16 +67,22 @@ export interface ViewWitness { occurrence: string; revision: string }
 export function rowEntity(row: WorkbookView["table"]["rows"][number]): string {
   return row.fields[0]?.target.entity ?? row.id;
 }
-export type ScalarEdit =
+/** A typed scalar value. Only onCommit may carry a Work formula alongside these. */
+export type ScalarValueEdit =
   | { kind: "number"; input: string }
   | { kind: "text"; value: string }
   | { kind: "boolean"; value: boolean }
   | { kind: "date"; value: string };
+export type ScalarEdit =
+  | ScalarValueEdit
+  /** Work owns the formula grammar; Sheet forwards the source unchanged. */
+  | { kind: "formula"; source: string };
 
 export type NewTableColumn = { name: string; field_type: "text" | "number" | "date" | "boolean"; required?: boolean };
-export type ColumnInitializer = { entity: string; input: ScalarEdit };
-export type CellEdit = { target: FieldTarget; input: ScalarEdit | { kind: "clear" } };
-export type RowInitializer = { field: string; input: ScalarEdit };
+export type ColumnInitializer = { entity: string; input: ScalarValueEdit };
+/** Cell and row payloads are tracker scalars; formula text never rides them. */
+export type CellEdit = { target: FieldTarget; input: ScalarValueEdit | { kind: "clear" } };
+export type RowInitializer = { field: string; input: ScalarValueEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
   | { kind: "confirmed"; addedEntities?: readonly string[] }
@@ -311,6 +317,13 @@ export function savedCopiesAreVisible(status: "checking" | "ready" | "unavailabl
 }
 export type OperationOutcome = "idle" | "pending" | "unknown";
 export type SaveStatus = "not-saved" | "saving" | "saved" | "failed";
+/** A refused commit keeps its draft; Work's message is shown verbatim to the user. */
+export interface CommitOutcome {
+  accepted: boolean;
+  message?: string;
+  /** Work's 1-based character position for a formula refusal, when it provides one. */
+  position?: number;
+}
 export interface SheetShellProps {
   appearancePreference: AppearancePreferenceController;
   view: WorkbookView | null;
@@ -342,7 +355,7 @@ export interface SheetShellProps {
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
-  onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean>;
+  onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<CommitOutcome>;
   localHistory: LocalHistorySnapshot;
   onHistory(direction: "undo" | "redo"): Promise<FieldTarget | null>;
   onCreateCopy(name: string): Promise<boolean>;
