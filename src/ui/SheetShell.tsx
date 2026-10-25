@@ -1794,6 +1794,14 @@ export function SheetShell(props: SheetShellProps) {
    * token instead of moving focus or committing. The token comes from the
    * projection alone; Sheet never parses or rewrites the formula text.
    */
+  /** The bar owns the caret and this cell can name a Work address. */
+  function cellInsertsReference(row: TableRow | null, column: TableColumn, draft: boolean): boolean {
+    return formulaReferenceInsertion({
+      barHasCaret: formulaCaretInBar(), draft, row, column,
+      hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
+    }) !== null;
+  }
+
   function insertReferenceFromCell(event: ReactMouseEvent<HTMLTableCellElement>, row: TableRow | null, column: TableColumn, draft: boolean): boolean {
     // A second click of a double-click adds no second token.
     if (event.button !== 0 || event.detail > 1) return false;
@@ -3589,9 +3597,10 @@ export function SheetShell(props: SheetShellProps) {
           // A press inside the cell's own editor belongs to that editor: its
           // native caret placement must survive, and it inserts no reference.
           if (cellEditorOwnsPointer(event.target as Element | null)) return;
-          // The bar owns the caret: this click inserts a reference (if the
-          // cell has one) and never moves focus or commits.
-          if (formulaCaretInBar()) {
+          // The bar owns the caret and the cell has an address: this click
+          // inserts its reference and never moves focus or commits. Cells
+          // without one (the entry row, stubs) keep their normal behaviour.
+          if (cellInsertsReference(row, column, draft)) {
             event.preventDefault();
             insertReferenceFromCell(event, row, column, draft);
             return;
@@ -3600,8 +3609,8 @@ export function SheetShell(props: SheetShellProps) {
         }}
         onClick={(event) => {
           if (cellEditorOwnsPointer(event.target as Element | null)) return;
-          // The click above only inserted a reference; the bar keeps the caret.
-          if (formulaCaretInBar()) return;
+          // The press above only inserted a reference; the bar keeps the caret.
+          if (cellInsertsReference(row, column, draft)) return;
           setSelectedEntity(entity);
           if (event.shiftKey && !draft && focusedKey) {
             const [priorEntity, priorField] = focusedKey.split("\u0000");
@@ -3612,7 +3621,7 @@ export function SheetShell(props: SheetShellProps) {
             else { setCellSelection(null); focusCell(entity, column.id); }
           } else { setCellSelection(null); focusCell(entity, column.id); }
         }}
-        onDoubleClick={() => formulaCaretInBar() ? undefined : draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
+        onDoubleClick={() => cellInsertsReference(row, column, draft) ? undefined : draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
         onFocus={() => {
           // The bar only ever shows the focused cell instance, so a draft for
           // another cell would become invisible while still holding the user's
