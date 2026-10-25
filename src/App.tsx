@@ -1681,61 +1681,49 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
     }
     try {
+      // Every local copy is a native v3 snapshot: portable `.ro` bytes for
+      // work-file origin or authored schema, the explicit v3 project export
+      // otherwise. There is no legacy writer or writer-selection branch.
       const portableSave = live.openedFromWorkFile || live.requiresPortableSave;
-      const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const hasDateColumn = definitionBearing || portableSave
-        ? false
-        : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
-      let snapshotRevision: string;
+      const snapshot = portableSave
+        ? await runtime.exportWorkFile(witnessOf(live))
+        : await runtime.exportOpaque(witnessOf(live));
+      const snapshotRevision = snapshot.revision;
+      if (portableSave) validateWorkFileCopy({
+        ...snapshot, importedSource: importedSourceRef.current ?? undefined,
+      });
+      // Save writes only the truthful current state, without a dangling
+      // report. Detached settings stay in memory for same-occurrence Redo;
+      // they are not persisted and are discarded on Close/Open/replacement.
+      const configuredReport = reportRef.current;
+      const source = configuredReport && j4ResultsRef.current.find((candidate) =>
+        candidate.definitionId === configuredReport.definitionId &&
+        candidate.revision === live.revision &&
+        candidate.diagnostics.length === 0,
+      );
+      if (configuredReport && !source) {
+        throw new Error("Refresh the report source before saving its presentation settings.");
+      }
+      const presentation: PresentationAttachment | undefined = configuredReport ? {
+        version: 1,
+        report: configuredReport,
+        snapshotRevision,
+        snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
+      } : undefined;
+      requireCurrentSnapshot(snapshotRevision);
+      const payload = {
+        ...snapshot,
+        importedSource: importedSourceRef.current ?? undefined,
+        presentation,
+      };
       let receipt;
-      if (portableSave || definitionBearing || hasDateColumn) {
-        const snapshot = portableSave
-          ? await runtime.exportWorkFile(witnessOf(live))
-          : await runtime.exportOpaque(witnessOf(live));
-        snapshotRevision = snapshot.revision;
-        if (portableSave) validateWorkFileCopy({
-          ...snapshot, importedSource: importedSourceRef.current ?? undefined,
-        });
-        // Save writes only the truthful current state, without a dangling
-        // report. Detached settings stay in memory for same-occurrence Redo;
-        // they are not persisted and are discarded on Close/Open/replacement.
-        const configuredReport = reportRef.current;
-        const source = configuredReport && j4ResultsRef.current.find((candidate) =>
-          candidate.definitionId === configuredReport.definitionId &&
-          candidate.revision === live.revision &&
-          candidate.diagnostics.length === 0,
-        );
-        if (configuredReport && !source) {
-          throw new Error("Refresh the report source before saving its presentation settings.");
-        }
-        const presentation: PresentationAttachment | undefined = configuredReport ? {
-          version: 1,
-          report: configuredReport,
-          snapshotRevision,
-          snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
-        } : undefined;
-        requireCurrentSnapshot(snapshotRevision);
-        const payload = {
-          ...snapshot,
-          importedSource: importedSourceRef.current ?? undefined,
-          presentation,
-        };
-        if (expected) {
-          const replace = portableSave ? copies.replaceWorkFile : copies.replaceOpaque;
-          if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
-          receipt = await replace.call(copies, expected, payload);
-        } else {
-          const create = portableSave ? copies.createWorkFile! : copies.createOpaque;
-          receipt = await create.call(copies, name, payload);
-        }
+      if (expected) {
+        const replace = portableSave ? copies.replaceWorkFile : copies.replaceOpaque;
+        if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
+        receipt = await replace.call(copies, expected, payload);
       } else {
-        const snapshot = await runtime.exportCanonical(witnessOf(live));
-        snapshotRevision = snapshot.revision;
-        requireCurrentSnapshot(snapshotRevision);
-        if (expected) {
-          if (!copies.replace) throw new Error("Save is unavailable. Save a copy instead.");
-          receipt = await copies.replace(expected, snapshot, importedSourceRef.current ?? undefined);
-        } else receipt = await copies.create(name, snapshot, importedSourceRef.current ?? undefined);
+        const create = portableSave ? copies.createWorkFile! : copies.createOpaque;
+        receipt = await create.call(copies, name, payload);
       }
       void refreshCopies();
       const stillCurrent = mutationCompletion.save(live, snapshotRevision, receipt);

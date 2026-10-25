@@ -144,6 +144,8 @@ async function readView() {
 }
 async function snapshot() { return activePage.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot()); }
 async function counts() { return activePage.evaluate(() => window.__tachikoAcceptance.workMethodCounts()); }
+async function copyWrites() { return activePage.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts()); }
+async function exportWriters() { return activePage.evaluate(() => window.__tachikoAcceptance.exportWriterDispatchCounts()); }
 async function editDate(value) {
   const before = await counts();
   await activePage.locator('table[aria-label="Table"] tbody tr:first-child td:nth-of-type(5)').dblclick();
@@ -428,11 +430,26 @@ try {
   await runCase(expectedCases[4], async () => {
     await importFile("date-only.csv", ["text", "text", "number", "number", "text"]);
     const before = await readView();
-    const canonicalName = `${prefix}-canonical`;
-    await saveCopy(canonicalName);
-    const canonical = await savedRecord(canonicalName);
-    assert.equal(canonical.kind, "canonical");
-    await openSaved(canonicalName);
+    // The legacy canonical writer is retired: an ordinary Save of imported
+    // work must dispatch exactly one opaque v3 copy write and no canonical one.
+    const plainName = `${prefix}-plain`;
+    const writesBeforePlain = await copyWrites();
+    const writersBeforePlain = await exportWriters();
+    await saveCopy(plainName);
+    const writesAfterPlain = await copyWrites();
+    const writersAfterPlain = await exportWriters();
+    assert.deepEqual({
+      opaque: writesAfterPlain.opaque - writesBeforePlain.opaque,
+      canonical: writesAfterPlain.canonical - writesBeforePlain.canonical,
+    }, { opaque: 1, canonical: 0 }, "an ordinary Save dispatches exactly one opaque v3 copy write and no legacy canonical write");
+    assert.deepEqual({
+      v3Opaque: writersAfterPlain.v3Opaque - writersBeforePlain.v3Opaque,
+      legacyOpaque: writersAfterPlain.legacyOpaque - writersBeforePlain.legacyOpaque,
+      canonical: writersAfterPlain.canonical - writersBeforePlain.canonical,
+    }, { v3Opaque: 1, legacyOpaque: 0, canonical: 0 }, "an ordinary Save writes native v3 bytes through the explicit v3 export only");
+    const plain = await savedRecord(plainName);
+    assert.equal(plain.kind, "opaque");
+    await openSaved(plainName);
     assert.deepEqual((await readView()).cells, before.cells);
     await summaryBinding(false);
     await createSummary();
@@ -459,12 +476,25 @@ try {
     const legend = activePage.getByRole("checkbox");
     if (await legend.isChecked()) await legend.uncheck();
     const copyName = `${prefix}-complete`;
+    const writesBeforeComplete = await copyWrites();
+    const writersBeforeComplete = await exportWriters();
     await saveCopy(copyName);
+    const writesAfterComplete = await copyWrites();
+    const writersAfterComplete = await exportWriters();
+    assert.deepEqual({
+      opaque: writesAfterComplete.opaque - writesBeforeComplete.opaque,
+      canonical: writesAfterComplete.canonical - writesBeforeComplete.canonical,
+    }, { opaque: 1, canonical: 0 }, "the complete copy also dispatches exactly one opaque v3 copy write and no legacy canonical write");
+    assert.deepEqual({
+      v3Opaque: writersAfterComplete.v3Opaque - writersBeforeComplete.v3Opaque,
+      legacyOpaque: writersAfterComplete.legacyOpaque - writersBeforeComplete.legacyOpaque,
+      canonical: writersAfterComplete.canonical - writersBeforeComplete.canonical,
+    }, { v3Opaque: 1, legacyOpaque: 0, canonical: 0 }, "the complete copy also writes native v3 bytes through the explicit v3 export only");
     const saved = await savedRecord(copyName);
     assert.equal(saved.kind, "opaque");
-    assert.equal(saved.source.sha256, canonical.source.sha256);
-    assert.deepEqual(saved.source.metadata, canonical.source.metadata, "same saved work retains exact metadata identities");
-    assert.deepEqual(saved.source.ledger, canonical.source.ledger);
+    assert.equal(saved.source.sha256, plain.source.sha256);
+    assert.deepEqual(saved.source.metadata, plain.source.metadata, "same saved work retains exact metadata identities");
+    assert.deepEqual(saved.source.ledger, plain.source.ledger);
     assert.equal(saved.presentation?.snapshotDigest, saved.coreHash);
     assert.equal(saved.presentation?.snapshotRevision, saved.revision);
     assert.equal(saved.presentation?.report.legendVisible, false);
@@ -486,12 +516,12 @@ try {
     assert.match(report.text, /Paper\s+1000/);
     assert.match(report.text, /Stationery\s+800/);
     await activePage.getByRole("button", { name: "Save a copy", exact: true }).click();
-    await activePage.getByRole("textbox", { name: "Copy name", exact: true }).fill(canonicalName);
+    await activePage.getByRole("textbox", { name: "Copy name", exact: true }).fill(plainName);
     await activePage.getByRole("button", { name: "Create copy", exact: true }).click();
     await activePage.getByTestId("save-status").filter({ hasText: "Save failed" }).waitFor();
-    assert.deepEqual(await savedRecord(canonicalName), canonical, "duplicate name leaves original saved record byte/field-identical");
+    assert.deepEqual(await savedRecord(plainName), plain, "duplicate name leaves original saved record byte/field-identical");
     assert.deepEqual(await savedRecord(copyName), saved, "duplicate name leaves newer record byte/field-identical");
-    return { canonical: { ...canonical, bytes: undefined }, saved: { ...saved, bytes: undefined }, savedView, after, report, controls };
+    return { plain: { ...plain, bytes: undefined }, saved: { ...saved, bytes: undefined }, savedView, after, report, controls };
   });
 
   for (const [caseIndex, file, size] of [[5, "rows-64.csv", 64], [6, "fields-16.csv", 16]]) await runCase(expectedCases[caseIndex], async () => {

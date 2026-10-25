@@ -423,9 +423,28 @@ const cases = {
   },
   async formats(p) {
     await seed(p, false); await close(p);
+    // Saves write native v3 only, so build the v1 canonical fixture from the
+    // saved bytes: the legacy envelope carries files, no kind and no saveToken.
+    // It must still open, and its Save moves it into the opaque store.
     await p.evaluate(async () => {
       const db = await new Promise(resolve => { const r = indexedDB.open('tachiko-sheet-local-copies', 2); r.onsuccess = () => resolve(r.result); });
-      await new Promise((resolve, reject) => { const tx = db.transaction('copies', 'readwrite'); const s = tx.objectStore('copies'); const r = s.get('Q4'); r.onsuccess = () => { const v = r.result; v.name = 'Legacy'; delete v.kind; delete v.saveToken; s.add(v); }; tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); }); db.close();
+      let saved;
+      for (const store of ['copies', 'opaque-copies']) {
+        if (saved) break;
+        saved = await new Promise(resolve => { const r = db.transaction(store).objectStore(store).get('Q4'); r.onsuccess = () => resolve(r.result); });
+      }
+      if (!saved) throw new Error('Missing saved Q4 copy');
+      let files = saved.files, revision = saved.revision;
+      if (!files) {
+        const kit = await import('/core-kit/experimental-client.js'); const core = kit.createExperimentalDesignerClient();
+        try {
+          const opened = saved.kind === 'work-file' ? await core.openPortableRo(saved.bytes.slice(0)) : await core.openProject(saved.bytes.slice(0));
+          const tree = await core.exportCanonicalTree(opened.bootstrap.revision);
+          files = tree.files.map(f => ({path: f.path, bytes: f.bytes.slice(0)})); revision = tree.revision;
+        } finally { await core.close(); }
+      }
+      await new Promise((resolve, reject) => { const tx = db.transaction('copies', 'readwrite'); tx.objectStore('copies').put({name: 'Legacy', savedAt: saved.savedAt, revision, files}); tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); });
+      db.close();
     });
     for (const name of ['Q4', 'Legacy']) { const before = await records(p); await open(p, name); const expected = await edit(p, 61); await button(p, 'Save').click(); await saved(p); await close(p); await open(p, name); await oracle(p, name, expected); await close(p); const after = await records(p); for (const store of Object.keys(after)) assert.deepEqual(after[store].filter(r => r.name !== name), before[store].filter(r => r.name !== name)); }
     await button(p, 'Open sales example').click(); await ready(p); await copy(p, 'Opaque'); const expected = await edit(p, 63); await button(p, 'Save').click(); await saved(p); await close(p); await open(p, 'Opaque'); await oracle(p, 'Opaque', expected);

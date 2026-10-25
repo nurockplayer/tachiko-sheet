@@ -101,6 +101,7 @@ class FakeClient {
     trackerCommand: [] as TrackerCommand[],
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
+    exportProjectV3: [] as string[],
     createKeyedGroupedSum: [] as KeyedGroupedSumDefinitionInput[],
     queryKeyedGroupedSum: [] as string[],
     closeProject: 0,
@@ -345,6 +346,13 @@ class FakeClient {
     this.#requireOpen();
     this.#requireRevision(revision);
     return { revision: this.#revision, bytes: new Uint8Array([7, 8, 9]).buffer };
+  }
+
+  async exportProjectV3(revision: string) {
+    this.calls.exportProjectV3.push(revision);
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return { revision: this.#revision, bytes: new Uint8Array([3, 19]).buffer };
   }
 
   async createKeyedGroupedSum(revision: string, definition: KeyedGroupedSumDefinitionInput) {
@@ -1058,12 +1066,17 @@ describe("createSheetRuntime", () => {
   it("exports and reopens opaque core bytes only through the revision witness", async () => {
     const { client, runtime, view } = await opened();
     const exported = await runtime.exportOpaque(witnessOf(view));
-    expect(client.calls.exportProject).toEqual(["r1"]);
-    expect(Array.from(new Uint8Array(exported.bytes))).toEqual([7, 8, 9]);
+    expect(client.calls.exportProjectV3).toEqual(["r1"]);
+    expect(client.calls.exportProject).toEqual([]);
+    expect(Array.from(new Uint8Array(exported.bytes))).toEqual([3, 19]);
     new Uint8Array(exported.bytes)[0] = 0;
-    const reopened = await runtime.openOpaque(new Uint8Array([7, 8, 9]).buffer);
+    // Reopen the same v3 bytes the runtime just handed out, not an unrelated
+    // legacy fixture, so the round trip covers the actual writer's output.
+    const roundTrip = await runtime.exportOpaque(witnessOf(view));
+    const reopened = await runtime.openOpaque(roundTrip.bytes);
     expect(reopened.occurrence).toBe("scope-2");
     expect(client.calls.openProject).toHaveLength(2);
+    expect(Array.from(new Uint8Array(client.calls.openProject[1]))).toEqual([3, 19]);
   });
 
   it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
@@ -1304,14 +1317,11 @@ describe("createSheetRuntime", () => {
 });
 
 describe("Work file adapter admission and export", () => {
-  it.each(["folder", "canonical", "opaque", "recovery"])("uses the typed v3 export refusal after %s open and retains the save requirement", async (entry) => {
+  it.each(["folder", "canonical", "opaque", "recovery"])("writes %s-origin opaque saves through the explicit v3 export only", async (entry) => {
     const client = new FakeClient();
     const { kit, preflightCanonicalProjectEntries } = makeKit(client);
     preflightCanonicalProjectEntries.mockImplementation(() => {});
     const runtime = createSheetRuntime(async () => kit);
-    const ordinary = vi.spyOn(client, "exportProject").mockRejectedValue(new FakeDesignerRuntimeError("unsupported_project", "r1"));
-    const explicit = vi.fn(async (revision: string) => ({ revision, bytes: new Uint8Array([3, 19]).buffer }));
-    Object.assign(client, { exportProjectV3: explicit });
     let view;
     if (entry === "canonical") view = await runtime.openCanonical(CANONICAL_FILES);
     else if (entry === "opaque") view = await runtime.openOpaque(new ArrayBuffer(4));
@@ -1327,48 +1337,31 @@ describe("Work file adapter admission and export", () => {
     }
     expect(view.requiresPortableSave).toBeUndefined(); // No frontend origin inference.
     expect(Array.from(new Uint8Array((await runtime.exportOpaque(view)).bytes))).toEqual([3, 19]);
-    expect(explicit).toHaveBeenCalledExactlyOnceWith(view.revision);
-    const current = await runtime.read();
-    expect(current.requiresPortableSave).toBe(true);
-    const edited = await runtime.edit(current, IMPACT, { kind: "number", input: "4" });
-    expect(edited.requiresPortableSave).toBe(true);
+    expect(client.calls.exportProjectV3).toEqual([view.revision]);
+    expect(client.calls.exportProject).toEqual([]); // No legacy v1/v2 selector dispatch.
+    const edited = await runtime.edit(await runtime.read(), IMPACT, { kind: "number", input: "4" });
     await runtime.exportOpaque(edited);
-    expect(ordinary).toHaveBeenCalledTimes(1);
-    expect(explicit).toHaveBeenLastCalledWith(edited.revision);
-    // A refused replacement leaves the same origin evidence intact.
-    client.hooks.openProject = async () => { throw new FakeDesignerRuntimeError("invalid_project", edited.revision); };
-    await expect(runtime.openOpaque(new ArrayBuffer(0))).rejects.toThrow("invalid_project");
-    expect((await runtime.read()).requiresPortableSave).toBe(true);
-    ordinary.mockRestore();
-    expect((await runtime.openFiles(FILES)).requiresPortableSave).toBeUndefined();
-    await runtime.close();
-    expect((await runtime.openFiles(FILES)).requiresPortableSave).toBeUndefined();
+    expect(client.calls.exportProjectV3).toEqual([view.revision, edited.revision]);
+    expect(client.calls.exportProject).toEqual([]);
+    expect((await runtime.read()).requiresPortableSave).toBeUndefined();
     await runtime.close();
   });
 
-  it.each(["stale_revision", "resource_limit", "invalid_project"])("does not retry ordinary export refusal %s or infer v3 from its text", async (code) => {
+  it.each(["unsupported_project", "stale_revision", "resource_limit", "invalid_project"])("propagates the v3 export refusal %s without retrying or inferring another writer", async (code) => {
     const { runtime, client, view } = await opened();
     const refusal = new FakeDesignerRuntimeError(code, view.revision);
-    refusal.message = "This occurrence was opened from .roproj/v3; use explicit v3 export.";
-    vi.spyOn(client, "exportProject").mockRejectedValue(refusal);
-    const explicit = vi.fn(); Object.assign(client, { exportProjectV3: explicit });
+    const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValue(refusal);
     await expect(runtime.exportOpaque(view)).rejects.toBe(refusal);
-    expect(explicit).not.toHaveBeenCalled();
+    expect(explicit).toHaveBeenCalledExactlyOnceWith(view.revision);
+    expect(client.calls.exportProject).toEqual([]);
     expect((await runtime.read()).requiresPortableSave).toBeUndefined();
   });
 
-  it.each(["refused", "incoherent", "untyped"])("does not retain v3 evidence or return bytes after an %s fallback", async (outcome) => {
+  it("rejects a mismatched v3 export revision and retains the resident work", async () => {
     const { runtime, client, view } = await opened();
-    const refusal = new FakeDesignerRuntimeError("unsupported_project", view.revision);
-    vi.spyOn(client, "exportProject").mockRejectedValue(outcome === "untyped" ? Object.assign(new Error(refusal.message), { failure: refusal.failure }) : refusal);
-    const explicit = vi.fn(async () => {
-      if (outcome === "refused") throw new FakeDesignerRuntimeError("resource_limit", view.revision);
-      return { revision: "wrong-revision", bytes: new ArrayBuffer(4) };
-    });
-    Object.assign(client, { exportProjectV3: explicit });
-    await expect(runtime.exportOpaque(view)).rejects.toBeInstanceOf(Error);
-    expect(explicit).toHaveBeenCalledTimes(outcome === "untyped" ? 0 : 1);
-    expect((await runtime.read()).requiresPortableSave).toBeUndefined();
+    vi.spyOn(client, "exportProjectV3").mockResolvedValue({ revision: "other", bytes: new ArrayBuffer(4) });
+    await expect(runtime.exportOpaque(view)).rejects.toMatchObject({ code: "incoherent-reply" });
+    expect(await runtime.read()).toEqual(view);
   });
 
   it.each(["close", "replacement", "import"])("clears work-file origin at %s after a lost replacement reply", async (boundary) => {

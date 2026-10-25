@@ -243,7 +243,8 @@ const cases = [
           `${profile.label} failed transaction created no saved copy`,
         );
         const writesAfterFailure = await page.evaluate(() => window.__tachikoAcceptance.copyWriteDispatchCounts());
-        assert.equal(writesAfterFailure.canonical, writesBeforeFailure.canonical + 1, `${profile.label} exercised one real canonical copy write`);
+        assert.equal(writesAfterFailure.opaque, writesBeforeFailure.opaque + 1, `${profile.label} exercised one real opaque v3 copy write`);
+        assert.equal(writesAfterFailure.canonical, writesBeforeFailure.canonical, `${profile.label} dispatches no legacy canonical copy write`);
         await nameInput.fill(`${profileName}-corrected`);
         assert.equal(await profileSave.getByRole("alert").count(), 0, `${profile.label} correction clears only the inline Save failure`);
         assert.equal(await page.getByRole("alert").count(), 0, `${profile.label} correction does not reveal the stale parent Save failure behind the modal`);

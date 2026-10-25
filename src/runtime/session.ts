@@ -137,6 +137,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let residentAvailable = false;
   // Host session evidence from an acknowledged Work admission; never document state.
   let openedFromWorkFile = false;
+  // New-table admission and authored schema keep the portable work-file copy
+  // route, so their local copies stay portable `.ro` bytes.
   let requiresPortableSave = false;
   let closed = false;
   let epoch = 0;
@@ -795,27 +797,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const explicitV3 = () => client.exportProjectV3(live.revision);
-      let project;
-      let usedExplicitV3 = requiresPortableSave;
-      try {
-        project = await afterUsable(expected, dispatch(kit, usedExplicitV3 ? explicitV3 : () => client.exportProject(live.revision)));
-      } catch (error) {
-        assertUsable(expected);
-        // This kit exposes no origin in open/inspect/occurrence projections.
-        // At the pinned producer, ordinary export's v3-origin guard emits
-        // unsupported_project. Use that typed refusal, never message text or
-        // frontend manifest parsing, to select the explicit compatible writer.
-        // Other refusals and an unsuccessful explicit export remain failures.
-        if (usedExplicitV3 || !(error instanceof kit.DesignerRuntimeError) || error.failure.code !== "unsupported_project") throw error;
-        project = await afterUsable(expected, dispatch(kit, explicitV3));
-        usedExplicitV3 = true;
-      }
+      // Every persisted project is native v3: the explicit writer is the only
+      // opaque writer, so no legacy selector or refusal-driven fallback remains.
+      const project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
-      // Retain only confirmed producer evidence for this occurrence. Every
-      // open path (including recovery/Home) reaches this common fallback;
-      // replacement/Close reset it along with the other admission evidence.
-      if (usedExplicitV3) requiresPortableSave = true;
       return { revision: project.revision, bytes: project.bytes.slice(0) };
     });
   }
