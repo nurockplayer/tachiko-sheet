@@ -23,6 +23,7 @@ import type {
 import type {
   Currentness,
   CellEdit,
+  CommitOutcome,
   FieldTarget,
   ImportSelection,
   KeyedGroupedSumBindingCatalog,
@@ -68,6 +69,8 @@ import { sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
+import { FormulaBar } from "./FormulaBar.js";
+import { FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarState, isFormulaCell, type FormulaBarDraft } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -636,6 +639,12 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  // The bar's draft names its projection revision and cell, so a newer
+  // occurrence or revision can never display text meant for the old one.
+  const [formulaDraft, setFormulaDraft] = useState<FormulaBarDraft | null>(null);
+  // Bound to the exact cell/revision instance that raised it, so a message is
+  // never displayed under a different cell without any effect or extra render.
+  const [formulaRefusal, setFormulaRefusal] = useState<{ identity: string; message: string; position?: number } | null>(null);
   const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
   const gridRowHeightRef = useRef(32);
   // Mirrors the ref so a measured pitch change re-renders spacer heights.
@@ -698,6 +707,10 @@ export function SheetShell(props: SheetShellProps) {
   const historyOperationIdRef = useRef(0);
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | null>(null);
+  const formulaInputRef = useRef<HTMLInputElement | null>(null);
+  // The identity currently displayed by the bar; a late refusal compares it
+  // before publishing a message meant for another cell.
+  const formulaIdentityRef = useRef("");
   const selectEditorValueOnFocusRef = useRef(true);
   // Intent captured when a rejected commit asked to refocus its retained
   // editor; rechecked when the refocus is finally applied.
@@ -735,6 +748,9 @@ export function SheetShell(props: SheetShellProps) {
     node.focus();
     if (selectEditorValueOnFocusRef.current) node.select();
     else node.setSelectionRange(node.value.length, node.value.length);
+  }, []);
+  const bindFormulaInput = useCallback((node: HTMLInputElement | null) => {
+    formulaInputRef.current = node;
   }, []);
   const viewKey = view ? `${view.occurrence}\u0000${view.revision}` : null;
   const collectionIdentity = view ? `${view.occurrence}\u0000${view.table.collection.key}` : null;
@@ -792,6 +808,15 @@ export function SheetShell(props: SheetShellProps) {
       setCloseOpen(false);
       setTab("table");
     }
+  }, [viewKey]);
+
+  // A newer projection invalidates any draft; a refused message belongs to the
+  // cell that raised it. A draft is additionally bound to its cell identity, so
+  // focus changes show the new cell's own source while an edit in progress is
+  // never silently destroyed by merely looking at another cell.
+  useEffect(() => {
+    setFormulaDraft(null);
+    setFormulaRefusal(null);
   }, [viewKey]);
 
   useEffect(() => {
@@ -874,6 +899,39 @@ export function SheetShell(props: SheetShellProps) {
     displayRows.forEach((row, index) => indices.set(rowEntity(row), index));
     return indices;
   }, [displayRows]);
+  const focusedPosition = useMemo<GridPosition | null>(() => {
+    const [entity, field] = focusedKey?.split("\u0000") ?? [];
+    return entity && field ? { entity, field } : null;
+  }, [focusedKey]);
+  // Reads only the focused instance's own projected formula (#129): never a
+  // column-level rule, a computed-column claim or a neighbour's value.
+  const formulaState = formulaBarState({
+    viewIdentity: viewKey ?? "",
+    table,
+    columns,
+    displayRows,
+    focus: focusedPosition,
+    currentness,
+    // Another operation's publication replaces the projection; this bar's own
+    // submit is the one busy case that must keep the bar editable for itself.
+    locked: props.busy && !commitPending,
+  });
+  // A changed, identity-bound draft is unapplied user input: it blocks the same
+  // operations as an open cell editor instead of silently vanishing with a new
+  // revision. An unchanged bar value is only a selection, not a draft.
+  const formulaDraftActive = Boolean(
+    formulaDraft && formulaDraft.identity === formulaState.identity &&
+    formulaDraft.value !== formulaState.source,
+  );
+  // A refusal names the cell instance that raised it. A newer cell or revision
+  // simply never shows it — no clearing effect, so focus changes never schedule
+  // a render of their own.
+  const formulaError = formulaRefusal && formulaRefusal.identity === formulaState.identity
+    ? { message: formulaRefusal.message, ...(formulaRefusal.position !== undefined ? { position: formulaRefusal.position } : {}) }
+    : null;
+  useLayoutEffect(() => {
+    formulaIdentityRef.current = formulaState.identity;
+  }, [formulaState.identity]);
 
   function address(position: GridPosition): CellAddress {
     return { row: rowIndexByEntity.get(position.entity) ?? -1, column: columns.findIndex(column => column.id === position.field) };
@@ -1052,12 +1110,16 @@ export function SheetShell(props: SheetShellProps) {
     const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, displayRows.length);
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
-      blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
+      blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
       pendingDraft: rowDraftActive, start, rowCount: displayRows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
       editable: (r, c) => {
         const row = displayRows[r], column = columns[c];
         const slot = row && column ? cellEditSlot(row, column) : null;
         return Boolean(slot && !slot.formula);
+      },
+      formula: (r, c) => {
+        const row = displayRows[r], column = columns[c];
+        return Boolean(row && column && isFormulaCell(row, column));
       },
     });
     if (route.kind === "refused") { announceClipboard(route.message, true); return; }
@@ -1079,7 +1141,10 @@ export function SheetShell(props: SheetShellProps) {
         for (const [c, raw] of values.entries()) {
           const column = columns[start.column + c]!;
           const slot = cellEditSlot(blockRows[r]!, column);
-          if (!slot || slot.formula) { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
+          if (!slot || slot.formula) {
+            announceClipboard(blockRows[r] && isFormulaCell(blockRows[r]!, column) ? FORMULA_BAR_GUIDANCE : "The pasted block includes a non-editable cell. Nothing was pasted.", true);
+            return;
+          }
           try {
             const edit = pastedCellEdit(slot, raw, Boolean(table.native_table_profile));
             if (edit) edits.push(edit);
@@ -1132,7 +1197,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function clearGrid(position: GridPosition): void {
-    if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
+    if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before clearing cells.", true, true); return;
     }
     if (!table) return;
@@ -1320,7 +1385,7 @@ export function SheetShell(props: SheetShellProps) {
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
   const modalInteractionOpen = columnDialog !== null || deleteName !== null || newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
-  const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive;
+  const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
     const request = historyFocusRequest;
@@ -1420,9 +1485,9 @@ export function SheetShell(props: SheetShellProps) {
       const focusInShell = focusedElement instanceof Node && shell.contains(focusedElement);
       if (!((targetInShell && (focusInShell || neutralFocus)) || (neutralTarget && neutralFocus))) return;
       if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
-      if (rowDraftActive && !modalInteractionOpen && historyCommandForKey(event, target, props.appearancePreference.getSnapshot().composing || controlsLocked, focusedElement)) {
+      if ((rowDraftActive || formulaDraftActive) && !modalInteractionOpen && historyCommandForKey(event, target, props.appearancePreference.getSnapshot().composing || controlsLocked, focusedElement)) {
         event.preventDefault();
-        setLocalError("Add or discard the new row first.");
+        setLocalError(formulaDraftActive ? "Apply or cancel the formula you are editing before using Undo or Redo." : "Add or discard the new row first.");
         return;
       }
       const direction = historyCommandForKey(
@@ -1437,14 +1502,14 @@ export function SheetShell(props: SheetShellProps) {
     }
     window.addEventListener("keydown", onHistoryKeyDown);
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
-  }, [controlsLocked, currentness, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view]);
+  }, [controlsLocked, currentness, formulaDraftActive, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view]);
   const cellDraftActive = editor !== null && editor.entity !== DRAFT_ROW && editor.value !== editor.original;
-  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
+  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   // Downloads snapshot the published revision, so unpublished drafts block them.
-  const spreadsheetDraftLocked = cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  const spreadsheetDraftLocked = cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
-    cellDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
+    cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
     (newTableOpen && newTableDraftActive) || columnDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
@@ -1593,21 +1658,13 @@ export function SheetShell(props: SheetShellProps) {
     async (
       target: FieldProjection["target"],
       edit: Parameters<SheetShellProps["onCommit"]>[2],
-      onRejected?: () => void,
-    ): Promise<boolean> => {
-      if (!witness) return false;
+    ): Promise<CommitOutcome | null> => {
+      if (!witness) return null;
       setCommitPending(true);
       try {
-        const accepted = await onCommit(witness, target, edit);
-        if (!accepted) {
-          onRejected?.();
-          setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
-        }
-        return accepted;
+        return await onCommit(witness, target, edit);
       } catch (error) {
-        onRejected?.();
-        setLocalError(explain(error, "The work could not apply this change. The draft was kept."));
-        return false;
+        return { accepted: false, message: explain(error, "The work could not apply this change. The draft was kept.") };
       } finally {
         setCommitPending(false);
       }
@@ -1616,6 +1673,21 @@ export function SheetShell(props: SheetShellProps) {
   );
 
   function beginEdit(entity: string, fieldId: string, seed?: string): void {
+    // Work owns the formula text; in-cell editing can never rewrite it.
+    if (formulaCellAt({ entity, field: fieldId })) {
+      announceClipboard(FORMULA_BAR_GUIDANCE, false, true);
+      return;
+    }
+    // An unapplied formula draft would be dropped by the editor's publication,
+    // even when both editors target the same cell.
+    if (formulaDraftActive) {
+      setLocalError("Apply or cancel the formula you are editing before editing this cell.");
+      requestAnimationFrame(() => {
+        const input = formulaInputRef.current;
+        if (input && !input.disabled && !input.readOnly) input.focus();
+      });
+      return;
+    }
     const slot = currentEditorSlot({ entity, field: fieldId });
     if (!slot || controlsLocked) return;
     if (editor && editor.entity !== DRAFT_ROW && editor.value !== editor.original && (editor.entity !== entity || editor.field !== slot.target.field)) {
@@ -1668,6 +1740,107 @@ export function SheetShell(props: SheetShellProps) {
     setEditor(null);
     setLocalError(null);
     if (cancelled) focusCell(cancelled.entity, cancelled.field);
+  }
+
+  function formulaCellAt(position: GridPosition): boolean {
+    const row = table?.rows.find((candidate) => rowEntity(candidate) === position.entity);
+    const column = columns.find((candidate) => candidate.id === position.field);
+    return Boolean(row && column && isFormulaCell(row, column));
+  }
+
+  function beginFormulaEdit(position: GridPosition): void {
+    const state = formulaBarState({ viewIdentity: viewKey ?? "", table, columns, displayRows, focus: position, currentness });
+    if (!state.editable || !state.target || controlsLocked || rowCommandPendingRef.current) return;
+    if (refuseWhileCellDraft("editing a formula", false)) return;
+    setCellSelection(null);
+    setClipboardMessage(null);
+    requestAnimationFrame(() => {
+      const input = formulaInputRef.current;
+      if (!input || input.disabled || input.readOnly) return;
+      input.focus();
+      input.select();
+    });
+  }
+
+  function changeFormulaDraft(value: string): void {
+    if (!formulaState.editable) return;
+    // The reverse of an in-cell edit: a changed cell value is also unapplied,
+    // and its publication would drop this formula draft.
+    if (cellDraftActive) {
+      setLocalError("Apply or cancel the value you are editing before editing a formula.");
+      requestAnimationFrame(() => editorInputRef.current?.focus());
+      return;
+    }
+    setClipboardMessage(null);
+    setFormulaRefusal(null);
+    setFormulaDraft({ identity: formulaState.identity, value });
+  }
+
+  function cancelFormulaEdit(): void {
+    setFormulaDraft(null);
+    setFormulaRefusal(null);
+    if (focusedPosition) withAppFocus(() => focusCell(focusedPosition.entity, focusedPosition.field));
+  }
+
+  async function submitFormula(): Promise<void> {
+    const state = formulaState;
+    if (!witness || !state.target || !state.editable || commitPending || controlsLocked || rowCommandPendingRef.current) return;
+    if (refuseWhileCellDraft("editing a formula", false)) return;
+    // A first formula withdraws the native row profile, which would hide the
+    // entry row while its draft keeps blocking Save and Undo.
+    if (rowDraftActive) {
+      setLocalError("Add or discard the new row first.");
+      return;
+    }
+    const source = formulaBarDraftValue(state, formulaDraft);
+    if (source === state.source) {
+      setFormulaDraft(null);
+      setFormulaRefusal(null);
+      return;
+    }
+    const position = focusedPosition;
+    setFormulaRefusal(null);
+    setLocalError(null);
+    // Sheet forwards the source unchanged; Work parses, validates and stores it.
+    const outcome = await runCommit(state.target, { kind: "formula", source });
+    if (!outcome || !outcome.accepted) {
+      // The refusal belongs to this cell and this revision. A changed identity
+      // means the projection moved on; never show this message under it.
+      if (formulaIdentityRef.current !== state.identity) return;
+      // A refusal keeps the user's text in the bar and Work's words verbatim,
+      // with Work's own character position when it supplies one.
+      setFormulaRefusal({
+        identity: state.identity,
+        message: outcome?.message ?? "The formula was not applied.",
+        ...(outcome?.position !== undefined ? { position: outcome.position } : {}),
+      });
+      // Submitting disables the input; the second frame runs after it is back.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const input = formulaInputRef.current;
+        if (!input || input.disabled || input.readOnly) return;
+        input.focus();
+        input.select();
+      }));
+      return;
+    }
+    setFormulaDraft(null);
+    setFormulaRefusal(null);
+    if (position && !modalInteractionOpen) withAppFocus(() => focusCell(position.entity, position.field));
+  }
+
+  function onFormulaKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
+    if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
+    // The bar's input is not a cell editor; drop keys before the grid sees them.
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelFormulaEdit();
+      return;
+    }
+    if (event.key === "Enter" && !event.repeat && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      void submitFormula();
+    }
   }
 
   function focusCell(entity: string, field: string): void {
@@ -1765,6 +1938,12 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       return true;
     }
+    // Publishing this value would install a new revision and drop the formula
+    // draft the bar is still holding.
+    if (formulaDraftActive) {
+      setLocalError("Apply or cancel the formula you are editing before changing this cell.");
+      return false;
+    }
     keepGridRows([editor.entity]);
     if (editor.value === "" && table?.native_table_profile) {
       let change: CellEdit | null;
@@ -1792,9 +1971,14 @@ export function SheetShell(props: SheetShellProps) {
       edit = scalarEditOf(editor.kind, editor.value);
     }
     const intent = completionIntent();
-    const accepted = await runCommit(slot.target, edit, () => {
+    const outcome = await runCommit(slot.target, edit);
+    const accepted = outcome?.accepted === true;
+    if (!accepted) {
       focusRejectedEditorRef.current = intent;
-    });
+      // The cell editor keeps its established retained-draft copy; Work's own
+      // detail stays in the status message rather than replacing it.
+      setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
+    }
     if (accepted) {
       setEditor(null);
       setLocalError(null);
@@ -1865,7 +2049,14 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "F2"].includes(event.key)) setCellSelection(null);
+    const formulaCell = !draft && formulaCellAt(position);
     const editable = (draft || Boolean(currentEditorSlot(position))) && !controlsLocked;
+    // Shift+F2 opens the formula bar for this exact cell instance.
+    if (!draft && event.shiftKey && event.key === "F2" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      beginFormulaEdit(position);
+      return;
+    }
     if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
       const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
       const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}), mayPublish);
@@ -1882,6 +2073,11 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (event.key === "Enter" || event.key === "F2") {
+      if (formulaCell) {
+        event.preventDefault();
+        announceClipboard(FORMULA_BAR_GUIDANCE, false, true);
+        return;
+      }
       if (!editable) return;
       event.preventDefault();
       if (draft) beginDraftEdit(columns.find(column => column.id === position.field)!);
@@ -1901,7 +2097,7 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (
-      editable &&
+      (editable || formulaCell) &&
       event.key.length === 1 &&
       event.key !== " " &&
       !event.ctrlKey &&
@@ -1909,6 +2105,10 @@ export function SheetShell(props: SheetShellProps) {
       !event.altKey
     ) {
       event.preventDefault();
+      if (formulaCell) {
+        announceClipboard(FORMULA_BAR_GUIDANCE, false, true);
+        return;
+      }
       if (draft) beginDraftEdit(columns.find(column => column.id === position.field)!, event.key);
       else beginEdit(entity, position.field, event.key);
     }
@@ -1980,7 +2180,20 @@ export function SheetShell(props: SheetShellProps) {
   // An unapplied cell value is never published implicitly. Anything else that
   // installs a new revision (or may clear the view) would drop it, so refuse
   // and return to the Table panel, whose editor autofocus retains the draft.
-  function refuseWhileCellDraft(action: string): boolean {
+  function refuseWhileCellDraft(action: string, includeFormula = true): boolean {
+    // The formula bar is an editor too: its unapplied text is refused by the
+    // same rule and its input gets focus back. The bar's own paths pass false.
+    if (includeFormula && formulaDraftActive) {
+      setLocalError(`Apply or cancel the formula you are editing before ${action}.`);
+      setTab("table");
+      window.requestAnimationFrame(() => {
+        const input = formulaInputRef.current;
+        if (!input || input.disabled || input.readOnly) return;
+        input.focus();
+        input.select();
+      });
+      return true;
+    }
     if (!cellDraftActive) return false;
     setLocalError(`Apply or cancel the value you are editing before ${action}.`);
     setTab("table");
@@ -1994,7 +2207,11 @@ export function SheetShell(props: SheetShellProps) {
     if (refuseWhileCellDraft("applying notes")) return;
     const applied = activeNotesDraft;
     const entity = notesField.target.entity;
-    const accepted = await runCommit(notesField.target, { kind: "text", value: notesValue });
+    const outcome = await runCommit(notesField.target, { kind: "text", value: notesValue });
+    const accepted = outcome?.accepted === true;
+    // Same retained-draft copy as the cell editor; Work's detail stays in the
+    // status message.
+    if (!accepted) setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
     if (accepted && applied) {
       // Same as a cell edit: an applied Notes value keeps its row visible under
       // the filter that was active when it was written.
@@ -2036,6 +2253,14 @@ export function SheetShell(props: SheetShellProps) {
     }
     if (anyNotesDraft || hasInvalidReportDraft) {
       setLocalError("Apply or cancel the current draft before switching tables.");
+      return false;
+    }
+    if (formulaDraftActive) {
+      setLocalError("Apply or cancel the formula you are editing before switching tables.");
+      window.requestAnimationFrame(() => {
+        const input = formulaInputRef.current;
+        if (input && !input.disabled && !input.readOnly) input.focus();
+      });
       return false;
     }
     if (cellDraftActive || rowDraftActive) {
@@ -2197,6 +2422,16 @@ export function SheetShell(props: SheetShellProps) {
 
   function openCopyDialog(forClose = false): void {
     if (view?.openedFromWorkFile && workFileSaveUnavailableReason) return;
+    // A copy snapshots the published revision, so it must never silently
+    // leave out an unapplied formula.
+    if (formulaDraftActive) {
+      setLocalError("Apply or cancel the formula you are editing before saving a copy.");
+      requestAnimationFrame(() => {
+        const input = formulaInputRef.current;
+        if (input && !input.disabled && !input.readOnly) input.focus();
+      });
+      return;
+    }
     invalidateCloseSaveIntent();
     if (forClose) closeSaveIntentRef.current = Symbol("close after copy save");
     setCopyError(null);
@@ -2224,9 +2459,16 @@ export function SheetShell(props: SheetShellProps) {
 
   async function saveWork(forClose = false): Promise<void> {
     if (!view || controlsLocked || currentness !== "current" || saveStatus === "saving" || modalInteractionOpen && !forClose) return;
+    // The copy dialog refuses an unapplied formula itself; check it before the
+    // dialog-opening branch so the message is about the save, not the copy.
+    if (formulaDraftActive) {
+      setLocalError("Apply or cancel the formula you are editing before saving.");
+      return;
+    }
     if (!boundCopyName) { openCopyDialog(forClose); return; }
     if (!onSave || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft) {
-      setLocalError(rowDraftActive ? "Add or discard the new row first." : "Finish or clear the unfinished changes before saving.");
+      setLocalError(rowDraftActive ? "Add or discard the new row first."
+        : "Finish or clear the unfinished changes before saving.");
       return;
     }
     const witness = { occurrence: view.occurrence, revision: view.revision };
@@ -2287,6 +2529,10 @@ export function SheetShell(props: SheetShellProps) {
     if (name === "" || copyPending || controlsLocked) return;
     if (rowDraftActive) {
       setCopyError("Add or discard the new row first.");
+      return;
+    }
+    if (formulaDraftActive) {
+      setCopyError("Apply or cancel the formula you are editing before creating a copy.");
       return;
     }
     if (hasInvalidReportDraft) {
@@ -2391,7 +2637,7 @@ export function SheetShell(props: SheetShellProps) {
   }, [view?.occurrence, view?.table.collection.id, currentness, rowDraft]);
 
   function discardRowDraft(): void {
-    if (controlsLocked || cellDraftActive || rowCommandPendingRef.current) return;
+    if (controlsLocked || cellDraftActive || formulaDraftActive || rowCommandPendingRef.current) return;
     setClipboardMessage(null);
     if (editor?.entity === DRAFT_ROW) setEditor(null);
     setRowDraft(null);
@@ -2425,7 +2671,7 @@ export function SheetShell(props: SheetShellProps) {
 
   // Tab and publication must agree about whether a request can be dispatched.
   function rowInsertBlocked(): boolean {
-    return controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || rowDraft?.needsReview === true || props.appearancePreference.getSnapshot().composing;
+    return controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraft?.needsReview === true || props.appearancePreference.getSnapshot().composing;
   }
 
   async function addRow(redirectMissing = false): Promise<void> {
@@ -2478,7 +2724,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function deleteRow(): Promise<void> {
-    if (!view || !witness || !selectedEntity || selectedEntity === DRAFT_ROW || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
+    if (!view || !witness || !selectedEntity || selectedEntity === DRAFT_ROW || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || formulaDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
@@ -2501,7 +2747,7 @@ export function SheetShell(props: SheetShellProps) {
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
   }
 
-  const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   const columnChangeReason = "Finish the current input before changing columns.";
   useEffect(() => { setColumnDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
   useEffect(() => {
@@ -3037,8 +3283,8 @@ export function SheetShell(props: SheetShellProps) {
           </tr>
           <tr role="presentation" className="ts-entry-feedback"><td role="presentation" colSpan={columns.length + 1}>
             <div className="ts-entry-actions">
-              <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
-              <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive} onClick={discardRowDraft}>Discard</button>
+              <button type="button" className="ts-button" disabled={controlsLocked || cellDraftActive || formulaDraftActive || currentness !== "current" || rowDraft?.needsReview === true} onClick={() => void addRow()}>Add row</button>
+              <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || cellDraftActive || formulaDraftActive} onClick={discardRowDraft}>Discard</button>
               {rowDraftActive ? <span className="ts-hint">{rowDraft?.needsReview ? "Review the row, then discard this draft before adding another." : "Press Enter to add this row."}</span> : null}
               {rowError ? <span className="ts-row-error" id="ts-row-error" role="alert">{rowError.message}</span> : null}
             </div>
@@ -3064,6 +3310,15 @@ export function SheetShell(props: SheetShellProps) {
               {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" onClick={clearGridSort}>Clear sort</button> : null}
               {gridSettings.filter ? <button type="button" className="ts-button ts-button--ghost" onClick={() => applyGridFilter(gridSettings.filter!.field, "")}>Clear filter</button> : null}
             </div> : null}
+            <FormulaBar
+              state={formulaState}
+              draft={formulaDraft}
+              pending={commitPending}
+              error={formulaError}
+              inputRef={bindFormulaInput}
+              onChange={changeFormulaDraft}
+              onKeyDown={onFormulaKeyDown}
+            />
             <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
@@ -3079,7 +3334,7 @@ export function SheetShell(props: SheetShellProps) {
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         {(table.native_table_profile && onInsertRow && onRemoveRows) || (compactColumnActions && focusedColumn) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
-          {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
+          {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
             if (columnChangesBlocked) { closeColumnToolbar(event.currentTarget); return; }
@@ -3194,13 +3449,17 @@ export function SheetShell(props: SheetShellProps) {
     const draftBoolean = column.field_type === "boolean" ? parseBooleanDraft(raw) : null;
     const display: FieldDisplay = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : cellDisplay(row!, column);
     const key = cellKey(entity, column.id);
+    const cellIdentity = `${viewKey ?? ""}\u0000${key}`;
     const focusedEntity = focusedKey?.split("\u0000")[0];
     const focusedEntityVisible = Boolean(focusedEntity && (focusedEntity === DRAFT_ROW
       ? hasDraftRow
       : rowIndexByEntity.has(focusedEntity)));
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
-    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && cellEditSlot(row, column))) && !controlsLocked;
+    // A formula field instance is read-only in the grid; the bar edits it.
+    const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
+    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
+    if (formulaCell) classes.push("ts-cell--formula");
     const coordinate = address({ entity, field: column.id });
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
@@ -3245,6 +3504,20 @@ export function SheetShell(props: SheetShellProps) {
         }}
         onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
         onFocus={() => {
+          // The bar only ever shows the focused cell instance, so a draft for
+          // another cell would become invisible while still holding the user's
+          // text. Keep the caret in the bar until it is applied or cancelled.
+          if (formulaDraftActive && formulaDraft && formulaDraft.identity !== cellIdentity) {
+            // While a submission is pending the bar cannot take focus back;
+            // the refusal/accepted path returns it once the input is enabled.
+            if (!commitPending) setLocalError("Apply or cancel the formula you are editing before moving to another cell.");
+            requestAnimationFrame(() => {
+              const input = formulaInputRef.current;
+              if (!input || input.disabled || input.readOnly) return;
+              input.focus();
+            });
+            return;
+          }
           setSelectedEntity(entity);
           setFocusedKey(key);
           lastCellRef.current = cellRefs.current.get(key) ?? null;
@@ -3469,13 +3742,10 @@ export function SheetShell(props: SheetShellProps) {
     };
     const create = async () => {
       if (!j4Binding || controlsLocked || j4Pending) return;
-      if (cellDraftActive) {
-        setLocalError("Apply or cancel the value you are editing before creating a cross-table summary.");
-        // The editor is only mounted in the Table panel. Returning there lets
-        // its existing autofocus callback retain the draft for correction.
-        setTab("table");
-        return;
-      }
+      // Publishing the summary advances the revision, so any unapplied editor
+      // draft must be resolved first. Returning to Table lets the existing
+      // autofocus callbacks retain the draft for correction.
+      if (refuseWhileCellDraft("creating a cross-table summary")) return;
       setJ4Pending(true);
       setLocalError(null);
       try {
@@ -3699,7 +3969,7 @@ export function SheetShell(props: SheetShellProps) {
         <nav className="ts-work-context" aria-label="Workbook actions">
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
-            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || cellDraftActive || rowDraftActive}>
+            <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || cellDraftActive || formulaDraftActive || rowDraftActive}>
               {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.display_name}</option>)}
             </select>
           </div>
@@ -4041,7 +4311,7 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       </Modal> : null}
       {closeOpen && !copyOpen && !savedClose ? (() => {
-        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft);
+        const closeSaveReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft);
         return (
         <Modal variant="close" label="Unsaved work" onCancel={keepEditing}>
           <div className="ts-dialog-intro">

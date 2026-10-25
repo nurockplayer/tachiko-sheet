@@ -35,6 +35,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type CommitOutcome,
   type PasteCellInput,
   type ColumnInitializer,
   type RowCommandOutcome,
@@ -1553,18 +1554,31 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     } finally { end(); }
   }
 
-  function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<boolean> {
-    if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve(false);
+  function commit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<CommitOutcome> {
+    if (blockUnknownOpenRecovery()) {
+      return Promise.resolve({ accepted: false, message: "Recovery is pending. Refresh to confirm the open work before editing." });
+    }
+    if (!begin()) {
+      return Promise.resolve({ accepted: false, message: "An operation is in progress; editing is disabled until it finishes." });
+    }
     const live = viewRef.current;
     if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
       setOutcome("idle");
       setMessage("This draft belongs to an older view. Refresh to load the current work.");
       end();
-      return Promise.resolve(false);
+      return Promise.resolve({ accepted: false, message: "This draft belongs to an older view. Refresh to load the current work." });
     }
     // Map/finish inside the seam's continuation, as in base App's finally.
     // Known/unknown publication must exit the rejected-editor retry path.
-    return mutationCompletion.run({ kind: "scalar", witness, edit, dispatch: () => runtime.editConfirmed(witness, target, edit) }, result => result.kind !== "refused", end);
+    return mutationCompletion.run<CommitOutcome>(
+      { kind: "scalar", witness, edit, dispatch: () => runtime.editConfirmed(witness, target, edit) },
+      // Work's refusal is shown verbatim; a published or unknown outcome is
+      // never a refusal and keeps the existing editor-retry policy.
+      result => result.kind === "refused"
+        ? { accepted: false, message: result.message, ...(result.position !== undefined ? { position: result.position } : {}) }
+        : { accepted: true },
+      end,
+    );
   }
 
   function changeRows(

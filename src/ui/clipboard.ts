@@ -65,7 +65,11 @@ export interface PasteContext {
   native: boolean; draft: boolean; blocked: boolean; pendingDraft: boolean;
   start: CellAddress; rowCount: number; columnTypes: readonly string[]; columnRequired: readonly boolean[];
   editable(row: number, column: number): boolean;
+  /** Optional attribution: a refusal for a Work formula names its real editor. */
+  formula?(row: number, column: number): boolean;
 }
+/** Formula text is edited in the formula bar, never typed or pasted over in a cell. */
+export const FORMULA_BAR_GUIDANCE = "Edit the formula in the formula bar.";
 export type PasteRoute = { kind: "refused"; message: string } | { kind: "draft" | "edit"; rows: string[][] } | { kind: "publish"; rows: PasteCellInput[][] };
 export function routePaste(rows: string[][], context: PasteContext): PasteRoute {
   const refuse = (message: string): PasteRoute => ({ kind: "refused", message });
@@ -87,7 +91,9 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
     if (row + rows.length > context.rowCount && (column !== 0 || width !== context.columnTypes.length)) return refuse("To append rows, paste from the first column and include every column. Nothing was pasted.");
     for (let r = row; r < Math.min(context.rowCount, row + rows.length); r++) {
       for (let c = column; c < column + width; c++) {
-        if (!context.editable(r, c)) return refuse("The pasted block includes a calculated or non-editable cell. Nothing was pasted.");
+        if (!context.editable(r, c)) return refuse(context.formula?.(r, c)
+          ? FORMULA_BAR_GUIDANCE
+          : "The pasted block includes a calculated or non-editable cell. Nothing was pasted.");
       }
     }
   }

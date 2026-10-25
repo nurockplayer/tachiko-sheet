@@ -1,4 +1,5 @@
 import type { CellEdit, FieldTarget } from "../contracts.js";
+import { FORMULA_BAR_GUIDANCE } from "./clipboard.js";
 import { scalarEditOf, seedTextOf } from "./field-display.js";
 import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
 
@@ -45,7 +46,7 @@ export function requiredCellValueMessage(kind: string): string {
 
 /** Request shaping only. Requiredness/presence come from Work's projection. */
 export function emptyCellEdit(slot: CellEditSlot): CellEdit | null {
-  if (slot.formula) throw new CellClearRefusal("Calculated cells cannot be cleared here.");
+  if (slot.formula) throw new CellClearRefusal(FORMULA_BAR_GUIDANCE);
   if (slot.blank) return null;
   if (slot.required) {
     if (slot.kind !== "text") throw new CellClearRefusal(requiredCellValueMessage(slot.kind));

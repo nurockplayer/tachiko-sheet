@@ -61,6 +61,7 @@ interface Hooks {
   observeOccurrence?: () => Promise<OccurrenceProjection>;
   editNumber?: () => Promise<PublicationProjection>;
   editText?: () => Promise<PublicationProjection>;
+  updateFormula?: () => Promise<PublicationProjection>;
   trackerCommand?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
@@ -94,6 +95,7 @@ class FakeClient {
     queryFields: [] as Array<{ revision: string; targets: FieldTarget[] }>,
     editNumber: 0,
     editText: 0,
+    updateFormula: [] as string[],
     editBoolean: 0,
     editDate: 0,
     trackerCommand: [] as TrackerCommand[],
@@ -294,6 +296,18 @@ class FakeClient {
     const hook = this.hooks.editText;
     if (hook !== undefined) {
       this.hooks.editText = undefined;
+      return hook();
+    }
+    this.#requireRevision(revision);
+    return this.#publish(target);
+  }
+
+  async updateFormula(revision: string, target: FieldTarget, source: string): Promise<PublicationProjection> {
+    this.calls.updateFormula.push(source);
+    this.#requireOpen();
+    const hook = this.hooks.updateFormula;
+    if (hook !== undefined) {
+      this.hooks.updateFormula = undefined;
       return hook();
     }
     this.#requireRevision(revision);
@@ -567,6 +581,24 @@ describe("createSheetRuntime", () => {
     const redone = await runtime.trackerHistory(witnessOf(undone.view), "redo");
     expect(redone.publication.base_revision).toBe(undone.view.revision);
     expect(client.calls.trackerCommand).toHaveLength(2);
+  });
+
+  it("forwards a formula source unchanged to updateFormula", async () => {
+    const { client, runtime, view } = await opened();
+    const source = "min([stock.qty], 4) + 1";
+    const edit = await runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "formula", source });
+    expect(client.calls.updateFormula).toEqual([source]);
+    expect(edit.publication.base_revision).toBe(view.revision);
+    expect(edit.view.occurrence).toBe(view.occurrence);
+  });
+
+  it("refuses a formula edit when the installed kit has no updateFormula", async () => {
+    const client = new FakeClient();
+    Object.defineProperty(client, "updateFormula", { value: undefined, configurable: true });
+    const { runtime, view } = await opened(client);
+    const refused = await failure(runtime.editConfirmed(witnessOf(view), IMPACT, { kind: "formula", source: "1 + 1" }));
+    expect(refused).toBeInstanceOf(SheetSessionError);
+    expect((refused as SheetSessionError).code).toBe("capability-missing");
   });
 
   it("rejects empty history and does not retry the dispatched command", async () => {

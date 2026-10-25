@@ -1,5 +1,5 @@
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
-import type { ScalarEdit } from "../contracts.js";
+import type { ScalarValueEdit } from "../contracts.js";
 import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 
 /** Visual tone of a rendered fact. Never a semantic judgement about the value. */
@@ -175,7 +175,7 @@ export function seedTextOf(field: FieldProjection): string {
  * Builds the typed edit intent for one scalar draft. Numbers cross as raw input;
  * the UI performs no numeric validation or coercion.
  */
-export function scalarEditOf(kind: "number" | "text" | "date", raw: string): ScalarEdit {
+export function scalarEditOf(kind: "number" | "text" | "date", raw: string): ScalarValueEdit {
   switch (kind) {
     case "number":
       return { kind: "number", input: raw };

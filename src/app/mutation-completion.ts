@@ -16,7 +16,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; position?: number };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -189,11 +189,24 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.setOutcome("idle");
       if (command.kind === "cleanup") port.clearPreview();
       else if (command.kind !== "summary") port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
-      const message = describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
+      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown } })?.failure;
+      // Work's formula refusal is shown verbatim. Other failures keep the
+      // explanatory prefix so their cause is not mistaken for a Work verdict.
+      const message = command.kind === "scalar" && command.edit.kind === "formula" &&
+        typeof failure?.message === "string" && failure.message.length > 0
+        ? failure.message
+        : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
       if (command.kind !== "rows") port.setMessage(message);
-      const failure = (error as { failure?: { code?: string } })?.failure;
       const fieldType = failure?.code === "invalid_number" ? "number" : failure?.code === "invalid_date" ? "date" : undefined;
-      return completed({ kind: "refused", message, ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code } : {}) });
+      // Work may attach a 1-based character position to a formula refusal.
+      // Sheet neither parses the source nor invents one when it is absent.
+      const position = typeof failure?.position === "number" && Number.isInteger(failure.position) && failure.position > 0
+        ? failure.position : undefined;
+      return completed({
+        kind: "refused", message,
+        ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code } : {}),
+        ...(command.kind === "scalar" && position !== undefined ? { position } : {}),
+      });
     } finally {
       // App's base finally/end ran in this continuation. A caller awaiting
       // this seam before end adds a microtask and can render the value with

@@ -1,4 +1,4 @@
-import type { InteropMetadata, NewTableColumn, RowCommandOutcome, ScalarEdit, SheetShellProps, ViewWitness, WorkbookView } from "../contracts.js";
+import type { InteropMetadata, NewTableColumn, RowCommandOutcome, ScalarValueEdit, SheetShellProps, ViewWitness, WorkbookView } from "../contracts.js";
 import { newColumnInput } from "./column-requiredness.js";
 import { canRenameColumns, IMPORTED_RENAME_UNAVAILABLE } from "./column-rename-availability.js";
 
@@ -14,7 +14,7 @@ export function initialColumnDraft(state: ColumnDialogState): ColumnDraft {
 export function fillChoiceRequired(type: NewTableColumn["field_type"], rowCount: number, fill: string): boolean {
   return rowCount > 0 && type !== "text" && fill === "";
 }
-export function columnFill(draft: ColumnDraft): ScalarEdit | null {
+export function columnFill(draft: ColumnDraft): ScalarValueEdit | null {
   switch (draft.fieldType) {
     case "number": return { kind: "number", input: draft.fill };
     case "date": return { kind: "date", value: draft.fill };

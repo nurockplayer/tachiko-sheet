@@ -22,6 +22,7 @@ import {
 } from "./SheetShell.js";
 import { cellDisplay, fieldClipboardText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { encodeTsv } from "./clipboard.js";
+import { FORMULA_BAR_NO_CELL } from "./formula-bar.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
 const entityA = "entity-a";
@@ -137,7 +138,7 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
     onOpenFiles: async () => {},
     onOpenExample: async () => {},
     onOpenSaved: async () => {},
-    onCommit: async () => true,
+    onCommit: async () => ({ accepted: true }),
     localHistory: { occurrence: null, revision: null, undoCount: 0, redoCount: 0 },
     onHistory: async () => null,
     onCreateCopy: async () => true,
@@ -1244,6 +1245,24 @@ describe("work-file entry and Save availability", () => {
   });
 });
 
+
+describe("formula bar presentation", () => {
+  it("renders one bar above the grid and never shows a formula without a focused cell", () => {
+    const markup = render({ view: makeView() });
+    expect(markup).toContain('data-testid="formula-bar"');
+    expect(markup).toContain(FORMULA_BAR_NO_CELL);
+    expect(markup).toContain('placeholder="Enter a formula"');
+    expect(markup.indexOf('data-testid="formula-bar"')).toBeLessThan(markup.indexOf('class="ts-grid-scroll"'));
+    expect(markup).not.toContain("impact + friction");
+  });
+
+  it("marks a projected formula cell as read-only in the grid", () => {
+    const markup = render({ view: makeView() });
+    const cell = cellMarkup(markup, `cell:${entityA}:c-priority`)!;
+    expect(cell).toContain('class="ts-cell ts-cell--computed ts-cell--formula"');
+    expect(cell).toContain('aria-readonly="true"');
+  });
+});
 
 describe("native insertion limit presentation", () => {
   it("removes the draft and Add row at 128 stored records and exposes the limit as a status", () => {
