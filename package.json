@@ -48,7 +48,8 @@
     "acceptance:desktop": "node tests/desktop/packaged-lifecycle.mjs",
     "test:desktop-parity": "cargo build --locked --release --example frame_harness --manifest-path src-tauri/Cargo.toml && vitest run tests/desktop/native-parity.test.ts",
     "acceptance:display-names": "node tests/product/display-names-local.mjs",
-    "acceptance:summary-labels": "node tests/product/summary-labels-local.mjs"
+    "acceptance:summary-labels": "node tests/product/summary-labels-local.mjs",
+    "acceptance:j6-continuation": "pnpm build && node tests/product/j6-continuation-local.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
