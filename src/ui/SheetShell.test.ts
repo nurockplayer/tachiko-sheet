@@ -16,6 +16,7 @@ import {
   salesCatalogLayoutEligible,
   describeSavedCopyNameWhitespace,
   reportRenderResetKey,
+  rowViewStatusText,
   shouldPublishAppearanceCompositionEnd,
   SheetShell,
 } from "./SheetShell.js";
@@ -922,6 +923,30 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain("Brief");
     expect(markup).not.toContain("brief:");
     expect(markup).not.toContain("Decision notes");
+  });
+
+  it("describes the client-only sort and filter status in one line", () => {
+    const columns = tableColumns(makeView().table);
+    expect(rowViewStatusText(columns, {}, 2, 2)).toBe(null);
+    expect(rowViewStatusText(columns, { sort: { field: "c-impact", direction: "desc" } }, 2, 2))
+      .toBe("Sorted by impact ↓");
+    expect(rowViewStatusText(columns, { filter: { field: "c-title", text: "alpha" } }, 12, 40))
+      .toBe("Showing 12 of 40 rows");
+    expect(rowViewStatusText(columns, {
+      sort: { field: "c-title", direction: "asc" },
+      filter: { field: "c-title", text: "alpha" },
+    }, 12, 40)).toBe("Sorted by title ↑ · Showing 12 of 40 rows");
+  });
+
+  it("keeps the stored row order and shows no view status without sort or filter", () => {
+    const view = makeView();
+    const markup = render({ view });
+    const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
+    expect(body.indexOf(`data-work-entity="${entityA}"`)).toBeLessThan(body.indexOf(`data-work-entity="${entityB}"`));
+    expect(markup).not.toContain('data-testid="row-view-status"');
+    expect(markup).not.toContain(">Clear sort</button>");
+    expect(markup).not.toContain(">Clear filter</button>");
+    expect(markup).not.toContain("ts-column-view-marker");
   });
 
   it("renders cells from the field order when the projection has no columns", () => {

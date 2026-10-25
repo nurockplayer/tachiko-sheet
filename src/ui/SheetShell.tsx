@@ -75,6 +75,7 @@ import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
+import { pastePastVisibleRows, rowViewOrder, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
@@ -96,6 +97,19 @@ interface EditorState {
 interface GridPosition {
   entity: string;
   field: string;
+}
+
+interface GridViewRecord {
+  occurrence: string | null;
+  byCollection: Record<string, RowViewSettings>;
+}
+
+interface PendingKeptRow {
+  occurrence: string;
+  collection: string;
+  revision: string;
+  filter: string;
+  previousEntities: ReadonlySet<string>;
 }
 
 interface HistoryFocusRequest {
@@ -151,6 +165,21 @@ export function salesCatalogLayoutEligible(view: WorkbookView, marker: SalesCata
   if (!marker || marker.occurrence !== view.occurrence || marker.collectionId !== view.table.collection.id) return false;
   const keys = tableColumns(view.table).map((column) => column.key);
   return keys.length === 3 && new Set(keys).size === 3 && ["code", "category", "price"].every((key) => keys.includes(key));
+}
+
+/** One-line view status; null when the grid is showing its untouched order. */
+export function rowViewStatusText(
+  columns: readonly Pick<TableColumn, "id" | "display_name">[],
+  settings: Pick<RowViewSettings, "sort" | "filter">,
+  shownRows: number,
+  totalRows: number,
+): string | null {
+  const parts: string[] = [];
+  const sortColumn = settings.sort ? columns.find((column) => column.id === settings.sort!.field) : undefined;
+  if (settings.sort && sortColumn) parts.push(`Sorted by ${sortColumn.display_name} ${settings.sort.direction === "asc" ? "↑" : "↓"}`);
+  const filterColumn = settings.filter ? columns.find((column) => column.id === settings.filter!.field) : undefined;
+  if (settings.filter?.text.trim() && filterColumn) parts.push(`Showing ${shownRows} of ${totalRows} rows`);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLElement): boolean {
@@ -580,6 +609,9 @@ export function SheetShell(props: SheetShellProps) {
   const [compactColumnActions, setCompactColumnActions] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse), (hover: none), (max-width: 700px)").matches);
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [columnAnnouncement, setColumnAnnouncement] = useState<string | null>(null);
+  const [gridViews, setGridViews] = useState<GridViewRecord>({ occurrence: null, byCollection: {} });
+  const [filterDraft, setFilterDraft] = useState<{ field: string; text: string } | null>(null);
+  const [pendingKeptRow, setPendingKeptRow] = useState<PendingKeptRow | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
   const [newTableOpen, setNewTableOpen] = useState(false);
@@ -815,25 +847,56 @@ export function SheetShell(props: SheetShellProps) {
   const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(table.rows.length));
   const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
   const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
+  // View settings live only in React state, scoped to the current occurrence
+  // and table. Replacing the work (a new occurrence) cannot inherit them.
+  const rawGridSettings = view && table && gridViews.occurrence === view.occurrence
+    ? gridViews.byCollection[table.collection.key]
+    : undefined;
+  const gridSettings = useMemo<RowViewSettings>(() => {
+    const ids = new Set(columns.map((column) => column.id));
+    return {
+      sort: rawGridSettings?.sort && ids.has(rawGridSettings.sort.field) ? rawGridSettings.sort : undefined,
+      filter: rawGridSettings?.filter && rawGridSettings.filter.text.trim() && ids.has(rawGridSettings.filter.field)
+        ? rawGridSettings.filter : undefined,
+      kept: rawGridSettings?.kept,
+    };
+  }, [columns, rawGridSettings]);
+  const filterSignature = gridSettings.filter ? `${gridSettings.filter.field}\u0000${gridSettings.filter.text}` : "";
+  // A confirmed insertion becomes visible in the same render that installs the
+  // new projection, so the existing focus request can find its cell. The
+  // effect below then records it as kept for later renders.
+  const pendingKeptEntities = useMemo(() => {
+    if (!pendingKeptRow || !view || !table) return undefined;
+    if (view.occurrence !== pendingKeptRow.occurrence || table.collection.key !== pendingKeptRow.collection
+      || filterSignature !== pendingKeptRow.filter || view.revision === pendingKeptRow.revision) return undefined;
+    return table.rows.map(rowEntity).filter((entity) => !pendingKeptRow.previousEntities.has(entity));
+  }, [filterSignature, pendingKeptRow, table, view]);
+  const displaySettings = useMemo<RowViewSettings>(() => {
+    if (!pendingKeptEntities?.length) return gridSettings;
+    return { ...gridSettings, kept: new Set([...(gridSettings.kept ?? []), ...pendingKeptEntities]) };
+  }, [gridSettings, pendingKeptEntities]);
+  const displayRows = useMemo(
+    () => table ? rowViewOrder(table.rows, columns, displaySettings) : [],
+    [columns, displaySettings, table],
+  );
   const gridOrder = useMemo(() => {
     if (!table) return [] as GridPosition[];
-    const tableCols = tableColumns(table);
-    const order = table.rows.flatMap((row) => {
+    const order = displayRows.flatMap((row) => {
       const entity = rowEntity(row);
-      return tableCols.map((column) => ({
+      return columns.map((column) => ({
         entity,
         field: column.id,
       }));
     });
-    if (hasDraftRow) order.push(...tableCols.map(column => ({ entity: DRAFT_ROW, field: column.id })));
+    if (hasDraftRow) order.push(...columns.map(column => ({ entity: DRAFT_ROW, field: column.id })));
     return order;
-  }, [table, hasDraftRow]);
-  const gridWindowed = (table?.rows.length ?? 0) > GRID_WINDOW_THRESHOLD;
+  }, [displayRows, columns, table, hasDraftRow]);
+  const gridWindowed = displayRows.length > GRID_WINDOW_THRESHOLD;
   const rowIndexByEntity = useMemo(() => {
     const indices = new Map<string, number>();
-    table?.rows.forEach((row, index) => indices.set(rowEntity(row), index));
+    displayRows.forEach((row, index) => indices.set(rowEntity(row), index));
     return indices;
-  }, [table]);
+  }, [displayRows]);
 
   function address(position: GridPosition): CellAddress {
     return { row: rowIndexByEntity.get(position.entity) ?? -1, column: columns.findIndex(column => column.id === position.field) };
@@ -842,7 +905,110 @@ export function SheetShell(props: SheetShellProps) {
   clipboardIdentityRef.current = collectionIdentity;
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
-  useEffect(() => { setCellSelection(null); setClipboardMessage(null); }, [collectionIdentity]);
+  useEffect(() => { setCellSelection(null); setClipboardMessage(null); setFilterDraft(null); }, [collectionIdentity]);
+
+  useEffect(() => {
+    const occurrence = view?.occurrence ?? null;
+    setGridViews((current) => current.occurrence === occurrence ? current : { occurrence, byCollection: {} });
+    setPendingKeptRow(null);
+  }, [view?.occurrence]);
+
+  useEffect(() => { setCellSelection(null); }, [filterSignature]);
+
+  function updateGridSettings(update: (current: RowViewSettings) => RowViewSettings): void {
+    const occurrence = view?.occurrence;
+    const collection = table?.collection.key;
+    if (!occurrence || !collection) return;
+    setGridViews((current) => {
+      const base = current.occurrence === occurrence ? current : { occurrence, byCollection: {} };
+      const previous = base.byCollection[collection] ?? {};
+      const next = update(previous);
+      if (next === previous) return base;
+      return { occurrence, byCollection: { ...base.byCollection, [collection]: next } };
+    });
+  }
+
+  function keepGridRows(entities: readonly string[]): void {
+    if (!gridSettings.filter) return;
+    const extra = entities.filter((entity) => entity !== DRAFT_ROW);
+    if (extra.length === 0) return;
+    updateGridSettings((current) => {
+      if (!current.filter) return current;
+      const kept = new Set(current.kept);
+      for (const entity of extra) kept.add(entity);
+      return { ...current, kept };
+    });
+  }
+
+  function setGridSort(field: string, direction: "asc" | "desc"): void {
+    updateGridSettings((current) => ({ ...current, sort: { field, direction } }));
+  }
+
+  function clearGridSort(): void {
+    updateGridSettings((current) => ({ ...current, sort: undefined }));
+  }
+
+  function applyGridFilter(field: string, text: string): void {
+    const trimmed = text.trim();
+    updateGridSettings((current) => {
+      const unchanged = current.filter?.field === field && current.filter?.text === trimmed;
+      return {
+        ...current,
+        filter: trimmed ? { field, text: trimmed } : undefined,
+        kept: unchanged ? current.kept : undefined,
+      };
+    });
+    setFilterDraft(null);
+  }
+
+  function startGridFilter(column: TableColumn): void {
+    setFilterDraft({ field: column.id, text: gridSettings.filter?.field === column.id ? gridSettings.filter.text : "" });
+  }
+
+  function renderFilterEditor(column: TableColumn): ReactNode {
+    const draft = filterDraft;
+    if (!draft || draft.field !== column.id) return null;
+    const close = (element: Element): void => {
+      const details = element.closest("details");
+      if (!details) return;
+      details.open = false;
+      details.querySelector<HTMLElement>("summary")?.focus();
+    };
+    return <form className="ts-row-view-filter" onSubmit={(event) => {
+      event.preventDefault();
+      applyGridFilter(column.id, draft.text);
+      close(event.currentTarget);
+    }}>
+      <input
+        autoFocus
+        aria-label={`Filter ${column.display_name}`}
+        placeholder="Contains…"
+        value={draft.text}
+        onChange={(event) => setFilterDraft({ field: column.id, text: event.currentTarget.value })}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || isComposingEvent(event)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setFilterDraft(null);
+          close(event.currentTarget);
+        }}
+      />
+      <button type="submit" className="ts-button">Apply</button>
+    </form>;
+  }
+
+  useEffect(() => {
+    if (!pendingKeptRow || !view || !table) return;
+    if (view.occurrence !== pendingKeptRow.occurrence || table.collection.key !== pendingKeptRow.collection
+      || filterSignature !== pendingKeptRow.filter) {
+      setPendingKeptRow(null);
+      return;
+    }
+    if (view.revision === pendingKeptRow.revision) return;
+    const added = table.rows.map(rowEntity).filter((entity) => !pendingKeptRow.previousEntities.has(entity));
+    if (added.length > 0) keepGridRows(added);
+    setPendingKeptRow(null);
+  }, [filterSignature, pendingKeptRow, table, view]);
 
   // Focus/selection alone does not dismiss a refusal. A different projection or
   // an explicit edit does; ordinary copy/paste actions replace the announcement.
@@ -873,7 +1039,7 @@ export function SheetShell(props: SheetShellProps) {
     event.preventDefault();
     const point = address(position);
     const area = position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point);
-    const rows = area ? table.rows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldClipboardText(fieldForColumn(row, column.id))))
+    const rows = area ? displayRows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldClipboardText(fieldForColumn(row, column.id))))
       : [[boundRowDraft?.values[position.field] ?? ""]];
     try {
       if (!event.clipboardData) throw new Error("No clipboard data");
@@ -898,12 +1064,16 @@ export function SheetShell(props: SheetShellProps) {
     } catch (error) { announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
-    const start = draft ? { row: table.rows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
+    const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
+    if (!draft && gridSettings.filter && pastePastVisibleRows(start.row, decoded.length, displayRows.length)) {
+      announceClipboard("Clear the filter to paste past the visible rows.", true);
+      return;
+    }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
-      pendingDraft: rowDraftActive, start, rowCount: table.rows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
+      pendingDraft: rowDraftActive, start, rowCount: displayRows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
       editable: (r, c) => {
-        const row = table.rows[r], column = columns[c];
+        const row = displayRows[r], column = columns[c];
         const slot = row && column ? cellEditSlot(row, column) : null;
         return Boolean(slot && !slot.formula);
       },
@@ -918,14 +1088,14 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (route.kind === "edit" ? !onEditCells : !onPasteCells) { announceClipboard("Pasting is not available in this view.", true); return; }
-    const anchor = table.rows[start.row];
+    const anchor = displayRows[start.row];
     if (!anchor || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
     const edits: CellEdit[] = [];
     if (route.kind === "edit") {
       for (const [r, values] of route.rows.entries()) {
         for (const [c, raw] of values.entries()) {
           const column = columns[start.column + c]!;
-          const slot = cellEditSlot(table.rows[start.row + r]!, column);
+          const slot = cellEditSlot(displayRows[start.row + r]!, column);
           if (!slot || slot.formula) { announceClipboard("The pasted block includes a non-editable cell. Nothing was pasted.", true); return; }
           try {
             const edit = pastedCellEdit(slot, raw, Boolean(table.native_table_profile));
@@ -937,6 +1107,7 @@ export function SheetShell(props: SheetShellProps) {
       }
     }
     if (route.kind === "edit" && edits.length === 0) { announceClipboard("The pasted cells are unchanged."); return; }
+    if (route.kind === "edit") keepGridRows(route.rows.map((_, r) => rowEntity(displayRows[start.row + r]!)));
     const intent = completionIntent();
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
@@ -983,8 +1154,10 @@ export function SheetShell(props: SheetShellProps) {
     }
     if (!table) return;
     const at = address(position);
+    const area = selectionRectangle ?? rectangle(at, at);
     try {
-      const edits = clearCellEdits(table.rows, columns, selectionRectangle ?? rectangle(at, at), Boolean(table.native_table_profile));
+      const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile));
+      keepGridRows(displayRows.slice(area.top, area.bottom + 1).map(rowEntity));
       void publishClearEdits(edits);
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here."), true, true); }
   }
@@ -1015,7 +1188,7 @@ export function SheetShell(props: SheetShellProps) {
 
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
-  }, [gridWindowed, collectionIdentity, tab, table?.rows.length]);
+  }, [gridWindowed, collectionIdentity, tab, displayRows.length]);
 
   useLayoutEffect(() => {
     if (!gridWindowed) return;
@@ -1530,7 +1703,7 @@ export function SheetShell(props: SheetShellProps) {
   function syncGridWindow(): void {
     const scroller = gridScrollRef.current;
     if (!scroller || !table) return;
-    const next = gridWindowRange(scroller.scrollTop, scroller.clientHeight, gridRowHeightRef.current, table.rows.length);
+    const next = gridWindowRange(scroller.scrollTop, scroller.clientHeight, gridRowHeightRef.current, displayRows.length);
     setGridRange((current) => current.start === next.start && current.end === next.end ? current : next);
   }
 
@@ -1548,7 +1721,7 @@ export function SheetShell(props: SheetShellProps) {
       const top = scrollTopToReveal(index, gridRowHeightRef.current, gridHeaderHeightRef.current, scroller.scrollTop, scroller.clientHeight);
       if (top !== null) scroller.scrollTop = top;
     }
-    const rowCount = table?.rows.length ?? 0;
+    const rowCount = displayRows.length;
     setGridRange((current) => gridWindowAround(index, current, rowCount));
   }
 
@@ -1609,6 +1782,7 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       return true;
     }
+    keepGridRows([editor.entity]);
     if (editor.value === "" && table?.native_table_profile) {
       let change: CellEdit | null;
       try { change = emptyCellEdit(slot); }
@@ -1698,9 +1872,13 @@ export function SheetShell(props: SheetShellProps) {
     }
     if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-      const next = stepAddress(address(position), event.key, table?.rows.length ?? 0, columns.length);
-      const row = table?.rows[next.row], column = columns[next.column];
-      if (row && column) { event.preventDefault(); extendSelection(boundSelection?.anchor ?? position, { entity: rowEntity(row), field: column.id }); }
+      const next = stepAddress(address(position), event.key, displayRows.length, columns.length);
+      const row = displayRows[next.row], column = columns[next.column];
+      if (row && column) {
+        event.preventDefault();
+        const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
+        extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+      }
       return;
     }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "F2"].includes(event.key)) setCellSelection(null);
@@ -1832,8 +2010,12 @@ export function SheetShell(props: SheetShellProps) {
     if (!notesField || !notesEditable || !notesDirty || !notesDraftBound || controlsLocked) return;
     if (refuseWhileCellDraft("applying notes")) return;
     const applied = activeNotesDraft;
+    const entity = notesField.target.entity;
     const accepted = await runCommit(notesField.target, { kind: "text", value: notesValue });
     if (accepted && applied) {
+      // Same as a cell edit: an applied Notes value keeps its row visible under
+      // the filter that was active when it was written.
+      keepGridRows([entity]);
       setNotesDrafts((drafts) => dropAppliedNotesDraft(drafts, applied));
       setLocalError(null);
     }
@@ -2276,6 +2458,8 @@ export function SheetShell(props: SheetShellProps) {
     }
     const initializers = draftInitializers(columns, draft.values);
     if (!initializers) return;
+    const keepNewRow = Boolean(gridSettings.filter);
+    const previousEntities = new Set(view.table.rows.map(rowEntity));
     if (editor?.entity === DRAFT_ROW || (editor && editor.value === editor.original)) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
@@ -2291,6 +2475,10 @@ export function SheetShell(props: SheetShellProps) {
         setRowDraft((current) => current === rowDraft ? null : current);
         setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
           previousEntities: view.table.rows.map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
+        if (keepNewRow) setPendingKeptRow({
+          occurrence: view.occurrence, collection: view.table.collection.key,
+          revision: view.revision, filter: filterSignature, previousEntities,
+        });
       } else if (result.kind === "refused") {
         const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
         setRowError(refusal);
@@ -2750,6 +2938,9 @@ export function SheetShell(props: SheetShellProps) {
     const hasColumnActions = Boolean(onAddColumn || renameAvailable || onRemoveColumn || onSetColumnRequiredness);
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
+    const viewActionsBlocked = columnChangesBlocked || editor !== null;
+    const viewStatus = rowViewStatusText(columns, gridSettings, displayRows.length, table.rows.length);
+    const sortColumnName = columns.find(column => column.id === gridSettings.sort?.field)?.display_name;
     const hasResults = j4DefinitionIds.length > 0;
     const visibleSalesTip = hasResults && !resultsHidden && salesEntryTip?.occurrence === view?.occurrence
       ? salesEntryTip
@@ -2759,7 +2950,7 @@ export function SheetShell(props: SheetShellProps) {
       return !result || result.diagnostics.length > 0;
     });
     const gridTable = (
-      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? table.rows.length + 1 + Number(hasDraftRow) : undefined}>
+      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
@@ -2767,14 +2958,19 @@ export function SheetShell(props: SheetShellProps) {
               <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
+              {gridSettings.sort?.field === column.id ? <span className="ts-column-view-marker" aria-hidden="true" title={`Sorted ${gridSettings.sort.direction === "asc" ? "A to Z" : "Z to A"}${sortColumnName ? ` by ${sortColumnName}` : ""}`}>{gridSettings.sort.direction === "asc" ? "↑" : "↓"}</span> : null}
+              {gridSettings.filter?.field === column.id ? <span className="ts-column-view-marker" aria-hidden="true" title={`Filtered by ${gridSettings.filter.text}`}>▽</span> : null}
               {!compactColumnActions && table.native_table_profile && (renameAvailable || onAddColumn || onRemoveColumn || (onSetColumnRequiredness && canChangeRequiredness(table, column.id))) ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
-                  if (!disclosure.open) return;
+                  if (!disclosure.open) { setFilterDraft(null); return; }
                   if (columnChangesBlocked) { disclosure.open = false; return; }
                   gridScrollRef.current?.querySelectorAll<HTMLDetailsElement>(".ts-column-overflow[open]").forEach(other => { if (other !== disclosure) other.open = false; });
                 }} onBlur={event => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    event.currentTarget.open = false;
+                    setFilterDraft(null);
+                  }
                 }} onKeyDown={event => {
                   if (event.key !== "Escape" || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || !event.currentTarget.open) return;
                   event.preventDefault(); event.stopPropagation();
@@ -2785,6 +2981,20 @@ export function SheetShell(props: SheetShellProps) {
                     if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
                   }} />
                   <div className="ts-command-menu">
+                    <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      disclosure.open = false;
+                      setGridSort(column.id, "asc");
+                      disclosure.querySelector<HTMLElement>("summary")?.focus();
+                    }} />
+                    <button type="button" className="ts-button" aria-label="Sort Z → A" data-column-action="Sort Z → A" disabled={viewActionsBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      disclosure.open = false;
+                      setGridSort(column.id, "desc");
+                      disclosure.querySelector<HTMLElement>("summary")?.focus();
+                    }} />
+                    <button type="button" className="ts-button" aria-label="Filter…" data-column-action="Filter…" disabled={viewActionsBlocked} onClick={() => startGridFilter(column)} />
+                    {renderFilterEditor(column)}
                     {([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
@@ -2805,13 +3015,13 @@ export function SheetShell(props: SheetShellProps) {
           </tr>
         </thead>
         <tbody>
-          {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), table.rows.length).map((segment) => segment.kind === "spacer"
+          {gridWindowed ? gridWindowSegments(gridRange, pinnedGridRows(), displayRows.length).map((segment) => segment.kind === "spacer"
             ? <tr key={segment.key} className="ts-grid-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: segment.rows * gridRowHeight, padding: 0, border: 0 }} /></tr>
-            : table.rows[segment.index] ? renderRow(table.rows[segment.index]!, segment.index) : null)
-            : table.rows.map((row, index) => renderRow(row, index))}
+            : displayRows[segment.index] ? renderRow(displayRows[segment.index]!, segment.index) : null)
+            : displayRows.map((row, index) => renderRow(row, index))}
         </tbody>
         {hasDraftRow ? <tfoot role="rowgroup" className="ts-entry-footer">
-          <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? table.rows.length + 2 : undefined}>
+          <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
             <th scope="row" className="ts-row-head" aria-label="New row">+</th>
             {columns.map(column => renderCell(null, DRAFT_ROW, column))}
           </tr>
@@ -2839,13 +3049,18 @@ export function SheetShell(props: SheetShellProps) {
               hasAttention={resultsNeedAttention}
               dismiss={dismissSalesTip}
             /> : null}
+            {viewStatus ? <div className="ts-row-view-status" data-testid="row-view-status">
+              <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}</span>
+              {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" onClick={clearGridSort}>Clear sort</button> : null}
+              {gridSettings.filter ? <button type="button" className="ts-button ts-button--ghost" onClick={() => applyGridFilter(gridSettings.filter!.field, "")}>Clear filter</button> : null}
+            </div> : null}
             <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.
                   A table min-height would instead stretch the rendered row heights. */}
               {gridWindowed
-                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(table.rows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
+                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
@@ -2856,11 +3071,14 @@ export function SheetShell(props: SheetShellProps) {
         {table.native_table_profile && ((onInsertRow && onRemoveRows) || (compactColumnActions && hasColumnActions)) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           {onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && hasColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
-            if (!event.currentTarget.open) return;
+            if (!event.currentTarget.open) { setFilterDraft(null); return; }
             if (columnChangesBlocked) { event.currentTarget.open = false; return; }
             positionColumnToolbar(event.currentTarget);
           }} onBlur={event => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              event.currentTarget.open = false;
+              setFilterDraft(null);
+            }
           }} onKeyDown={event => {
             if (event.key !== "Escape" || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || !event.currentTarget.open) return;
             event.preventDefault(); event.stopPropagation();
@@ -2871,6 +3089,20 @@ export function SheetShell(props: SheetShellProps) {
               if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
             }}>Column</summary>
             <div className="ts-command-menu">
+              <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                disclosure.open = false;
+                setGridSort(focusedColumn.id, "asc");
+                disclosure.querySelector<HTMLElement>("summary")?.focus();
+              }}>Sort A → Z</button>
+              <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                disclosure.open = false;
+                setGridSort(focusedColumn.id, "desc");
+                disclosure.querySelector<HTMLElement>("summary")?.focus();
+              }}>Sort Z → A</button>
+              <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={() => startGridFilter(focusedColumn)}>Filter…</button>
+              {renderFilterEditor(focusedColumn)}
               {([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
@@ -2948,6 +3180,10 @@ export function SheetShell(props: SheetShellProps) {
     const draftBoolean = column.field_type === "boolean" ? parseBooleanDraft(raw) : null;
     const display: FieldDisplay = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : cellDisplay(row!, column);
     const key = cellKey(entity, column.id);
+    const focusedEntity = focusedKey?.split("\u0000")[0];
+    const focusedEntityVisible = Boolean(focusedEntity && (focusedEntity === DRAFT_ROW
+      ? hasDraftRow
+      : rowIndexByEntity.has(focusedEntity)));
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && cellEditSlot(row, column))) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
@@ -2976,7 +3212,7 @@ export function SheetShell(props: SheetShellProps) {
         data-work-entity={entity}
         data-work-field={column.id}
         data-work-currentness={currentness}
-        tabIndex={focusedKey === key || (!focusedKey && isFirstCell(entity, column)) ? 0 : -1}
+        tabIndex={focusedKey === key || (!focusedEntityVisible && isFirstCell(entity, column)) ? 0 : -1}
         aria-selected={Boolean(rangeSelected) || (!selectionRectangle && focusedKey === key)}
         aria-readonly={!editable}
         title={display.title === display.description ? undefined : display.title ?? undefined}
@@ -2986,7 +3222,11 @@ export function SheetShell(props: SheetShellProps) {
           setSelectedEntity(entity);
           if (event.shiftKey && !draft && focusedKey) {
             const [priorEntity, priorField] = focusedKey.split("\u0000");
-            if (priorEntity && priorField && priorEntity !== DRAFT_ROW) extendSelection(boundSelection?.anchor ?? { entity: priorEntity, field: priorField }, { entity, field: column.id });
+            const anchor = boundSelection?.anchor ?? (priorEntity && priorField && priorEntity !== DRAFT_ROW ? { entity: priorEntity, field: priorField } : null);
+            // A filter can hide the anchor row. A range must never start from a
+            // row that is not displayed, or copy/paste sees an empty rectangle.
+            if (anchor && rowIndexByEntity.has(anchor.entity)) extendSelection(anchor, { entity, field: column.id });
+            else { setCellSelection(null); focusCell(entity, column.id); }
           } else { setCellSelection(null); focusCell(entity, column.id); }
         }}
         onDoubleClick={() => draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
@@ -3029,7 +3269,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function isFirstCell(entity: string, column: TableColumn): boolean {
     if (!table) return false;
-    const firstRow = table.rows[0];
+    const firstRow = displayRows[0];
     if (!firstRow) return entity === DRAFT_ROW && columns[0]?.id === column.id;
     return rowEntity(firstRow) === entity && columns[0]?.id === column.id;
   }

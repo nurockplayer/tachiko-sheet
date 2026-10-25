@@ -2791,6 +2791,62 @@ body { margin: 0; }
 .ts-column-status:empty { display: none; }
 .ts-column-heading [data-column-action]::before { content: attr(data-column-action); }
 
+/* View-only sort and filter status; dense spreadsheet chrome above the grid. */
+.ts-row-view-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 6px 2px 10px;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface-sunken);
+  color: var(--ts-ink-soft);
+  font-size: 12px;
+  line-height: 18px;
+}
+.ts-row-view-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-row-view-status .ts-button {
+  flex: none;
+  min-height: 24px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+.ts-column-view-marker {
+  flex: none;
+  color: var(--ts-accent-ink);
+  font-size: 11px;
+  line-height: 1;
+}
+.ts-row-view-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.ts-row-view-filter input {
+  font: inherit;
+  min-width: 0;
+  width: 128px;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font-size: 12px;
+}
+.ts-row-view-filter .ts-button {
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
 .ts-column-toolbar > summary { min-width: 72px; min-height: 44px; opacity: 1; pointer-events: auto; font-size: 14px; line-height: 20px; }
 .ts-column-toolbar[open] .ts-command-menu {
   position: fixed;
