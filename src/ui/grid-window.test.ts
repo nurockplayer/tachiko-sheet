@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal } from "./grid-window.js";
+import { gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal } from "./grid-window.js";
 
 describe("grid window", () => {
   it("covers the visible rows plus overscan, clamped to the table", () => {
@@ -80,6 +80,32 @@ describe("grid window", () => {
     expect(scrollTopToReveal(5, 32, 32, 0, 352)).toBeNull();
     expect(scrollTopToReveal(4000, 32, 32, 0, 352)).toBe(32 * 4001 - 320);
     expect(scrollTopToReveal(2, 32, 32, 320, 352)).toBe(64);
+  });
+});
+
+describe("pinned grid rows", () => {
+  // Displayed order after a filter hides "a": only b and c remain.
+  const displayed = new Map([["b", 0], ["c", 1]]);
+
+  it("pins the displayed editor, selection and focus rows", () => {
+    expect(gridPinnedRows(["c", "b", null, "c"], displayed, "b")).toEqual([1, 0, 1]);
+  });
+
+  it("pins the first row when the focused row is no longer displayed", () => {
+    // The user scrolled away, then a filter hid the focused row "a". The
+    // tabIndex=0 fallback is the first displayed row, so it must stay mounted.
+    expect(gridPinnedRows(["a"], displayed, "a")).toEqual([0]);
+    expect(gridPinnedRows([null], displayed, "gone")).toEqual([0]);
+  });
+
+  it("pins the first row when nothing is focused, but not otherwise", () => {
+    expect(gridPinnedRows([null], displayed, null)).toEqual([0]);
+    expect(gridPinnedRows([], displayed, undefined)).toEqual([0]);
+    expect(gridPinnedRows([null], displayed, "c")).toEqual([]);
+  });
+
+  it("pins the first row for a focused draft row, which is not a displayed entity", () => {
+    expect(gridPinnedRows(["draft"], displayed, "draft")).toEqual([0]);
   });
 });
 

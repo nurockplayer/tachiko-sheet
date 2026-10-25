@@ -75,7 +75,7 @@ import { workFileOpenRefusal } from "./work-file-copy.js";
 import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
-import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
+import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
@@ -3145,13 +3145,12 @@ export function SheetShell(props: SheetShellProps) {
 
   /** Rows kept mounted outside the window: editor, selection/focus and the default tab stop. */
   function pinnedGridRows(): number[] {
-    const pinned: number[] = [];
-    for (const entity of [editor?.entity, selectedEntity, focusedKey?.split("\u0000")[0], pendingCellFocusRef.current?.entity]) {
-      const index = entity ? rowIndexByEntity.get(entity) : undefined;
-      if (index !== undefined) pinned.push(index);
-    }
-    if (!focusedKey) pinned.push(0);
-    return pinned;
+    const focusedEntity = focusedKey?.split("\u0000")[0];
+    return gridPinnedRows(
+      [editor?.entity, selectedEntity, focusedEntity, pendingCellFocusRef.current?.entity],
+      rowIndexByEntity,
+      focusedEntity,
+    );
   }
 
   function renderCell(row: TableRow | null, entity: string, column: TableColumn): ReactNode {
