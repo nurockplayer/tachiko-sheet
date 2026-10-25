@@ -93,22 +93,21 @@ describe("targeted Results refresh admission", () => {
 });
 
 describe("Date schema admission", () => {
+  const field = (key: string, fieldType: string) => ({ id: key, key, displayName: key, displayNameExplicit: false, fieldType });
+  const collection = (key: string, fields: ReturnType<typeof field>[]) => ({ id: key, key, fields });
   it("finds Date in selected or unrelated collections, including a schema with no rows", () => {
     expect(bindingCatalogContainsDate({ collections: [
-      { key: "orders", fields: [{ key: "when", fieldType: "date" }] },
+      collection("orders", [field("when", "date")]),
     ] })).toBe(true);
     expect(bindingCatalogContainsDate({ collections: [
-      { key: "orders", fields: [{ key: "quantity", fieldType: "number" }] },
-      { key: "unrelated-empty-table", fields: [{ key: "when", fieldType: "date" }] },
+      collection("orders", [field("quantity", "number")]),
+      collection("unrelated-empty-table", [field("when", "date")]),
     ] })).toBe(true);
   });
 
   it("keeps non-Date types, including reference, admissible", () => {
     expect(bindingCatalogContainsDate({ collections: [
-      { key: "orders", fields: [
-        { key: "quantity", fieldType: "number" },
-        { key: "product", fieldType: "reference" },
-      ] },
+      collection("orders", [field("quantity", "number"), field("product", "reference")]),
     ] })).toBe(false);
     expect(DATE_SUMMARY_UNSUPPORTED_MESSAGE).toMatch(/Date column/);
   });
@@ -298,16 +297,11 @@ describe("acknowledged saved-open presentation recovery", () => {
 });
 
 describe("coordinated Sales entry bindings", () => {
+  const field = (key: string, fieldType: string) => ({ id: key, key, displayName: key, displayNameExplicit: false, fieldType });
+  const collection = (key: string, fields: ReturnType<typeof field>[]) => ({ id: key, key, fields });
   const catalog = { collections: [
-    { key: "sales", fields: [
-      { key: "product_code", fieldType: "text" },
-      { key: "quantity", fieldType: "number" },
-    ] },
-    { key: "catalog", fields: [
-      { key: "code", fieldType: "text" },
-      { key: "category", fieldType: "text" },
-      { key: "price", fieldType: "number" },
-    ] },
+    collection("sales", [field("product_code", "text"), field("quantity", "number")]),
+    collection("catalog", [field("code", "text"), field("category", "text"), field("price", "number")]),
   ] };
 
   it("resolves the exact field identities and types from the authoritative catalog", () => {
@@ -324,7 +318,7 @@ describe("coordinated Sales entry bindings", () => {
 
   it("refuses missing, duplicate, or wrong-type identities instead of choosing a nearby field", () => {
     expect(() => resolveSalesSummaryBinding({ collections: [...catalog.collections,
-      { key: "sales", fields: [] },
+      collection("sales", []),
     ] })).toThrow(/resolved uniquely/);
     expect(() => resolveSalesSummaryBinding({ collections: [
       { ...catalog.collections[0]!, fields: catalog.collections[0]!.fields.filter((field) => field.key !== "quantity") },
@@ -332,7 +326,7 @@ describe("coordinated Sales entry bindings", () => {
     ] })).toThrow(/sales.quantity/);
     expect(() => resolveSalesSummaryBinding({ collections: [
       { ...catalog.collections[0]!, fields: [
-        { key: "product_code", fieldType: "text" }, { key: "quantity", fieldType: "text" },
+        field("product_code", "text"), field("quantity", "text"),
       ] },
       catalog.collections[1]!,
     ] })).toThrow(/sales.quantity/);
