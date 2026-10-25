@@ -2507,7 +2507,7 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     if (columnChangesBlocked) {
       const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
-      if (disclosure) disclosure.open = false;
+      if (disclosure) { resetColumnToolbar(disclosure); disclosure.open = false; }
     }
   }, [columnChangesBlocked]);
 
@@ -2526,15 +2526,18 @@ export function SheetShell(props: SheetShellProps) {
     menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16))}px`;
   }
 
-  // The open menu can gain buttons in a later commit than the toggle event
-  // (long Rename/Remove names, the filter editor). A ResizeObserver would report
-  // that one rendering step late, after a test can measure the stale position,
-  // so re-position after every commit instead: this runs before paint, in the
-  // same commit that added the content.
-  useLayoutEffect(() => {
-    const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
-    if (disclosure) positionColumnToolbar(disclosure);
-  });
+  /**
+   * The menu stays mounted after its disclosure closes, so its inline position
+   * would still describe the previous column, viewport or content when it is
+   * opened again (the toggle event that repositions runs later). Clear it on
+   * every close, so each open positions the menu afresh.
+   */
+  function resetColumnToolbar(disclosure: HTMLDetailsElement): void {
+    const menu = disclosure.querySelector<HTMLElement>(".ts-command-menu");
+    if (!menu) return;
+    menu.style.left = "";
+    menu.style.top = "";
+  }
 
   function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
     if (!view || !table?.native_table_profile || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
@@ -3064,17 +3067,19 @@ export function SheetShell(props: SheetShellProps) {
         {(table.native_table_profile && onInsertRow && onRemoveRows) || (compactColumnActions && focusedColumn) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
           {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
-            if (!event.currentTarget.open) { setFilterDraft(null); return; }
-            if (columnChangesBlocked) { event.currentTarget.open = false; return; }
+            if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
+            if (columnChangesBlocked) { resetColumnToolbar(event.currentTarget); event.currentTarget.open = false; return; }
             positionColumnToolbar(event.currentTarget);
           }} onBlur={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              resetColumnToolbar(event.currentTarget);
               event.currentTarget.open = false;
               setFilterDraft(null);
             }
           }} onKeyDown={event => {
             if (event.key !== "Escape" || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || !event.currentTarget.open) return;
             event.preventDefault(); event.stopPropagation();
+            resetColumnToolbar(event.currentTarget);
             event.currentTarget.open = false;
             event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
           }}>
