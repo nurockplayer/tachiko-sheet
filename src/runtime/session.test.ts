@@ -1845,6 +1845,24 @@ describe("table duplication adapter", () => {
     expect((await runtime.read()).table.collection.key).toBe(COPY.key);
   });
 
+  it("falls back to Work's default table when the acknowledged copy is gone", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+    const query = client.hooks.queryTable!;
+    let copyExists = true;
+    client.hooks.queryTable = async (key) => {
+      if (key === COPY.key) {
+        if (copyExists) { copyExists = false; throw new Error("lost read"); }
+        throw new FakeDesignerRuntimeError("missing_collection", client.currentRevision);
+      }
+      return query(key);
+    };
+
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy")).rejects.toHaveProperty("name", "PublishedProjectionRecoveryError");
+    // Refresh never gets stuck on a table Work no longer has.
+    expect((await runtime.read()).table.collection.key).toBe(COLLECTION.key);
+  });
+
   it("reports a wrong-base duplicate receipt as unknown without replay", async () => {
     const { runtime, client, view } = await opened();
     client.hooks.duplicateCollection = async () => ({

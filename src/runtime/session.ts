@@ -556,7 +556,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertUsable(expected);
       let result: CoherentRead;
       try {
-        result = await loadCoherentView(kit, client, expected, collection);
+        try {
+          result = await loadCoherentView(kit, client, expected, collection);
+        } catch (error) {
+          // The resident table no longer exists (e.g. an acknowledged copy
+          // that Undo removed): Work's bootstrap default is authoritative.
+          if (collection === null || !isMissingCollection(kit, error)) throw error;
+          residentCollection = null;
+          result = await loadCoherentView(kit, client, expected, null);
+        }
       } catch (error) {
         active = null;
         if (isNoProject(kit, error)) {
