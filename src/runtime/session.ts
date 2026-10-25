@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { DuplicateCollectionProjection, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -34,6 +34,7 @@ import {
   type CellEdit,
   type PasteCellInput,
   type ColumnInitializer,
+  type ConfirmedPublication,
   type SheetRuntime,
   type ImportedWorkbook,
   type KeyedGroupedSumBindingCatalog,
@@ -250,6 +251,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   function isUnsupportedProject(kit: CoreKit, error: unknown): boolean {
     return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
       && (error as { failure?: { code?: string } }).failure?.code === "unsupported_project";
+  }
+
+  /** Undoing a table's creation/duplication removes that exact collection. */
+  function isMissingCollection(kit: CoreKit, error: unknown): boolean {
+    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
+      && (error as { failure?: { code?: string } }).failure?.code === "missing_collection";
   }
 
   async function dispatch<T>(kit: CoreKit, call: () => Promise<T>): Promise<T> {
@@ -549,7 +556,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertUsable(expected);
       let result: CoherentRead;
       try {
-        result = await loadCoherentView(kit, client, expected, collection);
+        try {
+          result = await loadCoherentView(kit, client, expected, collection);
+        } catch (error) {
+          // The resident table no longer exists (e.g. an acknowledged copy
+          // that Undo removed): Work's bootstrap default is authoritative.
+          if (collection === null || !isMissingCollection(kit, error)) throw error;
+          residentCollection = null;
+          result = await loadCoherentView(kit, client, expected, null);
+        }
       } catch (error) {
         active = null;
         if (isNoProject(kit, error)) {
@@ -725,6 +740,74 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  /**
+   * Duplicates one table and makes the copy the active table. The reply names
+   * the new collection, so this cannot reuse `confirmedMutation`: the coherent
+   * read must follow the copy rather than the live collection.
+   */
+  function duplicateCollection(witness: ViewWitness, collection: string, name: string): Promise<ConfirmedPublication> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const duplicate = capability(client.duplicateCollection, "table duplication");
+      let duplicated: DuplicateCollectionProjection;
+      try {
+        duplicated = await afterUsable(
+          expected,
+          dispatch(kit, () => duplicate.call(client, live.revision, collection, name)),
+        );
+      } catch (error) {
+        if (error instanceof UnknownOperationOutcomeError) {
+          // A lost duplicate acknowledgement may already have introduced a
+          // table with an authored display name.
+          requiresPortableSave = true;
+          active = null;
+          residentCollection = live.collection;
+        }
+        throw error;
+      }
+      // The copy carries an authored display name, like New table and columns.
+      requiresPortableSave = true;
+      const publication = duplicated.publication;
+      if (publication.base_revision !== live.revision) {
+        active = null;
+        residentCollection = live.collection;
+        throw new UnknownOperationOutcomeError(
+          "The duplicate returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
+        );
+      }
+      let result: CoherentRead;
+      try {
+        result = await loadCoherentView(kit, client, expected, duplicated.collection.key);
+      } catch (error) {
+        active = null;
+        // Work acknowledged the copy, so Refresh must land on it, not the source.
+        residentCollection = duplicated.collection.key;
+        throw new PublishedProjectionRecoveryError(publication, error);
+      }
+      assertUsable(expected);
+      if (publication.resulting_revision !== result.view.revision ||
+        result.view.occurrence !== live.scope) {
+        active = null;
+        residentCollection = duplicated.collection.key;
+        throw new PublishedProjectionRecoveryError(
+          publication,
+          new SheetSessionError("incoherent-reply", "The duplicate publication and replacement view do not share one coherent occurrence/revision."),
+        );
+      }
+      active = {
+        scope: result.view.occurrence,
+        revision: result.view.revision,
+        collection: result.collection,
+      };
+      residentCollection = result.collection;
+      return { view: result.view, publication };
+    });
+  }
+
   function edit(witness: ViewWitness, target: FieldTarget, change: ScalarEdit): Promise<WorkbookView> {
     return editConfirmed(witness, target, change).then((confirmed) => confirmed.view);
   }
@@ -759,9 +842,21 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       try {
         result = await loadCoherentView(kit, client, expected, live.collection);
       } catch (error) {
-        active = null;
-        residentCollection = live.collection;
-        throw new PublishedProjectionRecoveryError(publication, error);
+        // Undoing a table's creation/duplication removes the active
+        // collection. Work's bootstrap is authoritative, so follow it to the
+        // remaining table instead of calling the history reply unconfirmed.
+        if (!isMissingCollection(kit, error)) {
+          active = null;
+          residentCollection = live.collection;
+          throw new PublishedProjectionRecoveryError(publication, error);
+        }
+        try {
+          result = await loadCoherentView(kit, client, expected, null);
+        } catch (fallback) {
+          active = null;
+          residentCollection = null;
+          throw new PublishedProjectionRecoveryError(publication, fallback);
+        }
       }
       assertUsable(expected);
       if (publication.resulting_revision !== result.view.revision ||
@@ -1124,7 +1219,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, renameColumn, removeColumn, removeRows, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

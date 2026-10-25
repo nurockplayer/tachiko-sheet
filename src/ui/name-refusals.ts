@@ -6,9 +6,9 @@ const messages: Record<string, string> = {
   forbidden_display_name_scalar: "Remove control characters or line breaks from this name.",
   duplicate_display_name: "This name is already used. Choose a distinct name.",
 };
-export function nameRefusals(error: unknown): NameRefusals | null {
-  const failures = (error as { failure?: { name_failures?: Array<{ reason: string; inputs: Array<{kind: string; index?: number}> }> } } | null)?.failure?.name_failures;
-  if (!Array.isArray(failures) || failures.length === 0) return null;
+export interface NameFailureLike { reason: string; inputs: Array<{kind: string; index?: number}> }
+export function refusalsFor(failures: ReadonlyArray<NameFailureLike>): NameRefusals | null {
+  if (failures.length === 0) return null;
   const result: NameRefusals = { table: [], columns: {} };
   for (const failure of failures) {
     const message = messages[failure.reason] ?? "This name was refused. Choose another name.";
@@ -19,4 +19,9 @@ export function nameRefusals(error: unknown): NameRefusals | null {
     }
   }
   return result;
+}
+export function nameRefusals(error: unknown): NameRefusals | null {
+  const failures = (error as { failure?: { name_failures?: NameFailureLike[] } } | null)?.failure?.name_failures;
+  if (!Array.isArray(failures) || failures.length === 0) return null;
+  return refusalsFor(failures);
 }
