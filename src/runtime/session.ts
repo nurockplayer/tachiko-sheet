@@ -776,14 +776,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         result = await loadCoherentView(kit, client, expected, duplicated.collection.key);
       } catch (error) {
         active = null;
-        residentCollection = live.collection;
+        // Work acknowledged the copy, so Refresh must land on it, not the source.
+        residentCollection = duplicated.collection.key;
         throw new PublishedProjectionRecoveryError(publication, error);
       }
       assertUsable(expected);
       if (publication.resulting_revision !== result.view.revision ||
         result.view.occurrence !== live.scope) {
         active = null;
-        residentCollection = live.collection;
+        residentCollection = duplicated.collection.key;
         throw new PublishedProjectionRecoveryError(
           publication,
           new SheetSessionError("incoherent-reply", "The duplicate publication and replacement view do not share one coherent occurrence/revision."),

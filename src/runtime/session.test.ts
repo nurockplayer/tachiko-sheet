@@ -1830,6 +1830,21 @@ describe("table duplication adapter", () => {
     expect((await runtime.read()).requiresPortableSave).toBe(true);
   });
 
+  it("recovers to the acknowledged copy when its first read fails", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+    const query = client.hooks.queryTable!;
+    let failCopyOnce = true;
+    client.hooks.queryTable = async (key) => {
+      if (key === COPY.key && failCopyOnce) { failCopyOnce = false; throw new Error("lost read"); }
+      return query(key);
+    };
+
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy")).rejects.toHaveProperty("name", "PublishedProjectionRecoveryError");
+    // Work acknowledged the copy, so Refresh lands on it rather than the source.
+    expect((await runtime.read()).table.collection.key).toBe(COPY.key);
+  });
+
   it("reports a wrong-base duplicate receipt as unknown without replay", async () => {
     const { runtime, client, view } = await opened();
     client.hooks.duplicateCollection = async () => ({
