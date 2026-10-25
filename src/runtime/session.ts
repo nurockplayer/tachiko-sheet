@@ -137,6 +137,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let residentAvailable = false;
   // Host session evidence from an acknowledged Work admission; never document state.
   let openedFromWorkFile = false;
+  // New-table admission and authored schema keep the portable work-file copy
+  // route, so their local copies stay portable `.ro` bytes.
   let requiresPortableSave = false;
   let closed = false;
   let epoch = 0;
@@ -243,6 +245,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   function isNoProject(kit: CoreKit, error: unknown): boolean {
     return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
       && ["no_project", "no_project_open"].includes((error as { failure?: { code?: string } }).failure?.code ?? "");
+  }
+
+  function isUnsupportedProject(kit: CoreKit, error: unknown): boolean {
+    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
+      && (error as { failure?: { code?: string } }).failure?.code === "unsupported_project";
   }
 
   async function dispatch<T>(kit: CoreKit, call: () => Promise<T>): Promise<T> {
@@ -795,27 +802,29 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const explicitV3 = () => client.exportProjectV3(live.revision);
-      let project;
-      let usedExplicitV3 = requiresPortableSave;
+      let project: OpaqueProjectExport;
       try {
-        project = await afterUsable(expected, dispatch(kit, usedExplicitV3 ? explicitV3 : () => client.exportProject(live.revision)));
+        project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
       } catch (error) {
         assertUsable(expected);
-        // This kit exposes no origin in open/inspect/occurrence projections.
-        // At the pinned producer, ordinary export's v3-origin guard emits
-        // unsupported_project. Use that typed refusal, never message text or
-        // frontend manifest parsing, to select the explicit compatible writer.
-        // Other refusals and an unsuccessful explicit export remain failures.
-        if (usedExplicitV3 || !(error instanceof kit.DesignerRuntimeError) || error.failure.code !== "unsupported_project") throw error;
-        project = await afterUsable(expected, dispatch(kit, explicitV3));
-        usedExplicitV3 = true;
+        // TEMPORARY fallback (remove at the next kit re-pin). At the pinned
+        // producer both v3 writers enforce the strict bounded Designer profile:
+        // `export_project_v3` and `export_portable_ro` call
+        // `ensure_document_profile(.., false)`, so a capacity document (a
+        // collection above MAX_TABLE_ROWS = 128, or a project above
+        // MAX_TOTAL_ENTITIES = 1024) is opened but cannot be written as v3.
+        // Work has no capacity-capable v3 writer yet. Until it ships one, only
+        // this opaque copy path retries Work's typed `unsupported_project`
+        // refusal with the legacy writer; every other refusal propagates and
+        // the `.ro` work-file path has no legacy carrier. Select on the typed
+        // code only, never on message text. Work evidence (source commit
+        // 4e51942a, packages/browser-client/runtime/src/lib.rs): the profile
+        // retry is open-only, "intentionally not an export or re-admission
+        // capability".
+        if (!isUnsupportedProject(kit, error)) throw error;
+        project = await afterUsable(expected, dispatch(kit, () => client.exportProject(live.revision)));
       }
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
-      // Retain only confirmed producer evidence for this occurrence. Every
-      // open path (including recovery/Home) reaches this common fallback;
-      // replacement/Close reset it along with the other admission evidence.
-      if (usedExplicitV3) requiresPortableSave = true;
       return { revision: project.revision, bytes: project.bytes.slice(0) };
     });
   }

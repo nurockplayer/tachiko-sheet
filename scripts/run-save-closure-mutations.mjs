@@ -23,7 +23,7 @@ const implementationPaths = [
   'tests/save-closure-mutations.test.mjs', 'tests/save-closure-workflow-scope.test.mjs',
 ];
 const expectedSeeds = {
-  'tests/product/web-save-closure-current.mjs': '1acb4f5746a5e76e556d8da2052b6771fed6bcd1dbb5bbece78fb81827b2f717',
+  'tests/product/web-save-closure-current.mjs': '723adfe06471fec91d3ee099c9ca5441de24c8371c570ed61152828880fff00c',
   'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
   'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
 };

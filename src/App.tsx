@@ -36,6 +36,7 @@ import {
   type RowInitializer,
   type CellEdit,
   type CommitOutcome,
+  type CreateCopyOutcome,
   type PasteCellInput,
   type ColumnInitializer,
   type RowCommandOutcome,
@@ -51,6 +52,7 @@ import {
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
+import { copyFailureReason } from "./ui/save-close.js";
 import { useHostFiles } from "./host/host-files.js";
 import { COPY_CHANGED_MESSAGE, validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
 
@@ -1658,18 +1660,18 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) }, result => result.kind === "published" ? result.focusTarget : null, end);
   }
 
-  async function createCopy(name: string, expected?: SavedCopySummary): Promise<boolean> {
-    if (blockUnknownOpenRecovery()) return false;
+  async function createCopy(name: string, expected?: SavedCopySummary): Promise<CreateCopyOutcome> {
+    if (blockUnknownOpenRecovery()) return { saved: false, reason: "The copy was not created. Refresh to confirm the open work, or close it, then try again." };
     if ((viewRef.current?.openedFromWorkFile || viewRef.current?.requiresPortableSave) && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
-      return false;
+      return { saved: false, reason: WORK_FILE_SAVE_UNAVAILABLE };
     }
-    if (!begin()) return false;
+    if (!begin()) return { saved: false, reason: "The copy was not created. Another operation is in progress; try again when it finishes." };
     const live = viewRef.current;
     if (!live) {
       end();
       setMessage("There is no open work to save.");
-      return false;
+      return { saved: false, reason: "There is no open work to save." };
     }
     saveInFlightRef.current = true;
     setMessage(null);
@@ -1681,71 +1683,64 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
     }
     try {
+      // Every local copy is a native v3 snapshot: portable `.ro` bytes for
+      // work-file origin or authored schema, the explicit v3 project export
+      // otherwise. There is no legacy writer or writer-selection branch.
       const portableSave = live.openedFromWorkFile || live.requiresPortableSave;
-      const definitionBearing = j4DefinitionIdsRef.current.length > 0;
-      const hasDateColumn = definitionBearing || portableSave
-        ? false
-        : bindingCatalogContainsDate(await runtime.listKeyedGroupedSumBindings(witnessOf(live)));
-      let snapshotRevision: string;
+      const snapshot = portableSave
+        ? await runtime.exportWorkFile(witnessOf(live))
+        : await runtime.exportOpaque(witnessOf(live));
+      const snapshotRevision = snapshot.revision;
+      if (portableSave) validateWorkFileCopy({
+        ...snapshot, importedSource: importedSourceRef.current ?? undefined,
+      });
+      // Save writes only the truthful current state, without a dangling
+      // report. Detached settings stay in memory for same-occurrence Redo;
+      // they are not persisted and are discarded on Close/Open/replacement.
+      const configuredReport = reportRef.current;
+      const source = configuredReport && j4ResultsRef.current.find((candidate) =>
+        candidate.definitionId === configuredReport.definitionId &&
+        candidate.revision === live.revision &&
+        candidate.diagnostics.length === 0,
+      );
+      if (configuredReport && !source) {
+        throw new Error("Refresh the report source before saving its presentation settings.");
+      }
+      const presentation: PresentationAttachment | undefined = configuredReport ? {
+        version: 1,
+        report: configuredReport,
+        snapshotRevision,
+        snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
+      } : undefined;
+      requireCurrentSnapshot(snapshotRevision);
+      const payload = {
+        ...snapshot,
+        importedSource: importedSourceRef.current ?? undefined,
+        presentation,
+      };
       let receipt;
-      if (portableSave || definitionBearing || hasDateColumn) {
-        const snapshot = portableSave
-          ? await runtime.exportWorkFile(witnessOf(live))
-          : await runtime.exportOpaque(witnessOf(live));
-        snapshotRevision = snapshot.revision;
-        if (portableSave) validateWorkFileCopy({
-          ...snapshot, importedSource: importedSourceRef.current ?? undefined,
-        });
-        // Save writes only the truthful current state, without a dangling
-        // report. Detached settings stay in memory for same-occurrence Redo;
-        // they are not persisted and are discarded on Close/Open/replacement.
-        const configuredReport = reportRef.current;
-        const source = configuredReport && j4ResultsRef.current.find((candidate) =>
-          candidate.definitionId === configuredReport.definitionId &&
-          candidate.revision === live.revision &&
-          candidate.diagnostics.length === 0,
-        );
-        if (configuredReport && !source) {
-          throw new Error("Refresh the report source before saving its presentation settings.");
-        }
-        const presentation: PresentationAttachment | undefined = configuredReport ? {
-          version: 1,
-          report: configuredReport,
-          snapshotRevision,
-          snapshotDigest: await opaqueSnapshotDigest(snapshot.bytes),
-        } : undefined;
-        requireCurrentSnapshot(snapshotRevision);
-        const payload = {
-          ...snapshot,
-          importedSource: importedSourceRef.current ?? undefined,
-          presentation,
-        };
-        if (expected) {
-          const replace = portableSave ? copies.replaceWorkFile : copies.replaceOpaque;
-          if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
-          receipt = await replace.call(copies, expected, payload);
-        } else {
-          const create = portableSave ? copies.createWorkFile! : copies.createOpaque;
-          receipt = await create.call(copies, name, payload);
-        }
+      if (expected) {
+        const replace = portableSave ? copies.replaceWorkFile : copies.replaceOpaque;
+        if (!replace) throw new Error("Save is unavailable. Save a copy instead.");
+        receipt = await replace.call(copies, expected, payload);
       } else {
-        const snapshot = await runtime.exportCanonical(witnessOf(live));
-        snapshotRevision = snapshot.revision;
-        requireCurrentSnapshot(snapshotRevision);
-        if (expected) {
-          if (!copies.replace) throw new Error("Save is unavailable. Save a copy instead.");
-          receipt = await copies.replace(expected, snapshot, importedSourceRef.current ?? undefined);
-        } else receipt = await copies.create(name, snapshot, importedSourceRef.current ?? undefined);
+        const create = portableSave ? copies.createWorkFile! : copies.createOpaque;
+        receipt = await create.call(copies, name, payload);
       }
       void refreshCopies();
       const stillCurrent = mutationCompletion.save(live, snapshotRevision, receipt);
-      return expected ? stillCurrent : true;
+      // The replacement already wrote to the host; `stillCurrent` false means
+      // only that the open work moved on before the save could be confirmed,
+      // which is not a copy-store conflict.
+      return expected && !stillCurrent
+        ? { saved: false, reason: "The copy was saved, but this work changed before the save could be confirmed. Refresh to review it." }
+        : { saved: true };
     } catch (error) {
       markNotSaved();
       setSaveStatus("failed");
       setOutcome("idle");
       setMessage(error instanceof Error && error.message === COPY_CHANGED_MESSAGE ? COPY_CHANGED_MESSAGE : describe(error, "The copy could not be saved on this device."));
-      return false;
+      return { saved: false, reason: copyFailureReason(name, error) };
     } finally {
       saveInFlightRef.current = false;
       evaluateSavedStatus();
@@ -2170,7 +2165,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSave={async () => {
             const binding = boundCopyRef.current;
             if (!binding || binding.occurrence !== viewRef.current?.occurrence) return false;
-            return createCopy(binding.copy.name, binding.copy);
+            const outcome = await createCopy(binding.copy.name, binding.copy);
+            return outcome.saved;
           }}
           onDeleteCopy={copies.delete ? async (copy) => {
             const name = copy.name;

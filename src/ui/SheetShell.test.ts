@@ -141,7 +141,7 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
     onCommit: async () => ({ accepted: true }),
     localHistory: { occurrence: null, revision: null, undoCount: 0, redoCount: 0 },
     onHistory: async () => null,
-    onCreateCopy: async () => true,
+    onCreateCopy: async () => ({ saved: true }),
     onClose: async () => {},
     onRefresh: async () => {},
     onDraftChange: () => {},

@@ -9,6 +9,7 @@ import { UnknownOperationOutcomeError, type CoreKit, type KitLoader } from "../.
 import { hashCanonicalFiles } from "../../src/acceptance/canonical-hash.js";
 import {
   executeRequestCount,
+  exportWriterDispatchCounts,
   acceptanceHarnessVersion,
   armTargetedQueryReplyFault,
   coreFailureProbe,
@@ -428,6 +429,25 @@ describe("acceptance kit instrumentation", () => {
     expect(importSpreadsheetRequestCount() - before).toBe(1);
   });
 
+  it("separates the native v3 opaque writer from the retired legacy transfer", async () => {
+    const answer = async () => ({ revision: "r1", bytes: new ArrayBuffer(1) });
+    const client = { exportProject: answer, exportProjectV3: answer, exportCanonicalTree: async () => ({ revision: "r1", files: [] }) };
+    const kit = { createExperimentalDesignerClient: () => client } as unknown as CoreKit;
+    const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient() as unknown as
+      Record<"exportProject" | "exportProjectV3" | "exportCanonicalTree", (revision: string) => Promise<unknown>>;
+    const before = exportWriterDispatchCounts();
+    await instrumented.exportProject("r1");
+    await instrumented.exportProjectV3("r1");
+    await instrumented.exportProjectV3("r1");
+    await instrumented.exportCanonicalTree("r1");
+    const after = exportWriterDispatchCounts();
+    expect({
+      v3Opaque: after.v3Opaque - before.v3Opaque,
+      legacyOpaque: after.legacyOpaque - before.legacyOpaque,
+      canonical: after.canonical - before.canonical,
+    }).toEqual({ v3Opaque: 2, legacyOpaque: 1, canonical: 1 });
+  });
+
   it("keeps before-dispatch and post-dispatch import fault arms mutually exclusive", async () => {
     const { kit, importCalls } = fakeKit(async () => projection());
     const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
@@ -499,6 +519,7 @@ describe("acceptance kit instrumentation", () => {
         "lastReceipt",
         "exportDispatchCounts",
         "copyWriteDispatchCounts",
+        "exportWriterDispatchCounts",
         "acceptanceHarnessVersion",
         "resetCoreFailureProbe",
         "coreFailureProbe",
