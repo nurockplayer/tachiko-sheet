@@ -1199,7 +1199,9 @@ body { margin: 0; }
 /* Always one line tall (18px line-height) whether or not it has a message, so
    focus changes never resize the bar and shift the grid beneath it. A refusal
    overlays that reserved line rather than adding one, so it cannot move the
-   grid either; the full text stays in the DOM for assistive tech. */
+   grid either; the full text stays in the DOM for assistive tech. Its Details
+   disclosure and the popover it opens are absolutely positioned for the same
+   reason: the whole refusal is readable without adding a line. */
 .ts-formula-bar-notes { position: relative; min-height: 18px; }
 .ts-formula-bar-reason { padding: 0 2px; line-height: 18px; min-height: 18px; }
 .ts-formula-bar .ts-formula-bar-error {
@@ -1209,12 +1211,48 @@ body { margin: 0; }
   right: 0;
   box-sizing: border-box;
   height: 18px;
-  padding: 0 8px;
+  /* The Details button overlays the right end of the line. */
+  padding: 0 62px 0 8px;
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ts-formula-bar-details {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  z-index: 1;
+  box-sizing: border-box;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 3px;
+  background: var(--ts-surface);
+  color: var(--ts-ink-soft);
+  font: 600 10px/16px ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+.ts-formula-bar-details:hover { background: var(--ts-surface-sunken); }
+.ts-formula-bar-details:focus-visible { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
+.ts-formula-bar-error-details {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #e0b4b4;
+  border-radius: var(--ts-radius);
+  background: var(--ts-error-bg);
+  color: var(--ts-error-ink);
+  box-shadow: var(--ts-shadow);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .ts-formula-bar-position { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ts-cell--formula { cursor: default; }

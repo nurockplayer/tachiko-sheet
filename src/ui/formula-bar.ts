@@ -216,6 +216,74 @@ export function formulaSubmitHandoffOutcome(input: {
   };
 }
 
+/**
+ * The grid a handoff settles against: one render's displayed order, the row
+ * index of every displayed row in that same order, and whether only a window
+ * of rows is mounted. All of it must come from one projection: a destination
+ * named by the rendered order has to be looked up (and revealed) in the same
+ * window, never in the one captured before the commit.
+ */
+export interface FormulaHandoffGrid {
+  viewKey: string;
+  order: readonly FormulaGridPosition[];
+  /** Displayed row index by entity, built from this same order. */
+  rowIndexByEntity: ReadonlyMap<string, number>;
+  /** Rows outside the mounted window exist, so a destination there must be revealed. */
+  windowed: boolean;
+}
+
+export type FormulaHandoffSettlement =
+  | { kind: "wait" }
+  | { kind: "stop" }
+  | {
+    kind: "move";
+    destination: FormulaGridPosition;
+    /** The rendered row to mount before focusing, or null when no reveal is needed. */
+    rowIndex: number | null;
+  };
+
+/**
+ * Settle a handoff and name the row a windowed grid must mount for it. The row
+ * index comes from the same rendered projection that named the destination, so
+ * a row a filter or sort has just revealed is reachable even though no earlier
+ * window displayed it.
+ */
+export function formulaHandoffSettlement(input: {
+  handoff: FormulaSubmitHandoff;
+  generation: number;
+  occurrence: string;
+  draftEntity: string;
+  modalOpen: boolean;
+  focusOnBar: boolean;
+  rendered: FormulaHandoffGrid;
+}): FormulaHandoffSettlement {
+  const outcome = formulaSubmitHandoffOutcome({
+    handoff: input.handoff,
+    generation: input.generation,
+    occurrence: input.occurrence,
+    viewKey: input.rendered.viewKey,
+    order: input.rendered.order,
+    draftEntity: input.draftEntity,
+    modalOpen: input.modalOpen,
+    focusOnBar: input.focusOnBar,
+  });
+  if (outcome.kind !== "move") return outcome;
+  if (!outcome.destination) return { kind: "stop" };
+  const destination = outcome.destination;
+  return {
+    kind: "move",
+    destination,
+    rowIndex: input.rendered.windowed
+      ? input.rendered.rowIndexByEntity.get(destination.entity) ?? null
+      : null,
+  };
+}
+
+/** Work's refusal with its own character position, as one line of text. */
+export function formulaRefusalText(error: { message: string; position?: number }): string {
+  return `${error.message}${error.position !== undefined ? ` (position ${error.position})` : ""}`;
+}
+
 /** Insert a token at the caret, replacing the selection; returns the caret after it. */
 export function insertFormulaReference(
   value: string,

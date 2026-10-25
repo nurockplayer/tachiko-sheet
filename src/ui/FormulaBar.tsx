@@ -1,6 +1,6 @@
-import { useId, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useId, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
+import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
 
 export interface FormulaBarProps {
   /** Exactly one focused cell instance, or an empty state with its reason. */
@@ -21,8 +21,16 @@ export function FormulaBar(props: FormulaBarProps) {
   const id = useId();
   const reasonId = `${id}-reason`;
   const errorId = `${id}-error`;
+  const detailsId = `${id}-details`;
   const state = props.state;
   const value = formulaBarDraftValue(state, props.draft);
+  // A refusal keeps to the fixed 18px line, so a long message is cut off with
+  // an ellipsis. `title` and the Details disclosure expose the whole text
+  // without adding a line that would move the grid. The open disclosure is
+  // keyed by the text, so a different refusal never inherits it.
+  const errorText = props.error ? formulaRefusalText(props.error) : "";
+  const [openErrorText, setOpenErrorText] = useState<string | null>(null);
+  const detailsOpen = props.error !== null && openErrorText === errorText;
   return (
     <div className={`ts-formula-bar${state.editable ? "" : " ts-formula-bar--readonly"}`} data-testid="formula-bar">
       <div className="ts-formula-bar-row">
@@ -56,12 +64,22 @@ export function FormulaBar(props: FormulaBarProps) {
           {state.reason ?? state.note ?? ""}
         </p>
         {props.error ? (
-          <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true">
-            {props.error.message}
-            {props.error.position !== undefined
-              ? <span className="ts-formula-bar-position"> (position {props.error.position})</span>
-              : null}
-          </p>
+          <>
+            <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true" title={errorText}>
+              {props.error.message}
+              {props.error.position !== undefined
+                ? <span className="ts-formula-bar-position"> (position {props.error.position})</span>
+                : null}
+            </p>
+            <button
+              type="button"
+              className="ts-formula-bar-details"
+              aria-expanded={detailsOpen}
+              aria-controls={detailsId}
+              onClick={() => setOpenErrorText(detailsOpen ? null : errorText)}
+            >Details</button>
+            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen}>{errorText}</div>
+          </>
         ) : null}
       </div>
     </div>
