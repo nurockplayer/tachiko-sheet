@@ -71,7 +71,7 @@ import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, type FormulaBarDraft } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, positionedAfterFormulaSubmit, type FormulaBarDraft } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -1798,7 +1798,12 @@ export function SheetShell(props: SheetShellProps) {
     // A second click of a double-click adds no second token.
     if (event.button !== 0 || event.detail > 1) return false;
     const input = formulaInputRef.current;
-    const token = formulaReferenceInsertion({ barHasCaret: formulaCaretInBar(), draft, row, column });
+    // A stub cell is drawn for every column, but only a projected field
+    // instance has an address Work can resolve.
+    const token = formulaReferenceInsertion({
+      barHasCaret: formulaCaretInBar(), draft, row, column,
+      hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
+    });
     if (!token || !input) return false;
     const current = formulaBarDraftValue(formulaState, formulaDraft);
     const next = insertFormulaReference(current, token, {
@@ -1864,16 +1869,15 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /**
-   * Tab leaves the bar through the grid's own order, never a wrap-around, and
-   * never into the entry row: a first formula withdraws the native row
-   * profile the pre-commit order still lists, so that cell may be gone by the
-   * time focus moves.
+   * Tab leaves the bar through the grid's own displayed order, never a
+   * wrap-around, and never into the entry row: a first formula withdraws the
+   * native row profile the pre-commit order still lists, so that cell may be
+   * gone by the time focus moves. A filter can also hide the bound row, so a
+   * position the grid no longer displays falls back to the first or last
+   * displayed cell; with none, focus stays in the bar.
    */
-  function positionedAfterSubmit(position: GridPosition, then: "stay" | "next" | "previous"): GridPosition {
-    if (then === "stay") return position;
-    const index = gridOrder.findIndex((item) => item.entity === position.entity && item.field === position.field);
-    const target = index < 0 ? undefined : gridOrder[index + (then === "next" ? 1 : -1)];
-    return target && target.entity !== DRAFT_ROW ? target : position;
+  function positionedAfterSubmit(position: GridPosition, then: "stay" | "next" | "previous"): GridPosition | null {
+    return positionedAfterFormulaSubmit({ position, then, order: gridOrder, draftEntity: DRAFT_ROW });
   }
 
   /** The bar can hand focus back only to a cell the grid displays right now. */
@@ -3552,6 +3556,9 @@ export function SheetShell(props: SheetShellProps) {
         aria-readonly={!editable}
         title={display.title === display.description ? undefined : display.title ?? undefined}
         onMouseDown={(event) => {
+          // A press inside the cell's own editor belongs to that editor: its
+          // native caret placement must survive, and it inserts no reference.
+          if (cellEditorOwnsPointer(event.target as Element | null)) return;
           // The bar owns the caret: this click inserts a reference (if the
           // cell has one) and never moves focus or commits.
           if (formulaCaretInBar()) {
@@ -3562,7 +3569,7 @@ export function SheetShell(props: SheetShellProps) {
           if (event.shiftKey && !draft && !editor) event.preventDefault();
         }}
         onClick={(event) => {
-          if ((event.target as Element).closest("input")) return;
+          if (cellEditorOwnsPointer(event.target as Element | null)) return;
           // The click above only inserted a reference; the bar keeps the caret.
           if (formulaCaretInBar()) return;
           setSelectedEntity(entity);

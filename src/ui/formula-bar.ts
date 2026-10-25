@@ -109,9 +109,53 @@ export function formulaReferenceInsertion(input: {
   draft: boolean;
   row: { key: string } | null;
   column: { key: string } | null;
+  /**
+   * The clicked row projects a field instance for this column. The grid also
+   * draws a stub cell for every column, but a cell Work never projected has
+   * no reference to give; only the projection can name an address.
+   */
+  hasProjectedField: boolean;
 }): string | null {
-  if (!input.barHasCaret || input.draft) return null;
+  if (!input.barHasCaret || input.draft || !input.hasProjectedField) return null;
   return formulaReferenceToken(input.row, input.column);
+}
+
+/**
+ * A pointer-down inside the cell's own scalar editor is that editor's: the
+ * native caret placement and text selection must survive, and no reference is
+ * inserted. `target` is only inspected through `closest`, so this stays a
+ * pure predicate.
+ */
+export function cellEditorOwnsPointer(target: { closest?: (selector: string) => unknown } | null): boolean {
+  return Boolean(target?.closest?.("input"));
+}
+
+/** A grid cell address; only identity matters for focus movement. */
+export interface FormulaGridPosition { entity: string; field: string }
+
+/**
+ * Tab/Shift+Tab after a successful formula submit lands on a cell the grid
+ * actually displays. A filter can hide the bound row, so a position missing
+ * from the displayed order falls back to the first (Tab) or last (Shift+Tab)
+ * visible cell; with nothing visible it returns null, which keeps focus in the
+ * bar instead of on a cell that is not mounted.
+ */
+export function positionedAfterFormulaSubmit(input: {
+  position: FormulaGridPosition;
+  then: "stay" | "next" | "previous";
+  /** Displayed cells in grid order; the new-row draft is last when present. */
+  order: readonly FormulaGridPosition[];
+  /** The new-row draft is never a submit destination. */
+  draftEntity: string;
+}): FormulaGridPosition | null {
+  if (input.then === "stay") return input.position;
+  const index = input.order.findIndex((item) => item.entity === input.position.entity && item.field === input.position.field);
+  if (index >= 0) {
+    const target = input.order[index + (input.then === "next" ? 1 : -1)];
+    return target && target.entity !== input.draftEntity ? target : input.position;
+  }
+  const visible = input.then === "next" ? input.order : [...input.order].reverse();
+  return visible.find((item) => item.entity !== input.draftEntity) ?? null;
 }
 
 /** Insert a token at the caret, replacing the selection; returns the caret after it. */

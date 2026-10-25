@@ -19,6 +19,7 @@ import {
   FORMULA_BAR_NO_CELL,
   FORMULA_BAR_UNKNOWN,
   boundFormulaDraft,
+  cellEditorOwnsPointer,
   formulaBarDraftValue,
   formulaBarKeyAction,
   formulaBarState,
@@ -26,8 +27,9 @@ import {
   formulaReferenceToken,
   insertFormulaReference,
   isFormulaCell,
+  positionedAfterFormulaSubmit,
 } from "./formula-bar.js";
-import type { TableColumn, TableRow } from "./projection-access.js";
+import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 
 const task: TableColumn = { id: "task", key: "task", display_name: "Task", field_type: "text", required: true };
 const impact: TableColumn = { id: "impact", key: "impact", display_name: "Impact", field_type: "number", required: false };
@@ -304,7 +306,19 @@ describe("formula references", () => {
     expect(formulaReferenceToken({ key: "  " }, keyedColumn)).toBeNull();
     expect(formulaReferenceToken(keyedRow, { key: "" })).toBeNull();
     // The new-row draft is not a projected instance.
-    expect(formulaReferenceInsertion({ barHasCaret: true, draft: true, row: keyedRow, column: keyedColumn })).toBeNull();
+    expect(formulaReferenceInsertion({ barHasCaret: true, draft: true, row: keyedRow, column: keyedColumn, hasProjectedField: true })).toBeNull();
+  });
+
+  it("inserts nothing for a stub cell the projection never gave a field", () => {
+    // The grid draws a cell for every column. A row can project no field for
+    // one of them: the stub has both keys, yet no address Work can resolve.
+    const stubRow: TableRow = { ...formulaRow, fields: formulaRow.fields.filter((item) => item.target.field !== impact.id) };
+    expect(fieldForColumn(stubRow, impact.id)).toBeNull();
+    expect(formulaReferenceToken(stubRow, impact)).toBe("[row-1.impact]");
+    expect(formulaReferenceInsertion({
+      barHasCaret: true, draft: false, row: stubRow, column: impact,
+      hasProjectedField: fieldForColumn(stubRow, impact.id) !== null,
+    })).toBeNull();
   });
 
   it("inserts at the caret, replacing the selection", () => {
@@ -316,7 +330,7 @@ describe("formula references", () => {
 
   it("only edits the draft on a click, never the projected formula", () => {
     const bar = state({ entity: "e1", field: "impact" });
-    const token = formulaReferenceInsertion({ barHasCaret: true, draft: false, row: keyedRow, column: keyedColumn });
+    const token = formulaReferenceInsertion({ barHasCaret: true, draft: false, row: keyedRow, column: keyedColumn, hasProjectedField: true });
     expect(token).toBe("[entity-key.impact-key]");
     const inserted = insertFormulaReference(bar.source, token!, { start: bar.source.length, end: bar.source.length });
     // A click changes what the bar would submit; it commits nothing on its own.
@@ -326,7 +340,16 @@ describe("formula references", () => {
   });
 
   it("inserts nothing unless the bar owns the caret", () => {
-    expect(formulaReferenceInsertion({ barHasCaret: false, draft: false, row: keyedRow, column: keyedColumn })).toBeNull();
+    expect(formulaReferenceInsertion({ barHasCaret: false, draft: false, row: keyedRow, column: keyedColumn, hasProjectedField: true })).toBeNull();
+  });
+
+  it("leaves a press inside the cell's own editor to that editor", () => {
+    // The scalar editor's <input> sits inside the cell. Its pointer-down must
+    // place the caret natively instead of inserting a reference.
+    const editorInput = { closest: (selector: string) => selector === "input" ? {} : null };
+    expect(cellEditorOwnsPointer(editorInput)).toBe(true);
+    expect(cellEditorOwnsPointer({ closest: () => null })).toBe(false);
+    expect(cellEditorOwnsPointer(null)).toBe(false);
   });
 });
 
@@ -359,6 +382,46 @@ describe("formulaBarKeyAction", () => {
   it("keeps the row-draft hint and the hidden-row note exact", () => {
     expect(FORMULA_BAR_DRAFT_ROW_HINT).toBe("Add or discard the new row first. Press Esc to cancel this formula.");
     expect(FORMULA_BAR_HIDDEN_ROW).toBe("This row is hidden by the current filter or sort. Its formula can still be edited.");
+  });
+});
+
+describe("positionedAfterFormulaSubmit", () => {
+  // The grid's displayed order: every displayed row's columns, then the
+  // new-row draft last.
+  const order = [
+    { entity: "e1", field: "task" }, { entity: "e1", field: "impact" },
+    { entity: "e2", field: "task" }, { entity: "e2", field: "impact" },
+    { entity: "draft", field: "task" }, { entity: "draft", field: "impact" },
+  ];
+  const at = (position: { entity: string; field: string }, then: "stay" | "next" | "previous", rows = order) =>
+    positionedAfterFormulaSubmit({ position, then, order: rows, draftEntity: "draft" });
+
+  it("stays on the same cell after Enter", () => {
+    expect(at({ entity: "e1", field: "impact" }, "stay")).toEqual({ entity: "e1", field: "impact" });
+    // Even a hidden bound row keeps the bar's cell; focus simply stays put.
+    expect(at({ entity: "gone", field: "impact" }, "stay")).toEqual({ entity: "gone", field: "impact" });
+  });
+
+  it("walks the displayed order without wrap-around and never into the draft row", () => {
+    expect(at({ entity: "e1", field: "task" }, "next")).toEqual({ entity: "e1", field: "impact" });
+    expect(at({ entity: "e2", field: "impact" }, "previous")).toEqual({ entity: "e2", field: "task" });
+    // The entry row is last in the order but is never a submit destination.
+    expect(at({ entity: "e2", field: "impact" }, "next")).toEqual({ entity: "e2", field: "impact" });
+  });
+
+  it("finds a displayed cell when a filter hides the bound row", () => {
+    // The focused row is projected but not displayed, so its position is not
+    // in the order: Tab goes to the first displayed cell, Shift+Tab to the
+    // last, and either way not to a cell that is not mounted.
+    expect(at({ entity: "gone", field: "impact" }, "next")).toEqual({ entity: "e1", field: "task" });
+    expect(at({ entity: "gone", field: "impact" }, "previous")).toEqual({ entity: "e2", field: "impact" });
+  });
+
+  it("keeps focus in the bar when the grid displays no cell", () => {
+    expect(at({ entity: "gone", field: "impact" }, "next", [])).toBeNull();
+    // Only the draft row is left; it is still not a destination.
+    expect(at({ entity: "gone", field: "impact" }, "next", order.slice(4))).toBeNull();
+    expect(at({ entity: "gone", field: "impact" }, "previous", order.slice(4))).toBeNull();
   });
 });
 
