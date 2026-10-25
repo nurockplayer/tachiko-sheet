@@ -1186,7 +1186,9 @@ body { margin: 0; }
 .ts-formula-input:focus { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
 .ts-formula-input:disabled { color: var(--ts-ink-soft); }
 .ts-formula-bar--readonly .ts-formula-input { color: var(--ts-ink-soft); }
-.ts-formula-bar-reason { padding: 0 2px; }
+/* Always one line tall (18px line-height) whether or not it has a message, so
+   focus changes never resize the bar and shift the grid beneath it. */
+.ts-formula-bar-reason { padding: 0 2px; line-height: 18px; min-height: 18px; }
 .ts-formula-bar-error { font-size: 12px; }
 .ts-formula-bar-position { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ts-cell--formula { cursor: default; }

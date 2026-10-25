@@ -642,7 +642,9 @@ export function SheetShell(props: SheetShellProps) {
   // The bar's draft names its projection revision and cell, so a newer
   // occurrence or revision can never display text meant for the old one.
   const [formulaDraft, setFormulaDraft] = useState<FormulaBarDraft | null>(null);
-  const [formulaError, setFormulaError] = useState<{ message: string; position?: number } | null>(null);
+  // Bound to the exact cell/revision instance that raised it, so a message is
+  // never displayed under a different cell without any effect or extra render.
+  const [formulaRefusal, setFormulaRefusal] = useState<{ identity: string; message: string; position?: number } | null>(null);
   const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
   const gridRowHeightRef = useRef(32);
   // Mirrors the ref so a measured pitch change re-renders spacer heights.
@@ -814,11 +816,8 @@ export function SheetShell(props: SheetShellProps) {
   // never silently destroyed by merely looking at another cell.
   useEffect(() => {
     setFormulaDraft(null);
-    setFormulaError(null);
+    setFormulaRefusal(null);
   }, [viewKey]);
-  useEffect(() => {
-    setFormulaError(null);
-  }, [focusedKey]);
 
   useEffect(() => {
     setReportTextDraft((current) => {
@@ -924,6 +923,12 @@ export function SheetShell(props: SheetShellProps) {
     formulaDraft && formulaDraft.identity === formulaState.identity &&
     formulaDraft.value !== formulaState.source,
   );
+  // A refusal names the cell instance that raised it. A newer cell or revision
+  // simply never shows it — no clearing effect, so focus changes never schedule
+  // a render of their own.
+  const formulaError = formulaRefusal && formulaRefusal.identity === formulaState.identity
+    ? { message: formulaRefusal.message, ...(formulaRefusal.position !== undefined ? { position: formulaRefusal.position } : {}) }
+    : null;
   useLayoutEffect(() => {
     formulaIdentityRef.current = formulaState.identity;
   }, [formulaState.identity]);
@@ -1767,13 +1772,13 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     setClipboardMessage(null);
-    setFormulaError(null);
+    setFormulaRefusal(null);
     setFormulaDraft({ identity: formulaState.identity, value });
   }
 
   function cancelFormulaEdit(): void {
     setFormulaDraft(null);
-    setFormulaError(null);
+    setFormulaRefusal(null);
     if (focusedPosition) withAppFocus(() => focusCell(focusedPosition.entity, focusedPosition.field));
   }
 
@@ -1784,11 +1789,11 @@ export function SheetShell(props: SheetShellProps) {
     const source = formulaBarDraftValue(state, formulaDraft);
     if (source === state.source) {
       setFormulaDraft(null);
-      setFormulaError(null);
+      setFormulaRefusal(null);
       return;
     }
     const position = focusedPosition;
-    setFormulaError(null);
+    setFormulaRefusal(null);
     setLocalError(null);
     // Sheet forwards the source unchanged; Work parses, validates and stores it.
     const outcome = await runCommit(state.target, { kind: "formula", source });
@@ -1798,7 +1803,8 @@ export function SheetShell(props: SheetShellProps) {
       if (formulaIdentityRef.current !== state.identity) return;
       // A refusal keeps the user's text in the bar and Work's words verbatim,
       // with Work's own character position when it supplies one.
-      setFormulaError({
+      setFormulaRefusal({
+        identity: state.identity,
         message: outcome?.message ?? "The formula was not applied.",
         ...(outcome?.position !== undefined ? { position: outcome.position } : {}),
       });
@@ -1812,7 +1818,7 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     setFormulaDraft(null);
-    setFormulaError(null);
+    setFormulaRefusal(null);
     if (position && !modalInteractionOpen) withAppFocus(() => focusCell(position.entity, position.field));
   }
 
@@ -1963,7 +1969,9 @@ export function SheetShell(props: SheetShellProps) {
     const accepted = outcome?.accepted === true;
     if (!accepted) {
       focusRejectedEditorRef.current = intent;
-      setLocalError(outcome?.message ?? "The work did not accept this value. The draft was kept so you can correct it.");
+      // The cell editor keeps its established retained-draft copy; Work's own
+      // detail stays in the status message rather than replacing it.
+      setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
     }
     if (accepted) {
       setEditor(null);
@@ -2195,7 +2203,9 @@ export function SheetShell(props: SheetShellProps) {
     const entity = notesField.target.entity;
     const outcome = await runCommit(notesField.target, { kind: "text", value: notesValue });
     const accepted = outcome?.accepted === true;
-    if (!accepted) setLocalError(outcome?.message ?? "The work did not accept this value. The draft was kept so you can correct it.");
+    // Same retained-draft copy as the cell editor; Work's detail stays in the
+    // status message.
+    if (!accepted) setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
     if (accepted && applied) {
       // Same as a cell edit: an applied Notes value keeps its row visible under
       // the filter that was active when it was written.

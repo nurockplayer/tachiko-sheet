@@ -229,6 +229,19 @@ describe("FormulaBar", () => {
     expect(html).not.toContain(FORMULA_BAR_NON_NATIVE);
   });
 
+  it("always keeps the reason line so focus never resizes the bar over the grid", () => {
+    // The bar sits in normal flow directly above the grid. A reason line that
+    // appeared or disappeared with focus moved every row under the pointer
+    // between the two clicks of a double-click, so the line is always there.
+    const editable = render({ state: state({ entity: "e1", field: "impact" }), draft: null, pending: false, error: null });
+    const readOnly = render({ state: state({ entity: "e3", field: "impact" }, { native: false, rows: [scalarRow] }), draft: null, pending: false, error: null });
+    for (const html of [editable, readOnly]) {
+      expect(html.match(/data-testid="formula-bar-reason"/g)).toHaveLength(1);
+    }
+    expect(editable).toMatch(/<p class="ts-hint ts-formula-bar-reason"[^>]*data-testid="formula-bar-reason">\s*<\/p>/);
+    expect(readOnly).toContain(FORMULA_BAR_NON_NATIVE);
+  });
+
   it("shows Work's refusal verbatim below the bar and keeps the draft", () => {
     const bar = state({ entity: "e1", field: "impact" });
     const draft = { identity: bar.identity, value: "1 +" };
