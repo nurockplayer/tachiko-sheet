@@ -48,18 +48,22 @@ export function FormulaBar(props: FormulaBarProps) {
       {/* The reason line is always present, even when empty: the bar sits in
           normal flow above the grid, and a line that appeared or disappeared
           with focus moved every row under the pointer between the two clicks
-          of a double-click. One reserved line keeps the grid still. */}
-      <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason">
-        {state.reason ?? state.note ?? ""}
-      </p>
-      {props.error ? (
-        <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true">
-          {props.error.message}
-          {props.error.position !== undefined
-            ? <span className="ts-formula-bar-position"> (position {props.error.position})</span>
-            : null}
+          of a double-click. One reserved line keeps the grid still. A refusal
+          shares that line instead of adding one, so the bar keeps its height
+          while the message is shown and the grid never moves. */}
+      <div className="ts-formula-bar-notes">
+        <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason">
+          {state.reason ?? state.note ?? ""}
         </p>
-      ) : null}
+        {props.error ? (
+          <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true">
+            {props.error.message}
+            {props.error.position !== undefined
+              ? <span className="ts-formula-bar-position"> (position {props.error.position})</span>
+              : null}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

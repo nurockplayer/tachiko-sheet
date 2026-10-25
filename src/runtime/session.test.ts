@@ -1863,6 +1863,56 @@ describe("table duplication adapter", () => {
     expect((await runtime.read()).table.collection.key).toBe(COLLECTION.key);
   });
 
+  it("propagates a resident read error that is not a missing collection", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+    await runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy");
+    // The resident copy is still there; Work's failure must not be read as
+    // "the table vanished" and answered with the default table instead.
+    client.hooks.queryTable = async () => {
+      throw new FakeDesignerRuntimeError("stale_revision", client.currentRevision);
+    };
+
+    const before = client.calls.queryTable.length;
+    const readFailure = await failure(runtime.read());
+    expect(readFailure).toMatchObject({ failure: { code: "stale_revision" } });
+    expect(client.calls.queryTable.slice(before)).toEqual([COPY.key]);
+  });
+
+  it("does not fall back without a resident collection", async () => {
+    const client = new FakeClient();
+    // The open was acknowledged, but its first table read failed before any
+    // collection became resident.
+    client.hooks.queryTable = async () => {
+      throw new FakeDesignerRuntimeError("missing_collection", client.currentRevision);
+    };
+    const kitParts = makeKit(client);
+    const runtime = createSheetRuntime(async () => kitParts.kit);
+
+    await expect(runtime.openFiles(FILES)).rejects.toBeInstanceOf(OpenedProjectionRecoveryError);
+    const before = client.calls.queryTable.length;
+    const readFailure = await failure(runtime.read());
+    // With nothing to fall back from, Refresh reports the failure instead of
+    // repeating the same default-table query as a "fallback".
+    expect(readFailure).toMatchObject({ failure: { code: "missing_collection" } });
+    expect(client.calls.queryTable.slice(before)).toEqual([COLLECTION.key]);
+  });
+
+  it("rejects without a view when the fallback query fails too", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+    await runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy");
+    client.hooks.queryTable = async () => {
+      throw new FakeDesignerRuntimeError("missing_collection", client.currentRevision);
+    };
+
+    const before = client.calls.queryTable.length;
+    const readFailure = await failure(runtime.read());
+    expect(readFailure).toMatchObject({ failure: { code: "missing_collection" } });
+    // Exactly one fallback, and no view: the copy and Work's default are both gone.
+    expect(client.calls.queryTable.slice(before)).toEqual([COPY.key, COLLECTION.key]);
+  });
+
   it("reports a wrong-base duplicate receipt as unknown without replay", async () => {
     const { runtime, client, view } = await opened();
     client.hooks.duplicateCollection = async () => ({

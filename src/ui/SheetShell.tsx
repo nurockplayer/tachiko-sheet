@@ -73,7 +73,7 @@ import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, positionedAfterFormulaSubmit, type FormulaBarDraft } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaReferenceInsertion, formulaSubmitHandoffOutcome, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -665,6 +665,13 @@ export function SheetShell(props: SheetShellProps) {
   // Bumped by any pointer or key input outside the cell editor. A late
   // completion may move focus only if the user has not acted since.
   const focusIntentRef = useRef(0);
+  // A formula submit's Tab/Enter handoff. It carries the projection it started
+  // from and waits for the commit's own, because a filter or sort change makes
+  // the pre-commit grid order the wrong place to look for the neighbour.
+  const pendingFormulaHandoffRef = useRef<FormulaSubmitHandoff | null>(null);
+  // The projection the grid was last asked to render, so a submit that
+  // completes after React already rendered it can settle without a new render.
+  const renderedProjectionRef = useRef<{ viewKey: string; order: GridPosition[] }>({ viewKey: "", order: [] });
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
@@ -1245,6 +1252,13 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
   }, [gridWindowed, collectionIdentity, tab, displayRows.length]);
+
+  // A formula-submit handoff is decided against the projection this render
+  // displays, not the one the submit started from.
+  useLayoutEffect(() => {
+    renderedProjectionRef.current = { viewKey: viewKey ?? "", order: gridOrder };
+    settleFormulaHandoff();
+  });
 
   useLayoutEffect(() => {
     if (!gridWindowed) return;
@@ -1853,6 +1867,11 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     const position = focusedPosition;
+    // The handoff that follows this commit belongs to the focus and the open
+    // work as they were at submit: any newer focus action cancels it.
+    const intent = completionIntent();
+    const generation = intent.generation;
+    const startingViewKey = viewKey ?? "";
     setFormulaRefusal(null);
     setLocalError(null);
     // Sheet forwards the source unchanged; Work parses, validates and stores it.
@@ -1869,39 +1888,46 @@ export function SheetShell(props: SheetShellProps) {
         ...(outcome?.position !== undefined ? { position: outcome.position } : {}),
       });
       // Submitting disables the input; the second frame runs after it is back.
+      // The refusal stays in the bar either way, but focus returns only if the
+      // user has not chosen somewhere else and no modal holds it.
       requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!completionMayUpdateUi(intent) || document.querySelector('[aria-modal="true"]')) return;
         const input = formulaInputRef.current;
         if (!input || input.disabled || input.readOnly) return;
-        input.focus();
-        input.select();
+        withAppFocus(() => {
+          input.focus();
+          input.select();
+        });
       }));
       return;
     }
     setFormulaDraft(null);
     setFormulaRefusal(null);
-    const destination = position ? positionedAfterSubmit(position, then) : null;
-    // Move focus only if the user has not put it somewhere else meanwhile:
-    // it is still on the bar, or was dropped to the body when the bar was
-    // disabled for the commit. An open modal keeps its own focus.
-    const focusStillOurs = () => {
-      if (document.querySelector('[aria-modal="true"]')) return false;
-      const active = document.activeElement;
-      return !active || active === document.body || active === formulaInputRef.current;
-    };
-    if (modalInteractionOpen || !focusStillOurs()) return;
-    if (destination) withAppFocus(() => focusCell(destination.entity, destination.field));
+    // The commit's publication can change what the filter or sort displays, so
+    // the order captured above is not a destination: queue the handoff and
+    // resolve it from the projection the grid renders once the commit settles.
+    if (position) {
+      pendingFormulaHandoffRef.current = { position, then, viewKey: startingViewKey, generation, occurrence: intent.occurrence ?? "" };
+      // React may have rendered the commit's projection before this
+      // continuation ran; the layout effect retries after every render.
+      settleFormulaHandoff();
+    }
     // If no cell took focus (none is displayed, e.g. a filter hides every row,
-    // or the commit hid the destination), hand focus back to the bar once it
-    // is enabled again. Anything other than the body means focus landed.
+    // or the commit hid the destination, or a newer focus action cancelled the
+    // handoff), hand focus back to the bar once it is enabled again. Anything
+    // other than the body means focus landed.
     let frames = 0;
     const refocusBar = () => {
       if (document.querySelector('[aria-modal="true"]')) return;
+      // A newer focus action than the submit's owns focus now, even when it
+      // left focus on the body; refocusing the bar would undo it.
+      if (focusIntentRef.current !== generation) return;
       const active = document.activeElement;
       if (active && active !== document.body) return;
       const node = formulaInputRef.current;
       // A windowed destination is still being revealed; let it land first.
       if (node && !node.disabled && pendingCellFocusRef.current === null) {
-        node.focus();
+        withAppFocus(() => node.focus());
         return;
       }
       if (++frames < 10) requestAnimationFrame(refocusBar);
@@ -1909,16 +1935,38 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(refocusBar);
   }
 
+  /** Focus is still where the commit left it: the bar, or the body its disabled input dropped to. */
+  function formulaHandoffOwnsFocus(): boolean {
+    const active = document.activeElement;
+    return !active || active === document.body || active === formulaInputRef.current;
+  }
+
   /**
-   * Tab leaves the bar through the grid's own displayed order, never a
-   * wrap-around, and never into the entry row: a first formula withdraws the
-   * native row profile the pre-commit order still lists, so that cell may be
-   * gone by the time focus moves. A filter can also hide the bound row, so a
-   * position the grid no longer displays falls back to the first or last
-   * displayed cell; with none, focus stays in the bar.
+   * Settle a queued formula-submit handoff against the projection this render
+   * displays. Tab/Shift+Tab leave the bar through the grid's own displayed
+   * order, never a wrap-around, and never into the entry row: the publication
+   * may have hidden the bound row or moved it, so only the rendered order can
+   * name the neighbour. With nothing displayed, focus stays in the bar.
    */
-  function positionedAfterSubmit(position: GridPosition, then: "stay" | "next" | "previous"): GridPosition | null {
-    return positionedAfterFormulaSubmit({ position, then, order: gridOrder, draftEntity: DRAFT_ROW });
+  function settleFormulaHandoff(rendered = renderedProjectionRef.current): void {
+    const handoff = pendingFormulaHandoffRef.current;
+    if (!handoff) return;
+    const outcome = formulaSubmitHandoffOutcome({
+      handoff,
+      generation: focusIntentRef.current,
+      occurrence: liveOccurrenceRef.current ?? "",
+      viewKey: rendered.viewKey,
+      order: rendered.order,
+      draftEntity: DRAFT_ROW,
+      // The DOM check also catches a modal that opened during the commit.
+      modalOpen: modalInteractionOpen || document.querySelector('[aria-modal="true"]') !== null,
+      focusOnBar: formulaHandoffOwnsFocus(),
+    });
+    if (outcome.kind === "wait") return;
+    pendingFormulaHandoffRef.current = null;
+    if (outcome.kind === "stop" || !outcome.destination) return;
+    const destination = outcome.destination;
+    withAppFocus(() => focusCell(destination.entity, destination.field));
   }
 
   /** The bar can hand focus back only to a cell the grid displays right now. */

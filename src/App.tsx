@@ -1587,6 +1587,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     witness: ViewWitness,
     command: () => ReturnType<SheetRuntime["insertRow"]>,
     saveCheck: "column" | "duplicate" | null = null,
+    /** Typed input the command would otherwise lose when its dialog closes. */
+    retainedInput?: string,
   ): Promise<RowCommandOutcome> {
     if (saveCheck && !copies.createWorkFile) {
       return Promise.resolve({ kind: "refused", message: saveCheck === "duplicate" ? DUPLICATE_SAVE_UNAVAILABLE : COLUMN_SAVE_UNAVAILABLE });
@@ -1598,7 +1600,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       end();
       return Promise.resolve({ kind: "refused", message: "This change belongs to an older view. Refresh before trying again." });
     }
-    const apply = () => mutationCompletion.run<RowCommandOutcome>({ kind: "rows", witness, dispatch: command }, result => {
+    const apply = () => mutationCompletion.run<RowCommandOutcome>({
+      kind: "rows", witness, dispatch: command,
+      ...(retainedInput !== undefined ? { retainedInput } : {}),
+    }, result => {
       if (result.kind === "published") return { kind: "confirmed", addedEntities: result.addedEntities };
       if (result.kind === "refused") return result;
       return { kind: "recovery" };
@@ -1656,7 +1661,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function duplicateTable(witness: ViewWitness, collection: string, name: string) {
-    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name), "duplicate");
+    // The dialog closes on a recovery, so the recovery message carries the name.
+    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name), "duplicate", name);
   }
 
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
