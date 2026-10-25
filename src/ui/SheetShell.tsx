@@ -1865,18 +1865,27 @@ export function SheetShell(props: SheetShellProps) {
     setFormulaDraft(null);
     setFormulaRefusal(null);
     const destination = position ? positionedAfterSubmit(position, then) : null;
-    if (modalInteractionOpen) return;
-    if (destination) {
-      withAppFocus(() => focusCell(destination.entity, destination.field));
-      return;
-    }
-    // No displayed cell can take focus (e.g. a filter hides every row). The
-    // input was disabled during the commit, so hand focus back once it is
-    // enabled again instead of leaving it on the document body.
+    // Move focus only if the user has not put it somewhere else meanwhile:
+    // it is still on the bar, or was dropped to the body when the bar was
+    // disabled for the commit. An open modal keeps its own focus.
+    const focusStillOurs = () => {
+      if (document.querySelector('[aria-modal="true"]')) return false;
+      const active = document.activeElement;
+      return !active || active === document.body || active === formulaInputRef.current;
+    };
+    if (modalInteractionOpen || !focusStillOurs()) return;
+    if (destination) withAppFocus(() => focusCell(destination.entity, destination.field));
+    // If no cell took focus (none is displayed, e.g. a filter hides every row,
+    // or the commit hid the destination), hand focus back to the bar once it
+    // is enabled again. Anything other than the body means focus landed.
     let frames = 0;
     const refocusBar = () => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
       const node = formulaInputRef.current;
-      if (node && !node.disabled) {
+      // A windowed destination is still being revealed; let it land first.
+      if (node && !node.disabled && pendingCellFocusRef.current === null) {
         node.focus();
         return;
       }
