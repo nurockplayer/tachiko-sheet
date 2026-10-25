@@ -1,4 +1,5 @@
 import type { PublicationProjection } from "../../public/core-kit/experimental-client.js";
+import type { NameFailure } from "../../public/core-kit/runtime/protocol.js";
 import type { ConfirmedPublication, Currentness, FieldTarget, KeyedGroupedSumResult, SaveReceipt, SaveStatus, ScalarEdit, ViewWitness, WorkbookView } from "../contracts.js";
 import { UnknownOperationOutcomeError, rowEntity } from "../contracts.js";
 import { PublishedProjectionRecoveryError, SheetSessionError } from "../runtime/session.js";
@@ -16,7 +17,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; position?: number };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; position?: number; nameFailures?: readonly NameFailure[] };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -189,7 +190,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.setOutcome("idle");
       if (command.kind === "cleanup") port.clearPreview();
       else if (command.kind !== "summary") port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
-      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown } })?.failure;
+      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown; name_failures?: readonly NameFailure[] } })?.failure;
       // Work's formula refusal is shown verbatim. Other failures keep the
       // explanatory prefix so their cause is not mistaken for a Work verdict.
       const message = command.kind === "scalar" && command.edit.kind === "formula" &&
@@ -204,7 +205,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         ? failure.position : undefined;
       return completed({
         kind: "refused", message,
-        ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code } : {}),
+        ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code, ...(failure?.name_failures ? { nameFailures: failure.name_failures } : {}) } : {}),
         ...(command.kind === "scalar" && position !== undefined ? { position } : {}),
       });
     } finally {

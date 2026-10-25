@@ -924,6 +924,16 @@ body { margin: 0; }
   justify-content: flex-end;
 }
 
+/* Table-level commands share the existing context row, so adding one never
+   changes the grid's available height. */
+.ts-context-commands {
+  flex: 0 0 auto;
+}
+
+.ts-context-commands .ts-button {
+  white-space: nowrap;
+}
+
 .ts-context-table .ts-field-label {
   color: var(--ts-ink-soft);
   font-size: 12px;
@@ -2220,8 +2230,9 @@ body { margin: 0; }
   .ts-context-table {
     align-items: center;
     flex-direction: row;
+    flex: 1 1 auto;
     gap: 8px;
-    width: 100%;
+    width: auto;
   }
   .ts-context-table select { flex: 1 1 auto; min-width: 0; max-width: none; width: auto; }
   .ts-tabs { padding-inline: 12px; }

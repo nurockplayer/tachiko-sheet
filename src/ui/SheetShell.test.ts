@@ -346,6 +346,34 @@ describe("recovery presentation", () => {
     expect(context).toContain('id="ts-active-table"');
   });
 
+  it("offers Duplicate table in the existing context row only when the host can save its copy", () => {
+    const contextOf = (markup: string) => markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    const handler = async () => ({ kind: "confirmed" as const });
+
+    const offered = render({ view: makeView(), onDuplicateTable: handler });
+    expect(contextOf(offered)).toContain("Duplicate table…");
+    expect(contextOf(offered)).toContain("ts-context-commands");
+    expect(offered.match(/<button[^>]*>Duplicate table…<\/button>/)?.[0]).not.toContain("disabled=");
+
+    const readerOnly = render({ view: makeView() });
+    expect(readerOnly).not.toContain("Duplicate table…");
+  });
+
+  it("keeps Duplicate table disabled while busy or while the work is unconfirmed", () => {
+    const handler = async () => ({ kind: "confirmed" as const });
+    const buttonOf = (markup: string) => markup.match(/<button[^>]*>Duplicate table…<\/button>/)?.[0] ?? "";
+    expect(buttonOf(render({ view: makeView(), busy: true, onDuplicateTable: handler }))).toContain("disabled=");
+    expect(buttonOf(render({ view: makeView(), currentness: "unknown", outcome: "unknown", onDuplicateTable: handler })))
+      .toContain("disabled=");
+  });
+
+  it("adds Duplicate table without changing the grid's own markup", () => {
+    const workspaceOf = (markup: string) => markup.slice(markup.indexOf('id="ts-table-workspace"'));
+    const base = render({ view: makeView() });
+    const offered = render({ view: makeView(), onDuplicateTable: async () => ({ kind: "confirmed" }) });
+    expect(workspaceOf(offered)).toBe(workspaceOf(base));
+  });
+
   it("keeps Refresh available when a replacement opened without a confirmed projection", () => {
     const markup = render({ currentness: "unknown", outcome: "unknown" });
     expect(markup).toContain('aria-label="Recovery"');

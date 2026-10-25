@@ -51,6 +51,8 @@ import { isComposingEvent } from "./composition-event.js";
 import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
+import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
+import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
@@ -445,6 +447,7 @@ export function SheetShell(props: SheetShellProps) {
     onPasteCells,
     onEditCells,
     onRemoveRows,
+    onDuplicateTable,
     onOpenExample,
     onOpenSaved,
     onSelectCollection = async () => {},
@@ -606,6 +609,8 @@ export function SheetShell(props: SheetShellProps) {
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
   const [newTableOpen, setNewTableOpen] = useState(false);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
@@ -618,6 +623,7 @@ export function SheetShell(props: SheetShellProps) {
     field: string;
   } | null>(null);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
+  const duplicateTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [deleteSelection, setDeleteSelection] = useState<SavedCopySummary | null>(null);
   const deleteName = deleteSelection?.name ?? null;
   const [deletePending, setDeletePending] = useState(false);
@@ -659,6 +665,7 @@ export function SheetShell(props: SheetShellProps) {
   // completion may move focus only if the user has not acted since.
   const focusIntentRef = useRef(0);
   const newTableFocusIntentRef = useRef<number | null>(null);
+  const duplicateFocusIntentRef = useRef<number | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
   const appFocusingRef = useRef(false);
   // Declared before the windowing effects so a replacement occurrence never
@@ -1384,7 +1391,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = columnDialog !== null || deleteName !== null || newTableOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = columnDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -1510,7 +1517,7 @@ export function SheetShell(props: SheetShellProps) {
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
-    (newTableOpen && newTableDraftActive) || columnDialog !== null;
+    (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -2024,6 +2031,24 @@ export function SheetShell(props: SheetShellProps) {
       });
     });
   }, [newTableOpen, view]);
+
+  // A confirmed duplicate makes its copy active; the Table panel then shows
+  // the new table, whose first cell is the landing point. An empty copy has
+  // only its entry row, exactly like a table New table just created.
+  useLayoutEffect(() => {
+    const generation = duplicateFocusIntentRef.current;
+    if (generation === null || duplicateOpen || !view) return;
+    duplicateFocusIntentRef.current = null;
+    const intent = { generation, occurrence: view.occurrence };
+    requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent)) return;
+      withAppFocus(() => {
+        const firstCell = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
+        const firstEntry = shellRef.current?.querySelector<HTMLElement>(".ts-entry-row [data-entry-field]");
+        (firstCell ?? firstEntry ?? duplicateTriggerRef.current)?.focus();
+      });
+    });
+  }, [duplicateOpen, view]);
 
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
@@ -3977,6 +4002,21 @@ export function SheetShell(props: SheetShellProps) {
               {view.collections.map((collection) => <option key={collection.key} value={collection.key}>{names.table(collection.id) ?? collection.display_name}</option>)}
             </select>
           </div>
+          {onDuplicateTable && supportsDuplicateTable ? <div className="ts-actions ts-context-commands">
+            <button
+              type="button"
+              ref={duplicateTriggerRef}
+              className="ts-button"
+              disabled={columnChangesBlocked}
+              aria-describedby={controlsLocked ? lockNoteId : undefined}
+              title={!controlsLocked && columnChangesBlocked ? "Finish the current input before duplicating a table." : undefined}
+              onClick={(event) => {
+                if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+                duplicateTriggerRef.current = event.currentTarget;
+                setDuplicateOpen(true);
+              }}
+            >Duplicate table…</button>
+          </div> : null}
         </nav>
         <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
           <span className="ts-views-label" aria-hidden="true">Views</span>
@@ -4203,6 +4243,23 @@ export function SheetShell(props: SheetShellProps) {
         if (created) newTableFocusIntentRef.current = generation;
         return created;
       }} onSuccess={() => setNewTableOpen(false)} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
+      {duplicateOpen && onDuplicateTable && view && witness ? <DuplicateTableDialog
+        tableName={names.table(view.table.collection.id) ?? view.table.collection.display_name}
+        composing={() => props.appearancePreference.getSnapshot().composing}
+        onDuplicate={async (name) => {
+          const generation = focusIntentRef.current;
+          const result = await onDuplicateTable(witness, view.table.collection.key, name);
+          if (duplicateLanding(result).switchToTable) {
+            duplicateFocusIntentRef.current = generation;
+            // The copy is active on the Table panel; land there from any tab.
+            setTab("table");
+          }
+          return result;
+        }}
+        onSuccess={() => setDuplicateOpen(false)}
+        onDraftChange={setDuplicateDraftActive}
+        onCancel={() => { setDuplicateOpen(false); requestAnimationFrame(() => duplicateTriggerRef.current?.focus()); }}
+      /> : null}
       {deleteName !== null ? <Modal variant="close" label="Delete copy" onCancel={cancelDelete} dismissDisabled={deletePending}>
         <div className="ts-dialog-intro"><h2 ref={deletePendingFocusRef} className="ts-h2" tabIndex={deletePending || deleteError !== null ? 0 : -1}>Delete “{deleteName}”?</h2><p>This deletes the saved copy from this device. It cannot be undone.</p></div>
         {deleteError ? <p role="alert" className="ts-dialog-error">{deleteError}</p> : null}

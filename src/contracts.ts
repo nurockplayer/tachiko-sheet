@@ -8,7 +8,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { KeyedGroupedSumProjection } from "../public/core-kit/runtime/protocol.js";
+import type { KeyedGroupedSumProjection, NameFailure } from "../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   CleanupPreview,
@@ -86,7 +86,7 @@ export type RowInitializer = { field: string; input: ScalarValueEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
   | { kind: "confirmed"; addedEntities?: readonly string[] }
-  | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string }
+  | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string; nameFailures?: readonly NameFailure[] }
   | { kind: "recovery" };
 
 export interface SheetRuntime {
@@ -101,6 +101,7 @@ export interface SheetRuntime {
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
   removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
+  duplicateCollection(witness: ViewWitness, collection: string, name: string): Promise<ConfirmedPublication>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
   /**
@@ -354,6 +355,7 @@ export interface SheetShellProps {
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
+  onDuplicateTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;

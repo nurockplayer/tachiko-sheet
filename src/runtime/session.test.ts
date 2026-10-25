@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -37,6 +37,7 @@ import {
 
 const TITLE = "Qualification workbook";
 const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", display_name: "tasks", entity_count: 1 };
+const COPY: CollectionSummary = { id: "col-2", key: "tasks-copy", display_name: "tasks copy", entity_count: 1 };
 const IMPACT: FieldTarget = { entity: "e1", field: "impact" };
 const NOTES: FieldTarget = { entity: "e1", field: "notes" };
 const FILES = { length: 18, item: () => null } as unknown as FileList;
@@ -63,6 +64,7 @@ interface Hooks {
   editText?: () => Promise<PublicationProjection>;
   updateFormula?: () => Promise<PublicationProjection>;
   trackerCommand?: () => Promise<PublicationProjection>;
+  duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
   bootstrap?: () => Promise<BootstrapProjection>;
@@ -99,6 +101,7 @@ class FakeClient {
     editBoolean: 0,
     editDate: 0,
     trackerCommand: [] as TrackerCommand[],
+    duplicateCollection: [] as Array<{ revision: string; collection: string; name: string }>,
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
     exportProjectV3: [] as string[],
@@ -204,6 +207,25 @@ class FakeClient {
     if (request.type === "undo") { this.#undoCount -= 1; this.#redoCount += 1; }
     else { this.#redoCount -= 1; this.#undoCount = Math.min(64, this.#undoCount + 1); }
     return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [], schemas: [], schema_fields: [] };
+  }
+
+  async duplicateCollection(revision: string, collection: string, name: string): Promise<DuplicateCollectionProjection> {
+    this.calls.duplicateCollection.push({ revision, collection, name });
+    this.#requireOpen();
+    const hook = this.hooks.duplicateCollection;
+    if (hook !== undefined) {
+      this.hooks.duplicateCollection = undefined;
+      return hook();
+    }
+    this.#requireRevision(revision);
+    const base = this.#revision;
+    this.#bump();
+    this.#undoCount = Math.min(64, this.#undoCount + 1);
+    this.#redoCount = 0;
+    return {
+      publication: { base_revision: base, resulting_revision: this.#revision, entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] },
+      collection: COPY,
+    };
   }
 
   async newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection> {
@@ -1718,6 +1740,114 @@ describe("native table and row adapter", () => {
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
     });
   }
+});
+
+describe("table duplication adapter", () => {
+  function twoTables(client: FakeClient): void {
+    client.hooks.bootstrap = async () => ({
+      title: TITLE,
+      revision: client.currentRevision,
+      default_collection: COLLECTION.key,
+      collections: [COLLECTION, COPY],
+    });
+    client.hooks.queryTable = async (key) => ({
+      revision: client.currentRevision,
+      collection: key === COPY.key ? COPY : COLLECTION,
+      columns: [{ id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true }],
+      rows: [],
+    });
+  }
+
+  it("passes the exact revision, table and name, then makes the copy active", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+
+    const confirmed = await runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy");
+
+    expect(client.calls.duplicateCollection).toEqual([{ revision: view.revision, collection: COLLECTION.key, name: "Tasks copy" }]);
+    expect(confirmed.publication.base_revision).toBe(view.revision);
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+    expect(confirmed.view.occurrence).toBe(view.occurrence);
+    expect(confirmed.view.table.collection.key).toBe(COPY.key);
+    // The copy carries an authored name, so local copies stay portable.
+    expect(confirmed.view.requiresPortableSave).toBe(true);
+    // The active table survives the acknowledgement for later commands.
+    expect((await runtime.read()).table.collection.key).toBe(COPY.key);
+  });
+
+  it("follows Work's bootstrap when Undo removes the duplicated active table", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+    const confirmed = await runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy");
+    // Work's undo removes the copy; only the original table remains.
+    client.hooks.bootstrap = async () => ({
+      title: TITLE,
+      revision: client.currentRevision,
+      default_collection: COLLECTION.key,
+      collections: [COLLECTION],
+    });
+    client.hooks.queryTable = async (key) => {
+      if (key === COPY.key) throw new FakeDesignerRuntimeError("missing_collection", client.currentRevision);
+      return { revision: client.currentRevision, collection: COLLECTION, columns: [], rows: [] };
+    };
+
+    const undone = await runtime.trackerHistory(witnessOf(confirmed.view), "undo");
+
+    expect(undone.publication.base_revision).toBe(confirmed.view.revision);
+    expect(undone.publication.resulting_revision).toBe(undone.view.revision);
+    expect(undone.view.table.collection.key).toBe(COLLECTION.key);
+    // The vanished collection is never retained as the resident selection.
+    expect((await runtime.read()).table.collection.key).toBe(COLLECTION.key);
+  });
+
+  it("refuses stale witnesses before dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    await expect(runtime.duplicateCollection({ ...witnessOf(view), occurrence: "old" }, COLLECTION.key, "copy"))
+      .rejects.toMatchObject({ code: "stale-witness" });
+    await expect(runtime.duplicateCollection({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "copy"))
+      .rejects.toMatchObject({ code: "stale-witness" });
+    expect(client.calls.duplicateCollection).toEqual([]);
+  });
+
+  it("rethrows Work's typed name refusal and keeps the live witness", async () => {
+    const { runtime, client, view } = await opened();
+    const refusal = new FakeDesignerRuntimeError("duplicate_display_name", view.revision);
+    refusal.failure.name_failures = [{ reason: "duplicate_display_name", inputs: [{ kind: "table" }], subjects: [], effective_name: "tasks" }];
+    client.hooks.duplicateCollection = async () => { throw refusal; };
+
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "tasks")).rejects.toBe(refusal);
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("requires recovery for an unknown duplicate outcome without replay", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.duplicateCollection = async () => { throw new Error("lost transport"); };
+
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy")).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy")).rejects.toMatchObject({ code: "not-open" });
+    expect(client.calls.duplicateCollection).toHaveLength(1);
+    // A lost acknowledgement may already have introduced the named copy.
+    expect((await runtime.read()).requiresPortableSave).toBe(true);
+  });
+
+  it("reports a wrong-base duplicate receipt as unknown without replay", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.duplicateCollection = async () => ({
+      publication: { base_revision: "wrong", resulting_revision: "r2", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] },
+      collection: COPY,
+    });
+
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "copy")).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+    expect(client.calls.duplicateCollection).toHaveLength(1);
+  });
+
+  it("refuses a kit without duplicateCollection before dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    Object.defineProperty(client, "duplicateCollection", { value: undefined });
+
+    await expect(runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "copy")).rejects.toThrow("does not provide table duplication");
+    expect(client.calls.duplicateCollection).toEqual([]);
+  });
 });
 
 // #189: the application seam must preserve this adapter's evidence vocabulary.

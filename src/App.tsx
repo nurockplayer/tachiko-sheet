@@ -1,4 +1,4 @@
-import { COLUMN_SAVE_UNAVAILABLE, columnSavePreflightDecision } from "./application/column-save-preflight.js";
+import { COLUMN_SAVE_UNAVAILABLE, DUPLICATE_SAVE_UNAVAILABLE, columnSavePreflightDecision, duplicateSavePreflightDecision } from "./application/column-save-preflight.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
@@ -1586,9 +1586,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function changeRows(
     witness: ViewWitness,
     command: () => ReturnType<SheetRuntime["insertRow"]>,
-    checkColumnSave = false,
+    saveCheck: "column" | "duplicate" | null = null,
   ): Promise<RowCommandOutcome> {
-    if (checkColumnSave && !copies.createWorkFile) return Promise.resolve({ kind: "refused", message: COLUMN_SAVE_UNAVAILABLE });
+    if (saveCheck && !copies.createWorkFile) {
+      return Promise.resolve({ kind: "refused", message: saveCheck === "duplicate" ? DUPLICATE_SAVE_UNAVAILABLE : COLUMN_SAVE_UNAVAILABLE });
+    }
     if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before making this change." });
     const live = viewRef.current;
     if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
@@ -1601,14 +1603,16 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (result.kind === "refused") return result;
       return { kind: "recovery" };
     }, end);
-    if (!checkColumnSave) return apply();
+    if (!saveCheck) return apply();
     return (async () => {
       // begin() owns the operation lock throughout export and dispatch. This
       // dry run writes no host state and supplies no Save receipt/status.
       let exportedRevision: string | null = null;
       try { exportedRevision = (await runtime.exportWorkFile(witness)).revision; }
       catch { /* Every portable-export failure refuses before publication. */ }
-      const decision = columnSavePreflightDecision(witness, viewRef.current, exportedRevision);
+      const decision = saveCheck === "duplicate"
+        ? duplicateSavePreflightDecision(witness, viewRef.current, exportedRevision)
+        : columnSavePreflightDecision(witness, viewRef.current, exportedRevision);
       if (!decision.allowed) {
         setOutcome("idle");
         end();
@@ -1632,23 +1636,27 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required = true) {
-    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers, required), true);
+    return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers, required), "column");
   }
 
   function setColumnRequiredness(witness: ViewWitness, collection: string, field: string, required: boolean) {
-    return changeRows(witness, () => runtime.setColumnRequiredness(witness, collection, field, required), true);
+    return changeRows(witness, () => runtime.setColumnRequiredness(witness, collection, field, required), "column");
   }
 
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
-    return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), true);
+    return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), "column");
   }
 
   function removeColumn(witness: ViewWitness, collection: string, field: string) {
-    return changeRows(witness, () => runtime.removeColumn(witness, collection, field), true);
+    return changeRows(witness, () => runtime.removeColumn(witness, collection, field), "column");
   }
 
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
     return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
+  }
+
+  function duplicateTable(witness: ViewWitness, collection: string, name: string) {
+    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name), "duplicate");
   }
 
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
@@ -2154,6 +2162,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onRemoveRows={removeRows}
+          // A duplicate carries an authored display name and is saved through
+          // the portable route, like column authoring.
+          onDuplicateTable={copies.createWorkFile ? duplicateTable : undefined}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}
