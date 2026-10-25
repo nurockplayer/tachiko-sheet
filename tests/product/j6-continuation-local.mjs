@@ -247,6 +247,9 @@ async function readCatalog(target) {
     occurrence: element.getAttribute("data-work-occurrence"),
     revision: element.getAttribute("data-work-revision"),
   }));
+  // Identity comparisons are evidence only when each witness is present.
+  assert.match(witness.occurrence ?? "", /\S/, "Catalog witness carries a nonempty occurrence");
+  assert.match(witness.revision ?? "", /\S/, "Catalog witness carries a nonempty revision");
   return { rows, witness };
 }
 
