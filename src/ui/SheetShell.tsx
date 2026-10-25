@@ -953,9 +953,9 @@ export function SheetShell(props: SheetShellProps) {
     const draft = filterDraft;
     if (!draft || draft.field !== column.id) return null;
     const close = (element: Element): void => {
-      const details = element.closest("details");
+      const details = element.closest<HTMLDetailsElement>("details");
       if (!details) return;
-      details.open = false;
+      closeColumnToolbar(details);
       details.querySelector<HTMLElement>("summary")?.focus();
     };
     return <form className="ts-row-view-filter" onSubmit={(event) => {
@@ -2507,7 +2507,7 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     if (columnChangesBlocked) {
       const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
-      if (disclosure) { resetColumnToolbar(disclosure); disclosure.open = false; }
+      if (disclosure) closeColumnToolbar(disclosure);
     }
   }, [columnChangesBlocked]);
 
@@ -2538,6 +2538,20 @@ export function SheetShell(props: SheetShellProps) {
     menu.style.left = "";
     menu.style.top = "";
   }
+
+  /** Close synchronously: the position must be gone before the close renders. */
+  function closeColumnToolbar(disclosure: HTMLDetailsElement): void {
+    resetColumnToolbar(disclosure);
+    disclosure.open = false;
+  }
+
+  // The filter editor mounts inside the menu after it was positioned, which
+  // makes the menu taller. Re-clamp the open compact menu for that content.
+  useLayoutEffect(() => {
+    if (!filterDraft) return;
+    const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
+    if (disclosure) positionColumnToolbar(disclosure);
+  }, [filterDraft]);
 
   function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
     if (!view || !table?.native_table_profile || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
@@ -3068,46 +3082,48 @@ export function SheetShell(props: SheetShellProps) {
           {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
-            if (columnChangesBlocked) { resetColumnToolbar(event.currentTarget); event.currentTarget.open = false; return; }
+            if (columnChangesBlocked) { closeColumnToolbar(event.currentTarget); return; }
             positionColumnToolbar(event.currentTarget);
           }} onBlur={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              resetColumnToolbar(event.currentTarget);
-              event.currentTarget.open = false;
+              closeColumnToolbar(event.currentTarget);
               setFilterDraft(null);
             }
           }} onKeyDown={event => {
             if (event.key !== "Escape" || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || !event.currentTarget.open) return;
             event.preventDefault(); event.stopPropagation();
-            resetColumnToolbar(event.currentTarget);
-            event.currentTarget.open = false;
+            closeColumnToolbar(event.currentTarget);
             event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
           }}>
             <summary role="button" className="ts-button" aria-label="Column" aria-disabled={columnChangesBlocked} tabIndex={columnChangesBlocked ? -1 : 0} title={columnChangesBlocked ? columnChangeReason : undefined} onClick={event => {
-              if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
+              if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) { event.preventDefault(); return; }
+              // The summary closes the disclosure natively; drop the old
+              // position before that close can be seen and measured.
+              const disclosure = event.currentTarget.closest("details");
+              if (disclosure?.open) resetColumnToolbar(disclosure);
             }}>Column</summary>
             <div className="ts-command-menu">
               {table.native_table_profile ? ([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
-                disclosure.open = false;
+                closeColumnToolbar(disclosure);
                 openColumnDialog(kind, trigger, focusedColumn.id);
               }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>) : null}
               {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
-                disclosure.open = false;
+                closeColumnToolbar(disclosure);
                 void changeRequiredness(focusedColumn.id, trigger);
               }}>{focusedColumn.required ? "Allow blanks" : "Require a value"}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
-                disclosure.open = false;
+                closeColumnToolbar(disclosure);
                 setGridSort(focusedColumn.id, "asc");
                 disclosure.querySelector<HTMLElement>("summary")?.focus();
               }}>Sort A → Z</button>
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
-                disclosure.open = false;
+                closeColumnToolbar(disclosure);
                 setGridSort(focusedColumn.id, "desc");
                 disclosure.querySelector<HTMLElement>("summary")?.focus();
               }}>Sort Z → A</button>
