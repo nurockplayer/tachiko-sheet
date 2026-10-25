@@ -2961,6 +2961,18 @@ export function SheetShell(props: SheetShellProps) {
                     if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
                   }} />
                   <div className="ts-command-menu">
+                    {table.native_table_profile ? ([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      openColumnDialog(kind, trigger, column.id);
+                    }} />) : null}
+                    {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      void changeRequiredness(column.id, trigger);
+                    }} /> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
@@ -2975,18 +2987,6 @@ export function SheetShell(props: SheetShellProps) {
                     }} />
                     <button type="button" className="ts-button" aria-label="Filter…" data-column-action="Filter…" disabled={viewActionsBlocked} onClick={() => startGridFilter(column)} />
                     {renderFilterEditor(column)}
-                    {table.native_table_profile ? ([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
-                      const disclosure = event.currentTarget.closest("details")!;
-                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
-                      disclosure.open = false;
-                      openColumnDialog(kind, trigger, column.id);
-                    }} />) : null}
-                    {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
-                      const disclosure = event.currentTarget.closest("details")!;
-                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
-                      disclosure.open = false;
-                      void changeRequiredness(column.id, trigger);
-                    }} /> : null}
                   </div>
                 </details>
                 {table.native_table_profile && index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
@@ -3069,6 +3069,18 @@ export function SheetShell(props: SheetShellProps) {
               if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
             }}>Column</summary>
             <div className="ts-command-menu">
+              {table.native_table_profile ? ([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                disclosure.open = false;
+                openColumnDialog(kind, trigger, focusedColumn.id);
+              }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>) : null}
+              {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                disclosure.open = false;
+                void changeRequiredness(focusedColumn.id, trigger);
+              }}>{focusedColumn.required ? "Allow blanks" : "Require a value"}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 disclosure.open = false;
@@ -3083,18 +3095,6 @@ export function SheetShell(props: SheetShellProps) {
               }}>Sort Z → A</button>
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={() => startGridFilter(focusedColumn)}>Filter…</button>
               {renderFilterEditor(focusedColumn)}
-              {table.native_table_profile ? ([...(onAddColumn ? ["add"] : []), ...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"add" | "rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
-                const disclosure = event.currentTarget.closest("details")!;
-                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
-                disclosure.open = false;
-                openColumnDialog(kind, trigger, focusedColumn.id);
-              }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>) : null}
-              {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
-                const disclosure = event.currentTarget.closest("details")!;
-                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
-                disclosure.open = false;
-                void changeRequiredness(focusedColumn.id, trigger);
-              }}>{focusedColumn.required ? "Allow blanks" : "Require a value"}</button> : null}
             </div>
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
