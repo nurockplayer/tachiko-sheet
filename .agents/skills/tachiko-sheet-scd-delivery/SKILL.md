@@ -5,6 +5,8 @@ description: Run or resume Tachiko Sheet's active Stewarded Continuous Delivery 
 
 # Tachiko Sheet SCD Delivery
 
+> Model and reviewer names below (Oracle Extra High, ego-lite, ChatGPT Steward) follow the *Current routing* table in `docs/DELIVERY.md`, which takes precedence.
+
 Use this Skill only while running or resuming an active Sheet SCD lane. It is an operating procedure, not a source of product, acceptance, Ready/HOLD, review, or merge authority.
 
 Before acting, read the repository `AGENTS.md`, live #1 body, live #2 body, `../../../docs/DELIVERY.md`, the owning Issue/PR, and relevant live upstream authority. Those sources outrank this Skill.

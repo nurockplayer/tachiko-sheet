@@ -1,5 +1,7 @@
 # MVP execution card
 
+> **Current routing:** model names in this map (Sol, Luna, Oracle, Astra) are historical. Use the *Current routing* table in [`DELIVERY.md`](DELIVERY.md#current-routing-founder-2026-10-25) and live #2.
+
 Status: proposed execution aid under #1 and DELIVERY.md; effective after reviewed merge. This card introduces no additional product scope or upstream authority.
 
 ## Resume with the minimum context
