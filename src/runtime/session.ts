@@ -359,9 +359,16 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
           const table = tables.get(collection.key);
           if (!table) throw new SheetSessionError("incoherent-reply", "A core collection was not returned.");
           return {
+            id: table.collection.id,
             key: collection.key,
             displayName: collection.display_name,
-            fields: table.columns.map((column) => ({ key: column.key, displayName: column.display_name, fieldType: column.field_type })),
+            fields: table.columns.map((column) => ({
+              id: column.id,
+              key: column.key,
+              displayName: column.display_name,
+              displayNameExplicit: column.display_name_explicit === true,
+              fieldType: column.field_type,
+            })),
           };
         }),
       },
