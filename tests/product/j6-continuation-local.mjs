@@ -6,7 +6,7 @@
 // Run through `pnpm acceptance:j6-continuation` so the production build exists.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -54,6 +54,22 @@ function freePort() {
   });
 }
 
+const TIMED_OUT = Symbol("timed out");
+
+/** Race with a timer that is cancelled as soon as either side settles, so a
+ * slow loser never keeps Node alive after the test has finished. */
+function within(promise, ms) {
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function blocked(message) {
+  const error = new Error(message);
+  error.code = "BLOCKED";
+  return error;
+}
+
 async function startStaticServer() {
   const port = process.env.J6_PORT ? Number(process.env.J6_PORT) : await freePort();
   assert.ok(Number.isInteger(port) && port > 1023, "static server port is usable");
@@ -63,6 +79,15 @@ async function startStaticServer() {
     stdio: ["ignore", "pipe", "pipe"],
   });
   serverLog = "";
+  // Only a real exit proves termination; an error event (for example a failed
+  // kill signal) must never be read as one. The persistent listener keeps a
+  // second signal failure from becoming an unhandled event. The exit promise
+  // exists from the moment the process does, so startup failure and shutdown
+  // both await it.
+  server.on("error", () => {});
+  serverExit = new Promise((resolve) => {
+    server.once("exit", (code, signal) => resolve({ code, signal }));
+  });
   const ready = new Promise((resolve, reject) => {
     server.stdout.setEncoding("utf8");
     server.stderr.setEncoding("utf8");
@@ -71,31 +96,38 @@ async function startStaticServer() {
       if (serverLog.includes(`http://127.0.0.1:${port}`)) resolve();
     });
     server.stderr.on("data", (chunk) => { serverLog = (serverLog + chunk).slice(-4000); });
-    server.once("exit", (code) => reject(new Error(`BLOCKED: static server exited (${code}): ${serverLog}`)));
+    server.once("exit", (code) => reject(blocked(`static server exited (${code}): ${serverLog}`)));
+    server.once("error", (error) => reject(blocked(`static server could not start: ${error.message}`)));
   });
-  try {
-    await Promise.race([ready, delay(timeout).then(() => { throw new Error(`BLOCKED: static server did not become ready: ${serverLog}`); })]);
-  } catch (error) {
-    error.code = error.code ?? "BLOCKED";
-    throw error;
+  if (await within(ready, timeout) === TIMED_OUT) {
+    throw blocked(`static server did not become ready: ${serverLog}`);
   }
-  serverExit = new Promise((resolve) => server.once("exit", (code, signal) => resolve({ code, signal })));
   return `http://127.0.0.1:${port}`;
 }
 
 async function stopStaticServer() {
   if (!server) return;
   const current = server;
+  const exited = serverExit;
   server = undefined;
+  // A server that never started has no process to wait for.
+  if (!current.pid) return;
   if (current.exitCode === null && current.signalCode === null) current.kill("SIGTERM");
-  await Promise.race([serverExit, delay(5000)]);
-  if (current.exitCode === null && current.signalCode === null) current.kill("SIGKILL");
+  let outcome = await within(exited, 5000);
+  if (outcome === TIMED_OUT && current.exitCode === null && current.signalCode === null) {
+    current.kill("SIGKILL");
+    // Escalation still waits for the real exit before the caller moves on.
+    outcome = await within(exited, timeout);
+  }
+  if (outcome === TIMED_OUT) throw blocked("static server did not exit after SIGKILL");
 }
 
 async function startOwnedPersistentChromium() {
   const remoteProfile = path.join(browserProfile, "profile");
   const portFile = path.join(remoteProfile, "DevToolsActivePort");
-  await rm(portFile, { force: true });
+  if (await within(rm(portFile, { force: true }), timeout) === TIMED_OUT) {
+    throw blocked("Chromium profile port file could not be cleared in time");
+  }
   child = spawn(executable, [
     "--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
     // Playwright's own launcher passes these; without them macOS keychain
@@ -104,24 +136,36 @@ async function startOwnedPersistentChromium() {
     "--window-size=1280,900", `--user-data-dir=${remoteProfile}`, "--remote-debugging-port=0", "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-8000); });
-  childExit = new Promise((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk) => { stderr = (stderr + chunk).slice(-8000); });
+  // A failed spawn reports through error (usually without a PID and without an
+  // exit event). Termination is proven only by exit; the error listener stays
+  // attached so a later failed signal can never become an unhandled event.
+  let spawnError = null;
+  child.on("error", (error) => { spawnError = error; });
+  childExit = new Promise((resolve) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
   const pid = child.pid;
-  if (!pid) throw new Error("BLOCKED: Chromium child process did not expose its PID");
+  if (!pid) {
+    const error = await within(new Promise((resolve) => child.once("error", resolve)), timeout);
+    throw blocked(`Chromium child process did not start: ${error === TIMED_OUT ? "no error event" : error.message}; ${stderr}`);
+  }
   let port;
   for (let attempt = 0; attempt < 100; attempt++) {
-    if (child.exitCode !== null) throw new Error(`BLOCKED: owned Chromium exited before CDP startup; ${stderr}`);
+    if (spawnError || child.exitCode !== null || child.signalCode !== null) {
+      throw blocked(`owned Chromium stopped before CDP startup: ${spawnError?.message ?? "process exited"}; ${stderr}`);
+    }
     try {
       port = Number((await readFile(portFile, "utf8")).split("\n")[0]);
       if (Number.isInteger(port) && port > 0) break;
     } catch {}
     await delay(100);
   }
-  if (!port) throw new Error(`BLOCKED: Chromium DevTools endpoint did not become ready; ${stderr}`);
+  if (!port) throw blocked(`Chromium DevTools endpoint did not become ready; ${stderr}`);
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout });
   context = browser.contexts()[0];
-  if (!context) throw new Error("BLOCKED: Chromium process has no persistent default context");
+  if (!context) throw blocked("Chromium process has no persistent default context");
   context.setDefaultTimeout(timeout);
   context.setDefaultNavigationTimeout(timeout);
   page = context.pages()[0] ?? await context.newPage();
@@ -136,18 +180,36 @@ async function startOwnedPersistentChromium() {
 }
 
 async function stopOwnedChromium() {
-  if (browser) { await browser.close().catch(() => {}); browser = undefined; }
+  if (browser) {
+    // A wedged CDP connection must not block the process cleanup below.
+    await within(browser.close().catch(() => {}), timeout);
+    browser = undefined;
+  }
   if (!child) return null;
   const old = child;
   const oldPid = old.pid;
+  if (!oldPid) {
+    // The child never started; there is no process to terminate or observe.
+    child = undefined;
+    context = undefined;
+    page = undefined;
+    return null;
+  }
+  const exited = childExit ?? Promise.resolve({ code: null, signal: null });
   if (old.exitCode === null && old.signalCode === null) old.kill("SIGTERM");
-  const exit = await Promise.race([childExit, delay(timeout).then(() => null)]);
-  if (!exit) { old.kill("SIGKILL"); throw new Error(`BLOCKED: owned Chromium PID ${oldPid} did not terminate within ${timeout}ms`); }
-  processEvidence.at(-1).exit = { pid: oldPid, code: exit.code, signal: exit.signal, observed: true };
+  let outcome = await within(exited, timeout);
+  if (outcome === TIMED_OUT) {
+    old.kill("SIGKILL");
+    // Escalation waits for the real termination, not just the signal.
+    outcome = await within(exited, timeout);
+    if (outcome === TIMED_OUT) throw blocked(`owned Chromium PID ${oldPid} did not exit even after SIGKILL`);
+  }
+  const evidence = processEvidence.findLast((entry) => entry.pid === oldPid);
+  if (evidence) evidence.exit = { pid: oldPid, code: outcome.code, signal: outcome.signal, observed: true };
   child = undefined;
   context = undefined;
   page = undefined;
-  return { pid: oldPid, ...exit };
+  return { pid: oldPid, code: outcome.code, signal: outcome.signal };
 }
 
 async function waitForColdHome(target) {
@@ -302,8 +364,14 @@ const receipt = {
   diagnostics,
 };
 
+let failure = null;
 try {
   phase = "preflight";
+  // The run owns its evidence path: a receipt left by an earlier run must
+  // never be read as this run's outcome.
+  if (await within(rm(evidencePath, { force: true }), timeout) === TIMED_OUT) {
+    throw blocked("stale evidence at the configured path could not be cleared");
+  }
   const productionIndex = await readFile(path.join(dist, "index.html"));
   assert.ok(productionIndex.length, "production dist index exists");
   const builtPkg = JSON.parse(await readFile(path.join(root, "node_modules/@playwright/test/package.json"), "utf8"));
@@ -437,15 +505,11 @@ try {
   assert.ok(processEvidence.at(-1).exit?.observed, "final owned Chromium process exit is observed");
   assert.deepEqual(diagnostics.pageErrors, []);
   assert.deepEqual(diagnostics.requestFailures, []);
+  // The journey is done, but nothing is announced until cleanup and the
+  // durable receipt both succeed (see the finally below).
   receipt.status = "PASS";
   receipt.exits = { firstExit, secondExit, thirdExit };
   stage("complete", { catalogRows: final.catalog.rows, results: final.results, report: final.report });
-  console.log(JSON.stringify({
-    status: receipt.status,
-    caseId,
-    evidencePath,
-    processEvidence: processEvidence.map(({ launch, pid, exit }) => ({ launch, pid, exit })),
-  }, null, 2));
 } catch (error) {
   const setupPhases = new Set(["preflight", "server", "home-and-sales-open", "owned-process-restart"]);
   receipt.status = error.code === "BLOCKED" || error.name === "TimeoutError" || setupPhases.has(phase)
@@ -453,12 +517,71 @@ try {
     : error.code === "ERR_ASSERTION" ? "BEHAVIORAL_RED" : "BLOCKED";
   receipt.phase = phase;
   receipt.error = { name: error.name, message: error.message, stack: error.stack };
-  throw error;
+  failure = error;
 } finally {
-  if (browser || child) { try { await stopOwnedChromium(); } catch {} }
-  await stopStaticServer();
+  const cleanupErrors = [];
+  if (browser || child) {
+    try { await stopOwnedChromium(); }
+    catch (error) { cleanupErrors.push(`chromium: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+  try { await stopStaticServer(); }
+  catch (error) { cleanupErrors.push(`server: ${error instanceof Error ? error.message : String(error)}`); }
   receipt.serverLog = serverLog;
   receipt.completedAt = new Date().toISOString();
-  await writeFile(evidencePath, `${JSON.stringify(receipt, null, 2)}\n`);
-  await rm(browserProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  // Every cleanup step completes before the receipt is published: the evidence
+  // never reports PASS while a process or the profile survives, and a failed
+  // evidence write can no longer skip the profile removal (it precedes it).
+  try {
+    // A stalled filesystem must not hold cleanup open; a timeout counts as a
+    // cleanup failure, so PASS is never published for it.
+    if (await within(rm(browserProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }), timeout) === TIMED_OUT) {
+      throw new Error(`profile removal did not complete within ${timeout}ms`);
+    }
+    receipt.profileRemoved = true;
+  } catch (error) {
+    receipt.profileRemoved = false;
+    cleanupErrors.push(`profile: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (cleanupErrors.length) receipt.cleanupErrors = cleanupErrors;
+  if (!failure && cleanupErrors.length) receipt.status = "BLOCKED";
+  // Publish atomically: the receipt is written beside its final path and only
+  // renamed into place once complete, so a timed-out or failed write can never
+  // leave a PASS receipt behind.
+  const stagedEvidence = `${evidencePath}.tmp-${process.pid}`;
+  let evidenceError = null;
+  let abandoned = false;
+  try {
+    const publish = (async () => {
+      await writeFile(stagedEvidence, `${JSON.stringify(receipt, null, 2)}\n`, { flush: true });
+      if (abandoned) return;
+      await rename(stagedEvidence, evidencePath);
+    })();
+    if (await within(publish, timeout) === TIMED_OUT) {
+      abandoned = true;
+      throw new Error(`evidence write did not complete within ${timeout}ms`);
+    }
+  } catch (error) {
+    evidenceError = error;
+    await within(rm(stagedEvidence, { force: true }).catch(() => {}), 1000);
+  }
+  if (failure) {
+    if (evidenceError) failure.evidenceError = String(evidenceError);
+    if (cleanupErrors.length) failure.cleanupErrors = cleanupErrors;
+    throw failure;
+  }
+  if (evidenceError || cleanupErrors.length) {
+    throw blocked(`cleanup or evidence failed: ${[
+      evidenceError && `evidence: ${evidenceError}`,
+      ...cleanupErrors,
+    ].filter(Boolean).join("; ")}`);
+  }
+  // PASS is announced only now: the receipt is durably written, every owned
+  // process has exited, and the temporary profile is gone.
+  console.log(JSON.stringify({
+    status: receipt.status,
+    caseId,
+    evidencePath,
+    profileRemoved: receipt.profileRemoved,
+    processEvidence: processEvidence.map(({ launch, pid, exit }) => ({ launch, pid, exit })),
+  }, null, 2));
 }
