@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { pastePastVisibleRows, rowViewBlockRows, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter } from "./row-view.js";
+import { pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -182,6 +182,26 @@ describe("confirmed insertion visibility", () => {
     expect(rowViewSettingsForFilter(settings, "c-name", "alpha").kept).toBe(settings.kept);
     expect(rowViewSettingsForFilter(settings, "c-name", "beta").kept).toBeUndefined();
     expect(rowViewSettingsForFilter(settings, "c-name", "  ").kept).toBeUndefined();
+  });
+});
+
+describe("rowViewDisplaySignature", () => {
+  it("changes when the sort field or direction changes, so a selection is cleared", () => {
+    const ascending = rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } });
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "desc" } })).not.toBe(ascending);
+    expect(rowViewDisplaySignature({ sort: { field: "c-price", direction: "asc" } })).not.toBe(ascending);
+    expect(rowViewDisplaySignature({})).not.toBe(ascending);
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } })).toBe(ascending);
+  });
+
+  it("changes with the filter and keeps the sort and filter apart", () => {
+    const filtered = rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "a" } });
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } })).not.toBe(filtered);
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "b" } })).not.toBe(filtered);
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "a" } })).toBe(filtered);
+    // Each part is delimited, so a filter text cannot impersonate a sort.
+    expect(rowViewDisplaySignature({ filter: { field: "c-name", text: "asc" } }))
+      .not.toBe(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } }));
   });
 });
 

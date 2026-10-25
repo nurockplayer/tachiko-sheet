@@ -76,7 +76,7 @@ import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { rowViewBlockRows, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
@@ -849,7 +849,7 @@ export function SheetShell(props: SheetShellProps) {
       kept: rawGridSettings?.kept,
     };
   }, [columns, rawGridSettings]);
-  const filterSignature = gridSettings.filter ? `${gridSettings.filter.field}\u0000${gridSettings.filter.text}` : "";
+  const displaySignature = rowViewDisplaySignature(gridSettings);
   // A confirmed insertion is already in the installed projection, so its kept
   // entry is committed with the confirmation rather than by a later effect.
   const displayRows = useMemo(
@@ -908,7 +908,9 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [columns, table, view]);
 
-  useEffect(() => { setCellSelection(null); }, [filterSignature]);
+  // A changed sort or filter remaps the displayed rows, so a rectangular
+  // selection over them would silently come to address different cells.
+  useEffect(() => { setCellSelection(null); }, [displaySignature]);
 
   function updateGridSettings(update: (current: RowViewSettings) => RowViewSettings): void {
     const occurrence = view?.occurrence;

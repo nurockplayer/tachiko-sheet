@@ -100,6 +100,17 @@ export function rowViewSettingsForFilter(settings: RowViewSettings, field: strin
 }
 
 /**
+ * Identity of the displayed order and membership. A different sort field or
+ * direction, or a different filter, remaps display addresses, so anything
+ * anchored to them (a rectangular selection) is invalid once this changes.
+ */
+export function rowViewDisplaySignature(settings: Pick<RowViewSettings, "sort" | "filter">): string {
+  const sort = settings.sort ? `${settings.sort.field}\u0000${settings.sort.direction}` : "";
+  const filter = settings.filter ? `${settings.filter.field}\u0000${settings.filter.text}` : "";
+  return `${sort}\u0001${filter}`;
+}
+
+/**
  * Keep a confirmed insertion visible under the active filter, like an edited
  * row. Without a filter the row is visible anyway, so nothing is kept.
  */
