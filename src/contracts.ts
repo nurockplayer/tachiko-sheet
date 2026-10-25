@@ -175,9 +175,10 @@ export interface OpaqueProjectExport {
 /** Visible selection vocabulary only. Runtime resolves these names to stable core IDs at dispatch. */
 export interface KeyedGroupedSumBindingCatalog {
   collections: Array<{
+    id: string;
     key: string;
     displayName?: string;
-    fields: Array<{ key: string; displayName?: string; fieldType: string }>;
+    fields: Array<{ id: string; key: string; displayName: string; displayNameExplicit: boolean; fieldType: string }>;
   }>;
 }
 

@@ -9,6 +9,8 @@ export interface SourceNames {
   title: string | null;
   table(collectionId: string): string | null;
   column(collectionId: string, fieldId: string): string | null;
+  /** Resolve a catalog field with the same metadata/presence rule as a table projection. */
+  catalogColumn(collectionId: string, fieldId: string, displayName: string, displayNameExplicit?: boolean): string | null;
 }
 
 // This is a projection feature marker, not a method. A rollback kit must keep
@@ -30,6 +32,18 @@ export function sourceNames(
   // CSV has one sheet whose name is a producer placeholder; the file is the
   // user's own name for it.
   const singleCsvLike = metadata?.sheets.length === 1;
+  const resolveColumn = (collectionId: string, fieldId: string, displayName: string, displayNameExplicit: boolean) => {
+    // Work owns stored name presence, including an explicit name equal to its
+    // generated key. Never infer it from spelling. Preserve its exact text.
+    if (explicitDisplayNames && displayNameExplicit) return displayName;
+    const sheet = sheets.get(collectionId);
+    const metadataName = sheet?.has_header ? sheet.columns.find(column => column.field_id === fieldId)?.name : null;
+    // With the qualified rule, keep the metadata spelling exactly as export
+    // does, except that a blank heading keeps the projected-name fallback so
+    // the column stays identifiable. Older kits keep the trimmed label.
+    const imported = explicitDisplayNames ? (metadataName?.trim() ? metadataName : null) : label(metadataName);
+    return imported ?? (displayName || null);
+  };
   return {
     title: metadata ? label(fileName) : null,
     table(collectionId) {
@@ -39,16 +53,8 @@ export function sourceNames(
     },
     column(collectionId, fieldId) {
       const current = table?.collection.id === collectionId ? columns.get(fieldId) : undefined;
-      // Work owns stored name presence, including an explicit name equal to its
-      // generated key. Never infer it from spelling. Preserve its exact text.
-      if (explicitDisplayNames && current && "display_name_explicit" in current && current.display_name_explicit === true) return current.display_name;
-      const sheet = sheets.get(collectionId);
-      const metadataName = sheet?.has_header ? sheet.columns.find(column => column.field_id === fieldId)?.name : null;
-      // With the qualified rule, keep the metadata spelling exactly as export
-      // does, except that a blank heading keeps the projected-name fallback so
-      // the column stays identifiable. Older kits keep the trimmed label.
-      const imported = explicitDisplayNames ? (metadataName?.trim() ? metadataName : null) : label(metadataName);
-      return imported ?? current?.display_name ?? null;
+      return resolveColumn(collectionId, fieldId, current?.display_name ?? "", current?.display_name_explicit === true);
     },
+    catalogColumn: resolveColumn,
   };
 }
