@@ -324,6 +324,8 @@ export interface CommitOutcome {
   /** Work's 1-based character position for a formula refusal, when it provides one. */
   position?: number;
 }
+/** Outcome of a Save a copy attempt; a failure carries its own truthful reason. */
+export type CreateCopyOutcome = { saved: true } | { saved: false; reason: string };
 export interface SheetShellProps {
   appearancePreference: AppearancePreferenceController;
   view: WorkbookView | null;
@@ -358,7 +360,7 @@ export interface SheetShellProps {
   onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<CommitOutcome>;
   localHistory: LocalHistorySnapshot;
   onHistory(direction: "undo" | "redo"): Promise<FieldTarget | null>;
-  onCreateCopy(name: string): Promise<boolean>;
+  onCreateCopy(name: string): Promise<CreateCopyOutcome>;
   boundCopyName?: string | null;
   onSave?(): Promise<boolean>;
   onDeleteCopy?(copy: SavedCopySummary): Promise<void>;

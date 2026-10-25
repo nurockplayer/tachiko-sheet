@@ -166,6 +166,7 @@ export interface AcceptanceApi {
   lastReceipt(): PublicationProjection | null;
   exportDispatchCounts(): { canonical: number; opaque: number };
   copyWriteDispatchCounts(): { canonical: number; opaque: number };
+  exportWriterDispatchCounts(): { canonical: number; legacyOpaque: number; v3Opaque: number };
   acceptanceHarnessVersion(): string;
   resetCoreFailureProbe(): void;
   coreFailureProbe(): AcceptanceCoreFailureProbe | null;
@@ -222,6 +223,8 @@ let openProjectDispatchCount = 0;
 let importSpreadsheetDispatchCount = 0;
 let exportCanonicalDispatchCount = 0;
 let exportOpaqueDispatchCount = 0;
+let exportLegacyOpaqueDispatchCount = 0;
+let exportV3OpaqueDispatchCount = 0;
 let copyCanonicalDispatchCount = 0;
 let copyOpaqueDispatchCount = 0;
 let lastReceiptValue: PublicationProjection | null = null;
@@ -1265,9 +1268,15 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
         };
       }
-      if (property === "exportProject") {
+      // The opaque save writer is the explicit v3 export. The legacy
+      // `exportProject` transfer stays counted separately so a regression back
+      // to legacy bytes cannot pass as a v3 write.
+      if (property === "exportProject" || property === "exportProjectV3") {
+        const legacy = property === "exportProject";
         return (...args: unknown[]): Promise<unknown> => {
           exportOpaqueDispatchCount += 1;
+          if (legacy) exportLegacyOpaqueDispatchCount += 1;
+          else exportV3OpaqueDispatchCount += 1;
           return (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
         };
       }
@@ -2024,6 +2033,16 @@ export function copyWriteDispatchCounts(): { canonical: number; opaque: number }
   return { canonical: copyCanonicalDispatchCount, opaque: copyOpaqueDispatchCount };
 }
 
+/** Which opaque writer actually produced persisted bytes: the native v3
+ * export or the retired legacy transfer. */
+export function exportWriterDispatchCounts(): { canonical: number; legacyOpaque: number; v3Opaque: number } {
+  return {
+    canonical: exportCanonicalDispatchCount,
+    legacyOpaque: exportLegacyOpaqueDispatchCount,
+    v3Opaque: exportV3OpaqueDispatchCount,
+  };
+}
+
 export function acceptanceHarnessVersion(): string {
   return ACCEPTANCE_HARNESS_VERSION;
 }
@@ -2346,6 +2365,7 @@ export function installAcceptance(next: AcceptanceWiring): void {
     lastReceipt,
     exportDispatchCounts,
     copyWriteDispatchCounts,
+    exportWriterDispatchCounts,
     acceptanceHarnessVersion,
     resetCoreFailureProbe,
     coreFailureProbe,

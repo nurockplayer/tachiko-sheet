@@ -134,12 +134,32 @@ async function mutateStored(page, name, replacementName, fault) {
       const r = indexedDB.open("tachiko-sheet-local-copies", 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
     });
     try {
-      const storeName = fault === "legacy" ? "copies" : "opaque-copies";
+      const read = (store, key) => new Promise((resolve, reject) => {
+        const r = db.transaction(store, "readonly").objectStore(store).get(key); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
+      });
+      let source, row;
+      for (const store of ["copies", "opaque-copies"]) { row = await read(store, name); if (row) { source = store; break; } }
+      if (!row) throw new Error(`Missing stored copy ${name}`);
+      // Saves write native v3 only, so a legacy v1 fixture is built from the
+      // stored bytes: canonical files, no kind, no saveToken.
+      if (fault === "legacy") {
+        const kit = await import("/core-kit/experimental-client.js"); const core = kit.createExperimentalDesignerClient();
+        let legacy;
+        try {
+          const opened = row.kind === "work-file" ? await core.openPortableRo(row.bytes.slice(0)) : await core.openProject(row.bytes.slice(0));
+          const tree = await core.exportCanonicalTree(opened.bootstrap.revision);
+          legacy = {name: replacementName, savedAt: row.savedAt, revision: tree.revision, files: tree.files.map(f => ({path: f.path, bytes: f.bytes.slice(0)}))};
+        } finally { await core.close(); }
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction("copies", "readwrite"); tx.objectStore("copies").add(legacy); tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+        });
+        return;
+      }
+      const storeName = source;
       await new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, "readwrite"); const store = tx.objectStore(storeName); const request = store.get(name);
         request.onsuccess = () => {
           const row = request.result; row.name = replacementName;
-          if (fault === "legacy") delete row.kind;
           if (fault === "corrupt") { row.bytes = row.bytes.slice(0); new Uint8Array(row.bytes)[0] ^= 255; delete row.presentation; }
           if (fault === "digest") row.presentation.snapshotDigest = "0".repeat(64);
           if (fault === "revision") row.presentation.snapshotRevision = "different-revision";

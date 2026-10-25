@@ -396,7 +396,17 @@ try {
   for (const [shard, text] of Object.entries(shards)) await writeFile(path.join(capacityFolder, "entities", `${shard}.jsonl`), text);
   await page.getByTestId("open-project").setInputFiles(capacityFolder); await ready();
   table = await projection(); assert.equal(table.native_table_profile, true); assert.equal(table.rows.length, 129);
+  const writersBeforeCapacity = await page.evaluate(() => window.__tachikoAcceptance.exportWriterDispatchCounts());
   await saveCopy("Capacity before columns");
+  // TEMPORARY with the runtime fallback: Work's v3 writer refuses this
+  // 129-entity collection (MAX_TABLE_ROWS = 128), so the opaque copy retries
+  // the legacy writer once. Remove this assertion at the next kit re-pin.
+  const writersAfterCapacity = await page.evaluate(() => window.__tachikoAcceptance.exportWriterDispatchCounts());
+  assert.deepEqual({
+    v3Opaque: writersAfterCapacity.v3Opaque - writersBeforeCapacity.v3Opaque,
+    legacyOpaque: writersAfterCapacity.legacyOpaque - writersBeforeCapacity.legacyOpaque,
+  }, { v3Opaque: 1, legacyOpaque: 1 }, "a capacity copy falls back to the legacy opaque writer after Work's typed v3 profile refusal");
+  checks.push("capacity Save a copy: v3 writer refuses the 129-entity profile and the legacy fallback writes the copy");
   const capacityBefore = await projection(), countBefore = (await commands()).length;
   const writesBefore = await page.evaluate(() => window.__columnEvidence.hostWrites);
   const refusal = "Column changes aren't available for this work yet, because it couldn't then be saved. Nothing was changed.";
