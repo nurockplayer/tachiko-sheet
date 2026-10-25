@@ -76,7 +76,7 @@ import { closeSaveUnavailableReason, savedCloseIsConfirmed } from "./save-close.
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { rowViewBlockRows, rowViewDisplaySettings, rowViewFilterKeyAction, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsAfterProjection, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { rowViewBlockRows, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
@@ -847,20 +847,14 @@ export function SheetShell(props: SheetShellProps) {
       filter: rawGridSettings?.filter && rawGridSettings.filter.text.trim() && ids.has(rawGridSettings.filter.field)
         ? rawGridSettings.filter : undefined,
       kept: rawGridSettings?.kept,
-      pending: rawGridSettings?.pending,
     };
   }, [columns, rawGridSettings]);
   const filterSignature = gridSettings.filter ? `${gridSettings.filter.field}\u0000${gridSettings.filter.text}` : "";
-  // A confirmed insertion becomes visible in the same render that installs the
-  // new projection, so the existing focus request can find its cell. The
-  // effect below then commits it as kept for later renders.
-  const displaySettings = useMemo<RowViewSettings>(
-    () => rowViewDisplaySettings(gridSettings, table?.rows ?? []),
-    [gridSettings, table],
-  );
+  // A confirmed insertion is already in the installed projection, so its kept
+  // entry is committed with the confirmation rather than by a later effect.
   const displayRows = useMemo(
-    () => table ? rowViewOrder(table.rows, columns, displaySettings) : [],
-    [columns, displaySettings, table],
+    () => table ? rowViewOrder(table.rows, columns, gridSettings) : [],
+    [columns, gridSettings, table],
   );
   const gridOrder = useMemo(() => {
     if (!table) return [] as GridPosition[];
@@ -933,12 +927,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!gridSettings.filter) return;
     const extra = entities.filter((entity) => entity !== DRAFT_ROW);
     if (extra.length === 0) return;
-    updateGridSettings((current) => {
-      if (!current.filter) return current;
-      const kept = new Set(current.kept);
-      for (const entity of extra) kept.add(entity);
-      return { ...current, kept };
-    });
+    updateGridSettings((current) => rowViewKeepingRows(current, extra));
   }
 
   function setGridSort(field: string, direction: "asc" | "desc"): void {
@@ -1002,14 +991,6 @@ export function SheetShell(props: SheetShellProps) {
       <button type="submit" className="ts-button">Apply</button>
     </form>;
   }
-
-  // A waiting insertion becomes kept only when its row actually appears in
-  // this table's projection. A revision change alone does not consume it, and
-  // the state lives in the table's own settings, so another table cannot drop it.
-  useEffect(() => {
-    if (!view || !table || !gridSettings.pending) return;
-    updateGridSettings((current) => rowViewSettingsAfterProjection(current, table.rows));
-  }, [gridSettings.pending, table, view]);
 
   // Focus/selection alone does not dismiss a refusal. A different projection or
   // an explicit edit does; ordinary copy/paste actions replace the announcement.
@@ -2458,8 +2439,6 @@ export function SheetShell(props: SheetShellProps) {
     }
     const initializers = draftInitializers(columns, draft.values);
     if (!initializers) return;
-    const keepNewRow = Boolean(gridSettings.filter);
-    const previousEntities = new Set(view.table.rows.map(rowEntity));
     if (editor?.entity === DRAFT_ROW || (editor && editor.value === editor.original)) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
@@ -2475,12 +2454,10 @@ export function SheetShell(props: SheetShellProps) {
         setRowDraft((current) => current === rowDraft ? null : current);
         setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
           previousEntities: view.table.rows.map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
-        // Recorded in that table's own settings: switching tables must not
-        // drop the wait for this insertion's projection.
-        if (keepNewRow) updateGridSettings((current) => ({ ...current, pending: {
-          previousEntities,
-          insertedEntities: result.addedEntities ? new Set(result.addedEntities) : undefined,
-        } }));
+        // The new row is already in the installed projection. Keep it visible
+        // under the active filter, in this table's own settings. A publication
+        // that named no row keeps nothing.
+        keepGridRows(result.addedEntities ?? []);
       } else if (result.kind === "refused") {
         const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
         setRowError(refusal);

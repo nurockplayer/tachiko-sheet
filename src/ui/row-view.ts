@@ -12,25 +12,11 @@ export interface RowViewFilter {
   text: string;
 }
 
-/** A confirmed insertion whose row has not reached this table's projection yet. */
-export interface RowViewPendingRow {
-  /** Entities the publication created, when the runtime reported them. */
-  insertedEntities?: ReadonlySet<string>;
-  /** Entities the table held when the insertion was requested. */
-  previousEntities: ReadonlySet<string>;
-}
-
 export interface RowViewSettings {
   sort?: RowViewSort;
   filter?: RowViewFilter;
   /** Rows just added or edited while a filter is active; visible until it changes. */
   kept?: ReadonlySet<string>;
-  /**
-   * Waiting insertion while a filter is active. It lives with this table's
-   * settings, so switching to another table cannot discard it. Only the
-   * inserted entity appearing in the projection consumes it.
-   */
-  pending?: RowViewPendingRow;
 }
 
 /** View settings scoped to one work occurrence; the record survives a missing projection. */
@@ -99,11 +85,10 @@ export function rowViewSettingsForColumns(settings: RowViewSettings, columnIds: 
     sort: dropSort ? undefined : settings.sort,
     filter: dropFilter ? undefined : settings.filter,
     kept: dropFilter ? undefined : settings.kept,
-    pending: dropFilter ? undefined : settings.pending,
   };
 }
 
-/** Apply a filter; changing or clearing it discards kept rows and any waiting insertion. */
+/** Apply a filter; changing or clearing it discards kept rows. */
 export function rowViewSettingsForFilter(settings: RowViewSettings, field: string, text: string): RowViewSettings {
   const trimmed = text.trim();
   const unchanged = settings.filter?.field === field && settings.filter?.text === trimmed;
@@ -111,42 +96,18 @@ export function rowViewSettingsForFilter(settings: RowViewSettings, field: strin
     ...settings,
     filter: trimmed ? { field, text: trimmed } : undefined,
     kept: unchanged ? settings.kept : undefined,
-    pending: unchanged ? settings.pending : undefined,
   };
 }
 
 /**
- * Entities the projection gained since the insertion was requested. When the
- * publication named the inserted entities, only those count: an unrelated row
- * arriving first must not consume the wait.
+ * Keep a confirmed insertion visible under the active filter, like an edited
+ * row. Without a filter the row is visible anyway, so nothing is kept.
  */
-export function rowViewPendingAdded(rows: readonly TableRow[], pending: RowViewPendingRow | undefined): string[] {
-  if (!pending) return [];
-  const added = rows.map(rowEntity).filter((entity) => !pending.previousEntities.has(entity));
-  return pending.insertedEntities ? added.filter((entity) => pending.insertedEntities!.has(entity)) : added;
-}
-
-/**
- * Display settings that keep a waiting insertion visible in the render that
- * installs its projection, before the settings are committed.
- */
-export function rowViewDisplaySettings(settings: RowViewSettings, rows: readonly TableRow[]): RowViewSettings {
-  const added = rowViewPendingAdded(rows, settings.pending);
-  if (added.length === 0) return settings;
-  return { ...settings, kept: new Set([...(settings.kept ?? []), ...added]) };
-}
-
-/**
- * Consume a waiting insertion once its row is actually in the projection and
- * keep it like an edited row. A revision change that does not bring the row
- * keeps waiting; the same settings object is returned when nothing changed.
- */
-export function rowViewSettingsAfterProjection(settings: RowViewSettings, rows: readonly TableRow[]): RowViewSettings {
-  const added = rowViewPendingAdded(rows, settings.pending);
-  if (added.length === 0) return settings;
+export function rowViewKeepingRows(settings: RowViewSettings, entities: readonly string[]): RowViewSettings {
+  if (!settings.filter || entities.length === 0) return settings;
   const kept = new Set(settings.kept);
-  for (const entity of added) kept.add(entity);
-  return { ...settings, kept, pending: undefined };
+  for (const entity of entities) kept.add(entity);
+  return { ...settings, kept };
 }
 
 /**

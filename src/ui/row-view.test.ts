@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySettings, rowViewFilterKeyAction, rowViewOrder, rowViewPasteRefusal, rowViewPendingAdded, rowViewRecordForOccurrence, rowViewSettingsAfterProjection, rowViewSettingsForColumns, rowViewSettingsForFilter } from "./row-view.js";
+import { pastePastVisibleRows, rowViewBlockRows, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -149,60 +149,39 @@ describe("rowViewSettingsForColumns", () => {
   });
 });
 
-describe("pending insertion visibility", () => {
+describe("confirmed insertion visibility", () => {
   const added = row("added", { name: "Zeta", price: 99 });
   const filtered = { filter: { field: "c-name", text: "alpha" } };
 
-  it("keeps waiting when a projection changes but the inserted row is absent", () => {
-    const settings = { ...filtered, pending: { previousEntities: new Set(["alpha"]) } };
-    expect(rowViewPendingAdded([alpha], settings.pending)).toEqual([]);
-    expect(rowViewSettingsAfterProjection(settings, [alpha])).toBe(settings);
+  it("keeps a reported inserted row visible under the active filter", () => {
+    const settings = rowViewKeepingRows(filtered, ["added"]);
+    expect(settings.kept).toEqual(new Set(["added"]));
+    expect(rowViewOrder([alpha, added], columns, settings).map(row => row.id)).toEqual(["alpha", "added"]);
   });
 
-  it("waits past an unrelated new row and consumes only the inserted entity", () => {
-    const gamma = row("gamma", { name: "Gamma", price: 3 });
-    const settings = { ...filtered, pending: { previousEntities: new Set(["alpha"]), insertedEntities: new Set(["added"]) } };
-    // An unrelated row arrives first: the wait survives and gamma is not kept.
-    const intermediate = rowViewSettingsAfterProjection(settings, [alpha, gamma]);
-    expect(intermediate).toBe(settings);
-    expect(rowViewOrder([alpha, gamma], columns, intermediate).map(row => row.id)).toEqual(["alpha"]);
-    // The inserted row then arrives and is kept like an edited row.
-    const consumed = rowViewSettingsAfterProjection(intermediate, [alpha, gamma, added]);
-    expect(consumed.pending).toBeUndefined();
-    expect(consumed.kept).toEqual(new Set(["added"]));
-    expect(rowViewOrder([alpha, gamma, added], columns, consumed).map(row => row.id)).toEqual(["alpha", "added"]);
+  it("keeps nothing when no filter is active", () => {
+    expect(rowViewKeepingRows({}, ["added"])).toEqual({});
   });
 
-  it("shows and then consumes the row once its projection arrives", () => {
-    const settings = { ...filtered, pending: { previousEntities: new Set(["alpha"]) } };
-    const rows = [alpha, added];
-    expect(rowViewDisplaySettings(settings, rows).kept).toEqual(new Set(["added"]));
-    const consumed = rowViewSettingsAfterProjection(settings, rows);
-    expect(consumed.kept).toEqual(new Set(["added"]));
-    expect(consumed.pending).toBeUndefined();
-    expect(rowViewOrder(rows, columns, consumed).map(row => row.id)).toEqual(["alpha", "added"]);
+  it("keeps nothing when the publication named no row", () => {
+    expect(rowViewKeepingRows(filtered, []).kept).toBeUndefined();
   });
 
-  it("survives a table switch until that table's projection brings the row", () => {
-    // Table A is filtered with a waiting insertion; table B has its own settings.
-    const tableA = { ...filtered, pending: { previousEntities: new Set(["alpha"]) } };
-    const tableB = { sort: { field: "c-name", direction: "asc" as const } };
-    const record = { occurrence: "occ-1", byCollection: { a: tableA, b: tableB } };
-    // Switching to B leaves A's entry (and its wait) alone.
-    expect(record.byCollection.a.pending).toBeDefined();
-    // While B is shown, A's projection arrives with the new row.
-    const consumedA = rowViewSettingsAfterProjection(record.byCollection.a, [alpha, added]);
-    expect(consumedA.pending).toBeUndefined();
-    expect(consumedA.kept).toEqual(new Set(["added"]));
-    // Back on A, the row is still visible under the unchanged filter.
-    expect(rowViewOrder([alpha, added], columns, consumedA).map(row => row.id)).toEqual(["alpha", "added"]);
+  it("survives a table switch and back", () => {
+    const tableA = rowViewKeepingRows(filtered, ["added"]);
+    const record = { occurrence: "occ-1", byCollection: { a: tableA, b: { sort: { field: "c-name", direction: "asc" as const } } } };
+    // Switching tables and returning to the same occurrence keeps A's entry.
+    const returned = rowViewRecordForOccurrence(record, "occ-1");
+    expect(rowViewOrder([alpha, added], columns, returned.byCollection.a!).map(row => row.id)).toEqual(["alpha", "added"]);
+    // A different confirmed occurrence clears it.
+    expect(rowViewRecordForOccurrence(record, "occ-2").byCollection.a).toBeUndefined();
   });
 
   it("is discarded when the filter changes or is cleared, but kept when re-applied unchanged", () => {
-    const settings = { ...filtered, pending: { previousEntities: new Set(["alpha"]) } };
-    expect(rowViewSettingsForFilter(settings, "c-name", "alpha").pending).toBe(settings.pending);
-    expect(rowViewSettingsForFilter(settings, "c-name", "beta").pending).toBeUndefined();
-    expect(rowViewSettingsForFilter(settings, "c-name", "  ").pending).toBeUndefined();
+    const settings = rowViewKeepingRows(filtered, ["added"]);
+    expect(rowViewSettingsForFilter(settings, "c-name", "alpha").kept).toBe(settings.kept);
+    expect(rowViewSettingsForFilter(settings, "c-name", "beta").kept).toBeUndefined();
+    expect(rowViewSettingsForFilter(settings, "c-name", "  ").kept).toBeUndefined();
   });
 });
 

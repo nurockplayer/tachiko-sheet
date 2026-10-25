@@ -62,6 +62,11 @@ export interface WorkbookView {
   table: TableProjection;
 }
 export interface ViewWitness { occurrence: string; revision: string }
+
+/** Entity identity of one projected row: the FieldTarget identity the grid and test markers use. */
+export function rowEntity(row: WorkbookView["table"]["rows"][number]): string {
+  return row.fields[0]?.target.entity ?? row.id;
+}
 export type ScalarEdit =
   | { kind: "number"; input: string }
   | { kind: "text"; value: string }
