@@ -78,7 +78,7 @@ export function FormulaBar(props: FormulaBarProps) {
               aria-controls={detailsId}
               onClick={() => setOpenErrorText(detailsOpen ? null : errorText)}
             >Details</button>
-            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen}>{errorText}</div>
+            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen} tabIndex={0}>{errorText}</div>
           </>
         ) : null}
       </div>

@@ -1243,6 +1243,12 @@ body { margin: 0; }
   right: 0;
   z-index: 30;
   box-sizing: border-box;
+  /* A very long refusal must scroll inside the disclosure: an unbounded
+     popover would add scroll height to the table composition and push the
+     grid instead of staying an overlay. */
+  max-height: min(50vh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px 8px;
   border: 1px solid #e0b4b4;
   border-radius: var(--ts-radius);
@@ -1254,6 +1260,7 @@ body { margin: 0; }
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.ts-formula-bar-error-details:focus-visible { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
 .ts-formula-bar-position { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ts-cell--formula { cursor: default; }
 .ts-results-pane {

@@ -288,6 +288,9 @@ describe("FormulaBar", () => {
     expect(html).toContain('class="ts-formula-bar-details" aria-expanded="false"');
     expect(html).toContain(">Details</button>");
     expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*>Unexpected end of input[\s\S]*<\/div>/);
+    // A long popover scrolls inside itself, and its text is reachable from the
+    // keyboard, so it can never add scroll height under the grid.
+    expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*tabindex="0"/);
     // Still inside the one reserved line, never a sibling block above the grid.
     expect(html.indexOf('class="ts-formula-bar-notes"')).toBeLessThan(html.indexOf('class="ts-formula-bar-details"'));
   });
