@@ -9,14 +9,14 @@ Status: founder-authorized Sheet-local delivery policy, 2026-09-10, recorded by 
 
 ## Current routing (founder, 2026-10-25)
 
-This section is the current role mapping. Where later sections name a fixed model, read it through this table; the gates themselves (one writer per surface, exact-HEAD independent review, `No blocking findings.`, hosted gates, protected merge, HOLDs, human/release gates) are unchanged.
+This section is the current role mapping. Where later sections (and `MVP-EXECUTION.md`, the SCD skill or the operations playbook) name a fixed model, reviewer transport ("ego-lite → Oracle") or effort label ("Extra High"), read it through this table; the gates themselves (one writer per surface, exact-HEAD independent review, `No blocking findings.`, hosted gates, protected merge, HOLDs, human/release gates) are unchanged.
 
 | Role in this document | Current holder |
 |---|---|
 | Mission Lead / integrator ("Sol" in older text) | Claude Opus 5.5, as recorded in #2 (founder directive of 2026-10-19, #208 / Work #541). |
-| Bounded implementation worker ("Luna" in older text) | Chosen per task by the founder's `quota-advisor`: DeepSeek-V4.1-Flash in a visible herdr pane, or Codex gpt-6-luna / gpt-6.1-sol. One writer per worktree. |
-| Independent Final Candidate review ("Oracle latest Extra High via ego-lite") | ChatGPT through `oracle-ego` (newest GPT, Temporary Chat, read-only). It sets the reasoning control to its maximum and fails closed otherwise; record the model and effort label it reports. Sheet code is oracle-OK. If oracle fails for a reason other than busy slots, the founder's fallback order applies (Codex gpt-6.1-sol review, then a fresh read-only Sonnet 5.5 review), labelled as fallback. |
-| Advisor (Astra / Pro) | Optional read-only consultation; record advice and the lead's disposition. |
+| Bounded implementation worker ("Luna" in older text) | Chosen per task by the founder's `quota-advisor`: DeepSeek-V4.1-Flash in a visible herdr pane, or Codex gpt-6-luna / gpt-6.1-sol. The serial-production and overlapping-surface ownership rules below stay binding: one active production lane, no competing writers on an overlapping surface. |
+| Independent Final Candidate review ("Oracle latest Extra High via ego-lite") | ChatGPT through `oracle-ego` (newest GPT, Temporary Chat, read-only). It sets the reasoning control to the maximum the model offers and fails closed otherwise; that maximum satisfies the "Extra High" requirement whatever label ChatGPT shows, and the reported model and effort label are recorded with the receipt. Identity/effort verification, independence and exact-HEAD binding stay fail-closed. Sheet code is oracle-OK. **Fallback** applies only when the oracle run itself cannot produce a qualified review (transport or execution failure, or unverifiable provenance) after the failure has been looked into — never for busy slots (wait) and never because a completed review reported blocking findings (those findings must be repaired). The authorized fallback order is a Codex gpt-6.1-sol review, then a fresh read-only Sonnet 5.5 review, each labelled as fallback and meeting the same independence, exact-HEAD and provenance requirements; this replaces the playbook-only fallback wording below. |
+| Advisor (Astra / Pro) | Read-only consultation. Mandatory Astra and conditional Pro escalation triggers (below and in live #1) remain binding, including their timing and HOLD-if-unavailable rule; outside those triggers consultation is optional. Record advice and the lead's disposition. |
 
 Older amendments named below are historical context for how this policy evolved.
 
