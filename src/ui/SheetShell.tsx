@@ -53,6 +53,8 @@ import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
+import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
+import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
@@ -444,6 +446,7 @@ export function SheetShell(props: SheetShellProps) {
     onInsertRow,
     onAddColumn,
     onSetColumnRequiredness,
+    onSetColumnConstraint,
     onRenameColumn,
     onRemoveColumn,
     onPasteCells,
@@ -613,6 +616,7 @@ export function SheetShell(props: SheetShellProps) {
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
+  const [ruleDialog, setRuleDialog] = useState<{ field: string; trigger: HTMLElement } | null>(null);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
@@ -1416,7 +1420,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = columnDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = columnDialog !== null || ruleDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -2941,7 +2945,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   const columnChangeReason = "Finish the current input before changing columns.";
-  useEffect(() => { setColumnDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
+  useEffect(() => { setColumnDialog(null); setRuleDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
   useEffect(() => {
     if (columnChangesBlocked) {
       const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
@@ -3441,6 +3445,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       void changeRequiredness(column.id, trigger);
                     }} /> : null}
+                    {table.native_table_profile && onSetColumnConstraint && columnRuleKind(column.field_type) !== null ? <button type="button" className="ts-button" aria-label="Rule…" data-column-action="Rule…" disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      setRuleDialog({ field: column.id, trigger });
+                    }} /> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
@@ -3562,6 +3572,12 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 void changeRequiredness(focusedColumn.id, trigger);
               }}>{focusedColumn.required ? "Allow blanks" : "Require a value"}</button> : null}
+              {table.native_table_profile && onSetColumnConstraint && columnRuleKind(focusedColumn.field_type) !== null ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                closeColumnToolbar(disclosure);
+                setRuleDialog({ field: focusedColumn.id, trigger });
+              }}>{`Rule for “${focusedColumnName}”…`}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 closeColumnToolbar(disclosure);
@@ -3731,12 +3747,15 @@ export function SheetShell(props: SheetShellProps) {
         }}
         onKeyDown={(event) => onCellKeyDown(event, entity, { entity, field: column.id })}
       >
-        {editing && editor ? (
+        {editing && editor ? (<>
           <input
             className="ts-cell-input"
             aria-label="Edit cell"
             aria-describedby={draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : undefined}
-            placeholder={draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
+            // Work's declared rule is offered as suggestions; Work still decides
+            // what is admitted, so typing another value reaches its refusal.
+            list={column.constraint?.kind === "text_literal_set" ? `ts-allowed-${column.id}` : undefined}
+            placeholder={column.constraint?.kind === "number_inclusive_range" ? `${column.constraint.min}–${column.constraint.max}` : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
             aria-busy={commitPending}
             data-testid="cell-editor"
             disabled={controlsLocked}
@@ -3753,7 +3772,10 @@ export function SheetShell(props: SheetShellProps) {
             }}
             onKeyDown={onEditorKeyDown}
           />
-        ) : (
+          {column.constraint?.kind === "text_literal_set"
+            ? <datalist id={`ts-allowed-${column.id}`}>{column.constraint.values.map(value => <option key={value} value={value} />)}</datalist>
+            : null}
+        </>) : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}
         {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
@@ -4439,6 +4461,19 @@ export function SheetShell(props: SheetShellProps) {
         onDraftChange={setDuplicateDraftActive}
         onCancel={() => { setDuplicateOpen(false); requestAnimationFrame(() => duplicateTriggerRef.current?.focus()); }}
       /> : null}
+      {ruleDialog && onSetColumnConstraint && view && witness && table ? (() => {
+        const column = columns.find(item => item.id === ruleDialog.field);
+        if (!column) return null;
+        const trigger = ruleDialog.trigger;
+        const restore = () => requestAnimationFrame(() => { if (trigger.isConnected) withAppFocus(() => trigger.focus()); });
+        return <ColumnRuleDialog
+          column={column}
+          composing={() => props.appearancePreference.getSnapshot().composing}
+          onSubmit={input => onSetColumnConstraint(witness, table.collection.key, column.id, input)}
+          onSuccess={() => { setRuleDialog(null); setColumnAnnouncement(`Rule updated for ${column.display_name}. Undo restores it.`); restore(); }}
+          onCancel={() => { setRuleDialog(null); restore(); }}
+        />;
+      })() : null}
       {deleteName !== null ? <Modal variant="close" label="Delete copy" onCancel={cancelDelete} dismissDisabled={deletePending}>
         <div className="ts-dialog-intro"><h2 ref={deletePendingFocusRef} className="ts-h2" tabIndex={deletePending || deleteError !== null ? 0 : -1}>Delete “{deleteName}”?</h2><p>This deletes the saved copy from this device. It cannot be undone.</p></div>
         {deleteError ? <p role="alert" className="ts-dialog-error">{deleteError}</p> : null}

@@ -528,6 +528,26 @@ describe("SheetShell static rendering", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it.each([false, true])("rule action follows native Text/Number declarations (compact=%s)", compact => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
+    try {
+      const view = makeView();
+      view.table.native_table_profile = true;
+      const onSetColumnConstraint = async () => ({ kind: "confirmed" as const });
+      const ruleAction = compact ? "Rule for “" : 'data-column-action="Rule…"';
+      for (const type of ["text", "number", "date", "boolean"]) {
+        for (const column of view.table.columns) column.field_type = type;
+        const markup = render({ view, onSetColumnConstraint });
+        expect(markup.includes(ruleAction)).toBe(type === "text" || type === "number");
+      }
+      for (const column of view.table.columns) column.field_type = "text";
+      view.table.native_table_profile = false;
+      expect(render({ view, onSetColumnConstraint })).not.toContain(ruleAction);
+      view.table.native_table_profile = true;
+      expect(render({ view })).not.toContain(ruleAction);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("offers one compact Column menu with column handlers alone and no interactive headers", () => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
     try {
