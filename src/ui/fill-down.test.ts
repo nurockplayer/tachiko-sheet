@@ -36,6 +36,20 @@ describe("fill down request planning", () => {
     });
   });
 
+  it("refuses a formula fill while the view is sorted or filtered", () => {
+    const rows = [row(0, { a: "2" }, ["a"]), row(1, { a: "3" })];
+    expect(() => fillDownPlan(rows, [columns[0]!], rectangle({ row: 0, column: 0 }, { row: 1, column: 0 }), true, false))
+      .toThrow("Clear the sort and filter to fill a formula down. Nothing was filled.");
+  });
+
+  it("replaces an editable destination's own formula but refuses a non-editable one", () => {
+    const rows = [row(0, { a: "2" }, ["a"]), row(1, { a: "3" }, ["a"])];
+    expect(fillDownPlan(rows, [columns[0]!], rectangle({ row: 0, column: 0 }, { row: 1, column: 0 }), true)).toMatchObject({ kind: "formula", count: 1 });
+    const locked = [row(0, { a: "2" }, ["a"]), { ...row(1, { a: "3" }), fields: row(1, { a: "3" }).fields.map(field => ({ ...field, editable_scalar: undefined })) }];
+    expect(() => fillDownPlan(locked as never, [columns[0]!], rectangle({ row: 0, column: 0 }, { row: 1, column: 0 }), true))
+      .toThrow("The fill range includes a calculated or non-editable cell. Nothing was filled.");
+  });
+
   it("refuses a formula selection wider than one column", () => {
     const rows = [row(0, { a: "2", b: "x" }, ["a"]), row(1, { a: "3", b: "y" })];
     expect(() => fillDownPlan(rows, columns, rectangle({ row: 0, column: 0 }, { row: 1, column: 1 }), true))

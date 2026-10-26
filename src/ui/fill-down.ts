@@ -12,7 +12,12 @@ export type FillDownPlan =
 
 const NON_EDITABLE = "The fill range includes a calculated or non-editable cell. Nothing was filled.";
 
-export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle | null, native: boolean): FillDownPlan {
+/**
+ * `stored` is true when the displayed rows are in stored order (no sort or
+ * filter). Work shifts relative formula references by stored position, so a
+ * formula fill is only offered when display order and stored order agree.
+ */
+export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle | null, native: boolean, stored = true): FillDownPlan {
   if (!area || area.bottom <= area.top) throw new FillDownRefusal("Select at least two rows to fill down.");
   const width = area.right - area.left + 1;
   const height = area.bottom - area.top + 1;
@@ -28,15 +33,17 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
   });
   if (formulaColumnIndex >= 0) {
     if (width !== 1) throw new FillDownRefusal("Fill a formula down one column at a time. Nothing was filled.");
+    if (!stored) throw new FillDownRefusal("Clear the sort and filter to fill a formula down. Nothing was filled.");
     const column = selectedColumns[0];
     const source = topRow && column ? fieldForColumn(topRow, column.id)?.target : undefined;
     if (!source) throw new FillDownRefusal(NON_EDITABLE);
     const destinations = [];
     for (let rowIndex = area.top + 1; rowIndex <= area.bottom; rowIndex += 1) {
       const row = rows[rowIndex];
-      const target = row && column ? fieldForColumn(row, column.id)?.target : undefined;
-      if (!target) throw new FillDownRefusal(NON_EDITABLE);
-      destinations.push(target);
+      // An editable cell may hold its own formula; the copy replaces it, and Undo restores it.
+      const slot = row && column ? cellEditSlot(row, column) : null;
+      if (!slot) throw new FillDownRefusal(NON_EDITABLE);
+      destinations.push(slot.target);
     }
     return { kind: "formula", request: { source, destinations, fixed_references: [], relative_rows: true, relative_columns: false }, count };
   }

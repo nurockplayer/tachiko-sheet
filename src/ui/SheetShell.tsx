@@ -1244,7 +1244,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!table || !view || !witness) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
     try {
       const area = selectionRectangle;
-      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile));
+      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filter);
       keepGridRows(rowViewBlockRows(displayRows, area!.top, area!.bottom - area!.top + 1).map(rowEntity));
       if (plan.kind === "formula" ? !onCopyFormula : !onEditCells) {
         announceClipboard("Filling cells is not available in this view.", true, true); return;
