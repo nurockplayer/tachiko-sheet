@@ -39,7 +39,7 @@ function harness(): { port: MutationCompletionPort; messages: Array<string | nul
   return { port: proxy as unknown as MutationCompletionPort, messages, recoveries };
 }
 
-function refusal(failure: { code: string; message: string; position?: number; diagnostics?: unknown[]; constraint_failure?: unknown }): Error {
+function refusal(failure: { code: string; message: string; position?: number; diagnostics?: unknown[]; constraint_failure?: unknown; limit?: string; maximum?: number; attempted?: number; collection?: string }): Error {
   return Object.assign(new Error(failure.message), { failure });
 }
 
@@ -90,6 +90,24 @@ describe("mutation completion formula refusal", () => {
       dispatch: async () => { throw refusal({ code: "invalid_text", message: "Text is not allowed here." }); },
     });
     expect(result).toEqual({ kind: "refused", message: "The change was not applied. (Details: Text is not allowed here.)" });
+  });
+});
+
+describe("mutation completion capacity refusal", () => {
+  it("shows the capacity message for a refused rows command", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "rows",
+      witness,
+      dispatch: async () => {
+        throw refusal({ code: "capacity_exceeded", message: "capacity_exceeded", limit: "table_rows", maximum: 100, attempted: 101, collection: "plan" });
+      },
+    });
+    expect(result).toMatchObject({
+      kind: "refused",
+      message: "This table can hold up to 100 rows; this change would make 101. Nothing was changed.",
+      refusalCode: "capacity_exceeded",
+    });
   });
 });
 

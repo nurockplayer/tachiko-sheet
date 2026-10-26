@@ -1,8 +1,9 @@
 import type { PublicationProjection } from "../../public/core-kit/experimental-client.js";
-import type { NameFailure } from "../../public/core-kit/runtime/protocol.js";
+import { isCapacityFailure, type CapacityFailureProjection, type FailureProjection, type NameFailure } from "../../public/core-kit/runtime/protocol.js";
 import type { ConfirmedPublication, Currentness, FieldTarget, KeyedGroupedSumResult, SaveReceipt, SaveStatus, ScalarEdit, ViewWitness, WorkbookView } from "../contracts.js";
 import { UnknownOperationOutcomeError, rowEntity } from "../contracts.js";
 import { rowSource } from "../ui/row-source.js";
+import { capacityMessage } from "../ui/capacity-message.js";
 import { PublishedProjectionRecoveryError, SheetSessionError } from "../runtime/session.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, type LocalHistorySnapshot } from "../application/local-history.js";
 
@@ -204,15 +205,21 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.setOutcome("idle");
       if (command.kind === "cleanup") port.clearPreview();
       else if (command.kind !== "summary") port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
-      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown; constraint_failure?: unknown; name_failures?: readonly NameFailure[]; diagnostics?: ReadonlyArray<{ facts?: ReadonlyArray<{ name: string; value: string }> }> } })?.failure;
+      const failure = (error as { failure?: {
+        code?: string; message?: string; limit?: string; maximum?: number; attempted?: number; collection?: string;
+        position?: unknown; constraint_failure?: unknown; name_failures?: readonly NameFailure[];
+        diagnostics?: ReadonlyArray<{ facts?: ReadonlyArray<{ name: string; value: string }> }>;
+      } })?.failure;
       // Work's formula and column-rule refusals are shown verbatim. Other
       // failures keep the explanatory prefix so their cause is not mistaken
       // for a Work verdict.
       const verbatim = (command.kind === "scalar" && command.edit.kind === "formula") ||
         (command.kind === "rows" && (failure?.constraint_failure != null || failure?.code === "invalid_constraint_declaration"));
-      const message = verbatim && typeof failure?.message === "string" && failure.message.length > 0
-        ? failure.message
-        : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
+      const message = failure && isCapacityFailure(failure as FailureProjection)
+        ? capacityMessage(failure as CapacityFailureProjection)
+        : verbatim && typeof failure?.message === "string" && failure.message.length > 0
+          ? failure.message
+          : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
       // A formula refusal is shown in the formula bar beside the retained
       // draft; the global banner would repeat Work's words a second time.
       if (command.kind !== "rows" && !(command.kind === "scalar" && command.edit.kind === "formula")) port.setMessage(message);

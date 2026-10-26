@@ -386,6 +386,7 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
 export function App({ runtime, copies, appearancePreference }: AppProps) {
   const hostFiles = useHostFiles();
   const [view, setView] = useState<WorkbookView | null>(null);
+  const [capacity, setCapacity] = useState<{ rows: number; maximum: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [currentness, setCurrentness] = useState<Currentness>("current");
@@ -404,6 +405,25 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   const [salesChangedOccurrence, setSalesChangedOccurrence] = useState<string | null>(null);
   const [interop, setInterop] = useState<InteropState | null>(null);
   const [localHistory, setLocalHistory] = useState<LocalHistorySnapshot>(() => emptyLocalHistory());
+  useEffect(() => {
+    let current = true;
+    setCapacity(null);
+    if (!view) return () => { current = false; };
+    const occurrence = view.occurrence;
+    const revision = view.revision;
+    const collectionId = view.table.collection.id;
+    // A capacity read is advisory: any failure, even a synchronous one, only hides the warning.
+    void Promise.resolve().then(() => runtime.queryCapacity(revision)).then((projection) => {
+      const active = viewRef.current;
+      if (!current || !projection || !active || active.occurrence !== occurrence ||
+        active.revision !== revision || active.table.collection.id !== collectionId) return;
+      const usage = projection.usage.tables[collectionId];
+      setCapacity(usage ? { rows: usage.rows, maximum: projection.limits.table_rows } : null);
+    }).catch(() => {
+      if (current) setCapacity(null);
+    });
+    return () => { current = false; };
+  }, [runtime, view]);
   const importBytesRef = useRef<ArrayBuffer | null>(null);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
   // An ephemeral, user-consented delivery candidate; never canonical state.
@@ -2158,6 +2178,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           outcome={outcome}
           saveStatus={saveStatus}
           message={message}
+          capacity={capacity}
           copies={savedCopies}
           copiesStatus={savedCopiesStatus}
           onRetryCopies={refreshCopies}

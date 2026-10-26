@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -680,6 +680,21 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null> {
+    return enqueue(async () => {
+      const live = session();
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const query = client.queryCapacity;
+      if (typeof query !== "function") return null;
+      const revision = expectedRevision ?? live.revision;
+      const capacity = await afterUsable(expected, dispatch(kit, () => query.call(client, revision)));
+      if (capacity.revision !== revision) throw new SheetSessionError("incoherent-reply", "The capacity query does not match the requested revision.");
+      return capacity;
+    });
+  }
+
   function confirmedMutation(
     witness: ViewWitness,
     command: (client: PublicClient, revision: string) => Promise<PublicationProjection>,
@@ -1282,7 +1297,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, copyFormula, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, queryCapacity, copyFormula, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

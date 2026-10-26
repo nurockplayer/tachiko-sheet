@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -70,6 +70,7 @@ interface Hooks {
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
+  queryCapacity?: (revision: string) => Promise<CapacityProjection>;
   bootstrap?: () => Promise<BootstrapProjection>;
 }
 
@@ -98,6 +99,7 @@ class FakeClient {
     observeOccurrence: 0,
     queryTable: [] as string[],
     queryTableWindow: [] as Array<{ revision: string; start: number; count: number }>,
+    queryCapacity: [] as string[],
     queryFields: [] as Array<{ revision: string; targets: FieldTarget[] }>,
     editNumber: 0,
     editText: 0,
@@ -313,6 +315,17 @@ class FakeClient {
     const hook = this.hooks.queryTableWindow;
     if (hook === undefined) throw new FakeDesignerRuntimeError("unsupported_operation", this.#revision);
     return hook(revision, collection, start, count);
+  }
+
+  async queryCapacity(revision: string): Promise<CapacityProjection> {
+    this.calls.queryCapacity.push(revision);
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return {
+      revision,
+      limits: { collections: 100, table_fields: 100, table_rows: 100, total_entities: 1000, populated_cells: 10000, formulas: 1000, formula_ast_nodes: 10000, dependency_edges: 10000 },
+      usage: { collections: 1, total_entities: 1, populated_cells: 2, formulas: 0, formula_ast_nodes: 0, dependency_edges: 0, tables: { [COLLECTION.id]: { rows: 1, fields: 2 } } },
+    };
   }
 
   async queryFields(revision: string, targets: FieldTarget[]): Promise<FieldBatchProjection> {
@@ -1787,6 +1800,29 @@ describe("setColumnConstraint", () => {
     await expect(runtime.setColumnConstraint({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", { kind: "none" }))
       .rejects.toMatchObject({ code: "stale-witness" });
     expect(client.calls.setColumnConstraint).toEqual([]);
+  });
+});
+
+describe("queryCapacity", () => {
+  it("reads Work capacity at the requested revision without publishing a mutation", async () => {
+    const { runtime, client, view } = await opened();
+
+    const capacity = await runtime.queryCapacity(view.revision);
+
+    expect(client.calls.queryCapacity).toEqual([view.revision]);
+    expect(capacity).toMatchObject({
+      revision: view.revision,
+      limits: { table_rows: 100 },
+      usage: { tables: { [COLLECTION.id]: { rows: 1, fields: 2 } } },
+    });
+    expect(client.calls.trackerCommand).toEqual([]);
+  });
+
+  it("returns null when the installed client lacks the optional query", async () => {
+    const { runtime, client, view } = await opened();
+    Object.defineProperty(client, "queryCapacity", { value: undefined });
+
+    await expect(runtime.queryCapacity(view.revision)).resolves.toBeNull();
   });
 });
 

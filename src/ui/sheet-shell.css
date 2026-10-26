@@ -900,6 +900,10 @@ body { margin: 0; }
   margin-left: auto;
 }
 
+.ts-capacity-warn {
+  color: var(--ts-warn);
+}
+
 .ts-work-context {
   display: flex;
   align-items: center;
