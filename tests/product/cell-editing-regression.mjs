@@ -170,7 +170,7 @@ const cases = [
       ["Tab", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").first()],
     ];
     for (const [index, [key, target, destination]] of edges.entries()) {
-      const before = await state(page), count = await dispatches(page);
+      const before = await state(page), count = await dispatches(page), storedRows = await rows.count();
       const value = `Boundary ${index}`;
       const landing = destination ?? target;
       await target.dblclick(); await editor(page).fill(value); await editor(page).press(key);
@@ -180,7 +180,8 @@ const cases = [
       assert.equal((await target.textContent()).trim(), value);
       assert.equal(await dispatches(page), count + 1, "boundary edit publishes exactly once");
       assert.notEqual((await state(page)).revision, before.revision);
-      assert.equal(await entryRow.count(), 1, "moving into the entry row creates no row");
+      assert.equal(await rows.count(), storedRows, "moving into the entry row creates no stored row");
+      assert.equal(await entryRow.count(), 1, "the entry row stays a single unpublished draft");
       await target.focus(); await target.press("F2"); await editor(page).press(key);
       await editor(page).waitFor({ state: "hidden" });
       await page.waitForFunction(element => document.activeElement === element, await landing.elementHandle());
