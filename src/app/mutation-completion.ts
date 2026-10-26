@@ -18,7 +18,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; position?: number; nameFailures?: readonly NameFailure[] };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; nameFailures?: readonly NameFailure[] };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -204,7 +204,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.setOutcome("idle");
       if (command.kind === "cleanup") port.clearPreview();
       else if (command.kind !== "summary") port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
-      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown; name_failures?: readonly NameFailure[] } })?.failure;
+      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown; name_failures?: readonly NameFailure[]; diagnostics?: ReadonlyArray<{ facts?: ReadonlyArray<{ name: string; value: string }> }> } })?.failure;
       // Work's formula refusal is shown verbatim. Other failures keep the
       // explanatory prefix so their cause is not mistaken for a Work verdict.
       const message = command.kind === "scalar" && command.edit.kind === "formula" &&
@@ -219,9 +219,14 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       // Sheet neither parses the source nor invents one when it is absent.
       const position = typeof failure?.position === "number" && Number.isInteger(failure.position) && failure.position > 0
         ? failure.position : undefined;
+      // Work counts the blanks that block a requiredness change; Sheet only relays it.
+      const blankFact = failure?.code === "required_values_missing"
+        ? failure.diagnostics?.flatMap((diagnostic) => diagnostic.facts ?? []).find((fact) => fact.name === "blank_count")
+        : undefined;
+      const blankCount = blankFact && /^[1-9]\d*$/.test(blankFact.value) ? Number(blankFact.value) : undefined;
       return completed({
         kind: "refused", message,
-        ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code, ...(failure?.name_failures ? { nameFailures: failure.name_failures } : {}) } : {}),
+        ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code, ...(blankCount !== undefined ? { blankCount } : {}), ...(failure?.name_failures ? { nameFailures: failure.name_failures } : {}) } : {}),
         ...(command.kind === "scalar" && position !== undefined ? { position } : {}),
       });
     } finally {

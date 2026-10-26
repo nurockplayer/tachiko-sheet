@@ -86,7 +86,7 @@ export type RowInitializer = { field: string; input: ScalarValueEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
   | { kind: "confirmed"; addedEntities?: readonly string[] }
-  | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string; nameFailures?: readonly NameFailure[] }
+  | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string; blankCount?: number; nameFailures?: readonly NameFailure[] }
   | { kind: "recovery" };
 
 export interface SheetRuntime {

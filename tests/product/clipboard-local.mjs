@@ -49,7 +49,14 @@ async function start() {
         window.__clipboardEvidence.worker = this;
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
+          // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table_window") {
+            const w = structuredClone(event.data.response.payload);
+            if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
+            this.__windowTable.rows.push(...w.rows);
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+          }
           const request = this.record.requests.find(request => request.id === event.data.id);
           if (["paste_cells", "edit_cells"].includes(request?.request?.type) && event.data.response?.type === "published") {
             if (window.__clipboardEvidence.loseReply) {

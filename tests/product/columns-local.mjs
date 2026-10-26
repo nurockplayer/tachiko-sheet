@@ -53,7 +53,14 @@ async function start() {
         window.__columnEvidence.worker = this;
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
+          // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table_window") {
+            const w = structuredClone(event.data.response.payload);
+            if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
+            this.__windowTable.rows.push(...w.rows);
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+          }
           const request = this.record.requests.find(request => request.id === event.data.id);
           if (window.__columnEvidence.holdExport && request?.kind === "export_portable_ro") {
             window.__columnEvidence.holdExport = false; window.__columnEvidence.heldExport = event.data; event.stopImmediatePropagation(); return;
@@ -398,51 +405,59 @@ try {
   table = await projection(); assert.equal(table.native_table_profile, true); assert.equal(table.rows.length, 129);
   const writersBeforeCapacity = await page.evaluate(() => window.__tachikoAcceptance.exportWriterDispatchCounts());
   await saveCopy("Capacity before columns");
-  // TEMPORARY with the runtime fallback: Work's v3 writer refuses this
-  // 129-entity collection (MAX_TABLE_ROWS = 128), so the opaque copy retries
-  // the legacy writer once. Remove this assertion at the next kit re-pin.
+  // Work's capacity-capable v3 writer (Work #580) saves this 129-entity
+  // collection itself; no legacy writer is ever dispatched.
   const writersAfterCapacity = await page.evaluate(() => window.__tachikoAcceptance.exportWriterDispatchCounts());
   assert.deepEqual({
     v3Opaque: writersAfterCapacity.v3Opaque - writersBeforeCapacity.v3Opaque,
     legacyOpaque: writersAfterCapacity.legacyOpaque - writersBeforeCapacity.legacyOpaque,
-  }, { v3Opaque: 1, legacyOpaque: 1 }, "a capacity copy falls back to the legacy opaque writer after Work's typed v3 profile refusal");
-  checks.push("capacity Save a copy: v3 writer refuses the 129-entity profile and the legacy fallback writes the copy");
-  const capacityBefore = await projection(), countBefore = (await commands()).length;
-  const writesBefore = await page.evaluate(() => window.__columnEvidence.hostWrites);
-  const refusal = "Column changes aren't available for this work yet, because it couldn't then be saved. Nothing was changed.";
-  for (const width of [1440, 320]) for (const kind of ["Add", "Rename", "Remove"]) {
-    await page.setViewportSize({ width, height: width === 320 ? 844 : 900 });
-    await page.locator(width === 320 ? ".ts-column-toolbar > summary" : ".ts-column-header summary").first().waitFor();
-    if (kind === "Add") d = await add("Blocked", "text", "unchanged");
-    else {
-      await chooseColumnAction(table.columns[0].display_name, kind); d = dialog(`${kind} column`);
-      if (kind === "Rename") await d.getByLabel("Column name", { exact: true }).fill("Blocked");
-    }
-    await submit(`${kind} column`); await d.getByRole("alert").filter({ hasText: refusal }).waitFor();
-    assert.equal(await d.getByRole("alert").innerText(), refusal);
-    assert.deepEqual(await projection(), capacityBefore, "preflight refusal changes no schema, values or revision");
-    assert.equal((await commands()).length, countBefore, "preflight failure dispatches no column mutation");
-    assert.equal(await page.evaluate(() => window.__columnEvidence.hostWrites), writesBefore, "refusal creates or updates no copy");
-    assert.equal(await d.evaluate(n => n.contains(document.activeElement)), true);
-    await cancel(`${kind} column`);
-    if (width === 320) await assertFocused(page.locator(".ts-column-toolbar > summary"), "portable-preflight refusal cancellation returns to Column");
-    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
-  }
+  }, { v3Opaque: 1, legacyOpaque: 0 }, "a capacity copy is written by Work's v3 writer alone");
+  checks.push("capacity Save a copy: Work's v3 writer saves the 129-entity collection with no legacy writer");
+  // Work #580: a capacity document now saves as v3, so the portable preflight
+  // admits column changes here. Add, Rename and Remove each publish (desktop
+  // header and compact Column menu); the kept column must survive Save, Save a
+  // copy and a full restart below.
+  const capacityBefore = await projection();
+  d = await add("Capacity extra", "text", "x"); await submit("Add column");
+  const capacityAdded = await projection();
+  assert.equal(capacityAdded.columns.length, capacityBefore.columns.length + 1, "the capacity table gains the authored column");
+  assert.equal(capacityAdded.rows.length, capacityBefore.rows.length, "adding a column keeps every capacity row");
+  const addedColumn = capacityAdded.columns.at(-1);
+  assert.ok(capacityAdded.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "every capacity row holds the fill value");
+  await history("Undo");
+  assert.deepEqual((await projection()).columns, capacityBefore.columns, "Undo removes the added column");
+  assert.deepEqual((await projection()).rows, capacityBefore.rows, "Undo restores every capacity row exactly");
+  await history("Redo");
+  assert.deepEqual((await projection()).columns, capacityAdded.columns, "Redo restores the added column");
+  assert.deepEqual((await projection()).rows, capacityAdded.rows, "Redo restores every row and fill value exactly");
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.locator(".ts-column-toolbar > summary").waitFor();
+  await chooseColumnAction("Capacity extra", "Rename"); d = dialog("Rename column");
+  await d.getByLabel("Column name", { exact: true }).fill("Capacity note"); await submit("Rename column");
+  assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "compact Rename publishes on the capacity table");
+  const capacityRenamed = await projection();
+  await chooseColumnAction("Capacity note", "Remove"); await submit("Remove column");
+  assert.equal((await projection()).columns.some(column => column.id === addedColumn.id), false, "compact Remove publishes on the capacity table");
+  // History controls live in the desktop toolbar.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator(".ts-column-header summary").first().waitFor();
-  await page.getByRole("button", { name: "Refresh", exact: true }).click(); await ready();
-  assert.deepEqual(await projection(), capacityBefore, "a fresh authoritative read confirms every refusal left the work unchanged");
-  assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true, "preflights create no history entry");
+  await history("Undo");
+  assert.deepEqual(await projection().then(table => table.columns), capacityRenamed.columns, "Undo brings the removed column back");
+  assert.deepEqual(await projection().then(table => table.rows), capacityRenamed.rows, "Undo restores the removed column's values");
   // A real scalar edit makes the following bound Save perform a durable write.
   await cell(table, 0, 1).dblclick(); const capacityEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await capacityEditor.fill("777"); await capacityEditor.press("Enter"); await ready();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
-  await saveCopy("Capacity after refused columns"); const savedCapacity = await projection();
-  await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after refused columns", exact: true }).click(); await ready();
+  await saveCopy("Capacity after columns"); const savedCapacity = await projection();
+  await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
+  assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "the authored capacity column survives Save, Save a copy and a full restart");
+  const reopenedCapacity = await projection();
+  assert.equal(reopenedCapacity.rows.length, capacityAdded.rows.length);
+  assert.ok(reopenedCapacity.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "all capacity rows keep the authored fill value after a full restart");
   assert.equal(values(await projection())[0][1], 777);
-  checks.push("129-row native capacity: all three column actions refuse portable preflight through desktop headers and compact Column menu with exact copy, no dispatch/publication/host write/flag change; scalar edit, bound Save and Save a copy still succeed; full restart/reopen retains exact state");
+  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
 
   const manyHeaders = await assertManyColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));

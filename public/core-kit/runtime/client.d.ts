@@ -1,5 +1,5 @@
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, FailureProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, FailureProjection, FieldConstraintInput } from "./protocol.ts";
 export interface DesignerClient {
     inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions): Promise<SourceWorkbook>;
     importSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
@@ -20,6 +20,8 @@ export interface DesignerClient {
     trackerCommand?(request: TrackerCommand): Promise<PublicationProjection>;
     clearField?(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     setColumnRequiredness?(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
+    /** Replace one durable constraint; `none` clears it. Constrained projects export as v3 only. */
+    setColumnConstraint?(expectedRevision: string, collection: string, field: string, constraint: FieldConstraintInput): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
     inspectProject?(bytes: ArrayBuffer): Promise<OpenedProjection>;
     openProject(bytes: ArrayBuffer): Promise<OpenedProjection>;
@@ -33,7 +35,12 @@ export interface DesignerClient {
     openPortableRo?(bytes: ArrayBuffer): Promise<OpenedProjection>;
     observeOccurrence?(): Promise<OccurrenceProjection>;
     closeProject(): Promise<void>;
+    /** Complete table; collections above 1,000 rows refuse with `use_window_query`. */
     queryTable(collection: string): Promise<TableProjection>;
+    /** Rows `[start, start+count)` of a stateless view; `count` is 0..256, 0 for totals only. */
+    queryTableWindow(expectedRevision: string, collection: string, view: TableView, start: number, count: number): Promise<TableWindowProjection>;
+    /** The entity's zero-based position in that same view, or `filtered_out`. */
+    locateInView(expectedRevision: string, collection: string, view: TableView, entity: string): Promise<LocatedInViewProjection>;
     queryFields(expectedRevision: string, fields: FieldTarget[]): Promise<FieldBatchProjection>;
     explainField(expectedRevision: string, target: FieldTarget): Promise<FieldExplanationProjection>;
     editNumber(expectedRevision: string, target: FieldTarget, input: string): Promise<PublicationProjection>;

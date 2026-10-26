@@ -1,7 +1,8 @@
 import { projectTransferFromEntries, projectTransferFromFiles, type CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 import type { SpreadsheetExport, SpreadsheetFormat } from "./runtime/interop-protocol.ts";
 import { DesignerRuntimeError, type DesignerClient } from "./runtime/client.ts";
-import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, ProjectExport, FieldTarget, PublicationProjection } from "./runtime/protocol.ts";
+import { isFormulaFailure } from "./runtime/protocol.ts";
+import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, ProjectExport, FieldConstraintInput, FieldTarget, PublicationProjection } from "./runtime/protocol.ts";
 export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
 /**
  * Public client surface exposed by the experimental kit.
@@ -16,6 +17,8 @@ export interface ExperimentalDesignerClient extends DesignerClient {
     clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     /** Strengthening refuses while any entity lacks a value; never fills or coerces. */
     setColumnRequiredness(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
+    /** Replace one durable Text/Number constraint; `none` clears it. */
+    setColumnConstraint(expectedRevision: string, collection: string, field: string, constraint: FieldConstraintInput): Promise<PublicationProjection>;
     exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
     openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection>;
@@ -37,7 +40,7 @@ export declare function preflightCanonicalProjectEntries(entries: readonly Canon
  */
 export declare function openCanonicalTreeFromEntries(client: Pick<ExperimentalDesignerClient, "openProject">, entries: readonly CanonicalProjectTransferEntry[]): Promise<OpenedProjection>;
 export declare function createExperimentalDesignerClient(): ExperimentalDesignerClient;
-export { DesignerRuntimeError, projectTransferFromEntries, projectTransferFromFiles, };
+export { DesignerRuntimeError, isFormulaFailure, projectTransferFromEntries, projectTransferFromFiles, };
 export type { DesignerClient };
 export type { CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
-export type { BootstrapProjection, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, ColumnProjection, DiagnosticProjection, FailureProjection, FieldBatchProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, ScalarEditInput, TrackerCommand, OpenedProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";
+export type { BootstrapProjection, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, ColumnProjection, ConstraintFailureProjection, ConstraintFailureReason, DiagnosticProjection, FailureCode, FailureProjection, FieldConstraint, FieldConstraintInput, FieldBatchProjection, FormulaFailureCode, FormulaFailureProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, ScalarEditInput, TrackerCommand, OpenedProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";

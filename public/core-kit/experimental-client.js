@@ -1,6 +1,7 @@
 import { projectTransferFromEntries, projectTransferFromFiles, } from "./host/project-transfer.js";
 import { DesignerRuntimeError } from "./runtime/client.js";
 import { WorkerDesignerClient } from "./runtime/worker-client.js";
+import { isFormulaFailure } from "./runtime/protocol.js";
 export const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
 const MAX_CANONICAL_PROJECT_FILE_COUNT = 19;
 const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
@@ -54,4 +55,4 @@ export function createExperimentalDesignerClient() {
         name: "tachiko-experimental-designer-runtime",
     }));
 }
-export { DesignerRuntimeError, projectTransferFromEntries, projectTransferFromFiles, };
+export { DesignerRuntimeError, isFormulaFailure, projectTransferFromEntries, projectTransferFromFiles, };

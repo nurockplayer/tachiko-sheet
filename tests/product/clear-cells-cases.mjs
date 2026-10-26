@@ -211,13 +211,15 @@ export async function runClearCellsCases(page, { close, checks }) {
   checks.push("#229 real Work derived-input clear refusal through editor/grid/paste: explicit clear reaches validator, no publication/history, editor input/focus or grid selection retained");
   await page.locator("#ts-active-table").selectOption(formulaKey); await ready();
   const formulaView = await projection();
-  assert.notEqual(formulaView.native_table_profile, true);
+  // Work #576: a formula-bearing table keeps the native profile, so Delete on
+  // a formula cell reaches Sheet's per-cell check and points to the formula bar.
+  assert.equal(formulaView.native_table_profile, true);
   const formulaCell = page.getByTestId(`cell:${formulaView.rows[0].id}:${formulaView.columns[1].id}`);
   assert.equal(await formulaCell.getAttribute("aria-readonly"), "true");
   const formulaCount = (await commands()).length;
-  await formulaCell.click(); await page.keyboard.press("Delete"); await status("This table cannot be cleared here.").waitFor();
+  await formulaCell.click(); await page.keyboard.press("Delete"); await status("Edit the formula in the formula bar.").waitFor();
   assert.equal((await commands()).length, formulaCount); assert.deepEqual(await projection(), formulaView); await noUndo();
-  checks.push("#229 derived/non-native table Delete refuses plainly with zero dispatch, no skipped formula target and no history");
+  checks.push("#229 formula cell in a native formula table: Delete points to the formula bar with zero dispatch, no skipped formula target and no history");
   await close(page);
 
   const imported = await page.evaluate(async () => {
