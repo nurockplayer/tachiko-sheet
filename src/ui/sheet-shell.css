@@ -1200,7 +1200,7 @@ body { margin: 0; }
    focus changes never resize the bar and shift the grid beneath it. A refusal
    overlays that reserved line rather than adding one, so it cannot move the
    grid either; the full text stays in the DOM for assistive tech. Its Details
-   disclosure and the popover it opens are overlaid for the same
+   disclosure and the popover it opens are absolutely positioned for the same
    reason: the whole refusal is readable without adding a line. */
 .ts-formula-bar-notes { position: relative; min-height: 18px; }
 .ts-formula-bar-reason { padding: 0 2px; line-height: 18px; min-height: 18px; }
@@ -1237,13 +1237,15 @@ body { margin: 0; }
 .ts-formula-bar-details:hover { background: var(--ts-surface-sunken); }
 .ts-formula-bar-details:focus-visible { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
 .ts-formula-bar-error-details {
-  position: fixed;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
   z-index: 30;
   box-sizing: border-box;
   /* A very long refusal must scroll inside the disclosure: an unbounded
      popover would add scroll height to the table composition and push the
      grid instead of staying an overlay. */
-  max-width: calc(100vw - 16px);
   max-height: min(50vh, 240px);
   overflow-y: auto;
   overscroll-behavior: contain;
