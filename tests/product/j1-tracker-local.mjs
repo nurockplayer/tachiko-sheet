@@ -192,14 +192,15 @@ try {
   checks.push("4 Undo removes the Priority constraint and Redo restores it.");
 
   // 5. Sort and filter.
-  await chooseImmediateColumnAction("Priority", "Sort A → Z"); await ready();
+  // Rows were entered in ascending Priority, so a descending sort must visibly reorder them.
+  await chooseImmediateColumnAction("Priority", "Sort Z → A"); await ready();
   const displayedNames = () => page.locator(".ts-grid tbody tr.ts-row").evaluateAll(rows => rows.map(row => row.querySelector(".ts-cell")?.textContent?.trim()));
-  assert.deepEqual(await displayedNames(), ["試算", "驗收", "入庫"]);
+  assert.deepEqual(await displayedNames(), ["入庫", "驗收", "試算"]);
   await chooseColumnAction("Status", "Filter");
   await page.getByLabel("Filter Status", { exact: true }).fill("Todo");
   await page.getByLabel("Filter Status", { exact: true }).press("Enter"); await ready();
-  assert.deepEqual(await displayedNames(), ["驗收", "入庫"]);
-  checks.push("5 Priority ascending sort preserves projected order; Status Todo filter displays only 驗收 and 入庫.");
+  assert.deepEqual(await displayedNames(), ["入庫", "驗收"]);
+  checks.push("5 Priority descending sort reverses the entered order; with the Status Todo filter, the display is 入庫 then 驗收.");
 
   // 6. Edit under sort/filter.
   let editor = await editDisplayed("入庫", "Priority", "");
