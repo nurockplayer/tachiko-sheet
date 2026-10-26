@@ -1829,6 +1829,7 @@ export function SheetShell(props: SheetShellProps) {
   function cellInsertsReference(row: TableRow | null, column: TableColumn, draft: boolean): boolean {
     return formulaReferenceInsertion({
       barHasCaret: formulaCaretInBar(), draft, row, column,
+      formulaRowKey: formulaState.target && table ? rowSource(table).byEntity(formulaState.target.entity)?.key ?? null : null,
       hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
     }) !== null;
   }
@@ -1841,6 +1842,7 @@ export function SheetShell(props: SheetShellProps) {
     // instance has an address Work can resolve.
     const token = formulaReferenceInsertion({
       barHasCaret: formulaCaretInBar(), draft, row, column,
+      formulaRowKey: formulaState.target && table ? rowSource(table).byEntity(formulaState.target.entity)?.key ?? null : null,
       hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
     });
     if (!token || !input) return false;

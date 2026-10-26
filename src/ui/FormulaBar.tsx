@@ -1,6 +1,6 @@
-import { useId, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
+import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalIsTruncated, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
 
 export interface FormulaBarProps {
   /** Exactly one focused cell instance, or an empty state with its reason. */
@@ -22,6 +22,7 @@ export function FormulaBar(props: FormulaBarProps) {
   const reasonId = `${id}-reason`;
   const errorId = `${id}-error`;
   const detailsId = `${id}-details`;
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const state = props.state;
   const value = formulaBarDraftValue(state, props.draft);
   // A refusal keeps to the fixed 18px line, so a long message is cut off with
@@ -30,7 +31,32 @@ export function FormulaBar(props: FormulaBarProps) {
   // keyed by the text, so a different refusal never inherits it.
   const errorText = props.error ? formulaRefusalText(props.error) : "";
   const [openErrorText, setOpenErrorText] = useState<string | null>(null);
+  const [errorTruncated, setErrorTruncated] = useState(false);
   const detailsOpen = props.error !== null && openErrorText === errorText;
+
+  useEffect(() => {
+    const node = errorRef.current;
+    if (!node) {
+      setErrorTruncated(false);
+      return;
+    }
+    const measure = () => setErrorTruncated(formulaRefusalIsTruncated(node));
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [errorText]);
+
+  // A refusal that ends closes its disclosure, so the same text arriving
+  // later starts closed rather than reopening on its own.
+  useEffect(() => {
+    if (!props.error) setOpenErrorText(null);
+  }, [props.error]);
+
   return (
     <div className={`ts-formula-bar${state.editable ? "" : " ts-formula-bar--readonly"}`} data-testid="formula-bar">
       <div className="ts-formula-bar-row">
@@ -65,20 +91,20 @@ export function FormulaBar(props: FormulaBarProps) {
         </p>
         {props.error ? (
           <>
-            <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true" title={errorText}>
+            <p ref={errorRef} className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true" title={errorText}>
               {props.error.message}
               {props.error.position !== undefined
                 ? <span className="ts-formula-bar-position"> (position {props.error.position})</span>
                 : null}
             </p>
-            <button
+            {errorTruncated ? <button
               type="button"
               className="ts-formula-bar-details"
               aria-expanded={detailsOpen}
               aria-controls={detailsId}
               onClick={() => setOpenErrorText(detailsOpen ? null : errorText)}
-            >Details</button>
-            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen} tabIndex={0}>{errorText}</div>
+            >Details</button> : null}
+            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen || !errorTruncated} tabIndex={0}>{errorText}</div>
           </>
         ) : null}
       </div>
