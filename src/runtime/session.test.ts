@@ -1818,6 +1818,13 @@ describe("queryCapacity", () => {
     expect(client.calls.trackerCommand).toEqual([]);
   });
 
+  it("skips a read whose revision is no longer the session's", async () => {
+    const { runtime, client } = await opened();
+
+    await expect(runtime.queryCapacity("rev-obsolete")).resolves.toBeNull();
+    expect(client.calls.queryCapacity).toEqual([]);
+  });
+
   it("returns null when the installed client lacks the optional query", async () => {
     const { runtime, client, view } = await opened();
     Object.defineProperty(client, "queryCapacity", { value: undefined });

@@ -80,6 +80,14 @@ function describe(error: unknown, fallback: string): string {
 const KNOWN_RECOVERY_MESSAGE = "The change was applied, but the current values could not be confirmed. Refresh to read the work again.";
 
 export function createMutationCompletion(port: MutationCompletionPort) {
+  /** Names the refused table, unless it is the table on screen ("This table"). */
+  function capacityTableName(collection: string | undefined): string | undefined {
+    const view = port.state().view;
+    if (!collection || !view || view.table.collection.id === collection) return undefined;
+    const name = view.collections.find((summary) => summary.id === collection)?.display_name;
+    return name ? `The table “${name}”` : "Another table";
+  }
+
   function recover(kind: MutationRecovery["kind"], context: RecoveryContext): MutationCompletion {
     const command = context.kind;
     const occurrence = context.witness?.occurrence;
@@ -216,7 +224,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       const verbatim = (command.kind === "scalar" && command.edit.kind === "formula") ||
         (command.kind === "rows" && (failure?.constraint_failure != null || failure?.code === "invalid_constraint_declaration"));
       const message = failure && isCapacityFailure(failure as FailureProjection)
-        ? capacityMessage(failure as CapacityFailureProjection)
+        ? capacityMessage(failure as CapacityFailureProjection, capacityTableName(failure.collection))
         : verbatim && typeof failure?.message === "string" && failure.message.length > 0
           ? failure.message
           : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");

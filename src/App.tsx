@@ -52,6 +52,7 @@ import {
   RuntimeStartupError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
+import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { copyFailureReason } from "./ui/save-close.js";
 import { useHostFiles } from "./host/host-files.js";
@@ -386,7 +387,7 @@ async function loadFixtureFiles(base: string): Promise<CanonicalProjectFile[]> {
 export function App({ runtime, copies, appearancePreference }: AppProps) {
   const hostFiles = useHostFiles();
   const [view, setView] = useState<WorkbookView | null>(null);
-  const [capacity, setCapacity] = useState<{ rows: number; maximum: number } | null>(null);
+  const [capacity, setCapacity] = useState<CapacityReading | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [currentness, setCurrentness] = useState<Currentness>("current");
@@ -418,7 +419,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (!current || !projection || !active || active.occurrence !== occurrence ||
         active.revision !== revision || active.table.collection.id !== collectionId) return;
       const usage = projection.usage.tables[collectionId];
-      setCapacity(usage ? { rows: usage.rows, maximum: projection.limits.table_rows } : null);
+      setCapacity(usage ? { occurrence, revision, collectionId, rows: usage.rows, maximum: projection.limits.table_rows } : null);
     }).catch(() => {
       if (current) setCapacity(null);
     });
@@ -2178,7 +2179,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           outcome={outcome}
           saveStatus={saveStatus}
           message={message}
-          capacity={capacity}
+          capacity={capacityForView(capacity, view)}
           copies={savedCopies}
           copiesStatus={savedCopiesStatus}
           onRetryCopies={refreshCopies}
