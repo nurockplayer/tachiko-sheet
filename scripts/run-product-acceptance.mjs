@@ -167,6 +167,7 @@ try {
     [path.join(root, 'tests', 'product', 'columns-local.mjs')],
     { WORK_DIST: acceptanceDir, ...singleProcessEnv },
   );
+  const j1 = await runStep('j1-tracker-local', [path.join(root, 'tests', 'product', 'j1-tracker-local.mjs')], { WORK_DIST: acceptanceDir, ...singleProcessEnv });
   const workFile = await runStep(
     'work-file-local',
     [path.join(root, 'tests', 'product', 'work-file-local.mjs')],
@@ -321,7 +322,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    const localOk = workbookTabs === 0 && mutationCompletion === 0 && tableRows === 0 && clipboard === 0 && columns === 0 && workFile === 0 && workFileSave === 0 && v3FolderSave === 0 && saveClose === 0 && saveUpdate === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && nativeExport === 0 && resultComposition === 0 && resultsChartRedraw === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
+    const localOk = workbookTabs === 0 && mutationCompletion === 0 && tableRows === 0 && clipboard === 0 && columns === 0 && j1 === 0 && workFile === 0 && workFileSave === 0 && v3FolderSave === 0 && saveClose === 0 && saveUpdate === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && nativeExport === 0 && resultComposition === 0 && resultsChartRedraw === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
@@ -361,7 +362,7 @@ try {
       [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
       { WORK_DIST: acceptanceDir, ...singleProcessEnv },
     );
-    exitCode = workbookTabs === 0 && mutationCompletion === 0 && tableRows === 0 && clipboard === 0 && columns === 0 && workFile === 0 && workFileSave === 0 && v3FolderSave === 0 && saveClose === 0 && saveUpdate === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && nativeExport === 0 && resultComposition === 0 && resultsChartRedraw === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
+    exitCode = workbookTabs === 0 && mutationCompletion === 0 && tableRows === 0 && clipboard === 0 && columns === 0 && j1 === 0 && workFile === 0 && workFileSave === 0 && v3FolderSave === 0 && saveClose === 0 && saveUpdate === 0 && cellEditing === 0 && j4 === 0 && j4Imported === 0 && nativeExport === 0 && resultComposition === 0 && resultsChartRedraw === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
