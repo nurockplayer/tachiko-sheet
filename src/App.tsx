@@ -6,7 +6,7 @@ import { DetachedReportPresentations } from "./application/detached-report-prese
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
-import type { FieldConstraintInput } from "../public/core-kit/runtime/protocol.js";
+import type { FieldConstraintInput, FormulaCopy } from "../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   type AnySavedCopy,
@@ -1653,6 +1653,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnConstraint(witness, collection, field, constraint), "column");
   }
 
+  function copyFormula(witness: ViewWitness, request: FormulaCopy) {
+    return changeRows(witness, () => runtime.copyFormula(witness, request));
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), "column");
   }
@@ -2164,6 +2168,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onOpenFiles={openFiles}
           onNewTable={newTable}
           onEditCells={editCells}
+          onCopyFormula={copyFormula}
           onPasteCells={pasteCells}
           onInsertRow={insertRow}
           // Column authoring needs the portable writer to save its result;

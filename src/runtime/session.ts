@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { DuplicateCollectionProjection, FieldConstraintInput, KeyedGroupedSumProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -785,6 +785,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
+  function copyFormula(witness: ViewWitness, request: FormulaCopy) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.copyFormula, "formula copy");
+      return command.call(client, revision, request);
+    });
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.trackerCommand, "column rename");
@@ -1265,7 +1272,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, copyFormula, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
