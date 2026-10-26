@@ -16,6 +16,24 @@ export type BootstrapProjection = {
     collections: CollectionSummary[];
     keyed_grouped_sum_definition_ids?: string[];
 };
+export type CapacityLimits = Record<CapacityLimitName, number>;
+export type CapacityUsage = {
+    collections: number;
+    total_entities: number;
+    populated_cells: number;
+    formulas: number;
+    formula_ast_nodes: number;
+    dependency_edges: number;
+    tables: Record<string, {
+        rows: number;
+        fields: number;
+    }>;
+};
+export type CapacityProjection = {
+    revision: string;
+    usage: CapacityUsage;
+    limits: CapacityLimits;
+};
 export type OpenedProjection = {
     bootstrap: BootstrapProjection;
     table: TableProjection;
@@ -87,7 +105,20 @@ export type FieldConstraint = {
 export type FieldConstraintInput = FieldConstraint | {
     kind: "none";
 };
-export type ConstraintFailureReason = "field_value" | "existing_values";
+/** Display-only number formatting stored on a Number field. */
+export type NumberFormat = {
+    decimals: number;
+    kind: {
+        type: "plain";
+    } | {
+        type: "currency";
+        code: string;
+    } | {
+        type: "percent";
+    };
+    thousands_separator: boolean;
+};
+export type ConstraintFailureReason = "field_value" | "existing_values" | "declaration";
 /** Structured refusal: the allowed shape and how many rows or values failed. */
 export type ConstraintFailureProjection = {
     reason: ConstraintFailureReason;
@@ -107,6 +138,8 @@ export type ColumnProjection = {
     dropdown_options?: string[];
     /** Declared durable constraint; omission means unconstrained. */
     constraint?: FieldConstraint;
+    /** Declared display-only number format; omission means default formatting. */
+    number_format?: NumberFormat;
 };
 export type TableRowProjection = {
     id: string;
@@ -122,6 +155,12 @@ export type TableProjection = {
     collection: CollectionSummary;
     columns: ColumnProjection[];
     rows: TableRowProjection[];
+    /**
+     * One total per Number column, keyed by column id and observed at the same
+     * revision as rows. Null means a contributing value is unavailable; blank
+     * cells are skipped.
+     */
+    column_totals?: Record<string, number | null>;
 };
 export type SortDirection = "asc" | "desc";
 /** Every comparison takes the column's declared kind; text compares case-insensitively. */
@@ -187,6 +226,12 @@ export type TableWindowProjection = {
     unfiltered_rows: number;
     start: number;
     rows: TableRowProjection[];
+    /**
+     * One total per Number column, keyed by column id and observed at the same
+     * revision as rows. Null means a contributing value is unavailable; blank
+     * cells are skipped.
+     */
+    column_totals?: Record<string, number | null>;
 };
 /** Zero-based position in the filtered, sorted view; `index` appears only when found. */
 export type LocatedInViewProjection = {
@@ -299,14 +344,35 @@ export type FailureProjection = {
     message: string;
     current_revision: string;
     diagnostics: DiagnosticProjection[];
+    /** Present only for the `capacity_exceeded` refusal. */
+    limit?: CapacityLimitName;
+    maximum?: number;
+    attempted?: number;
+    collection?: string;
     name_failures?: NameFailure[];
     /** Present only when a field constraint refused the request. */
     constraint_failure?: ConstraintFailureProjection;
     /** Present only for the `use_window_query` refusal: the collection's row count. */
     row_count?: number;
 };
+/** Runtime accounting limit named by a capacity refusal. */
+export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges";
+export type CapacityFailureProjection = FailureProjection & {
+    code: "capacity_exceeded";
+    limit: CapacityLimitName;
+    maximum: number;
+    attempted: number;
+} & ({
+    limit: "table_fields" | "table_rows";
+    collection: string;
+} | {
+    limit: Exclude<CapacityLimitName, "table_fields" | "table_rows">;
+    collection?: never;
+});
+/** Validate the detailed wire payload for a capacity refusal. */
+export declare function isCapacityFailure(failure: FailureProjection): failure is CapacityFailureProjection;
 /** Known runtime failure codes, while allowing forward-compatible additions. */
-export type FailureCode = "required_values_missing" | (string & {});
+export type FailureCode = "required_values_missing" | "capacity_exceeded" | (string & {});
 /**
  * Stable refusal codes for `updateFormula`. Each failure carries a human
  * message in `FailureProjection.message`. Syntax and reference failures add
@@ -377,6 +443,12 @@ export type TrackerCommand = {
     collection: string;
     field: string;
     constraint: FieldConstraintInput;
+} | {
+    type: "set_column_number_format";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    number_format: NumberFormat | null;
 } | {
     type: "rename_column";
     expected_revision: string;
@@ -453,6 +525,9 @@ export type DesignerRequest = {
     type: "bootstrap";
     occurrence_id: string;
 } | {
+    type: "query_capacity";
+    expected_revision?: string;
+} | {
     type: "query_table";
     collection: string;
 } | {
@@ -513,6 +588,9 @@ export type DesignerResponse = {
 } | {
     type: "bootstrap";
     payload: BootstrapProjection;
+} | {
+    type: "capacity";
+    payload: CapacityProjection;
 } | {
     type: "opened";
     payload: OpenedProjection;

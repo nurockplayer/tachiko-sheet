@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "aac49a08da4b23a94f0279f01835c43a8596ccc9",
+  "sourceCommit": "770dcf17d3e0dde97a3df90285bf78d708467c91",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "b4c9ff7f8671a6ebd59bcb63457837f354e0ba1802b2ec8ec046ac043affb0e1",
+  "artifactManifestSha256": "17f76cf8537f4b6aed96afa80e632f3369daab3d45c1f49b94cc91bc08b50484",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6407076552",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6423949352",
   "qualificationArtifactReview": {
-    "sourceCommit": "aac49a08da4b23a94f0279f01835c43a8596ccc9",
-    "artifactManifestSha256": "b4c9ff7f8671a6ebd59bcb63457837f354e0ba1802b2ec8ec046ac043affb0e1",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6407076552"
+    "sourceCommit": "770dcf17d3e0dde97a3df90285bf78d708467c91",
+    "artifactManifestSha256": "17f76cf8537f4b6aed96afa80e632f3369daab3d45c1f49b94cc91bc08b50484",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6423949352"
   },
-  "notes": "Combined re-pin to Work main aac49a08 (Work #574 same-row [.field], #580 text-capacity v3/.ro save and reopen, #576 formula tables keep add/remove row/column, #583 A-03 table windows, #585 window profile flags, #586 Send runtime). Two clean detached lead exports match byte for byte in all 25 files; the receipt is in Sheet #246. Product acceptance and independent candidate review remain separate."
+  "notes": "Re-pin to Work main 770dcf17 (Work #587 R3 number format, #588 A-02 capacity accounting and capacity_exceeded, #575 column totals, #590 normalised literal sets and typed declaration refusals, #591 totals on window replies). Two clean detached lead exports match byte for byte in all 25 files; the receipt is in Sheet #246. Product acceptance and independent candidate review remain separate."
 }

@@ -39,7 +39,7 @@ function harness(): { port: MutationCompletionPort; messages: Array<string | nul
   return { port: proxy as unknown as MutationCompletionPort, messages, recoveries };
 }
 
-function refusal(failure: { code: string; message: string; position?: number; diagnostics?: unknown[] }): Error {
+function refusal(failure: { code: string; message: string; position?: number; diagnostics?: unknown[]; constraint_failure?: unknown }): Error {
   return Object.assign(new Error(failure.message), { failure });
 }
 
@@ -135,6 +135,26 @@ describe("mutation completion duplicate recovery", () => {
     const recovery = recoveries.at(-1)!;
     expect(recovery.message).toContain("row change");
     expect(recovery.retainedInput).toBeUndefined();
+  });
+
+  it("shows Work's column-rule refusal verbatim", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "rows",
+      witness,
+      dispatch: async () => { throw refusal({ code: "invalid_constraint_declaration", message: "The lowest value is above the highest value.", constraint_failure: { reason: "declaration", offending_rows: 0 } }); },
+    });
+    expect(result).toMatchObject({ kind: "refused", message: "The lowest value is above the highest value.", refusalCode: "invalid_constraint_declaration" });
+  });
+
+  it("keeps the explanatory prefix for other row refusals", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "rows",
+      witness,
+      dispatch: async () => { throw refusal({ code: "stale_revision", message: "The work changed." }); },
+    });
+    expect(result).toMatchObject({ kind: "refused", message: "The row change was not applied. (Details: The work changed.)" });
   });
 
   it("relays Work's blank count for a required_values_missing refusal", async () => {
