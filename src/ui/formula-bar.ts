@@ -85,17 +85,18 @@ export function formulaBarState(input: {
  * keys — never a DOM id, an entity id or a display name. Work refuses ids with
  * `MissingEntityKey`, and a rename only changes `display_name`.
  *
- * The same-row shorthand (`[.fieldKey]`) is not on this pin (Work #574), so
- * every reference takes the full `[entityKey.fieldKey]` form.
+ * Work #574 is on the pin: a reference to the formula's own row uses
+ * `[.fieldKey]`; references to other rows use `[entityKey.fieldKey]`.
  */
 export function formulaReferenceToken(
   row: { key: string } | null,
   column: { key: string } | null,
+  formulaRowKey: string | null,
 ): string | null {
   const entityKey = row?.key ?? "";
   const fieldKey = column?.key ?? "";
   if (!entityKey.trim() || !fieldKey.trim()) return null;
-  return `[${entityKey}.${fieldKey}]`;
+  return formulaRowKey === entityKey ? `[.${fieldKey}]` : `[${entityKey}.${fieldKey}]`;
 }
 
 /**
@@ -110,6 +111,8 @@ export function formulaReferenceInsertion(input: {
   draft: boolean;
   row: { key: string } | null;
   column: { key: string } | null;
+  /** The projection key of the row whose formula is being edited. */
+  formulaRowKey: string | null;
   /**
    * The clicked row projects a field instance for this column. The grid also
    * draws a stub cell for every column, but a cell Work never projected has
@@ -118,7 +121,12 @@ export function formulaReferenceInsertion(input: {
   hasProjectedField: boolean;
 }): string | null {
   if (!input.barHasCaret || input.draft || !input.hasProjectedField) return null;
-  return formulaReferenceToken(input.row, input.column);
+  return formulaReferenceToken(input.row, input.column, input.formulaRowKey);
+}
+
+/** Whether the rendered refusal line clips any of its text. */
+export function formulaRefusalIsTruncated(element: Pick<HTMLElement, "scrollWidth" | "clientWidth">): boolean {
+  return element.scrollWidth > element.clientWidth;
 }
 
 /**
