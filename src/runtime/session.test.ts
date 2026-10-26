@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -65,6 +65,7 @@ interface Hooks {
   updateFormula?: () => Promise<PublicationProjection>;
   trackerCommand?: () => Promise<PublicationProjection>;
   duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
+  setColumnConstraint?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
@@ -104,6 +105,7 @@ class FakeClient {
     editDate: 0,
     trackerCommand: [] as TrackerCommand[],
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string }>,
+    setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
     exportProjectV3: [] as string[],
@@ -228,6 +230,15 @@ class FakeClient {
       publication: { base_revision: base, resulting_revision: this.#revision, entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] },
       collection: COPY,
     };
+  }
+
+  async setColumnConstraint(revision: string, collection: string, field: string, constraint: FieldConstraintInput): Promise<PublicationProjection> {
+    this.calls.setColumnConstraint.push({ revision, collection, field, constraint });
+    this.#requireOpen();
+    const hook = this.hooks.setColumnConstraint;
+    if (hook !== undefined) { this.hooks.setColumnConstraint = undefined; return hook(); }
+    this.#requireRevision(revision);
+    return this.#publish(IMPACT);
   }
 
   async newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection> {
@@ -1734,6 +1745,38 @@ describe("native table and row adapter", () => {
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
     });
   }
+});
+
+describe("setColumnConstraint", () => {
+  it("publishes the input unchanged and marks the view for portable save", async () => {
+    const { runtime, client, view } = await opened();
+    const constraint: FieldConstraintInput = { kind: "text_literal_set", values: ["Todo", "Doing", "Done"] };
+
+    const confirmed = await runtime.setColumnConstraint(witnessOf(view), COLLECTION.key, "f1", constraint);
+
+    expect(client.calls.setColumnConstraint[0]).toEqual({ revision: view.revision, collection: COLLECTION.key, field: "f1", constraint });
+    expect(confirmed.view.requiresPortableSave).toBe(true);
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+  });
+
+  it.each([
+    { kind: "none" },
+    { kind: "number_inclusive_range", min: 1, max: 5 },
+  ] as const)("passes through $kind unchanged", async (constraint) => {
+    const { runtime, client, view } = await opened();
+
+    await runtime.setColumnConstraint(witnessOf(view), COLLECTION.key, "f1", constraint);
+
+    expect(client.calls.setColumnConstraint[0]).toEqual({ revision: view.revision, collection: COLLECTION.key, field: "f1", constraint });
+  });
+
+  it("refuses a stale witness without dispatch", async () => {
+    const { runtime, client, view } = await opened();
+
+    await expect(runtime.setColumnConstraint({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", { kind: "none" }))
+      .rejects.toMatchObject({ code: "stale-witness" });
+    expect(client.calls.setColumnConstraint).toEqual([]);
+  });
 });
 
 describe("whole-table reads above Work's 1,000-row query", () => {
