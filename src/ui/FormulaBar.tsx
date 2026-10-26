@@ -1,6 +1,6 @@
-import { useId, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
+import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalIsTruncated, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
 
 export interface FormulaBarProps {
   /** Exactly one focused cell instance, or an empty state with its reason. */
@@ -22,6 +22,9 @@ export function FormulaBar(props: FormulaBarProps) {
   const reasonId = `${id}-reason`;
   const errorId = `${id}-error`;
   const detailsId = `${id}-details`;
+  const notesRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const detailsButtonRef = useRef<HTMLButtonElement>(null);
   const state = props.state;
   const value = formulaBarDraftValue(state, props.draft);
   // A refusal keeps to the fixed 18px line, so a long message is cut off with
@@ -30,7 +33,48 @@ export function FormulaBar(props: FormulaBarProps) {
   // keyed by the text, so a different refusal never inherits it.
   const errorText = props.error ? formulaRefusalText(props.error) : "";
   const [openErrorText, setOpenErrorText] = useState<string | null>(null);
+  const [errorTruncated, setErrorTruncated] = useState(false);
+  const [detailsPosition, setDetailsPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const detailsOpen = props.error !== null && openErrorText === errorText;
+
+  useEffect(() => {
+    const node = errorRef.current;
+    if (!node) {
+      setErrorTruncated(false);
+      return;
+    }
+    const measure = () => setErrorTruncated(formulaRefusalIsTruncated(node));
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [errorText]);
+
+  // Placed before paint, so the fixed popover never flashes at the viewport origin.
+  useLayoutEffect(() => {
+    if (!detailsOpen) return;
+    const position = () => {
+      const button = detailsButtonRef.current;
+      const notes = notesRef.current;
+      if (!button || !notes) return;
+      const anchor = button.getBoundingClientRect();
+      const bounds = notes.getBoundingClientRect();
+      const width = Math.min(bounds.width, Math.max(0, window.innerWidth - 16));
+      setDetailsPosition({ top: anchor.bottom + 4, left: Math.min(bounds.left, window.innerWidth - width - 8), width });
+    };
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [detailsOpen]);
+
   return (
     <div className={`ts-formula-bar${state.editable ? "" : " ts-formula-bar--readonly"}`} data-testid="formula-bar">
       <div className="ts-formula-bar-row">
@@ -59,26 +103,27 @@ export function FormulaBar(props: FormulaBarProps) {
           of a double-click. One reserved line keeps the grid still. A refusal
           shares that line instead of adding one, so the bar keeps its height
           while the message is shown and the grid never moves. */}
-      <div className="ts-formula-bar-notes">
+      <div className="ts-formula-bar-notes" ref={notesRef}>
         <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason">
           {state.reason ?? state.note ?? ""}
         </p>
         {props.error ? (
           <>
-            <p className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true" title={errorText}>
+            <p ref={errorRef} className="ts-dialog-error ts-row-error ts-formula-bar-error" id={errorId} role="alert" aria-live="assertive" aria-atomic="true" title={errorText}>
               {props.error.message}
               {props.error.position !== undefined
                 ? <span className="ts-formula-bar-position"> (position {props.error.position})</span>
                 : null}
             </p>
-            <button
+            {errorTruncated ? <button
+              ref={detailsButtonRef}
               type="button"
               className="ts-formula-bar-details"
               aria-expanded={detailsOpen}
               aria-controls={detailsId}
               onClick={() => setOpenErrorText(detailsOpen ? null : errorText)}
-            >Details</button>
-            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen} tabIndex={0}>{errorText}</div>
+            >Details</button> : null}
+            <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen || !errorTruncated} tabIndex={0} style={detailsPosition ? { top: detailsPosition.top, left: detailsPosition.left, width: detailsPosition.width } : undefined}>{errorText}</div>
           </>
         ) : null}
       </div>

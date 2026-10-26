@@ -23,6 +23,7 @@ import {
   formulaBarDraftValue,
   formulaBarKeyAction,
   formulaBarState,
+  formulaRefusalIsTruncated,
   formulaHandoffSettlement,
   formulaRefusalText,
   formulaSubmitHandoffOutcome,
@@ -275,8 +276,9 @@ describe("FormulaBar", () => {
 
   it("keeps a truncated refusal readable without adding a line", () => {
     // The fixed 18px line ellipsizes a long Work refusal. The whole text stays
-    // in the alert region and is the hover title, and Details opens it in an
-    // absolutely positioned popover that cannot move the grid.
+    // in the alert region and is the hover title. Details appears only once the
+    // rendered line is measured as clipped, so a server render has none and
+    // its popover stays hidden.
     const message = "Unexpected end of input: the call to sum( is missing its closing parenthesis before the end of the formula.";
     const error = { message, position: 96 };
     const html = render({ state: state({ entity: "e1", field: "impact" }), draft: null, pending: false, error });
@@ -285,14 +287,13 @@ describe("FormulaBar", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain(fullText);
     expect(html).toContain(`title="${fullText}"`);
-    expect(html).toContain('class="ts-formula-bar-details" aria-expanded="false"');
-    expect(html).toContain(">Details</button>");
-    expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*>Unexpected end of input[\s\S]*<\/div>/);
+    expect(html).not.toContain(">Details</button>");
+    expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*hidden=""[^>]*>Unexpected end of input[\s\S]*<\/div>/);
     // A long popover scrolls inside itself, and its text is reachable from the
     // keyboard, so it can never add scroll height under the grid.
     expect(html).toMatch(/<div class="ts-formula-bar-error-details"[^>]*tabindex="0"/);
     // Still inside the one reserved line, never a sibling block above the grid.
-    expect(html.indexOf('class="ts-formula-bar-notes"')).toBeLessThan(html.indexOf('class="ts-formula-bar-details"'));
+    expect(html.indexOf('class="ts-formula-bar-notes"')).toBeLessThan(html.indexOf('class="ts-formula-bar-error-details"'));
   });
 
   it("shows Work's refusal verbatim below the bar and keeps the draft", () => {
@@ -341,17 +342,17 @@ describe("formula references", () => {
   const keyedColumn: TableColumn = { ...impact, id: "impact-id", key: "impact-key" };
 
   it("builds the token from the projection's keys, never an id", () => {
-    const token = formulaReferenceToken(keyedRow, keyedColumn);
+    const token = formulaReferenceToken(keyedRow, keyedColumn, "another-row");
     expect(token).toBe("[entity-key.impact-key]");
     for (const forbidden of ["internal-id", "e1", "impact-id", "Impact"]) expect(token).not.toContain(forbidden);
   });
 
   it("has no token without a projected key form", () => {
-    expect(formulaReferenceToken(null, keyedColumn)).toBeNull();
-    expect(formulaReferenceToken({ key: "  " }, keyedColumn)).toBeNull();
-    expect(formulaReferenceToken(keyedRow, { key: "" })).toBeNull();
+    expect(formulaReferenceToken(null, keyedColumn, null)).toBeNull();
+    expect(formulaReferenceToken({ key: "  " }, keyedColumn, null)).toBeNull();
+    expect(formulaReferenceToken(keyedRow, { key: "" }, keyedRow.key)).toBeNull();
     // The new-row draft is not a projected instance.
-    expect(formulaReferenceInsertion({ barHasCaret: true, draft: true, row: keyedRow, column: keyedColumn, hasProjectedField: true })).toBeNull();
+    expect(formulaReferenceInsertion({ barHasCaret: true, draft: true, row: keyedRow, column: keyedColumn, formulaRowKey: null, hasProjectedField: true })).toBeNull();
   });
 
   it("inserts nothing for a stub cell the projection never gave a field", () => {
@@ -359,9 +360,9 @@ describe("formula references", () => {
     // one of them: the stub has both keys, yet no address Work can resolve.
     const stubRow: TableRow = { ...formulaRow, fields: formulaRow.fields.filter((item) => item.target.field !== impact.id) };
     expect(fieldForColumn(stubRow, impact.id)).toBeNull();
-    expect(formulaReferenceToken(stubRow, impact)).toBe("[row-1.impact]");
+    expect(formulaReferenceToken(stubRow, impact, "another-row")).toBe("[row-1.impact]");
     expect(formulaReferenceInsertion({
-      barHasCaret: true, draft: false, row: stubRow, column: impact,
+      barHasCaret: true, draft: false, row: stubRow, column: impact, formulaRowKey: "another-row",
       hasProjectedField: fieldForColumn(stubRow, impact.id) !== null,
     })).toBeNull();
   });
@@ -373,9 +374,18 @@ describe("formula references", () => {
     expect(insertFormulaReference("", "[r.c]", { start: 9, end: 9 })).toEqual({ value: "[r.c]", caret: 5 });
   });
 
+  it("uses the same-row shorthand and retains full references for other rows", () => {
+    expect(formulaReferenceToken(keyedRow, keyedColumn, keyedRow.key)).toBe("[.impact-key]");
+    expect(formulaReferenceToken(keyedRow, keyedColumn, "other-entity")).toBe("[entity-key.impact-key]");
+    expect(formulaReferenceInsertion({
+      barHasCaret: true, draft: false, row: keyedRow, column: keyedColumn,
+      formulaRowKey: keyedRow.key, hasProjectedField: true,
+    })).toBe("[.impact-key]");
+  });
+
   it("only edits the draft on a click, never the projected formula", () => {
     const bar = state({ entity: "e1", field: "impact" });
-    const token = formulaReferenceInsertion({ barHasCaret: true, draft: false, row: keyedRow, column: keyedColumn, hasProjectedField: true });
+    const token = formulaReferenceInsertion({ barHasCaret: true, draft: false, row: keyedRow, column: keyedColumn, formulaRowKey: "other-entity", hasProjectedField: true });
     expect(token).toBe("[entity-key.impact-key]");
     const inserted = insertFormulaReference(bar.source, token!, { start: bar.source.length, end: bar.source.length });
     // A click changes what the bar would submit; it commits nothing on its own.
@@ -385,7 +395,12 @@ describe("formula references", () => {
   });
 
   it("inserts nothing unless the bar owns the caret", () => {
-    expect(formulaReferenceInsertion({ barHasCaret: false, draft: false, row: keyedRow, column: keyedColumn, hasProjectedField: true })).toBeNull();
+    expect(formulaReferenceInsertion({ barHasCaret: false, draft: false, row: keyedRow, column: keyedColumn, formulaRowKey: null, hasProjectedField: true })).toBeNull();
+  });
+
+  it("detects refusal truncation from the rendered element dimensions", () => {
+    expect(formulaRefusalIsTruncated({ clientWidth: 100, scrollWidth: 101 })).toBe(true);
+    expect(formulaRefusalIsTruncated({ clientWidth: 100, scrollWidth: 100 })).toBe(false);
   });
 
   it("leaves a press inside the cell's own editor to that editor", () => {
