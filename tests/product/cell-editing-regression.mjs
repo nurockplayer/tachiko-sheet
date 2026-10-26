@@ -159,26 +159,32 @@ const cases = [
   }],
   ["accepted and unchanged boundary edits keep the originating cell when no move exists", async (page) => {
     const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
-    assert.equal(await page.locator(".ts-entry-row").count(), 0, "non-native fixture has no draft destination");
+    // Work #576: the formula-bearing fixture is native, so its entry row is the
+    // destination after the last stored cell. Only the top edge has no move.
+    const entryRow = page.locator(".ts-entry-row");
+    assert.equal(await entryRow.count(), 1, "native fixture shows its entry row");
     const edges = [
-      ["Shift+Enter", rows.first().locator("td").first()],
-      ["Shift+Tab", rows.first().locator("td").first()],
-      ["Enter", rows.last().locator("td").last()],
-      ["Tab", rows.last().locator("td").last()],
+      ["Shift+Enter", rows.first().locator("td").first(), null],
+      ["Shift+Tab", rows.first().locator("td").first(), null],
+      ["Enter", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").last()],
+      ["Tab", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").first()],
     ];
-    for (const [index, [key, target]] of edges.entries()) {
+    for (const [index, [key, target, destination]] of edges.entries()) {
       const before = await state(page), count = await dispatches(page);
       const value = `Boundary ${index}`;
+      const landing = destination ?? target;
       await target.dblclick(); await editor(page).fill(value); await editor(page).press(key);
       await editor(page).waitFor({ state: "hidden" });
-      await page.waitForFunction(id => document.activeElement?.dataset.testid === id, await target.getAttribute("data-testid"));
-      assert.equal(await focused(target), true, `${key} at the boundary keeps origin focus`);
+      await page.waitForFunction(element => document.activeElement === element, await landing.elementHandle());
+      assert.equal(await focused(landing), true, destination ? `${key} after the last stored cell moves into the entry row` : `${key} at the boundary keeps origin focus`);
       assert.equal((await target.textContent()).trim(), value);
       assert.equal(await dispatches(page), count + 1, "boundary edit publishes exactly once");
       assert.notEqual((await state(page)).revision, before.revision);
-      await target.press("F2"); await editor(page).press(key);
+      assert.equal(await entryRow.count(), 1, "moving into the entry row creates no row");
+      await target.focus(); await target.press("F2"); await editor(page).press(key);
       await editor(page).waitFor({ state: "hidden" });
-      assert.equal(await focused(target), true, "unchanged boundary edit also keeps origin focus");
+      await page.waitForFunction(element => document.activeElement === element, await landing.elementHandle());
+      assert.equal(await focused(landing), true, "unchanged boundary edit moves the same way");
       assert.equal(await dispatches(page), count + 1, "unchanged edit dispatches nothing");
     }
   }],
