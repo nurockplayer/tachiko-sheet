@@ -15,6 +15,7 @@ export function ColumnFormatDialog({ columnName, format, composing, onSubmit, on
   const [draft, setDraft] = useState(() => columnFormatDraft(format));
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
+  const decimalsRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const errorId = error !== null ? `${id}-error` : undefined;
   const previewType = draft.type;
@@ -26,6 +27,9 @@ export function ColumnFormatDialog({ columnName, format, composing, onSubmit, on
   };
   async function submit(value: NumberFormat | null) {
     if (pendingRef.current || composing()) return;
+    // Disabling the activated button would drop focus to the page; keep it in the
+    // dialog on the read-only decimals field, as the rule dialog does for Save.
+    decimalsRef.current?.focus();
     pendingRef.current = true; setPending(true); setError(null);
     try {
       const settlement = columnFormatSettlement(await onSubmit(value));
@@ -48,7 +52,7 @@ export function ColumnFormatDialog({ columnName, format, composing, onSubmit, on
         </select>
       </div>
       {draft.type === "currency" ? <div className="ts-dialog-field"><label className="ts-field-label" htmlFor={`${id}-code`}>Currency code</label><input id={`${id}-code`} className="ts-text-input" value={draft.code} readOnly={pending} aria-invalid={error !== null ? true : undefined} aria-describedby={errorId} onChange={event => {setDraft({...draft,code:event.currentTarget.value});setError(null);}} /></div> : null}
-      <div className="ts-dialog-field"><label className="ts-field-label" htmlFor={`${id}-decimals`}>Decimal places</label><input id={`${id}-decimals`} className="ts-text-input" type="number" min="0" max="10" step="1" value={draft.decimals} readOnly={pending} aria-invalid={error !== null ? true : undefined} aria-describedby={errorId} onChange={event => {setDraft({...draft,decimals:event.currentTarget.value});setError(null);}} /></div>
+      <div className="ts-dialog-field"><label className="ts-field-label" htmlFor={`${id}-decimals`}>Decimal places</label><input ref={decimalsRef} id={`${id}-decimals`} className="ts-text-input" type="number" min="0" max="10" step="1" value={draft.decimals} readOnly={pending} aria-invalid={error !== null ? true : undefined} aria-describedby={errorId} onChange={event => {setDraft({...draft,decimals:event.currentTarget.value});setError(null);}} /></div>
       <div className="ts-dialog-field"><label><input type="checkbox" checked={draft.thousandsSeparator} disabled={pending} onChange={event => setDraft({...draft,thousandsSeparator:event.currentTarget.checked})} /> Thousands separator</label></div>
       <p className="ts-subtle">Preview: {formatNumberFor(1234.5, preview)}</p>
       {error !== null ? <p id={`${id}-error`} className="ts-dialog-error" role="alert">{error}</p> : null}
