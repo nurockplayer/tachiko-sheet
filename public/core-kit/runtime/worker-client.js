@@ -1,4 +1,5 @@
 import { projectTransferFromEntries } from "../host/project-transfer.js";
+import { isCapacityFailure } from "./protocol.js";
 import { DesignerRuntimeError, } from "./client.js";
 export class WorkerDesignerClient {
     #worker;
@@ -12,6 +13,10 @@ export class WorkerDesignerClient {
                 return;
             this.#pending.delete(event.data.id);
             if (event.data.status === "error") {
+                if (event.data.error.code === "capacity_exceeded" && !isCapacityFailure(event.data.error)) {
+                    pending.reject(new Error("Invalid Worker capacity failure."));
+                    return;
+                }
                 pending.reject(new DesignerRuntimeError(event.data.error));
             }
             else {
@@ -115,11 +120,19 @@ export class WorkerDesignerClient {
     async setColumnConstraint(expectedRevision, collection, field, constraint) {
         return this.trackerCommand({ type: "set_column_constraint", expected_revision: expectedRevision, collection, field, constraint });
     }
+    async setColumnNumberFormat(expectedRevision, collection, field, numberFormat) {
+        return this.trackerCommand({ type: "set_column_number_format", expected_revision: expectedRevision, collection, field, number_format: numberFormat });
+    }
     async bootstrap() {
         return expectResponse("bootstrap", await this.#command({
             type: "bootstrap",
             occurrence_id: freshOccurrenceId(),
         }));
+    }
+    async queryCapacity(expectedRevision) {
+        return expectResponse("capacity", await this.#command(expectedRevision === undefined
+            ? { type: "query_capacity" }
+            : { type: "query_capacity", expected_revision: expectedRevision }));
     }
     async inspectProject(bytes) {
         // Inspection preserves the caller's bytes for the subsequent accepted open.
@@ -381,8 +394,38 @@ function expectResponse(type, response) {
             response.payload.changes.forEach(change => { if (change.before !== null)
                 validateFieldPresence(change.before); });
             break;
+        case "capacity":
+            validateCapacity(response.payload);
+            break;
     }
     return "payload" in response ? response.payload : undefined;
+}
+const CAPACITY_LIMITS = [
+    "collections", "table_fields", "table_rows", "total_entities", "populated_cells",
+    "formulas", "formula_ast_nodes", "dependency_edges",
+];
+function validateCapacity(capacity) {
+    const nonnegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0;
+    if (capacity === null || typeof capacity !== "object" ||
+        typeof capacity.revision !== "string" ||
+        capacity.usage === null || typeof capacity.usage !== "object" ||
+        capacity.limits === null || typeof capacity.limits !== "object") {
+        throw new Error("Invalid Worker capacity projection.");
+    }
+    const usage = capacity.usage;
+    const limits = capacity.limits;
+    const usageCounts = [usage.collections, usage.total_entities, usage.populated_cells, usage.formulas,
+        usage.formula_ast_nodes, usage.dependency_edges];
+    if (!usageCounts.every(nonnegativeInteger) || !CAPACITY_LIMITS.every(limit => nonnegativeInteger(limits[limit])) ||
+        usage.tables === null || typeof usage.tables !== "object" || Array.isArray(usage.tables)) {
+        throw new Error("Invalid Worker capacity projection.");
+    }
+    for (const table of Object.values(usage.tables)) {
+        if (table === null || typeof table !== "object" ||
+            !nonnegativeInteger(table.rows) || !nonnegativeInteger(table.fields)) {
+            throw new Error("Invalid Worker capacity projection.");
+        }
+    }
 }
 function validateFieldPresence(field) {
     if (field.blank !== undefined && typeof field.blank !== "boolean") {
@@ -443,6 +486,25 @@ function validateColumnConstraint(column) {
     }
     throw new Error("Invalid Worker column constraint.");
 }
+function validateColumnNumberFormat(column) {
+    const format = column.number_format;
+    if (format === undefined)
+        return;
+    if (format === null || typeof format !== "object") {
+        throw new Error("Invalid Worker column number format.");
+    }
+    const kind = format.kind;
+    // Mirror Rust's closed wire: exact member sets on the format and each kind.
+    const exactKeys = (value, keys) => Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+    const validKind = kind !== null && typeof kind === "object" && (((kind.type === "plain" || kind.type === "percent") && exactKeys(kind, ["type"])) ||
+        (kind.type === "currency" && exactKeys(kind, ["type", "code"]) &&
+            typeof kind.code === "string" && /^[A-Z]{3}$/.test(kind.code)));
+    if (column.field_type !== "number" || !exactKeys(format, ["decimals", "kind", "thousands_separator"]) ||
+        !Number.isInteger(format.decimals) ||
+        format.decimals < 0 || format.decimals > 10 || typeof format.thousands_separator !== "boolean" || !validKind) {
+        throw new Error("Invalid Worker column number format.");
+    }
+}
 function validateLocatedInView(located) {
     if (located.result === "found") {
         if (!Number.isInteger(located.index) || located.index < 0) {
@@ -462,6 +524,7 @@ function validateTablePresence(table) {
             throw new Error("Invalid Worker column display_name_explicit.");
         }
         validateColumnConstraint(column);
+        validateColumnNumberFormat(column);
         return [column.id, { required: column.required, index }];
     }));
     if (columns.size !== table.columns.length)

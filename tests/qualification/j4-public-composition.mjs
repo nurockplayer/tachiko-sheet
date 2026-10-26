@@ -19,7 +19,7 @@ const fixtureText = j4CanaryText;
 const fixture = Object.entries(fixtureText).sort(([a], [b]) => a.localeCompare(b)).map(([path, body]) => ({path, bytes: text(body)}));
 const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(fixtureText).sort())).digest('hex');
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
-const expectedCoreSourceCommit = 'aac49a08da4b23a94f0279f01835c43a8596ccc9';
+const expectedCoreSourceCommit = '770dcf17d3e0dde97a3df90285bf78d708467c91';
 const expectedCoreManifestSha256 = 'b4c9ff7f8671a6ebd59bcb63457837f354e0ba1802b2ec8ec046ac043affb0e1';
 const expectedPersistedDefinition = [{
   id: definitionId,

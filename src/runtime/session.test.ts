@@ -1842,6 +1842,24 @@ describe("whole-table reads above Work's 1,000-row query", () => {
     expect(read.table.tracker_profile).toBeUndefined();
   });
 
+  it("carries Work's whole-table column totals from the windows", async () => {
+    const { runtime, client, windowOf } = await largeTable(600);
+    const totals = { amount: 1234.5, note: null };
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) => ({ ...windowOf(revision, start, count), column_totals: { ...totals } });
+
+    const read = await runtime.read();
+
+    expect(read.table.column_totals).toEqual(totals);
+  });
+
+  it("never shows totals that differ between windows of one table", async () => {
+    const { runtime, client, windowOf } = await largeTable(600);
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) =>
+      ({ ...windowOf(revision, start, count), column_totals: { amount: start === 0 ? 10 : 11 } });
+
+    await expect(runtime.read()).rejects.toMatchObject({ code: "incoherent-reply" });
+  });
+
   it("asks for fewer rows when a window is over Work's byte cap", async () => {
     const { runtime, client, view, all, windowOf } = await largeTable(300);
     client.hooks.queryTableWindow = async (revision, _collection, start, count) => {

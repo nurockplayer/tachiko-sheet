@@ -287,7 +287,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
    * unsorted windows, which keep the same row order as `queryTable`. Every
    * window is pinned to `revision` (a stale one is refused by Work), and a
    * window over Work's byte cap (`query_too_large`) is re-requested smaller.
-   * Window replies carry the same profile flags as `queryTable` (Work #585).
+   * Window replies carry the same profile flags as `queryTable` (Work #585)
+   * and the whole-table column totals (Work #591), which every window repeats.
    */
   async function queryWholeTable(
     kit: CoreKit,
@@ -322,7 +323,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       first ??= window;
       if (window.revision !== first.revision || window.columns_revision !== first.columns_revision ||
         window.collection.id !== first.collection.id || window.total_rows !== first.total_rows ||
-        window.start !== rows.length || rows.length + window.rows.length > window.total_rows) {
+        window.start !== rows.length || rows.length + window.rows.length > window.total_rows ||
+        !sameTotals(window.column_totals, first.column_totals)) {
         throw new SheetSessionError("incoherent-reply", "Core table windows did not describe one table.");
       }
       rows.push(...window.rows);
@@ -335,7 +337,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       ...(first.tracker_profile ? { tracker_profile: true } : {}),
       ...(first.native_table_profile ? { native_table_profile: true } : {}),
       revision: first.revision, collection: first.collection, columns: first.columns, rows,
+      ...(first.column_totals ? { column_totals: first.column_totals } : {}),
     };
+  }
+
+  /** Work's window totals are whole-table, so every window at one revision carries the same ones (Work #591). */
+  function sameTotals(a: TableWindowProjection["column_totals"], b: TableWindowProjection["column_totals"]): boolean {
+    if (!a || !b) return a === b;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && a[key] === b[key]);
   }
 
   async function loadCoherentView(

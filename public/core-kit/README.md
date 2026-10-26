@@ -50,6 +50,23 @@ await client.closeProject();
 await client.close();
 ```
 
+Number columns may carry a durable display format. Formats affect presentation
+only; stored values and calculated results remain numeric. Replace a format or
+pass `null` to clear it, using the current table revision:
+
+```ts
+await client.setColumnNumberFormat(table.revision, "tasks", "amount", {
+  decimals: 2,
+  kind: { type: "currency", code: "USD" },
+  thousands_separator: true,
+});
+```
+
+`kind` is `{ type: "plain" }`, `{ type: "currency", code: "USD" }` (three
+uppercase ISO-4217 letters), or `{ type: "percent" }`. `decimals` is an integer
+from 0 through 10. A column projection includes `number_format` only when a
+format is stored.
+
 Publication replies include `schemas` and `schema_fields` (stable schema ID or
 `{schema, field}` ID pairs) for presentation invalidation, independently of
 `entities`, `fields`, and `affected_calculations`. Refresh affected collection
@@ -149,6 +166,28 @@ formula itself, in memory and after a v3 save/reopen. A missing field refuses as
 `formula_unknown_reference`, a non-Number field as `formula_type_mismatch`, and
 referring to the formula's own field (`[.reserve]` inside `reserve`) as
 `formula_cycle`.
+
+A column total names one Number column and sums it over every row of that
+table. The table projection already carries the same numbers as a footer:
+
+```ts
+const table = await client.queryTable("plan");
+table.column_totals; // { [columnId]: 12000 }, same revision as table.rows
+await client.updateFormula(
+  table.revision,
+  summaryTotal,
+  "[plan.reserve:total] + [plan_copy.reserve:total]",
+);
+// A summary formula reads both tables' footer totals.
+```
+
+`column_totals` has one entry per Number column, keyed by column ID, and is
+`null` when any contributing value is unavailable; blank cells are skipped, as
+in the formula. The reference is identity-based, so renaming the table or the
+field keeps the formula source valid. Referencing a column total from that same
+column (`[plan.reserve:total]` inside a `plan.reserve` cell) refuses as
+`formula_cycle`, and `duplicateCollection` moves a total of the copied table's
+own column onto the copy.
 
 See the
 [formula authoring reference](https://github.com/nurockplayer/tachiko-work/blob/main/docs/engineering/formula-authoring-reference.md).

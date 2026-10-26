@@ -204,11 +204,13 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.setOutcome("idle");
       if (command.kind === "cleanup") port.clearPreview();
       else if (command.kind !== "summary") port.setCurrentness(command.kind === "rows" && error instanceof SheetSessionError ? "unknown" : "current");
-      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown; name_failures?: readonly NameFailure[]; diagnostics?: ReadonlyArray<{ facts?: ReadonlyArray<{ name: string; value: string }> }> } })?.failure;
-      // Work's formula refusal is shown verbatim. Other failures keep the
-      // explanatory prefix so their cause is not mistaken for a Work verdict.
-      const message = command.kind === "scalar" && command.edit.kind === "formula" &&
-        typeof failure?.message === "string" && failure.message.length > 0
+      const failure = (error as { failure?: { code?: string; message?: string; position?: unknown; constraint_failure?: unknown; name_failures?: readonly NameFailure[]; diagnostics?: ReadonlyArray<{ facts?: ReadonlyArray<{ name: string; value: string }> }> } })?.failure;
+      // Work's formula and column-rule refusals are shown verbatim. Other
+      // failures keep the explanatory prefix so their cause is not mistaken
+      // for a Work verdict.
+      const verbatim = (command.kind === "scalar" && command.edit.kind === "formula") ||
+        (command.kind === "rows" && (failure?.constraint_failure != null || failure?.code === "invalid_constraint_declaration"));
+      const message = verbatim && typeof failure?.message === "string" && failure.message.length > 0
         ? failure.message
         : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
       // A formula refusal is shown in the formula bar beside the retained
