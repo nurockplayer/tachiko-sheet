@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -66,6 +66,7 @@ interface Hooks {
   trackerCommand?: () => Promise<PublicationProjection>;
   duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
   setColumnConstraint?: () => Promise<PublicationProjection>;
+  copyFormula?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
@@ -106,6 +107,7 @@ class FakeClient {
     trackerCommand: [] as TrackerCommand[],
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string }>,
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
+    copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
     exportProjectV3: [] as string[],
@@ -239,6 +241,15 @@ class FakeClient {
     if (hook !== undefined) { this.hooks.setColumnConstraint = undefined; return hook(); }
     this.#requireRevision(revision);
     return this.#publish(IMPACT);
+  }
+
+  async copyFormula(revision: string, request: FormulaCopy): Promise<PublicationProjection> {
+    this.calls.copyFormula.push({ revision, request });
+    this.#requireOpen();
+    const hook = this.hooks.copyFormula;
+    if (hook !== undefined) { this.hooks.copyFormula = undefined; return hook(); }
+    this.#requireRevision(revision);
+    return this.#publish(request.source);
   }
 
   async newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection> {
@@ -1776,6 +1787,22 @@ describe("setColumnConstraint", () => {
     await expect(runtime.setColumnConstraint({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", { kind: "none" }))
       .rejects.toMatchObject({ code: "stale-witness" });
     expect(client.calls.setColumnConstraint).toEqual([]);
+  });
+});
+
+describe("copyFormula", () => {
+  it("forwards the request unchanged with the witness revision and confirms the publication", async () => {
+    const { runtime, client, view } = await opened();
+    const request: FormulaCopy = {
+      source: IMPACT,
+      destinations: [{ entity: "e2", field: "impact" }, { entity: "e3", field: "impact" }],
+      fixed_references: [], relative_rows: true, relative_columns: false,
+    };
+
+    const confirmed = await runtime.copyFormula(witnessOf(view), request);
+
+    expect(client.calls.copyFormula[0]).toEqual({ revision: view.revision, request });
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
   });
 });
 

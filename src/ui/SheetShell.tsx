@@ -32,6 +32,7 @@ import type {
   KeyedGroupedSumResult,
   ReportConfiguration,
   ReportPresentationTextField,
+  RowCommandOutcome,
   SalesEntryOutcome,
   SalesCatalogLayoutMarker,
   SalesEntryTipMarker,
@@ -75,6 +76,7 @@ import { sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
+import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { FormulaBar } from "./FormulaBar.js";
 import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaHandoffSettlement, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
@@ -451,6 +453,7 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveColumn,
     onPasteCells,
     onEditCells,
+    onCopyFormula,
     onRemoveRows,
     onDuplicateTable,
     onOpenExample,
@@ -1199,24 +1202,20 @@ export function SheetShell(props: SheetShellProps) {
     }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
   }
 
-  async function publishClearEdits(edits: CellEdit[]): Promise<boolean> {
-    if (!view || !witness || !onEditCells) {
-      announceClipboard("Clearing cells is not available in this view.", true, true); return false;
-    }
-    if (!edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return true; }
+  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled", noun: "clear" | "fill"): Promise<boolean> {
     const intent = completionIntent();
     rowCommandPendingRef.current = true;
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
     try {
-      const result = await onEditCells(witness, edits);
+      const result = await run();
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return false;
-      announceClipboard(result.kind === "confirmed" ? `Cleared ${edits.length} cell${edits.length === 1 ? "" : "s"}. Save to keep these changes.`
+      announceClipboard(result.kind === "confirmed" ? `${verb} ${count} cell${count === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? result.message
-        : "The clear outcome needs review. Refresh to check it; the clear has not been retried.", result.kind !== "confirmed", true);
+        : `The ${noun} outcome needs review. Refresh to check it; the ${noun} has not been retried.`, result.kind !== "confirmed", true);
       return result.kind === "confirmed";
     } catch (error) {
       if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) {
-        announceClipboard(explain(error, "The clear could not be confirmed. Refresh to check it before trying again."), true, true);
+        announceClipboard(explain(error, `The ${noun} could not be confirmed. Refresh to check it before trying again.`), true, true);
       }
       return false;
     } finally { rowCommandPendingRef.current = false; setCommitPending(false); }
@@ -1232,8 +1231,33 @@ export function SheetShell(props: SheetShellProps) {
     try {
       const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile));
       keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-      void publishClearEdits(edits);
+      if (!view || !witness || !onEditCells) { announceClipboard("Clearing cells is not available in this view.", true, true); return; }
+      if (!edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return; }
+      void publishCells(() => onEditCells(witness, edits), edits.length, "Cleared", "clear");
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here."), true, true); }
+  }
+
+  function fillDown(): void {
+    if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
+      announceClipboard("Finish the current edit or operation before filling cells.", true, true); return;
+    }
+    if (!table || !view || !witness) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
+    try {
+      const area = selectionRectangle;
+      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filter);
+      keepGridRows(rowViewBlockRows(displayRows, area!.top, area!.bottom - area!.top + 1).map(rowEntity));
+      if (plan.kind === "formula" ? !onCopyFormula : !onEditCells) {
+        announceClipboard("Filling cells is not available in this view.", true, true); return;
+      }
+      if (plan.kind === "values" && !plan.edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return; }
+      const publish = plan.kind === "formula"
+        ? () => onCopyFormula!(witness, plan.request)
+        : () => onEditCells!(witness, plan.edits);
+      void publishCells(publish, plan.count, "Filled", "fill");
+    } catch (error) {
+      if (error instanceof FillDownRefusal) announceClipboard(error.message, true, true);
+      else announceClipboard(explain(error, "These cells cannot be filled here."), true, true);
+    }
   }
 
   // Reconcile roving state from every installed projection, independently of
@@ -2128,7 +2152,9 @@ export function SheetShell(props: SheetShellProps) {
       // atomic rows outcome so Work's formula refusal is shown verbatim.
       if (change?.input.kind === "clear") {
         const intent = completionIntent();
-        const accepted = await publishClearEdits([change]);
+        if (!view || !witness || !onEditCells) { announceClipboard("Clearing cells is not available in this view.", true, true); return false; }
+        const edits = [change];
+        const accepted = await publishCells(() => onEditCells(witness, edits), 1, "Cleared", "clear");
         if (accepted) setEditor(null);
         else focusRejectedEditorRef.current = intent;
         return accepted;
@@ -2228,6 +2254,11 @@ export function SheetShell(props: SheetShellProps) {
     if ((event.key === "Delete" || event.key === "Backspace") && clipboardPosition(event.target)) {
       event.preventDefault();
       if (!draft && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) clearGrid(position);
+      return;
+    }
+    if (!draft && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "d" && clipboardPosition(event.target)) {
+      event.preventDefault();
+      if (!event.repeat) fillDown();
       return;
     }
     if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
