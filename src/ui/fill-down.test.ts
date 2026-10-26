@@ -17,7 +17,8 @@ function row(index: number, values: Record<string, string>, formulas: string[] =
       formula: formulas.includes(field) ? { source: `=${field}${index + 1}` } : null,
       calculated: null,
       diagnostics: [],
-      editable_scalar: "text" as const,
+      // Work projects a formula cell with no editable scalar (scalar_kind of a formula is None).
+      editable_scalar: formulas.includes(field) ? null : "text" as const,
     })),
   };
 }
@@ -42,7 +43,7 @@ describe("fill down request planning", () => {
       .toThrow("Clear the sort and filter to fill a formula down. Nothing was filled.");
   });
 
-  it("replaces an editable destination's own formula but refuses a non-editable one", () => {
+  it("replaces a destination's existing formula but refuses a non-editable cell", () => {
     const rows = [row(0, { a: "2" }, ["a"]), row(1, { a: "3" }, ["a"])];
     expect(fillDownPlan(rows, [columns[0]!], rectangle({ row: 0, column: 0 }, { row: 1, column: 0 }), true)).toMatchObject({ kind: "formula", count: 1 });
     const locked = [row(0, { a: "2" }, ["a"]), { ...row(1, { a: "3" }), fields: row(1, { a: "3" }).fields.map(field => ({ ...field, editable_scalar: undefined })) }];

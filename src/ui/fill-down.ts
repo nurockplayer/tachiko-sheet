@@ -40,10 +40,13 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
     const destinations = [];
     for (let rowIndex = area.top + 1; rowIndex <= area.bottom; rowIndex += 1) {
       const row = rows[rowIndex];
-      // An editable cell may hold its own formula; the copy replaces it, and Undo restores it.
+      // An editable value or an existing formula (Work projects formula cells
+      // with no editable_scalar) may be replaced; Undo restores it.
       const slot = row && column ? cellEditSlot(row, column) : null;
-      if (!slot) throw new FillDownRefusal(NON_EDITABLE);
-      destinations.push(slot.target);
+      const formulaField = row && column ? fieldForColumn(row, column.id) : undefined;
+      const target = slot?.target ?? (formulaField?.formula != null ? formulaField.target : undefined);
+      if (!target) throw new FillDownRefusal(NON_EDITABLE);
+      destinations.push(target);
     }
     return { kind: "formula", request: { source, destinations, fixed_references: [], relative_rows: true, relative_columns: false }, count };
   }
