@@ -33,27 +33,32 @@ export function columnRuleDraft(column: { field_type: string; constraint?: Field
   };
 }
 
-/** Turns the draft into Work's request. This only parses the form; Work decides whether the rule is admissible. */
+/**
+ * Turns the draft into Work's request. This only parses the form; Work decides
+ * whether the rule is admissible (duplicates, limits, min > max, existing rows).
+ * List values are sent exactly as typed, one per line; only empty lines are dropped.
+ */
 export function columnRuleInput(draft: ColumnRuleDraft): { input: FieldConstraint } | { error: string } {
   if (draft.kind === "list") {
-    const values = draft.values.split("\n").map(value => value.trim()).filter(value => value.length > 0);
+    const values = draft.values.split(/\r?\n/).filter(value => value.trim().length > 0);
     return values.length > 0
       ? { input: { kind: "text_literal_set", values } }
       : { error: "Enter at least one allowed value." };
   }
-  const numberPattern = /^-?\d+(\.\d+)?$/;
-  const minText = draft.min.trim();
-  const maxText = draft.max.trim();
-  if (!numberPattern.test(minText) || !numberPattern.test(maxText)) {
+  const bound = (text: string) => text.trim() === "" ? Number.NaN : Number(text.trim());
+  const min = bound(draft.min);
+  const max = bound(draft.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
     return { error: "Enter a number for both the lowest and highest value." };
   }
-  return { input: { kind: "number_inclusive_range", min: Number(minText), max: Number(maxText) } };
+  return { input: { kind: "number_inclusive_range", min, max } };
 }
 
-export interface ColumnRuleSettlement { close: boolean; error: string | null }
+export interface ColumnRuleSettlement { close: boolean; error: string | null; confirmed: boolean }
 
 /** confirmed and recovery close; refused keeps the dialog open with Work's message verbatim. */
 export function columnRuleSettlement(result: RowCommandOutcome): ColumnRuleSettlement {
-  if (result.kind === "refused") return { close: false, error: result.message };
-  return { close: true, error: null };
+  if (result.kind === "refused") return { close: false, error: result.message, confirmed: false };
+  // A recovery closes the dialog, but its outcome is unknown: never announce it as applied.
+  return { close: true, error: null, confirmed: result.kind === "confirmed" };
 }

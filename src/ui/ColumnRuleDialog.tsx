@@ -69,7 +69,8 @@ export function ColumnRuleDialog({ column, composing, onSubmit, onCancel, onSucc
   composing(): boolean;
   onSubmit(input: FieldConstraintInput): Promise<RowCommandOutcome>;
   onCancel(): void;
-  onSuccess(): void;
+  /** `confirmed` is false for a recovery, whose outcome is unknown. */
+  onSuccess(confirmed: boolean): void;
 }) {
   const initialDraft = columnRuleDraft(column);
   const [draft, setDraft] = useState<ColumnRuleDraft | null>(initialDraft);
@@ -86,7 +87,7 @@ export function ColumnRuleDialog({ column, composing, onSubmit, onCancel, onSucc
     try {
       // Work's refusal keeps the dialog and the current draft open.
       const settlement = columnRuleSettlement(await onSubmit(input));
-      if (settlement.close) onSuccess();
+      if (settlement.close) onSuccess(settlement.confirmed);
       else setError(settlement.error);
     } catch {
       onCancel();

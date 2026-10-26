@@ -616,7 +616,8 @@ export function SheetShell(props: SheetShellProps) {
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
-  const [ruleDialog, setRuleDialog] = useState<{ field: string; trigger: HTMLElement } | null>(null);
+  // Bound to the table it was opened on; a render for another table or occurrence never shows or submits it.
+  const [ruleDialog, setRuleDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
@@ -3449,7 +3450,7 @@ export function SheetShell(props: SheetShellProps) {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                       disclosure.open = false;
-                      setRuleDialog({ field: column.id, trigger });
+                      setRuleDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
                     }} /> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
@@ -3576,7 +3577,7 @@ export function SheetShell(props: SheetShellProps) {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                 closeColumnToolbar(disclosure);
-                setRuleDialog({ field: focusedColumn.id, trigger });
+                setRuleDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
               }}>{`Rule for “${focusedColumnName}”…`}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
@@ -3747,15 +3748,15 @@ export function SheetShell(props: SheetShellProps) {
         }}
         onKeyDown={(event) => onCellKeyDown(event, entity, { entity, field: column.id })}
       >
-        {editing && editor ? (<>
+        {editing && editor ? (
           <input
             className="ts-cell-input"
             aria-label="Edit cell"
             aria-describedby={draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : undefined}
-            // Work's declared rule is offered as suggestions; Work still decides
-            // what is admitted, so typing another value reaches its refusal.
-            list={column.constraint?.kind === "text_literal_set" ? `ts-allowed-${column.id}` : undefined}
-            placeholder={column.constraint?.kind === "number_inclusive_range" ? `${column.constraint.min}–${column.constraint.max}` : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
+            // Work's declared rule is shown as a hint; Work still decides what
+            // is admitted, so typing another value reaches its refusal.
+            placeholder={column.constraint?.kind === "number_inclusive_range" ? `${column.constraint.min}–${column.constraint.max}`
+              : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
             aria-busy={commitPending}
             data-testid="cell-editor"
             disabled={controlsLocked}
@@ -3772,10 +3773,7 @@ export function SheetShell(props: SheetShellProps) {
             }}
             onKeyDown={onEditorKeyDown}
           />
-          {column.constraint?.kind === "text_literal_set"
-            ? <datalist id={`ts-allowed-${column.id}`}>{column.constraint.values.map(value => <option key={value} value={value} />)}</datalist>
-            : null}
-        </>) : (
+        ) : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}
         {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
@@ -4461,7 +4459,8 @@ export function SheetShell(props: SheetShellProps) {
         onDraftChange={setDuplicateDraftActive}
         onCancel={() => { setDuplicateOpen(false); requestAnimationFrame(() => duplicateTriggerRef.current?.focus()); }}
       /> : null}
-      {ruleDialog && onSetColumnConstraint && view && witness && table ? (() => {
+      {ruleDialog && onSetColumnConstraint && view && witness && table
+        && ruleDialog.collection === table.collection.id && ruleDialog.occurrence === view.occurrence ? (() => {
         const column = columns.find(item => item.id === ruleDialog.field);
         if (!column) return null;
         const trigger = ruleDialog.trigger;
@@ -4470,7 +4469,7 @@ export function SheetShell(props: SheetShellProps) {
           column={column}
           composing={() => props.appearancePreference.getSnapshot().composing}
           onSubmit={input => onSetColumnConstraint(witness, table.collection.key, column.id, input)}
-          onSuccess={() => { setRuleDialog(null); setColumnAnnouncement(`Rule updated for ${column.display_name}. Undo restores it.`); restore(); }}
+          onSuccess={confirmed => { setRuleDialog(null); if (confirmed) setColumnAnnouncement(`Rule updated for ${column.display_name}. Undo restores it.`); restore(); }}
           onCancel={() => { setRuleDialog(null); restore(); }}
         />;
       })() : null}
