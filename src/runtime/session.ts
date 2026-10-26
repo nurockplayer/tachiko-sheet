@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { DuplicateCollectionProjection, KeyedGroupedSumProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { DuplicateCollectionProjection, KeyedGroupedSumProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -127,6 +127,8 @@ interface CoherentRead {
 }
 
 const COHERENT_READ_ATTEMPTS = 3;
+/** Work's largest table window (A-03). */
+const WINDOW_ROWS = 256;
 
 const noop = (): void => undefined;
 
@@ -248,11 +250,6 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       && ["no_project", "no_project_open"].includes((error as { failure?: { code?: string } }).failure?.code ?? "");
   }
 
-  function isUnsupportedProject(kit: CoreKit, error: unknown): boolean {
-    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
-      && (error as { failure?: { code?: string } }).failure?.code === "unsupported_project";
-  }
-
   /** Undoing a table's creation/duplication removes that exact collection. */
   function isMissingCollection(kit: CoreKit, error: unknown): boolean {
     return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
@@ -278,6 +275,61 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return live;
   }
 
+  function hasFailureCode(kit: CoreKit, error: unknown, code: string): boolean {
+    return typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError
+      && (error as { failure?: { code?: string } }).failure?.code === code;
+  }
+
+  /**
+   * The complete table at `revision`. Work refuses a whole-table read above
+   * 1,000 rows (`use_window_query`), so until the grid reads windows itself
+   * (capacity A-04, #246) a larger table is assembled from Work's unfiltered,
+   * unsorted windows, which keep the same row order as `queryTable`. Every
+   * window is pinned to `revision` (a stale one is refused by Work), and a
+   * window over Work's byte cap (`query_too_large`) is re-requested smaller.
+   * Window replies carry no profile flags, so an assembled table never claims
+   * a tracker or native-table profile.
+   */
+  async function queryWholeTable(
+    kit: CoreKit,
+    client: PublicClient,
+    expected: number,
+    revision: string,
+    key: string,
+  ): Promise<TableProjection> {
+    try {
+      return await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
+    } catch (error) {
+      if (!hasFailureCode(kit, error, "use_window_query")) throw error;
+    }
+    const rows: TableProjection["rows"] = [];
+    let first: TableWindowProjection | null = null;
+    let count = WINDOW_ROWS;
+    for (;;) {
+      let window: TableWindowProjection;
+      try {
+        window = await afterUsable(expected, dispatch(kit, () => client.queryTableWindow(revision, key, {}, rows.length, count)));
+      } catch (error) {
+        if (count > 1 && hasFailureCode(kit, error, "query_too_large")) {
+          count = Math.max(1, Math.floor(count / 2));
+          continue;
+        }
+        throw error;
+      }
+      first ??= window;
+      if (window.revision !== first.revision || window.columns_revision !== first.columns_revision ||
+        window.total_rows !== first.total_rows || window.start !== rows.length) {
+        throw new SheetSessionError("incoherent-reply", "Core table windows did not describe one table.");
+      }
+      rows.push(...window.rows);
+      if (rows.length >= window.total_rows) break;
+      if (window.rows.length === 0) {
+        throw new SheetSessionError("incoherent-reply", "Core returned an empty window inside the table.");
+      }
+    }
+    return { revision: first.revision, collection: first.collection, columns: first.columns, rows };
+  }
+
   async function loadCoherentView(
     kit: CoreKit,
     client: PublicClient,
@@ -294,7 +346,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         continue;
       }
       const key = collection ?? bootstrap.default_collection;
-      const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
+      const table = await queryWholeTable(kit, client, expected, occurrence.revision, key);
       if (table.revision !== occurrence.revision) {
         if (attempt >= COHERENT_READ_ATTEMPTS) {
           throw new SheetSessionError("incoherent-reply", "Core did not return one coherent revision.");
@@ -371,7 +423,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     requireCurrentProjectionRevision(revision, bootstrap.revision, "binding catalog");
     const tables = new Map<string, TableProjection>();
     for (const collection of bootstrap.collections) {
-      const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(collection.key)));
+      const table = await queryWholeTable(kit, client, expected, revision, collection.key);
       requireCurrentProjectionRevision(revision, table.revision, `table ${collection.key}`);
       tables.set(collection.key, table);
     }
@@ -897,28 +949,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      let project: OpaqueProjectExport;
-      try {
-        project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
-      } catch (error) {
-        assertUsable(expected);
-        // TEMPORARY fallback (remove at the next kit re-pin). At the pinned
-        // producer both v3 writers enforce the strict bounded Designer profile:
-        // `export_project_v3` and `export_portable_ro` call
-        // `ensure_document_profile(.., false)`, so a capacity document (a
-        // collection above MAX_TABLE_ROWS = 128, or a project above
-        // MAX_TOTAL_ENTITIES = 1024) is opened but cannot be written as v3.
-        // Work has no capacity-capable v3 writer yet. Until it ships one, only
-        // this opaque copy path retries Work's typed `unsupported_project`
-        // refusal with the legacy writer; every other refusal propagates and
-        // the `.ro` work-file path has no legacy carrier. Select on the typed
-        // code only, never on message text. Work evidence (source commit
-        // 4e51942a, packages/browser-client/runtime/src/lib.rs): the profile
-        // retry is open-only, "intentionally not an export or re-admission
-        // capability".
-        if (!isUnsupportedProject(kit, error)) throw error;
-        project = await afterUsable(expected, dispatch(kit, () => client.exportProject(live.revision)));
-      }
+      const project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
       return { revision: project.revision, bytes: project.bytes.slice(0) };
     });

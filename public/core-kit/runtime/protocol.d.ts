@@ -74,6 +74,28 @@ export type FieldProjection = {
     diagnostics: DiagnosticProjection[];
     editable_scalar: "number" | "text" | "boolean" | "date" | null;
 };
+/** One durable field constraint; absence of the projection means unconstrained. */
+export type FieldConstraint = {
+    kind: "text_literal_set";
+    values: string[];
+} | {
+    kind: "number_inclusive_range";
+    min: number;
+    max: number;
+};
+/** One complete constraint replacement; `none` clears the declaration. */
+export type FieldConstraintInput = FieldConstraint | {
+    kind: "none";
+};
+export type ConstraintFailureReason = "field_value" | "existing_values";
+/** Structured refusal: the allowed shape and how many rows or values failed. */
+export type ConstraintFailureProjection = {
+    reason: ConstraintFailureReason;
+    schema: string;
+    field: string;
+    constraint: FieldConstraint;
+    offending_rows: number;
+};
 export type ColumnProjection = {
     id: string;
     key: string;
@@ -83,6 +105,15 @@ export type ColumnProjection = {
     field_type: string;
     required: boolean;
     dropdown_options?: string[];
+    /** Declared durable constraint; omission means unconstrained. */
+    constraint?: FieldConstraint;
+};
+export type TableRowProjection = {
+    id: string;
+    key: string;
+    /** fields contains present values only; blank_fields lists absent IDs in column order (omission means []). */
+    blank_fields?: string[];
+    fields: FieldProjection[];
 };
 export type TableProjection = {
     tracker_profile?: boolean;
@@ -90,13 +121,75 @@ export type TableProjection = {
     revision: string;
     collection: CollectionSummary;
     columns: ColumnProjection[];
-    /** fields contains present values only; blank_fields lists absent IDs in column order (omission means []). */
-    rows: Array<{
-        id: string;
-        key: string;
-        blank_fields?: string[];
-        fields: FieldProjection[];
-    }>;
+    rows: TableRowProjection[];
+};
+export type SortDirection = "asc" | "desc";
+/** Every comparison takes the column's declared kind; text compares case-insensitively. */
+export type ComparisonOperator = "=" | "<>" | "<" | "<=" | ">" | ">=";
+/** One literal member of an `in_set` filter; it must fit the filtered column's type. */
+export type ScalarLiteral = number | string | boolean;
+/** One AND-ed view filter. Comparisons and sets match only same-kind values; blanks match `is_blank`. */
+export type ViewFilter = {
+    kind: "text_equals";
+    field: string;
+    value: string;
+} | {
+    kind: "text_contains";
+    field: string;
+    value: string;
+} | {
+    kind: "number_compare";
+    field: string;
+    op: ComparisonOperator;
+    value: number;
+} | {
+    kind: "date_compare";
+    field: string;
+    op: ComparisonOperator;
+    value: string;
+} | {
+    kind: "is_blank";
+    field: string;
+} | {
+    kind: "not_blank";
+    field: string;
+} | {
+    kind: "in_set";
+    field: string;
+    values: ScalarLiteral[];
+};
+export type ViewSortKey = {
+    field: string;
+    direction: SortDirection;
+};
+/**
+ * Stateless view state owned by the caller, never by the document: sort keys
+ * apply in order with blanks last, filters are AND-ed, and `keep_entities`
+ * (at most 256) stay visible even when a filter excludes them.
+ */
+export type TableView = {
+    sort?: ViewSortKey[];
+    filters?: ViewFilter[];
+    keep_entities?: string[];
+};
+/** One bounded window of a table; `count` 0 returns totals and columns only. */
+export type TableWindowProjection = {
+    revision: string;
+    collection: CollectionSummary;
+    columns: ColumnProjection[];
+    /** Deterministic digest of the column definitions; stable across row edits. */
+    columns_revision: string;
+    /** Rows left after filters, plus kept entities. */
+    total_rows: number;
+    unfiltered_rows: number;
+    start: number;
+    rows: TableRowProjection[];
+};
+/** Zero-based position in the filtered, sorted view; `index` appears only when found. */
+export type LocatedInViewProjection = {
+    revision: string;
+    result: "found" | "filtered_out";
+    index?: number;
 };
 export type FieldBatchProjection = {
     revision: string;
@@ -168,6 +261,8 @@ export type KeyedGroupedSumProjection = {
         category: string;
         value: number;
     }>;
+    /** Sum of the groups at this revision; null whenever the result is unavailable. */
+    total: number | null;
     diagnostics: Array<{
         code: string;
         entity: string | null;
@@ -197,12 +292,30 @@ export type NameFailure = {
     effective_name: string | null;
 };
 export type FailureProjection = {
-    code: string;
+    code: FailureCode;
     message: string;
     current_revision: string;
     diagnostics: DiagnosticProjection[];
     name_failures?: NameFailure[];
+    /** Present only when a field constraint refused the request. */
+    constraint_failure?: ConstraintFailureProjection;
+    /** Present only for the `use_window_query` refusal: the collection's row count. */
+    row_count?: number;
 };
+/** Known runtime failure codes, while allowing forward-compatible additions. */
+export type FailureCode = "required_values_missing" | (string & {});
+/**
+ * Stable refusal codes for `updateFormula`. Each failure carries a human
+ * message in `FailureProjection.message`. Syntax and reference failures add
+ * one diagnostic for the refused formula with a `position` or `reference`
+ * fact; a cycle failure carries the authoritative validation diagnostics,
+ * whose location is the cycle's canonical member.
+ */
+export type FormulaFailureCode = "formula_syntax" | "formula_unknown_reference" | "formula_type_mismatch" | "formula_cycle";
+export type FormulaFailureProjection = FailureProjection & {
+    code: FormulaFailureCode;
+};
+export declare function isFormulaFailure(failure: FailureProjection): failure is FormulaFailureProjection;
 export type TrackerCommand = {
     type: "edit_cells";
     expected_revision: string;
@@ -255,6 +368,12 @@ export type TrackerCommand = {
     collection: string;
     field: string;
     required: boolean;
+} | {
+    type: "set_column_constraint";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    constraint: FieldConstraintInput;
 } | {
     type: "rename_column";
     expected_revision: string;
@@ -334,6 +453,19 @@ export type DesignerRequest = {
     type: "query_table";
     collection: string;
 } | {
+    type: "query_table_window";
+    expected_revision: string;
+    collection: string;
+    view: TableView;
+    start: number;
+    count: number;
+} | {
+    type: "locate_in_view";
+    expected_revision: string;
+    collection: string;
+    view: TableView;
+    entity: string;
+} | {
     type: "query_fields";
     expected_revision: string;
     fields: FieldTarget[];
@@ -384,6 +516,12 @@ export type DesignerResponse = {
 } | {
     type: "table";
     payload: TableProjection;
+} | {
+    type: "table_window";
+    payload: TableWindowProjection;
+} | {
+    type: "located_in_view";
+    payload: LocatedInViewProjection;
 } | {
     type: "fields";
     payload: FieldBatchProjection;

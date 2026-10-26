@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "4e51942a6b8c83bb691bef4308b264d9104a18a5",
+  "sourceCommit": "3ef35866b1eecadd1f9dbbeea1e3f4b5dcb58783",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -10,12 +10,15 @@
     "projectTransferFromEntries",
     "preflightCanonicalProjectEntries",
     "openCanonicalTreeFromEntries",
+    "isFormulaFailure",
     "bootstrap",
     "inspectProject",
     "openProject",
     "openImportedProject",
     "closeProject",
     "queryTable",
+    "queryTableWindow",
+    "locateInView",
     "queryFields",
     "explainField",
     "createKeyedGroupedSum",
@@ -24,7 +27,9 @@
     "editText",
     "clearField",
     "setColumnRequiredness",
+    "setColumnConstraint",
     "columnDisplayNameExplicit",
+    "columnConstraintProjection",
     "editBoolean",
     "editDate",
     "updateFormula",
@@ -57,19 +62,19 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "d5257c7979b0b9fd5751ded85f47984cbb89caaf3236c7ef74b250dc842ec783"
+      "sha256": "bfe0c708bde7bd2fb1fb8ea67740c3dcf4a1a09368a496a535c25e92a86515dc"
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "64ed5e8fd47f4fe97ab9c5ffde6ec9eb8dc4ac7dd328d903980282e85c41ee20"
+      "sha256": "521125f54175b86cb0411d485fed8f6d7074274174179717e80738646875aceb"
     },
     {
       "path": "experimental-client.d.ts",
-      "sha256": "af2e847c76acee9bfd2fe22610c8ff55f46471dd17c4eed574dd5b5a9d10f5e3"
+      "sha256": "d9acb756b3eca3d67cf35157ce91a30376b19b821aa20840d484cebea706ac3a"
     },
     {
       "path": "experimental-client.js",
-      "sha256": "bd53c548b64db958ea78efe421141b5056a089921c1541b1d29c63f22b043391"
+      "sha256": "8153354491b847325895ccf695007c4a8eef133fcccac01b912bf1ffcb606dd6"
     },
     {
       "path": "experimental-client.worker.d.ts",
@@ -105,7 +110,7 @@
     },
     {
       "path": "runtime/client.d.ts",
-      "sha256": "df7af27be28cb6f71c1777f5cdc478a9eab6bff9f449c21d73567765ed63589f"
+      "sha256": "6d1090c0d4493437c8c94910820ea972ee6781d4d270530373bc92f25bb918f0"
     },
     {
       "path": "runtime/client.js",
@@ -121,11 +126,11 @@
     },
     {
       "path": "runtime/protocol.d.ts",
-      "sha256": "12e730e7fa8fadf6dff22264183e3688ffdc64a4ec7ad7d21a4780cc76e0402f"
+      "sha256": "15725baea2785dc00508b37f973681cc8e899f4760d1073aeafeb400597908be"
     },
     {
       "path": "runtime/protocol.js",
-      "sha256": "090a3f5d26d2765d53ad6a3a9a4533937d34adfb99700bc3869218cccf0a1bbc"
+      "sha256": "d52b1ceecdde503cf071fae701a18c561aee68d2dce30318974803886e52ab6a"
     },
     {
       "path": "runtime/wasm-bridge.d.ts",
@@ -137,11 +142,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "10d05912423cf1005260597c8420dcb5f5d121170c9a1f0d690097a6df9591dd"
+      "sha256": "5b4e3f2da95e569bb6aa8ae16b722b7492dccf985aae271e23c1bb40c4e3d7f0"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "44bd2c1337b758386dc5693ac8393396f47ffc5b6d325f785ac0fea3b29d57a8"
+      "sha256": "8f6e5bdf7cfa14ed48fece73348e1828f7a649c7b30bf79c2e4e21f286f07d20"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

@@ -13,6 +13,14 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Combined re-pin (Work #574/#580/#576/#583): two clean detached lead exports
+    // match byte for byte in all 25 files; receipt with inventory on #246.
+    sourceCommit: '3ef35866b1eecadd1f9dbbeea1e3f4b5dcb58783',
+    artifactManifestSha256: 'e80d2c6a2fc29213f851badc8e4a57e779239447cfdc6cd58a08d8cd98eb5d21',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6406374428',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6406374428',
+  },
+  {
     // #227 Rename: separate clean detached writer/lead builds; docs/227-rename-kit-handback.md.
     sourceCommit: '4e51942a6b8c83bb691bef4308b264d9104a18a5',
     artifactManifestSha256: 'd4c4bb7da05f906075bd93ecb99c1a4b64d348d0ed7130f3ce1b5f37c2a111b8',

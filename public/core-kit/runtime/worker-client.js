@@ -112,6 +112,9 @@ export class WorkerDesignerClient {
     async setColumnRequiredness(expectedRevision, collection, field, required) {
         return this.trackerCommand({ type: "set_column_requiredness", expected_revision: expectedRevision, collection, field, required });
     }
+    async setColumnConstraint(expectedRevision, collection, field, constraint) {
+        return this.trackerCommand({ type: "set_column_constraint", expected_revision: expectedRevision, collection, field, constraint });
+    }
     async bootstrap() {
         return expectResponse("bootstrap", await this.#command({
             type: "bootstrap",
@@ -233,6 +236,25 @@ export class WorkerDesignerClient {
     async queryTable(collection) {
         return expectResponse("table", await this.#command({ type: "query_table", collection }));
     }
+    async queryTableWindow(expectedRevision, collection, view, start, count) {
+        return expectResponse("table_window", await this.#command({
+            type: "query_table_window",
+            expected_revision: expectedRevision,
+            collection,
+            view,
+            start,
+            count,
+        }));
+    }
+    async locateInView(expectedRevision, collection, view, entity) {
+        return expectResponse("located_in_view", await this.#command({
+            type: "locate_in_view",
+            expected_revision: expectedRevision,
+            collection,
+            view,
+            entity,
+        }));
+    }
     async queryFields(expectedRevision, fields) {
         return expectResponse("fields", await this.#command({
             type: "query_fields",
@@ -336,6 +358,12 @@ function expectResponse(type, response) {
         case "table":
             validateTablePresence(response.payload);
             break;
+        case "table_window":
+            validateTablePresence(response.payload);
+            break;
+        case "located_in_view":
+            validateLocatedInView(response.payload);
+            break;
         case "opened":
             validateTablePresence(response.payload.table);
             break;
@@ -369,6 +397,63 @@ function validateFieldPresence(field) {
         throw new Error("Invalid Worker non-blank field payload.");
     }
 }
+const byteOrder = new TextEncoder();
+function compareBytes(left, right) {
+    const length = Math.min(left.length, right.length);
+    for (let index = 0; index < length; index += 1) {
+        if (left[index] !== right[index])
+            return left[index] < right[index] ? -1 : 1;
+    }
+    return Math.sign(left.length - right.length);
+}
+/** Mirrors the semantic declaration: unique literals in strict byte order. */
+function strictlyByteOrdered(values) {
+    let previous;
+    for (const value of values) {
+        const bytes = byteOrder.encode(value);
+        if (previous !== undefined && compareBytes(previous, bytes) >= 0)
+            return false;
+        previous = bytes;
+    }
+    return true;
+}
+function validateColumnConstraint(column) {
+    const constraint = column.constraint;
+    if (constraint === undefined)
+        return;
+    if (constraint.kind === "text_literal_set") {
+        if (column.field_type !== "text" ||
+            !Array.isArray(constraint.values) || constraint.values.length === 0 ||
+            !constraint.values.every(value => typeof value === "string") ||
+            !strictlyByteOrdered(constraint.values) ||
+            !Array.isArray(column.dropdown_options) ||
+            column.dropdown_options.length !== constraint.values.length ||
+            column.dropdown_options.some((value, index) => value !== constraint.values[index])) {
+            throw new Error("Invalid Worker column constraint.");
+        }
+        return;
+    }
+    if (constraint.kind === "number_inclusive_range") {
+        if (column.field_type !== "number" ||
+            !Number.isFinite(constraint.min) || !Number.isFinite(constraint.max) ||
+            constraint.min > constraint.max) {
+            throw new Error("Invalid Worker column constraint.");
+        }
+        return;
+    }
+    throw new Error("Invalid Worker column constraint.");
+}
+function validateLocatedInView(located) {
+    if (located.result === "found") {
+        if (!Number.isInteger(located.index) || located.index < 0) {
+            throw new Error("Invalid Worker located-in-view position.");
+        }
+        return;
+    }
+    if (located.result !== "filtered_out" || located.index !== undefined) {
+        throw new Error("Invalid Worker located-in-view result.");
+    }
+}
 function validateTablePresence(table) {
     const columns = new Map(table.columns.map((column, index) => {
         if (typeof column.required !== "boolean")
@@ -376,6 +461,7 @@ function validateTablePresence(table) {
         if (column.display_name_explicit !== undefined && column.display_name_explicit !== true) {
             throw new Error("Invalid Worker column display_name_explicit.");
         }
+        validateColumnConstraint(column);
         return [column.id, { required: column.required, index }];
     }));
     if (columns.size !== table.columns.length)

@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -67,6 +67,7 @@ interface Hooks {
   duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
+  queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
   bootstrap?: () => Promise<BootstrapProjection>;
 }
 
@@ -94,6 +95,7 @@ class FakeClient {
     bootstrap: 0,
     observeOccurrence: 0,
     queryTable: [] as string[],
+    queryTableWindow: [] as Array<{ revision: string; start: number; count: number }>,
     queryFields: [] as Array<{ revision: string; targets: FieldTarget[] }>,
     editNumber: 0,
     editText: 0,
@@ -284,6 +286,13 @@ class FakeClient {
     return this.#table();
   }
 
+  async queryTableWindow(revision: string, collection: string, _view: unknown, start: number, count: number): Promise<TableWindowProjection> {
+    this.calls.queryTableWindow.push({ revision, start, count });
+    const hook = this.hooks.queryTableWindow;
+    if (hook === undefined) throw new FakeDesignerRuntimeError("unsupported_operation", this.#revision);
+    return hook(revision, collection, start, count);
+  }
+
   async queryFields(revision: string, targets: FieldTarget[]): Promise<FieldBatchProjection> {
     this.calls.queryFields.push({ revision, targets });
     this.#requireOpen();
@@ -388,6 +397,7 @@ class FakeClient {
         definition_id: definition.id,
         revision: publication.resulting_revision,
         groups: [{ category: "PEN", value: 800 }],
+        total: 800,
         diagnostics: [],
       } satisfies KeyedGroupedSumProjection,
     };
@@ -396,7 +406,7 @@ class FakeClient {
   async queryKeyedGroupedSum(definitionId: string): Promise<KeyedGroupedSumProjection> {
     this.#requireOpen();
     this.calls.queryKeyedGroupedSum.push(definitionId);
-    return { definition_id: definitionId, revision: this.#revision, groups: [{ category: "PEN", value: 800 }], diagnostics: [] };
+    return { definition_id: definitionId, revision: this.#revision, groups: [{ category: "PEN", value: 800 }], total: 800, diagnostics: [] };
   }
 
   async closeProject(): Promise<void> {
@@ -1369,29 +1379,13 @@ describe("Work file adapter admission and export", () => {
     await runtime.close();
   });
 
-  // TEMPORARY, removed at the next kit re-pin with the runtime fallback: Work's
-  // v3 writers enforce the strict bounded profile (MAX_TABLE_ROWS = 128,
-  // MAX_TOTAL_ENTITIES = 1024), so an opaque copy retries the legacy writer on
-  // exactly this typed refusal and no other.
-  it("falls back to the legacy opaque writer only for a typed unsupported_project profile refusal", async () => {
+  it("reports Work's v3 profile refusal instead of trying a legacy writer", async () => {
     const { runtime, client, view } = await opened();
-    const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValueOnce(new FakeDesignerRuntimeError("unsupported_project", view.revision));
-    const exported = await runtime.exportOpaque(witnessOf(view));
+    const refusal = new FakeDesignerRuntimeError("unsupported_project", view.revision);
+    const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValueOnce(refusal);
+    await expect(runtime.exportOpaque(witnessOf(view))).rejects.toBe(refusal);
     expect(explicit).toHaveBeenCalledExactlyOnceWith(view.revision);
-    expect(client.calls.exportProject).toEqual([view.revision]);
-    expect(Array.from(new Uint8Array(exported.bytes))).toEqual([7, 8, 9]); // The legacy writer's bytes.
-    expect(exported.revision).toBe(view.revision);
-    expect((await runtime.read()).requiresPortableSave).toBeUndefined();
-  });
-
-  it("reports the fallback writer's own refusal instead of retrying it", async () => {
-    const { runtime, client, view } = await opened();
-    const explicit = vi.spyOn(client, "exportProjectV3").mockRejectedValueOnce(new FakeDesignerRuntimeError("unsupported_project", view.revision));
-    const fallbackRefusal = new FakeDesignerRuntimeError("unsupported_project", view.revision);
-    const fallback = vi.spyOn(client, "exportProject").mockRejectedValueOnce(fallbackRefusal);
-    await expect(runtime.exportOpaque(witnessOf(view))).rejects.toBe(fallbackRefusal);
-    expect(explicit).toHaveBeenCalledExactlyOnceWith(view.revision);
-    expect(fallback).toHaveBeenCalledExactlyOnceWith(view.revision);
+    expect(client.calls.exportProject).toEqual([]);
   });
 
   it.each(["stale_revision", "resource_limit", "invalid_project"])("propagates the v3 export refusal %s without retrying or inferring another writer", async (code) => {
@@ -1740,6 +1734,65 @@ describe("native table and row adapter", () => {
       await expect(invoke(runtime, view)).rejects.toMatchObject({ code: "not-open" });
     });
   }
+});
+
+describe("whole-table reads above Work's 1,000-row query", () => {
+  async function largeTable(rowCount: number) {
+    const { runtime, client, view } = await opened();
+    const base = view.table;
+    const template = base.rows[0]!;
+    const all = Array.from({ length: rowCount }, (_, i) => ({ ...template, key: `r${i}` }));
+    client.hooks.queryTable = async () => { throw new FakeDesignerRuntimeError("use_window_query", client.currentRevision); };
+    const windowOf = (revision: string, start: number, count: number): TableWindowProjection => ({
+      revision,
+      collection: base.collection,
+      columns: base.columns,
+      columns_revision: "c1",
+      total_rows: all.length,
+      unfiltered_rows: all.length,
+      start,
+      rows: all.slice(start, start + count),
+    });
+    return { runtime, client, view, all, windowOf };
+  }
+
+  it("assembles the table from pinned windows in Work's order, without profile flags", async () => {
+    const { runtime, client, view, all, windowOf } = await largeTable(600);
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) => windowOf(revision, start, count);
+
+    const read = await runtime.read();
+
+    expect(read.table.rows.map((row) => row.key)).toEqual(all.map((row) => row.key));
+    expect(client.calls.queryTableWindow).toEqual([
+      { revision: view.revision, start: 0, count: 256 },
+      { revision: view.revision, start: 256, count: 256 },
+      { revision: view.revision, start: 512, count: 256 },
+    ]);
+    expect(read.table.native_table_profile).toBeUndefined();
+    expect(read.table.tracker_profile).toBeUndefined();
+  });
+
+  it("asks for fewer rows when a window is over Work's byte cap", async () => {
+    const { runtime, client, view, all, windowOf } = await largeTable(300);
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) => {
+      if (count > 128) throw new FakeDesignerRuntimeError("query_too_large", revision);
+      return windowOf(revision, start, count);
+    };
+
+    const read = await runtime.read();
+
+    expect(read.table.rows).toHaveLength(all.length);
+    expect(client.calls.queryTableWindow.map((call) => [call.start, call.count])).toEqual([[0, 256], [0, 128], [128, 128], [256, 128]]);
+    expect(read.revision).toBe(view.revision);
+  });
+
+  it("never shows a table whose windows disagree", async () => {
+    const { runtime, client, windowOf } = await largeTable(300);
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) =>
+      ({ ...windowOf(revision, start, count), columns_revision: start === 0 ? "c1" : "c2" });
+
+    await expect(runtime.read()).rejects.toMatchObject({ code: "incoherent-reply" });
+  });
 });
 
 describe("table duplication adapter", () => {
