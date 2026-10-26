@@ -643,6 +643,7 @@ describe("SheetShell static rendering", () => {
     view.table.column_totals = { "c-impact": 1800 };
     const markup = render({ view });
     expect(markup).toContain('<tr class="ts-totals-row" aria-label="Column totals"');
+    expect(markup.match(/<tfoot/g)).toHaveLength(1);
     expect(markup).toContain('data-testid="total:c-impact"');
     expect(markup).toContain(">1800</td>");
   });

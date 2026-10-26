@@ -3521,8 +3521,9 @@ export function SheetShell(props: SheetShellProps) {
             : displayRows[segment.index] ? renderRow(displayRows[segment.index]!, segment.index) : null)
             : displayRows.map((row, index) => renderRow(row, index))}
         </tbody>
-        {hasColumnTotals ? <tfoot role="rowgroup" className="ts-totals-footer">
-          <tr className="ts-totals-row" aria-label="Column totals" aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
+        {/* One tfoot per table (HTML): Work's totals row, then the entry row and its actions. */}
+        {hasColumnTotals || hasDraftRow ? <tfoot role="rowgroup" className={[hasColumnTotals ? "ts-totals-footer" : "", hasDraftRow ? "ts-entry-footer" : ""].filter(Boolean).join(" ")}>
+        {hasColumnTotals ? <tr className="ts-totals-row" aria-label="Column totals" aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
             <th scope="row" className="ts-row-head" title="Totals for every row in the table, including rows a filter hides.">Σ</th>
             {columns.map(column => {
               const hasTotal = Object.prototype.hasOwnProperty.call(totals, column.id);
@@ -3531,9 +3532,8 @@ export function SheetShell(props: SheetShellProps) {
                 {hasTotal ? total === null ? "Unavailable" : formatNumberFor(total, column.number_format) : null}
               </td>;
             })}
-          </tr>
-        </tfoot> : null}
-        {hasDraftRow ? <tfoot role="rowgroup" className="ts-entry-footer">
+          </tr> : null}
+        {hasDraftRow ? <>
           <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? displayRows.length + (hasColumnTotals ? 3 : 2) : undefined}>
             <th scope="row" className="ts-row-head" aria-label="New row">+</th>
             {columns.map(column => renderCell(null, DRAFT_ROW, column))}
@@ -3546,6 +3546,7 @@ export function SheetShell(props: SheetShellProps) {
               {rowError ? <span className="ts-row-error" id="ts-row-error" role="alert">{rowError.message}</span> : null}
             </div>
           </td></tr>
+        </> : null}
         </tfoot> : null}
       </table>
     );
