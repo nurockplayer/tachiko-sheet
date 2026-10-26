@@ -438,11 +438,12 @@ try {
   const capacityRenamed = await projection();
   await chooseColumnAction("Capacity note", "Remove"); await submit("Remove column");
   assert.equal((await projection()).columns.some(column => column.id === addedColumn.id), false, "compact Remove publishes on the capacity table");
+  // History controls live in the desktop toolbar.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator(".ts-column-header summary").first().waitFor();
   await history("Undo");
   assert.deepEqual(await projection().then(table => table.columns), capacityRenamed.columns, "Undo brings the removed column back");
   assert.deepEqual(await projection().then(table => table.rows), capacityRenamed.rows, "Undo restores the removed column's values");
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator(".ts-column-header summary").first().waitFor();
   // A real scalar edit makes the following bound Save perform a durable write.
   await cell(table, 0, 1).dblclick(); const capacityEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await capacityEditor.fill("777"); await capacityEditor.press("Enter"); await ready();
