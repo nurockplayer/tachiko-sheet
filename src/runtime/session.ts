@@ -287,8 +287,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
    * unsorted windows, which keep the same row order as `queryTable`. Every
    * window is pinned to `revision` (a stale one is refused by Work), and a
    * window over Work's byte cap (`query_too_large`) is re-requested smaller.
-   * Window replies carry no profile flags, so an assembled table never claims
-   * a tracker or native-table profile.
+   * Window replies carry the same profile flags as `queryTable` (Work #585).
    */
   async function queryWholeTable(
     kit: CoreKit,
@@ -318,7 +317,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       first ??= window;
       if (window.revision !== first.revision || window.columns_revision !== first.columns_revision ||
-        window.total_rows !== first.total_rows || window.start !== rows.length) {
+        window.collection.id !== first.collection.id || window.total_rows !== first.total_rows ||
+        window.start !== rows.length || rows.length + window.rows.length > window.total_rows) {
         throw new SheetSessionError("incoherent-reply", "Core table windows did not describe one table.");
       }
       rows.push(...window.rows);
@@ -327,7 +327,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw new SheetSessionError("incoherent-reply", "Core returned an empty window inside the table.");
       }
     }
-    return { revision: first.revision, collection: first.collection, columns: first.columns, rows };
+    return {
+      ...(first.tracker_profile ? { tracker_profile: true } : {}),
+      ...(first.native_table_profile ? { native_table_profile: true } : {}),
+      revision: first.revision, collection: first.collection, columns: first.columns, rows,
+    };
   }
 
   async function loadCoherentView(

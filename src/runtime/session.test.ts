@@ -1756,9 +1756,9 @@ describe("whole-table reads above Work's 1,000-row query", () => {
     return { runtime, client, view, all, windowOf };
   }
 
-  it("assembles the table from pinned windows in Work's order, without profile flags", async () => {
+  it("assembles the table from pinned windows in Work's order with Work's profile flags", async () => {
     const { runtime, client, view, all, windowOf } = await largeTable(600);
-    client.hooks.queryTableWindow = async (revision, _collection, start, count) => windowOf(revision, start, count);
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) => ({ ...windowOf(revision, start, count), native_table_profile: true });
 
     const read = await runtime.read();
 
@@ -1768,7 +1768,7 @@ describe("whole-table reads above Work's 1,000-row query", () => {
       { revision: view.revision, start: 256, count: 256 },
       { revision: view.revision, start: 512, count: 256 },
     ]);
-    expect(read.table.native_table_profile).toBeUndefined();
+    expect(read.table.native_table_profile).toBe(true);
     expect(read.table.tracker_profile).toBeUndefined();
   });
 
@@ -1784,6 +1784,14 @@ describe("whole-table reads above Work's 1,000-row query", () => {
     expect(read.table.rows).toHaveLength(all.length);
     expect(client.calls.queryTableWindow.map((call) => [call.start, call.count])).toEqual([[0, 256], [0, 128], [128, 128], [256, 128]]);
     expect(read.revision).toBe(view.revision);
+  });
+
+  it("never shows a table whose windows overrun the declared total", async () => {
+    const { runtime, client, all, windowOf } = await largeTable(300);
+    client.hooks.queryTableWindow = async (revision, _collection, start, count) =>
+      ({ ...windowOf(revision, start, count), rows: start === 256 ? [...all.slice(256), all[0]!] : all.slice(start, start + count) });
+
+    await expect(runtime.read()).rejects.toMatchObject({ code: "incoherent-reply" });
   });
 
   it("never shows a table whose windows disagree", async () => {
