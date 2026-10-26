@@ -1797,7 +1797,7 @@ describe("whole-table reads above Work's 1,000-row query", () => {
   it("never shows another table's windows as the requested one", async () => {
     const { runtime, client, view, windowOf } = await largeTable(300);
     client.hooks.queryTableWindow = async (revision, _collection, start, count) =>
-      ({ ...windowOf(revision, start, count), collection: { ...view.table.collection, key: "other" } });
+      ({ ...windowOf(revision, start, count), ...(start > 0 ? { collection: { ...view.table.collection, key: "other" } } : {}) });
 
     await expect(runtime.read()).rejects.toMatchObject({ code: "incoherent-reply" });
   });
@@ -1805,7 +1805,7 @@ describe("whole-table reads above Work's 1,000-row query", () => {
   it("never shows a partial table as complete", async () => {
     const { runtime, client, windowOf } = await largeTable(300);
     client.hooks.queryTableWindow = async (revision, _collection, start, count) =>
-      ({ ...windowOf(revision, start, count), unfiltered_rows: 1300 });
+      ({ ...windowOf(revision, start, count), ...(start > 0 ? { unfiltered_rows: 1300 } : {}) });
 
     await expect(runtime.read()).rejects.toMatchObject({ code: "incoherent-reply" });
   });

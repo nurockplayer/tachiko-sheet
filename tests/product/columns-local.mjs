@@ -429,6 +429,7 @@ try {
   assert.deepEqual((await projection()).rows, capacityBefore.rows, "Undo restores every capacity row exactly");
   await history("Redo");
   assert.deepEqual((await projection()).columns, capacityAdded.columns, "Redo restores the added column");
+  assert.deepEqual((await projection()).rows, capacityAdded.rows, "Redo restores every row and fill value exactly");
   await page.setViewportSize({ width: 320, height: 844 });
   await page.locator(".ts-column-toolbar > summary").waitFor();
   await chooseColumnAction("Capacity extra", "Rename"); d = dialog("Rename column");
@@ -451,6 +452,9 @@ try {
   await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
   assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "the authored capacity column survives Save, Save a copy and a full restart");
+  const reopenedCapacity = await projection();
+  assert.equal(reopenedCapacity.rows.length, capacityAdded.rows.length);
+  assert.ok(reopenedCapacity.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "all capacity rows keep the authored fill value after a full restart");
   assert.equal(values(await projection())[0][1], 777);
   checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
 
