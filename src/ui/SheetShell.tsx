@@ -61,7 +61,7 @@ import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
 import { BriefFacts } from "./BriefFacts.js";
 import { AppearanceSelector } from "./AppearanceSelector.js";
-import { booleanText, cellDisplay, fieldClipboardText, type FieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
+import { booleanText, cellDisplay, fieldClipboardText, formatNumberFor, type FieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import {
   cellKey,
   fieldForColumn,
@@ -3423,6 +3423,8 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
+    const totals = table.column_totals;
+    const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
@@ -3437,7 +3439,7 @@ export function SheetShell(props: SheetShellProps) {
       return !result || result.diagnostics.length > 0;
     });
     const gridTable = (
-      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) : undefined}>
+      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
@@ -3519,8 +3521,20 @@ export function SheetShell(props: SheetShellProps) {
             : displayRows[segment.index] ? renderRow(displayRows[segment.index]!, segment.index) : null)
             : displayRows.map((row, index) => renderRow(row, index))}
         </tbody>
+        {hasColumnTotals ? <tfoot role="rowgroup" className="ts-totals-footer">
+          <tr className="ts-totals-row" aria-label="Column totals" aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
+            <th scope="row" className="ts-row-head" title="Totals for every row in the table, including rows a filter hides.">Σ</th>
+            {columns.map(column => {
+              const hasTotal = Object.prototype.hasOwnProperty.call(totals, column.id);
+              const total = totals[column.id];
+              return <td key={column.id} className={total === null && hasTotal ? "ts-total-cell ts-total-cell--unavailable" : "ts-total-cell"} data-testid={`total:${column.id}`} title={total === null && hasTotal ? "A value in this column has no available result." : undefined}>
+                {hasTotal ? total === null ? "Unavailable" : formatNumberFor(total, column.number_format) : null}
+              </td>;
+            })}
+          </tr>
+        </tfoot> : null}
         {hasDraftRow ? <tfoot role="rowgroup" className="ts-entry-footer">
-          <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
+          <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? displayRows.length + (hasColumnTotals ? 3 : 2) : undefined}>
             <th scope="row" className="ts-row-head" aria-label="New row">+</th>
             {columns.map(column => renderCell(null, DRAFT_ROW, column))}
           </tr>

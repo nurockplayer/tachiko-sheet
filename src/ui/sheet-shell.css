@@ -2886,6 +2886,11 @@ body { margin: 0; }
 
 .ts-draft-cell-message { display: block; white-space: normal; margin-top: 4px; font-size: 12px; }
 
+/* Work's whole-table column totals, shown above the entry row. */
+.ts-totals-row { border-top: 1px solid var(--ts-line); font-variant-numeric: tabular-nums; }
+.ts-totals-row .ts-total-cell { text-align: right; }
+.ts-totals-row .ts-total-cell--unavailable { color: var(--ts-ink-soft); }
+
 /* Entry feedback travels with the draft, outside the grid's cell row count. */
 .ts-grid .ts-entry-feedback td { padding: 0; border: 0; white-space: normal; overflow: visible; }
 .ts-entry-footer .ts-entry-actions {

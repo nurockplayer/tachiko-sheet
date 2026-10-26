@@ -637,6 +637,31 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain(">Discard</button>");
   });
 
+  it("renders the projection's column totals without calculating them", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.column_totals = { "c-impact": 1800 };
+    const markup = render({ view });
+    expect(markup).toContain('<tr class="ts-totals-row" aria-label="Column totals"');
+    expect(markup).toContain('data-testid="total:c-impact"');
+    expect(markup).toContain(">1800</td>");
+  });
+
+  it("renders unavailable column totals with an explanation", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.column_totals = { "c-impact": null };
+    const markup = render({ view });
+    expect(markup).toContain("Unavailable");
+    expect(markup).toContain('title="A value in this column has no available result."');
+  });
+
+  it("omits the totals row when the projection has no column totals", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    expect(render({ view })).not.toContain("ts-totals-row");
+  });
+
   it.each([127, 128, 205, 8406])("offers drafts only below the insertion gate (%i stored rows)", count => {
     const view = makeView();
     view.table.native_table_profile = true;
