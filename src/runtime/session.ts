@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NumberFormat, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -795,6 +795,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
+  function setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.setColumnNumberFormat, "column number format");
+      return command.call(client, revision, collection, field, format);
+    }, true);
+  }
+
   function copyFormula(witness: ViewWitness, request: FormulaCopy) {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.copyFormula, "formula copy");
@@ -1282,7 +1289,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, copyFormula, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, copyFormula, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

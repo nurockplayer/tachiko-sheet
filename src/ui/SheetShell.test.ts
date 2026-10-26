@@ -548,6 +548,21 @@ describe("SheetShell static rendering", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("offers Number format only for number columns with a native writer", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const onSetColumnNumberFormat = async () => ({ kind: "confirmed" as const });
+    for (const column of view.table.columns) {
+      column.field_type = column.id === "c-impact" ? "number" : "text";
+    }
+    const markup = render({ view, onSetColumnNumberFormat });
+    expect(markup).toContain('aria-label="Number format…"');
+    expect(markup.match(/data-column-action="Number format…"/g)).toHaveLength(1);
+    expect(render({ view })).not.toContain("Number format…");
+    view.table.native_table_profile = false;
+    expect(render({ view, onSetColumnNumberFormat })).not.toContain("Number format…");
+  });
+
   it("offers one compact Column menu with column handlers alone and no interactive headers", () => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
     try {

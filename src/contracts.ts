@@ -8,7 +8,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NameFailure } from "../public/core-kit/runtime/protocol.js";
+import type { FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   CleanupPreview,
@@ -99,6 +99,7 @@ export interface SheetRuntime {
   addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<ConfirmedPublication>;
   setColumnRequiredness(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<ConfirmedPublication>;
   setColumnConstraint(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<ConfirmedPublication>;
+  setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;
   copyFormula(witness: ViewWitness, request: FormulaCopy): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
   removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
@@ -356,6 +357,7 @@ export interface SheetShellProps {
   onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<RowCommandOutcome>;
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;
+  onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
