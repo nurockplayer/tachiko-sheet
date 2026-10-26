@@ -8,7 +8,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   CleanupPreview,
@@ -99,6 +99,8 @@ export interface SheetRuntime {
   addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<ConfirmedPublication>;
   setColumnRequiredness(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<ConfirmedPublication>;
   setColumnConstraint(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<ConfirmedPublication>;
+  /** Read Work's capacity accounting for a revision; null when the kit lacks the capability. */
+  queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
   setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;
   copyFormula(witness: ViewWitness, request: FormulaCopy): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
@@ -333,6 +335,7 @@ export type CreateCopyOutcome = { saved: true } | { saved: false; reason: string
 export interface SheetShellProps {
   appearancePreference: AppearancePreferenceController;
   view: WorkbookView | null;
+  capacity?: { rows: number; maximum: number } | null;
   busy: boolean;
   dirty: boolean;
   currentness: Currentness;

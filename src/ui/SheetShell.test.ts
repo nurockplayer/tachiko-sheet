@@ -485,6 +485,16 @@ describe("projection access", () => {
 });
 
 describe("SheetShell static rendering", () => {
+  it("shows the row capacity warning at 80 percent and hides it at 50 percent", () => {
+    const view = makeView();
+    const warning = render({ view, capacity: { rows: 80, maximum: 100 } });
+    expect(warning).toContain('<span class="ts-capacity-warn">80 of 100 rows</span> · 4 columns');
+
+    const ordinary = render({ view, capacity: { rows: 50, maximum: 100 } });
+    expect(ordinary).not.toContain("ts-capacity-warn");
+    expect(ordinary).toContain("2 rows · 4 columns");
+  });
+
   it("starts Other ways with New table and preserves the existing file/example entries", () => {
     const markup = render({ onNewTable: async () => true });
     const otherWays = markup.slice(markup.indexOf('aria-label="Other ways to start"'));

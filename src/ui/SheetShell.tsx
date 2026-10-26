@@ -3415,7 +3415,9 @@ export function SheetShell(props: SheetShellProps) {
             </span>
           ) : null}
           <span className="ts-workbook-row-count">
-            {table ? `${rowSource(table).total} rows · ${columns.length} columns` : ""}
+            {table ? props.capacity && props.capacity.maximum > 0 && props.capacity.rows >= props.capacity.maximum * 0.8
+              ? <><span className="ts-capacity-warn">{props.capacity.rows} of {props.capacity.maximum} rows</span> · {columns.length} columns</>
+              : `${rowSource(table).total} rows · ${columns.length} columns` : ""}
           </span>
         </div>
     );
