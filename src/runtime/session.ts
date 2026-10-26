@@ -315,7 +315,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         }
         throw error;
       }
-      first ??= window;
+      if (!first) {
+        // The first window must be the requested table and the whole of it.
+        if (window.collection.key !== key || window.total_rows !== window.unfiltered_rows) {
+          throw new SheetSessionError("incoherent-reply", "Core table windows did not describe the requested table.");
+        }
+        first = window;
+      }
       if (window.revision !== first.revision || window.columns_revision !== first.columns_revision ||
         window.collection.id !== first.collection.id || window.total_rows !== first.total_rows ||
         window.start !== rows.length || rows.length + window.rows.length > window.total_rows) {

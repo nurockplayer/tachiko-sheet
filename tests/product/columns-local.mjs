@@ -414,16 +414,34 @@ try {
   }, { v3Opaque: 1, legacyOpaque: 0 }, "a capacity copy is written by Work's v3 writer alone");
   checks.push("capacity Save a copy: Work's v3 writer saves the 129-entity collection with no legacy writer");
   // Work #580: a capacity document now saves as v3, so the portable preflight
-  // admits column changes here. Adding one publishes it, and Undo restores the
-  // exact table.
+  // admits column changes here. Add, Rename and Remove each publish (desktop
+  // header and compact Column menu); the kept column must survive Save, Save a
+  // copy and a full restart below.
   const capacityBefore = await projection();
   d = await add("Capacity extra", "text", "x"); await submit("Add column");
   const capacityAdded = await projection();
   assert.equal(capacityAdded.columns.length, capacityBefore.columns.length + 1, "the capacity table gains the authored column");
   assert.equal(capacityAdded.rows.length, capacityBefore.rows.length, "adding a column keeps every capacity row");
+  const addedColumn = capacityAdded.columns.at(-1);
+  assert.ok(capacityAdded.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "every capacity row holds the fill value");
   await history("Undo");
   assert.deepEqual((await projection()).columns, capacityBefore.columns, "Undo removes the added column");
   assert.deepEqual((await projection()).rows, capacityBefore.rows, "Undo restores every capacity row exactly");
+  await history("Redo");
+  assert.deepEqual((await projection()).columns, capacityAdded.columns, "Redo restores the added column");
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.locator(".ts-column-toolbar > summary").waitFor();
+  await chooseColumnAction("Capacity extra", "Rename"); d = dialog("Rename column");
+  await d.getByLabel("Column name", { exact: true }).fill("Capacity note"); await submit("Rename column");
+  assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "compact Rename publishes on the capacity table");
+  const capacityRenamed = await projection();
+  await chooseColumnAction("Capacity note", "Remove"); await submit("Remove column");
+  assert.equal((await projection()).columns.some(column => column.id === addedColumn.id), false, "compact Remove publishes on the capacity table");
+  await history("Undo");
+  assert.deepEqual(await projection().then(table => table.columns), capacityRenamed.columns, "Undo brings the removed column back");
+  assert.deepEqual(await projection().then(table => table.rows), capacityRenamed.rows, "Undo restores the removed column's values");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator(".ts-column-header summary").first().waitFor();
   // A real scalar edit makes the following bound Save perform a durable write.
   await cell(table, 0, 1).dblclick(); const capacityEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await capacityEditor.fill("777"); await capacityEditor.press("Enter"); await ready();
@@ -432,8 +450,9 @@ try {
   await saveCopy("Capacity after columns"); const savedCapacity = await projection();
   await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
+  assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "the authored capacity column survives Save, Save a copy and a full restart");
   assert.equal(values(await projection())[0][1], 777);
-  checks.push("129-row native capacity: Work's v3 writer admits a column add (published, then undone exactly); scalar edit, bound Save and Save a copy succeed; full restart/reopen retains exact state");
+  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
 
   const manyHeaders = await assertManyColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));
