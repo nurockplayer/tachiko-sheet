@@ -1547,7 +1547,7 @@ export function SheetShell(props: SheetShellProps) {
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
-    (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null;
+    (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
