@@ -55,7 +55,7 @@ export async function collectWindowedRows({ rowCount, columnCount, timeoutMs = 6
       const covered = Array.from({ length: last - first + 1 }, (_, offset) => rows.get(first + offset));
       const ready = grid.getAttribute("aria-busy") === "false" &&
         document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false" &&
-        Number(grid.getAttribute("aria-rowcount")) === rowCount + 1 &&
+        Number(grid.getAttribute("aria-rowcount")) === rowCount + 1 + grid.querySelectorAll("tr.ts-totals-row").length &&
         centreBox && centreBox.top >= portTop + header - 1 && centreBox.bottom <= portTop + scroller.clientHeight + 1 &&
         covered.every(row => row?.querySelectorAll("td").length === columnCount);
       if (!ready) { previous = undefined; await pause(); continue; }

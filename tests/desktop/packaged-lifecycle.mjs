@@ -248,7 +248,7 @@ async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
   // Fully rendered grids omit aria-rowcount; count their data rows instead.
   const rowCount = grid().getAttribute("aria-rowcount");
-  const rows = rowCount === null ? grid().querySelectorAll("tbody tr.ts-row").length : Number(rowCount) - 1;
+  const rows = rowCount === null ? grid().querySelectorAll("tbody tr.ts-row").length : Number(rowCount) - 1 - grid().querySelectorAll("tr.ts-totals-row").length;
   const visible = () => {
     const target = rowAt(row);
     if (!target) return null;
@@ -371,7 +371,8 @@ async function importSource(file) {
 }
 
 const rowCount = () => evaluate(`
-  const declared = Number(grid().getAttribute("aria-rowcount")) - 1;
+  // The column totals row is a grid row but not a record.
+  const declared = Number(grid().getAttribute("aria-rowcount")) - 1 - grid().querySelectorAll("tr.ts-totals-row").length;
   const rendered = grid().querySelectorAll("tbody tr.ts-row").length;
   if (rendered >= 400) throw new Error("large table renders " + rendered + " rows, not a window");
   return declared;

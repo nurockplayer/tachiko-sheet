@@ -458,14 +458,14 @@ try {
   assert.equal(imported.native_table_profile, true, "imported Text/Number is structurally native");
   assert.equal(imported.rows.length, 1, "the draft is not a stored record");
   assert.equal(await entry(page).count(), 1);
-  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), 3, "one header, one record and one draft");
+  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count() - await page.locator(".ts-grid .ts-totals-row").count(), 3, "one header, one record and one draft, besides any totals row");
   await closeWithoutSave(page); await openReleasePlanExample(page); // Work #576: formula-bearing tables keep the native profile, so Release plan offers the Add row draft.
   assert.equal((await projection(page)).native_table_profile, true, "Release plan is native once Work admits formula tables"); assert.equal(await entry(page).count(), 1); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   const salesBefore = await projection(page);
   assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
   assert.equal(await page.locator('.ts-grid tfoot .ts-entry-row').count(), 1);
-  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), salesBefore.rows.length + 2, "accessible grid includes header, published rows and the client-only draft");
+  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count() - await page.locator(".ts-grid .ts-totals-row").count(), salesBefore.rows.length + 2, "accessible grid includes header, published rows and the client-only draft");
   assert.equal(salesBefore.native_table_profile, true, "the current Sales example is a native table accepted by core");
   for (const column of salesBefore.columns) {
     await fillDraftCell(page, entry(page).locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? "6" : column.key === "category" ? "ROW-PROBE" : "ROW-PROBE-CODE");
