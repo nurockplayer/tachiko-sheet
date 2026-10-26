@@ -25,9 +25,16 @@ describe("column rules", () => {
     const draft = columnRuleDraft({ field_type: "text", constraint: { kind: "text_literal_set", values: ["  padded", "Done"] } })!;
     expect(columnRuleInput(draft)).toEqual({ input: { kind: "text_literal_set", values: ["  padded", "Done"] } });
     expect(columnRuleInput({ kind: "list", values: "Active\n \nInactive", min: "", max: "" }))
-      .toEqual({ input: { kind: "text_literal_set", values: ["Active", " ", "Inactive"] } });
+      .toEqual({ input: { kind: "text_literal_set", values: [" ", "Active", "Inactive"] } });
     expect(columnRuleInput({ kind: "list", values: "\n\r\n", min: "", max: "" }))
       .toEqual({ error: "Enter at least one allowed value." });
+  });
+
+  it("sends allowed values in Work's UTF-8 byte order and refuses duplicates", () => {
+    expect(columnRuleInput({ kind: "list", values: "Todo\nDoing\nDone\n試算\né", min: "", max: "" }))
+      .toEqual({ input: { kind: "text_literal_set", values: ["Doing", "Done", "Todo", "é", "試算"] } });
+    expect(columnRuleInput({ kind: "list", values: "Todo\nDone\nTodo", min: "", max: "" }))
+      .toEqual({ error: "Each allowed value can appear only once." });
   });
 
   it("parses numeric bounds without deciding rule admissibility", () => {

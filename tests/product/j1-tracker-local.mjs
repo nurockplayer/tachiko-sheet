@@ -172,7 +172,7 @@ try {
   await d.getByLabel("Allowed values", { exact: true }).fill("Todo\nDoing\nDone");
   await d.getByRole("button", { name: "Save rule", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns.find(c => c.display_name === "Status").constraint,
-    { kind: "text_literal_set", values: ["Todo", "Doing", "Done"] });
+    { kind: "text_literal_set", values: ["Doing", "Done", "Todo"] });
   await chooseColumnAction("Priority", "Rule");
   d = dialog("Column rule");
   await d.getByLabel("Lowest value", { exact: true }).fill("1");
@@ -223,7 +223,7 @@ try {
   assert.equal(values(await projection()).find(row => row[0] === "入庫")[2], 5);
 
   editor = await editDisplayed("驗收", "Status", "");
-  assert.equal(await editor.getAttribute("placeholder"), "Todo / Doing / Done");
+  assert.equal(await editor.getAttribute("placeholder"), "Doing / Done / Todo");
   const beforeInvalidStatus = await projection();
   await editor.fill("Blocked"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
