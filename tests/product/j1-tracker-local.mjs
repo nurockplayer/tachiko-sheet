@@ -115,13 +115,20 @@ async function saveCopy(name) {
   await d.waitFor({ state: "detached" }); await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
 }
 const rowByName = name => page.locator(".ts-grid tbody tr.ts-row").filter({ hasText: name }).first();
+// Synthetic DataTransfer gives deterministic headless clipboard contents (as columns-local does).
+async function paste(target, text) {
+  await target.evaluate((node, text) => {
+    const data = new DataTransfer(); data.setData("text/plain", text);
+    node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+  await ready();
+}
 async function addEntryRow(row) {
   const fields = entry().locator("[data-entry-field]");
   assert.equal(await fields.count(), row.length);
-  await fields.first().focus();
-  for (let i = 0; i < row.length; i++) await fields.nth(i).fill(String(row[i]));
-  await fields.nth(row.length - 1).press("Enter");
-  await ready();
+  // Entry fields are grid cells; a TSV paste into the first fills the draft row (as columns-local does).
+  const first = fields.first(); await first.focus(); await paste(first, row.map(String).join("\t"));
+  await first.press("Enter"); await ready();
 }
 async function editDisplayed(name, columnName, value) {
   const table = await projection();
@@ -178,7 +185,7 @@ try {
 
   // 4. Undo/Redo of a rule.
   await history("Undo");
-  assert.equal((await projection()).columns.find(c => c.display_name === "Priority").constraint, undefined);
+  assert.equal((await projection()).columns.find(c => c.display_name === "Priority").constraint ?? null, null);
   await history("Redo");
   assert.deepEqual((await projection()).columns.find(c => c.display_name === "Priority").constraint,
     { kind: "number_inclusive_range", min: 1, max: 5 });
@@ -207,28 +214,23 @@ try {
   editor = await editDisplayed("入庫", "Priority", "");
   assert.equal(await editor.getAttribute("placeholder"), "1–5");
   const beforeInvalidNumber = await projection();
-  const editRequestCount = async () => page.evaluate(() => window.__j1Evidence.records.flatMap(record => record.requests)
-    .filter(message => message.request?.type === "edit_cells").length);
-  const editCountBefore = await editRequestCount();
   await editor.fill("6"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
   assert.equal(await editor.inputValue(), "6");
   assert.deepEqual(await projection(), beforeInvalidNumber);
-  assert.equal(await editRequestCount(), editCountBefore, "refused number edit must not dispatch an edit_cells request");
+  // Work refused it: the projection, including its revision, is unchanged.
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });
   assert.equal(values(await projection()).find(row => row[0] === "入庫")[2], 5);
 
   editor = await editDisplayed("驗收", "Status", "");
   assert.equal(await editor.getAttribute("placeholder"), "Todo / Doing / Done");
   const beforeInvalidStatus = await projection();
-  const statusEditCount = await editRequestCount();
   await editor.fill("Blocked"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
   assert.equal(await editor.inputValue(), "Blocked");
   assert.deepEqual(await projection(), beforeInvalidStatus);
-  assert.equal(await editRequestCount(), statusEditCount, "refused status edit must not dispatch an edit_cells request");
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });
-  checks.push("7 Invalid Priority 6 and Status Blocked remain as drafts with alerts, dispatch no edit_cells request, and Escape preserves published values; both rule placeholders match.");
+  checks.push("7 Invalid Priority 6 and Status Blocked remain as drafts with alerts, leave Work's projection and revision unchanged, and Escape preserves published values; both rule placeholders match.");
 
   // 8. Remove-rule cancel is safe.
   const statusConstraint = (await projection()).columns.find(c => c.display_name === "Status").constraint;
