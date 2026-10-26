@@ -40,7 +40,7 @@ export function sourcePreviewText(value: SourceValue | undefined): string {
   return String(value.value);
 }
 
-const BEYOND_LIMITS = /capacity exceeded|Text capacity requires|capacity requires|exceeds 8,406|row exceeds 8,406|CSV exceeds|exceeds .*(row|column|cell) bounds|25,218|25218|logical cells|(?:cell column|worksheet row).*exceeds profile|bounded Text\/Number capacity rectangle/i;
+const BEYOND_LIMITS = /\b(?:TableRows|TableFields|PopulatedCells|TotalEntities) capacity exceeded|Text capacity requires|capacity requires|exceeds 8,406|row exceeds 8,406|CSV exceeds|exceeds .*(row|column|cell) bounds|25,218|25218|logical cells|(?:cell column|worksheet row).*exceeds profile|bounded Text\/Number capacity rectangle/i;
 const DAMAGED = /unclosed quoted field|Missing ZIP|invalid ZIP|not a valid|malformed|truncated/i;
 
 /** Plain-language inspection refusal; the producer's detail stays visible. */

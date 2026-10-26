@@ -45,6 +45,7 @@ describe("import refusal message", () => {
     const typed = Object.assign(new Error("TableRows capacity exceeded: maximum 8406, attempted 8407"), { failure: { code: "capacity_exceeded" } });
     expect(importRefusalMessage(typed)).toMatch(/^This file is outside what this beta can open: .*Nothing was imported\. \(Details: TableRows capacity exceeded/);
     expect(importRefusalMessage(new Error("TableRows capacity exceeded: maximum 8406, attempted 8407"))).toMatch(/^This file is outside what this beta can open/);
+    expect(importRefusalMessage(new Error("Server capacity exceeded"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: Server capacity exceeded)");
   });
 });
 
