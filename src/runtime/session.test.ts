@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -66,6 +66,7 @@ interface Hooks {
   trackerCommand?: () => Promise<PublicationProjection>;
   duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
   setColumnConstraint?: () => Promise<PublicationProjection>;
+  setColumnNumberFormat?: () => Promise<PublicationProjection>;
   copyFormula?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
@@ -109,6 +110,7 @@ class FakeClient {
     trackerCommand: [] as TrackerCommand[],
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string }>,
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
+    setColumnNumberFormat: [] as Array<{ revision: string; collection: string; field: string; format: NumberFormat | null }>,
     copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
     exportCanonicalTree: [] as string[],
     exportProject: [] as string[],
@@ -241,6 +243,15 @@ class FakeClient {
     this.#requireOpen();
     const hook = this.hooks.setColumnConstraint;
     if (hook !== undefined) { this.hooks.setColumnConstraint = undefined; return hook(); }
+    this.#requireRevision(revision);
+    return this.#publish(IMPACT);
+  }
+
+  async setColumnNumberFormat(revision: string, collection: string, field: string, format: NumberFormat | null): Promise<PublicationProjection> {
+    this.calls.setColumnNumberFormat.push({ revision, collection, field, format });
+    this.#requireOpen();
+    const hook = this.hooks.setColumnNumberFormat;
+    if (hook !== undefined) { this.hooks.setColumnNumberFormat = undefined; return hook(); }
     this.#requireRevision(revision);
     return this.#publish(IMPACT);
   }
@@ -1800,6 +1811,17 @@ describe("setColumnConstraint", () => {
     await expect(runtime.setColumnConstraint({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", { kind: "none" }))
       .rejects.toMatchObject({ code: "stale-witness" });
     expect(client.calls.setColumnConstraint).toEqual([]);
+  });
+});
+
+describe("setColumnNumberFormat", () => {
+  it("forwards the format, confirms publication, and marks portable save", async () => {
+    const { runtime, client, view } = await opened();
+    const format: NumberFormat = { decimals: 2, kind: { type: "currency", code: "USD" }, thousands_separator: true };
+    const confirmed = await runtime.setColumnNumberFormat(witnessOf(view), COLLECTION.key, "f1", format);
+    expect(client.calls.setColumnNumberFormat[0]).toEqual({ revision: view.revision, collection: COLLECTION.key, field: "f1", format });
+    expect(confirmed.view.requiresPortableSave).toBe(true);
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
   });
 });
 

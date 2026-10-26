@@ -55,6 +55,7 @@ import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./
 import { NewTableDialog } from "./NewTableDialog.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
+import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
 import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
@@ -449,6 +450,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
+    onSetColumnNumberFormat,
     onRenameColumn,
     onRemoveColumn,
     onPasteCells,
@@ -621,6 +623,7 @@ export function SheetShell(props: SheetShellProps) {
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
   // Bound to the table it was opened on; a render for another table or occurrence never shows or submits it.
   const [ruleDialog, setRuleDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
+  const [formatDialog, setFormatDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
@@ -1445,7 +1448,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = columnDialog !== null || ruleDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = columnDialog !== null || ruleDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -1571,7 +1574,7 @@ export function SheetShell(props: SheetShellProps) {
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
-    (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null;
+    (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || formatDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -2977,7 +2980,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   const columnChangeReason = "Finish the current input before changing columns.";
-  useEffect(() => { setColumnDialog(null); setRuleDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
+  useEffect(() => { setColumnDialog(null); setRuleDialog(null); setFormatDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
   useEffect(() => {
     if (columnChangesBlocked) {
       const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
@@ -3485,6 +3488,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       setRuleDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
                     }} /> : null}
+                    {table.native_table_profile && onSetColumnNumberFormat && column.field_type === "number" ? <button type="button" className="ts-button" aria-label="Number format…" data-column-action="Number format…" disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      setFormatDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
+                    }} /> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
@@ -3612,6 +3621,12 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 setRuleDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
               }}>{`Rule for “${focusedColumnName}”…`}</button> : null}
+              {table.native_table_profile && onSetColumnNumberFormat && focusedColumn.field_type === "number" ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                closeColumnToolbar(disclosure);
+                setFormatDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
+              }}>{`Number format for “${focusedColumnName}”…`}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 closeColumnToolbar(disclosure);
@@ -4504,6 +4519,21 @@ export function SheetShell(props: SheetShellProps) {
           onSubmit={input => onSetColumnConstraint(witness, table.collection.key, column.id, input)}
           onSuccess={confirmed => { setRuleDialog(null); if (confirmed) setColumnAnnouncement(`Rule updated for ${column.display_name}. Undo restores it.`); restore(); }}
           onCancel={() => { setRuleDialog(null); restore(); }}
+        />;
+      })() : null}
+      {formatDialog && onSetColumnNumberFormat && view && witness && table
+        && formatDialog.collection === table.collection.id && formatDialog.occurrence === view.occurrence ? (() => {
+        const column = columns.find(item => item.id === formatDialog.field);
+        if (!column || column.field_type !== "number") return null;
+        const trigger = formatDialog.trigger;
+        const restore = () => requestAnimationFrame(() => { if (trigger.isConnected) withAppFocus(() => trigger.focus()); });
+        return <ColumnFormatDialog
+          columnName={column.display_name}
+          format={column.number_format}
+          composing={() => props.appearancePreference.getSnapshot().composing}
+          onSubmit={format => onSetColumnNumberFormat(witness, table.collection.key, column.id, format)}
+          onSuccess={confirmed => { setFormatDialog(null); if (confirmed) setColumnAnnouncement(`Format updated for ${column.display_name}. Undo restores it.`); restore(); }}
+          onCancel={() => { setFormatDialog(null); restore(); }}
         />;
       })() : null}
       {deleteName !== null ? <Modal variant="close" label="Delete copy" onCancel={cancelDelete} dismissDisabled={deletePending}>

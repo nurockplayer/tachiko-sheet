@@ -45,6 +45,7 @@ import {
   type ViewWitness,
   type WorkbookView,
 } from "./contracts.js";
+import type { NumberFormat } from "../public/core-kit/runtime/protocol.js";
 import {
   OpenedProjectionRecoveryError,
   NoResidentWorkError,
@@ -1674,6 +1675,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnConstraint(witness, collection, field, constraint), "column");
   }
 
+  function setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null) {
+    return changeRows(witness, () => runtime.setColumnNumberFormat(witness, collection, field, format), "column");
+  }
+
   function copyFormula(witness: ViewWitness, request: FormulaCopy) {
     return changeRows(witness, () => runtime.copyFormula(witness, request));
   }
@@ -2198,6 +2203,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onAddColumn={copies.createWorkFile ? addColumn : undefined}
           onSetColumnRequiredness={copies.createWorkFile ? setColumnRequiredness : undefined}
           onSetColumnConstraint={copies.createWorkFile ? setColumnConstraint : undefined}
+          onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onRemoveRows={removeRows}

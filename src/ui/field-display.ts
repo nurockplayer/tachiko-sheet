@@ -1,5 +1,6 @@
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { ScalarValueEdit } from "../contracts.js";
+import type { NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 
 /** Visual tone of a rendered fact. Never a semantic judgement about the value. */
@@ -32,10 +33,10 @@ const NOT_LOADED: FieldDisplay = {
  * core-calculated results, explicit failure/unavailable states and missing
  * projections each stay distinguishable.
  */
-export function fieldDisplay(field: FieldProjection | null | undefined, required = true): FieldDisplay {
+export function fieldDisplay(field: FieldProjection | null | undefined, required = true, format?: NumberFormat): FieldDisplay {
   if (!field) return NOT_LOADED;
   if (field.blank === true) return BLANK_DISPLAY;
-  const base = baseDisplay(field);
+  const base = baseDisplay(field, format);
   if (!field.formula && !field.calculated && field.stored?.kind === "text" && field.stored.value === "") {
     base.description = "Empty text";
     if (!required) { base.text = '""'; base.emptyTextMarker = true; }
@@ -62,7 +63,7 @@ const BLANK_DISPLAY: FieldDisplay = { text: "", tone: "muted", title: "Blank", d
 /** Sparse table fields are joined by ID; only producer presence metadata marks a blank. */
 export function cellDisplay(row: TableRow, column: TableColumn): FieldDisplay {
   if (row.blank_fields?.includes(column.id)) return BLANK_DISPLAY;
-  return fieldDisplay(fieldForColumn(row, column.id), column.required);
+  return fieldDisplay(fieldForColumn(row, column.id), column.required, column.number_format);
 }
 
 /** Copy authoritative values, independently of display markers, tooltips or warnings. */
@@ -72,12 +73,12 @@ export function fieldClipboardText(field: FieldProjection | null | undefined): s
   return seedTextOf(field);
 }
 
-function baseDisplay(field: FieldProjection): FieldDisplay {
+function baseDisplay(field: FieldProjection, format?: NumberFormat): FieldDisplay {
   const calculated = field.calculated;
   if (calculated) {
     if (calculated.status === "value") {
       return {
-        text: formatNumber(calculated.value),
+        text: formatNumberFor(calculated.value, format),
         tone: field.formula ? "computed" : "plain",
         title: field.formula ? "Calculated value" : null,
       };
@@ -95,10 +96,10 @@ function baseDisplay(field: FieldProjection): FieldDisplay {
       title: "This calculation has no available result.",
     };
   }
-  return storedDisplay(field);
+  return storedDisplay(field, format);
 }
 
-function storedDisplay(field: FieldProjection): FieldDisplay {
+function storedDisplay(field: FieldProjection, format?: NumberFormat): FieldDisplay {
   const stored = field.stored;
   if (!stored) {
     return field.formula
@@ -111,7 +112,7 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
         return { text: UNAVAILABLE_TEXT, tone: "muted", title: "The stored number is not finite." };
       }
       return {
-        text: formatNumber(stored.value),
+        text: formatNumberFor(stored.value, format),
         tone: field.formula ? "computed" : "plain",
         title: formulaTitle(field),
       };
@@ -144,6 +145,29 @@ function storedDisplay(field: FieldProjection): FieldDisplay {
 
 function formulaTitle(field: FieldProjection): string | null {
   return field.formula ? "Calculated value" : null;
+}
+
+const numberFormatterCache = new Map<string, Intl.NumberFormat>();
+
+export function formatNumberFor(value: number, format: NumberFormat | undefined): string {
+  if (!format) return String(value);
+  const key = JSON.stringify(format);
+  let formatter = numberFormatterCache.get(key);
+  if (!formatter) {
+    try {
+      formatter = new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: format.decimals,
+        maximumFractionDigits: format.decimals,
+        useGrouping: format.thousands_separator,
+        style: format.kind.type === "currency" ? "currency" : format.kind.type === "percent" ? "percent" : "decimal",
+        ...(format.kind.type === "currency" ? { currency: format.kind.code } : {}),
+      });
+    } catch {
+      return String(value);
+    }
+    numberFormatterCache.set(key, formatter);
+  }
+  return formatter.format(value);
 }
 
 function formatNumber(value: number): string {
