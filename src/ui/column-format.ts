@@ -13,7 +13,8 @@ export function columnFormatDraft(format?: NumberFormat): ColumnFormatDraft {
 }
 
 export function columnFormatInput(draft: ColumnFormatDraft): { input: NumberFormat } | { error: string } {
-  const decimals = Number(draft.decimals);
+  // Number("") is 0, so an emptied field must be refused before conversion.
+  const decimals = draft.decimals.trim() === "" ? Number.NaN : Number(draft.decimals);
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 10) return { error: "Enter 0 to 10 decimal places." };
   const code = draft.code.toUpperCase();
   if (draft.type === "currency" && !/^[A-Z]{3}$/.test(code)) return { error: "Enter a three-letter currency code." };

@@ -7,6 +7,8 @@ describe("column number format", () => {
     expect(columnFormatInput({ ...columnFormatDraft(), decimals: "0", type: "currency", code: "jpy" }))
       .toEqual({ input: { decimals: 0, kind: { type: "currency", code: "JPY" }, thousands_separator: true } });
     expect(columnFormatInput({ ...columnFormatDraft(), decimals: "11" })).toEqual({ error: "Enter 0 to 10 decimal places." });
+    expect(columnFormatInput({ ...columnFormatDraft(), decimals: "" })).toEqual({ error: "Enter 0 to 10 decimal places." });
+    expect(columnFormatInput({ ...columnFormatDraft(), decimals: "  " })).toEqual({ error: "Enter 0 to 10 decimal places." });
     expect(columnFormatInput({ ...columnFormatDraft(), type: "currency", code: "US" })).toEqual({ error: "Enter a three-letter currency code." });
   });
 
