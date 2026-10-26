@@ -32,10 +32,11 @@ export function completeBlankCount(table: WorkbookView["table"], field: string, 
 }
 
 export function requirednessRefusal(message: string, refusalCode: string | undefined, count: number | null, name: string): string {
-  // Attribute a refusal to blanks only when Work rejected the edit and the
-  // complete current projection shows blanks in this column (ADR-0045 refuses
-  // strengthening while values are missing). Never infer it from message text:
-  // stale witnesses, save preflight or a removed field keep their own message.
-  if (refusalCode !== "edit_rejected" || count === null || count < 1) return message;
+  // Work's typed `required_values_missing` carries its own blank count, which
+  // the caller passes as `count`. The older `edit_rejected` path attributes the
+  // refusal to blanks only when the complete current projection shows them.
+  // Never infer it from message text: stale witnesses, save preflight or a
+  // removed field keep their own message.
+  if ((refusalCode !== "required_values_missing" && refusalCode !== "edit_rejected") || count === null || count < 1) return message;
   return `${count} ${count === 1 ? "row in" : "rows in"} ${name} ${count === 1 ? "is" : "are"} blank. Fill ${count === 1 ? "it" : "them"} before requiring a value.`;
 }

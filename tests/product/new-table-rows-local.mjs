@@ -81,7 +81,14 @@ async function start() {
             evidence.loseNextMutationReply = null;
             this.dispatchEvent(new ErrorEvent("error", { message: "Controlled lost mutation acknowledgement" }));
           }
+          // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
           if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table_window") {
+            const w = structuredClone(event.data.response.payload);
+            if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
+            this.__windowTable.rows.push(...w.rows);
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+          }
           const request = this.record.requests.find(request => request.id === event.data.id);
           if (window.__rowEvidence.loseNextCreateReply && request?.request?.type === "new_table" && (event.data.response?.type === "opened" || event.data.status === "error")) {
             window.__rowEvidence.loseNextCreateReply = false;
@@ -452,7 +459,8 @@ try {
   assert.equal(imported.rows.length, 1, "the draft is not a stored record");
   assert.equal(await entry(page).count(), 1);
   assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count(), 3, "one header, one record and one draft");
-  await closeWithoutSave(page); await openReleasePlanExample(page); assert.equal(Boolean((await projection(page)).native_table_profile), false, "Release plan stays non-native"); assert.equal(await entry(page).count(), 0); await closeWithoutSave(page);
+  await closeWithoutSave(page); await openReleasePlanExample(page); // Work #576: formula-bearing tables keep the native profile, so Release plan offers the Add row draft.
+  assert.equal((await projection(page)).native_table_profile, true, "Release plan is native once Work admits formula tables"); assert.equal(await entry(page).count(), 1); await closeWithoutSave(page);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
   const salesBefore = await projection(page);
   assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");

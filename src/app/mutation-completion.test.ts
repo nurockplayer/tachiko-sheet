@@ -39,7 +39,7 @@ function harness(): { port: MutationCompletionPort; messages: Array<string | nul
   return { port: proxy as unknown as MutationCompletionPort, messages, recoveries };
 }
 
-function refusal(failure: { code: string; message: string; position?: number }): Error {
+function refusal(failure: { code: string; message: string; position?: number; diagnostics?: unknown[] }): Error {
   return Object.assign(new Error(failure.message), { failure });
 }
 
@@ -135,5 +135,15 @@ describe("mutation completion duplicate recovery", () => {
     const recovery = recoveries.at(-1)!;
     expect(recovery.message).toContain("row change");
     expect(recovery.retainedInput).toBeUndefined();
+  });
+
+  it("relays Work's blank count for a required_values_missing refusal", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "rows",
+      witness,
+      dispatch: async () => { throw refusal({ code: "required_values_missing", message: "2 rows have no value in this column.", diagnostics: [{ facts: [{ name: "blank_count", value: "2" }] }] }); },
+    });
+    expect(result).toMatchObject({ kind: "refused", refusalCode: "required_values_missing", blankCount: 2 });
   });
 });

@@ -53,6 +53,8 @@ describe("column requiredness intent", () => {
     expect(requirednessRefusal("blank values", "edit_rejected", 3, "Price")).toBe("3 rows in Price are blank. Fill them before requiring a value.");
     expect(requirednessRefusal("semantic command was rejected: field 'row.field/column' does not exist", "edit_rejected", 1, "Extra")).toBe("1 row in Extra is blank. Fill it before requiring a value.");
     expect(requirednessRefusal("semantic command was rejected: field 'row.field/column' does not exist", "edit_rejected", 0, "Extra")).toBe("semantic command was rejected: field 'row.field/column' does not exist");
+    expect(requirednessRefusal("2 rows have no value in this column.", "required_values_missing", 2, "Extra")).toBe("2 rows in Extra are blank. Fill them before requiring a value.");
+    expect(requirednessRefusal("2 rows have no value in this column.", "required_values_missing", null, "Extra")).toBe("2 rows have no value in this column.");
     expect(requirednessRefusal("Stale revision", "stale_revision", 3, "Price")).toBe("Stale revision");
     expect(requirednessRefusal("This change belongs to an older view. Refresh before trying again.", undefined, 3, "Price")).toBe("This change belongs to an older view. Refresh before trying again.");
   });

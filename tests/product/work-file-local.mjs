@@ -199,13 +199,13 @@ try {
       return read.apply(this, args);
     };
   });
-  const constrained = Buffer.from((await readFile(new URL("../fixtures/work-file/constrained-v3.hex", import.meta.url), "utf8")).replace(/\s/g, ""), "hex");
   for (const [name, buffer, reason] of [
     ["corrupt.ro", Buffer.from("corrupt bytes"), /portable|package|archive|container/i],
     ["csv-renamed.ro", Buffer.from("Name,Amount\nA,1\n"), /portable|package|archive|container/i],
     ["developmental.ro", developmentalArchive(second.bytes), /payload|representation|version/i],
     ["over-limit.ro", null, /limit|64|capacity|size/i],
-    ["constrained.ro", constrained, /unconstrained|unsupported/i],
+    // constrained-v3 is no longer a refusal: Work now admits v3 list/range
+    // constraints (Work #569), so the J1 constraint UI covers it as an open.
     ["wrong-extension.csv", second.bytes, /ending in .ro/i],
   ]) {
     const refusalFile = path.join(profileRoot, name);
