@@ -24,7 +24,9 @@ describe("column rules", () => {
     // An unchanged prefill round-trips Work's values literally.
     const draft = columnRuleDraft({ field_type: "text", constraint: { kind: "text_literal_set", values: ["  padded", "Done"] } })!;
     expect(columnRuleInput(draft)).toEqual({ input: { kind: "text_literal_set", values: ["  padded", "Done"] } });
-    expect(columnRuleInput({ kind: "list", values: " \n\n ", min: "", max: "" }))
+    expect(columnRuleInput({ kind: "list", values: "Active\n \nInactive", min: "", max: "" }))
+      .toEqual({ input: { kind: "text_literal_set", values: ["Active", " ", "Inactive"] } });
+    expect(columnRuleInput({ kind: "list", values: "\n\r\n", min: "", max: "" }))
       .toEqual({ error: "Enter at least one allowed value." });
   });
 

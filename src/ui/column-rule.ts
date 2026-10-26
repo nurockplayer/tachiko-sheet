@@ -36,11 +36,12 @@ export function columnRuleDraft(column: { field_type: string; constraint?: Field
 /**
  * Turns the draft into Work's request. This only parses the form; Work decides
  * whether the rule is admissible (duplicates, limits, min > max, existing rows).
- * List values are sent exactly as typed, one per line; only empty lines are dropped.
+ * List values are sent exactly as typed, one per line; only empty lines are
+ * dropped (a line of spaces is a value, and Work decides whether to admit it).
  */
 export function columnRuleInput(draft: ColumnRuleDraft): { input: FieldConstraint } | { error: string } {
   if (draft.kind === "list") {
-    const values = draft.values.split(/\r?\n/).filter(value => value.trim().length > 0);
+    const values = draft.values.split(/\r?\n/).filter(value => value.length > 0);
     return values.length > 0
       ? { input: { kind: "text_literal_set", values } }
       : { error: "Enter at least one allowed value." };

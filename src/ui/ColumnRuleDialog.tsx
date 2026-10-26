@@ -90,7 +90,9 @@ export function ColumnRuleDialog({ column, composing, onSubmit, onCancel, onSucc
       if (settlement.close) onSuccess(settlement.confirmed);
       else setError(settlement.error);
     } catch {
-      onCancel();
+      // The request never produced an outcome (App reports unknown dispatch
+      // outcomes as a recovery), so keep the draft and say it was not sent.
+      setError("The rule could not be sent. Your entry is kept; try again.");
     } finally {
       pendingRef.current = false;
       setPending(false);
