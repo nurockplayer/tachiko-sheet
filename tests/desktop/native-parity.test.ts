@@ -128,11 +128,17 @@ interface Table { revision: string; collection: { id: string; key: string }; row
  * 1,000 rows (`use_window_query`); larger tables are read through unfiltered
  * windows pinned to the current revision, in the same row order.
  */
-async function readTable(client: Client, key: string): Promise<TableProjection> {
+async function readTable(client: Client, key: string, log: Log): Promise<TableProjection> {
+  // Which path each host took is part of the compared log, so a host that
+  // answers a whole-table query the other refuses can never pass as parity.
   try {
-    return await client.queryTable(key);
+    const table = await client.queryTable(key);
+    log.push(["whole-table query", { answered: table.rows.length }]);
+    return table;
   } catch (error) {
-    if ((error as { failure?: { code?: string } }).failure?.code !== "use_window_query") throw error;
+    const failure = (error as { failure?: { code?: string; row_count?: number } }).failure;
+    if (failure?.code !== "use_window_query") throw error;
+    log.push(["whole-table query", { use_window_query: failure.row_count ?? null }]);
   }
   const { revision } = await client.observeOccurrence();
   const first = await client.queryTableWindow(revision, key, {}, 0, 256);
@@ -184,7 +190,7 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   const imported = await step(log, "import csv", () => client.importSpreadsheet(inputs.csv.slice(0), "csv", options, selection as never));
   revision = imported?.opened.bootstrap.revision ?? "missing";
   const key = imported!.opened.table.collection.key;
-  const rows = await step(log, "query imported", () => readTable(client, key)) as unknown as Table;
+  const rows = await step(log, "query imported", () => readTable(client, key, log)) as unknown as Table;
   for (const row of [0, 4203, 8405]) {
     const target = firstEditable(rows, "text", row);
     const edit = await step(log, `edit text row ${row}`, () => client.editText(revision, target!, `edited-${row}-雪`));
@@ -198,7 +204,7 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   await step(log, "close imported", () => client.closeProject());
   await step(log, "inspect imported project", () => client.inspectImportedProject(saved!.bytes.slice(0), metadata));
   const reopened = await step(log, "open imported project", () => client.openImportedProject(saved!.bytes.slice(0), metadata));
-  await step(log, "query reopened", () => readTable(client, reopened!.table.collection.key));
+  await step(log, "query reopened", () => readTable(client, reopened!.table.collection.key, log));
 
   // #184: the unchanged native transport must admit exactly the same table
   // creation, typed names, row lifecycle, history and v3 reopening as WASM.
@@ -381,6 +387,13 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
             const key = imported.opened.table.collection.key;
             const metadata = imported.metadata;
             const originals = imported.opened.table;
+            // Work's whole-table query answers up to exactly 1,000 rows and
+            // refuses above that with the typed use_window_query, on both hosts.
+            if (rows! <= 1000) {
+              expect((await client.queryTable(key)).rows).toHaveLength(rows!);
+            } else {
+              await expect(client.queryTable(key)).rejects.toMatchObject({ failure: { code: "use_window_query", row_count: rows } });
+            }
             const assertCells = (table: TableProjection, edited: boolean) => {
               expect(metadata.sheets[0]!.columns.map(c => c.name)).toEqual(expected[`${rows}x${cols}`]![0]);
               expect(table.columns).toEqual(originals.columns);
@@ -401,22 +414,22 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
                 }
               }
             };
-            assertCells(await readTable(client, key), false);
+            assertCells(await readTable(client, key, log), false);
             const canEdit = cols! > 1;
             const target = canEdit ? { entity: metadata.sheets[0]!.rows[Math.floor(rows! / 2)]!.entity_id, field: metadata.sheets[0]!.columns[1]!.field_id } : null;
             if (target) {
               revision = (await client.editNumber(revision, target, "424242")).resulting_revision;
-              assertCells(await readTable(client, key), true);
+              assertCells(await readTable(client, key, log), true);
               revision = (await client.trackerCommand({ type: "undo", expected_revision: revision })).resulting_revision;
-              assertCells(await readTable(client, key), false);
+              assertCells(await readTable(client, key, log), false);
               revision = (await client.trackerCommand({ type: "redo", expected_revision: revision })).resulting_revision;
-              assertCells(await readTable(client, key), true);
+              assertCells(await readTable(client, key, log), true);
             }
             // Failed inspection and candidate confirmation preserve the entire
             // resident table, exact save/export bytes and both history directions.
             if (rows === 320) {
               for (const file of [`source-320x17.${format}`, `source-8407x2.${format}`, `source-1577x16.${format}`, `malformed.${format}`, `nonfinite.${format}`]) {
-                const before = await readTable(client, key);
+                const before = await readTable(client, key, log);
                 const savedBefore = normalize((await client.exportProject(revision)).bytes);
                 const csvBefore = normalize((await client.exportSpreadsheet(revision, metadata, "csv", metadata.sheets[0]!.schema_id)).bytes);
                 if (file.startsWith("nonfinite")) {
@@ -424,13 +437,13 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
                 } else {
                   await expect(client.inspectSpreadsheet(await bytesOf(file), format, options)).rejects.toThrow();
                 }
-                expect(await readTable(client, key)).toEqual(before);
+                expect(await readTable(client, key, log)).toEqual(before);
                 expect(normalize((await client.exportProject(revision)).bytes)).toEqual(savedBefore);
                 expect(normalize((await client.exportSpreadsheet(revision, metadata, "csv", metadata.sheets[0]!.schema_id)).bytes)).toEqual(csvBefore);
                 revision = (await client.trackerCommand({ type: "undo", expected_revision: revision })).resulting_revision;
-                assertCells(await readTable(client, key), false);
+                assertCells(await readTable(client, key, log), false);
                 revision = (await client.trackerCommand({ type: "redo", expected_revision: revision })).resulting_revision;
-                assertCells(await readTable(client, key), true);
+                assertCells(await readTable(client, key, log), true);
               }
             }
             for (const exportFormat of ["csv", "xlsx"] as const) {
@@ -443,7 +456,7 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
             const saved = await client.exportProject(revision);
             await client.closeProject();
             const reopened = await client.openImportedProject(saved.bytes.slice(0), metadata);
-            assertCells(await readTable(client, reopened.table.collection.key), canEdit);
+            assertCells(await readTable(client, reopened.table.collection.key, log), canEdit);
             log.push(["reopened", normalize(reopened)]);
             logs.push(log);
           } finally { client.close(); native?.close(); }
