@@ -545,7 +545,9 @@ try {
     await launchExampleThenClose();
     const before = await counts();
     await activePage.locator('input[type="file"][accept*=".csv"]').setInputFiles(path.join(prep, "fixtures", file));
-    await activePage.getByRole("alert").filter({ hasText: "CSV exceeds" }).waitFor();
+    // Work words the bound per producer ("CSV exceeds …", then #588's typed
+    // "TableRows capacity exceeded …"); Sheet's beta-limit explanation covers both.
+    await activePage.getByRole("alert").filter({ hasText: "outside what this beta can open" }).waitFor();
     assert.equal(await activePage.locator(".ts-modal--import").count(), 0, "over-profile input is rejected before review/import dispatch");
     assert.equal((await counts()).importSpreadsheet ?? 0, before.importSpreadsheet ?? 0, "oversize CSV never reaches producer import");
     assert.equal(await activePage.getByTestId("project-ready").count(), 0, "rejected input does not publish a workbook");
