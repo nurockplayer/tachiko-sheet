@@ -6,6 +6,7 @@ import { DetachedReportPresentations } from "./application/detached-report-prese
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
+import type { FieldConstraintInput } from "../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   type AnySavedCopy,
@@ -1648,6 +1649,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnRequiredness(witness, collection, field, required), "column");
   }
 
+  function setColumnConstraint(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput) {
+    return changeRows(witness, () => runtime.setColumnConstraint(witness, collection, field, constraint), "column");
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), "column");
   }
@@ -2165,6 +2170,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // reader-only/rollback hosts do not offer it.
           onAddColumn={copies.createWorkFile ? addColumn : undefined}
           onSetColumnRequiredness={copies.createWorkFile ? setColumnRequiredness : undefined}
+          onSetColumnConstraint={copies.createWorkFile ? setColumnConstraint : undefined}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onRemoveRows={removeRows}
