@@ -228,6 +228,38 @@ const cases = [
       assert.equal(await fact.getAttribute("data-work-currentness"), "current");
     }
   }],
+  ["J2 R2: IF/AND/NOT/ISBLANK/ROUND/percent formula recalculates; a Text operand refuses verbatim", async (page) => {
+    const bar = page.getByTestId("formula-bar-input");
+    const commitFormula = async (source) => {
+      await cell(page, "priority").click();
+      await bar.fill(source);
+      await bar.press("Enter");
+    };
+    // (5 + 5) * 62.5% = 6.25, rounded half away from zero to one decimal.
+    let count = await dispatches(page);
+    await commitFormula("IF(AND([.impact] >= 4, NOT(ISBLANK([.friction]))), ROUND(([.impact] + [.friction]) * 62.5%, 1), 0)");
+    // Work stores the canonical source; the computed value is what the grid shows.
+    const priorityText = (value) => page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
+      [`cell:${expected.entity}:${fields.priority}`, value]);
+    await priorityText("6.3");
+    assert.equal(await dispatches(page), count + 1, "the formula publishes exactly once");
+    assert.equal((await cell(page, "priority").textContent()).trim(), "6.3");
+    // Work recalculates the dependant after a scalar edit: the condition is now false.
+    const input = await entry(page, "impact"); await replace(input, "3");
+    await published(page, input, "impact", "3");
+    await priorityText("0");
+    // Arithmetic on a Text field is Work's typed formula_type_mismatch refusal:
+    // the bar keeps the draft and shows Work's words; nothing is published.
+    const before = await state(page); count = await dispatches(page);
+    await commitFormula("[.title] * 2");
+    const error = page.locator(".ts-formula-bar-error");
+    await error.waitFor();
+    assert.match((await error.textContent()).trim(), /title.*not a Number field/);
+    assert.equal(await bar.inputValue(), "[.title] * 2", "the refused draft stays in the bar");
+    assert.equal(await dispatches(page), count + 1, "the refused formula was sent once");
+    assert.deepEqual(await state(page), before, "a refusal leaves the authoritative state unchanged");
+    assert.equal((await cell(page, "priority").textContent()).trim(), "0");
+  }],
   ["synthetic composing keys do not publish, restart, cancel or navigate", async (page) => {
     const before = await state(page); const count = await dispatches(page);
     const input = await entry(page, "title"); await replace(input, "abc");
