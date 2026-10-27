@@ -2994,6 +2994,21 @@ body { margin: 0; }
   padding: 1px 6px;
   font-size: 12px;
 }
+/* Ctrl/Cmd+F find bar on the Table tab; view-only, dense spreadsheet chrome. */
+.ts-find-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.ts-find-bar input {
+  min-width: 14rem;
+}
+.ts-find-status {
+  min-width: 6rem;
+  color: var(--ts-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
 .ts-column-view-marker {
   flex: none;
   color: var(--ts-accent-ink);
