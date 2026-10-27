@@ -50,8 +50,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # ubuntu-24.04 runners already carry Chromium's system libraries; the
+      # apt step behind --with-deps took 4-12 min and pushed green runs to the
+      # job limit. Only the browser build itself is downloaded here.
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
 
       - name: Typecheck
         run: pnpm typecheck
