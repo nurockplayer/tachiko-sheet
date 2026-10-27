@@ -13,9 +13,14 @@ export type GridWindowSegment =
   | { kind: "row"; index: number }
   | { kind: "spacer"; key: string; rows: number };
 
-/** A scroll extent independent of the rows/spacers React is replacing. */
-export function gridWindowScrollHeight(rowCount: number, rowHeight: number, headerHeight: number): number {
-  return rowCount * rowHeight + headerHeight;
+/**
+ * A scroll extent independent of the rows/spacers React is replacing. It must
+ * cover the footer (totals and entry rows) too: otherwise the table's own
+ * height, which shifts with fractional row heights as the window moves,
+ * decides the extent and the bottom of the scroll range never settles.
+ */
+export function gridWindowScrollHeight(rowCount: number, rowHeight: number, headerHeight: number, footerHeight = 0): number {
+  return rowCount * rowHeight + headerHeight + footerHeight;
 }
 
 export function gridWindowRange(

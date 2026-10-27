@@ -670,6 +670,8 @@ export function SheetShell(props: SheetShellProps) {
   const [gridRowHeight, setGridRowHeight] = useState(32);
   const gridHeaderHeightRef = useRef(32);
   const [gridHeaderHeight, setGridHeaderHeight] = useState(32);
+  const gridFooterHeightRef = useRef(0);
+  const [gridFooterHeight, setGridFooterHeight] = useState(0);
   const gridScrollFrameRef = useRef<number | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
@@ -1312,6 +1314,11 @@ export function SheetShell(props: SheetShellProps) {
     if (head && head.offsetHeight > 0 && head.offsetHeight !== gridHeaderHeightRef.current) {
       gridHeaderHeightRef.current = head.offsetHeight;
       setGridHeaderHeight(head.offsetHeight);
+    }
+    const footerHeight = scroller?.querySelector<HTMLElement>("table.ts-grid > tfoot")?.offsetHeight ?? 0;
+    if (footerHeight !== gridFooterHeightRef.current) {
+      gridFooterHeightRef.current = footerHeight;
+      setGridFooterHeight(footerHeight);
     }
     if (pitch !== null && Math.abs(pitch - gridRowHeightRef.current) > 0.5) {
       gridRowHeightRef.current = pitch;
@@ -3585,7 +3592,7 @@ export function SheetShell(props: SheetShellProps) {
                   scrollTop against a temporarily shorter table during that commit.
                   A table min-height would instead stretch the rendered row heights. */}
               {gridWindowed
-                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight) }}>{gridTable}</div>
+                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
