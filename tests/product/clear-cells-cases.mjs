@@ -191,6 +191,14 @@ export async function runClearCellsCases(page, { close, checks }) {
   const derived = await openFixture(true);
   assert.equal(derived.native_table_profile, true);
   const source = page.getByTestId(`cell:${derived.rows[0].id}:${derived.columns[1].id}`);
+  // The dependant lives in the formula table: read Work's calculated value there, then return.
+  const dependant = async () => {
+    await page.locator("#ts-active-table").selectOption(formulaKey); await ready();
+    const view = await projection();
+    const value = view.rows[0].fields.find(field => field.target.field === view.columns[1].id)?.calculated;
+    await page.locator("#ts-active-table").selectOption(derived.collection.key); await ready();
+    return value;
+  };
   const publications = () => page.evaluate(() => window.__exportEvidence.replies.filter(r => r.response?.type === "published").length);
   for (const mode of ["editor", "range", "paste"]) {
     await source.click(); const before = await projection(), count = (await commands()).length, publishedBefore = await publications();
@@ -201,10 +209,12 @@ export async function runClearCellsCases(page, { close, checks }) {
     assert.equal((await commands()).length, count + 1, "one clear reaches the real Work validator");
     assert.deepEqual((await commands()).at(-1).edits, [{ target: { entity: derived.rows[0].id, field: derived.columns[1].id }, input: { kind: "clear" } }]);
     assert.equal((await source.textContent()).trim(), "", "Work accepted the clear of a formula input");
+    assert.deepEqual(await dependant(), { status: "value", value: 1 }, "the dependant reads the blank input as 0: 0 + 1");
     await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
     assert.deepEqual((await projection()).rows, before.rows, "one Undo restores the cleared input exactly"); await noUndo();
   }
-  checks.push("#229 real Work derived-input clear through editor/grid/paste: explicit clear reaches Work, which accepts it under R2 blank-as-0; one publication, one Undo restores");
+  assert.deepEqual(await dependant(), { status: "value", value: 3 }, "after Undo the dependant reads the restored input: 2 + 1");
+  checks.push("#229 real Work derived-input clear through editor/grid/paste: explicit clear reaches Work, which accepts it under R2 blank-as-0 (dependant 2+1=3 → 0+1=1); one publication, one Undo restores input and dependant");
   await page.locator("#ts-active-table").selectOption(formulaKey); await ready();
   const formulaView = await projection();
   // Work #576: a formula-bearing table keeps the native profile, so Delete on
