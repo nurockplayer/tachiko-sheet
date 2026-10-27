@@ -57,6 +57,18 @@ describe("mutation completion formula refusal", () => {
     expect(result).toEqual({ kind: "refused", message: "Unexpected end of input.", position: 4 });
   });
 
+  it("shows Work's R2 type-mismatch refusal verbatim", async () => {
+    const { port } = harness();
+    const message = "Formula reference '[.title]' is not a Number field.";
+    const result = await createMutationCompletion(port).run({
+      kind: "scalar",
+      witness,
+      edit: { kind: "formula", source: "[.title] * 2" },
+      dispatch: async () => { throw refusal({ code: "formula_type_mismatch", message }); },
+    });
+    expect(result).toEqual({ kind: "refused", message });
+  });
+
   it("keeps a formula refusal out of the global banner: the bar shows it", async () => {
     const { port, messages } = harness();
     await createMutationCompletion(port).run({
