@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal } from "./grid-window.js";
 
 describe("grid window", () => {
+  it("reserves the footer in the scroll extent", () => {
+    expect(gridWindowScrollHeight(320, 32, 33)).toBe(320 * 32 + 33);
+    expect(gridWindowScrollHeight(320, 32, 33, 34)).toBe(320 * 32 + 33 + 34);
+  });
+
   it("covers the visible rows plus overscan, clamped to the table", () => {
     expect(gridWindowRange(0, 320, 32, 8406, 30)).toEqual({ start: 0, end: 41 });
     expect(gridWindowRange(32 * 4000, 320, 32, 8406, 30)).toEqual({ start: 3970, end: 4041 });

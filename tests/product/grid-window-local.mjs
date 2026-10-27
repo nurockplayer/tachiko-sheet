@@ -34,7 +34,8 @@ const geometry = (page) => page.evaluate(() => {
   const table = document.querySelector('table[aria-label="Table"]');
   const pitch = table.querySelector("tbody tr.ts-row").offsetHeight;
   const body = table.querySelector("tbody").offsetHeight;
-  return { pitch, body, rows: Number(table.getAttribute("aria-rowcount")) - 1 };
+  // The column totals row (tfoot) is counted by aria-rowcount but is not a body row.
+  return { pitch, body, rows: Number(table.getAttribute("aria-rowcount")) - 1 - table.querySelectorAll("tr.ts-totals-row").length };
 });
 const pageErrors = [];
 
@@ -81,7 +82,7 @@ try {
     await page.waitForFunction(() => {
       const table = document.querySelector('table[aria-label="Table"]');
       const pitch = table.querySelector("tbody tr.ts-row").offsetHeight;
-      return Math.abs(table.querySelector("tbody").offsetHeight - pitch * (Number(table.getAttribute("aria-rowcount")) - 1)) <= 2;
+      return Math.abs(table.querySelector("tbody").offsetHeight - pitch * (Number(table.getAttribute("aria-rowcount")) - 1 - table.querySelectorAll("tr.ts-totals-row").length)) <= 2;
     });
   }
 

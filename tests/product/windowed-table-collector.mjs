@@ -12,9 +12,10 @@ export async function collectWindowedRows({ rowCount, columnCount, timeoutMs = 6
     let previous;
     let settledSince;
     let lastRange = [];
+    let lastFacts = null;
     for (;;) {
       if (performance.now() >= deadline) {
-        throw new Error(`Full-table collection timed out at row ${first}; missing indices (0-based): ${missing().join(", ")}; last rendered indices: ${lastRange.join(", ")}`);
+        throw new Error(`Full-table collection timed out at row ${first}; missing indices (0-based): ${missing().join(", ")}; last rendered indices: ${lastRange.join(", ")}; last readiness facts: ${JSON.stringify(lastFacts)}`);
       }
       const grid = table();
       const scroller = grid?.closest(".ts-grid-scroll");
@@ -55,10 +56,17 @@ export async function collectWindowedRows({ rowCount, columnCount, timeoutMs = 6
       const covered = Array.from({ length: last - first + 1 }, (_, offset) => rows.get(first + offset));
       const ready = grid.getAttribute("aria-busy") === "false" &&
         document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false" &&
-        Number(grid.getAttribute("aria-rowcount")) === rowCount + 1 &&
+        Number(grid.getAttribute("aria-rowcount")) === rowCount + 1 + grid.querySelectorAll("tr.ts-totals-row").length &&
         centreBox && centreBox.top >= portTop + header - 1 && centreBox.bottom <= portTop + scroller.clientHeight + 1 &&
         covered.every(row => row?.querySelectorAll("td").length === columnCount);
-      if (!ready) { previous = undefined; await pause(); continue; }
+      if (!ready) {
+        // Kept for the timeout message: which readiness fact failed, and the geometry.
+        lastFacts = { centre, scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight, header, pitch,
+          portTop, centreTop: centreBox?.top, centreBottom: centreBox?.bottom, rowcount: grid.getAttribute("aria-rowcount"),
+          totalsRows: grid.querySelectorAll("tr.ts-totals-row").length, tfootHeight: grid.querySelector("tfoot")?.getBoundingClientRect().height,
+          busy: grid.getAttribute("aria-busy"), covered: covered.map(row => row?.querySelectorAll("td").length ?? null) };
+        previous = undefined; await pause(); continue;
+      }
 
       const snapshot = covered.map((row, offset) => [first + offset,
         [...row.querySelectorAll("td")].map(cell => ({ text: cell.textContent, target: cell.getAttribute("data-testid") }))]);

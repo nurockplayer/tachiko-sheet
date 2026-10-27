@@ -76,7 +76,8 @@ async function rowCount(page) {
   assert.equal(projection.native_table_profile, true, "Text/Number fixture is structurally native");
   assert.equal(await grid(page).locator(".ts-entry-row").count(), 0, "no draft at or above the insertion gate");
   await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
-  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1;
+  // The column totals row is a grid row but not a record.
+  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1 - await grid(page).locator(".ts-totals-row").count();
   assert.equal(declared, projection.rows.length, "ARIA data rows match stored records, excluding drafts");
   const rendered = await grid(page).locator("tbody tr.ts-row").count();
   assert.ok(rendered < 400, `large table renders a window, not ${rendered} rows`);

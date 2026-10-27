@@ -35,7 +35,7 @@ export async function runWindowedDraftCases({ page, ready, projection, checks })
     assert.equal(table.native_table_profile, true, "core admits the real native fixture");
     assert.equal(table.rows.length, 205);
     const grid = page.getByRole("grid", { name: "Table", exact: true });
-    assert.equal(await grid.getAttribute("aria-rowcount"), "206", "header plus 205 stored records; no draft");
+    assert.equal(Number(await grid.getAttribute("aria-rowcount")) - await grid.locator(".ts-totals-row").count(), 206, "header plus 205 stored records (besides any totals row); no draft");
     assert.equal(await grid.locator(".ts-entry-row").count(), 0, "no insertion draft beyond Work's published gate");
     const limit = page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true });
     await limit.waitFor();
