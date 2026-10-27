@@ -24,6 +24,12 @@ export function cellEditSlot(row: TableRow, column: TableColumn): CellEditSlot |
   return null;
 }
 
+/** Suggestions for the cell editor: Work's projected choices for an allowed-values column. Work still validates the commit. */
+export function cellEditorOptions(column: TableColumn): readonly string[] {
+  if (column.constraint?.kind !== "text_literal_set") return [];
+  return column.dropdown_options ?? column.constraint.values;
+}
+
 export function cellEditorUnchanged(slot: CellEditSlot, original: string, raw: string): boolean {
   return raw === original || (slot.blank && raw === "");
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellEditSlot, cellEditorUnchanged, pastedCellEdit } from "./cell-edit-slot.js";
+import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, pastedCellEdit } from "./cell-edit-slot.js";
 import { routePaste } from "./clipboard.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
@@ -44,5 +44,15 @@ describe("authoritative sparse edit slots", () => {
     const context = { native: true, draft: false, blocked: false, pendingDraft: false, rowCount: 128, start: { row: 0, column: 0 }, columnTypes: Array(9).fill("text"), columnRequired: Array(9).fill(false), editable: () => Boolean(cellEditSlot(blank, column())) };
     expect(routePaste(Array.from({ length: 128 }, () => Array(8).fill("")), context).kind).toBe("edit");
     expect(routePaste(Array.from({ length: 128 }, () => Array(9).fill("")), context)).toMatchObject({ kind: "refused", message: expect.stringContaining("1,024-cell") });
+  });
+});
+
+describe("cell editor options", () => {
+  it("offers Work's choices only for an allowed-values column", () => {
+    const listed: TableColumn = { ...column(), constraint: { kind: "text_literal_set", values: ["Done", "Open"] }, dropdown_options: ["Done", "Open"] };
+    expect(cellEditorOptions(listed)).toEqual(["Done", "Open"]);
+    expect(cellEditorOptions({ ...listed, dropdown_options: undefined })).toEqual(["Done", "Open"]);
+    expect(cellEditorOptions(column())).toEqual([]);
+    expect(cellEditorOptions({ ...column("number"), constraint: { kind: "number_inclusive_range", min: 0, max: 9 } })).toEqual([]);
   });
 });

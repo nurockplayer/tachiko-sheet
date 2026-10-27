@@ -75,7 +75,7 @@ import { ReportCanvas } from "./ReportCanvas.js";
 import { rowSource } from "./row-source.js";
 import { sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
-import { cellEditSlot, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
+import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { FormulaBar } from "./FormulaBar.js";
@@ -3734,6 +3734,8 @@ export function SheetShell(props: SheetShellProps) {
       ? hasDraftRow
       : rowIndexByEntity.has(focusedEntity)));
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
+    const cellOptions = editing ? cellEditorOptions(column) : [];
+    const cellOptionsId = `ts-cell-options-${column.id}`;
     // A formula field instance is read-only in the grid; the bar edits it.
     const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
@@ -3829,6 +3831,7 @@ export function SheetShell(props: SheetShellProps) {
               : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
             aria-busy={commitPending}
             data-testid="cell-editor"
+            list={cellOptions.length > 0 ? cellOptionsId : undefined}
             disabled={controlsLocked}
             value={editor.value}
             ref={focusEditorInput}
@@ -3843,7 +3846,13 @@ export function SheetShell(props: SheetShellProps) {
             }}
             onKeyDown={onEditorKeyDown}
           />
-        ) : (
+        ) : null}
+        {editing && editor && cellOptions.length > 0 ? (
+          <datalist id={cellOptionsId} data-testid="cell-editor-options">
+            {cellOptions.map((option) => <option key={option} value={option} />)}
+          </datalist>
+        ) : null}
+        {editing && editor ? null : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}
         {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
