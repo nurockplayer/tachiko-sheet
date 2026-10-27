@@ -21,15 +21,21 @@ export function CellOptionsPopup({ id, label, options, activeIndex, anchor, cont
     if (!anchor) return;
     const place = (): void => {
       const rect = anchor.getBoundingClientRect();
-      setBox(current => current && current.left === rect.left && current.top === rect.bottom && current.minWidth === rect.width
-        ? current : { left: rect.left, top: rect.bottom, minWidth: rect.width });
+      const list = listRef.current?.getBoundingClientRect();
+      const height = list?.height ?? 0;
+      const width = Math.max(list?.width ?? 0, rect.width);
+      // Below the cell when it fits; above it near the bottom (the new-row line); always inside the viewport.
+      const top = rect.bottom + height <= window.innerHeight || rect.top < height ? rect.bottom : rect.top - height;
+      const left = Math.max(0, Math.min(rect.left, window.innerWidth - width));
+      setBox(current => current && current.left === left && current.top === top && current.minWidth === rect.width
+        ? current : { left, top, minWidth: rect.width });
     };
     place();
     // Grid scrolling moves the cell; capture catches every scrolling ancestor.
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => { window.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
-  }, [anchor]);
+  }, [anchor, box === null, options.length]);
 
   useLayoutEffect(() => {
     if (activeIndex < 0) return;
@@ -48,7 +54,8 @@ export function CellOptionsPopup({ id, label, options, activeIndex, anchor, cont
         className={index === activeIndex ? "ts-cell-option ts-cell-option--active" : "ts-cell-option"}
         // Keep focus in the editor so a draft-row editor does not blur away.
         onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); onPick(option); }}
-        onClick={(event) => event.stopPropagation()}
+        // A pointer click already picked on mousedown; a synthetic click (assistive technology) has detail 0.
+        onClick={(event) => { event.stopPropagation(); if (event.detail === 0) onPick(option); }}
       >{option}</li>)}
     </ul>,
     container,
