@@ -2073,11 +2073,13 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function goToFindMatch(direction: 1 | -1): void {
-    if (!find) return;
+    // An unapplied cell or formula draft keeps its cell; Find never moves selection out from under it.
+    if (!find || editor || formulaDraftActive) return;
     const match = findMatches[stepGridMatch(findMatches.length, findIndex, direction)];
     if (!match) return;
     const key = cellKey(match.entity, match.field);
     setFind({ ...find, active: { entity: match.entity, field: match.field } });
+    setCellSelection(null);
     setSelectedEntity(match.entity);
     setFocusedKey(key);
     revealGridRow(match.rowIndex);
@@ -3637,8 +3639,8 @@ export function SheetShell(props: SheetShellProps) {
                   event.preventDefault(); goToFindMatch(event.shiftKey ? -1 : 1);
                 }} />
               <span className="ts-find-status" role="status" aria-live="polite">{find.query.trim() ? findStatusText(findMatches.length, findIndex) : ""}</span>
-              <button type="button" className="ts-button ts-button--ghost" aria-label="Previous match" disabled={findMatches.length === 0} onClick={() => goToFindMatch(-1)}>↑</button>
-              <button type="button" className="ts-button ts-button--ghost" aria-label="Next match" disabled={findMatches.length === 0} onClick={() => goToFindMatch(1)}>↓</button>
+              <button type="button" className="ts-button ts-button--ghost" aria-label="Previous match" disabled={findMatches.length === 0 || editor !== null || formulaDraftActive} onClick={() => goToFindMatch(-1)}>↑</button>
+              <button type="button" className="ts-button ts-button--ghost" aria-label="Next match" disabled={findMatches.length === 0 || editor !== null || formulaDraftActive} onClick={() => goToFindMatch(1)}>↓</button>
               <button type="button" className="ts-button ts-button--ghost" onClick={closeFind}>Close</button>
             </div> : null}
             <FormulaBar
