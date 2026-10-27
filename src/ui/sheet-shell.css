@@ -1532,9 +1532,11 @@ body { margin: 0; }
 .ts-cell-options {
   position: fixed;
   z-index: 40;
+  /* Placement caps the outer height: padding and border count inside it. */
+  box-sizing: border-box;
   max-height: 12rem;
   overflow-y: auto;
-  margin: 2px 0 0;
+  margin: 0;
   padding: 4px 0;
   list-style: none;
   background: var(--ts-surface);
