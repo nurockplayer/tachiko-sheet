@@ -3743,7 +3743,8 @@ export function SheetShell(props: SheetShellProps) {
     const cellOptions = editing && editor ? cellOptionMatches(allCellOptions, editor.value) : [];
     const cellOptionsId = `ts-cell-options-${column.id}`;
     const optionsUi: CellOptionsUi = cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
-    const optionsOpen = optionsUi.open && cellOptions.length > 0;
+    // A pending commit owns the editor value; a pick then would be silently dropped.
+    const optionsOpen = optionsUi.open && cellOptions.length > 0 && !commitPending;
     const pickCellOption = (value: string): void => {
       setClipboardMessage(null);
       if (draft) changeRowDraft(column.id, value);

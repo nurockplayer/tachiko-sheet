@@ -1550,9 +1550,15 @@ body { margin: 0; }
   cursor: default;
 }
 
-.ts-cell-option:hover,
+.ts-cell-option:hover {
+  background: var(--ts-surface-sunken);
+}
+
+/* The surface and the cell-selection background can both be white: mark the pending choice explicitly. */
 .ts-cell-option--active {
-  background: var(--ts-selection-active-background);
+  background: var(--ts-surface-sunken);
+  box-shadow: inset 3px 0 0 var(--ts-focus);
+  font-weight: 600;
 }
 
 /* ---------- Brief ---------- */
