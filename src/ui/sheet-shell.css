@@ -1529,6 +1529,35 @@ body { margin: 0; }
   outline: none;
 }
 
+.ts-cell-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 100%;
+  max-height: 12rem;
+  overflow-y: auto;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--ts-surface);
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  box-shadow: var(--ts-shadow);
+}
+
+.ts-cell-option {
+  padding: 3px 10px;
+  white-space: nowrap;
+  color: var(--ts-ink);
+  cursor: default;
+}
+
+.ts-cell-option:hover,
+.ts-cell-option--active {
+  background: var(--ts-selection-active-background);
+}
+
 /* ---------- Brief ---------- */
 
 .ts-brief {

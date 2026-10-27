@@ -24,10 +24,29 @@ export function cellEditSlot(row: TableRow, column: TableColumn): CellEditSlot |
   return null;
 }
 
-/** Suggestions for the cell editor: Work's projected choices for an allowed-values column. Work still validates the commit. */
+/** Choices for the cell editor: an allowed-values column's declared values. Work still validates the commit. */
 export function cellEditorOptions(column: TableColumn): readonly string[] {
-  if (column.constraint?.kind !== "text_literal_set") return [];
-  return column.dropdown_options ?? column.constraint.values;
+  return column.constraint?.kind === "text_literal_set" ? column.constraint.values : [];
+}
+
+/** All choices until the typed text narrows them; an exact choice keeps the full list visible. */
+export function cellOptionMatches(options: readonly string[], value: string): readonly string[] {
+  const needle = value.trim().toLocaleLowerCase();
+  if (!needle || options.includes(value)) return options;
+  return options.filter(option => option.toLocaleLowerCase().includes(needle));
+}
+
+export interface CellOptionsUi { open: boolean; index: number }
+export type CellOptionsKeyAction = { kind: "move"; ui: CellOptionsUi } | { kind: "pick"; index: number } | { kind: "close" } | null;
+
+/** Keys the choice list owns; any other key (and Enter/Escape with no list) keeps the editor's own handling. */
+export function cellOptionsKeyAction(key: string, ui: CellOptionsUi, count: number): CellOptionsKeyAction {
+  if (count === 0) return null;
+  if (key === "ArrowDown") return { kind: "move", ui: { open: true, index: ui.open ? Math.min(ui.index + 1, count - 1) : 0 } };
+  if (key === "ArrowUp") return { kind: "move", ui: { open: true, index: ui.open ? Math.max(ui.index - 1, 0) : count - 1 } };
+  if (key === "Enter" && ui.open && ui.index >= 0 && ui.index < count) return { kind: "pick", index: ui.index };
+  if (key === "Escape" && ui.open) return { kind: "close" };
+  return null;
 }
 
 export function cellEditorUnchanged(slot: CellEditSlot, original: string, raw: string): boolean {

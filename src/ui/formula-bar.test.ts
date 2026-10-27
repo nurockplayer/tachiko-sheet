@@ -406,8 +406,11 @@ describe("formula references", () => {
   it("leaves a press inside the cell's own editor to that editor", () => {
     // The scalar editor's <input> sits inside the cell. Its pointer-down must
     // place the caret natively instead of inserting a reference.
-    const editorInput = { closest: (selector: string) => selector === "input" ? {} : null };
+    const editorInput = { closest: (selector: string) => selector.split(", ").includes("input") ? {} : null };
     expect(cellEditorOwnsPointer(editorInput)).toBe(true);
+    // So does the allowed-values list under that editor.
+    const choice = { closest: (selector: string) => selector.split(", ").includes('[role="listbox"]') ? {} : null };
+    expect(cellEditorOwnsPointer(choice)).toBe(true);
     expect(cellEditorOwnsPointer({ closest: () => null })).toBe(false);
     expect(cellEditorOwnsPointer(null)).toBe(false);
   });

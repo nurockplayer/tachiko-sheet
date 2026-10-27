@@ -75,7 +75,7 @@ import { ReportCanvas } from "./ReportCanvas.js";
 import { rowSource } from "./row-source.js";
 import { sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
-import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
+import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, type CellOptionsUi, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { FormulaBar } from "./FormulaBar.js";
@@ -605,6 +605,8 @@ export function SheetShell(props: SheetShellProps) {
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
   const [resultsHidden, setResultsHidden] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
+  // The allowed-values list under the cell editor; another cell key means a fresh, open list.
+  const [cellOptionsUi, setCellOptionsUi] = useState<CellOptionsUi & { key: string } | null>(null);
   const [notesDrafts, setNotesDrafts] = useState<NotesDraft[]>([]);
   const [commitPending, setCommitPending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -3734,8 +3736,18 @@ export function SheetShell(props: SheetShellProps) {
       ? hasDraftRow
       : rowIndexByEntity.has(focusedEntity)));
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
-    const cellOptions = editing ? cellEditorOptions(column) : [];
+    const allCellOptions = editing ? cellEditorOptions(column) : [];
+    const cellOptions = editing && editor ? cellOptionMatches(allCellOptions, editor.value) : [];
     const cellOptionsId = `ts-cell-options-${column.id}`;
+    const optionsUi: CellOptionsUi = cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
+    const optionsOpen = optionsUi.open && cellOptions.length > 0;
+    const pickCellOption = (value: string): void => {
+      setClipboardMessage(null);
+      if (draft) changeRowDraft(column.id, value);
+      setLocalError(null);
+      setEditor((previous) => (previous ? { ...previous, value } : previous));
+      setCellOptionsUi({ key, open: false, index: -1 });
+    };
     // A formula field instance is read-only in the grid; the bar edits it.
     const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
@@ -3831,7 +3843,11 @@ export function SheetShell(props: SheetShellProps) {
               : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
             aria-busy={commitPending}
             data-testid="cell-editor"
-            list={cellOptions.length > 0 ? cellOptionsId : undefined}
+            role={allCellOptions.length > 0 ? "combobox" : undefined}
+            aria-autocomplete={allCellOptions.length > 0 ? "list" : undefined}
+            aria-expanded={allCellOptions.length > 0 ? optionsOpen : undefined}
+            aria-controls={optionsOpen ? cellOptionsId : undefined}
+            aria-activedescendant={optionsOpen && optionsUi.index >= 0 ? `${cellOptionsId}-${optionsUi.index}` : undefined}
             disabled={controlsLocked}
             value={editor.value}
             ref={focusEditorInput}
@@ -3843,14 +3859,34 @@ export function SheetShell(props: SheetShellProps) {
               if (draft) changeRowDraft(column.id, value);
               setLocalError(null);
               setEditor((previous) => (previous ? { ...previous, value } : previous));
+              if (allCellOptions.length > 0) setCellOptionsUi({ key, open: true, index: -1 });
             }}
-            onKeyDown={onEditorKeyDown}
+            onKeyDown={(event) => {
+              const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
+              const action = composing ? null : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
+              if (!action) { onEditorKeyDown(event); return; }
+              // The open list owns this key; Enter picks without committing, so a second Enter commits.
+              event.preventDefault();
+              event.stopPropagation();
+              if (action.kind === "move") setCellOptionsUi({ key, ...action.ui });
+              else if (action.kind === "pick") pickCellOption(cellOptions[action.index]!);
+              else setCellOptionsUi({ key, open: false, index: -1 });
+            }}
           />
         ) : null}
-        {editing && editor && cellOptions.length > 0 ? (
-          <datalist id={cellOptionsId} data-testid="cell-editor-options">
-            {cellOptions.map((option) => <option key={option} value={option} />)}
-          </datalist>
+        {editing && editor && optionsOpen ? (
+          <ul role="listbox" id={cellOptionsId} className="ts-cell-options" data-testid="cell-editor-options" aria-label={`${column.display_name} allowed values`}>
+            {cellOptions.map((option, index) => <li
+              key={option}
+              id={`${cellOptionsId}-${index}`}
+              role="option"
+              aria-selected={index === optionsUi.index}
+              className={index === optionsUi.index ? "ts-cell-option ts-cell-option--active" : "ts-cell-option"}
+              // Keep focus in the editor so a draft-row editor does not blur away.
+              onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); pickCellOption(option); }}
+              onClick={(event) => event.stopPropagation()}
+            >{option}</li>)}
+          </ul>
         ) : null}
         {editing && editor ? null : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
