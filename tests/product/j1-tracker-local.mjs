@@ -231,6 +231,13 @@ try {
   assert.equal(await editor.inputValue(), "Blocked");
   assert.deepEqual(await projection(), beforeInvalidStatus);
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.getByLabel("Find in table").fill("驗收");
+  await page.getByLabel("Find in table").press("Enter");
+  assert.equal(await page.getByTestId("find-bar").locator(".ts-find-status").textContent(), "1 of 1");
+  assert.equal(await rowByName("驗收").locator('[aria-selected="true"]').count(), 1);
+  await page.getByLabel("Find in table").press("Escape"); await page.getByTestId("find-bar").waitFor({ state: "detached" });
+  checks.push("7b Find locates 驗收 and Escape closes the bar.");
   checks.push("7 Invalid Priority 6 and Status Blocked remain as drafts with alerts, leave Work's projection and revision unchanged, and Escape preserves published values; both rule placeholders match.");
 
   // 8. Remove-rule cancel is safe.

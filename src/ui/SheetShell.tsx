@@ -93,6 +93,7 @@ import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
+import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
 import { useHostFiles } from "../host/host-files.js";
 import "./sheet-shell.css";
 
@@ -658,6 +659,8 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [find, setFind] = useState<{ query: string; index: number } | null>(null);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
   // The bar's draft names its projection revision and cell, so a newer
   // occurrence or revision can never display text meant for the old one.
   const [formulaDraft, setFormulaDraft] = useState<FormulaBarDraft | null>(null);
@@ -915,6 +918,7 @@ export function SheetShell(props: SheetShellProps) {
     () => table ? rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings) : [],
     [columns, gridSettings, table],
   );
+  const findMatches = useMemo(() => find ? findGridMatches(displayRows, columns, find.query) : [], [find?.query, displayRows, columns]);
   const gridOrder = useMemo(() => {
     if (!table) return [] as GridPosition[];
     const order = displayRows.flatMap((row) => {
@@ -2065,6 +2069,25 @@ export function SheetShell(props: SheetShellProps) {
     revealGridRow(rowIndex);
   }
 
+  function goToFindMatch(direction: 1 | -1): void {
+    if (!find) return;
+    const next = stepGridMatch(findMatches.length, find.index, direction);
+    setFind({ ...find, index: next });
+    if (next < 0) return;
+    const match = findMatches[next];
+    if (!match) return;
+    setSelectedEntity(match.entity);
+    setFocusedKey(cellKey(match.entity, match.field));
+    revealGridRow(match.rowIndex);
+    if (!gridWindowed) cellRefs.current.get(cellKey(match.entity, match.field))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  function closeFind(): void {
+    const match = find && find.index >= 0 ? findMatches[find.index] : undefined;
+    setFind(null);
+    requestAnimationFrame(() => match ? focusCell(match.entity, match.field, match.rowIndex) : lastCellRef.current?.focus());
+  }
+
   function syncGridWindow(): void {
     const scroller = gridScrollRef.current;
     if (!scroller || !table) return;
@@ -2727,6 +2750,22 @@ export function SheetShell(props: SheetShellProps) {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   });
+
+  // Ctrl/Cmd+F opens the view-only find bar on the Table tab; it never changes data.
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (!view || tab !== "table" || event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      setFind((current) => current ?? { query: "", index: -1 });
+      requestAnimationFrame(() => { findInputRef.current?.focus(); findInputRef.current?.select(); });
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
+  useEffect(() => {
+    setFind((current) => current ? { ...current, index: -1 } : current);
+  }, [view?.revision, tab]);
 
   function cancelDelete(): void {
     if (deletePending) return;
@@ -3576,6 +3615,19 @@ export function SheetShell(props: SheetShellProps) {
               <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}</span>
               {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" onClick={clearGridSort}>Clear sort</button> : null}
               {gridSettings.filter ? <button type="button" className="ts-button ts-button--ghost" onClick={() => applyGridFilter(gridSettings.filter!.field, "")}>Clear filter</button> : null}
+            </div> : null}
+            {find ? <div className="ts-find-bar" role="search" data-testid="find-bar">
+              <input ref={findInputRef} type="search" aria-label="Find in table" placeholder="Find…" value={find.query}
+                onChange={(event) => setFind({ query: event.currentTarget.value, index: -1 })}
+                onKeyDown={(event) => {
+                  if (isComposingEvent(event)) return;
+                  if (event.key === "Enter") { event.preventDefault(); goToFindMatch(event.shiftKey ? -1 : 1); }
+                  else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); }
+                }} />
+              <span className="ts-find-status" role="status" aria-live="polite">{find.query.trim() ? findStatusText(findMatches.length, find.index) : ""}</span>
+              <button type="button" className="ts-button ts-button--ghost" aria-label="Previous match" disabled={findMatches.length === 0} onClick={() => goToFindMatch(-1)}>↑</button>
+              <button type="button" className="ts-button ts-button--ghost" aria-label="Next match" disabled={findMatches.length === 0} onClick={() => goToFindMatch(1)}>↓</button>
+              <button type="button" className="ts-button ts-button--ghost" onClick={closeFind}>Close</button>
             </div> : null}
             <FormulaBar
               state={formulaState}
