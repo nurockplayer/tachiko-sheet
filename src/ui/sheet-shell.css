@@ -1530,11 +1530,8 @@ body { margin: 0; }
 }
 
 .ts-cell-options {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 20;
-  min-width: 100%;
+  position: fixed;
+  z-index: 40;
   max-height: 12rem;
   overflow-y: auto;
   margin: 2px 0 0;

@@ -93,6 +93,7 @@ import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
+import { CellOptionsPopup } from "./CellOptionsPopup.js";
 import { useHostFiles } from "../host/host-files.js";
 import "./sheet-shell.css";
 
@@ -607,6 +608,8 @@ export function SheetShell(props: SheetShellProps) {
   const [editor, setEditor] = useState<EditorState | null>(null);
   // The allowed-values list under the cell editor; another cell key means a fresh, open list.
   const [cellOptionsUi, setCellOptionsUi] = useState<CellOptionsUi & { key: string } | null>(null);
+  // Every edit session, including reopening the same cell, starts with the list open.
+  useEffect(() => { setCellOptionsUi(null); }, [editor?.entity, editor?.field]);
   const [notesDrafts, setNotesDrafts] = useState<NotesDraft[]>([]);
   const [commitPending, setCommitPending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -3863,7 +3866,8 @@ export function SheetShell(props: SheetShellProps) {
             }}
             onKeyDown={(event) => {
               const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
-              const action = composing ? null : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
+              const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+              const action = composing || modified ? null : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
               if (!action) { onEditorKeyDown(event); return; }
               // The open list owns this key; Enter picks without committing, so a second Enter commits.
               event.preventDefault();
@@ -3874,20 +3878,15 @@ export function SheetShell(props: SheetShellProps) {
             }}
           />
         ) : null}
-        {editing && editor && optionsOpen ? (
-          <ul role="listbox" id={cellOptionsId} className="ts-cell-options" data-testid="cell-editor-options" aria-label={`${column.display_name} allowed values`}>
-            {cellOptions.map((option, index) => <li
-              key={option}
-              id={`${cellOptionsId}-${index}`}
-              role="option"
-              aria-selected={index === optionsUi.index}
-              className={index === optionsUi.index ? "ts-cell-option ts-cell-option--active" : "ts-cell-option"}
-              // Keep focus in the editor so a draft-row editor does not blur away.
-              onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); pickCellOption(option); }}
-              onClick={(event) => event.stopPropagation()}
-            >{option}</li>)}
-          </ul>
-        ) : null}
+        {editing && editor && optionsOpen ? <CellOptionsPopup
+          id={cellOptionsId}
+          label={`${column.display_name} allowed values`}
+          options={cellOptions}
+          activeIndex={optionsUi.index}
+          anchor={cellRefs.current.get(key) ?? null}
+          container={shellRef.current}
+          onPick={pickCellOption}
+        /> : null}
         {editing && editor ? null : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}
