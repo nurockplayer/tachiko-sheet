@@ -668,6 +668,8 @@ export function SheetShell(props: SheetShellProps) {
   const [find, setFind] = useState<{ query: string; active: { entity: string; field: string } | null } | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const findOriginRef = useRef<HTMLElement | null>(null);
+  // The focused cell when Find opened: windowing may unmount its element meanwhile.
+  const findOriginKeyRef = useRef<string | null>(null);
   // The bar's draft names its projection revision and cell, so a newer
   // occurrence or revision can never display text meant for the old one.
   const [formulaDraft, setFormulaDraft] = useState<FormulaBarDraft | null>(null);
@@ -2095,11 +2097,14 @@ export function SheetShell(props: SheetShellProps) {
   function closeFind(): void {
     const match = findIndex >= 0 ? findMatches[findIndex] : undefined;
     const origin = findOriginRef.current;
+    const originKey = findOriginKeyRef.current;
     findOriginRef.current = null;
+    findOriginKeyRef.current = null;
     setFind(null);
     requestAnimationFrame(() => {
       if (match) focusCell(match.entity, match.field, match.rowIndex);
       else if (origin?.isConnected) origin.focus();
+      else if (originKey) { const [entity, field] = originKey.split("\u0000"); if (entity && field) focusCell(entity, field); }
       else lastCellRef.current?.focus();
     });
   }
@@ -2776,7 +2781,10 @@ export function SheetShell(props: SheetShellProps) {
       const target = event.target instanceof Element ? event.target : null;
       if (editor || formulaDraft || target?.closest('[role="dialog"], dialog')) return;
       event.preventDefault();
-      if (!find) findOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (!find) {
+        findOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        findOriginKeyRef.current = focusedKey;
+      }
       setFind((current) => current ?? { query: "", active: null });
       requestAnimationFrame(() => { findInputRef.current?.focus(); findInputRef.current?.select(); });
     };

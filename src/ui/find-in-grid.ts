@@ -3,10 +3,10 @@ import { rowEntity, type TableColumn, type TableRow } from "./projection-access.
 
 export interface GridMatch { entity: string; field: string; rowIndex: number }
 
-/** Cells whose displayed text contains the query, in display order (row, then column). Empty query: none. */
+/** Cells whose displayed text contains the query literally (spaces count), in display order. Blank query: none. */
 export function findGridMatches(rows: readonly TableRow[], columns: readonly TableColumn[], query: string): GridMatch[] {
-  const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return [];
+  if (!query.trim()) return [];
+  const needle = query.toLocaleLowerCase();
   const matches: GridMatch[] = [];
   rows.forEach((row, rowIndex) => {
     for (const column of columns) {

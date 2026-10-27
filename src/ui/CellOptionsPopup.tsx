@@ -1,6 +1,9 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+/** Matches .ts-cell-options max-height (12rem at the 16px root). */
+const LIST_MAX_HEIGHT = 192;
+
 interface CellOptionsPopupProps {
   id: string;
   label: string;
@@ -15,27 +18,32 @@ interface CellOptionsPopupProps {
 /** The allowed-values list under a cell editor. Focus stays in the editor; the editor owns the keys. */
 export function CellOptionsPopup({ id, label, options, activeIndex, anchor, container, onPick }: CellOptionsPopupProps) {
   const listRef = useRef<HTMLUListElement | null>(null);
-  const [box, setBox] = useState<{ left: number; top: number; minWidth: number } | null>(null);
+  const [box, setBox] = useState<{ left: number; top: number; minWidth: number; maxHeight?: number } | null>(null);
 
   useLayoutEffect(() => {
     if (!anchor) return;
     const place = (): void => {
       const rect = anchor.getBoundingClientRect();
-      const list = listRef.current?.getBoundingClientRect();
-      const height = list?.height ?? 0;
-      const width = Math.max(list?.width ?? 0, rect.width);
-      // Below the cell when it fits; above it near the bottom (the new-row line); always inside the viewport.
-      const top = rect.bottom + height <= window.innerHeight || rect.top < height ? rect.bottom : rect.top - height;
+      const list = listRef.current;
+      // Natural size, before any height cap this placement applies.
+      const height = list ? Math.min(list.scrollHeight + list.offsetHeight - list.clientHeight, LIST_MAX_HEIGHT) : 0;
+      const width = Math.max(list?.offsetWidth ?? 0, rect.width);
+      const below = window.innerHeight - rect.bottom;
+      const above = rect.top;
+      // Below the cell when it fits; above it near the bottom (the new-row line); else the larger side, capped.
+      const placeAbove = height > below && (height <= above || above > below);
+      const maxHeight = height > (placeAbove ? above : below) ? Math.max(0, placeAbove ? above : below) : undefined;
+      const top = placeAbove ? rect.top - (maxHeight ?? height) : rect.bottom;
       const left = Math.max(0, Math.min(rect.left, window.innerWidth - width));
-      setBox(current => current && current.left === left && current.top === top && current.minWidth === rect.width
-        ? current : { left, top, minWidth: rect.width });
+      setBox(current => current && current.left === left && current.top === top && current.minWidth === rect.width && current.maxHeight === maxHeight
+        ? current : { left, top, minWidth: rect.width, maxHeight });
     };
     place();
     // Grid scrolling moves the cell; capture catches every scrolling ancestor.
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => { window.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
-  }, [anchor, box === null, options.length]);
+  }, [anchor, box === null, options.join("\u0000")]);
 
   useLayoutEffect(() => {
     if (activeIndex < 0) return;
@@ -45,7 +53,7 @@ export function CellOptionsPopup({ id, label, options, activeIndex, anchor, cont
   if (!container || !box) return null;
   return createPortal(
     <ul ref={listRef} role="listbox" id={id} className="ts-cell-options" data-testid="cell-editor-options" aria-label={label}
-      style={{ left: box.left, top: box.top, minWidth: box.minWidth }}>
+      style={{ left: box.left, top: box.top, minWidth: box.minWidth, maxHeight: box.maxHeight }}>
       {options.map((option, index) => <li
         key={option}
         id={`${id}-${index}`}
