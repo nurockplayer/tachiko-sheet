@@ -20,6 +20,11 @@ describe("find in grid", () => {
     expect(findGridMatches(rows, columns, "   ")).toEqual([]);
   });
 
+  it("keeps meaningful spaces in the query", () => {
+    const named = [row("r1", { a: "ACME Products", b: "ACMEProducts" })];
+    expect(findGridMatches(named, columns, "acme ").map(match => match.field)).toEqual(["a"]);
+  });
+
   it("wraps forward and backward and starts before the first match from -1", () => {
     expect(stepGridMatch(3, -1, 1)).toBe(0);
     expect(stepGridMatch(3, -1, -1)).toBe(2);
