@@ -136,7 +136,7 @@ export function formulaRefusalIsTruncated(element: Pick<HTMLElement, "scrollWidt
  * pure predicate.
  */
 export function cellEditorOwnsPointer(target: { closest?: (selector: string) => unknown } | null): boolean {
-  return Boolean(target?.closest?.("input"));
+  return Boolean(target?.closest?.("input, [role=\"listbox\"]"));
 }
 
 /** A grid cell address; only identity matters for focus movement. */

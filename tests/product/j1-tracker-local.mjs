@@ -225,13 +225,24 @@ try {
 
   editor = await editDisplayed("驗收", "Status", "");
   assert.equal(await editor.getAttribute("placeholder"), "Doing / Done / Todo");
+  // The editor lists the allowed values; arrows highlight, Enter picks without committing.
+  const options = page.getByRole("listbox", { name: "Status allowed values" });
+  assert.deepEqual(await options.getByRole("option").allTextContents(), ["Doing", "Done", "Todo"]);
+  await editor.press("ArrowDown"); await editor.press("ArrowDown"); await editor.press("Enter");
+  assert.equal(await editor.inputValue(), "Done");
+  await options.waitFor({ state: "detached" });
+  // ArrowDown reopens it; a real click (visible, unobstructed) picks and keeps the editor focused.
+  await editor.press("ArrowDown");
+  await options.getByRole("option", { name: "Todo", exact: true }).click();
+  assert.equal(await editor.inputValue(), "Todo");
+  assert.equal(await editor.evaluate(node => node === document.activeElement), true);
   const beforeInvalidStatus = await projection();
   await editor.fill("Blocked"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
   assert.equal(await editor.inputValue(), "Blocked");
   assert.deepEqual(await projection(), beforeInvalidStatus);
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });
-  checks.push("7 Invalid Priority 6 and Status Blocked remain as drafts with alerts, leave Work's projection and revision unchanged, and Escape preserves published values; both rule placeholders match.");
+  checks.push("7 Invalid Priority 6 and Status Blocked remain as drafts with alerts, leave Work's projection and revision unchanged, and Escape preserves published values; both rule placeholders match and Status lists its allowed values; Enter or a click picks one without committing.");
 
   // 8. Remove-rule cancel is safe.
   const statusConstraint = (await projection()).columns.find(c => c.display_name === "Status").constraint;

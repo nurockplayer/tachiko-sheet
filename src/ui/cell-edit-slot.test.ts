@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellEditSlot, cellEditorUnchanged, pastedCellEdit } from "./cell-edit-slot.js";
+import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, pastedCellEdit } from "./cell-edit-slot.js";
 import { routePaste } from "./clipboard.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
@@ -44,5 +44,34 @@ describe("authoritative sparse edit slots", () => {
     const context = { native: true, draft: false, blocked: false, pendingDraft: false, rowCount: 128, start: { row: 0, column: 0 }, columnTypes: Array(9).fill("text"), columnRequired: Array(9).fill(false), editable: () => Boolean(cellEditSlot(blank, column())) };
     expect(routePaste(Array.from({ length: 128 }, () => Array(8).fill("")), context).kind).toBe("edit");
     expect(routePaste(Array.from({ length: 128 }, () => Array(9).fill("")), context)).toMatchObject({ kind: "refused", message: expect.stringContaining("1,024-cell") });
+  });
+});
+
+describe("cell editor options", () => {
+  const listed: TableColumn = { ...column(), constraint: { kind: "text_literal_set", values: ["Doing", "Done", "Todo"] }, dropdown_options: ["Doing", "Done", "Todo"] };
+  it("offers the declared values only for an allowed-values column", () => {
+    expect(cellEditorOptions(listed)).toEqual(["Doing", "Done", "Todo"]);
+    expect(cellEditorOptions(column())).toEqual([]);
+    expect(cellEditorOptions({ ...column("number"), constraint: { kind: "number_inclusive_range", min: 0, max: 9 } })).toEqual([]);
+  });
+  it("narrows by typed text, keeping every choice for empty or exact text", () => {
+    const options = cellEditorOptions(listed);
+    expect(cellOptionMatches(options, "")).toEqual(options);
+    expect(cellOptionMatches(options, "Done")).toEqual(options);
+    expect(cellOptionMatches(options, "do")).toEqual(["Doing", "Done", "Todo"]);
+    expect(cellOptionMatches(options, "on")).toEqual(["Done"]);
+    expect(cellOptionMatches(options, "Blocked")).toEqual([]);
+  });
+  it("owns arrows, Enter on a highlighted choice and Escape on an open list only", () => {
+    const open = { open: true, index: -1 };
+    expect(cellOptionsKeyAction("ArrowDown", open, 3)).toEqual({ kind: "move", ui: { open: true, index: 0 } });
+    expect(cellOptionsKeyAction("ArrowDown", { open: true, index: 2 }, 3)).toEqual({ kind: "move", ui: { open: true, index: 2 } });
+    expect(cellOptionsKeyAction("ArrowUp", { open: false, index: -1 }, 3)).toEqual({ kind: "move", ui: { open: true, index: 2 } });
+    expect(cellOptionsKeyAction("Enter", { open: true, index: 1 }, 3)).toEqual({ kind: "pick", index: 1 });
+    expect(cellOptionsKeyAction("Enter", open, 3)).toBeNull();
+    expect(cellOptionsKeyAction("Escape", open, 3)).toEqual({ kind: "close" });
+    expect(cellOptionsKeyAction("Escape", { open: false, index: -1 }, 3)).toBeNull();
+    expect(cellOptionsKeyAction("Tab", { open: true, index: 1 }, 3)).toBeNull();
+    expect(cellOptionsKeyAction("ArrowDown", open, 0)).toBeNull();
   });
 });
