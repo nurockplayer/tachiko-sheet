@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-/** Matches .ts-cell-options max-height (12rem at the 16px root). */
-const LIST_MAX_HEIGHT = 192;
+/** .ts-cell-options max-height in rem; converted with the live root font size. */
+const LIST_MAX_HEIGHT_REM = 12;
 
 interface CellOptionsPopupProps {
   id: string;
@@ -26,7 +26,8 @@ export function CellOptionsPopup({ id, label, options, activeIndex, anchor, cont
       const rect = anchor.getBoundingClientRect();
       const list = listRef.current;
       // Natural size, before any height cap this placement applies.
-      const height = list ? Math.min(list.scrollHeight + list.offsetHeight - list.clientHeight, LIST_MAX_HEIGHT) : 0;
+      const rootFont = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const height = list ? Math.min(list.scrollHeight + list.offsetHeight - list.clientHeight, LIST_MAX_HEIGHT_REM * rootFont) : 0;
       const width = Math.max(list?.offsetWidth ?? 0, rect.width);
       const below = window.innerHeight - rect.bottom;
       const above = rect.top;
