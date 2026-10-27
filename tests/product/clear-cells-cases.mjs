@@ -185,30 +185,26 @@ export async function runClearCellsCases(page, { close, checks }) {
   await close(page);
 
   // A separate formula table consumes a native source. Work alone determines
-  // whether a clear is legal; the UI never traverses dependencies.
+  // whether a clear is legal; the UI never traverses dependencies. Since Work
+  // R2 (#589) a blank optional Number reads as 0 in formulas, so clearing the
+  // input is accepted and the dependant recalculates instead of refusing.
   const derived = await openFixture(true);
   assert.equal(derived.native_table_profile, true);
   const source = page.getByTestId(`cell:${derived.rows[0].id}:${derived.columns[1].id}`);
+  const publications = () => page.evaluate(() => window.__exportEvidence.replies.filter(r => r.response?.type === "published").length);
   for (const mode of ["editor", "range", "paste"]) {
-    await source.click(); const before = await projection(), count = (await commands()).length;
-    const publishedBefore = await page.evaluate(() => window.__exportEvidence.replies.filter(r => r.response?.type === "published").length);
+    await source.click(); const before = await projection(), count = (await commands()).length, publishedBefore = await publications();
     if (mode === "editor") { await source.press("F2"); await editor().fill(""); await editor().press("Enter"); }
     else if (mode === "range") await page.keyboard.press("Delete");
     else await paste(source, "");
-    await page.locator(".ts-clipboard-status").filter({ hasText: /not applied|not cleared|validation|calculation/i }).waitFor(); await ready();
+    await page.waitForFunction(n => window.__exportEvidence.replies.filter(r => r.response?.type === "published").length === n, publishedBefore + 1); await ready();
     assert.equal((await commands()).length, count + 1, "one clear reaches the real Work validator");
     assert.deepEqual((await commands()).at(-1).edits, [{ target: { entity: derived.rows[0].id, field: derived.columns[1].id }, input: { kind: "clear" } }]);
-    assert.deepEqual(await projection(), before); await noUndo();
-    const refusal = await page.evaluate(() => window.__exportEvidence.replies.findLast(r => r.status === "error").error);
-    assert.ok((await page.locator(".ts-clipboard-status").allTextContents()).join(" ").includes(refusal.message), "Work refusal is surfaced without invented diagnostics");
-    assert.equal(await page.evaluate(() => window.__exportEvidence.replies.filter(r => r.response?.type === "published").length), publishedBefore, "Work published nothing");
-    if (mode === "editor") {
-      assert.equal(await editor().inputValue(), "");
-      await page.waitForFunction(() => document.activeElement?.dataset.testid === "cell-editor");
-      await editor().press("Escape");
-    } else assert.equal(await source.getAttribute("aria-selected"), "true");
+    assert.equal((await source.textContent()).trim(), "", "Work accepted the clear of a formula input");
+    await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+    assert.deepEqual((await projection()).rows, before.rows, "one Undo restores the cleared input exactly"); await noUndo();
   }
-  checks.push("#229 real Work derived-input clear refusal through editor/grid/paste: explicit clear reaches validator, no publication/history, editor input/focus or grid selection retained");
+  checks.push("#229 real Work derived-input clear through editor/grid/paste: explicit clear reaches Work, which accepts it under R2 blank-as-0; one publication, one Undo restores");
   await page.locator("#ts-active-table").selectOption(formulaKey); await ready();
   const formulaView = await projection();
   // Work #576: a formula-bearing table keeps the native profile, so Delete on
