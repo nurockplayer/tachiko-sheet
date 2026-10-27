@@ -237,8 +237,13 @@ try {
   assert.equal(await page.getByTestId("find-bar").locator(".ts-find-status").textContent(), "1 of 1");
   assert.equal(await rowByName("驗收").locator('[aria-selected="true"]').count(), 1);
   await page.getByLabel("Find in table").press("Escape"); await page.getByTestId("find-bar").waitFor({ state: "detached" });
+  // An open cell editor keeps Ctrl/Cmd+F; Find does not take its focus.
+  editor = await editDisplayed("驗收", "Status", "");
+  await editor.press("ControlOrMeta+f");
+  assert.equal(await page.getByTestId("find-bar").count(), 0);
+  await editor.press("Escape"); await editor.waitFor({ state: "detached" });
   checks.push("7 Invalid Priority 6 and Status Blocked remain as drafts with alerts, leave Work's projection and revision unchanged, and Escape preserves published values; both rule placeholders match.");
-  checks.push("7b Find locates 驗收 and Escape closes the bar.");
+  checks.push("7b Find locates 驗收, Escape closes the bar, and an open cell editor keeps Ctrl/Cmd+F.");
 
   // 8. Remove-rule cancel is safe.
   const statusConstraint = (await projection()).columns.find(c => c.display_name === "Status").constraint;

@@ -659,8 +659,10 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const [find, setFind] = useState<{ query: string; index: number } | null>(null);
+  // The active match is a cell, not an index, so sort/filter/edits re-resolve it.
+  const [find, setFind] = useState<{ query: string; active: { entity: string; field: string } | null } | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
+  const findOriginRef = useRef<HTMLElement | null>(null);
   // The bar's draft names its projection revision and cell, so a newer
   // occurrence or revision can never display text meant for the old one.
   const [formulaDraft, setFormulaDraft] = useState<FormulaBarDraft | null>(null);
@@ -919,6 +921,7 @@ export function SheetShell(props: SheetShellProps) {
     [columns, gridSettings, table],
   );
   const findMatches = useMemo(() => find ? findGridMatches(displayRows, columns, find.query) : [], [find?.query, displayRows, columns]);
+  const findIndex = find?.active ? findMatches.findIndex(match => match.entity === find.active!.entity && match.field === find.active!.field) : -1;
   const gridOrder = useMemo(() => {
     if (!table) return [] as GridPosition[];
     const order = displayRows.flatMap((row) => {
@@ -2071,21 +2074,27 @@ export function SheetShell(props: SheetShellProps) {
 
   function goToFindMatch(direction: 1 | -1): void {
     if (!find) return;
-    const next = stepGridMatch(findMatches.length, find.index, direction);
-    setFind({ ...find, index: next });
-    if (next < 0) return;
-    const match = findMatches[next];
+    const match = findMatches[stepGridMatch(findMatches.length, findIndex, direction)];
     if (!match) return;
+    const key = cellKey(match.entity, match.field);
+    setFind({ ...find, active: { entity: match.entity, field: match.field } });
     setSelectedEntity(match.entity);
-    setFocusedKey(cellKey(match.entity, match.field));
+    setFocusedKey(key);
     revealGridRow(match.rowIndex);
-    if (!gridWindowed) cellRefs.current.get(cellKey(match.entity, match.field))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // A windowed row renders after this update; reveal its column once it exists. Focus stays in Find.
+    requestAnimationFrame(() => requestAnimationFrame(() => cellRefs.current.get(key)?.scrollIntoView({ block: "nearest", inline: "nearest" })));
   }
 
   function closeFind(): void {
-    const match = find && find.index >= 0 ? findMatches[find.index] : undefined;
+    const match = findIndex >= 0 ? findMatches[findIndex] : undefined;
+    const origin = findOriginRef.current;
+    findOriginRef.current = null;
     setFind(null);
-    requestAnimationFrame(() => match ? focusCell(match.entity, match.field, match.rowIndex) : lastCellRef.current?.focus());
+    requestAnimationFrame(() => {
+      if (match) focusCell(match.entity, match.field, match.rowIndex);
+      else if (origin?.isConnected) origin.focus();
+      else lastCellRef.current?.focus();
+    });
   }
 
   function syncGridWindow(): void {
@@ -2756,16 +2765,17 @@ export function SheetShell(props: SheetShellProps) {
     const keydown = (event: KeyboardEvent) => {
       if (!view || tab !== "table" || event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
           !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
+      // An open cell or formula edit, or a dialog, keeps its own keys and focus.
+      const target = event.target instanceof Element ? event.target : null;
+      if (editor || formulaDraft || target?.closest('[role="dialog"], dialog')) return;
       event.preventDefault();
-      setFind((current) => current ?? { query: "", index: -1 });
+      if (!find) findOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setFind((current) => current ?? { query: "", active: null });
       requestAnimationFrame(() => { findInputRef.current?.focus(); findInputRef.current?.select(); });
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   });
-  useEffect(() => {
-    setFind((current) => current ? { ...current, index: -1 } : current);
-  }, [view?.revision, tab]);
 
   function cancelDelete(): void {
     if (deletePending) return;
@@ -3616,15 +3626,17 @@ export function SheetShell(props: SheetShellProps) {
               {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" onClick={clearGridSort}>Clear sort</button> : null}
               {gridSettings.filter ? <button type="button" className="ts-button ts-button--ghost" onClick={() => applyGridFilter(gridSettings.filter!.field, "")}>Clear filter</button> : null}
             </div> : null}
-            {find ? <div className="ts-find-bar" role="search" data-testid="find-bar">
+            {find ? <div className="ts-find-bar" role="search" data-testid="find-bar" onKeyDown={(event) => {
+              if (isComposingEvent(event) || event.key !== "Escape") return;
+              event.preventDefault(); event.stopPropagation(); closeFind();
+            }}>
               <input ref={findInputRef} type="search" aria-label="Find in table" placeholder="Find…" value={find.query}
-                onChange={(event) => setFind({ query: event.currentTarget.value, index: -1 })}
+                onChange={(event) => setFind({ query: event.currentTarget.value, active: null })}
                 onKeyDown={(event) => {
-                  if (isComposingEvent(event)) return;
-                  if (event.key === "Enter") { event.preventDefault(); goToFindMatch(event.shiftKey ? -1 : 1); }
-                  else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); }
+                  if (isComposingEvent(event) || event.key !== "Enter") return;
+                  event.preventDefault(); goToFindMatch(event.shiftKey ? -1 : 1);
                 }} />
-              <span className="ts-find-status" role="status" aria-live="polite">{find.query.trim() ? findStatusText(findMatches.length, find.index) : ""}</span>
+              <span className="ts-find-status" role="status" aria-live="polite">{find.query.trim() ? findStatusText(findMatches.length, findIndex) : ""}</span>
               <button type="button" className="ts-button ts-button--ghost" aria-label="Previous match" disabled={findMatches.length === 0} onClick={() => goToFindMatch(-1)}>↑</button>
               <button type="button" className="ts-button ts-button--ghost" aria-label="Next match" disabled={findMatches.length === 0} onClick={() => goToFindMatch(1)}>↓</button>
               <button type="button" className="ts-button ts-button--ghost" onClick={closeFind}>Close</button>
