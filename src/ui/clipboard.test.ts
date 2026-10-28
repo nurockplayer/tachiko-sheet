@@ -42,7 +42,7 @@ describe("paste routing", () => {
     [context({ editable: () => false }), [["a"]], /calculated or non-editable/],
     [context({ start: { row: 1, column: 1 } }), [["1", "true"], ["2", "false"]], /every column/],
     [context(), [["a"], ["b"], ["c"]], /every column/],
-    [context({ draft: true }), block, /one row/],
+    [context({ draft: true, start: { row: 2, column: 1 } }), [["1", "true"], ["2", "false"]], /add several rows, paste from the first column/],
     [context({ start: { row: -1, column: 0 } }), [["a"]], /current cell/],
   ] as const)("refuses whole blocks", (ctx, values, message) => {
     expect(routePaste(values as string[][], ctx)).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
@@ -86,6 +86,13 @@ describe("paste routing", () => {
       .toEqual({ kind: "refused", message: "Edit the formula in the formula bar." });
     expect(routePaste([["1"]], context({ editable: () => false, formula: () => false })))
       .toEqual({ kind: "refused", message: "The pasted block includes a calculated or non-editable cell. Nothing was pasted." });
+  });
+  it("appends several whole rows pasted into the new row, also into an empty table", () => {
+    const optional = { columnRequired: [false, false, true] };
+    for (const rowCount of [0, 2]) {
+      expect(routePaste([["a", "1", "TRUE"], ["", "", "false"]], context({ draft: true, rowCount, start: { row: rowCount, column: 0 }, ...optional })))
+        .toEqual({ kind: "publish", rows: [["a", "1", "true"], [{ kind: "clear" }, { kind: "clear" }, "false"]] });
+    }
   });
   it("fills a partial draft without publishing or losing existing draft permission", () => {
     expect(routePaste([["2", "TRUE"]], context({ draft: true, pendingDraft: true, start: { row: 2, column: 1 } })))

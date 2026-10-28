@@ -242,8 +242,14 @@ try {
   assert.equal(await page.locator('table[aria-label="Table"] td[aria-invalid="true"]').count(), 0, "type-only refusal never invents a cell attribution");
   checks.push("4 ragged, too-wide, malformed and oversized blocks refused before publication; exact history preserved across every refusal");
 
+  // Several whole rows pasted into the new row append to the table in one
+  // publication; Undo removes them together.
   await draftFirst().focus(); await paste(draftFirst(), "a\t1\ttrue\nb\t2\tfalse");
-  await status().filter({ hasText: "Paste one row" }).waitFor();
+  await status().filter({ hasText: "Added 2 rows" }).waitFor(); await ready();
+  const appended = values(await projection());
+  assert.equal(appended.length, pasted.length + 2, "both pasted rows were appended");
+  assert.deepEqual(appended.slice(0, pasted.length), pasted, "existing rows are unchanged");
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual(values(await projection()), pasted);
   // Existing draft blocks published-grid paste; discard remains ordinary UI.
   await paste(draftFirst(), "draft\t1\ttrue");
@@ -266,7 +272,7 @@ try {
   await cell(table, 0, 0).dispatchEvent("compositionend");
   assert.equal((await commands()).length, imeRequests);
   assert.deepEqual(values(await projection()), pasted);
-  checks.push("draft multi-row refusal; pending row/cell guards; editor native paste; IME paste never publishes");
+  checks.push("draft multi-row append and undo; pending row/cell guards; editor native paste; IME paste never publishes");
 
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   const save = page.getByRole("dialog", { name: "Save a copy", exact: true });

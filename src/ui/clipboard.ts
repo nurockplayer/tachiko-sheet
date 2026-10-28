@@ -86,7 +86,9 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
     return refuse(nativeInsertionLimitReached(context.rowCount) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
   }
   if (context.draft) {
-    if (rows.length !== 1) return refuse("Paste one row into the new row. To paste several rows, select a table cell first.");
+    // Several rows pasted into the new row append to the table, as in other
+    // spreadsheets; the block must cover every column so each row is whole.
+    if (rows.length !== 1 && (column !== 0 || width !== context.columnTypes.length)) return refuse("To add several rows, paste from the first column and include every column. Nothing was pasted.");
   } else {
     if (row + rows.length > context.rowCount && (column !== 0 || width !== context.columnTypes.length)) return refuse("To append rows, paste from the first column and include every column. Nothing was pasted.");
     for (let r = row; r < Math.min(context.rowCount, row + rows.length); r++) {
@@ -103,7 +105,7 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   // caller shapes edits; never convert empty Boolean text to false.
   if (insideExistingRows && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !(context.native && value === "") && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
   const normalized = rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!)));
-  if (context.draft || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
+  if ((context.draft && rows.length === 1) || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
   // Work 375da29f protocol.d.ts PasteCellInput + ADR-0045 §3: raw strings
   // always set values; explicit clear expresses absence in paste_cells.
   // Only newly appended optional Text/Number slots get that blank intent.
