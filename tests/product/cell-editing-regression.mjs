@@ -260,6 +260,27 @@ const cases = [
     assert.deepEqual(await state(page), before, "a refusal leaves the authoritative state unchanged");
     assert.equal((await cell(page, "priority").textContent()).trim(), "0");
   }],
+  ["typing = in a Number cell publishes a formula; Work's refusal keeps the draft", async (page) => {
+    // As in other spreadsheets, a leading "=" makes the entry a formula. Sheet
+    // strips only the "="; Work parses, stores and calculates the source.
+    let count = await dispatches(page);
+    let input = await entry(page, "impact"); await replace(input, "=[.friction] + 2");
+    await input.press("Enter"); await editor(page).waitFor({ state: "hidden" });
+    const friction = Number((await cell(page, "friction").textContent()).trim());
+    await page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
+      [`cell:${expected.entity}:${fields.impact}`, String(friction + 2)]);
+    assert.equal(await dispatches(page), count + 1, "the in-cell formula publishes exactly once");
+    await cell(page, "impact").click();
+    assert.match(await page.getByTestId("formula-bar-input").inputValue(), /\[\.friction\]/, "the bar shows the stored formula");
+    // A Text operand is Work's typed refusal: the editor keeps the draft and the
+    // alert shows Work's words; nothing new is published.
+    const before = await state(page); count = await dispatches(page);
+    input = await entry(page, "friction"); await replace(input, "=[.title] * 2");
+    await input.press("Enter"); await page.getByRole("alert").filter({ hasText: /not a Number field/ }).waitFor();
+    assert.equal(await input.inputValue(), "=[.title] * 2", "the refused draft stays in the cell editor");
+    assert.equal(await dispatches(page), count + 1, "the refused formula was sent once");
+    assert.deepEqual(await state(page), before, "a refusal leaves the authoritative state unchanged");
+  }],
   ["synthetic composing keys do not publish, restart, cancel or navigate", async (page) => {
     const before = await state(page); const count = await dispatches(page);
     const input = await entry(page, "title"); await replace(input, "abc");
