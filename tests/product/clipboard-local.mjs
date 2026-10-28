@@ -249,6 +249,7 @@ try {
   const appended = values(await projection());
   assert.equal(appended.length, pasted.length + 2, "both pasted rows were appended");
   assert.deepEqual(appended.slice(0, pasted.length), pasted, "existing rows are unchanged");
+  assert.deepEqual(appended.slice(pasted.length), [["a", 1, true], ["b", 2, false]], "appended rows hold the pasted typed values in order");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual(values(await projection()), pasted);
   // Existing draft blocks published-grid paste; discard remains ordinary UI.
