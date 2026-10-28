@@ -1159,7 +1159,7 @@ export function SheetShell(props: SheetShellProps) {
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
-      pendingDraft: rowDraftActive, start, rowCount: displayRows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
+      pendingDraft: rowDraftActive, start, rowCount: displayRows.length, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
       editable: (r, c) => {
         const row = displayRows[r], column = columns[c];
         const slot = row && column ? cellEditSlot(row, column) : null;
@@ -1180,8 +1180,9 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (route.kind === "edit" ? !onEditCells : !onPasteCells) { announceClipboard("Pasting is not available in this view.", true); return; }
-    const anchor = displayRows[start.row];
-    if (!anchor || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
+    // Rows pasted into the new row append at the end: Work takes no start row.
+    const anchor = draft ? null : displayRows[start.row];
+    if ((!draft && !anchor) || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
     const edits: CellEdit[] = [];
     const blockRows = rowViewBlockRows(displayRows, start.row, route.rows.length);
     if (route.kind === "edit") {
@@ -1210,10 +1211,12 @@ export function SheetShell(props: SheetShellProps) {
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
     const publish = route.kind === "edit"
       ? () => onEditCells!(witness, edits)
-      : () => onPasteCells!(witness, table.collection.key, rowEntity(anchor), columns[start.column]!.id, route.rows);
+      : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
-      announceClipboard(result.kind === "confirmed" ? `Updated ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
+      // Appended rows stay visible under the active filter, as Add row does.
+      if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
+      announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
         : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed", edits.some(edit => edit.input.kind === "clear"));
     }, () => {

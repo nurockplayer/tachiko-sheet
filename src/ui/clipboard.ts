@@ -64,6 +64,8 @@ export function clipboardBoolean(value: string, type: string): string {
 export interface PasteContext {
   native: boolean; draft: boolean; blocked: boolean; pendingDraft: boolean;
   start: CellAddress; rowCount: number; columnTypes: readonly string[]; columnRequired: readonly boolean[];
+  /** Every stored row, when a filter shows fewer than `rowCount` counts. */
+  storedRowCount?: number;
   editable(row: number, column: number): boolean;
   /** Optional attribution: a refusal for a Work formula names its real editor. */
   formula?(row: number, column: number): boolean;
@@ -82,11 +84,15 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if (!context.native && (context.draft || row + rows.length > context.rowCount)) return refuse("Imported tables can't gain rows by paste. Nothing was pasted.");
   const insideExistingRows = !context.draft && row + rows.length <= context.rowCount;
   if (insideExistingRows && rows.length * width > EDIT_CELLS_MAX) return refuse("The pasted block exceeds the 1,024-cell limit. Nothing was pasted.");
-  if (!insideExistingRows && !nativeInsertionFits(context.rowCount, Math.max(1, row + rows.length - context.rowCount))) {
-    return refuse(nativeInsertionLimitReached(context.rowCount) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
+  const stored = context.storedRowCount ?? context.rowCount;
+  if (!insideExistingRows && !nativeInsertionFits(stored, Math.max(1, row + rows.length - context.rowCount))) {
+    return refuse(nativeInsertionLimitReached(stored) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
   }
   if (context.draft) {
-    if (rows.length !== 1) return refuse("Paste one row into the new row. To paste several rows, select a table cell first.");
+    // Several rows pasted into the new row append to the table, as in other
+    // spreadsheets; the block must cover every column so each row is whole.
+    if (rows.length !== 1 && context.pendingDraft) return refuse("Add or discard the new row first.");
+    if (rows.length !== 1 && (column !== 0 || width !== context.columnTypes.length)) return refuse("To add several rows, paste from the first column and include every column. Nothing was pasted.");
   } else {
     if (row + rows.length > context.rowCount && (column !== 0 || width !== context.columnTypes.length)) return refuse("To append rows, paste from the first column and include every column. Nothing was pasted.");
     for (let r = row; r < Math.min(context.rowCount, row + rows.length); r++) {
@@ -103,7 +109,7 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   // caller shapes edits; never convert empty Boolean text to false.
   if (insideExistingRows && rows.some(values => values.some((value, i) => context.columnTypes[column + i] === "boolean" && !(context.native && value === "") && !/^(true|false)$/i.test(value)))) return refuse(pasteRefusal("", "boolean"));
   const normalized = rows.map(values => values.map((value, i) => clipboardBoolean(value, context.columnTypes[column + i]!)));
-  if (context.draft || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
+  if ((context.draft && rows.length === 1) || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
   // Work 375da29f protocol.d.ts PasteCellInput + ADR-0045 §3: raw strings
   // always set values; explicit clear expresses absence in paste_cells.
   // Only newly appended optional Text/Number slots get that blank intent.
