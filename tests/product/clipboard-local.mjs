@@ -24,6 +24,20 @@ let context, pid, page;
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const status = () => page.locator('.ts-clipboard-status');
 const entry = () => page.locator('.ts-entry-row');
+const columnActions = name => page.getByRole("button", { name: `Column actions for ${name}`, exact: true });
+async function chooseColumnAction(name, action) {
+  if (await page.locator(".ts-column-toolbar").count()) {
+    const index = (await page.locator(".ts-col-head").allTextContents()).indexOf(name);
+    assert.ok(index >= 0);
+    await page.locator(".ts-grid tbody tr.ts-row").first().locator(".ts-cell").nth(index).focus();
+    await page.getByRole("button", { name: "Column", exact: true }).click();
+    await page.getByRole("button", { name: `${action} “${name}”…`, exact: true }).click();
+    return;
+  }
+  await page.getByRole("columnheader", { name, exact: true }).hover();
+  await columnActions(name).click();
+  await page.getByRole("button", { name: `${action}…`, exact: true }).click();
+}
 const projection = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.tables).at(-1));
 const commands = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.requests).filter(message => ["paste_cells", "edit_cells"].includes(message.request?.type)).map(message => message.request));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
@@ -250,6 +264,18 @@ try {
   assert.equal(appended.length, pasted.length + 2, "both pasted rows were appended");
   assert.deepEqual(appended.slice(0, pasted.length), pasted, "existing rows are unchanged");
   assert.deepEqual(appended.slice(pasted.length), [["a", 1, true], ["b", 2, false]], "appended rows hold the pasted typed values in order");
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  assert.deepEqual(values(await projection()), pasted);
+  // Under a filter that excludes them, rows added by paste stay visible.
+  await chooseColumnAction("Item", "Filter");
+  await page.getByLabel("Filter Item", { exact: true }).fill("Coffee");
+  await page.getByLabel("Filter Item", { exact: true }).press("Enter"); await ready();
+  const visibleItems = () => page.locator(".ts-grid tbody tr.ts-row").evaluateAll(rows => rows.map(row => row.querySelector(".ts-cell")?.textContent?.trim()));
+  assert.deepEqual(await visibleItems(), ["Coffee"], "filter shows only Coffee");
+  await draftFirst().focus(); await paste(draftFirst(), "Tea\t2\ttrue\nWater\t1\tfalse");
+  await status().filter({ hasText: "Added 2 rows" }).waitFor(); await ready();
+  assert.deepEqual(await visibleItems(), ["Coffee", "Tea", "Water"], "pasted rows stay visible under the filter");
+  await page.getByRole("button", { name: "Clear filter", exact: true }).click(); await ready();
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual(values(await projection()), pasted);
   // Existing draft blocks published-grid paste; discard remains ordinary UI.

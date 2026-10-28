@@ -1159,7 +1159,7 @@ export function SheetShell(props: SheetShellProps) {
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
-      pendingDraft: rowDraftActive, start, rowCount: displayRows.length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
+      pendingDraft: rowDraftActive, start, rowCount: displayRows.length, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
       editable: (r, c) => {
         const row = displayRows[r], column = columns[c];
         const slot = row && column ? cellEditSlot(row, column) : null;

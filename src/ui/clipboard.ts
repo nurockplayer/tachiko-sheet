@@ -64,6 +64,8 @@ export function clipboardBoolean(value: string, type: string): string {
 export interface PasteContext {
   native: boolean; draft: boolean; blocked: boolean; pendingDraft: boolean;
   start: CellAddress; rowCount: number; columnTypes: readonly string[]; columnRequired: readonly boolean[];
+  /** Every stored row, when a filter shows fewer than `rowCount` counts. */
+  storedRowCount?: number;
   editable(row: number, column: number): boolean;
   /** Optional attribution: a refusal for a Work formula names its real editor. */
   formula?(row: number, column: number): boolean;
@@ -82,8 +84,9 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if (!context.native && (context.draft || row + rows.length > context.rowCount)) return refuse("Imported tables can't gain rows by paste. Nothing was pasted.");
   const insideExistingRows = !context.draft && row + rows.length <= context.rowCount;
   if (insideExistingRows && rows.length * width > EDIT_CELLS_MAX) return refuse("The pasted block exceeds the 1,024-cell limit. Nothing was pasted.");
-  if (!insideExistingRows && !nativeInsertionFits(context.rowCount, Math.max(1, row + rows.length - context.rowCount))) {
-    return refuse(nativeInsertionLimitReached(context.rowCount) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
+  const stored = context.storedRowCount ?? context.rowCount;
+  if (!insideExistingRows && !nativeInsertionFits(stored, Math.max(1, row + rows.length - context.rowCount))) {
+    return refuse(nativeInsertionLimitReached(stored) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
   }
   if (context.draft) {
     // Several rows pasted into the new row append to the table, as in other
