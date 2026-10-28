@@ -288,6 +288,16 @@ export function formulaHandoffSettlement(input: {
   };
 }
 
+/**
+ * The formula source of an in-cell entry that starts with "=", as in other
+ * spreadsheets, or null for an ordinary value. Work parses the source; Sheet
+ * only removes the leading "=" that the formula grammar does not use.
+ */
+export function inCellFormulaSource(value: string): string | null {
+  const entry = value.trim();
+  return entry.length > 1 && entry.startsWith("=") ? entry.slice(1).trim() : null;
+}
+
 /** Work's refusal with its own character position, as one line of text. */
 export function formulaRefusalText(error: { message: string; position?: number }): string {
   return `${error.message}${error.position !== undefined ? ` (position ${error.position})` : ""}`;
