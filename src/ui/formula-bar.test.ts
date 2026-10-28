@@ -26,6 +26,7 @@ import {
   formulaRefusalIsTruncated,
   formulaHandoffSettlement,
   formulaRefusalText,
+  inCellFormulaSource,
   formulaSubmitHandoffOutcome,
   formulaReferenceInsertion,
   formulaReferenceToken,
@@ -652,5 +653,15 @@ describe("formula bar with a hidden bound row", () => {
     expect(html).not.toContain("readonly");
     expect(html).toContain(FORMULA_BAR_HIDDEN_ROW);
     expect(html).not.toContain(FORMULA_BAR_NO_CELL);
+  });
+});
+
+describe("inCellFormulaSource", () => {
+  it("reads a leading = as a formula and keeps other entries as values", () => {
+    expect(inCellFormulaSource("=[.amount]*0.1")).toBe("[.amount]*0.1");
+    expect(inCellFormulaSource("  = [.amount] * 2 ")).toBe("[.amount] * 2");
+    expect(inCellFormulaSource("=")).toBeNull();
+    expect(inCellFormulaSource("12")).toBeNull();
+    expect(inCellFormulaSource("1=1")).toBeNull();
   });
 });

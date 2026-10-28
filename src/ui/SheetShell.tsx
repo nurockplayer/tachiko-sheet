@@ -79,7 +79,7 @@ import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaHandoffSettlement, formulaReferenceInsertion, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaHandoffSettlement, formulaReferenceInsertion, inCellFormulaSource, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -2213,6 +2213,27 @@ export function SheetShell(props: SheetShellProps) {
         else focusRejectedEditorRef.current = intent;
         return accepted;
       }
+    }
+    const formulaSource = editor.kind === "number" ? inCellFormulaSource(editor.value) : null;
+    if (formulaSource !== null) {
+      // Same rule as the formula bar: a first formula withdraws the native row
+      // profile, which would hide the entry row while its draft blocks Save.
+      if (rowDraftActive) {
+        setLocalError(FORMULA_BAR_DRAFT_ROW_HINT);
+        return false;
+      }
+      const intent = completionIntent();
+      // Sheet forwards the source unchanged; Work parses, validates and stores it.
+      const outcome = await runCommit(slot.target, { kind: "formula", source: formulaSource });
+      if (!outcome?.accepted) {
+        focusRejectedEditorRef.current = intent;
+        setLocalError(outcome?.message ?? "The formula was not applied. The draft was kept so you can correct it.");
+        return false;
+      }
+      setEditor(null);
+      setLocalError(null);
+      if (completionMayUpdateUi(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
+      return true;
     }
     let edit: Parameters<SheetShellProps["onCommit"]>[2];
     if (editor.kind === "boolean") {
