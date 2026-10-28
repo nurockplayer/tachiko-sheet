@@ -88,6 +88,7 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if (context.draft) {
     // Several rows pasted into the new row append to the table, as in other
     // spreadsheets; the block must cover every column so each row is whole.
+    if (rows.length !== 1 && context.pendingDraft) return refuse("Add or discard the new row first.");
     if (rows.length !== 1 && (column !== 0 || width !== context.columnTypes.length)) return refuse("To add several rows, paste from the first column and include every column. Nothing was pasted.");
   } else {
     if (row + rows.length > context.rowCount && (column !== 0 || width !== context.columnTypes.length)) return refuse("To append rows, paste from the first column and include every column. Nothing was pasted.");

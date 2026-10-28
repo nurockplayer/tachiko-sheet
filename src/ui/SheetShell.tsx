@@ -1214,6 +1214,8 @@ export function SheetShell(props: SheetShellProps) {
       : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
+      // Appended rows stay visible under the active filter, as Add row does.
+      if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
         : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed", edits.some(edit => edit.input.kind === "clear"));

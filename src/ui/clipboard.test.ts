@@ -43,6 +43,7 @@ describe("paste routing", () => {
     [context({ start: { row: 1, column: 1 } }), [["1", "true"], ["2", "false"]], /every column/],
     [context(), [["a"], ["b"], ["c"]], /every column/],
     [context({ draft: true, start: { row: 2, column: 1 } }), [["1", "true"], ["2", "false"]], /add several rows, paste from the first column/],
+    [context({ draft: true, pendingDraft: true, start: { row: 2, column: 0 } }), block, /Add or discard the new row first/],
     [context({ start: { row: -1, column: 0 } }), [["a"]], /current cell/],
   ] as const)("refuses whole blocks", (ctx, values, message) => {
     expect(routePaste(values as string[][], ctx)).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
