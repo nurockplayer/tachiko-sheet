@@ -53,6 +53,6 @@ export function draftRefusal(columns: Column[], values: Record<string, string>, 
   const matching = typed.filter(column => message.includes(`'${values[column.id] ?? ""}'`));
   const column = matching.length === 1 ? matching[0] : typed.length === 1 ? typed[0] : undefined;
   if (!column) return { message: "This row could not be added. Check its values and try again." };
-  const requirement = fieldType === "number" ? "a number" : fieldType === "date" ? "a date in YYYY-MM-DD format" : fieldType === "boolean" ? "Yes or No" : "a valid value";
+  const requirement = fieldType === "number" ? "a number" : fieldType === "date" ? "a date with the year first, such as 2026/10/7" : fieldType === "boolean" ? "Yes or No" : "a valid value";
   return { message: `${name(column)} needs ${requirement}.`, fields: [column.id] };
 }

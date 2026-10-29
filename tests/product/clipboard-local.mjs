@@ -241,7 +241,7 @@ try {
   await cell(table, 0, 0).press("F2");
   assert.equal(await page.locator('.ts-clipboard-status[role="alert"]:visible').count(), 0, "starting an edit clears refusal");
   await page.getByTestId("cell-editor").press("Escape");
-  for (const text of ["bad\t1,300\ttrue", "bad\t$5\ttrue"]) await unchangedPaste(text, /needs a number/);
+  for (const text of ["bad\t1,30\ttrue", "bad\t$5\ttrue"]) await unchangedPaste(text, /needs a number/);
   assert.equal(await unchangedPaste("bad\t\ttrue", /This Number column needs a value in every row/, true), 0);
   checks.push("3 invalid Number, locale and currency refused by Work; blank required Number refused locally; no revision/history change");
   for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/], ['"unclosed', /unfinished quote/], ['"x"tail', /malformed quotes/], [Array(129).fill("a\t1\ttrue").join("\n"), /128-row/]]) {
@@ -374,7 +374,7 @@ try {
   assert.deepEqual((await projection()).rows, table.rows);
   checks.push("217.1 imported 2x3 at selection top-left: one edit_cells, one publication, one Undo/Redo and preserved focus");
 
-  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,300\t2", "bad\t$5\t2"]) {
+  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,30\t2", "bad\t$5\t2"]) {
     assert.equal(await unchangedPaste(text, /needs a number/), 1);
   }
   // #229: structurally native imported optional Number now clears explicitly.
@@ -460,7 +460,7 @@ try {
   await dates.getByLabel("Column 1 type", { exact: true }).selectOption("date");
   await dates.getByRole("button", { name: "Create table", exact: true }).click(); await ready();
   await draftFirst().focus(); await paste(draftFirst(), "2026-10-19"); await draftFirst().press("Enter"); await ready();
-  assert.equal(await unchangedPaste("10/19/2026", /YYYY-MM-DD/), 1);
+  assert.equal(await unchangedPaste("10/19/2026", /year first/), 1);
   assert.equal((await commands()).at(-1).edits[0].input.value, "10/19/2026", "raw Date string reached Work unchanged");
   const dateTable = await projection();
   await paste(cell(dateTable, 0, 0), "2026-10-20"); await status().filter({ hasText: "Updated 1 row" }).waitFor();
