@@ -92,7 +92,7 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
     assert.equal(await unchangedPaste(`must-not-change\tTRUE\t2026-11-01\nalso-unchanged\t${bad}\t2026-11-02`, /true or false/), 0);
   }
   for (const bad of ["10/19/2026", "not-a-date", "2026-02-30"]) {
-    assert.equal(await unchangedPaste(`must-not-change\tTRUE\t2026-11-01\nalso-unchanged\tFALSE\t${bad}`, /YYYY-MM-DD/), 1);
+    assert.equal(await unchangedPaste(`must-not-change\tTRUE\t2026-11-01\nalso-unchanged\tFALSE\t${bad}`, /year first/), 1);
     assert.deepEqual((await commands()).at(-1).edits.at(-1).input, { kind: "date", value: bad }, "raw invalid date reaches Work unchanged");
   }
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();

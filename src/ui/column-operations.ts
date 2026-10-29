@@ -42,8 +42,8 @@ export async function submitColumnIntent(state: ColumnDialogState, draft: Column
   return { kind: "refused", message: "Choose a fill value before adding this column." };
 }
 export function columnRefusal(message: string, fieldType?: string): string {
-  if (fieldType === "number") return "Enter a number for the existing rows, such as 12.5. Nothing was changed.";
-  if (fieldType === "date") return "Enter a valid date in YYYY-MM-DD format. Nothing was changed.";
+  if (fieldType === "number") return "Enter a number for the existing rows, such as 12.5 or 1,300. Nothing was changed.";
+  if (fieldType === "date") return "Enter a valid date with the year first, such as 2026-10-07 or 2026/10/7. Nothing was changed.";
   if (/still referenced by a formula or saved definition/i.test(message)) return "This column is used by a formula or cross-table summary. Remove those references before removing the column. Nothing was changed.";
   if (/at least one column/i.test(message)) return "Keep at least one column in this table. Nothing was changed.";
   if (/duplicate_display_name|already.*(?:used|name)|distinct display names|names must be unique/i.test(message)) return "This name is already used. Choose a distinct column name. Nothing was changed.";

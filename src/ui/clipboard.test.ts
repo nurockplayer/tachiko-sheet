@@ -123,8 +123,8 @@ describe("selection and refusal presentation", () => {
     expect(stepAddress({ row: 0, column: 1 }, "ArrowRight", 3, 3)).toEqual({ row: 0, column: 2 });
   });
   it("does not infer a cell from type-only refusal evidence", () => {
-    expect(pasteRefusal("core refusal", "number")).toMatch(/12 or 12.5/);
-    expect(pasteRefusal("core refusal", "date")).toMatch(/YYYY-MM-DD/);
+    expect(pasteRefusal("core refusal", "number")).toMatch(/12.5, 1,300 or 12%/);
+    expect(pasteRefusal("core refusal", "date")).toMatch(/year first/);
     expect(pasteRefusal("core refusal")).toBe("core refusal");
     expect(pasteRefusal("private bridge limit", undefined, "request_too_large")).toBe("The pasted text is too large to paste here. Nothing was pasted.");
   });

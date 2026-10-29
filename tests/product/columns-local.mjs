@@ -201,7 +201,7 @@ try {
 
   baseline = await projection();
   const undoDisabled = await page.getByRole("button", { name: "Undo", exact: true }).getAttribute("disabled");
-  for (const fill of ["NaN", "1,300"]) {
+  for (const fill of ["NaN", "1,30"]) {
     d = await add("Refused", "number", fill); await submit("Add column");
     await d.getByRole("alert").filter({ hasText: "Enter a number" }).waitFor();
     assert.deepEqual(await projection(), baseline);
@@ -236,15 +236,40 @@ try {
   checks.push("5 copy/paste and draft-row Enter retain correct coordinates after add/remove/Undo; unfinished row blocks schema operations");
 
   // All four types, no selected No/today, and raw invalid Date reaches Work.
-  for (const [type, fill] of [["boolean", "no"], ["date", "2026-10-19"], ["text", ""]]) {
+  // A year-first slash date is stored canonically (Work #596).
+  for (const [type, fill, stored] of [["boolean", "no", false], ["date", "2026/10/19", "2026-10-19"], ["text", "", ""]]) {
     d = await add(`Added ${type}`, type); assert.equal(await d.getByLabel(/^Fill all/).inputValue(), "");
     if (type === "boolean") await d.getByLabel(/^Fill all/).selectOption(fill); else await d.getByLabel(/^Fill all/).fill(fill);
     await submit("Add column"); await d.waitFor({ state: "detached" });
-    assert.ok(values(await projection()).every(row => row.at(-1) === (type === "boolean" ? false : fill))); await history("Undo");
+    assert.ok(values(await projection()).every(row => row.at(-1) === stored)); await history("Undo");
   }
   d = await add("Bad date", "date", "2026-02-30"); const beforeDate = await projection(); await submit("Add column");
-  await d.getByRole("alert").filter({ hasText: "YYYY-MM-DD" }).waitFor(); assert.deepEqual(await projection(), beforeDate); await cancel("Add column");
+  await d.getByRole("alert").filter({ hasText: "year first" }).waitFor(); assert.deepEqual(await projection(), beforeDate); await cancel("Add column");
   checks.push("typed Boolean/Date/Text fills and authoritative invalid Date refusal");
+
+  // A calculated column over blank cells (Work #597): an optional Number
+  // column starts blank, a formula typed into its first cell calculates, Ctrl+D
+  // fills it down, and Undo returns the cells to blank.
+  d = await add("Tax", "number"); await d.getByLabel("Required", { exact: true }).uncheck();
+  await submit("Add column"); await d.waitFor({ state: "detached" });
+  table = await projection();
+  const amountAt = table.columns.findIndex(column => column.display_name === "Amount");
+  const taxAt = table.columns.findIndex(column => column.display_name === "Tax");
+  assert.equal(taxAt, table.columns.length - 1, "the added column lands last");
+  assert.ok(values(table).every(row => row[taxAt] === undefined), "the new optional column starts blank");
+  const doubled = values(table).map(row => String(row[amountAt] * 2));
+  const taxText = async () => Promise.all(table.rows.map((_, r) => cell(table, r, taxAt).textContent().then(text => text.trim())));
+  await cell(table, 0, taxAt).dblclick();
+  const cellEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  await cellEditor.fill(`=[.${table.columns[amountAt].key}] * 2`); await cellEditor.press("Enter"); await ready();
+  assert.deepEqual((await taxText()).slice(0, 1), doubled.slice(0, 1), "a formula into a blank cell calculates");
+  await cell(table, 0, taxAt).click(); await cell(table, table.rows.length - 1, taxAt).click({ modifiers: ["Shift"] });
+  await page.keyboard.press("Control+d"); await ready();
+  assert.deepEqual(await taxText(), doubled, "fill down calculates every blank cell");
+  await history("Undo"); assert.deepEqual((await taxText()).slice(1), doubled.slice(1).map(() => ""), "Undo returns filled cells to blank");
+  await history("Undo"); assert.deepEqual(await taxText(), doubled.map(() => ""), "Undo returns the first cell to blank");
+  await history("Undo"); assert.equal((await projection()).columns.length, table.columns.length - 1);
+  checks.push("calculated column: blank optional Number cells take a typed formula and Ctrl+D fill; Undo restores blanks");
 
   await close(); await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready();
   await page.getByTestId("results-pane").waitFor(); table = await projection();

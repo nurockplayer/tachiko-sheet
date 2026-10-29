@@ -460,7 +460,7 @@ try {
   await dates.getByLabel("Column 1 type", { exact: true }).selectOption("date");
   await dates.getByRole("button", { name: "Create table", exact: true }).click(); await ready();
   await draftFirst().focus(); await paste(draftFirst(), "2026-10-19"); await draftFirst().press("Enter"); await ready();
-  assert.equal(await unchangedPaste("10/19/2026", /YYYY-MM-DD/), 1);
+  assert.equal(await unchangedPaste("10/19/2026", /year first/), 1);
   assert.equal((await commands()).at(-1).edits[0].input.value, "10/19/2026", "raw Date string reached Work unchanged");
   const dateTable = await projection();
   await paste(cell(dateTable, 0, 0), "2026-10-20"); await status().filter({ hasText: "Updated 1 row" }).waitFor();
