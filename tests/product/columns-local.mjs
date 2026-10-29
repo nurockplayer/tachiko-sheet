@@ -271,6 +271,26 @@ try {
   await history("Undo"); assert.equal((await projection()).columns.length, table.columns.length - 1);
   checks.push("calculated column: blank optional Number cells take a typed formula and Ctrl+D fill; Undo restores blanks");
 
+  // Percent input (Work #596) and column aggregates (Work #600).
+  table = await projection();
+  await cell(table, 0, amountAt).dblclick(); await cellEditor.fill("12%"); await cellEditor.press("Enter"); await ready();
+  assert.equal(values(await projection())[0][amountAt], 0.12, "12% is stored as 0.12");
+  await history("Undo"); assert.deepEqual(values(await projection()), values(table));
+  d = await add("Stats", "number"); await d.getByLabel("Required", { exact: true }).uncheck();
+  await submit("Add column"); await d.waitFor({ state: "detached" });
+  table = await projection();
+  const statsAt = table.columns.length - 1, amounts = values(table).map(row => row[amountAt]);
+  const columnRef = `[${table.collection.key}.${table.columns[amountAt].key}`;
+  const aggregates = [["average", amounts.reduce((sum, value) => sum + value, 0) / amounts.length], ["count", amounts.length], ["min", Math.min(...amounts)], ["max", Math.max(...amounts)]];
+  for (const [name, expected] of aggregates) {
+    await cell(table, 0, statsAt).dblclick(); await cellEditor.fill(`=${columnRef}:${name}]`); await cellEditor.press("Enter"); await ready();
+    const shown = Number((await cell(table, 0, statsAt).textContent()).trim().replace(/,/g, ""));
+    assert.ok(Math.abs(shown - expected) < 0.01, `:${name} shows ${shown}, expected ${expected}`);
+  }
+  for (let undo = 0; undo <= aggregates.length; undo += 1) await history("Undo");
+  assert.equal((await projection()).columns.length, table.columns.length - 1);
+  checks.push("12% input stores 0.12; [table.field:average|count|min|max] calculate in a blank optional Number cell");
+
   await close(); await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready();
   await page.getByTestId("results-pane").waitFor(); table = await projection();
   assert.ok(table.native_table_profile, "Sales Catalog qualifies as native");
