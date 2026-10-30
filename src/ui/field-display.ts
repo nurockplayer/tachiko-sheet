@@ -176,7 +176,10 @@ export function formatNumberFor(value: number, format: NumberFormat | undefined)
  * value is unchanged; stored values seed the cell editor exactly.
  */
 export function formatNumber(value: number): string {
-  return Number.isFinite(value) ? String(Number(value.toPrecision(15))) : String(value);
+  if (!Number.isFinite(value)) return String(value);
+  // Rounding near the float limit can overflow; then show the exact value.
+  const rounded = Number(value.toPrecision(15));
+  return String(Number.isFinite(rounded) ? rounded : value);
 }
 
 /** Text seeded into a cell editor from the actual projection. */

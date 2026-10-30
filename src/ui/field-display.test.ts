@@ -13,6 +13,9 @@ describe("field display", () => {
     expect(formatNumber(1e21)).toBe("1e+21");
     expect(formatNumber(0.000001234)).toBe("0.000001234");
     expect(formatNumberFor(1455.7999999999997, undefined)).toBe("1455.8");
+    // A finite value never shows as Infinity, even where rounding overflows.
+    expect(formatNumber(Number.MAX_VALUE)).toBe(String(Number.MAX_VALUE));
+    expect(formatNumber(-Number.MAX_VALUE)).toBe(String(-Number.MAX_VALUE));
     const field: FieldProjection = {
       target: { entity: "e1", field: "total" }, address: "e1.total",
       stored: null, formula: null, calculated: { status: "value", value: 0.1 + 0.2 },
