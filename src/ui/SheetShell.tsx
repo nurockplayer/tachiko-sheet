@@ -4882,7 +4882,7 @@ export function SheetShell(props: SheetShellProps) {
               tabIndex={interop.importInspection.source.ledger.length || importPending || Boolean(importError) ? 0 : -1}
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
             >Review import preview</h2>
-            <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Check each column's type before importing. Number is suggested where every value is a plain number, Date where every value is a YYYY-MM-DD date; everything else stays Text.</p>
+            <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Check each column's type before importing. Suggested: Number for plain numbers, Date for YYYY-MM-DD dates, otherwise Text.</p>
           </div>
           <div className="ts-dialog-scroll">
             {(() => {
