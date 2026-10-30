@@ -71,6 +71,10 @@ export function findingMessage(message: string, code?: string): string {
     const header = /^Current header ("(?:[^"\\]|\\.)*") exports as ("(?:[^"\\]|\\.)*"); the source header was ("(?:[^"\\]|\\.)*")\.$/.exec(message);
     if (header) return `The current column heading ${header[1]} will download as ${header[2]}. The original heading was ${header[3]}.`;
   }
+  if (code === "native_tables_field_constraint_excluded") {
+    const rule = /^Field constraint \((allowed values|allowed range): (.*)\) has no native spreadsheet mapping; its values export unchanged and the spreadsheet does not validate them\.$/.exec(message);
+    if (rule) return `Its rule (${rule[1]}: ${rule[2]}) is not kept. The values download as they are, and the spreadsheet will not check them.`;
+  }
   if (code === "native_tables_csv_collection_excluded") {
     const excluded = /^CSV excludes collection ("(?:[^"\\]|\\.)*") \(.*\); only the requested collection is exported\.$/.exec(message);
     if (excluded) return `CSV downloads only the selected table, so “${quoted(excluded[1]!)}” is left out.`;
@@ -100,6 +104,16 @@ function quoted(text: string): string {
   } catch {
     return text;
   }
+}
+
+/** Tables whose columns a finding names by id (`collection <id>/…/field <id>` or `<id>/<field id>`). */
+export function findingColumnTables(findings: ReadonlyArray<{ location?: string }>): string[] {
+  const tables = new Set<string>();
+  for (const { location } of findings) {
+    const id = /^collection ([^/\s]+)\/(?:.*\/)?field [^/\s]+/.exec(location ?? "")?.[1] ?? /^([^/\s]+)\/[^/\s]+$/.exec(location ?? "")?.[1];
+    if (id) tables.add(id);
+  }
+  return [...tables];
 }
 
 /**

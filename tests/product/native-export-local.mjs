@@ -204,6 +204,23 @@ try {
   await close(page);
   await page.getByRole("button",{name:"Open sales example",exact:true}).click(); await ready(page);
   await page.getByTestId("results-pane").waitFor();
+  // A rule on a column of the table that is not open is named by its column.
+  await page.locator("#ts-active-table").selectOption("catalog"); await ready(page);
+  await page.getByRole("columnheader", { name: "price", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for price", exact: true }).click();
+  await page.getByRole("button", { name: "Rule…", exact: true }).click();
+  const rule = page.getByRole("dialog", { name: "Column rule", exact: true });
+  await rule.getByLabel("Lowest value", { exact: true }).fill("0");
+  await rule.getByLabel("Highest value", { exact: true }).fill("10000");
+  await rule.getByRole("button", { name: "Save rule", exact: true }).click(); await ready(page);
+  await page.locator("#ts-active-table").selectOption("sales"); await ready(page);
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+  const ruleReview = page.getByRole("dialog", { name: "Confirm download", exact: true });
+  assert.match(await ruleReview.getByLabel("Export changes and warnings", { exact: true }).textContent(),
+    /catalog, column “price”: Its rule \(allowed range: 0 to 10000\) is not kept\./);
+  await ruleReview.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
   const sales=await prepare(page,"xlsx",{sales:true});
   assert.equal(sales.length,2,"Sales exports exactly its two source tables, without summary snapshots");
   assert.deepEqual(sales.map(sheet=>sheet.name).sort(),["catalog","sales"]);
@@ -223,7 +240,7 @@ try {
   // CSV must follow the selected second table rather than workbook order.
   await page.getByLabel("Table", { exact: true }).selectOption("sales"); await ready(page);
   assert.deepEqual(await prepare(page,"csv",{sales:true}), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
-  checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review");
+  checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review; a rule in the table that is not open is named by table and column");
   await close(page);
   await runOptionalColumnsCases(page, { close, checks, output });
   await runBlankDisplayCases(page, { output, close, checks });
