@@ -1882,6 +1882,14 @@ describe("queryColumnTotals", () => {
     expect(client.calls.queryColumnTotals).toEqual([]);
   });
 
+  it("does not send an entity list the wire would refuse", async () => {
+    const { runtime, client, view } = await opened();
+    const entities = Array.from({ length: 6_000 }, (_, index) => `entity-${index}`);
+
+    await expect(runtime.queryColumnTotals(witnessOf(view), COLLECTION.key, entities)).resolves.toBeNull();
+    expect(client.calls.queryColumnTotals).toEqual([]);
+  });
+
   it("returns null when the installed client lacks the query", async () => {
     const { runtime, client, view } = await opened();
     Object.defineProperty(client, "queryColumnTotals", { value: undefined });

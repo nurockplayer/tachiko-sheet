@@ -74,7 +74,7 @@ import {
 } from "./projection-access.js";
 import { ReportCanvas } from "./ReportCanvas.js";
 import { rowSource } from "./row-source.js";
-import { sourceNames } from "./source-names.js";
+import { copyColumnNames, sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, type CellOptionsUi, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
@@ -4768,11 +4768,7 @@ export function SheetShell(props: SheetShellProps) {
           const generation = focusIntentRef.current;
           // Imported headings live in the import's metadata, not in Work's
           // fields; the copy keeps the names this table shows.
-          const columnNames: Record<string, string> = {};
-          for (const column of view.table.columns) {
-            const shown = names.column(view.table.collection.id, column.id);
-            if (shown && shown !== column.display_name) columnNames[column.id] = shown;
-          }
+          const columnNames = copyColumnNames(view.table.columns, field => names.column(view.table.collection.id, field));
           const result = await onDuplicateTable(witness, view.table.collection.key, name, columnNames);
           if (duplicateLanding(result).switchToTable) {
             duplicateFocusIntentRef.current = generation;

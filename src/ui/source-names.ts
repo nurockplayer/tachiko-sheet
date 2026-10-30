@@ -58,3 +58,31 @@ export function sourceNames(
     catalogColumn: resolveColumn,
   };
 }
+
+// Work's display-name whitespace (ADR-0043), trimmed before names are compared.
+const NAME_SPACE = "\\t-\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+const NAME_EDGES = new RegExp(`^[${NAME_SPACE}]+|[${NAME_SPACE}]+$`, "gu");
+const MAX_NAME_BYTES = 4_096;
+
+/**
+ * Names a duplicate's columns after the names this table shows, keyed by
+ * source field id. Work trims names and refuses two columns with the same
+ * name, so a name that would collide (" Amount " beside "Amount") is left
+ * out and that column keeps Work's own name.
+ */
+export function copyColumnNames(
+  columns: ReadonlyArray<{ id: string; display_name: string }>,
+  shown: (field: string) => string | null,
+): Record<string, string> {
+  const named = new Map<string, string>();
+  for (const column of columns) {
+    const name = (shown(column.id) ?? "").replace(NAME_EDGES, "");
+    if (name !== "" && name !== column.display_name && new TextEncoder().encode(name).length <= MAX_NAME_BYTES) named.set(column.id, name);
+  }
+  const counts = new Map<string, number>();
+  for (const column of columns) {
+    const name = named.get(column.id) ?? column.display_name;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return Object.fromEntries([...named].filter(([, name]) => counts.get(name) === 1));
+}

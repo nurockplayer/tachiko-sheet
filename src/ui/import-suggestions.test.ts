@@ -16,6 +16,9 @@ describe("import type suggestions", () => {
 
   it("suggests Date only for real YYYY-MM-DD dates", () => {
     expect(suggestColumnType(column(text("2026-10-01"), text("2026-02-28"), cell({ kind: "empty" }), text("2024-02-29")), 0)).toBe("date");
+    expect(suggestColumnType(column(text("0001-01-01"), text("0099-12-31"), text("0004-02-29")), 0), "years 1–99 are read as written").toBe("date");
+    expect(suggestColumnType(column(text("0000-01-01")), 0)).toBe("text");
+    expect(suggestColumnType(column(text("0099-02-29")), 0)).toBe("text");
     for (const value of ["2026-02-30", "2025-02-29", "2026-13-01", "2026/10/01", "2026-1-5", "01-10-2026", "0000-01-01"]) {
       expect(suggestColumnType(column(text("2026-10-01"), text(value)), 0), value).toBe("text");
     }

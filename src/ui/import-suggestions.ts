@@ -24,7 +24,9 @@ function isoDateText(text: string): boolean {
   const match = ISO_DATE.exec(text);
   if (!match) return false;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  const date = new Date(Date.UTC(year, month - 1, day));
+  // setUTCFullYear keeps years 0–99 as written; Date.UTC would read them as 19xx.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
   return year >= 1 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 

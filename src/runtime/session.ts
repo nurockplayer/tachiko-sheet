@@ -129,6 +129,8 @@ interface CoherentRead {
 const COHERENT_READ_ATTEMPTS = 3;
 /** Work's largest table window (A-03). */
 const WINDOW_ROWS = 256;
+// The entity list of a totals query, kept under the 64 KiB wire request limit.
+const COLUMN_TOTALS_ENTITY_BYTES = 60_000;
 
 const noop = (): void => undefined;
 
@@ -690,6 +692,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       // An advisory read queued behind a change that moved the revision is obsolete; skip it.
       const live = session();
       if (witness.occurrence !== live.scope || witness.revision !== live.revision) return null;
+      // Both bridges refuse a request over 64 KiB; when a filter shows that
+      // many rows, the footer keeps the whole-table totals instead.
+      if (new TextEncoder().encode(JSON.stringify(entities)).length > COLUMN_TOTALS_ENTITY_BYTES) return null;
       const totals = await afterUsable(expected, dispatch(kit, () => query.call(client, witness.revision, collection, entities)));
       if (totals.revision !== witness.revision) throw new SheetSessionError("incoherent-reply", "The totals query does not match the requested revision.");
       return totals;
