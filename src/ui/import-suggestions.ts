@@ -30,12 +30,21 @@ function isoDateText(text: string): boolean {
   return year >= 1 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+// Work's MAX_DATA_ROWS: when any sheet has more rows, the import takes the
+// large-table profile, which admits only Text and Number columns.
+const TYPED_IMPORT_ROWS = 64;
+
+/** Whether this source can import Date columns (no sheet over Work's 64 rows). */
+export function importAdmitsDates(sheets: ReadonlyArray<{ rows: readonly unknown[] }>): boolean {
+  return sheets.every(sheet => sheet.rows.length <= TYPED_IMPORT_ROWS);
+}
+
 /**
  * Advisory type for one source column: Number for plain decimals, Date for
- * YYYY-MM-DD dates, otherwise Text. The user still confirms it, and the core
- * remains the parser and validator.
+ * YYYY-MM-DD dates where the import admits them, otherwise Text. The user
+ * still confirms it, and the core remains the parser and validator.
  */
-export function suggestColumnType(rows: readonly SourceCell[][], column: number): ImportColumnType {
+export function suggestColumnType(rows: readonly SourceCell[][], column: number, datesAdmitted = true): ImportColumnType {
   let numbers = 0, dates = 0;
   for (const row of rows) {
     const value = row[column]?.value;
@@ -52,7 +61,7 @@ export function suggestColumnType(rows: readonly SourceCell[][], column: number)
     }
     if (numbers > 0 && dates > 0) return "text";
   }
-  return numbers > 0 ? "number" : dates > 0 ? "date" : "text";
+  return numbers > 0 ? "number" : dates > 0 && datesAdmitted ? "date" : "text";
 }
 
 export function sourcePreviewText(value: SourceValue | undefined): string {

@@ -87,7 +87,7 @@ import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
 import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
-import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
+import { chooseImportType, chosenImportTypes, importConfirmationMessage, importAdmitsDates, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
@@ -723,7 +723,11 @@ export function SheetShell(props: SheetShellProps) {
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | "ro" | null>(null);
   const [importChoice, setImportChoice] = useState<ImportTypeChoice | null>(null);
   const importSuggestions = useMemo<string[][]>(
-    () => interop?.importInspection?.source.sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column))) ?? [],
+    () => {
+      const sheets = interop?.importInspection?.source.sheets ?? [];
+      const dates = importAdmitsDates(sheets);
+      return sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column, dates)));
+    },
     [interop?.importInspection],
   );
   const importTypes = chosenImportTypes(importChoice, importSuggestions);

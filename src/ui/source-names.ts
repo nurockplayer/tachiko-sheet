@@ -63,12 +63,14 @@ export function sourceNames(
 const NAME_SPACE = "\\t-\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
 const NAME_EDGES = new RegExp(`^[${NAME_SPACE}]+|[${NAME_SPACE}]+$`, "gu");
 const MAX_NAME_BYTES = 4_096;
+// Scalars Work refuses inside a display name (control characters, line separators).
+const FORBIDDEN_NAME_SCALAR = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
 
 /**
  * Names a duplicate's columns after the names this table shows, keyed by
  * source field id. Work trims names and refuses two columns with the same
- * name, so a name that would collide (" Amount " beside "Amount") is left
- * out and that column keeps Work's own name.
+ * name, so a name it would refuse (a line break, " Amount " beside
+ * "Amount") is left out and that column keeps Work's own name.
  */
 export function copyColumnNames(
   columns: ReadonlyArray<{ id: string; display_name: string }>,
@@ -77,7 +79,8 @@ export function copyColumnNames(
   const named = new Map<string, string>();
   for (const column of columns) {
     const name = (shown(column.id) ?? "").replace(NAME_EDGES, "");
-    if (name !== "" && name !== column.display_name && new TextEncoder().encode(name).length <= MAX_NAME_BYTES) named.set(column.id, name);
+    if (name !== "" && name !== column.display_name && !FORBIDDEN_NAME_SCALAR.test(name)
+      && new TextEncoder().encode(name).length <= MAX_NAME_BYTES) named.set(column.id, name);
   }
   // A dropped name gives that column back its own name, which can collide
   // with a name kept so far; repeat until every name is unique. Work's own

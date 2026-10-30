@@ -96,6 +96,11 @@ describe("copy column names", () => {
     expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({});
   });
 
+  it("leaves out names with characters Work refuses in a name", () => {
+    const shown: Record<string, string> = { f0: "Memo\nDetails", f1: "Tab\there", f2: "Line\u2028break", f3: "Fine" };
+    expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f3: "Fine" });
+  });
+
   it("leaves out blank and over-long names", () => {
     const shown: Record<string, string> = { f0: "  ", f1: "x".repeat(4_097), f2: "é".repeat(2_048) };
     expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f2: "é".repeat(2_048) });
