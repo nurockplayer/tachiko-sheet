@@ -89,7 +89,8 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
     { kind: "text", value: "changed-second" }, { kind: "boolean", value: false }, { kind: "date", value: "2026-10-20" },
   ]);
   // Invalid value follows a valid row: refusal must also preserve its text/date peers.
-  for (const bad of ["yes", "no", "1", "0", " TRUE ", "falsehood", ""]) {
+  // An empty value clears an optional Yes/No (Work #606), so it is not a refusal.
+  for (const bad of ["yes", "no", "1", "0", " TRUE ", "falsehood"]) {
     assert.equal(await unchangedPaste(`must-not-change\tTRUE\t2026-11-01\nalso-unchanged\t${bad}\t2026-11-02`, /true or false/), 0);
   }
   for (const bad of ["10/19/2026", "not-a-date", "2026-02-30"]) {
