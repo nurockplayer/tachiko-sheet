@@ -207,7 +207,7 @@ describe("mutation completion duplicate recovery", () => {
       witness,
       dispatch: async () => { throw refusal({ code: "field_constraint_violation", message: "field 'native_table_x.native_table_field_y' refuses this value outside its constraint (allowed range: 1 to 5)", constraint_failure: { reason: "field_value", schema: "native_table_x", field: "native_table_field_y", constraint: { kind: "number_inclusive_range", min: 1, max: 5 }, offending_rows: 1 } }); },
     });
-    expect(result).toMatchObject({ kind: "refused", message: "This column must be between 1 and 5.", refusalCode: "field_constraint_violation" });
+    expect(result).toMatchObject({ kind: "refused", message: "This column must be between 1 and 5.", refusalCode: "field_constraint_violation", ruleRefusal: true });
   });
 
   it("keeps the explanatory prefix for other row refusals", async () => {

@@ -218,7 +218,7 @@ try {
   await editor.fill("6"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
   // The refusal names the column and its rule, never Work's internal ids.
-  await page.getByText("Priority must be between 1 and 5.", { exact: true }).first().waitFor();
+  await page.getByRole("alert").filter({ hasText: /^Priority must be between 1 and 5\. The draft was kept/ }).waitFor();
   assert.equal(await editor.inputValue(), "6");
   assert.deepEqual(await projection(), beforeInvalidNumber);
   // Work refused it: the projection, including its revision, is unchanged.
@@ -241,7 +241,7 @@ try {
   const beforeInvalidStatus = await projection();
   await editor.fill("Blocked"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
-  await page.getByText("Status must be one of Doing, Done or Todo.", { exact: true }).first().waitFor();
+  await page.getByRole("alert").filter({ hasText: /^Status must be one of Doing, Done or Todo\. The draft was kept/ }).waitFor();
   assert.equal(await editor.inputValue(), "Blocked");
   assert.deepEqual(await projection(), beforeInvalidStatus);
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });

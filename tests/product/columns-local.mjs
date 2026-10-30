@@ -353,20 +353,21 @@ try {
   await page.keyboard.press("Tab"); assert.equal(await page.getByRole("button", { name: "Remove…", exact: true }).evaluate(n => n === document.activeElement), true);
   await page.keyboard.press("Escape"); assert.equal(await disclosure.getAttribute("open"), null);
   await assertFocused(actions, "Escape returns to the disclosure button");
-  // Column order is document state: the header menu moves price one place right; Undo restores the order.
+  // Column order is document state: the header menu moves price, the last
+  // column, one place left; Undo restores the order.
   const order = async () => (await projection()).columns.map(column => column.display_name);
   const orderBefore = await order(), priceAt = orderBefore.indexOf("price");
-  assert.ok(priceAt >= 0 && priceAt + 1 < orderBefore.length, "price has a right neighbour");
+  assert.equal(priceAt, orderBefore.length - 1, "price is the last column");
   await actions.click(); assert.equal(await disclosure.getAttribute("open"), "");
-  assert.equal(await page.getByRole("button", { name: "Move left", exact: true }).isDisabled(), priceAt === 0, "Move left is unavailable only for the first column");
-  await page.getByRole("button", { name: "Move right", exact: true }).click(); await ready();
-  const moved = orderBefore.filter(name => name !== "price"); moved.splice(priceAt + 1, 0, "price");
-  assert.deepEqual(await order(), moved, "Move right publishes Work's new column order");
-  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt + 1, "the grid header follows Work's order");
-  await page.getByText(/price moved right\. Undo restores it\./).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Move right", exact: true }).isDisabled(), true, "Move right is unavailable for the last column");
+  await page.getByRole("button", { name: "Move left", exact: true }).click(); await ready();
+  const moved = orderBefore.filter(name => name !== "price"); moved.splice(priceAt - 1, 0, "price");
+  assert.deepEqual(await order(), moved, "Move left publishes Work's new column order");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt - 1, "the grid header follows Work's order");
+  await page.getByText(/price moved left\. Undo restores it\./).waitFor();
   await history("Undo"); assert.deepEqual(await order(), orderBefore, "Undo restores the column order");
   assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt, "Undo puts the header back");
-  checks.push("move column: header menu Move right publishes Work's column order, the grid follows, Move left is off only at the first column, Undo restores the order");
+  checks.push("move column: header menu Move left publishes Work's column order, the grid follows, Move right is off at the last column, Undo restores the order");
   await actions.press("Space"); assert.equal(await disclosure.getAttribute("open"), "");
   const desktopMenuScreenshot = path.join(screens, "column-menu-open-1440x900.png");
   await page.screenshot({ path: desktopMenuScreenshot }); screenshots.push(desktopMenuScreenshot);
@@ -377,9 +378,10 @@ try {
   await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
   await dialog("Remove column").waitFor(); await cancel("Remove column"); await dialog("Remove column").waitFor({ state: "detached" });
   await assertFocused(actions, "Remove dialog cancel returns to the closed disclosure");
-  // Rename, Remove, Require a value, Rule…, Number format… (price is a number column),
-  // Sort A → Z, Sort Z → A, Filter…, then out.
-  await actions.press("Enter"); for (let stop = 0; stop < 9; stop++) await page.keyboard.press("Tab");
+  // Rename, Remove, Move left (Move right is off for the last column), Require a
+  // value, Rule…, Number format… (price is a number column), Sort A → Z,
+  // Sort Z → A, Filter…, then out.
+  await actions.press("Enter"); for (let stop = 0; stop < 10; stop++) await page.keyboard.press("Tab");
   assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).evaluate(n => n === document.activeElement), true, "Tab exits the disclosure without a trap");
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
   assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);

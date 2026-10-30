@@ -20,7 +20,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; sourcePosition?: number; nameFailures?: readonly NameFailure[] };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; sourcePosition?: number; ruleRefusal?: true; nameFailures?: readonly NameFailure[] };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -253,6 +253,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code, ...(blankCount !== undefined ? { blankCount } : {}), ...(failure?.name_failures ? { nameFailures: failure.name_failures } : {}) } : {}),
         ...(command.kind === "scalar" && position !== undefined ? { position } : {}),
         ...(command.kind === "scalar" && sourcePosition !== undefined ? { sourcePosition } : {}),
+        ...(ruleMessage && !(failure && isCapacityFailure(failure as FailureProjection)) ? { ruleRefusal: true as const } : {}),
       });
     } finally {
       // App's base finally/end ran in this continuation. A caller awaiting

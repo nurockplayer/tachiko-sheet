@@ -336,6 +336,8 @@ export interface CommitOutcome {
    * already states it): used for hints, never shown again.
    */
   sourcePosition?: number;
+  /** The refusal is a column rule, and `message` words it with the column's name. */
+  ruleRefusal?: true;
 }
 /** Outcome of a Save a copy attempt; a failure carries its own truthful reason. */
 export type CreateCopyOutcome = { saved: true } | { saved: false; reason: string };
