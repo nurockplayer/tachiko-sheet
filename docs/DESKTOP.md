@@ -82,11 +82,11 @@ Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.
 
-Large imports support one headered, default-style table with 1–16 Text/finite
-Number columns, at most 8,406 data rows and 25,218 logical cells (including
-missing cells). Byte/XML/ZIP limits and unsupported-feature checks also apply.
-Capacity formulas, Date/Boolean columns, constraints, saved definitions and
-Dedup are excluded from the enlarged profile. Work still owns admission.
+Large imports support one headered, default-style table with 1–16 Text,
+finite Number, Date (1900-01-01 through 9999-12-31) or Yes/No columns, at most
+8,406 data rows and 25,218 logical cells (including missing cells). Byte/XML/ZIP
+limits and unsupported-feature checks also apply. Capacity formulas,
+constraints, saved definitions and Dedup are excluded from the enlarged profile. Work still owns admission.
 
 ## Retained CI engineering evidence
 
