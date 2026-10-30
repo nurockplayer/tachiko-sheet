@@ -62,6 +62,11 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
   assert.equal(downloads.length, count, "preparation never downloads without acknowledgement");
+  const changes = dialog.getByLabel("Export changes and warnings", { exact: true });
+  if (await changes.count()) {
+    // Findings are worded for people: table names, not ids; no engine limits vocabulary.
+    assert.doesNotMatch(await changes.textContent(), /native_table_|workbook:|collections|MiB|Tachiko source|Undo\/Redo/);
+  }
   if (sales) {
     const ledger = await dialog.getByLabel("Export changes and warnings", { exact: true }).textContent();
     assert.match(ledger, /Summary settings are not included/);

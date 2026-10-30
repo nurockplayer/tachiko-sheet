@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
+import { findingCategoryLabel, findingLocation, findingMessage } from "./interop-copy.js";
 
 describe("import/export disclosure copy", () => {
   it("translates the exact producer presence loss separately from general CSV limits", () => {
@@ -57,5 +57,43 @@ describe("current imported structure disclosures", () => {
     const message = "Surviving source columns and rows retain source order and identity-bound presentation. Added columns and rows append in current canonical order with default presentation; removed columns and deleted rows are omitted. Blank optional values are empty cells.";
     expect(findingMessage(message, "imported_current_structure")).toBe("Existing columns and rows keep their original order and formatting. New columns and rows are added at the end with default formatting. Removed columns and rows are left out. Blank cells stay empty.");
     expect(findingMessage(message + " Changed.", "imported_current_structure")).toBe(message + " Changed.");
+  });
+});
+
+describe("native table download disclosures", () => {
+  it("words the native export findings without engine vocabulary", () => {
+    for (const message of [
+      "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.",
+      "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.",
+      "Session Undo/Redo history is excluded.",
+      "Sheet presentation, view sorting/filtering and per-cell formatting are excluded; Dates use yyyy-mm-dd.",
+    ]) {
+      const worded = findingMessage(message);
+      expect(worded).not.toBe(message);
+      expect(worded).not.toMatch(/collection|scalar|MiB|Tachiko source|Session/);
+    }
+    expect(findingMessage("Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas."))
+      .toBe("Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.");
+  });
+
+  it("names the sheet a table downloads as, and keeps an unreadable message verbatim", () => {
+    expect(findingMessage('Worksheet name "Invoices" mapped to "Invoices".', "native_tables_worksheet_name")).toBe("The table downloads as the sheet “Invoices”.");
+    expect(findingMessage('Worksheet name "Q3: \\"plan\\"" mapped to "Q3 plan".', "native_tables_worksheet_name"))
+      .toBe("The table “Q3: \"plan\"” downloads as the sheet “Q3 plan”, because spreadsheet sheet names are limited.");
+    expect(findingMessage("Worksheet name changed.", "native_tables_worksheet_name")).toBe("Worksheet name changed.");
+  });
+
+  it("shows a table's name instead of its id, and nothing for the whole workbook", () => {
+    const collections = [{ id: "native_table_schema_0002_x", display_name: "Invoices" }];
+    expect(findingLocation("native_table_schema_0002_x", collections)).toBe("Invoices");
+    expect(findingLocation("workbook", collections)).toBeNull();
+    expect(findingLocation(undefined, collections)).toBeNull();
+    expect(findingLocation("Sheet1!B2", collections)).toBe("Sheet1!B2");
+    const column = (collection: string, field: string) => collection === "native_table_schema_0002_x" && field === "f27" ? "Item" : undefined;
+    expect(findingLocation("collection native_table_schema_0002_x/field f27/column", collections, column)).toBe("Invoices, column “Item”");
+    expect(findingLocation("collection native_table_schema_0002_x/header/field f9", collections, column)).toBe("Invoices, a column");
+    expect(findingLocation("collection native_table_schema_0002_x/entity e1", collections)).toBe("Invoices, a row");
+    expect(findingLocation("collection native_table_schema_0002_x/sheet-name", collections)).toBe("Invoices, sheet name");
+    expect(findingLocation("collection gone_id", collections)).toBe("A table");
   });
 });

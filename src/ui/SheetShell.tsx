@@ -91,7 +91,7 @@ import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRang
 import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
-import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
+import { findingCategoryLabel, findingMessage, findingLocation } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
 import { CellOptionsPopup } from "./CellOptionsPopup.js";
 import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
@@ -4805,7 +4805,7 @@ export function SheetShell(props: SheetShellProps) {
           {downloadFormat === "ro" ? downloadOmissions.length > 0 ? <>
             <h3 className="ts-content-heading">Not included in this file</h3>
             <ul className="ts-ledger" aria-label="Not included in this file">{downloadOmissions.map((omission) => <li key={omission} data-loss-category="lossy_on_export">{omission}</li>)}</ul>
-          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
+          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {((location) => location ? `${location}: ` : "")(findingLocation(finding.location, view?.collections ?? [], (collection, field) => table?.collection.id === collection ? columns.find((column) => column.id === field)?.display_name : undefined))}{findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
         </div>
         <div className="ts-dialog-actions">
           <button type="button" className="ts-button" disabled={busy} onClick={cancelDownload}>Cancel</button>
