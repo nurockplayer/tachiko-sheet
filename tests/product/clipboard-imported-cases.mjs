@@ -68,7 +68,8 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
 
   const typedCsv = path.join(work, "imported-paste-types.csv");
   await writeFile(typedCsv, "Item,Paid,When\nfirst,false,2026-10-01\nsecond,true,2026-10-02\nuntouched,false,2026-10-03\n");
-  const typedBaseline = await importFile(typedCsv, ["text", "boolean", "date"], false);
+  // Work #606: imported optional Yes/No and Date columns keep the table native.
+  const typedBaseline = await importFile(typedCsv, ["text", "boolean", "date"], true);
   assert.deepEqual(values(typedBaseline), [["first", false, "2026-10-01"], ["second", true, "2026-10-02"], ["untouched", false, "2026-10-03"]]);
   await cell(typedBaseline, 0, 0).click();
   const typedCount = (await commands()).length;

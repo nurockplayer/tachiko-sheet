@@ -102,8 +102,8 @@ export async function runBlankDisplayCases(page, { output, close, checks }) {
   checks.push("#228 real-kit optional blank vs empty Text; required Text unchanged; sparse-ID join; accessible descriptions; value-only single/range copy; CSV-only emitted presence disclosure; desktop/compact screenshots");
   await close(page);
 
-  // The importer already admits optional Date/Boolean. Preserve its blanks;
-  // this slice adds no Date/Boolean authoring operations.
+  // The importer admits optional Date/Boolean, and since Work #606 the table
+  // stays native. Preserve its blanks; bank-statement-local covers authoring.
   const imported = await page.evaluate(async () => {
     const { createExperimentalDesignerClient } = await import("/core-kit/experimental-client.js");
     const client = createExperimentalDesignerClient();
@@ -117,8 +117,7 @@ export async function runBlankDisplayCases(page, { output, close, checks }) {
   });
   await page.getByTestId("open-work-file").setInputFiles({ name: "imported-blanks.ro", mimeType: "application/octet-stream", buffer: Buffer.from(imported.bytes) });
   await ready(page);
-  assert.equal(Boolean(imported.table.native_table_profile), false, "optional imported Date/Boolean do not acquire native authoring admission");
-  assert.equal(await page.locator(".ts-entry-row").count(), 0, "no native draft-row operation is offered");
+  assert.equal(imported.table.native_table_profile, true, "optional imported Date/Boolean keep the table native");
   const blankRow = imported.table.rows.find(row => row.blank_fields?.length === 2);
   assert.ok(blankRow);
   for (const column of imported.table.columns.slice(1)) {
