@@ -217,6 +217,8 @@ try {
   const beforeInvalidNumber = await projection();
   await editor.fill("6"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
+  // The refusal names the column and its rule, never Work's internal ids.
+  await page.getByRole("alert").filter({ hasText: /^Priority must be between 1 and 5\. The draft was kept/ }).waitFor();
   assert.equal(await editor.inputValue(), "6");
   assert.deepEqual(await projection(), beforeInvalidNumber);
   // Work refused it: the projection, including its revision, is unchanged.
@@ -239,9 +241,19 @@ try {
   const beforeInvalidStatus = await projection();
   await editor.fill("Blocked"); await editor.press("Enter");
   await page.getByRole("alert").waitFor();
+  await page.getByRole("alert").filter({ hasText: /^Status must be one of Doing, Done or Todo\. The draft was kept/ }).waitFor();
   assert.equal(await editor.inputValue(), "Blocked");
   assert.deepEqual(await projection(), beforeInvalidStatus);
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });
+  // A formula whose result breaks the rule is refused the same way, and the draft stays.
+  const priorityAt = (await projection()).columns.findIndex(column => column.display_name === "Priority");
+  await rowByName("入庫").locator(".ts-cell").nth(priorityAt).click();
+  const formulaBar = page.getByTestId("formula-bar-input");
+  await formulaBar.fill("=2*3"); await formulaBar.press("Enter");
+  await page.getByText("Priority must be between 1 and 5.", { exact: false }).first().waitFor();
+  assert.match(await formulaBar.inputValue(), /2\*3/, "the refused formula stays in the bar");
+  assert.deepEqual(await projection(), beforeInvalidStatus, "Work refused the formula: nothing changed");
+  await formulaBar.press("Escape");
   await page.keyboard.press("ControlOrMeta+f");
   await page.getByLabel("Find in table").fill("驗收");
   await page.getByLabel("Find in table").press("Enter");

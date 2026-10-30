@@ -25,6 +25,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     setColumnRequiredness(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
     setColumnConstraint(expectedRevision: string, collection: string, field: string, constraint: FieldConstraintInput): Promise<PublicationProjection>;
     setColumnNumberFormat(expectedRevision: string, collection: string, field: string, numberFormat: NumberFormat | null): Promise<PublicationProjection>;
+    moveColumn(expected: string, collection: string, field: string, toIndex: number): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
     queryCapacity(expectedRevision?: string): Promise<CapacityProjection>;
     inspectProject(bytes: ArrayBuffer): Promise<OpenedProjection>;

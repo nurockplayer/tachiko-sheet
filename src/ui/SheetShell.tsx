@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
+import { flushSync } from "react-dom";
 import { appearanceDensity } from "../application/appearance-preference.js";
 import { emptyLocalHistory } from "../application/local-history.js";
 import { sameAppearanceChoice } from "../application/appearance-model.js";
@@ -91,7 +92,7 @@ import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRang
 import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { type ResultChartMode } from "./results-model.js";
-import { findingCategoryLabel, findingMessage } from "./interop-copy.js";
+import { findingCategoryLabel, findingMessage, findingLocation } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
 import { CellOptionsPopup } from "./CellOptionsPopup.js";
 import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
@@ -455,6 +456,7 @@ export function SheetShell(props: SheetShellProps) {
     onSetColumnNumberFormat,
     onRenameColumn,
     onRemoveColumn,
+    onMoveColumn,
     onPasteCells,
     onEditCells,
     onCopyFormula,
@@ -898,6 +900,7 @@ export function SheetShell(props: SheetShellProps) {
   const table = view?.table ?? null;
   const renameAvailable = Boolean(onRenameColumn && canRenameColumns(table, interop?.metadata ?? null));
   const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName, table), [interop?.metadata, importedSourceName, table]);
+  const ledgerColumns = useMemo(() => interop?.ledgerColumns ? bindingCatalogNames(interop.ledgerColumns, interop.metadata, importedSourceName) : null, [interop?.ledgerColumns, interop?.metadata, importedSourceName]);
   // Resolve labels once for every consumer. IDs, keys and canonical projections
   // remain untouched; this array is presentation only.
   const columns = useMemo(() => table ? tableColumns(table).map(column => ({
@@ -1876,6 +1879,12 @@ export function SheetShell(props: SheetShellProps) {
     return Boolean(input && !input.disabled && !input.readOnly && input.ownerDocument.activeElement === input);
   }
 
+  function retainedDraftRefusal(outcome: CommitOutcome | null | undefined): string {
+    return outcome?.ruleRefusal && outcome.message
+      ? `${outcome.message} The draft was kept so you can correct it.`
+      : "The work did not accept this value. The draft was kept so you can correct it.";
+  }
+
   /**
    * The cell's own editor holds a formula ("=…", as in other spreadsheets) and
    * owns the caret, so a click on another cell names that cell instead. The
@@ -1927,13 +1936,14 @@ export function SheetShell(props: SheetShellProps) {
         end: input.selectionEnd ?? editor.value.length,
       });
       setLocalError(null);
-      setEditor((previous) => (previous ? { ...previous, value: next.value } : previous));
-      requestAnimationFrame(() => {
-        const node = editorInputRef.current;
-        if (!node || node.disabled) return;
+      // Rendered now, so the caret lands after the reference before the next
+      // keystroke; a frame later could move it under fast typing.
+      flushSync(() => setEditor((previous) => (previous ? { ...previous, value: next.value } : previous)));
+      const node = editorInputRef.current;
+      if (node && !node.disabled) {
         node.focus();
         node.setSelectionRange(next.caret, next.caret);
-      });
+      }
       return true;
     }
     const input = formulaInputRef.current;
@@ -2294,8 +2304,9 @@ export function SheetShell(props: SheetShellProps) {
     if (!accepted) {
       focusRejectedEditorRef.current = intent;
       // The cell editor keeps its established retained-draft copy; Work's own
-      // detail stays in the status message rather than replacing it.
-      setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
+      // detail stays in the status message rather than replacing it. A column
+      // rule is the one reason worth naming here: it says what to enter.
+      setLocalError(retainedDraftRefusal(outcome));
     }
     if (accepted) {
       setEditor(null);
@@ -2552,7 +2563,7 @@ export function SheetShell(props: SheetShellProps) {
     const accepted = outcome?.accepted === true;
     // Same retained-draft copy as the cell editor; Work's detail stays in the
     // status message.
-    if (!accepted) setLocalError("The work did not accept this value. The draft was kept so you can correct it.");
+    if (!accepted) setLocalError(retainedDraftRefusal(outcome));
     if (accepted && applied) {
       // Same as a cell edit: an applied Notes value keeps its row visible under
       // the filter that was active when it was written.
@@ -3213,6 +3224,21 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(() => { if (completionMayUpdateUi(intent) && trigger.isConnected) withAppFocus(() => trigger.focus()); });
   }
 
+  async function moveColumn(field: string, offset: -1 | 1, trigger: HTMLElement) {
+    if (!view || !table || !witness || !onMoveColumn || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    const from = columns.findIndex(column => column.id === field);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= columns.length) return;
+    const displayName = columns[from].display_name;
+    const intent = completionIntent();
+    setColumnAnnouncement(null);
+    const result = await onMoveColumn(witness, table.collection.key, field, to);
+    if (intent.occurrence !== liveOccurrenceRef.current) return;
+    if (result.kind === "confirmed") setColumnAnnouncement(`${displayName} moved ${offset < 0 ? "left" : "right"}. Undo restores it.`);
+    else if (result.kind === "refused") setColumnAnnouncement(result.message);
+    requestAnimationFrame(() => { if (completionMayUpdateUi(intent) && trigger.isConnected) withAppFocus(() => trigger.focus()); });
+  }
+
   async function submitColumn(draft: ColumnDraft) {
     const state = columnDialog;
     if (!state || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return { kind: "refused" as const, message: columnChangeReason };
@@ -3612,6 +3638,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       openColumnDialog(kind, trigger, column.id);
                     }} />) : null}
+                    {table.native_table_profile && onMoveColumn ? ([[-1, "Move left"], [1, "Move right"]] as const).map(([offset, label]) => <button key={label} type="button" className="ts-button" aria-label={label} data-column-action={label} disabled={columnChangesBlocked || index + offset < 0 || index + offset >= columns.length} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      void moveColumn(column.id, offset, trigger);
+                    }} />) : null}
                     {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
@@ -3773,6 +3805,15 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 openColumnDialog(kind, trigger, focusedColumn.id);
               }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>) : null}
+              {table.native_table_profile && onMoveColumn ? ([[-1, "left"], [1, "right"]] as const).map(([offset, side]) => {
+                const target = columns.findIndex(column => column.id === focusedColumn.id) + offset;
+                return <button key={side} type="button" className="ts-button" disabled={columnChangesBlocked || target < 0 || target >= columns.length} onClick={event => {
+                  const disclosure = event.currentTarget.closest("details")!;
+                  const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                  closeColumnToolbar(disclosure);
+                  void moveColumn(focusedColumn.id, offset, trigger);
+                }}>{`Move “${focusedColumnName}” ${side}`}</button>;
+              }) : null}
               {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
@@ -4844,7 +4885,10 @@ export function SheetShell(props: SheetShellProps) {
           {downloadFormat === "ro" ? downloadOmissions.length > 0 ? <>
             <h3 className="ts-content-heading">Not included in this file</h3>
             <ul className="ts-ledger" aria-label="Not included in this file">{downloadOmissions.map((omission) => <li key={omission} data-loss-category="lossy_on_export">{omission}</li>)}</ul>
-          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {finding.location ? `${finding.location}: ` : ""}{findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
+          </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {((location) => location ? <><span className="ts-ledger-location">{location}</span>: </> : null)(findingLocation(finding.location,
+                (collection) => names.table(collection) ?? view?.collections.find((summary) => summary.id === collection)?.display_name,
+                (collection, field) => (table?.collection.id === collection ? names.column(collection, field) : null)
+                  ?? ledgerColumns?.collections.find((summary) => summary.id === collection)?.fields.find((column) => column.id === field)?.displayName, finding.code))}{findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
         </div>
         <div className="ts-dialog-actions">
           <button type="button" className="ts-button" disabled={busy} onClick={cancelDownload}>Cancel</button>

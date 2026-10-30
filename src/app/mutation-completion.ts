@@ -4,6 +4,7 @@ import type { ConfirmedPublication, Currentness, FieldTarget, KeyedGroupedSumRes
 import { UnknownOperationOutcomeError, rowEntity } from "../contracts.js";
 import { rowSource } from "../ui/row-source.js";
 import { capacityMessage } from "../ui/capacity-message.js";
+import { constraintMessage } from "../ui/constraint-message.js";
 import { PublishedProjectionRecoveryError, SheetSessionError } from "../runtime/session.js";
 import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, type LocalHistorySnapshot } from "../application/local-history.js";
 
@@ -19,7 +20,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; sourcePosition?: number; nameFailures?: readonly NameFailure[] };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; sourcePosition?: number; ruleRefusal?: true; nameFailures?: readonly NameFailure[] };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -223,11 +224,13 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       // for a Work verdict.
       const verbatim = (command.kind === "scalar" && command.edit.kind === "formula") ||
         (command.kind === "rows" && (failure?.constraint_failure != null || failure?.code === "invalid_constraint_declaration"));
+      // A column-rule refusal is worded with the column's name, never its id.
+      const ruleMessage = constraintMessage(failure?.constraint_failure, (field) => current?.table.columns.find((column) => column.id === field)?.display_name);
       const message = failure && isCapacityFailure(failure as FailureProjection)
         ? capacityMessage(failure as CapacityFailureProjection, capacityTableName(failure.collection))
-        : verbatim && typeof failure?.message === "string" && failure.message.length > 0
+        : ruleMessage ?? (verbatim && typeof failure?.message === "string" && failure.message.length > 0
           ? failure.message
-          : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created.");
+          : describe(error, command.kind === "scalar" ? "The change was not applied." : command.kind === "rows" ? "The row change was not applied." : command.kind === "cleanup" ? "The cleanup was not applied." : "The cross-table summary was not created."));
       // A formula refusal is shown in the formula bar beside the retained
       // draft; the global banner would repeat Work's words a second time.
       if (command.kind !== "rows" && !(command.kind === "scalar" && command.edit.kind === "formula")) port.setMessage(message);
@@ -250,6 +253,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code, ...(blankCount !== undefined ? { blankCount } : {}), ...(failure?.name_failures ? { nameFailures: failure.name_failures } : {}) } : {}),
         ...(command.kind === "scalar" && position !== undefined ? { position } : {}),
         ...(command.kind === "scalar" && sourcePosition !== undefined ? { sourcePosition } : {}),
+        ...(ruleMessage && !(failure && isCapacityFailure(failure as FailureProjection)) ? { ruleRefusal: true as const } : {}),
       });
     } finally {
       // App's base finally/end ran in this continuation. A caller awaiting

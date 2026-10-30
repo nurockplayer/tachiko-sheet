@@ -353,6 +353,21 @@ try {
   await page.keyboard.press("Tab"); assert.equal(await page.getByRole("button", { name: "Remove…", exact: true }).evaluate(n => n === document.activeElement), true);
   await page.keyboard.press("Escape"); assert.equal(await disclosure.getAttribute("open"), null);
   await assertFocused(actions, "Escape returns to the disclosure button");
+  // Column order is document state: the header menu moves price, the last
+  // column, one place left; Undo restores the order.
+  const order = async () => (await projection()).columns.map(column => column.display_name);
+  const orderBefore = await order(), priceAt = orderBefore.indexOf("price");
+  assert.equal(priceAt, orderBefore.length - 1, "price is the last column");
+  await actions.click(); assert.equal(await disclosure.getAttribute("open"), "");
+  assert.equal(await page.getByRole("button", { name: "Move right", exact: true }).isDisabled(), true, "Move right is unavailable for the last column");
+  await page.getByRole("button", { name: "Move left", exact: true }).click(); await ready();
+  const moved = orderBefore.filter(name => name !== "price"); moved.splice(priceAt - 1, 0, "price");
+  assert.deepEqual(await order(), moved, "Move left publishes Work's new column order");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt - 1, "the grid header follows Work's order");
+  await page.getByText(/price moved left\. Undo restores it\./).waitFor();
+  await history("Undo"); assert.deepEqual(await order(), orderBefore, "Undo restores the column order");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt, "Undo puts the header back");
+  checks.push("move column: header menu Move left publishes Work's column order, the grid follows, Move right is off at the last column, Undo restores the order");
   await actions.press("Space"); assert.equal(await disclosure.getAttribute("open"), "");
   const desktopMenuScreenshot = path.join(screens, "column-menu-open-1440x900.png");
   await page.screenshot({ path: desktopMenuScreenshot }); screenshots.push(desktopMenuScreenshot);
@@ -363,9 +378,10 @@ try {
   await actions.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
   await dialog("Remove column").waitFor(); await cancel("Remove column"); await dialog("Remove column").waitFor({ state: "detached" });
   await assertFocused(actions, "Remove dialog cancel returns to the closed disclosure");
-  // Rename, Remove, Require a value, Rule…, Number format… (price is a number column),
-  // Sort A → Z, Sort Z → A, Filter…, then out.
-  await actions.press("Enter"); for (let stop = 0; stop < 9; stop++) await page.keyboard.press("Tab");
+  // Rename, Remove, Move left (Move right is off for the last column), Require a
+  // value, Rule…, Number format… (price is a number column), Sort A → Z,
+  // Sort Z → A, Filter…, then out.
+  await actions.press("Enter"); for (let stop = 0; stop < 10; stop++) await page.keyboard.press("Tab");
   assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).evaluate(n => n === document.activeElement), true, "Tab exits the disclosure without a trap");
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
   assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
@@ -505,6 +521,24 @@ try {
   await chooseColumnAction("Capacity extra", "Rename"); d = dialog("Rename column");
   await d.getByLabel("Column name", { exact: true }).fill("Capacity note"); await submit("Rename column");
   assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "compact Rename publishes on the capacity table");
+  // Compact Column menu moves the focused column; moving it back restores the order.
+  const capacityOrder = async () => (await projection()).columns.map(column => column.id);
+  const compactMove = async (name, side) => {
+    const index = (await page.locator(".ts-col-head").allTextContents()).indexOf(name); assert.ok(index >= 0);
+    await page.locator(".ts-grid tbody tr.ts-row").first().locator(".ts-cell").nth(index).focus();
+    await page.getByRole("button", { name: "Column", exact: true }).click();
+    await page.getByRole("button", { name: `Move “${name}” ${side}`, exact: true }).click(); await ready();
+  };
+  const beforeMove = await capacityOrder(), noteAt = beforeMove.indexOf(addedColumn.id);
+  assert.ok(noteAt > 0, "the authored capacity column has a left neighbour");
+  await compactMove("Capacity note", "left");
+  assert.equal((await capacityOrder()).indexOf(addedColumn.id), noteAt - 1, "compact Move left publishes the new order");
+  await compactMove("Capacity note", "right");
+  assert.deepEqual(await capacityOrder(), beforeMove, "compact Move right restores the original order");
+  // Keep it moved: the order must survive Remove/Undo, Save, Save a copy and a restart.
+  await compactMove("Capacity note", "left");
+  const movedOrder = await capacityOrder();
+  assert.equal(movedOrder.indexOf(addedColumn.id), noteAt - 1);
   const capacityRenamed = await projection();
   await chooseColumnAction("Capacity note", "Remove"); await submit("Remove column");
   assert.equal((await projection()).columns.some(column => column.id === addedColumn.id), false, "compact Remove publishes on the capacity table");
@@ -523,11 +557,14 @@ try {
   await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
   assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "the authored capacity column survives Save, Save a copy and a full restart");
+  assert.deepEqual(await capacityOrder(), movedOrder, "the moved column order survives Save, Save a copy and a full restart");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("Capacity note"), noteAt - 1, "the reopened grid shows the moved order");
   const reopenedCapacity = await projection();
   assert.equal(reopenedCapacity.rows.length, capacityAdded.rows.length);
   assert.ok(reopenedCapacity.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "all capacity rows keep the authored fill value after a full restart");
-  assert.equal(values(await projection())[0][1], 777);
-  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
+  // The edit went to the column at index 1 of the pre-move snapshot; check it by id.
+  assert.equal((await projection()).rows[0].fields.find(field => field.target.field === table.columns[1].id)?.stored?.value, 777);
+  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename, Move and Remove (compact) with exact Undo/Redo; the authored column, its moved position and its values survive bound Save, Save a copy and a full restart/reopen");
 
   const manyHeaders = await assertManyColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));

@@ -711,6 +711,10 @@ body { margin: 0; }
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
+  padding: 6px;
+  background: var(--ts-surface);
+  border: 1px solid var(--ts-line);
+  border-radius: 8px;
   white-space: nowrap;
   box-shadow: var(--ts-shadow);
 }
@@ -2411,7 +2415,7 @@ body { margin: 0; }
   }
   .ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices a { color: LinkText; }
   .ts-notices a:focus-visible { outline-color: Highlight; }
-  .ts-card, .ts-grid-scroll, .ts-modal { background: Canvas; border-color: ButtonText; box-shadow: none; }
+  .ts-card, .ts-grid-scroll, .ts-modal, .ts-command-menu { background: Canvas; border-color: ButtonText; box-shadow: none; }
   .ts-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .ts-button, .ts-tab { color: ButtonText; border-color: ButtonText; background: Canvas; }
   .ts-app .ts-button--ghost:hover:not(:disabled),

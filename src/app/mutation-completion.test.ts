@@ -68,6 +68,17 @@ describe("mutation completion formula refusal", () => {
     expect(result).toEqual({ kind: "refused", message: "Formula syntax error at character 1: unknown function 'Hours'", sourcePosition: 1 });
   });
 
+  it("words a formula that breaks a column rule by that rule (#578)", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "scalar",
+      witness,
+      edit: { kind: "formula", source: "2*3" },
+      dispatch: async () => { throw refusal({ code: "field_constraint_violation", message: "field 'native_table_x.native_table_field_y' refuses this value outside its constraint (allowed range: 1 to 5)", constraint_failure: { reason: "field_value", schema: "native_table_x", field: "native_table_field_y", constraint: { kind: "number_inclusive_range", min: 1, max: 5 }, offending_rows: 1 } }); },
+    });
+    expect(result).toEqual({ kind: "refused", message: "This column must be between 1 and 5.", ruleRefusal: true });
+  });
+
   it("shows Work's R2 type-mismatch refusal verbatim", async () => {
     const { port } = harness();
     const message = "Formula reference '[.title]' is not a Number field.";
@@ -198,6 +209,16 @@ describe("mutation completion duplicate recovery", () => {
       dispatch: async () => { throw refusal({ code: "invalid_constraint_declaration", message: "The lowest value is above the highest value.", constraint_failure: { reason: "declaration", offending_rows: 0 } }); },
     });
     expect(result).toMatchObject({ kind: "refused", message: "The lowest value is above the highest value.", refusalCode: "invalid_constraint_declaration" });
+  });
+
+  it("words a refused value by the column's rule, never Work's ids", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "rows",
+      witness,
+      dispatch: async () => { throw refusal({ code: "field_constraint_violation", message: "field 'native_table_x.native_table_field_y' refuses this value outside its constraint (allowed range: 1 to 5)", constraint_failure: { reason: "field_value", schema: "native_table_x", field: "native_table_field_y", constraint: { kind: "number_inclusive_range", min: 1, max: 5 }, offending_rows: 1 } }); },
+    });
+    expect(result).toMatchObject({ kind: "refused", message: "This column must be between 1 and 5.", refusalCode: "field_constraint_violation", ruleRefusal: true });
   });
 
   it("keeps the explanatory prefix for other row refusals", async () => {
