@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { cellDisplay, fieldClipboardText, formatNumber, formatNumberFor } from "./field-display.js";
+import { cellDisplay, fieldClipboardText, formatNumber, formatNumberFor, seedTextOf } from "./field-display.js";
 
 describe("field display", () => {
   it("shows an unformatted number to 15 significant digits, as other spreadsheets do", () => {
@@ -21,8 +21,11 @@ describe("field display", () => {
     const row: TableRow = { id: "e1", key: "e1", fields: [field] };
     const column: TableColumn = { id: "total", key: "total", display_name: "Total", field_type: "number", required: true };
     expect(cellDisplay(row, column).text).toBe("0.3");
-    // Copy keeps Work's exact value.
+    // Copy and the editor seed keep Work's exact value.
     expect(fieldClipboardText(field)).toBe(String(0.1 + 0.2));
+    expect(seedTextOf(field)).toBe("0.30000000000000004");
+    const stored = { ...field, stored: { kind: "number", value: 1455.7999999999997 }, calculated: null } as unknown as FieldProjection;
+    expect(seedTextOf(stored)).toBe("1455.7999999999997");
   });
 
   it("uses the column number format for cell display", () => {
