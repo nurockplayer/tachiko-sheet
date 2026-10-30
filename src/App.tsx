@@ -1606,7 +1606,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // Work's refusal is shown verbatim; a published or unknown outcome is
       // never a refusal and keeps the existing editor-retry policy.
       result => result.kind === "refused"
-        ? { accepted: false, message: result.message, ...(result.position !== undefined ? { position: result.position } : {}), ...(result.sourcePosition !== undefined ? { sourcePosition: result.sourcePosition } : {}) }
+        ? { accepted: false, message: result.message, ...(result.position !== undefined ? { position: result.position } : {}), ...(result.sourcePosition !== undefined ? { sourcePosition: result.sourcePosition } : {}), ...(result.ruleRefusal ? { ruleRefusal: true as const } : {}) }
         : { accepted: true },
       end,
     );
@@ -1695,6 +1695,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function removeColumn(witness: ViewWitness, collection: string, field: string) {
     return changeRows(witness, () => runtime.removeColumn(witness, collection, field), "column");
+  }
+
+  function moveColumn(witness: ViewWitness, collection: string, field: string, toIndex: number) {
+    return changeRows(witness, () => runtime.moveColumn(witness, collection, field, toIndex), "column");
   }
 
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
@@ -2212,6 +2216,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
+          onMoveColumn={copies.createWorkFile ? moveColumn : undefined}
           onRemoveRows={removeRows}
           // A duplicate carries an authored display name and is saved through
           // the portable route, like column authoring.

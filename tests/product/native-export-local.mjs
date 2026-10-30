@@ -163,6 +163,18 @@ try {
   ]}]);
   checks.push("new-table CSV exact lexical values; XLSX exact text/number/boolean values and types; acknowledgement/cancel/focus");
 
+  // A moved column downloads in its new place; Undo restores the order.
+  await page.getByRole("tab",{name:"Table",exact:true}).click();
+  await page.getByRole("columnheader", { name: "Paid", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for Paid", exact: true }).click();
+  await page.getByRole("button", { name: "Move left", exact: true }).click(); await ready(page);
+  assert.deepEqual(await prepare(page,"csv"), [["Item","Paid","Amount"],["Tea 茶","true","4.5"],["Train","false","12"]]);
+  const movedWorkbook = await prepare(page,"xlsx");
+  assert.deepEqual(movedWorkbook[0].rows[0].map(cell => cell.value), ["Item","Paid","Amount"]);
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
+  assert.deepEqual((await prepare(page,"csv"))[0], ["Item","Amount","Paid"]);
+  checks.push("a moved column downloads in its new place (CSV and XLSX); Undo restores the export order");
+
   // Downloads snapshot the published revision: an unfinished new-row draft blocks them.
   await page.getByRole("tab",{name:"Table",exact:true}).click();
   await fillDraftCell(page, page.locator(".ts-entry-row").getByLabel("New row Item (Text)", { exact: true }), "Unfinished");
