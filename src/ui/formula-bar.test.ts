@@ -35,8 +35,7 @@ import {
   positionedAfterFormulaSubmit,
   type FormulaGridPosition,
   type FormulaHandoffGrid,
-  type FormulaSubmitHandoff,
-} from "./formula-bar.js";
+  type FormulaSubmitHandoff, formulaBarSource, formulaColumnNameHint } from "./formula-bar.js";
 import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 
 const task: TableColumn = { id: "task", key: "task", display_name: "Task", field_type: "text", required: true };
@@ -663,5 +662,31 @@ describe("inCellFormulaSource", () => {
     expect(inCellFormulaSource("=")).toBeNull();
     expect(inCellFormulaSource("12")).toBeNull();
     expect(inCellFormulaSource("1=1")).toBeNull();
+  });
+});
+
+describe("formulaBarSource", () => {
+  it("drops one leading = like the in-cell entry and maps positions back", () => {
+    expect(formulaBarSource("[.hours]*[.rate]")).toEqual({ source: "[.hours]*[.rate]", offset: 0 });
+    expect(formulaBarSource("=[.hours]*[.rate]")).toEqual({ source: "[.hours]*[.rate]", offset: 1 });
+    expect(formulaBarSource("  =  1 + 2 ")).toEqual({ source: "1 + 2", offset: 5 });
+    expect(formulaBarSource("1 = 2")).toEqual({ source: "1 = 2", offset: 0 });
+  });
+});
+
+describe("formulaColumnNameHint", () => {
+  const columns = [{ key: "hours", display_name: "Hours" }, { key: "unit_price", display_name: "Unit price" }, { key: "unit", display_name: "Unit" }];
+
+  it("names the column at Work's refusal position, preferring the longest name", () => {
+    expect(formulaColumnNameHint("Hours*Rate", 1, columns)).toBe("“Hours” is a column. Click one of its cells to insert a reference, or write [.hours].");
+    expect(formulaColumnNameHint("[.hours] * Unit price", 12, columns)).toBe("“Unit price” is a column. Click one of its cells to insert a reference, or write [.unit_price].");
+    expect(formulaColumnNameHint("unit_price*2", 1, columns)).toContain("[.unit_price]");
+  });
+
+  it("stays silent without a position, outside the source, or on a longer word", () => {
+    expect(formulaColumnNameHint("Hours*Rate", undefined, columns)).toBeNull();
+    expect(formulaColumnNameHint("Hours*Rate", 20, columns)).toBeNull();
+    expect(formulaColumnNameHint("Hoursly", 1, columns)).toBeNull();
+    expect(formulaColumnNameHint("Rate*2", 1, columns)).toBeNull();
   });
 });

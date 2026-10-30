@@ -259,17 +259,31 @@ try {
   assert.ok(values(table).every(row => row[taxAt] === undefined), "the new optional column starts blank");
   const doubled = values(table).map(row => String(row[amountAt] * 2));
   const taxText = async () => Promise.all(table.rows.map((_, r) => cell(table, r, taxAt).textContent().then(text => text.trim())));
+  const amountKey = table.columns[amountAt].key;
   await cell(table, 0, taxAt).dblclick();
   const cellEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
-  await cellEditor.fill(`=[.${table.columns[amountAt].key}] * 2`); await cellEditor.press("Enter"); await ready();
+  // A spreadsheet user's first try names the column. Work refuses; Sheet says how to refer to it.
+  await cellEditor.fill("=Amount * 2"); await cellEditor.press("Enter");
+  await page.getByText(`“Amount” is a column. Click one of its cells to insert a reference, or write [.${amountKey}].`, { exact: false }).first().waitFor();
+  // Type "=", click the Amount cell to insert its reference, then finish the formula.
+  await cellEditor.fill("=");
+  await cell(table, 0, amountAt).click();
+  assert.equal(await cellEditor.inputValue(), `=[.${amountKey}]`, "clicking a cell while typing a formula inserts its reference");
+  await cellEditor.press("End"); await cellEditor.pressSequentially(" * 2"); await cellEditor.press("Enter"); await ready();
   assert.deepEqual((await taxText()).slice(0, 1), doubled.slice(0, 1), "a formula into a blank cell calculates");
+  // The formula bar takes a leading "=" too.
+  await cell(table, 0, taxAt).click();
+  const formulaBar = page.getByTestId("formula-bar-input");
+  await formulaBar.fill(`=[.${amountKey}]*4`); await formulaBar.press("Enter"); await ready();
+  assert.equal((await taxText())[0], String(values(table)[0][amountAt] * 4), "the formula bar accepts a leading =");
+  await history("Undo"); assert.deepEqual((await taxText()).slice(0, 1), doubled.slice(0, 1));
   await cell(table, 0, taxAt).click(); await cell(table, table.rows.length - 1, taxAt).click({ modifiers: ["Shift"] });
   await page.keyboard.press("Control+d"); await ready();
   assert.deepEqual(await taxText(), doubled, "fill down calculates every blank cell");
   await history("Undo"); assert.deepEqual((await taxText()).slice(1), doubled.slice(1).map(() => ""), "Undo returns filled cells to blank");
   await history("Undo"); assert.deepEqual(await taxText(), doubled.map(() => ""), "Undo returns the first cell to blank");
   await history("Undo"); assert.equal((await projection()).columns.length, table.columns.length - 1);
-  checks.push("calculated column: blank optional Number cells take a typed formula and Ctrl+D fill; Undo restores blanks");
+  checks.push("calculated column: a column-name formula is refused with a how-to hint; = then a cell click inserts its reference; the bar accepts =; Ctrl+D fill; Undo restores blanks");
 
   // Percent input (Work #596) and column aggregates (Work #600).
   table = await projection();
