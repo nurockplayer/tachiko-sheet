@@ -123,6 +123,9 @@ export class WorkerDesignerClient {
     async setColumnNumberFormat(expectedRevision, collection, field, numberFormat) {
         return this.trackerCommand({ type: "set_column_number_format", expected_revision: expectedRevision, collection, field, number_format: numberFormat });
     }
+    async moveColumn(expected, collection, field, toIndex) {
+        return this.trackerCommand({ type: "move_column", expected_revision: expected, collection, field, to_index: toIndex });
+    }
     async bootstrap() {
         return expectResponse("bootstrap", await this.#command({
             type: "bootstrap",
