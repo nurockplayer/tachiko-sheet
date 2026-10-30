@@ -10,11 +10,13 @@ describe("import type suggestions", () => {
   it("suggests Number only for plain decimal columns", () => {
     expect(suggestColumnType(column(text("3"), text("200"), text("-4.5"), cell({ kind: "empty" })), 0)).toBe("number");
     expect(suggestColumnType(column(cell({ kind: "number", value: 12 }), text("7")), 0)).toBe("number");
+    // Money amounts keep their written decimals; the value is exact.
+    expect(suggestColumnType(column(text("-1200"), text("-85.40"), text("3200.00"), text("0.10")), 0)).toBe("number");
   });
 
   it("keeps identifiers and ambiguous values as Text", () => {
     for (const value of ["00123", "0001700000000097", "1234567890123456", "1e5", "1,000", " 3", "TRUE", "2026-10-11", "PEN",
-      "999999999999999.99", "123456789012345.123456789012345", "-0", "-0.00", "4.50", "1.", ".5", "0.0000001"]) {
+      "999999999999999.99", "123456789012345.123456789012345", "-0", "-0.00", "1.", ".5", "0.0000001", "0.00000010"]) {
       expect(suggestColumnType(column(text("1"), text(value)), 0), value).toBe("text");
     }
     expect(suggestColumnType(column(cell({ kind: "empty" })), 0)).toBe("text");
