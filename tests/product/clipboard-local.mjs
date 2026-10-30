@@ -158,7 +158,7 @@ try {
     if (index > 1) await d.getByRole("button", { name: "Add column", exact: true }).click();
     await d.getByLabel(`Column ${index} name`, { exact: true }).fill(name);
     await d.getByLabel(`Column ${index} type`, { exact: true }).selectOption(type);
-    if (type === "text" || type === "number") await d.getByLabel(`Column ${index} Required`, { exact: true }).check();
+    await d.getByLabel(`Column ${index} Required`, { exact: true }).check();
   }
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await ready();
   const draftFirst = () => entry().locator('[data-entry-field]').first();
@@ -458,6 +458,7 @@ try {
   await dates.getByLabel("Table name", { exact: true }).fill("Clipboard dates");
   await dates.getByLabel("Column 1 name", { exact: true }).fill("When");
   await dates.getByLabel("Column 1 type", { exact: true }).selectOption("date");
+  await dates.getByLabel("Column 1 Required", { exact: true }).check();
   await dates.getByRole("button", { name: "Create table", exact: true }).click(); await ready();
   await draftFirst().focus(); await paste(draftFirst(), "2026-10-19"); await draftFirst().press("Enter"); await ready();
   assert.equal(await unchangedPaste("10/19/2026", /year first/), 1);

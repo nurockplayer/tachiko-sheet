@@ -2,6 +2,7 @@ import type { CellEdit, FieldTarget } from "../contracts.js";
 import { FORMULA_BAR_GUIDANCE } from "./clipboard.js";
 import { scalarEditOf, seedTextOf } from "./field-display.js";
 import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
+import { supportsOptional } from "./column-requiredness.js";
 
 export interface CellEditSlot {
   target: FieldTarget;
@@ -18,8 +19,8 @@ export function cellEditSlot(row: TableRow, column: TableColumn): CellEditSlot |
   if (field) return field.editable_scalar ? {
     target: field.target, kind: field.editable_scalar, original: seedTextOf(field), blank: false, formula: Boolean(field.formula), required: column.required,
   } : null;
-  if (!column.required && row.blank_fields?.includes(column.id) && (column.field_type === "text" || column.field_type === "number")) {
-    return { target: { entity: rowEntity(row), field: column.id }, kind: column.field_type, original: "", blank: true, formula: false, required: false };
+  if (!column.required && row.blank_fields?.includes(column.id) && supportsOptional(column.field_type)) {
+    return { target: { entity: rowEntity(row), field: column.id }, kind: column.field_type as CellEditSlot["kind"], original: "", blank: true, formula: false, required: false };
   }
   return null;
 }
@@ -77,6 +78,6 @@ export function emptyCellEdit(slot: CellEditSlot): CellEdit | null {
     if (slot.kind !== "text") throw new CellClearRefusal(requiredCellValueMessage(slot.kind));
     return slot.original === "" ? null : { target: slot.target, input: { kind: "text", value: "" } };
   }
-  if (slot.kind !== "text" && slot.kind !== "number") throw new CellClearRefusal("This column cannot be cleared here.");
+  if (!supportsOptional(slot.kind)) throw new CellClearRefusal("This column cannot be cleared here.");
   return { target: slot.target, input: { kind: "clear" } };
 }

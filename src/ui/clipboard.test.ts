@@ -163,10 +163,10 @@ describe("append-paste presence encoding", () => {
     expect(routePaste([["existing", "1", "2026-10-20", "TRUE"], ["", "", "", ""]], ctx))
       .toEqual({ kind: "publish", rows: [["existing", "1", "2026-10-20", "true"], ["", "", "", ""]] });
   });
-  it("preserves false as a value and does not invent optional Date/Boolean blank support", () => {
+  it("preserves false as a value and appends blanks to optional Date and Yes/No columns", () => {
     const ctx = context({ rowCount: 1, columnTypes: ["text", "number", "date", "boolean"], columnRequired: [false, false, false, false] });
-    expect(routePaste([["present", "1", "2026-10-20", "TRUE"], ["", "0", "", "FaLsE"]], ctx))
-      .toEqual({ kind: "publish", rows: [["present", "1", "2026-10-20", "true"], [{ kind: "clear" }, "0", "", "false"]] });
+    expect(routePaste([["present", "1", "2026-10-20", "TRUE"], ["", "0", "", "FaLsE"], ["x", "", "2026-10-21", ""]], ctx))
+      .toEqual({ kind: "publish", rows: [["present", "1", "2026-10-20", "true"], [{ kind: "clear" }, "0", { kind: "clear" }, "false"], ["x", { kind: "clear" }, "2026-10-21", { kind: "clear" }]] });
   });
   it("keeps existing-row edits and local draft paste as string input", () => {
     expect(routePaste([["", ""]], optional)).toEqual({ kind: "edit", rows: [["", ""]] });

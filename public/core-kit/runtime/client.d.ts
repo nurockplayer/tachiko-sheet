@@ -1,5 +1,5 @@
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, FailureProjection, FieldConstraintInput, NumberFormat } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, ColumnTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat } from "./protocol.ts";
 export interface DesignerClient {
     inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions): Promise<SourceWorkbook>;
     importSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
@@ -16,7 +16,7 @@ export interface DesignerClient {
     newTracker?(): Promise<OpenedProjection>;
     newBudget?(): Promise<OpenedProjection>;
     newTable?(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
-    duplicateCollection?(expectedRevision: string, collection: string, name: string): Promise<DuplicateCollectionProjection>;
+    duplicateCollection?(expectedRevision: string, collection: string, name: string, columnNames?: Record<string, string>): Promise<DuplicateCollectionProjection>;
     trackerCommand?(request: TrackerCommand): Promise<PublicationProjection>;
     clearField?(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     setColumnRequiredness?(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
@@ -46,6 +46,8 @@ export interface DesignerClient {
     queryTableWindow(expectedRevision: string, collection: string, view: TableView, start: number, count: number): Promise<TableWindowProjection>;
     /** The entity's zero-based position in that same view, or `filtered_out`. */
     locateInView(expectedRevision: string, collection: string, view: TableView, entity: string): Promise<LocatedInViewProjection>;
+    /** Number totals over exactly these entities; unknown, duplicate or foreign ids refuse. */
+    queryColumnTotals(expectedRevision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection>;
     queryFields(expectedRevision: string, fields: FieldTarget[]): Promise<FieldBatchProjection>;
     explainField(expectedRevision: string, target: FieldTarget): Promise<FieldExplanationProjection>;
     editNumber(expectedRevision: string, target: FieldTarget, input: string): Promise<PublicationProjection>;

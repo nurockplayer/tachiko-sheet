@@ -18,7 +18,7 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
       if (index) await dialog.getByRole("button", { name: "Add column", exact: true }).click();
       await dialog.getByLabel(`Column ${index + 1} name`, { exact: true }).fill(name);
       await dialog.getByLabel(`Column ${index + 1} type`, { exact: true }).selectOption(type);
-      if (type === "number") await dialog.getByLabel(`Column ${index + 1} Required`, { exact: true }).check();
+      if (type !== "text") await dialog.getByLabel(`Column ${index + 1} Required`, { exact: true }).check();
     }
     await dialog.getByRole("button", { name: "Create table", exact: true }).click();
     await dialog.waitFor({ state: "detached" }); await ready(page);

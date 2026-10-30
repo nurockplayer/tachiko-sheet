@@ -22,9 +22,10 @@ Sheet UI / application (unchanged)
 - Each channel attaches a fresh host **generation**; older frames are refused.
   A transport failure or runtime panic is terminal: the resident work is
   discarded and the in-flight operation is an unknown outcome, never replayed.
-- The Rust dependency is pinned to an immutable Work revision: the same `b1560ab4331847557f04dfd6833fbffcabfc1169` source as the
-  Web kit. Acquisition/reproducibility and hashes are recorded in
-  [the #160 handback](160-kit-handback.md). Re-pin only together with a
+- The Rust dependency is pinned to an immutable Work revision: the same `e618d0a558e7cb891a5d72413f1293b2bc92b81a` source as the
+  Web kit. Each re-pin's reproducible exports and hashes are recorded on
+  [#246](https://github.com/nurockplayer/tachiko-sheet/issues/246) (the first
+  in [the #160 handback](160-kit-handback.md)). Re-pin only together with a
   qualified kit.
 - Exports (CSV/XLSX/PNG/profile) do not use WebKit downloads. The page hands
   the bytes to the host through the `HostFiles` port (`src/host/host-files.ts`;

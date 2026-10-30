@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, ColumnTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -108,7 +108,8 @@ class FakeClient {
     editBoolean: 0,
     editDate: 0,
     trackerCommand: [] as TrackerCommand[],
-    duplicateCollection: [] as Array<{ revision: string; collection: string; name: string }>,
+    duplicateCollection: [] as Array<{ revision: string; collection: string; name: string; columnNames?: Record<string, string> }>,
+    queryColumnTotals: [] as Array<{ revision: string; collection: string; entities: string[] }>,
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
     setColumnNumberFormat: [] as Array<{ revision: string; collection: string; field: string; format: NumberFormat | null }>,
     copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
@@ -219,8 +220,8 @@ class FakeClient {
     return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [], schemas: [], schema_fields: [] };
   }
 
-  async duplicateCollection(revision: string, collection: string, name: string): Promise<DuplicateCollectionProjection> {
-    this.calls.duplicateCollection.push({ revision, collection, name });
+  async duplicateCollection(revision: string, collection: string, name: string, columnNames?: Record<string, string>): Promise<DuplicateCollectionProjection> {
+    this.calls.duplicateCollection.push(columnNames === undefined ? { revision, collection, name } : { revision, collection, name, columnNames });
     this.#requireOpen();
     const hook = this.hooks.duplicateCollection;
     if (hook !== undefined) {
@@ -326,6 +327,13 @@ class FakeClient {
     const hook = this.hooks.queryTableWindow;
     if (hook === undefined) throw new FakeDesignerRuntimeError("unsupported_operation", this.#revision);
     return hook(revision, collection, start, count);
+  }
+
+  async queryColumnTotals(revision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection> {
+    this.calls.queryColumnTotals.push({ revision, collection, entities });
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return { revision, rows: entities.length, column_totals: { impact: entities.length * 2 } };
   }
 
   async queryCapacity(revision: string): Promise<CapacityProjection> {
@@ -1856,6 +1864,40 @@ describe("queryCapacity", () => {
   });
 });
 
+describe("queryColumnTotals", () => {
+  it("asks Work for the shown entities' totals at the witness revision without publishing", async () => {
+    const { runtime, client, view } = await opened();
+
+    const totals = await runtime.queryColumnTotals(witnessOf(view), COLLECTION.key, ["e2", "e1"]);
+
+    expect(client.calls.queryColumnTotals).toEqual([{ revision: view.revision, collection: COLLECTION.key, entities: ["e2", "e1"] }]);
+    expect(totals).toEqual({ revision: view.revision, rows: 2, column_totals: { impact: 4 } });
+    expect(client.calls.trackerCommand).toEqual([]);
+  });
+
+  it("skips a read whose witness is no longer live", async () => {
+    const { runtime, client, view } = await opened();
+
+    await expect(runtime.queryColumnTotals({ ...witnessOf(view), revision: "rev-obsolete" }, COLLECTION.key, ["e1"])).resolves.toBeNull();
+    expect(client.calls.queryColumnTotals).toEqual([]);
+  });
+
+  it("does not send an entity list the wire would refuse", async () => {
+    const { runtime, client, view } = await opened();
+    const entities = Array.from({ length: 6_000 }, (_, index) => `entity-${index}`);
+
+    await expect(runtime.queryColumnTotals(witnessOf(view), COLLECTION.key, entities)).resolves.toBeNull();
+    expect(client.calls.queryColumnTotals).toEqual([]);
+  });
+
+  it("returns null when the installed client lacks the query", async () => {
+    const { runtime, client, view } = await opened();
+    Object.defineProperty(client, "queryColumnTotals", { value: undefined });
+
+    await expect(runtime.queryColumnTotals(witnessOf(view), COLLECTION.key, ["e1"])).resolves.toBeNull();
+  });
+});
+
 describe("copyFormula", () => {
   it("forwards the request unchanged with the witness revision and confirms the publication", async () => {
     const { runtime, client, view } = await opened();
@@ -2004,6 +2046,19 @@ describe("table duplication adapter", () => {
     expect(confirmed.view.requiresPortableSave).toBe(true);
     // The active table survives the acknowledgement for later commands.
     expect((await runtime.read()).table.collection.key).toBe(COPY.key);
+  });
+
+  it("sends the shown column names only when there are any", async () => {
+    const { runtime, client, view } = await opened();
+    twoTables(client);
+
+    const confirmed = await runtime.duplicateCollection(witnessOf(view), COLLECTION.key, "Tasks copy", { f1: "Impact score" });
+    await runtime.duplicateCollection(witnessOf(confirmed.view), COLLECTION.key, "Tasks copy 2", {});
+
+    expect(client.calls.duplicateCollection).toEqual([
+      { revision: view.revision, collection: COLLECTION.key, name: "Tasks copy", columnNames: { f1: "Impact score" } },
+      { revision: confirmed.view.revision, collection: COLLECTION.key, name: "Tasks copy 2" },
+    ]);
   });
 
   it("follows Work's bootstrap when Undo removes the duplicated active table", async () => {

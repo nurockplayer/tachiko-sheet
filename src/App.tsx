@@ -1705,9 +1705,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
   }
 
-  function duplicateTable(witness: ViewWitness, collection: string, name: string) {
+  function duplicateTable(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>) {
     // The dialog closes on a recovery, so the recovery message carries the name.
-    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name), "duplicate", name);
+    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name, columnNames), "duplicate", name);
+  }
+
+  function queryShownTotals(witness: ViewWitness, collection: string, entities: string[]) {
+    // A read only: it never takes the operation slot, and a failure leaves the whole-table footer.
+    return runtime.queryColumnTotals(witness, collection, entities);
   }
 
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
@@ -2221,6 +2226,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // A duplicate carries an authored display name and is saved through
           // the portable route, like column authoring.
           onDuplicateTable={copies.createWorkFile ? duplicateTable : undefined}
+          onQueryShownTotals={queryShownTotals}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}

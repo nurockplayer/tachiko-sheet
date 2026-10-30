@@ -520,7 +520,7 @@ describe("SheetShell static rendering", () => {
     expect(readerOnly).not.toContain('class="ts-col-head" tabindex="0"');
   });
 
-  it.each([false, true])("requiredness actions follow native Text/Number declarations (compact=%s)", compact => {
+  it.each([false, true])("requiredness actions follow native scalar declarations (compact=%s)", compact => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: compact }) });
     try {
       const view = makeView();
@@ -529,7 +529,7 @@ describe("SheetShell static rendering", () => {
       for (const type of ["text", "number", "date", "boolean"]) {
         for (const column of view.table.columns) { column.field_type = type; column.required = false; }
         const markup = render({ view, onSetColumnRequiredness });
-        expect(markup.includes("Require a value")).toBe(type === "text" || type === "number");
+        expect(markup.includes("Require a value")).toBe(true);
       }
       for (const column of view.table.columns) { column.field_type = "text"; column.required = true; }
       expect(render({ view, onSetColumnRequiredness })).toContain("Allow blanks");

@@ -239,6 +239,12 @@ export type LocatedInViewProjection = {
     result: "found" | "filtered_out";
     index?: number;
 };
+/** Number totals over the named entities at one revision; blank cells are skipped, as in `column_totals`. */
+export type ColumnTotalsProjection = {
+    revision: string;
+    rows: number;
+    column_totals: Record<string, number | null>;
+};
 export type FieldBatchProjection = {
     revision: string;
     fields: FieldProjection[];
@@ -487,7 +493,7 @@ export type ScalarEditInput = {
 };
 /** Raw strings parse as the declared scalar type; only an explicit clear removes a value. */
 export type PasteCellInput = string | ScalarEditInput;
-/** required defaults to true; optional native authoring admits Text/Number only. */
+/** required defaults to true; optional native authoring admits every scalar type (#598). */
 export type NewTableColumnInput = {
     name: string;
     field_type: string;
@@ -527,6 +533,7 @@ export type DesignerRequest = {
     expected_revision: string;
     collection: string;
     name: string;
+    column_names?: Record<string, string>;
 } | {
     type: "bootstrap";
     occurrence_id: string;
@@ -549,6 +556,11 @@ export type DesignerRequest = {
     collection: string;
     view: TableView;
     entity: string;
+} | {
+    type: "query_column_totals";
+    expected_revision: string;
+    collection: string;
+    entities: string[];
 } | {
     type: "query_fields";
     expected_revision: string;
@@ -609,6 +621,9 @@ export type DesignerResponse = {
 } | {
     type: "located_in_view";
     payload: LocatedInViewProjection;
+} | {
+    type: "column_totals";
+    payload: ColumnTotalsProjection;
 } | {
     type: "fields";
     payload: FieldBatchProjection;

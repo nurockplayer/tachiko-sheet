@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
-import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
+import { importAdmitsDates, chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 
 const cell = (value: SourceValue): SourceCell => ({ value, formula: null, style: {} as SourceCell["style"] });
 const text = (value: string) => cell({ kind: "text", value });
@@ -12,6 +12,23 @@ describe("import type suggestions", () => {
     expect(suggestColumnType(column(cell({ kind: "number", value: 12 }), text("7")), 0)).toBe("number");
     // Money amounts keep their written decimals; the value is exact.
     expect(suggestColumnType(column(text("-1200"), text("-85.40"), text("3200.00"), text("0.10")), 0)).toBe("number");
+  });
+
+  it("suggests Date only for real YYYY-MM-DD dates", () => {
+    expect(suggestColumnType(column(text("2026-10-01"), text("2026-02-28"), cell({ kind: "empty" }), text("2024-02-29")), 0)).toBe("date");
+    expect(suggestColumnType(column(text("0001-01-01"), text("0099-12-31"), text("0004-02-29")), 0), "years 1–99 are read as written").toBe("date");
+    expect(suggestColumnType(column(text("0000-01-01")), 0)).toBe("text");
+    expect(suggestColumnType(column(text("0099-02-29")), 0)).toBe("text");
+    // Over Work's 64 rows the import admits only Text and Number.
+    const dates = (rows: number) => Array.from({ length: rows }, () => [text("2026-10-01")]);
+    expect(importAdmitsDates([{ rows: dates(64) }, { rows: [] }])).toBe(true);
+    expect(importAdmitsDates([{ rows: dates(1) }, { rows: dates(65) }])).toBe(false);
+    expect(suggestColumnType(dates(65), 0, false)).toBe("text");
+    expect(suggestColumnType(dates(64), 0, true)).toBe("date");
+    for (const value of ["2026-02-30", "2025-02-29", "2026-13-01", "2026/10/01", "2026-1-5", "01-10-2026", "0000-01-01"]) {
+      expect(suggestColumnType(column(text("2026-10-01"), text(value)), 0), value).toBe("text");
+    }
+    expect(suggestColumnType(column(text("2026-10-01"), text("12")), 0), "dates mixed with numbers").toBe("text");
   });
 
   it("keeps identifiers and ambiguous values as Text", () => {

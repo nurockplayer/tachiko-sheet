@@ -1,6 +1,7 @@
 /** Clipboard transport and grid geometry only; Work owns value validation. */
 import type { PasteCellInput } from "../contracts.js";
 import { nativeInsertionFits, nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
+import { supportsOptional } from "./column-requiredness.js";
 
 export const NATIVE_INSERTION_LIMIT_MESSAGE = "This table has reached the 128-row limit for adding rows here.";
 export interface CellAddress { row: number; column: number }
@@ -112,10 +113,10 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if ((context.draft && rows.length === 1) || insideExistingRows) return { kind: context.draft ? "draft" : "edit", rows: normalized };
   // Work 375da29f protocol.d.ts PasteCellInput + ADR-0045 §3: raw strings
   // always set values; explicit clear expresses absence in paste_cells.
-  // Only newly appended optional Text/Number slots get that blank intent.
+  // Only newly appended optional slots get that blank intent.
   return { kind: "publish", rows: normalized.map((values, r) => values.map((value, c): PasteCellInput => {
     const type = context.columnTypes[column + c];
-    return row + r >= context.rowCount && value === "" && context.columnRequired[column + c] === false && (type === "text" || type === "number")
+    return row + r >= context.rowCount && value === "" && context.columnRequired[column + c] === false && supportsOptional(type ?? "")
       ? { kind: "clear" } : value;
   })) };
 

@@ -239,17 +239,23 @@ export async function runClearCellsCases(page, { close, checks }) {
     } finally { await client.close(); }
   });
   await page.getByTestId("open-work-file").setInputFiles({ name: "readonly-clear.ro", mimeType: "application/octet-stream", buffer: Buffer.from(imported) }); await ready();
-  const readonly = await projection(), readonlyCount = (await commands()).length;
-  assert.notEqual(readonly.native_table_profile, true);
-  const readonlyCell = (r, c) => page.getByTestId(`cell:${readonly.rows[r].id}:${readonly.columns[c].id}`);
-  for (const [r, c] of [[0, 1], [1, 2]]) {
-    await readonlyCell(r, c).click(); await page.keyboard.press("Delete"); await status("This table cannot be cleared here.").waitFor();
-    assert.equal((await commands()).length, readonlyCount); assert.deepEqual(await projection(), readonly); await noUndo();
+  // Work #606: imported optional Date/Yes-No keep the table native, so their
+  // present values clear like any optional cell: one request, one Undo.
+  const imported0 = await projection();
+  assert.equal(imported0.native_table_profile, true);
+  const importedCell = (r, c) => page.getByTestId(`cell:${imported0.rows[r].id}:${imported0.columns[c].id}`);
+  for (const c of [1, 2]) {
+    const count = (await commands()).length;
+    await importedCell(1, c).click(); await page.keyboard.press("Delete");
+    await status("Cleared 1 cell").waitFor(); await ready();
+    assert.equal((await commands()).length, count + 1, "exactly one mutation request");
+    const row = (await projection()).rows[1];
+    assert.ok(row.blank_fields.includes(imported0.columns[c].id));
+    assert.equal(await importedCell(1, c).textContent(), "");
+    await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+    assert.deepEqual((await projection()).rows, imported0.rows, "one Undo restores the imported value");
   }
-  await readonlyCell(0, 0).click(); await readonlyCell(1, 2).click({ modifiers: ["Shift"] });
-  await page.keyboard.press("Backspace"); await status("This table cannot be cleared here.").waitFor();
-  assert.equal((await commands()).length, readonlyCount); assert.deepEqual(await projection(), readonly); await noUndo();
-  checks.push("#229 imported optional Date/Yes-No single/range clearing refuses whole with zero requests, unchanged presence and no history");
+  checks.push("#229 imported optional Date/Yes-No (native since Work #606) clear in place with one request; one Undo restores");
   await close(page);
 
   // Use the admitted 8,406-row Text capacity profile, as clipboard-local does.

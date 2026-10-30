@@ -145,6 +145,7 @@ try {
     if (index > 1) await d.getByRole("button", { name: "Add column", exact: true }).click();
     await d.getByLabel(`Column ${index} name`, { exact: true }).fill(name);
     await d.getByLabel(`Column ${index} type`, { exact: true }).selectOption(type);
+    if (type === "boolean") await d.getByLabel(`Column ${index} Required`, { exact: true }).check();
   }
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await ready(page);
   for (const row of [["Tea 茶",4.5,true],["Train",12,false]]) {

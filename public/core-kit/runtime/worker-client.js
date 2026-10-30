@@ -104,8 +104,9 @@ export class WorkerDesignerClient {
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
     }
-    async duplicateCollection(expectedRevision, collection, name) {
-        return expectResponse("duplicated", await this.#command({ type: "duplicate_collection", expected_revision: expectedRevision, collection, name }));
+    async duplicateCollection(expectedRevision, collection, name, columnNames) {
+        const columns = columnNames === undefined ? {} : { column_names: columnNames };
+        return expectResponse("duplicated", await this.#command({ type: "duplicate_collection", expected_revision: expectedRevision, collection, name, ...columns }));
     }
     /** Return complete entity and schema presentation invalidation from Rust. */
     async trackerCommand(request) {
@@ -271,6 +272,14 @@ export class WorkerDesignerClient {
             entity,
         }));
     }
+    async queryColumnTotals(expectedRevision, collection, entities) {
+        return expectResponse("column_totals", await this.#command({
+            type: "query_column_totals",
+            expected_revision: expectedRevision,
+            collection,
+            entities,
+        }));
+    }
     async queryFields(expectedRevision, fields) {
         return expectResponse("fields", await this.#command({
             type: "query_fields",
@@ -379,6 +388,9 @@ function expectResponse(type, response) {
             break;
         case "located_in_view":
             validateLocatedInView(response.payload);
+            break;
+        case "column_totals":
+            validateColumnTotals(response.payload);
             break;
         case "opened":
             validateTablePresence(response.payload.table);
@@ -506,6 +518,16 @@ function validateColumnNumberFormat(column) {
         !Number.isInteger(format.decimals) ||
         format.decimals < 0 || format.decimals > 10 || typeof format.thousands_separator !== "boolean" || !validKind) {
         throw new Error("Invalid Worker column number format.");
+    }
+}
+function validateColumnTotals(totals) {
+    if (!Number.isInteger(totals.rows) || totals.rows < 0) {
+        throw new Error("Invalid Worker column totals row count.");
+    }
+    for (const total of Object.values(totals.column_totals)) {
+        if (total !== null && !Number.isFinite(total)) {
+            throw new Error("Invalid Worker column total.");
+        }
     }
 }
 function validateLocatedInView(located) {

@@ -8,7 +8,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { CapacityProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, ColumnTotalsProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   CleanupPreview,
@@ -108,7 +108,10 @@ export interface SheetRuntime {
   /** Move a column to a zero-based position in Work's projected column order. */
   moveColumn(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
-  duplicateCollection(witness: ViewWitness, collection: string, name: string): Promise<ConfirmedPublication>;
+  /** `columnNames` names the copy's columns by source field id (imported headings Work does not hold). */
+  duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<ConfirmedPublication>;
+  /** Work's Number totals over exactly these entities; null when the kit lacks it or the revision moved. */
+  queryColumnTotals(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
   /**
@@ -374,7 +377,9 @@ export interface SheetShellProps {
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onMoveColumn?(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
-  onDuplicateTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
+  onDuplicateTable?(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<RowCommandOutcome>;
+  /** Totals of the rows a filter shows; arithmetic stays in Work. */
+  onQueryShownTotals?(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
   onOpenExample(): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;

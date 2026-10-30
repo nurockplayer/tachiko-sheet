@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -129,6 +129,8 @@ interface CoherentRead {
 const COHERENT_READ_ATTEMPTS = 3;
 /** Work's largest table window (A-03). */
 const WINDOW_ROWS = 256;
+// The entity list of a totals query, kept under the 64 KiB wire request limit.
+const COLUMN_TOTALS_ENTITY_BYTES = 60_000;
 
 const noop = (): void => undefined;
 
@@ -680,6 +682,25 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function queryColumnTotals(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null> {
+    return enqueue(async () => {
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const query = client.queryColumnTotals;
+      if (typeof query !== "function") return null;
+      // An advisory read queued behind a change that moved the revision is obsolete; skip it.
+      const live = session();
+      if (witness.occurrence !== live.scope || witness.revision !== live.revision) return null;
+      // Both bridges refuse a request over 64 KiB; when a filter shows that
+      // many rows, the footer keeps the whole-table totals instead.
+      if (new TextEncoder().encode(JSON.stringify(entities)).length > COLUMN_TOTALS_ENTITY_BYTES) return null;
+      const totals = await afterUsable(expected, dispatch(kit, () => query.call(client, witness.revision, collection, entities)));
+      if (totals.revision !== witness.revision) throw new SheetSessionError("incoherent-reply", "The totals query does not match the requested revision.");
+      return totals;
+    });
+  }
+
   function queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null> {
     return enqueue(async () => {
       const live = session();
@@ -860,7 +881,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
    * the new collection, so this cannot reuse `confirmedMutation`: the coherent
    * read must follow the copy rather than the live collection.
    */
-  function duplicateCollection(witness: ViewWitness, collection: string, name: string): Promise<ConfirmedPublication> {
+  function duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<ConfirmedPublication> {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
@@ -871,7 +892,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       try {
         duplicated = await afterUsable(
           expected,
-          dispatch(kit, () => duplicate.call(client, live.revision, collection, name)),
+          dispatch(kit, () => columnNames && Object.keys(columnNames).length > 0
+            ? duplicate.call(client, live.revision, collection, name, columnNames)
+            : duplicate.call(client, live.revision, collection, name)),
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
@@ -1313,7 +1336,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, queryColumnTotals, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

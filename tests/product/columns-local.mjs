@@ -158,7 +158,7 @@ async function add(name, type = "text", fill) {
   const d = dialog("Add column");
   await d.getByLabel("Column name", { exact: true }).fill(name);
   await d.getByLabel("Column type", { exact: true }).selectOption(type);
-  if (type === "text" || type === "number") await d.getByLabel("Required", { exact: true }).check();
+  await d.getByLabel("Required", { exact: true }).check();
   if (fill !== undefined) {
     const input = d.getByLabel(/^Fill all/);
     if (type === "boolean") await input.selectOption(fill); else await input.fill(fill);

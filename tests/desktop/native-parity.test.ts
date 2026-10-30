@@ -254,6 +254,17 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   expect(portableReopen!.columns).toEqual(nativeColumns);
   expect(portableReopen!.collection).toEqual(afterReopen!.collection);
 
+  // Totals over named rows (filtered Σ) and a duplicate that names its
+  // columns cross the same native transport.
+  const amount = nativeColumns.find(column => column.field_type === "number")!;
+  const totals = await step(log, "native totals over named rows", () => client.queryColumnTotals(portableReopen!.revision, nativeKey, portableReopen!.rows.map(row => row.id)));
+  expect(totals!.rows).toBe(1);
+  expect(totals!.column_totals[amount.id]).toBe(4.5);
+  const copied = await step(log, "duplicate with column names", () => client.duplicateCollection!(portableReopen!.revision, nativeKey, "My Expenses copy", { [nativeColumns[0]!.id]: "Item" }));
+  const copy = await step(log, "read named duplicate", () => client.queryTable(copied!.collection.key));
+  expect(copy!.columns.map(column => column.display_name)).toEqual(["Item", "Amount", "Paid", "Date", "項目"]);
+  expect(copy!.native_table_profile).toBe(true);
+
   // Refusals and local bridge limits.
   await step(log, "inspect malformed csv", () => client.inspectSpreadsheet(new TextEncoder().encode('a,b\n"open\n').buffer, "csv", options));
   await step(log, "oversized command refused", () => client.queryTable("x".repeat(70_000)));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InteropMetadata } from "../contracts.js";
-import { sourceNames } from "./source-names.js";
+import { copyColumnNames, sourceNames } from "./source-names.js";
 
 const sheet = (schema_id: string, name: string, has_header: boolean, columns: string[]) => ({
   schema_id, name, has_header, columns: columns.map((column, index) => ({ field_id: `${schema_id}-f${index}`, name: column, width: null })), rows: [],
@@ -69,5 +69,40 @@ describe("Work explicit display-name presence", () => {
   it("keeps metadata precedence when the capability marker is absent", () => {
     expect(sourceNames(imported(), null, current(true), false).column("s1", "s1-f0")).toBe("Item");
     expect(sourceNames(null, null, current(true), false).column("s1", "s1-f0")).toBe("Current item");
+  });
+});
+
+describe("copy column names", () => {
+  const columns = [
+    { id: "f0", display_name: "column_1" },
+    { id: "f1", display_name: "column_2" },
+    { id: "f2", display_name: "column_3" },
+    { id: "f3", display_name: "Kept" },
+  ];
+
+  it("sends the shown names, trimmed as Work trims them", () => {
+    const shown: Record<string, string> = { f0: "Date", f1: "\u3000Description ", f3: "Kept" };
+    expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f0: "Date", f1: "Description" });
+  });
+
+  it("leaves out names that would collide once trimmed, keeping Work's own name there", () => {
+    const shown: Record<string, string> = { f0: "Amount", f1: " Amount ", f2: "column_4", f3: "Note" };
+    expect(copyColumnNames([...columns, { id: "f4", display_name: "column_4" }], field => shown[field] ?? null))
+      .toEqual({ f3: "Note" });
+  });
+
+  it("rechecks after a dropped name gives a column back its own name", () => {
+    const shown: Record<string, string> = { f0: "Amount", f1: " Amount ", f2: "column_1" };
+    expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({});
+  });
+
+  it("leaves out names with characters Work refuses in a name", () => {
+    const shown: Record<string, string> = { f0: "Memo\nDetails", f1: "Tab\there", f2: "Line\u2028break", f3: "Fine" };
+    expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f3: "Fine" });
+  });
+
+  it("leaves out blank and over-long names", () => {
+    const shown: Record<string, string> = { f0: "  ", f1: "x".repeat(4_097), f2: "é".repeat(2_048) };
+    expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f2: "é".repeat(2_048) });
   });
 });

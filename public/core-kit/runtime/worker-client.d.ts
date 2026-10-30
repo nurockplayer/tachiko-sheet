@@ -1,6 +1,6 @@
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, ColumnTotalsProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -18,7 +18,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     commitCleanup(expectedRevision: string, previewId: string): Promise<PublicationProjection>;
     newBudget(): Promise<OpenedProjection>;
     newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
-    duplicateCollection(expectedRevision: string, collection: string, name: string): Promise<DuplicateCollectionProjection>;
+    duplicateCollection(expectedRevision: string, collection: string, name: string, columnNames?: Record<string, string>): Promise<DuplicateCollectionProjection>;
     /** Return complete entity and schema presentation invalidation from Rust. */
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
     clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
@@ -43,6 +43,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     queryTable(collection: string): Promise<TableProjection>;
     queryTableWindow(expectedRevision: string, collection: string, view: TableView, start: number, count: number): Promise<TableWindowProjection>;
     locateInView(expectedRevision: string, collection: string, view: TableView, entity: string): Promise<LocatedInViewProjection>;
+    queryColumnTotals(expectedRevision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection>;
     queryFields(expectedRevision: string, fields: FieldTarget[]): Promise<FieldBatchProjection>;
     explainField(expectedRevision: string, target: FieldTarget): Promise<FieldExplanationProjection>;
     createKeyedGroupedSum(expectedRevision: string, definition: KeyedGroupedSumDefinitionInput): Promise<KeyedGroupedSumPublishedProjection>;
