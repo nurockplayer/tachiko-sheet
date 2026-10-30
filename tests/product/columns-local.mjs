@@ -260,8 +260,13 @@ try {
   const doubled = values(table).map(row => String(row[amountAt] * 2));
   const taxText = async () => Promise.all(table.rows.map((_, r) => cell(table, r, taxAt).textContent().then(text => text.trim())));
   const amountKey = table.columns[amountAt].key;
-  await cell(table, 0, taxAt).dblclick();
   const cellEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
+  // The new-row draft never takes a clicked reference: its values belong to the row draft.
+  await page.locator(`[data-testid="cell:sheet:draft-row:${table.columns[taxAt].id}"]`).dblclick();
+  await cellEditor.fill("="); await cell(table, 0, amountAt).click();
+  assert.equal(await page.locator('[data-testid="cell-editor"]').evaluateAll(nodes => nodes.some(node => node.value.includes("["))), false, "no reference enters the draft row");
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await cell(table, 0, taxAt).dblclick();
   // A spreadsheet user's first try names the column. Work refuses; Sheet says how to refer to it.
   await cellEditor.fill("=Amount * 2"); await cellEditor.press("Enter");
   await page.getByText(`“Amount” is a column. Click one of its cells to insert a reference, or write [.${amountKey}].`, { exact: false }).first().waitFor();

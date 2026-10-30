@@ -1878,11 +1878,13 @@ export function SheetShell(props: SheetShellProps) {
 
   /**
    * The cell's own editor holds a formula ("=…", as in other spreadsheets) and
-   * owns the caret, so a click on another cell names that cell instead.
+   * owns the caret, so a click on another cell names that cell instead. The
+   * new-row draft is excluded: its values live in the row draft, and a formula
+   * is never entered there (FORMULA_BAR_DRAFT_ROW_HINT).
    */
   function formulaCaretInCellEditor(): boolean {
     const input = editorInputRef.current;
-    return Boolean(editor && editor.kind === "number" && editor.value.trimStart().startsWith("=") &&
+    return Boolean(editor && editor.entity !== DRAFT_ROW && editor.kind === "number" && editor.value.trimStart().startsWith("=") &&
       input && !input.disabled && input.ownerDocument.activeElement === input);
   }
 
