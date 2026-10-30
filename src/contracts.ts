@@ -434,6 +434,8 @@ export interface InteropState {
   importInspection: ImportInspection | null;
   metadata: InteropMetadata | null;
   ledger: FidelityFinding[];
+  /** Every table's columns, read only when a download finding names a column outside the open table. */
+  ledgerColumns?: KeyedGroupedSumBindingCatalog;
   cleanupPreview: CleanupPreview | null;
   downloadStatus: "idle" | "consent" | "failed";
   downloadError: string | null;

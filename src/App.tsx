@@ -56,6 +56,7 @@ import { SheetShell } from "./ui/SheetShell.js";
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { copyFailureReason } from "./ui/save-close.js";
+import { findingColumnTables } from "./ui/interop-copy.js";
 import { useHostFiles } from "./host/host-files.js";
 import { COPY_CHANGED_MESSAGE, validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
 
@@ -1515,7 +1516,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const metadata = interop?.metadata;
     if (!live || !begin()) return false;
     setMessage(null);
-    setInterop((current) => ({ importInspection: null, metadata: null, ledger: [], cleanupPreview: null, ...current, downloadStatus: "idle", downloadError: null }));
+    setInterop((current) => ({ importInspection: null, metadata: null, ledger: [], cleanupPreview: null, ...current, ledgerColumns: undefined, downloadStatus: "idle", downloadError: null }));
     try {
       if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
       // Any download snapshots the published revision; unpublished edits would be silently missing.
@@ -1532,7 +1533,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         collectionId: live.table.collection.id, bytes: exported.bytes.slice(0),
         ...(format === "ro" ? { omissions: currentWorkFileOmissions() } : {}),
       };
-      setInterop((current) => current ? { ...current, ledger: "ledger" in exported ? exported.ledger : current.ledger, downloadStatus: "consent", downloadError: null } : current);
+      // A finding about a column in another table needs that table's column
+      // names; without them the dialog still names the table.
+      const ledgerColumns = "ledger" in exported && findingColumnTables(exported.ledger).some((id) => id !== live.table.collection.id)
+        ? await runtime.listKeyedGroupedSumBindings(witnessOf(live)).catch(() => undefined)
+        : undefined;
+      setInterop((current) => current ? { ...current, ledger: "ledger" in exported ? exported.ledger : current.ledger, ledgerColumns, downloadStatus: "consent", downloadError: null } : current);
       setOutcome("idle");
       return true;
     } catch (error) {

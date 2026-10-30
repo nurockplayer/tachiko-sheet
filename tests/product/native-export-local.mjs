@@ -62,6 +62,17 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
   const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
   await dialog.waitFor();
   assert.equal(downloads.length, count, "preparation never downloads without acknowledgement");
+  const changes = dialog.getByLabel("Export changes and warnings", { exact: true });
+  if (await changes.count()) {
+    // Findings are worded for people: table names, not ids; no engine limits vocabulary.
+    assert.doesNotMatch(await changes.textContent(), /native_table_|workbook:|collections|MiB|Tachiko source|Undo\/Redo/);
+    // Every location names a table exactly as the table list shows it (or is
+    // Work's generic "Imported table" label for an attached workbook sheet).
+    const tables = await page.locator("#ts-active-table option").allTextContents();
+    for (const location of await changes.locator(".ts-ledger-location").allTextContents()) {
+      assert.ok(location === "Imported table" || tables.some(name => location === name || location.startsWith(`${name}, `)), `location “${location}” names a listed table (${tables.join(" | ")})`);
+    }
+  }
   if (sales) {
     const ledger = await dialog.getByLabel("Export changes and warnings", { exact: true }).textContent();
     assert.match(ledger, /Summary settings are not included/);
@@ -193,6 +204,23 @@ try {
   await close(page);
   await page.getByRole("button",{name:"Open sales example",exact:true}).click(); await ready(page);
   await page.getByTestId("results-pane").waitFor();
+  // A rule on a column of the table that is not open is named by its column.
+  await page.locator("#ts-active-table").selectOption("catalog"); await ready(page);
+  await page.getByRole("columnheader", { name: "price", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for price", exact: true }).click();
+  await page.getByRole("button", { name: "Rule…", exact: true }).click();
+  const rule = page.getByRole("dialog", { name: "Column rule", exact: true });
+  await rule.getByLabel("Lowest value", { exact: true }).fill("0");
+  await rule.getByLabel("Highest value", { exact: true }).fill("10000");
+  await rule.getByRole("button", { name: "Save rule", exact: true }).click(); await ready(page);
+  await page.locator("#ts-active-table").selectOption("sales"); await ready(page);
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+  const ruleReview = page.getByRole("dialog", { name: "Confirm download", exact: true });
+  assert.match(await ruleReview.getByLabel("Export changes and warnings", { exact: true }).textContent(),
+    /catalog, column “price”: Its rule \(allowed range: 0 to 10000\) is not kept\./);
+  await ruleReview.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
   const sales=await prepare(page,"xlsx",{sales:true});
   assert.equal(sales.length,2,"Sales exports exactly its two source tables, without summary snapshots");
   assert.deepEqual(sales.map(sheet=>sheet.name).sort(),["catalog","sales"]);
@@ -212,7 +240,7 @@ try {
   // CSV must follow the selected second table rather than workbook order.
   await page.getByLabel("Table", { exact: true }).selectOption("sales"); await ready(page);
   assert.deepEqual(await prepare(page,"csv",{sales:true}), [["product_code","quantity"],["PEN","3"],["NOTE","2"],["PEN","1"]]);
-  checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review");
+  checks.push("Sales XLSX two source sheets; summary/settings/results/chart exclusions visible in review; a rule in the table that is not open is named by table and column");
   await close(page);
   await runOptionalColumnsCases(page, { close, checks, output });
   await runBlankDisplayCases(page, { output, close, checks });
