@@ -66,6 +66,12 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
   if (await changes.count()) {
     // Findings are worded for people: table names, not ids; no engine limits vocabulary.
     assert.doesNotMatch(await changes.textContent(), /native_table_|workbook:|collections|MiB|Tachiko source|Undo\/Redo/);
+    // Every location names a table exactly as the table list shows it (or is
+    // Work's generic "Imported table" label for an attached workbook sheet).
+    const tables = await page.locator("#ts-active-table option").allTextContents();
+    for (const location of await changes.locator(".ts-ledger-location").allTextContents()) {
+      assert.ok(location === "Imported table" || tables.some(name => location === name || location.startsWith(`${name}, `)), `location “${location}” names a listed table (${tables.join(" | ")})`);
+    }
   }
   if (sales) {
     const ledger = await dialog.getByLabel("Export changes and warnings", { exact: true }).textContent();

@@ -38,13 +38,13 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
   "CSV exports selected-sheet scalar values only. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.":
     "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.",
   "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.":
-    "A download holds up to 32 tables, each with up to 32 columns and 128 rows (1,024 rows in all). Tachiko opens spreadsheets of up to 4 sheets, 16 columns and 64 rows, so a larger download may not open here again.",
+    "A download holds up to 32 tables, each with up to 32 columns and 128 rows (1,024 rows in all). Tachiko opens spreadsheets of up to 4 sheets, 16 columns and 64 rows (some larger text-only tables too), so a larger download may not open here again.",
   "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.":
     "Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.",
   "Session Undo/Redo history is excluded.":
     "Undo history is not included.",
   "Sheet presentation, view sorting/filtering and per-cell formatting are excluded; Dates use yyyy-mm-dd.":
-    "Sorting, filters and cell formatting are not included. Dates are written as YYYY-MM-DD.",
+    "Sheet layout, sorting, filters and cell formatting are not included. Dates are written as YYYY-MM-DD.",
   "CSV exports selected-sheet scalar values only. Blank and present empty Text both become empty CSV fields. Formula definitions, presentation formatting, and other sheets are not preserved; retain the source project.":
     "CSV includes only cell values from the selected sheet. Blank cells and empty text both become empty CSV cells. Formulas, formatting, and other sheets are not kept; keep the source work.",
 });
@@ -70,6 +70,14 @@ export function findingMessage(message: string, code?: string): string {
   if (code === "imported_current_header") {
     const header = /^Current header ("(?:[^"\\]|\\.)*") exports as ("(?:[^"\\]|\\.)*"); the source header was ("(?:[^"\\]|\\.)*")\.$/.exec(message);
     if (header) return `The current column heading ${header[1]} will download as ${header[2]}. The original heading was ${header[3]}.`;
+  }
+  if (code === "native_tables_csv_collection_excluded") {
+    const excluded = /^CSV excludes collection ("(?:[^"\\]|\\.)*") \(.*\); only the requested collection is exported\.$/.exec(message);
+    if (excluded) return `CSV downloads only the selected table, so “${quoted(excluded[1]!)}” is left out.`;
+  }
+  if (code === "native_tables_header_name") {
+    const header = /^Header ("(?:[^"\\]|\\.)*") mapped to ("(?:[^"\\]|\\.)*"); headers are never truncated\.$/.exec(message);
+    if (header) return `The column heading “${quoted(header[1]!)}” downloads as “${quoted(header[2]!)}”.`;
   }
   if (code === "native_tables_worksheet_name") {
     const names = /^Worksheet name ("(?:[^"\\]|\\.)*") mapped to ("(?:[^"\\]|\\.)*")\.$/.exec(message);
@@ -102,15 +110,24 @@ function quoted(text: string): string {
  */
 export function findingLocation(
   location: string | undefined,
-  collections: ReadonlyArray<{ id: string; display_name: string }>,
-  columnName: (collection: string, field: string) => string | undefined = () => undefined,
+  tableName: (collection: string) => string | null | undefined,
+  columnName: (collection: string, field: string) => string | null | undefined = () => undefined,
+  code?: string,
 ): string | null {
   if (!location || location === "workbook") return null;
-  const tableName = (id: string) => collections.find((collection) => collection.id === id)?.display_name;
   const bare = tableName(location);
   if (bare) return bare;
+  // A native header finding is located as `<table id>/<field id>`.
+  const pair = /^([^/\s]+)\/([^/\s]+)$/.exec(location);
+  const pairTable = pair ? tableName(pair[1]!) : null;
+  if (pair && pairTable) {
+    const name = columnName(pair[1]!, pair[2]!);
+    return `${pairTable}, ${name ? `column “${name}”` : "a column"}`;
+  }
   const path = /^collection ([^/\s]+)((?:\/.*)?)$/.exec(location);
-  if (!path) return location;
+  // Native table downloads locate findings by ids only (a table, a saved
+  // summary); one that names nothing the person can see is left out.
+  if (!path) return code?.startsWith("native_tables_") ? null : location;
   const [, collection, rest] = path as unknown as [string, string, string];
   const parts = [tableName(collection) ?? "A table"];
   const field = /\/field ([^/\s]+)/.exec(rest)?.[1];

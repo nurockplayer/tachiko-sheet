@@ -71,9 +71,17 @@ describe("native table download disclosures", () => {
       const worded = findingMessage(message);
       expect(worded).not.toBe(message);
       expect(worded).not.toMatch(/collection|scalar|MiB|Tachiko source|Session/);
+      expect(worded).not.toBe("");
     }
     expect(findingMessage("Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas."))
       .toBe("Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.");
+  });
+
+  it("words excluded tables and renamed headings without keys", () => {
+    expect(findingMessage('CSV excludes collection "Orders" (orders_key); only the requested collection is exported.', "native_tables_csv_collection_excluded"))
+      .toBe("CSV downloads only the selected table, so “Orders” is left out.");
+    expect(findingMessage('Header "Total (€)" mapped to "Total (€) 2"; headers are never truncated.', "native_tables_header_name"))
+      .toBe("The column heading “Total (€)” downloads as “Total (€) 2”.");
   });
 
   it("names the sheet a table downloads as, and keeps an unreadable message verbatim", () => {
@@ -84,16 +92,20 @@ describe("native table download disclosures", () => {
   });
 
   it("shows a table's name instead of its id, and nothing for the whole workbook", () => {
-    const collections = [{ id: "native_table_schema_0002_x", display_name: "Invoices" }];
-    expect(findingLocation("native_table_schema_0002_x", collections)).toBe("Invoices");
-    expect(findingLocation("workbook", collections)).toBeNull();
-    expect(findingLocation(undefined, collections)).toBeNull();
-    expect(findingLocation("Sheet1!B2", collections)).toBe("Sheet1!B2");
-    const column = (collection: string, field: string) => collection === "native_table_schema_0002_x" && field === "f27" ? "Item" : undefined;
-    expect(findingLocation("collection native_table_schema_0002_x/field f27/column", collections, column)).toBe("Invoices, column “Item”");
-    expect(findingLocation("collection native_table_schema_0002_x/header/field f9", collections, column)).toBe("Invoices, a column");
-    expect(findingLocation("collection native_table_schema_0002_x/entity e1", collections)).toBe("Invoices, a row");
-    expect(findingLocation("collection native_table_schema_0002_x/sheet-name", collections)).toBe("Invoices, sheet name");
-    expect(findingLocation("collection gone_id", collections)).toBe("A table");
+    const table = (id: string) => (id === "native_table_schema_0002_x" ? "Invoices" : id === "import_0001" ? "january-sales" : null);
+    expect(findingLocation("native_table_schema_0002_x", table)).toBe("Invoices");
+    expect(findingLocation("workbook", table)).toBeNull();
+    expect(findingLocation(undefined, table)).toBeNull();
+    expect(findingLocation("Sheet1!B2", table)).toBe("Sheet1!B2");
+    const column = (collection: string, field: string) => collection === "native_table_schema_0002_x" && field === "f27" ? "Item" : null;
+    expect(findingLocation("collection native_table_schema_0002_x/field f27/column", table, column)).toBe("Invoices, column “Item”");
+    expect(findingLocation("collection native_table_schema_0002_x/header/field f9", table, column)).toBe("Invoices, a column");
+    expect(findingLocation("collection native_table_schema_0002_x/entity e1", table)).toBe("Invoices, a row");
+    // An imported table is named as the table list names it (its source name).
+    expect(findingLocation("collection import_0001/sheet-name", table)).toBe("january-sales, sheet name");
+    expect(findingLocation("collection gone_id", table)).toBe("A table");
+    expect(findingLocation("native_table_schema_0002_x/f27", table, column, "native_tables_header_name")).toBe("Invoices, column “Item”");
+    expect(findingLocation("expenses", table, column, "native_tables_saved_grouped_sum_excluded")).toBeNull();
+    expect(findingLocation("expenses", table, column, "imported_sheet_note")).toBe("expenses");
   });
 });
