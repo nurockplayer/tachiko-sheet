@@ -79,10 +79,17 @@ export function copyColumnNames(
     const name = (shown(column.id) ?? "").replace(NAME_EDGES, "");
     if (name !== "" && name !== column.display_name && new TextEncoder().encode(name).length <= MAX_NAME_BYTES) named.set(column.id, name);
   }
-  const counts = new Map<string, number>();
-  for (const column of columns) {
-    const name = named.get(column.id) ?? column.display_name;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+  // A dropped name gives that column back its own name, which can collide
+  // with a name kept so far; repeat until every name is unique. Work's own
+  // names are already unique, so this ends.
+  for (;;) {
+    const counts = new Map<string, number>();
+    for (const column of columns) {
+      const name = named.get(column.id) ?? column.display_name;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const colliding = [...named].filter(([, name]) => counts.get(name)! > 1).map(([field]) => field);
+    if (colliding.length === 0) return Object.fromEntries(named);
+    for (const field of colliding) named.delete(field);
   }
-  return Object.fromEntries([...named].filter(([, name]) => counts.get(name) === 1));
 }

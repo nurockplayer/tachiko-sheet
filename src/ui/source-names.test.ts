@@ -91,6 +91,11 @@ describe("copy column names", () => {
       .toEqual({ f3: "Note" });
   });
 
+  it("rechecks after a dropped name gives a column back its own name", () => {
+    const shown: Record<string, string> = { f0: "Amount", f1: " Amount ", f2: "column_1" };
+    expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({});
+  });
+
   it("leaves out blank and over-long names", () => {
     const shown: Record<string, string> = { f0: "  ", f1: "x".repeat(4_097), f2: "é".repeat(2_048) };
     expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f2: "é".repeat(2_048) });
