@@ -79,7 +79,7 @@ import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarState, formulaHandoffSettlement, formulaReferenceInsertion, inCellFormulaSource, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarSource, formulaBarState, formulaColumnNameHint, formulaHandoffSettlement, formulaReferenceInsertion, inCellFormulaSource, insertFormulaReference, isFormulaCell, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -1878,30 +1878,67 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /**
-   * A cell click while the bar holds the caret inserts that cell's reference
-   * token instead of moving focus or committing. The token comes from the
-   * projection alone; Sheet never parses or rewrites the formula text.
+   * The cell's own editor holds a formula ("=…", as in other spreadsheets) and
+   * owns the caret, so a click on another cell names that cell instead. The
+   * new-row draft is excluded: its values live in the row draft, and a formula
+   * is never entered there (FORMULA_BAR_DRAFT_ROW_HINT).
    */
-  /** The bar owns the caret and this cell can name a Work address. */
-  function cellInsertsReference(row: TableRow | null, column: TableColumn, draft: boolean): boolean {
-    return formulaReferenceInsertion({
-      barHasCaret: formulaCaretInBar(), draft, row, column,
-      formulaRowKey: formulaState.target && table ? rowSource(table).byEntity(formulaState.target.entity)?.key ?? null : null,
+  function formulaCaretInCellEditor(): boolean {
+    const input = editorInputRef.current;
+    return Boolean(editor && editor.entity !== DRAFT_ROW && editor.kind === "number" && editor.value.trimStart().startsWith("=") &&
+      input && !input.disabled && input.ownerDocument.activeElement === input);
+  }
+
+  /**
+   * A cell click while the bar or an in-cell formula holds the caret inserts
+   * that cell's reference token instead of moving focus or committing. The
+   * token comes from the projection alone; Sheet never parses or rewrites the
+   * formula text.
+   */
+  function referenceForCell(row: TableRow | null, column: TableColumn, draft: boolean): { token: string; into: "bar" | "cell" } | null {
+    const into = formulaCaretInBar() ? "bar" : formulaCaretInCellEditor() ? "cell" : null;
+    if (!into || !table) return null;
+    const formulaEntity = into === "bar" ? formulaState.target?.entity : editor?.entity;
+    // The editing cell itself is never a reference to insert.
+    if (into === "cell" && row && rowEntity(row) === editor?.entity && column.id === editor?.field) return null;
+    // A stub cell is drawn for every column, but only a projected field
+    // instance has an address Work can resolve.
+    const token = formulaReferenceInsertion({
+      barHasCaret: true, draft, row, column,
+      formulaRowKey: formulaEntity ? rowSource(table).byEntity(formulaEntity)?.key ?? null : null,
       hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
-    }) !== null;
+    });
+    return token ? { token, into } : null;
+  }
+
+  /** The bar or an in-cell formula owns the caret and this cell can name a Work address. */
+  function cellInsertsReference(row: TableRow | null, column: TableColumn, draft: boolean): boolean {
+    return referenceForCell(row, column, draft) !== null;
   }
 
   function insertReferenceFromCell(event: ReactMouseEvent<HTMLTableCellElement>, row: TableRow | null, column: TableColumn, draft: boolean): boolean {
     // A second click of a double-click adds no second token.
     if (event.button !== 0 || event.detail > 1) return false;
+    const reference = referenceForCell(row, column, draft);
+    if (reference?.into === "cell") {
+      const input = editorInputRef.current;
+      if (!input || !editor) return false;
+      const next = insertFormulaReference(editor.value, reference.token, {
+        start: input.selectionStart ?? editor.value.length,
+        end: input.selectionEnd ?? editor.value.length,
+      });
+      setLocalError(null);
+      setEditor((previous) => (previous ? { ...previous, value: next.value } : previous));
+      requestAnimationFrame(() => {
+        const node = editorInputRef.current;
+        if (!node || node.disabled) return;
+        node.focus();
+        node.setSelectionRange(next.caret, next.caret);
+      });
+      return true;
+    }
     const input = formulaInputRef.current;
-    // A stub cell is drawn for every column, but only a projected field
-    // instance has an address Work can resolve.
-    const token = formulaReferenceInsertion({
-      barHasCaret: formulaCaretInBar(), draft, row, column,
-      formulaRowKey: formulaState.target && table ? rowSource(table).byEntity(formulaState.target.entity)?.key ?? null : null,
-      hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
-    });
+    const token = reference?.token;
     if (!token || !input) return false;
     const current = formulaBarDraftValue(formulaState, formulaDraft);
     const next = insertFormulaReference(current, token, {
@@ -1929,7 +1966,7 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(FORMULA_BAR_DRAFT_ROW_HINT);
       return;
     }
-    const source = formulaBarDraftValue(state, formulaDraft);
+    const { source, offset } = formulaBarSource(formulaBarDraftValue(state, formulaDraft));
     if (source === state.source) {
       setFormulaDraft(null);
       setFormulaRefusal(null);
@@ -1951,10 +1988,11 @@ export function SheetShell(props: SheetShellProps) {
       if (formulaIdentityRef.current !== state.identity) return;
       // A refusal keeps the user's text in the bar and Work's words verbatim,
       // with Work's own character position when it supplies one.
+      const hint = formulaColumnNameHint(source, outcome?.sourcePosition, columns);
       setFormulaRefusal({
         identity: state.identity,
-        message: outcome?.message ?? "The formula was not applied.",
-        ...(outcome?.position !== undefined ? { position: outcome.position } : {}),
+        message: [outcome?.message ?? "The formula was not applied.", hint].filter(Boolean).join(" "),
+        ...(outcome?.position !== undefined ? { position: outcome.position + offset } : {}),
       });
       // Submitting disables the input; the second frame runs after it is back.
       // The refusal stays in the bar either way, but focus returns only if the
@@ -2231,7 +2269,8 @@ export function SheetShell(props: SheetShellProps) {
       const outcome = await runCommit(slot.target, { kind: "formula", source: formulaSource });
       if (!outcome?.accepted) {
         focusRejectedEditorRef.current = intent;
-        setLocalError(outcome?.message ?? "The formula was not applied. The draft was kept so you can correct it.");
+        const hint = formulaColumnNameHint(formulaSource, outcome?.sourcePosition, columns);
+        setLocalError([outcome?.message ?? "The formula was not applied. The draft was kept so you can correct it.", hint].filter(Boolean).join(" "));
         return false;
       }
       setEditor(null);

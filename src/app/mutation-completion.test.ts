@@ -54,7 +54,18 @@ describe("mutation completion formula refusal", () => {
       edit: { kind: "formula", source: "1 +" },
       dispatch: async () => { throw refusal({ code: "invalid_formula", message: "Unexpected end of input.", position: 4 }); },
     });
-    expect(result).toEqual({ kind: "refused", message: "Unexpected end of input.", position: 4 });
+    expect(result).toEqual({ kind: "refused", message: "Unexpected end of input.", position: 4, sourcePosition: 4 });
+  });
+
+  it("keeps Work's position fact for hints without repeating it in the message", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "scalar",
+      witness,
+      edit: { kind: "formula", source: "Hours*Rate" },
+      dispatch: async () => { throw refusal({ code: "formula_syntax", message: "Formula syntax error at character 1: unknown function 'Hours'", diagnostics: [{ facts: [{ name: "position", value: "1" }] }] }); },
+    });
+    expect(result).toEqual({ kind: "refused", message: "Formula syntax error at character 1: unknown function 'Hours'", sourcePosition: 1 });
   });
 
   it("shows Work's R2 type-mismatch refusal verbatim", async () => {

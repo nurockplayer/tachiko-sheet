@@ -1606,7 +1606,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // Work's refusal is shown verbatim; a published or unknown outcome is
       // never a refusal and keeps the existing editor-retry policy.
       result => result.kind === "refused"
-        ? { accepted: false, message: result.message, ...(result.position !== undefined ? { position: result.position } : {}) }
+        ? { accepted: false, message: result.message, ...(result.position !== undefined ? { position: result.position } : {}), ...(result.sourcePosition !== undefined ? { sourcePosition: result.sourcePosition } : {}) }
         : { accepted: true },
       end,
     );

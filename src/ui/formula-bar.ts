@@ -298,6 +298,39 @@ export function inCellFormulaSource(value: string): string | null {
   return entry.length > 1 && entry.startsWith("=") ? entry.slice(1).trim() : null;
 }
 
+/**
+ * The source a bar entry sends to Work. Spreadsheet users start a formula with
+ * "=", which Work's grammar does not use; like the in-cell entry, Sheet drops
+ * that one leading "=". `offset` maps Work's positions back onto the bar text.
+ */
+export function formulaBarSource(value: string): { source: string; offset: number } {
+  const lead = value.length - value.trimStart().length;
+  if (value[lead] !== "=") return { source: value, offset: 0 };
+  const rest = value.slice(lead + 1);
+  const skipped = rest.length - rest.trimStart().length;
+  return { source: rest.trim(), offset: lead + 1 + skipped };
+}
+
+/**
+ * When Work refuses a formula at a word that names a column, say how to refer
+ * to it. Sheet does not read the formula: it only compares the text at Work's
+ * own refusal position with the table's column names.
+ */
+export function formulaColumnNameHint(
+  source: string,
+  position: number | undefined,
+  columns: ReadonlyArray<{ key: string; display_name: string }>,
+): string | null {
+  if (position === undefined || position < 1 || position > source.length) return null;
+  const rest = source.slice(position - 1).toLowerCase();
+  const named = columns
+    .flatMap((column) => [column.display_name, column.key].map((name) => ({ column, name: name.toLowerCase() })))
+    .filter(({ name }) => name.length > 0 && rest.startsWith(name) && !/[\p{L}\p{N}_]/u.test(rest.charAt(name.length)))
+    .sort((left, right) => right.name.length - left.name.length)[0];
+  if (!named) return null;
+  return `“${named.column.display_name}” is a column. Click one of its cells to insert a reference, or write [.${named.column.key}].`;
+}
+
 /** Work's refusal with its own character position, as one line of text. */
 export function formulaRefusalText(error: { message: string; position?: number }): string {
   return `${error.message}${error.position !== undefined ? ` (position ${error.position})` : ""}`;
