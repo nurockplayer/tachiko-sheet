@@ -69,7 +69,7 @@ export function cellDisplay(row: TableRow, column: TableColumn): FieldDisplay {
 /** Copy authoritative values, independently of display markers, tooltips or warnings. */
 export function fieldClipboardText(field: FieldProjection | null | undefined): string {
   if (!field || field.blank === true) return "";
-  if (field.calculated) return field.calculated.status === "value" ? formatNumber(field.calculated.value) : "";
+  if (field.calculated) return field.calculated.status === "value" ? String(field.calculated.value) : "";
   return seedTextOf(field);
 }
 
@@ -150,7 +150,7 @@ function formulaTitle(field: FieldProjection): string | null {
 const numberFormatterCache = new Map<string, Intl.NumberFormat>();
 
 export function formatNumberFor(value: number, format: NumberFormat | undefined): string {
-  if (!format) return String(value);
+  if (!format) return formatNumber(value);
   const key = JSON.stringify(format);
   let formatter = numberFormatterCache.get(key);
   if (!formatter) {
@@ -163,15 +163,23 @@ export function formatNumberFor(value: number, format: NumberFormat | undefined)
         ...(format.kind.type === "currency" ? { currency: format.kind.code } : {}),
       });
     } catch {
-      return String(value);
+      return formatNumber(value);
     }
     numberFormatterCache.set(key, formatter);
   }
   return formatter.format(value);
 }
 
-function formatNumber(value: number): string {
-  return String(value);
+/**
+ * A number without a format, shown to at most 15 significant digits as other
+ * spreadsheets do: a binary sum such as 1455.7999999999997 reads 1455.8. Work's
+ * value is unchanged; stored values seed the cell editor exactly.
+ */
+export function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  // Rounding near the float limit can overflow; then show the exact value.
+  const rounded = Number(value.toPrecision(15));
+  return String(Number.isFinite(rounded) ? rounded : value);
 }
 
 /** Text seeded into a cell editor from the actual projection. */
@@ -191,7 +199,7 @@ export function seedTextOf(field: FieldProjection): string {
         return stored.entity;
     }
   }
-  if (field.calculated?.status === "value") return formatNumber(field.calculated.value);
+  if (field.calculated?.status === "value") return String(field.calculated.value);
   return "";
 }
 

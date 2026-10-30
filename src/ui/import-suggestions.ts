@@ -2,9 +2,10 @@ import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/inte
 
 export type ImportColumnType = "text" | "number" | "boolean" | "date";
 
-// Plain decimal numbers only, and only when the text is exactly how the
-// number prints back (so 4.50, -0, 0.0000001 and over-long values that would
-// round stay Text). Leading zeros (IDs, postcodes), exponents and grouping
+// Plain decimal numbers only, and only when the number is exactly the value
+// written: trailing decimal zeros are allowed, so money amounts such as 4.50
+// suggest Number, while -0, 0.0000001 and over-long values that would round
+// stay Text. Leading zeros (IDs, postcodes), exponents and grouping
 // separators stay Text so no identifier is silently reinterpreted.
 const PLAIN_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 const MAX_SIGNIFICANT_DIGITS = 15;
@@ -12,7 +13,8 @@ const MAX_SIGNIFICANT_DIGITS = 15;
 function losslessNumberText(text: string): boolean {
   if (!PLAIN_NUMBER.test(text)) return false;
   if (text.replace(/^-/, "").replace(".", "").replace(/^0+/, "").length > MAX_SIGNIFICANT_DIGITS) return false;
-  return String(Number(text)) === text;
+  const value = text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text;
+  return String(Number(text)) === value;
 }
 
 // A calendar date written as YYYY-MM-DD, the form Work stores and exports.

@@ -450,6 +450,12 @@ export type TrackerCommand = {
     field: string;
     number_format: NumberFormat | null;
 } | {
+    type: "move_column";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    to_index: number;
+} | {
     type: "rename_column";
     expected_revision: string;
     collection: string;

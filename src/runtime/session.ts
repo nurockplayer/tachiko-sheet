@@ -840,6 +840,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
+  function moveColumn(witness: ViewWitness, collection: string, field: string, toIndex: number) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "column move");
+      return command.call(client, { type: "move_column", expected_revision: revision, collection, field, to_index: toIndex });
+    }, true);
+  }
+
   function removeRows(witness: ViewWitness, collection: string, entities: string[]) {
     const targets = [...entities];
     return confirmedMutation(witness, (client, revision) => {
@@ -1306,7 +1313,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, copyFormula, renameColumn, removeColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
