@@ -4,8 +4,9 @@ import { rowSource } from "./row-source.js";
 export const REQUIRED_HELP = "Required means a value must be present. Empty Text counts as present.";
 export const REQUIRED_TYPE_NOTE = "These columns currently need a value in every row.";
 
+/** Every scalar column may start blank (ADR-0045, Date and Yes/No since Work #598). */
 export function supportsOptional(type: string): boolean {
-  return type === "text" || type === "number";
+  return type === "text" || type === "number" || type === "date" || type === "boolean";
 }
 
 /** Shape authoring intent explicitly; Work's omitted required flag means true. */

@@ -12,8 +12,16 @@ describe("import type suggestions", () => {
     expect(suggestColumnType(column(cell({ kind: "number", value: 12 }), text("7")), 0)).toBe("number");
   });
 
+  it("suggests Date only for real YYYY-MM-DD dates", () => {
+    expect(suggestColumnType(column(text("2026-10-01"), text("2026-02-28"), cell({ kind: "empty" }), text("2024-02-29")), 0)).toBe("date");
+    for (const value of ["2026-02-30", "2025-02-29", "2026-13-01", "2026/10/01", "2026-1-5", "01-10-2026", "0000-01-01"]) {
+      expect(suggestColumnType(column(text("2026-10-01"), text(value)), 0), value).toBe("text");
+    }
+    expect(suggestColumnType(column(text("2026-10-01"), text("12")), 0), "dates mixed with numbers").toBe("text");
+  });
+
   it("keeps identifiers and ambiguous values as Text", () => {
-    for (const value of ["00123", "0001700000000097", "1234567890123456", "1e5", "1,000", " 3", "TRUE", "2026-10-11", "PEN",
+    for (const value of ["00123", "0001700000000097", "1234567890123456", "1e5", "1,000", " 3", "TRUE", "PEN",
       "999999999999999.99", "123456789012345.123456789012345", "-0", "-0.00", "4.50", "1.", ".5", "0.0000001"]) {
       expect(suggestColumnType(column(text("1"), text(value)), 0), value).toBe("text");
     }

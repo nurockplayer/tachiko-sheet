@@ -6,9 +6,9 @@ import { initialColumnDraft, submitColumnIntent } from "./column-operations.js";
 describe("column requiredness intent", () => {
   for (const field_type of ["text", "number", "date", "boolean"] as const) {
     it(`shapes explicit default and required ${field_type} declarations`, () => {
-      expect(newColumnInput({ name: "A", field_type })).toEqual({ name: "A", field_type, required: !["text", "number"].includes(field_type) });
+      expect(newColumnInput({ name: "A", field_type })).toEqual({ name: "A", field_type, required: false });
       expect(newColumnInput({ name: "A", field_type, required: true }).required).toBe(true);
-      expect(newColumnInput({ name: "A", field_type, required: false }).required).toBe(!["text", "number"].includes(field_type));
+      expect(newColumnInput({ name: "A", field_type, required: false }).required).toBe(false);
     });
   }
   const state = { kind: "add" as const, occurrence: "o", revision: "r", collection: "c", rowEntities: ["e1", "e2"] };
@@ -19,7 +19,7 @@ describe("column requiredness intent", () => {
         const onAddColumn = vi.fn(async () => ({ kind: "confirmed" as const }));
         const context = { table: null, metadata: null, onAddColumn };
         await submitColumnIntent(state, draft, context);
-        const effectiveRequired = required || !["text", "number"].includes(fieldType);
+        const effectiveRequired = required;
         expect(onAddColumn.mock.calls[0]?.slice(0, 4)).toEqual([state, "c", "Raw name", fieldType]);
         const args = onAddColumn.mock.calls[0] as unknown as unknown[];
         expect(args[5]).toBe(effectiveRequired);
@@ -34,7 +34,7 @@ describe("column requiredness intent", () => {
   const table = (type = "text", native = true) => ({ native_table_profile: native, revision: "r", collection: { entity_count: 1 }, columns: [{ id: "f", field_type: type, required: false }], rows: [{ id: "e", blank_fields: ["f"], fields: [] }] }) as unknown as WorkbookView["table"];
   it("offers only native Text/Number requiredness, independent of imported Rename", () => {
     for (const type of ["text", "number", "date", "boolean", "reference"]) for (const native of [true, false]) {
-      expect(canChangeRequiredness(table(type, native), "f")).toBe(native && ["text", "number"].includes(type));
+      expect(canChangeRequiredness(table(type, native), "f")).toBe(native && ["text", "number", "date", "boolean"].includes(type));
     }
     expect(canChangeRequiredness(table(), "missing")).toBe(false);
     expect(canChangeRequiredness(null, "f")).toBe(false);

@@ -15,7 +15,9 @@ describe("authoritative sparse edit slots", () => {
   it("never infers a blank from a missing field or a missing membership list", () => {
     for (const blank_fields of [undefined, [], ["different"]]) expect(cellEditSlot({ ...blank, blank_fields }, column())).toBeNull();
     expect(cellEditSlot(blank, { ...column(), required: true })).toBeNull();
-    for (const type of ["date", "boolean", "reference", "unknown"]) expect(cellEditSlot(blank, column(type))).toBeNull();
+    for (const type of ["reference", "unknown"]) expect(cellEditSlot(blank, column(type))).toBeNull();
+    // Optional Date and Yes/No blanks are editable since Work #598.
+    for (const type of ["date", "boolean"]) expect(cellEditSlot(blank, column(type))).toMatchObject({ kind: type, blank: true, original: "" });
   });
   it("uses the existing entity identity join when other present fields exist", () => {
     const row: TableRow = { ...blank, fields: [{ target: { entity: "semantic-entity", field: "other" }, address: "a", stored: { kind: "text", value: "x" }, formula: null, calculated: null, diagnostics: [], editable_scalar: "text" }] };
