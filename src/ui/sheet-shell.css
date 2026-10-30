@@ -2932,6 +2932,8 @@ body { margin: 0; }
 .ts-totals-row { border-top: 1px solid var(--ts-line); font-variant-numeric: tabular-nums; }
 .ts-totals-row .ts-total-cell { text-align: right; }
 .ts-totals-row .ts-total-cell--unavailable { color: var(--ts-ink-soft); }
+/* A filtered footer carries the header's filter marker: it totals the rows shown. */
+.ts-totals-row--shown .ts-row-head { white-space: nowrap; }
 
 /* Entry feedback travels with the draft, outside the grid's cell row count. */
 .ts-grid .ts-entry-feedback td { padding: 0; border: 0; white-space: normal; overflow: visible; }

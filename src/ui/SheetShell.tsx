@@ -462,6 +462,7 @@ export function SheetShell(props: SheetShellProps) {
     onCopyFormula,
     onRemoveRows,
     onDuplicateTable,
+    onQueryShownTotals,
     onOpenExample,
     onOpenSaved,
     onSelectCollection = async () => {},
@@ -1744,6 +1745,29 @@ export function SheetShell(props: SheetShellProps) {
     () => (view ? { occurrence: view.occurrence, revision: view.revision } : null),
     [view?.occurrence, view?.revision],
   );
+
+  // While a filter hides rows, the footer totals the rows shown. Work adds
+  // them up; until it answers (or if it cannot), the footer keeps Work's
+  // whole-table totals and says so.
+  const shownEntities = useMemo(
+    () => gridSettings.filter && table && displayRows.length < rowSource(table).total ? displayRows.map(rowEntity) : null,
+    [displayRows, gridSettings.filter, table],
+  );
+  const shownTotalsKey = shownEntities && witness && table
+    ? `${witness.occurrence}\u0001${witness.revision}\u0001${table.collection.key}\u0001${shownEntities.join("\u0002")}`
+    : null;
+  const [shownTotals, setShownTotals] = useState<{ key: string; rows: number; totals: Record<string, number | null> } | null>(null);
+  useEffect(() => {
+    if (!shownTotalsKey || !shownEntities || !witness || !table || !onQueryShownTotals) return;
+    let current = true;
+    onQueryShownTotals(witness, table.collection.key, shownEntities).then(result => {
+      if (current && result) setShownTotals({ key: shownTotalsKey, rows: result.rows, totals: result.column_totals });
+    }, () => { /* The whole-table footer stays; its title says what it covers. */ });
+    return () => { current = false; };
+    // shownTotalsKey captures the witness, collection and shown entities.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownTotalsKey, onQueryShownTotals]);
+  const footerTotals = shownTotalsKey && shownTotals?.key === shownTotalsKey ? shownTotals : null;
 
   const runCommit = useCallback(
     async (
@@ -3585,7 +3609,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
-    const totals = table.column_totals;
+    const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
@@ -3691,8 +3715,10 @@ export function SheetShell(props: SheetShellProps) {
         </tbody>
         {/* One tfoot per table (HTML): Work's totals row, then the entry row and its actions. */}
         {hasColumnTotals || hasDraftRow ? <tfoot role="rowgroup" className={[hasColumnTotals ? "ts-totals-footer" : "", hasDraftRow ? "ts-entry-footer" : ""].filter(Boolean).join(" ")}>
-        {hasColumnTotals ? <tr className="ts-totals-row" aria-label="Column totals" aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
-            <th scope="row" className="ts-row-head" title="Totals for every row in the table, including rows a filter hides.">Σ</th>
+        {hasColumnTotals ? <tr className={footerTotals ? "ts-totals-row ts-totals-row--shown" : "ts-totals-row"} aria-label={footerTotals ? "Column totals for the rows shown" : "Column totals"} aria-rowindex={gridWindowed ? displayRows.length + 2 : undefined}>
+            <th scope="row" className="ts-row-head" data-testid="totals-scope" title={footerTotals
+              ? `Totals for the ${footerTotals.rows === 1 ? "1 row" : `${footerTotals.rows} rows`} shown. Clear the filter to total every row.`
+              : "Totals for every row in the table, including rows a filter hides."}>{footerTotals ? <>Σ<span className="ts-column-view-marker" aria-hidden="true">▽</span></> : "Σ"}</th>
             {columns.map(column => {
               const hasTotal = Object.prototype.hasOwnProperty.call(totals, column.id);
               const total = totals[column.id];
@@ -4740,7 +4766,14 @@ export function SheetShell(props: SheetShellProps) {
         composing={() => props.appearancePreference.getSnapshot().composing}
         onDuplicate={async (name) => {
           const generation = focusIntentRef.current;
-          const result = await onDuplicateTable(witness, view.table.collection.key, name);
+          // Imported headings live in the import's metadata, not in Work's
+          // fields; the copy keeps the names this table shows.
+          const columnNames: Record<string, string> = {};
+          for (const column of view.table.columns) {
+            const shown = names.column(view.table.collection.id, column.id);
+            if (shown && shown !== column.display_name) columnNames[column.id] = shown;
+          }
+          const result = await onDuplicateTable(witness, view.table.collection.key, name, columnNames);
           if (duplicateLanding(result).switchToTable) {
             duplicateFocusIntentRef.current = generation;
             // The copy is active on the Table panel; land there from any tab.

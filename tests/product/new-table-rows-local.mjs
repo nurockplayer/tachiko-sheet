@@ -301,7 +301,7 @@ try {
   await d.getByLabel("Column 2 name", { exact: true }).fill("Amount"); await d.getByLabel("Column 2 type", { exact: true }).selectOption("number");
   await d.getByRole("button", { name: "Add column", exact: true }).click();
   await d.getByLabel("Column 3 name", { exact: true }).fill("Paid"); await d.getByLabel("Column 3 type", { exact: true }).selectOption("boolean");
-  await d.getByLabel("Column 2 Required", { exact: true }).check();
+  await d.getByLabel("Column 2 Required", { exact: true }).check(); await d.getByLabel("Column 3 Required", { exact: true }).check();
   await capture(page, "dialog");
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await d.waitFor({ state: "detached" }); await ready(page);
   assert.equal((await projection(page)).rows.length, 0);
@@ -484,6 +484,7 @@ try {
   await page.getByRole("button", { name: "New table", exact: true }).click();
   d = dialog(page); await d.getByLabel("Table name", { exact: true }).fill("Dates");
   await d.getByLabel("Column 1 name", { exact: true }).fill("When"); await d.getByLabel("Column 1 type", { exact: true }).selectOption("date");
+  await d.getByLabel("Column 1 Required", { exact: true }).check();
   await d.getByRole("button", { name: "Create table", exact: true }).click(); await ready(page);
   const dateInput = entry(page).getByLabel("New row When (Date)", { exact: true }); assert.equal(await dateInput.locator(".ts-cell-value").textContent(), "");
   const blankDateView = await projection(page);
