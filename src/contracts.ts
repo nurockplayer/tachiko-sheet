@@ -105,6 +105,8 @@ export interface SheetRuntime {
   copyFormula(witness: ViewWitness, request: FormulaCopy): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
   removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
+  /** Move a column to a zero-based position in Work's projected column order. */
+  moveColumn(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
   duplicateCollection(witness: ViewWitness, collection: string, name: string): Promise<ConfirmedPublication>;
   openFiles(files: FileList): Promise<WorkbookView>;
@@ -363,6 +365,7 @@ export interface SheetShellProps {
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
+  onMoveColumn?(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
   onDuplicateTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
   onOpenExample(): Promise<void>;

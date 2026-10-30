@@ -334,6 +334,20 @@ try {
   await page.keyboard.press("Tab"); assert.equal(await page.getByRole("button", { name: "Remove…", exact: true }).evaluate(n => n === document.activeElement), true);
   await page.keyboard.press("Escape"); assert.equal(await disclosure.getAttribute("open"), null);
   await assertFocused(actions, "Escape returns to the disclosure button");
+  // Column order is document state: the header menu moves price one place right; Undo restores the order.
+  const order = async () => (await projection()).columns.map(column => column.display_name);
+  const orderBefore = await order(), priceAt = orderBefore.indexOf("price");
+  assert.ok(priceAt >= 0 && priceAt + 1 < orderBefore.length, "price has a right neighbour");
+  await actions.click(); assert.equal(await disclosure.getAttribute("open"), "");
+  assert.equal(await page.getByRole("button", { name: "Move left", exact: true }).isDisabled(), priceAt === 0, "Move left is unavailable only for the first column");
+  await page.getByRole("button", { name: "Move right", exact: true }).click(); await ready();
+  const moved = orderBefore.filter(name => name !== "price"); moved.splice(priceAt + 1, 0, "price");
+  assert.deepEqual(await order(), moved, "Move right publishes Work's new column order");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt + 1, "the grid header follows Work's order");
+  await page.getByText(/price moved right\. Undo restores it\./).waitFor();
+  await history("Undo"); assert.deepEqual(await order(), orderBefore, "Undo restores the column order");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("price"), priceAt, "Undo puts the header back");
+  checks.push("move column: header menu Move right publishes Work's column order, the grid follows, Move left is off only at the first column, Undo restores the order");
   await actions.press("Space"); assert.equal(await disclosure.getAttribute("open"), "");
   const desktopMenuScreenshot = path.join(screens, "column-menu-open-1440x900.png");
   await page.screenshot({ path: desktopMenuScreenshot }); screenshots.push(desktopMenuScreenshot);
@@ -486,6 +500,20 @@ try {
   await chooseColumnAction("Capacity extra", "Rename"); d = dialog("Rename column");
   await d.getByLabel("Column name", { exact: true }).fill("Capacity note"); await submit("Rename column");
   assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "compact Rename publishes on the capacity table");
+  // Compact Column menu moves the focused column; moving it back restores the order.
+  const capacityOrder = async () => (await projection()).columns.map(column => column.id);
+  const compactMove = async (name, side) => {
+    const index = (await page.locator(".ts-col-head").allTextContents()).indexOf(name); assert.ok(index >= 0);
+    await page.locator(".ts-grid tbody tr.ts-row").first().locator(".ts-cell").nth(index).focus();
+    await page.getByRole("button", { name: "Column", exact: true }).click();
+    await page.getByRole("button", { name: `Move “${name}” ${side}`, exact: true }).click(); await ready();
+  };
+  const beforeMove = await capacityOrder(), noteAt = beforeMove.indexOf(addedColumn.id);
+  assert.ok(noteAt > 0, "the authored capacity column has a left neighbour");
+  await compactMove("Capacity note", "left");
+  assert.equal((await capacityOrder()).indexOf(addedColumn.id), noteAt - 1, "compact Move left publishes the new order");
+  await compactMove("Capacity note", "right");
+  assert.deepEqual(await capacityOrder(), beforeMove, "compact Move right restores the original order");
   const capacityRenamed = await projection();
   await chooseColumnAction("Capacity note", "Remove"); await submit("Remove column");
   assert.equal((await projection()).columns.some(column => column.id === addedColumn.id), false, "compact Remove publishes on the capacity table");
@@ -508,7 +536,7 @@ try {
   assert.equal(reopenedCapacity.rows.length, capacityAdded.rows.length);
   assert.ok(reopenedCapacity.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "all capacity rows keep the authored fill value after a full restart");
   assert.equal(values(await projection())[0][1], 777);
-  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
+  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename, Move and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
 
   const manyHeaders = await assertManyColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));

@@ -455,6 +455,7 @@ export function SheetShell(props: SheetShellProps) {
     onSetColumnNumberFormat,
     onRenameColumn,
     onRemoveColumn,
+    onMoveColumn,
     onPasteCells,
     onEditCells,
     onCopyFormula,
@@ -3174,6 +3175,21 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(() => { if (completionMayUpdateUi(intent) && trigger.isConnected) withAppFocus(() => trigger.focus()); });
   }
 
+  async function moveColumn(field: string, offset: -1 | 1, trigger: HTMLElement) {
+    if (!view || !table || !witness || !onMoveColumn || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    const from = columns.findIndex(column => column.id === field);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= columns.length) return;
+    const displayName = columns[from].display_name;
+    const intent = completionIntent();
+    setColumnAnnouncement(null);
+    const result = await onMoveColumn(witness, table.collection.key, field, to);
+    if (intent.occurrence !== liveOccurrenceRef.current) return;
+    if (result.kind === "confirmed") setColumnAnnouncement(`${displayName} moved ${offset < 0 ? "left" : "right"}. Undo restores it.`);
+    else if (result.kind === "refused") setColumnAnnouncement(result.message);
+    requestAnimationFrame(() => { if (completionMayUpdateUi(intent) && trigger.isConnected) withAppFocus(() => trigger.focus()); });
+  }
+
   async function submitColumn(draft: ColumnDraft) {
     const state = columnDialog;
     if (!state || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return { kind: "refused" as const, message: columnChangeReason };
@@ -3573,6 +3589,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       openColumnDialog(kind, trigger, column.id);
                     }} />) : null}
+                    {table.native_table_profile && onMoveColumn ? ([[-1, "Move left"], [1, "Move right"]] as const).map(([offset, label]) => <button key={label} type="button" className="ts-button" aria-label={label} data-column-action={label} disabled={columnChangesBlocked || index + offset < 0 || index + offset >= columns.length} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      void moveColumn(column.id, offset, trigger);
+                    }} />) : null}
                     {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, column.id) ? <button type="button" className="ts-button" aria-label={column.required ? "Allow blanks" : "Require a value"} data-column-action={column.required ? "Allow blanks" : "Require a value"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
@@ -3734,6 +3756,15 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 openColumnDialog(kind, trigger, focusedColumn.id);
               }}>{kind === "add" ? "Add column…" : kind === "rename" ? `Rename “${focusedColumnName}”…` : `Remove “${focusedColumnName}”…`}</button>) : null}
+              {table.native_table_profile && onMoveColumn ? ([[-1, "left"], [1, "right"]] as const).map(([offset, side]) => {
+                const target = columns.findIndex(column => column.id === focusedColumn.id) + offset;
+                return <button key={side} type="button" className="ts-button" disabled={columnChangesBlocked || target < 0 || target >= columns.length} onClick={event => {
+                  const disclosure = event.currentTarget.closest("details")!;
+                  const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                  closeColumnToolbar(disclosure);
+                  void moveColumn(focusedColumn.id, offset, trigger);
+                }}>{`Move “${focusedColumnName}” ${side}`}</button>;
+              }) : null}
               {table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, focusedColumn.id) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
