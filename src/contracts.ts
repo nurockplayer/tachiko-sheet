@@ -331,6 +331,11 @@ export interface CommitOutcome {
   message?: string;
   /** Work's 1-based character position for a formula refusal, when it provides one. */
   position?: number;
+  /**
+   * The same position when Work gives it only as a diagnostic fact (its message
+   * already states it): used for hints, never shown again.
+   */
+  sourcePosition?: number;
 }
 /** Outcome of a Save a copy attempt; a failure carries its own truthful reason. */
 export type CreateCopyOutcome = { saved: true } | { saved: false; reason: string };

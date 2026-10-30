@@ -20,7 +20,7 @@ export type MutationCommand = TrackedCommand
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
   | { kind: "known-publication-recovery" | "unknown-outcome" }
-  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; nameFailures?: readonly NameFailure[] };
+  | { kind: "refused"; message: string; fieldType?: "number" | "date"; refusalCode?: string; blankCount?: number; position?: number; sourcePosition?: number; nameFailures?: readonly NameFailure[] };
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
@@ -239,6 +239,10 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       // Sheet neither parses the source nor invents one when it is absent.
       const position = typeof failure?.position === "number" && Number.isInteger(failure.position) && failure.position > 0
         ? failure.position : undefined;
+      // Work's formula_syntax refusal states the position in its message and
+      // carries it as a `position` fact; that is kept for hints only.
+      const positionFact = failure?.diagnostics?.flatMap((diagnostic) => diagnostic.facts ?? []).find((fact) => fact.name === "position");
+      const sourcePosition = position ?? (positionFact && /^[1-9]\d*$/.test(positionFact.value) ? Number(positionFact.value) : undefined);
       // Work counts the blanks that block a requiredness change; Sheet only relays it.
       const blankFact = failure?.code === "required_values_missing"
         ? failure.diagnostics?.flatMap((diagnostic) => diagnostic.facts ?? []).find((fact) => fact.name === "blank_count")
@@ -248,6 +252,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         kind: "refused", message,
         ...(command.kind === "rows" ? { fieldType, refusalCode: failure?.code, ...(blankCount !== undefined ? { blankCount } : {}), ...(failure?.name_failures ? { nameFailures: failure.name_failures } : {}) } : {}),
         ...(command.kind === "scalar" && position !== undefined ? { position } : {}),
+        ...(command.kind === "scalar" && sourcePosition !== undefined ? { sourcePosition } : {}),
       });
     } finally {
       // App's base finally/end ran in this continuation. A caller awaiting
