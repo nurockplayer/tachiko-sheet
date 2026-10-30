@@ -535,6 +535,10 @@ try {
   assert.equal((await capacityOrder()).indexOf(addedColumn.id), noteAt - 1, "compact Move left publishes the new order");
   await compactMove("Capacity note", "right");
   assert.deepEqual(await capacityOrder(), beforeMove, "compact Move right restores the original order");
+  // Keep it moved: the order must survive Remove/Undo, Save, Save a copy and a restart.
+  await compactMove("Capacity note", "left");
+  const movedOrder = await capacityOrder();
+  assert.equal(movedOrder.indexOf(addedColumn.id), noteAt - 1);
   const capacityRenamed = await projection();
   await chooseColumnAction("Capacity note", "Remove"); await submit("Remove column");
   assert.equal((await projection()).columns.some(column => column.id === addedColumn.id), false, "compact Remove publishes on the capacity table");
@@ -553,11 +557,14 @@ try {
   await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).columns, savedCapacity.columns); assert.deepEqual((await projection()).rows, savedCapacity.rows);
   assert.equal((await projection()).columns.find(column => column.id === addedColumn.id)?.display_name, "Capacity note", "the authored capacity column survives Save, Save a copy and a full restart");
+  assert.deepEqual(await capacityOrder(), movedOrder, "the moved column order survives Save, Save a copy and a full restart");
+  assert.equal((await page.locator(".ts-col-head").allTextContents()).indexOf("Capacity note"), noteAt - 1, "the reopened grid shows the moved order");
   const reopenedCapacity = await projection();
   assert.equal(reopenedCapacity.rows.length, capacityAdded.rows.length);
   assert.ok(reopenedCapacity.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "all capacity rows keep the authored fill value after a full restart");
-  assert.equal(values(await projection())[0][1], 777);
-  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename, Move and Remove (compact) with exact Undo/Redo; the authored column and its values survive bound Save, Save a copy and a full restart/reopen");
+  // The edit went to the column at index 1 of the pre-move snapshot; check it by id.
+  assert.equal((await projection()).rows[0].fields.find(field => field.target.field === table.columns[1].id)?.stored?.value, 777);
+  checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename, Move and Remove (compact) with exact Undo/Redo; the authored column, its moved position and its values survive bound Save, Save a copy and a full restart/reopen");
 
   const manyHeaders = await assertManyColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));
