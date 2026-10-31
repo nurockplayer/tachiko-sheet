@@ -358,7 +358,7 @@ async function importSource(file) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
     const review = await waitFor(() => dialog("Review import preview"), "import review");
-    const types = [...review.querySelectorAll("select")].map((s) => s.value);
+    const types = [...review.querySelectorAll(".ts-import-columns select")].map((s) => s.value);
     const expectedTypes = ${JSON.stringify(Array.from({ length: COLS }, (_, c) => mixed && c % 2 ? "number" : "text"))};
     if (JSON.stringify(types) !== JSON.stringify(expectedTypes)) throw new Error("unexpected confirmed types: " + types);
     return true;
