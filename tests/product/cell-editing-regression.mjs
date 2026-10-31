@@ -149,6 +149,30 @@ const cases = [
     assert.deepEqual(await state(page), before);
     assert.equal(await dispatches(page), count);
   }],
+  ["Excel arrow, Home and End keys travel the filled table and Select All covers it", async (page) => {
+    const titleColumn = page.locator(`td[data-work-field="${fields.title}"]:not([data-entry-field])`);
+    const entities = await titleColumn.evaluateAll((nodes) => nodes.map((node) => node.dataset.workEntity));
+    assert.ok(entities.length > 1, "the example has more than one row");
+    const activeEntity = () => page.evaluate(() => document.activeElement?.dataset.workEntity ?? null);
+    const activeField = () => page.evaluate(() => document.activeElement?.dataset.workField ?? null);
+    const firstTitle = titleColumn.first();
+    await firstTitle.focus();
+    assert.equal(await activeEntity(), entities[0], "starts in the first row");
+    await page.keyboard.press("ControlOrMeta+ArrowDown");
+    assert.equal(await activeEntity(), entities.at(-1), "Ctrl+ArrowDown reaches the last filled row");
+    await page.keyboard.press("ControlOrMeta+ArrowUp");
+    assert.equal(await activeEntity(), entities[0], "Ctrl+ArrowUp returns to the first row");
+    const rowFields = await firstTitle.evaluate((node) => [...node.parentElement.querySelectorAll("td[data-work-field]")].map((td) => td.dataset.workField));
+    await page.keyboard.press("End");
+    assert.equal(await activeField(), rowFields.at(-1), "End reaches the last column of the focused row");
+    await page.keyboard.press("Home");
+    assert.equal(await activeField(), rowFields[0], "Home returns to the first column");
+    await page.keyboard.press("ControlOrMeta+a");
+    const selected = await page.locator("td[data-work-field]:not([data-entry-field])").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-selected")));
+    assert.equal(selected.length, entities.length * rowFields.length, "Select All covers every table cell");
+    assert.ok(selected.every((value) => value === "true"), "every table cell shows the selected state");
+    assert.equal(await focused(firstTitle), true, "Select All keeps focus where it was");
+  }],
   ["Tab and Shift+Tab publish complete scalars once before moving grid focus", async (page) => {
     let input = await entry(page, "impact", "F2"); await replace(input, "12345");
     await published(page, input, "impact", "12345", "Tab");

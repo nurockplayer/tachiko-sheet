@@ -45,6 +45,7 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
 import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
@@ -2501,6 +2502,82 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
+    const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
+    const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
+    const selectionIdentity = view && collectionIdentity && displayRows.length > 0 && columns.length > 0 ? { view, identity: collectionIdentity } : null;
+    // Excel Ctrl/Cmd+Arrow jumps to the edge of the filled run, or the table edge.
+    if (!draft && mod && arrowKey) {
+      const target = edgeAddress(address(position), event.key, displayRows.length, columns.length,
+        (row, column) => fieldClipboardText(fieldForColumn(displayRows[row]!, columns[column]!.id)) === "");
+      const row = displayRows[target.row], column = columns[target.column];
+      if (row && column) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
+          extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+        } else {
+          setCellSelection(null);
+          setSelectedEntity(rowEntity(row));
+          focusCell(rowEntity(row), column.id);
+        }
+      }
+      return;
+    }
+    // Home/End reach the row ends; with Ctrl/Cmd, the table corners.
+    if (!draft && !event.altKey && (event.key === "Home" || event.key === "End")) {
+      const target = homeEndAddress(address(position), event.key, mod, displayRows.length, columns.length);
+      const row = displayRows[target.row], column = columns[target.column];
+      if (row && column) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
+          extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+        } else {
+          setCellSelection(null);
+          setSelectedEntity(rowEntity(row));
+          focusCell(rowEntity(row), column.id);
+        }
+      }
+      return;
+    }
+    // Ctrl/Cmd+A selects the whole table without moving focus.
+    if (!draft && mod && !event.shiftKey && event.key.toLowerCase() === "a" && selectionIdentity && clipboardPosition(event.target)) {
+      event.preventDefault();
+      setCellSelection({
+        identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
+        anchor: { entity: rowEntity(displayRows[0]!), field: columns[0]!.id },
+        end: { entity: rowEntity(displayRows.at(-1)!), field: columns.at(-1)!.id },
+      });
+      return;
+    }
+    // Shift+Space selects the focused row; Ctrl/Cmd+Space the focused column.
+    if (!draft && event.key === " " && selectionIdentity && clipboardPosition(event.target)) {
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        setCellSelection({
+          identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
+          anchor: { entity: position.entity, field: columns[0]!.id },
+          end: { entity: position.entity, field: columns.at(-1)!.id },
+        });
+      } else if (mod && !event.shiftKey) {
+        event.preventDefault();
+        setCellSelection({
+          identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
+          anchor: { entity: rowEntity(displayRows[0]!), field: position.field },
+          end: { entity: rowEntity(displayRows.at(-1)!), field: position.field },
+        });
+      }
+      return;
+    }
+    // Ctrl/Cmd+; seeds today's date in an editable Date cell, as Excel does.
+    if (!draft && mod && !event.shiftKey && event.key === ";") {
+      event.preventDefault();
+      const column = columns.find(candidate => candidate.id === position.field);
+      const editable = Boolean(currentEditorSlot(position)) && !controlsLocked;
+      if (column?.field_type === "date" && editable && !formulaCellAt(position)) beginEdit(entity, position.field, todayIsoDate());
+      else announceClipboard("Ctrl+; enters today’s date in a Date cell.", false, true);
+      return;
+    }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
       const next = stepAddress(address(position), event.key, displayRows.length, columns.length);
       const row = displayRows[next.row], column = columns[next.column];
