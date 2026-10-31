@@ -3030,10 +3030,12 @@ body { margin: 0; }
  * Sized columns: a header cell carries an explicit width and the table grows
  * to fit its columns instead of sharing the viewport. Columns without a width
  * keep a fixed default, so dragging one never silently resizes the others.
+ * No minimum width: a fixed-layout table wider than its columns hands the
+ * spare width back to them, so a narrowed column would grow instead.
  */
 .ts-grid--sized {
   width: max-content;
-  min-width: 100%;
+  min-width: 0;
 }
 .ts-grid--sized .ts-column-header:not([style*="width"]) { width: 160px; }
 .ts-grid--sized th,

@@ -184,9 +184,19 @@ const cases = [
     for (let press = 0; press < 3; press += 1) await page.keyboard.press("ArrowRight");
     const widened = await width();
     assert.ok(Math.abs(widened - (start + 48)) <= 2, `three ArrowRight presses widen the column by 48px (${start} → ${widened})`);
+    for (let press = 0; press < 6; press += 1) await page.keyboard.press("ArrowLeft");
+    const narrowed = await width();
+    assert.ok(Math.abs(narrowed - Math.max(48, widened - 96)) <= 2, `six ArrowLeft presses narrow the column by 96px, never below 48px (${widened} → ${narrowed})`);
     await separator.dblclick();
     const fitted = await width();
     assert.ok(fitted >= 48 && fitted <= 800, `double-click fits the content to a usable width (${fitted}px)`);
+    if (fitted < 800) {
+      const clipped = await page.locator("tbody tr.ts-row").evaluateAll((rows) => rows
+        .map((row) => row.querySelector("td.ts-cell"))
+        .filter((cell) => cell && cell.scrollWidth > cell.clientWidth + 1)
+        .map((cell) => cell.textContent));
+      assert.deepEqual(clipped, [], "after a fit, no value in the column is cut off");
+    }
     const firstTitle = page.locator(`td[data-work-field="${fields.title}"]:not([data-entry-field])`).first();
     await firstTitle.focus();
     await page.keyboard.press("ControlOrMeta+a");

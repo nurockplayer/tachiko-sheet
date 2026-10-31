@@ -1087,7 +1087,11 @@ export function SheetShell(props: SheetShellProps) {
     if (displayName === undefined) return;
     // Measure in the body cells' font, the one the widest value is drawn in.
     const sample = gridScrollRef.current?.querySelector("td.ts-cell") ?? th;
-    const measure = textMeasure(sample ? getComputedStyle(sample).font : "");
+    // Built from longhands: Chromium returns an empty `font` shorthand when a
+    // longhand it cannot express (tabular-nums) is set, and canvas would then
+    // measure in its 10px default.
+    const style = sample ? getComputedStyle(sample) : null;
+    const measure = textMeasure(style ? `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}` : "");
     const texts = displayRows.slice(0, 2000).map((row) => fieldClipboardText(fieldForColumn(row, field)));
     updateGridSettings((current) => rowViewWithWidth(current, field, autoFitWidth(texts, displayName, measure)));
   }
