@@ -3987,7 +3987,8 @@ export function SheetShell(props: SheetShellProps) {
           {groupPanel && groupPanelLive ? <GroupTotalsPane
             columns={columns}
             setup={groupPanel.setup}
-            outcome={groupResult?.outcome ?? null}
+            // Only this question's answer, or the last one while its update is pending.
+            outcome={groupResult && (groupResult.key === groupQueryKey || groupPending) ? groupResult.outcome : null}
             pending={groupPending}
             filterHidesRows={groupFilterHidesRows}
             shownRows={displayRows.length}

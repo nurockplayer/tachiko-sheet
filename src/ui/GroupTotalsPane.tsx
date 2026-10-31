@@ -199,7 +199,7 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
             </tr>
           </tfoot>
         </table> : null}
-        {!refusal && !projection && !props.pending ? <p className="ts-hint">Totals are unavailable: The local runtime does not offer grouped totals.</p> : null}
+        {!refusal && !projection && !props.pending ? <p className="ts-hint">Totals aren’t available right now. Close the panel and open it again to retry.</p> : null}
       </div>
       <div className="ts-group-totals-footer">
         <button type="button" className="ts-button" disabled={!tsv || props.pending} onClick={copy}>Copy</button>
