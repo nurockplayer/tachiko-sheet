@@ -6,7 +6,9 @@ import {
   withDimensionBucket,
   groupDimensions,
   groupDimensionHeader,
+  groupKeyClipboardText,
   groupKeyLabel,
+  groupKeyMarker,
   groupRefusalMessage,
   groupScopeFor,
   groupTotalsTsv,
@@ -73,6 +75,13 @@ describe("group totals columns", () => {
     expect(groupKeyLabel({ kind: "text", value: "Food" })).toBe("Food");
     expect(groupKeyLabel({ kind: "text", value: "" })).toBe("(empty)");
     expect(groupKeyLabel({ kind: "blank" })).toBe("(blank)");
+    // A Text value spelled like a placeholder stays plain text; only real
+    // blank and empty keys are marked, and they copy as empty cells.
+    expect(groupKeyMarker({ kind: "text", value: "(blank)" })).toBeNull();
+    expect(groupKeyClipboardText({ kind: "text", value: "(blank)" })).toBe("(blank)");
+    expect(groupKeyMarker({ kind: "blank" })).toEqual({ label: "(blank)", description: "No value in this column" });
+    expect(groupKeyMarker({ kind: "text", value: "" })).toEqual({ label: "(empty)", description: "Empty text" });
+    expect(groupKeyClipboardText({ kind: "blank" })).toBe("");
     expect(groupKeyLabel({ kind: "boolean", value: true })).toBe("true");
     expect(groupKeyLabel({ kind: "boolean", value: false })).toBe("false");
     expect(groupKeyLabel({ kind: "date", value: "2026-01-02" })).toBe("2026-01-02");
@@ -93,7 +102,7 @@ describe("group totals clipboard text", () => {
     expect(groupTotalsTsv(PROJECTION, COLUMNS).split("\n")).toEqual([
       "Category\tDate (month)\tRows\tAmount",
       "Food\t2026-01\t3\t-12.5",
-      "(empty)\t(blank)\t2\t",
+      "\t\t2\t",
       "Total\t\t5\t-12.5",
     ]);
   });

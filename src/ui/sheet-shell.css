@@ -1316,6 +1316,7 @@ body { margin: 0; }
 .ts-group-totals-table tfoot td { border-top: 1px solid var(--ts-line); border-bottom: 0; font-weight: 600; }
 .ts-group-totals-table .ts-group-totals-number { text-align: right; white-space: nowrap; }
 .ts-group-totals-unavailable { color: var(--ts-ink-soft); }
+.ts-group-key-marker { color: var(--ts-ink-soft); font-style: italic; }
 .ts-group-totals-footer { display: flex; align-items: center; gap: 8px; }
 .ts-group-totals-status { margin: 0; min-width: 0; }
 .ts-results-heading,

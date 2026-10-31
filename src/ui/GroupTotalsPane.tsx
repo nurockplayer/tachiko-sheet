@@ -12,6 +12,7 @@ import {
   withDimensionBucket,
   groupDimensionHeader,
   groupKeyLabel,
+  groupKeyMarker,
   groupRefusalMessage,
   groupTotalsTsv,
   groupableColumns,
@@ -184,8 +185,8 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
           <tbody>
             {projection.groups.map((group, row) => <tr key={row}>
               {group.keys.map((key, index) => index === 0
-                ? <th key={index} scope="row">{groupKeyLabel(key)}</th>
-                : <td key={index}>{groupKeyLabel(key)}</td>)}
+                ? <th key={index} scope="row">{groupKeyCell(key)}</th>
+                : <td key={index}>{groupKeyCell(key)}</td>)}
               <td className="ts-group-totals-number">{group.rows}</td>
               {group.totals.map((total, index) => totalCell(total, measureColumnsOfReply[index]?.number_format, `group-${row}-total-${index}`))}
             </tr>)}
@@ -207,6 +208,14 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
       </div>
     </section>
   );
+}
+
+/** A blank or empty key is a marked placeholder, never plain text that a value could spell. */
+function groupKeyCell(key: Parameters<typeof groupKeyLabel>[0]) {
+  const marker = groupKeyMarker(key);
+  return marker
+    ? <span className="ts-group-key-marker" title={marker.description}><span aria-hidden="true">{marker.label}</span><span className="ts-visually-hidden">{marker.description}</span></span>
+    : groupKeyLabel(key);
 }
 
 function totalCell(total: number | null, format: Parameters<typeof formatNumberFor>[1], key: string) {

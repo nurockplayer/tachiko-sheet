@@ -251,11 +251,11 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
     .map(([label, group]) => [label, String(group.length), String(sumFor(group))]);
   const panel = page.getByTestId("group-totals");
   const groupTable = name => page.locator(`table[aria-label="Totals by ${name}"]`);
-  const groupRows = async name => groupTable(name).locator("tbody tr").evaluateAll(rows => rows.map(row => [...row.querySelectorAll("td, th")].map(cell => cell.textContent?.trim() ?? "")));
+  const groupRows = async name => groupTable(name).locator("tbody tr").evaluateAll(rows => rows.map(row => [...row.querySelectorAll("td, th")].map(cell => (cell.querySelector(".ts-group-key-marker [aria-hidden]") ?? cell).textContent?.trim() ?? "")));
   const waitForGroupRows = (expected, name = "Category") => page.waitForFunction(({ expected, name }) => {
     const table = document.querySelector(`table[aria-label="Totals by ${name}"]`);
     if (!table || table.closest('[aria-busy="true"]')) return false;
-    const rows = [...table.querySelectorAll("tbody tr")].map(row => [...row.querySelectorAll("td, th")].map(cell => cell.textContent?.trim() ?? ""));
+    const rows = [...table.querySelectorAll("tbody tr")].map(row => [...row.querySelectorAll("td, th")].map(cell => (cell.querySelector(".ts-group-key-marker [aria-hidden]") ?? cell).textContent?.trim() ?? ""));
     return JSON.stringify(rows) === JSON.stringify(expected);
   }, { expected, name });
 
@@ -281,7 +281,7 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
     const table = document.querySelector('table[aria-label="Totals by Category"]');
     if (!table) return false;
     return [...table.querySelectorAll("tbody tr")].some(row => {
-      const cells = [...row.querySelectorAll("td, th")].map(cell => cell.textContent?.trim() ?? "");
+      const cells = [...row.querySelectorAll("td, th")].map(cell => (cell.querySelector(".ts-group-key-marker [aria-hidden]") ?? cell).textContent?.trim() ?? "");
       return cells[0] === "Food" && cells[1] === "2026-01" && cells[3] === total;
     });
   }, { total: String(sumFor(foodJanuary)) });

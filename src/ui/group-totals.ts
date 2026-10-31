@@ -77,6 +77,22 @@ export function groupDimensions(columns: readonly ColumnProjection[], setup: Gro
   return dimensions;
 }
 
+/**
+ * A blank group or empty text has no value of its own to show. The panel marks
+ * these keys apart (`groupKeyMarker`), so a Text value spelled "(blank)" never
+ * reads as a missing one.
+ */
+export function groupKeyMarker(key: GroupKey): { label: string; description: string } | null {
+  if (key.kind === "blank") return { label: "(blank)", description: "No value in this column" };
+  if (key.kind === "text" && key.value === "") return { label: "(empty)", description: "Empty text" };
+  return null;
+}
+
+/** On the clipboard a blank or empty key is an empty cell, as in a spreadsheet. */
+export function groupKeyClipboardText(key: GroupKey): string {
+  return groupKeyMarker(key) ? "" : groupKeyLabel(key);
+}
+
 /** Text keys keep their value as is; an empty string and a blank group stay distinct. */
 export function groupKeyLabel(key: GroupKey): string {
   switch (key.kind) {
@@ -112,7 +128,7 @@ export function groupTotalsTsv(projection: GroupTotalsProjection, columns: reado
   return encodeTsv([
     [...headers, "Rows", ...measures.map((column) => column.display_name)],
     ...projection.groups.map((group) => [
-      ...group.keys.map(groupKeyLabel),
+      ...group.keys.map(groupKeyClipboardText),
       String(group.rows),
       ...group.totals.map((total) => total === null ? "" : formatNumber(total)),
     ]),
