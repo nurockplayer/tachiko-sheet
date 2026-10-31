@@ -264,7 +264,7 @@ export async function runClearCellsCases(page, { close, checks }) {
   const csv = "Row,Note,Extra\r\n" + Array.from({ length: 8406 }, (_, i) => `row_${i},note,extra`).join("\r\n") + "\r\n";
   await (await homeImportInput(page)).setInputFiles({ name: "clear-limit.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  for (let c = 0; c < 3; c++) await preview.locator("select").nth(c).selectOption("text");
+  for (let c = 0; c < 3; c++) await preview.locator(".ts-import-column select").nth(c).selectOption("text");
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await preview.waitFor({ state: "detached" }); await ready();
   const largeBefore = await projection(), largeCount = (await commands()).length;

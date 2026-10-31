@@ -39,12 +39,12 @@ async function importWithTypes(page, file, { numbers = true } = {}) {
   await dialog.waitFor();
   assert.ok(await dialog.locator(".ts-import-column").count() > 0, "candidate must expose per-column type selection");
   if (numbers) {
-    const selectors = dialog.locator("select");
+    const selectors = dialog.locator(".ts-import-column select");
     const count = await selectors.count();
     console.log(`J3 candidate type controls: ${count}`);
     assert.ok(count >= 2, "candidate must expose explicit types for quantity and price");
     await selectors.nth(count - 1).selectOption("number");
-    await dialog.locator("select").nth(count - 2).selectOption("number");
+    await dialog.locator(".ts-import-column select").nth(count - 2).selectOption("number");
   }
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
@@ -137,7 +137,7 @@ try {
   }));
   assert.equal(longCandidateMetrics.columns, 12, "long real candidate exposes all 12 column choices");
   assert.ok(longCandidateMetrics.scrollHeight > longCandidateMetrics.clientHeight, `long candidate overflows its review scroller: ${JSON.stringify(longCandidateMetrics)}`);
-  await dialog.locator("select").first().selectOption("number");
+  await dialog.locator(".ts-import-column select").first().selectOption("number");
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   const importAlert = dialog.getByRole("alert");
   await importAlert.waitFor();
@@ -145,8 +145,8 @@ try {
   assert.equal(await importAlert.evaluate((alert) => alert.closest('[role="dialog"]')?.getAttribute("aria-modal")), "true", "rejection alert must remain inside the active modal");
   assert.equal(await importAlert.evaluate((alert) => alert.closest(".ts-dialog-scroll")), null, "rejection alert stays outside the candidate scroller");
   assert.equal(await importAlert.isVisible(), true, "rejection alert remains visible with long candidate content");
-  assert.equal(await dialog.locator("select").count(), 12, "failed import retains all candidate choices");
-  assert.equal(await dialog.locator("select").first().inputValue(), "number", "failed import retains the rejected type choice for correction");
+  assert.equal(await dialog.locator(".ts-import-column select").count(), 12, "failed import retains all candidate choices");
+  assert.equal(await dialog.locator(".ts-import-column select").first().inputValue(), "number", "failed import retains the rejected type choice for correction");
   const [alertBox, actionBox] = await Promise.all([
     importAlert.boundingBox(),
     dialog.locator(".ts-dialog-actions").boundingBox(),
@@ -165,7 +165,7 @@ try {
   assert.equal(shortImportScroll.overflowY, "auto");
   assert.equal(shortImportScroll.contentOverflowY, "visible", "short Import exposes content to parent scrolling");
   const importAction = dialog.getByRole("button", { name: "Import file", exact: true });
-  await dialog.locator("select").first().focus();
+  await dialog.locator(".ts-import-column select").first().focus();
   // Column choices, then the "Import details" disclosure, then the actions.
   for (let index = 0; index < 14; index += 1) await page.keyboard.press("Tab");
   assert.equal(await importAction.evaluate((element) => element === document.activeElement), true, "keyboard navigation reaches the Import action after the long candidate");
@@ -197,7 +197,7 @@ try {
   const correctedNumberCsv = path.join(output, "corrected-number.csv");
   await writeFile(correctedNumberCsv, "value\nnot-a-number\n", "utf8");
   dialog = await choose(page, correctedNumberCsv);
-  await dialog.locator("select").first().selectOption("number");
+  await dialog.locator(".ts-import-column select").first().selectOption("number");
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   const correctedImportAlert = dialog.getByRole("alert");
   await correctedImportAlert.waitFor();
@@ -206,7 +206,7 @@ try {
   const specificImportFailure = (await correctedImportAlert.textContent())?.trim() ?? "";
   assert.ok(specificImportFailure.length > 0, "failed Import retains a recovery explanation");
   assert.notEqual(specificImportFailure, "The import was not applied. Your source selection is still available.", "candidate shows the specific parent recovery detail in place of the generic Shell fallback");
-  await dialog.locator("select").first().selectOption("text");
+  await dialog.locator(".ts-import-column select").first().selectOption("text");
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
   await page.getByTestId("project-ready").waitFor();
@@ -355,7 +355,7 @@ try {
   await page.keyboard.press("Tab");
   assert.equal(await importHeading.evaluate((heading) => heading === document.activeElement), true, "Tab wraps from the last action to the warning heading");
   await page.keyboard.press("Tab");
-  assert.equal(await dialog.locator("select").first().evaluate((select) => select === document.activeElement), true, "Tab from warning heading enters candidate choices");
+  assert.equal(await dialog.locator(".ts-import-column select").first().evaluate((select) => select === document.activeElement), true, "Tab from warning heading enters candidate choices");
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement === document.querySelector('input[type="file"][accept*=".csv"]'));

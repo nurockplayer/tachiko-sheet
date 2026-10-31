@@ -97,7 +97,7 @@ async function importSource(page, file) {
   await (await homeImportInput(page)).setInputFiles(file);
   const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
-  const types = dialog.locator("select");
+  const types = dialog.locator(".ts-import-column select");
   for (let index = 0; index < await types.count(); index++) {
     assert.equal(await types.nth(index).inputValue(), "text", "all three columns stay Text");
   }

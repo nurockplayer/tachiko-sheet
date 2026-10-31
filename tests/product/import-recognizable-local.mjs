@@ -34,7 +34,7 @@ try {
     "the review shows the user's actual first rows, whitespace included",
   );
   assert.equal(await preview.locator("tbody td").first().evaluate((cell) => getComputedStyle(cell).whiteSpace), "pre", "leading/trailing spaces stay visible");
-  const types = dialog.locator("select");
+  const types = dialog.locator(".ts-import-column select");
   assert.deepEqual(await types.evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"],
     "plain numeric columns are suggested as Number; other text stays Text");
   assert.equal(await dialog.getByText("Number suggested from its values").count(), 2);
@@ -75,7 +75,7 @@ try {
     await (await homeImportInput(largePage)).setInputFiles(large);
     const largeDialog = largePage.getByRole("dialog", { name: "Review import preview", exact: true });
     await largeDialog.waitFor();
-    assert.deepEqual(await largeDialog.locator("select").evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"]);
+    assert.deepEqual(await largeDialog.locator(".ts-import-column select").evaluateAll((selects) => selects.map((select) => select.value)), ["text", "number", "number"]);
     assert.equal(await largeDialog.getByText("First 5 of 65 rows").count(), 1);
     await largeDialog.getByRole("button", { name: "Import file", exact: true }).click();
     await largePage.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
