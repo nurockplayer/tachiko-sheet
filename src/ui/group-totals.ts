@@ -49,14 +49,20 @@ export function defaultGroupSetup(column: ColumnProjection, columns: readonly Co
   };
 }
 
-/** Month, except when "Then by" repeats the first Date column: then year. */
-export function defaultThenBucket(
-  dimension: GroupColumnIdentity | null,
-  dimensionBucket: GroupBucket,
-  then: GroupColumnIdentity,
-): GroupBucket {
-  if (then.field_type !== "date") return "month";
-  return dimension?.id === then.id && dimensionBucket === "month" ? "year" : "month";
+/**
+ * "Then by" may repeat the first Date column only to break years into months
+ * or days; any other repeat would name the same grouping twice.
+ */
+export function canThenBySameDate(dimension: GroupColumnIdentity | null, dimensionBucket: GroupBucket): boolean {
+  return dimension?.field_type === "date" && dimensionBucket === "year";
+}
+
+/** The setup after the first Date bucket changes: a repeat that no longer fits is dropped. */
+export function withDimensionBucket(setup: GroupSetup, dimension: GroupColumnIdentity | null, bucket: GroupBucket): GroupSetup {
+  const repeats = setup.then !== null && setup.then === setup.dimension;
+  return repeats && !canThenBySameDate(dimension, bucket)
+    ? { ...setup, bucket, then: null, thenBucket: "month" }
+    : { ...setup, bucket };
 }
 
 export function groupDimensions(columns: readonly ColumnProjection[], setup: GroupSetup): GroupDimension[] {

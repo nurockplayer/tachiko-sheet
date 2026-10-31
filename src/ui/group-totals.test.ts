@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ColumnProjection, GroupTotalsProjection } from "../../public/core-kit/runtime/protocol.js";
 import {
   defaultGroupSetup,
-  defaultThenBucket,
+  canThenBySameDate,
+  withDimensionBucket,
   groupDimensions,
   groupDimensionHeader,
   groupKeyLabel,
@@ -48,11 +49,14 @@ describe("group totals columns", () => {
     });
   });
 
-  it("picks a second bucket so the same Date column is not grouped twice at month", () => {
-    expect(defaultThenBucket(DATE, "month", DATE)).toBe("year");
-    expect(defaultThenBucket(DATE, "year", DATE)).toBe("month");
-    expect(defaultThenBucket(CATEGORY, "month", DATE)).toBe("month");
-    expect(defaultThenBucket(DATE, "month", CATEGORY)).toBe("month");
+  it("repeats a Date column only to break years down, and drops a repeat that no longer fits", () => {
+    expect(canThenBySameDate(DATE, "year")).toBe(true);
+    expect(canThenBySameDate(DATE, "month")).toBe(false);
+    expect(canThenBySameDate(CATEGORY, "year")).toBe(false);
+    const nested = { dimension: DATE.id, bucket: "year" as const, then: DATE.id, thenBucket: "month" as const, measures: ["amount"] };
+    expect(withDimensionBucket(nested, DATE, "month")).toEqual({ ...nested, bucket: "month", then: null, thenBucket: "month" });
+    const byCategory = { ...nested, then: CATEGORY.id };
+    expect(withDimensionBucket(byCategory, DATE, "month")).toEqual({ ...byCategory, bucket: "month" });
   });
 
   it("builds the wire dimensions, with a bucket only for Date columns", () => {

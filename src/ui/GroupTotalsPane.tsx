@@ -8,7 +8,8 @@ import type { ColumnProjection } from "../../public/core-kit/runtime/protocol.js
 import type { GroupTotalsOutcome } from "../runtime/session.js";
 import { formatNumberFor } from "./field-display.js";
 import {
-  defaultThenBucket,
+  canThenBySameDate,
+  withDimensionBucket,
   groupDimensionHeader,
   groupKeyLabel,
   groupRefusalMessage,
@@ -74,7 +75,7 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
     }
     const column = props.columns.find((candidate) => candidate.id === value);
     if (!column) return;
-    props.onChange({ ...props.setup, then: value, thenBucket: defaultThenBucket(first, props.setup.bucket, column) });
+    props.onChange({ ...props.setup, then: value, thenBucket: "month" });
   }
 
   function toggleMeasure(id: string): void {
@@ -124,7 +125,7 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
         </label>
         {first?.field_type === "date" ? <label className="ts-group-totals-field">
           <span>Date</span>
-          <select aria-label="Date" value={props.setup.bucket} onChange={(event) => props.onChange({ ...props.setup, bucket: event.currentTarget.value as GroupSetup["bucket"] })}>
+          <select aria-label="Date" value={props.setup.bucket} onChange={(event) => props.onChange(withDimensionBucket(props.setup, first, event.currentTarget.value as GroupSetup["bucket"]))}>
             <option value="value">Day</option>
             <option value="month">Month</option>
             <option value="year">Year</option>
@@ -135,7 +136,7 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
           <select aria-label="Then by" value={props.setup.then ?? ""} onChange={(event) => changeThen(event.currentTarget.value)}>
             <option value="">None</option>
             {groupable.filter((column) => column.id !== props.setup.dimension).map((column) => <option key={column.id} value={column.id}>{column.display_name}</option>)}
-            {first?.field_type === "date" ? <option value={first.id}>{first.display_name}</option> : null}
+            {first && canThenBySameDate(first, props.setup.bucket) ? <option value={first.id}>{first.display_name}</option> : null}
           </select>
         </label>
         {then?.field_type === "date" ? <label className="ts-group-totals-field">
@@ -143,7 +144,7 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
           <select aria-label="Then by date" value={props.setup.thenBucket} onChange={(event) => props.onChange({ ...props.setup, thenBucket: event.currentTarget.value as GroupSetup["bucket"] })}>
             <option value="value">Day</option>
             <option value="month">Month</option>
-            <option value="year">Year</option>
+            {then.id === props.setup.dimension ? null : <option value="year">Year</option>}
           </select>
         </label> : null}
         <fieldset className="ts-group-totals-group">
