@@ -187,6 +187,17 @@ const cases = [
     for (let press = 0; press < 6; press += 1) await page.keyboard.press("ArrowLeft");
     const narrowed = await width();
     assert.ok(Math.abs(narrowed - Math.max(48, widened - 96)) <= 2, `six ArrowLeft presses narrow the column by 96px, never below 48px (${widened} → ${narrowed})`);
+    // The pointer path: drag the border 60px right; the release stores it.
+    const box = await separator.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 3 });
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 3 });
+    await page.mouse.up();
+    await separator.focus();
+    await page.keyboard.press("ArrowRight");
+    const dragged = await width();
+    assert.ok(Math.abs(dragged - (narrowed + 60 + 16)) <= 2, `a 60px drag then one ArrowRight keeps both changes (${narrowed} → ${dragged})`);
     await separator.dblclick();
     const fitted = await width();
     assert.ok(fitted >= 48 && fitted <= 800, `double-click fits the content to a usable width (${fitted}px)`);

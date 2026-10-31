@@ -1092,7 +1092,9 @@ export function SheetShell(props: SheetShellProps) {
     // measure in its 10px default.
     const style = sample ? getComputedStyle(sample) : null;
     const measure = textMeasure(style ? `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}` : "");
-    const texts = displayRows.slice(0, 2000).map((row) => fieldClipboardText(fieldForColumn(row, field)));
+    // Every shown row, like Excel: a long value far down must not stay cut off.
+    // Distinct texts only, so repeated values are measured once.
+    const texts = [...new Set(displayRows.map((row) => fieldClipboardText(fieldForColumn(row, field))))];
     updateGridSettings((current) => rowViewWithWidth(current, field, autoFitWidth(texts, displayName, measure)));
   }
 
