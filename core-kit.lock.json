@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "fac94ef3942c10b287b7f9df9463c1a694ee1fad",
+  "sourceCommit": "3737adfc4fa1261ffa038857b29e2420dce0b3b8",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "40975bb8ca37df8a3e8b1d4675e8d4605900e1b8c1398945988ce16aadf19853",
+  "artifactManifestSha256": "6f0f934a29f383fdfda1c8bad1d1c5595efc1d55817da35e85288ec00fd9ab32",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6539180987",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6542826094",
   "qualificationArtifactReview": {
-    "sourceCommit": "fac94ef3942c10b287b7f9df9463c1a694ee1fad",
-    "artifactManifestSha256": "40975bb8ca37df8a3e8b1d4675e8d4605900e1b8c1398945988ce16aadf19853",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6539180987"
+    "sourceCommit": "3737adfc4fa1261ffa038857b29e2420dce0b3b8",
+    "artifactManifestSha256": "6f0f934a29f383fdfda1c8bad1d1c5595efc1d55817da35e85288ec00fd9ab32",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6542826094"
   },
-  "notes": "Re-pin to Work main fac94ef3 (Work #611: imports over 64 rows hold Date and Yes/No columns; large-import XLSX dates carry a yyyy-mm-dd format; saved typed large projects reopen; the stock Tracker keeps its 128-row profile)"
+  "notes": "Re-pin to Work main 3737adfc (Work #614: read-only grouped totals by one or two keys; Work #616: XLSX General written as built-in number format 0, so Numbers shows decimals)"
 }
