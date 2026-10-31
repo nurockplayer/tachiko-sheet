@@ -50,7 +50,8 @@ async function chooseColumnAction(page, name, action) {
     await page.getByRole("button", { name: `${action} “${name}”…`, exact: true }).click();
     return;
   }
-  await page.getByRole("columnheader", { name, exact: true }).hover();
+  // The grid's header: the totals panel has its own "Category" header.
+  await page.getByRole("grid", { name: "Table", exact: true }).getByRole("columnheader", { name, exact: true }).hover();
   await page.getByRole("button", { name: `Column actions for ${name}`, exact: true }).click();
   await page.getByRole("button", { name: `${action}…`, exact: true }).click();
 }
@@ -65,7 +66,8 @@ async function openGroupTotals(page, name) {
     await page.getByRole("button", { name: `Totals by “${name}”…`, exact: true }).click();
     return;
   }
-  await page.getByRole("columnheader", { name, exact: true }).hover();
+  // The grid's header: the totals panel has its own "Category" header.
+  await page.getByRole("grid", { name: "Table", exact: true }).getByRole("columnheader", { name, exact: true }).hover();
   await page.getByRole("button", { name: `Column actions for ${name}`, exact: true }).click();
   await page.getByRole("button", { name: "Totals by this column…", exact: true }).click();
 }
