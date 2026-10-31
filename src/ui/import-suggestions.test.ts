@@ -27,6 +27,15 @@ describe("import type suggestions", () => {
     expect(suggestColumnType([...dates(65), [text("1900-01-01")], [text("9999-12-31")]], 0, true)).toBe("date");
     expect(suggestColumnType([...dates(65), [text("1899-12-31")]], 0, true)).toBe("text");
     expect(suggestColumnType([...dates(64), [text("1899-12-31")]], 0, false)).toBe("date");
+    // Spreadsheet date and TRUE/FALSE cells arrive typed from the XLSX reader.
+    const date = (value: string) => cell({ kind: "date", value });
+    const yes = (value: boolean) => cell({ kind: "boolean", value });
+    expect(suggestColumnType(column(date("2026-10-01"), cell({ kind: "empty" }), text("2026-10-02")), 0)).toBe("date");
+    expect(suggestColumnType([...dates(65), [date("1899-12-31")]], 0, true)).toBe("text");
+    expect(suggestColumnType(column(yes(true), yes(false), cell({ kind: "empty" })), 0)).toBe("boolean");
+    expect(suggestColumnType(column(yes(true), text("x")), 0)).toBe("text");
+    expect(suggestColumnType(column(yes(true), date("2026-10-01")), 0)).toBe("text");
+    expect(suggestColumnType(column(yes(true), cell({ kind: "number", value: 1 })), 0)).toBe("text");
     for (const value of ["2026-02-30", "2025-02-29", "2026-13-01", "2026/10/01", "2026-1-5", "01-10-2026", "0000-01-01"]) {
       expect(suggestColumnType(column(text("2026-10-01"), text(value)), 0), value).toBe("text");
     }

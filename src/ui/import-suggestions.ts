@@ -42,11 +42,12 @@ export function largeImport(sheets: ReadonlyArray<{ rows: readonly unknown[] }>)
 
 /**
  * Advisory type for one source column: Number for plain decimals, Date for
- * YYYY-MM-DD dates (from 1900 in a large import), otherwise Text. The user
+ * YYYY-MM-DD dates and spreadsheet date cells (from 1900 in a large import),
+ * Yes/No for spreadsheet TRUE/FALSE cells, otherwise Text. The user
  * still confirms it, and the core remains the parser and validator.
  */
 export function suggestColumnType(rows: readonly SourceCell[][], column: number, large = false): ImportColumnType {
-  let numbers = 0, dates = 0;
+  let numbers = 0, dates = 0, booleans = 0;
   for (const row of rows) {
     const value = row[column]?.value;
     if (!value || value.kind === "empty") continue;
@@ -55,15 +56,17 @@ export function suggestColumnType(rows: readonly SourceCell[][], column: number,
       numbers++;
     } else if (value.kind === "text" && losslessNumberText(value.value)) {
       numbers++;
-    } else if (value.kind === "text" && isoDateText(value.value)) {
+    } else if ((value.kind === "text" && isoDateText(value.value)) || value.kind === "date") {
       if (large && value.value < LARGE_IMPORT_FIRST_DATE) return "text";
       dates++;
+    } else if (value.kind === "boolean") {
+      booleans++;
     } else {
       return "text";
     }
-    if (numbers > 0 && dates > 0) return "text";
+    if (Number(numbers > 0) + Number(dates > 0) + Number(booleans > 0) > 1) return "text";
   }
-  return numbers > 0 ? "number" : dates > 0 ? "date" : "text";
+  return numbers > 0 ? "number" : dates > 0 ? "date" : booleans > 0 ? "boolean" : "text";
 }
 
 export function sourcePreviewText(value: SourceValue | undefined): string {

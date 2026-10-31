@@ -5,6 +5,7 @@
 // Work's 64-row typed limit until Work #610) keeps Date and Yes/No columns
 // through edit, Save a copy, reopen and download. Built product, normal UI only.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -180,7 +181,21 @@ try {
   assert.equal(lines[0], "Date,Description,Amount,Cleared");
   assert.match(lines[1], /^2026-12-31,Item 0,1000\.25,$/);
   assert.match(lines[2], /^2026-01-02,Item 1,-1\.25,false$/);
-  assert.equal(downloads.xlsx.subarray(0, 2).toString("latin1"), "PK", "the XLSX downloads");
+  // The XLSX keeps real dates (date-formatted t="d" cells) and Yes/No cells.
+  const xlsx = JSON.parse(execFileSync("python3", ["-I", "-c", `
+import json, re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+sheet = z.read("xl/worksheets/sheet1.xml").decode()
+styles = z.read("xl/styles.xml").decode()
+cell = lambda ref: (re.search(r'<c r="' + ref + r'"[^>]*?(?:/>|>.*?</c>)', sheet) or [None])[0]
+print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3"), "d3": cell("D3"), "d4": cell("D4"), "dateFormat": 'formatCode="yyyy-mm-dd"' in styles}))
+`, path.join(work, "year-export.xlsx")], { encoding: "utf8" }));
+  assert.equal(xlsx.rows, YEAR_ROWS + 1, "header and every row");
+  assert.equal(xlsx.dateFormat, true, "dates carry a yyyy-mm-dd format");
+  assert.match(xlsx.a2, /t="d"><v>2026-12-31<\/v>/, "the edited date is a date cell");
+  assert.match(xlsx.a3, /t="d"><v>2026-01-02<\/v>/);
+  assert.match(xlsx.d3, /t="b"><v>0<\/v>/, "Cleared false is a Yes/No cell");
+  assert.match(xlsx.d4, /t="b"><v>1<\/v>/);
   checks.push("a 300-row statement imports with Date and Yes/No columns, edits, saves, reopens and downloads as CSV/XLSX");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
