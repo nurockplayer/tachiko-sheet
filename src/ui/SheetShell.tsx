@@ -91,6 +91,9 @@ import { chooseImportType, chosenImportTypes, importConfirmationMessage, importR
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
+import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
+import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
+import { COLUMN_TOTALS_ENTITY_BYTES, type GroupTotalsOutcome } from "../runtime/session.js";
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage, findingLocation } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
@@ -463,6 +466,7 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveRows,
     onDuplicateTable,
     onQueryShownTotals,
+    onQueryGroupTotals,
     onOpenExample,
     onOpenSaved,
     onSelectCollection = async () => {},
@@ -1772,6 +1776,91 @@ export function SheetShell(props: SheetShellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownTotalsKey, onQueryShownTotals]);
   const footerTotals = shownTotalsKey && shownTotals?.key === shownTotalsKey ? shownTotals : null;
+
+  // Grouped totals are a read too: Sheet picks the question, Work groups and sums.
+  const allEntities = useMemo(
+    () => table ? rowSource(table).allRowsForNow().map(rowEntity) : [],
+    [table],
+  );
+  const groupFilterHidesRows = shownEntities !== null;
+  const groupableColumnIds = useMemo(() => new Set(groupableColumns(columns).map(column => column.id)), [columns]);
+  const hasMeasureColumns = useMemo(() => measureColumns(columns).length > 0, [columns]);
+  const [groupPanel, setGroupPanel] = useState<{ setup: GroupSetup; occurrence: string; collection: string } | null>(null);
+  const [groupScopeChoice, setGroupScopeChoice] = useState<GroupTotalsScopeChoice>("shown");
+  const [groupResult, setGroupResult] = useState<{ key: string; outcome: GroupTotalsOutcome } | null>(null);
+  const [groupPending, setGroupPending] = useState(false);
+  const groupTriggerRef = useRef<HTMLElement | null>(null);
+
+  function openGroupTotals(column: TableColumn, trigger: HTMLElement | null): void {
+    if (!view || !table || !onQueryGroupTotals) return;
+    setGroupPanel({ setup: defaultGroupSetup(column, columns), occurrence: view.occurrence, collection: table.collection.key });
+    groupTriggerRef.current = trigger;
+    setGroupScopeChoice("shown");
+    setGroupResult(null);
+    setGroupPending(true);
+  }
+
+  function closeGroupTotals(): void {
+    setGroupPanel(null);
+    setGroupResult(null);
+    setGroupPending(false);
+    const trigger = groupTriggerRef.current;
+    groupTriggerRef.current = null;
+    const target = trigger?.isConnected ? trigger : gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
+    target?.focus();
+  }
+
+  // A panel whose table, dimension or measure disappeared closes and yields focus.
+  const groupPanelLive = groupPanel !== null && table !== null && view !== null &&
+    groupPanel.occurrence === view.occurrence &&
+    groupPanel.collection === table.collection.key &&
+    columns.some(column => column.id === groupPanel.setup.dimension) &&
+    groupPanel.setup.measures.length > 0 &&
+    groupPanel.setup.measures.every(id => columns.some(column => column.id === id && column.field_type === "number")) &&
+    (groupPanel.setup.then === null || columns.some(column => column.id === groupPanel.setup.then));
+  useEffect(() => {
+    if (!groupPanel || groupPanelLive) return;
+    const panelHadFocus = document.querySelector<HTMLElement>(".ts-group-totals")?.contains(document.activeElement) ?? false;
+    setGroupPanel(null);
+    setGroupResult(null);
+    setGroupPending(false);
+    groupTriggerRef.current = null;
+    if (panelHadFocus) gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']")?.focus();
+  }, [groupPanel, groupPanelLive]);
+
+  const groupShownScope = useMemo(
+    () => groupScopeFor(shownEntities, allEntities, COLUMN_TOTALS_ENTITY_BYTES),
+    [shownEntities, allEntities],
+  );
+  const groupScope = groupScopeChoice === "shown" && groupShownScope ? groupShownScope : { kind: "all" as const };
+  const groupQueryDimensions = groupPanel && groupPanelLive ? groupDimensions(columns, groupPanel.setup) : null;
+  const groupQueryKey = groupPanel && groupQueryDimensions && witness && table
+    ? `${witness.occurrence}\u0001${witness.revision}\u0001${table.collection.key}\u0001${JSON.stringify(groupQueryDimensions)}\u0001${JSON.stringify(groupPanel.setup.measures)}\u0001${JSON.stringify(groupScope)}`
+    : null;
+  useEffect(() => {
+    if (!groupQueryKey || !groupQueryDimensions || !groupPanel || !witness || !table || !onQueryGroupTotals) return;
+    let current = true;
+    setGroupPending(true);
+    onQueryGroupTotals(witness, table.collection.key, groupQueryDimensions, groupPanel.setup.measures, groupScope).then(outcome => {
+      if (!current) return;
+      // A reply at another revision is never shown as current.
+      if (outcome?.kind === "result" && outcome.projection.revision !== witness.revision) {
+        setGroupResult(null);
+        setGroupPending(false);
+        return;
+      }
+      setGroupResult(outcome ? { key: groupQueryKey, outcome } : null);
+      setGroupPending(false);
+    }, () => {
+      if (!current) return;
+      // A failed read is not an answer: never leave older totals looking current.
+      setGroupResult(null);
+      setGroupPending(false);
+    });
+    return () => { current = false; };
+    // groupQueryKey captures the witness, collection, setup and scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupQueryKey, onQueryGroupTotals]);
 
   const runCommit = useCallback(
     async (
@@ -3703,6 +3792,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.querySelector<HTMLElement>("summary")?.focus();
                     }} />
                     <button type="button" className="ts-button" aria-label="Filter…" data-column-action="Filter…" disabled={viewActionsBlocked} onClick={() => startGridFilter(column)} />
+                    {onQueryGroupTotals && hasMeasureColumns && groupableColumnIds.has(column.id) ? <button type="button" className="ts-button" aria-label="Totals by this column…" data-column-action="Totals by this column…" disabled={viewActionsBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary");
+                      disclosure.open = false;
+                      openGroupTotals(column, trigger);
+                    }} /> : null}
                     {renderFilterEditor(column)}
                   </div>
                 </details>
@@ -3875,6 +3970,12 @@ export function SheetShell(props: SheetShellProps) {
                 disclosure.querySelector<HTMLElement>("summary")?.focus();
               }}>Sort Z → A</button>
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={() => startGridFilter(focusedColumn)}>Filter…</button>
+              {onQueryGroupTotals && hasMeasureColumns && groupableColumnIds.has(focusedColumn.id) ? <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary");
+                closeColumnToolbar(disclosure);
+                openGroupTotals(focusedColumn, trigger);
+              }}>{`Totals by “${focusedColumnName}”…`}</button> : null}
               {renderFilterEditor(focusedColumn)}
             </div>
           </details> : null}
@@ -3883,6 +3984,20 @@ export function SheetShell(props: SheetShellProps) {
         </div> : onInsertRow && onRemoveRows && !table.native_table_profile ? <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>
+          {groupPanel && groupPanelLive ? <GroupTotalsPane
+            columns={columns}
+            setup={groupPanel.setup}
+            outcome={groupResult?.outcome ?? null}
+            pending={groupPending}
+            filterHidesRows={groupFilterHidesRows}
+            shownRows={displayRows.length}
+            totalRows={table ? rowSource(table).total : 0}
+            shownScopeAvailable={groupShownScope !== null}
+            scopeChoice={groupScopeChoice}
+            onChange={setup => setGroupPanel(panel => panel ? { ...panel, setup } : panel)}
+            onScopeChange={setGroupScopeChoice}
+            onClose={closeGroupTotals}
+          /> : null}
           {hasResults ? resultsHidden ? <button ref={resultsShowButtonRef} type="button" className="ts-button ts-results-show" onClick={() => setResultsHidden(false)}>Show results</button> : <>
             <ResultsPane
               view={view!}
