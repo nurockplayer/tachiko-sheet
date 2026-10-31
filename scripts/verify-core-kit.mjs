@@ -13,6 +13,15 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Re-pin (Work #614 grouped totals, #616 built-in General number format):
+    // two clean detached lead exports match byte for byte in all 25 files;
+    // receipt with inventory on #246.
+    sourceCommit: '3737adfc4fa1261ffa038857b29e2420dce0b3b8',
+    artifactManifestSha256: '6f0f934a29f383fdfda1c8bad1d1c5595efc1d55817da35e85288ec00fd9ab32',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6542826094',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6542826094',
+  },
+  {
     // Re-pin (Work #611 Date and Yes/No columns in imports over 64 rows):
     // two clean detached lead exports match byte for byte in all 25 files;
     // receipt with inventory on #246.

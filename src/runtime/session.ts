@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -130,7 +130,21 @@ const COHERENT_READ_ATTEMPTS = 3;
 /** Work's largest table window (A-03). */
 const WINDOW_ROWS = 256;
 // The entity list of a totals query, kept under the 64 KiB wire request limit.
-const COLUMN_TOTALS_ENTITY_BYTES = 60_000;
+export const COLUMN_TOTALS_ENTITY_BYTES = 60_000;
+
+/** Work's grouped-totals refusal codes Sheet reports as a readable message. */
+export type GroupTotalsRefusalCode = "group_limit_exceeded" | "result_size_exceeded" | "invalid_group_query";
+
+/** One grouped-totals read: Work's reply, a named refusal, or nothing to show. */
+export type GroupTotalsOutcome =
+  | { kind: "result"; projection: GroupTotalsProjection }
+  | { kind: "refused"; code: GroupTotalsRefusalCode; message: string };
+
+const GROUP_REFUSAL_CODES: readonly GroupTotalsRefusalCode[] = [
+  "group_limit_exceeded",
+  "result_size_exceeded",
+  "invalid_group_query",
+];
 
 const noop = (): void => undefined;
 
@@ -699,6 +713,53 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       if (totals.revision !== witness.revision) throw new SheetSessionError("incoherent-reply", "The totals query does not match the requested revision.");
       return totals;
     });
+  }
+
+  /** Work's grouped totals over one scope; a named refusal comes back as data, not a throw. */
+  function queryGroupTotals(
+    witness: ViewWitness,
+    collection: string,
+    dimensions: GroupDimension[],
+    measures: string[],
+    scope: GroupScope,
+  ): Promise<GroupTotalsOutcome | null> {
+    return enqueue(async () => {
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const query = client.queryGroupTotals;
+      if (typeof query !== "function") return null;
+      // An advisory read queued behind a change that moved the revision is obsolete; skip it.
+      const live = session();
+      if (witness.occurrence !== live.scope || witness.revision !== live.revision) return null;
+      let projection: GroupTotalsProjection;
+      try {
+        projection = await afterUsable(
+          expected,
+          dispatch(kit, () => query.call(client, witness.revision, collection, dimensions, measures, scope)),
+        );
+      } catch (error) {
+        const refusal = groupRefusal(kit, error);
+        if (refusal) return refusal;
+        throw error;
+      }
+      if (projection.revision !== witness.revision) {
+        throw new SheetSessionError("incoherent-reply", "The grouped totals query does not match the requested revision.");
+      }
+      return { kind: "result", projection };
+    });
+  }
+
+  function groupRefusal(kit: CoreKit, error: unknown): GroupTotalsOutcome | null {
+    if (typeof kit.DesignerRuntimeError !== "function" || !(error instanceof kit.DesignerRuntimeError)) return null;
+    const failure = (error as { failure?: { code?: string; message?: string } }).failure;
+    const code = failure?.code;
+    if (!GROUP_REFUSAL_CODES.includes(code as GroupTotalsRefusalCode)) return null;
+    return {
+      kind: "refused",
+      code: code as GroupTotalsRefusalCode,
+      message: failure?.message ?? (error instanceof Error ? error.message : String(code)),
+    };
   }
 
   function queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null> {
@@ -1336,7 +1397,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, queryColumnTotals, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, queryColumnTotals, queryGroupTotals, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

@@ -1285,6 +1285,40 @@ body { margin: 0; }
   border-radius: var(--ts-radius);
   background: var(--ts-surface);
 }
+.ts-group-totals { order: 2; }
+.ts-group-totals-close { flex: none; min-height: 32px; padding: 0 10px; font-size: 16px; line-height: 1; }
+.ts-group-totals-controls { display: grid; gap: 6px; }
+.ts-group-totals-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ts-ink-soft); font-size: 12px; line-height: 18px; }
+.ts-group-totals-field > span { flex: none; }
+.ts-group-totals-field select {
+  min-width: 0;
+  max-width: 62%;
+  height: var(--ts-profile-command-target-min-height);
+  padding: 4px 24px 4px 8px;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font: inherit;
+  font-size: 12px;
+}
+.ts-group-totals-group { margin: 0; padding: 6px 8px 8px; border: 1px solid var(--ts-line); border-radius: var(--ts-radius); }
+.ts-group-totals-group legend { padding: 0 4px; color: var(--ts-ink-soft); font-size: 12px; }
+.ts-group-totals-option { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 20px; }
+.ts-group-totals-option + .ts-group-totals-option { margin-top: 2px; }
+.ts-group-totals-results { min-width: 0; }
+.ts-group-totals--pending { opacity: 0.55; }
+.ts-group-totals-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ts-group-totals-table th,
+.ts-group-totals-table td { padding: 4px 6px; border-bottom: 1px solid var(--ts-line); text-align: left; overflow-wrap: anywhere; }
+.ts-group-totals-table thead th { background: var(--ts-surface-sunken); color: var(--ts-ink-soft); font-size: 11px; font-weight: 500; }
+.ts-group-totals-table tfoot th,
+.ts-group-totals-table tfoot td { border-top: 1px solid var(--ts-line); border-bottom: 0; font-weight: 600; }
+.ts-group-totals-table .ts-group-totals-number { text-align: right; white-space: nowrap; }
+.ts-group-totals-unavailable { color: var(--ts-ink-soft); }
+.ts-group-key-marker { color: var(--ts-ink-soft); font-style: italic; }
+.ts-group-totals-footer { display: flex; align-items: center; gap: 8px; }
+.ts-group-totals-status { margin: 0; min-width: 0; }
 .ts-results-heading,
 .ts-result-card-heading {
   display: flex;

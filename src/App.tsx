@@ -6,7 +6,7 @@ import { DetachedReportPresentations } from "./application/detached-report-prese
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
-import type { FieldConstraintInput, FormulaCopy } from "../public/core-kit/runtime/protocol.js";
+import type { FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope } from "../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   type AnySavedCopy,
@@ -1715,6 +1715,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return runtime.queryColumnTotals(witness, collection, entities);
   }
 
+  function queryGroupTotals(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope) {
+    // A read only, like the footer totals: Work groups and sums; Sheet shows its reply.
+    return runtime.queryGroupTotals(witness, collection, dimensions, measures, scope);
+  }
+
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
@@ -2227,6 +2232,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // the portable route, like column authoring.
           onDuplicateTable={copies.createWorkFile ? duplicateTable : undefined}
           onQueryShownTotals={queryShownTotals}
+          onQueryGroupTotals={queryGroupTotals}
           onOpenExample={openExample}
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}

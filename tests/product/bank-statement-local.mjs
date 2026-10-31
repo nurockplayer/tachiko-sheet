@@ -50,9 +50,26 @@ async function chooseColumnAction(page, name, action) {
     await page.getByRole("button", { name: `${action} “${name}”…`, exact: true }).click();
     return;
   }
-  await page.getByRole("columnheader", { name, exact: true }).hover();
+  // The grid's header: the totals panel has its own "Category" header.
+  await page.getByRole("grid", { name: "Table", exact: true }).getByRole("columnheader", { name, exact: true }).hover();
   await page.getByRole("button", { name: `Column actions for ${name}`, exact: true }).click();
   await page.getByRole("button", { name: `${action}…`, exact: true }).click();
+}
+
+// The grouped-totals entry follows each menu's own label pattern.
+async function openGroupTotals(page, name) {
+  if (await page.locator(".ts-column-toolbar").count()) {
+    const index = (await page.locator(".ts-col-head").allTextContents()).indexOf(name);
+    assert.ok(index >= 0);
+    await page.locator(".ts-grid tbody tr.ts-row").first().locator(".ts-cell").nth(index).focus();
+    await page.getByRole("button", { name: "Column", exact: true }).click();
+    await page.getByRole("button", { name: `Totals by “${name}”…`, exact: true }).click();
+    return;
+  }
+  // The grid's header: the totals panel has its own "Category" header.
+  await page.getByRole("grid", { name: "Table", exact: true }).getByRole("columnheader", { name, exact: true }).hover();
+  await page.getByRole("button", { name: `Column actions for ${name}`, exact: true }).click();
+  await page.getByRole("button", { name: "Totals by this column…", exact: true }).click();
 }
 
 const checks = [];
@@ -204,6 +221,107 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.match(xlsx.d3, /t="b"><v>0<\/v>/, "Cleared false is a Yes/No cell");
   assert.match(xlsx.d4, /t="b"><v>1<\/v>/);
   checks.push("a 300-row statement imports with Date and Yes/No columns, edits, saves, reopens and downloads as CSV/XLSX");
+
+  // 6. Totals by a column: Sheet asks, Work groups and sums, the panel shows its answer.
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: LOCAL_ORIGIN });
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+
+  const SPENDING_ROWS = 120;
+  const spending = Array.from({ length: SPENDING_ROWS }, (_, i) => ({
+    date: `2026-${String(1 + (i % 3)).padStart(2, "0")}-${String(1 + (i % 28)).padStart(2, "0")}`,
+    category: i % 10 === 9 ? "" : ["Food", "Rent", "Transport", "food"][i % 4],
+    text: `-${i}.50`,
+    amount: -(i + 0.5),
+  }));
+  const spendingCsv = path.join(work, "spending.csv");
+  await writeFile(spendingCsv, ["Date,Category,Amount", ...spending.map(row => `${row.date},${row.category},${row.text}`)].join("\n") + "\n");
+  await (await homeImportInput(page)).setInputFiles(spendingCsv);
+  await preview.waitFor();
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await ready();
+
+  const sumFor = rows => rows.reduce((sum, row) => sum + row.amount, 0);
+  const CATEGORY_ORDER = ["Food", "Rent", "Transport", "food", ""];
+  const groupSummary = rows => CATEGORY_ORDER
+    .map(category => [category === "" ? "(blank)" : category, rows.filter(row => row.category === category)])
+    .filter(([, group]) => group.length > 0)
+    .map(([label, group]) => [label, String(group.length), String(sumFor(group))]);
+  const panel = page.getByTestId("group-totals");
+  const groupTable = name => page.locator(`table[aria-label="Totals by ${name}"]`);
+  const groupRows = async name => groupTable(name).locator("tbody tr").evaluateAll(rows => rows.map(row => [...row.querySelectorAll("td, th")].map(cell => (cell.querySelector(".ts-group-key-marker [aria-hidden]") ?? cell).textContent?.trim() ?? "")));
+  const waitForGroupRows = (expected, name = "Category") => page.waitForFunction(({ expected, name }) => {
+    const table = document.querySelector(`table[aria-label="Totals by ${name}"]`);
+    if (!table || table.closest('[aria-busy="true"]')) return false;
+    const rows = [...table.querySelectorAll("tbody tr")].map(row => [...row.querySelectorAll("td, th")].map(cell => (cell.querySelector(".ts-group-key-marker [aria-hidden]") ?? cell).textContent?.trim() ?? ""));
+    return JSON.stringify(rows) === JSON.stringify(expected);
+  }, { expected, name });
+
+  table = await observedTable(page);
+  const amountColumn = table.columns.find(column => column.field_type === "number").id;
+  await openGroupTotals(page, "Category");
+  await panel.waitFor();
+  assert.equal(await panel.getByRole("heading", { name: "Totals by Category", exact: true }).count(), 1);
+  const allGroups = groupSummary(spending);
+  await waitForGroupRows(allGroups);
+  assert.deepEqual(await groupRows("Category"), allGroups, "Work's groups arrive in String order with the blank group last");
+  const footerTotal = await page.getByTestId(`total:${amountColumn}`).textContent();
+  const grandCells = await groupTable("Category").locator("tfoot tr > *").evaluateAll(cells => cells.map(cell => cell.textContent?.trim() ?? ""));
+  assert.equal(grandCells[0], "Total");
+  assert.equal(grandCells[1], String(SPENDING_ROWS));
+  assert.equal(grandCells[2], footerTotal, "the panel's Total row matches the grid footer total");
+  checks.push("Totals by a column shows Work's Category groups (Food, Rent, Transport, food, blank) with the grid footer total");
+
+  await panel.getByLabel("Then by", { exact: true }).selectOption({ label: "Date" });
+  assert.equal(await panel.getByLabel("Then by date", { exact: true }).inputValue(), "month", "a second Date dimension defaults to month");
+  const foodJanuary = spending.filter(row => row.category === "Food" && row.date.startsWith("2026-01"));
+  await page.waitForFunction(({ total }) => {
+    const table = document.querySelector('table[aria-label="Totals by Category"]');
+    if (!table) return false;
+    return [...table.querySelectorAll("tbody tr")].some(row => {
+      const cells = [...row.querySelectorAll("td, th")].map(cell => (cell.querySelector(".ts-group-key-marker [aria-hidden]") ?? cell).textContent?.trim() ?? "");
+      return cells[0] === "Food" && cells[1] === "2026-01" && cells[3] === total;
+    });
+  }, { total: String(sumFor(foodJanuary)) });
+  checks.push("Then by Date (Month) shows the Food / 2026-01 group with Work's total");
+
+  await panel.getByLabel("Then by", { exact: true }).selectOption({ label: "None" });
+  await waitForGroupRows(allGroups);
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").nth(2).dblclick();
+  await editor.fill("-100.50"); await editor.press("Enter"); await ready();
+  spending[0].amount = -100.5;
+  const editedGroups = groupSummary(spending);
+  await waitForGroupRows(editedGroups);
+  assert.equal((await groupRows("Category")).find(group => group[0] === "Food")?.[2], String(sumFor(spending.filter(row => row.category === "Food"))),
+    "the edited Amount changes the Food group at the new revision");
+  checks.push("editing an Amount updates the affected group after the new revision arrives");
+
+  await chooseColumnAction(page, "Category", "Filter");
+  await page.getByLabel("Filter Category", { exact: true }).fill("Food");
+  await page.getByLabel("Filter Category", { exact: true }).press("Enter"); await ready();
+  const shownSpending = spending.filter(row => row.category.toLowerCase().includes("food"));
+  await panel.getByRole("radio", { name: `Shown rows (${shownSpending.length})`, exact: true }).waitFor();
+  assert.equal(await panel.getByRole("radio", { name: `Shown rows (${shownSpending.length})`, exact: true }).isChecked(), true, "a filter totals the shown rows by default");
+  const shownGroups = groupSummary(shownSpending);
+  await waitForGroupRows(shownGroups);
+  const shownCells = await groupTable("Category").locator("tfoot tr > *").evaluateAll(cells => cells.map(cell => cell.textContent?.trim() ?? ""));
+  assert.equal(shownCells[1], String(shownSpending.length));
+  assert.equal(shownCells[2], String(sumFor(shownSpending)), "the Total row covers only the shown rows");
+  await panel.getByRole("radio", { name: `All rows (${SPENDING_ROWS})`, exact: true }).check();
+  await waitForGroupRows(editedGroups);
+  assert.equal((await groupTable("Category").locator("tfoot tr > *").last().textContent()), String(sumFor(spending)), "All rows restores the whole-table total");
+  checks.push("a filter totals only the shown rows; All rows totals the whole table");
+
+  await panel.getByRole("button", { name: "Copy", exact: true }).click();
+  await panel.getByText(`Copied ${editedGroups.length} groups.`, { exact: true }).waitFor();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  const copiedLines = copied.split("\n");
+  assert.equal(copiedLines[0], "Category\tRows\tAmount", "the TSV header matches the panel");
+  assert.equal(copiedLines.length, editedGroups.length + 2);
+  assert.equal(copiedLines.at(-1), `Total\t${SPENDING_ROWS}\t${sumFor(spending)}`, "the Total line ends with the unformatted total");
+  checks.push("Copy writes the same header, groups and Total row as TSV");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {
