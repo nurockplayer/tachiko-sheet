@@ -1388,7 +1388,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(null);
       return inspection;
     } catch (error) {
-      clearOpenCheckpoint();
+      // A failed separator/encoding re-read keeps the open preview, so the
+      // checkpoint of the work behind it must survive for Cancel to restore.
+      if (!csv) clearOpenCheckpoint();
       throw error;
     } finally { end(); }
   }
