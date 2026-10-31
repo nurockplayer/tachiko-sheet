@@ -5199,7 +5199,7 @@ export function SheetShell(props: SheetShellProps) {
               const csv = interop?.importInspection?.csv;
               if (!csv) return null;
               const reread = (delimiter: CsvDelimiter, encoding: CsvEncoding) => void inspectSpreadsheet(spreadsheetFileRef.current, { delimiter, encoding });
-              return <div className="ts-import-csv">
+              return <><div className="ts-import-csv">
                 <label className="ts-summary-field">
                   <span className="ts-field-label">Separator</span>
                   <select value={csv.delimiter} disabled={importPending || controlsLocked} onChange={(event) => reread(event.currentTarget.value as CsvDelimiter, csv.encoding)}>
@@ -5212,7 +5212,11 @@ export function SheetShell(props: SheetShellProps) {
                     {(Object.keys(CSV_ENCODING_LABELS) as CsvEncoding[]).map((value) => <option key={value} value={value}>{CSV_ENCODING_LABELS[value]}</option>)}
                   </select>
                 </label>
-              </div>;
+              </div>
+              {csv.encoding !== "utf-8" && csv.samples.length ? <div className="ts-import-encoding-check">
+                <p className="ts-hint">This file is not UTF-8, so it was read as {CSV_ENCODING_LABELS[csv.encoding]}. Check that these lines look right, or choose another Text encoding.</p>
+                <ul aria-label="Lines with non-English text">{csv.samples.map((line, index) => <li key={index}>{line}</li>)}</ul>
+              </div> : null}</>;
             })()}
           </div>
           <div className="ts-dialog-scroll">

@@ -83,8 +83,8 @@ const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 /** "utf-8" if `new TextDecoder("utf-8", { fatal: true })` succeeds (a UTF-8 BOM is fine, Work strips it).
  *  FF FE BOM → "utf-16le". Otherwise try, in order, the language-preferred encoding (zh-TW/zh-HK/zh-Hant* → big5,
  *  ja* → shift_jis, zh-CN/zh-Hans/zh → gb18030, ko* → euc-kr), then big5, shift_jis, gb18030, euc-kr, each with
- *  fatal: true; first that decodes wins; fallback "windows-1252". Bytes whose high bytes mostly stand alone are
- *  Western single-byte text and read as "windows-1252" before any double-byte candidate. */
+ *  fatal: true; first that decodes wins; fallback "windows-1252". After the language-preferred encodings, bytes
+ *  whose high bytes mostly stand alone are read as "windows-1252" before the other double-byte candidates. */
 export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[]): CsvEncoding {
   try {
     UTF8_DECODER.decode(bytes);
@@ -94,19 +94,22 @@ export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[
   }
   const head = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 2));
   if (head[0] === 0xff && head[1] === 0xfe) return "utf-16le";
-  // Western single-byte text (é = E9 between ASCII letters) also decodes as
-  // Big5 or Shift_JIS without an error; double-byte text pairs its high bytes.
-  if (mostlyIsolatedHighBytes(new Uint8Array(bytes))) return "windows-1252";
-  const preferred = languages.flatMap(language => preferredEncoding(language) ?? []);
-  for (const encoding of [...preferred, ...ENCODING_CANDIDATES]) {
+  const decodes = (encoding: CsvEncoding): boolean => {
     try {
       new TextDecoder(encoding, { fatal: true }).decode(bytes);
-      return encoding;
+      return true;
     } catch {
-      // Try the next candidate.
+      return false;
     }
-  }
-  return "windows-1252";
+  };
+  // Bytes alone cannot tell "année" in Windows-1252 from "表" (95 5C) in
+  // Shift_JIS, so the user's own language decides first and the import preview
+  // always shows non-ASCII lines for the user to confirm (csvSampleLines).
+  for (const encoding of languages.flatMap(language => preferredEncoding(language) ?? [])) if (decodes(encoding)) return encoding;
+  // Without a language hint, isolated high bytes (é between ASCII letters) are
+  // Western single-byte text; double-byte text mostly pairs its high bytes.
+  if (mostlyIsolatedHighBytes(new Uint8Array(bytes))) return "windows-1252";
+  return ENCODING_CANDIDATES.find(decodes) ?? "windows-1252";
 }
 
 /** True when most bytes >= 0x80 stand alone rather than in high-high pairs. */
@@ -118,6 +121,17 @@ function mostlyIsolatedHighBytes(bytes: Uint8Array): boolean {
     else { high += 1; isolated += 1; }
   }
   return high > 0 && isolated * 2 > high;
+}
+
+/** Up to `max` lines that contain non-ASCII text, so a wrong encoding guess is visible before import. */
+export function csvSampleLines(text: string, max = 5): string[] {
+  const lines: string[] = [];
+  for (const line of text.split(/\r\n|\n|\r/)) {
+    if (!/[^\u0000-\u007f]/.test(line)) continue;
+    lines.push(line.length > 120 ? `${line.slice(0, 119)}…` : line);
+    if (lines.length === max) break;
+  }
+  return lines;
 }
 
 /** utf-8 → the same bytes (copy). Otherwise TextDecoder(encoding) → TextEncoder (UTF-8), dropping a UTF-16 BOM. */

@@ -53,7 +53,7 @@ import {
   RuntimeStartupError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
-import { detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type CsvDelimiter, type CsvEncoding } from "./ui/csv-text.js";
+import { csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type CsvDelimiter, type CsvEncoding } from "./ui/csv-text.js";
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { copyFailureReason } from "./ui/save-close.js";
@@ -1372,12 +1372,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (!format) throw new Error("Choose a .csv, .tsv, .txt or .xlsx file.");
       const raw = await file.arrayBuffer();
       let bytes = raw;
-      let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding } | undefined;
+      let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[] } | undefined;
       if (format === "csv") {
         const encoding = csv?.encoding ?? guessCsvEncoding(raw, navigator.languages?.length ? navigator.languages : [navigator.language]);
         bytes = toUtf8Bytes(raw, encoding);
         const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536))));
-        csvRead = { delimiter, encoding };
+        // A non-UTF-8 guess is shown with real lines from the whole file, not just the first rows.
+        csvRead = { delimiter, encoding, samples: encoding === "utf-8" ? [] : csvSampleLines(new TextDecoder().decode(bytes)) };
       }
       const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true });
       const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}) } as ImportInspection;

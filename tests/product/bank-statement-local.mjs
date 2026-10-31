@@ -338,6 +338,8 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.equal(await preview.getByLabel("Text encoding", { exact: true }).inputValue(), "big5", "a Big5 file is read as Big5");
   const previewHeaders = () => preview.locator(".ts-import-preview th").allTextContents();
   assert.deepEqual(await previewHeaders(), ["日期", "摘要", "金額"]);
+  assert.deepEqual(await preview.getByRole("list", { name: "Lines with non-English text", exact: true }).locator("li").allTextContents(),
+    ["日期;摘要;金額", "2026-10-01;午餐;120", "2026-10-02;捷運;35"], "a non-UTF-8 guess shows real lines to confirm");
   await preview.getByLabel("Separator", { exact: true }).selectOption(",");
   await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 1);
   await preview.getByLabel("Separator", { exact: true }).selectOption(";");

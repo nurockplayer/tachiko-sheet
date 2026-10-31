@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes } from "./csv-text.js";
+import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes } from "./csv-text.js";
 
 /** printf '名稱,金額\n午餐,120\n' | iconv -f UTF-8 -t BIG5 */
 const BIG5 = new Uint8Array([
@@ -76,10 +76,20 @@ describe("guessCsvEncoding and toUtf8Bytes", () => {
     expect(decoded(converted)).toBe("名稱,金額\n午餐,120\n");
   });
 
-  it("reads Western single-byte text as Windows-1252 whatever the language", () => {
+  it("reads Shift_JIS 表 (95 5C) as Shift_JIS for a Japanese reader", () => {
+    expect(guessCsvEncoding(new Uint8Array([0x95, 0x5c, 0x0a]).buffer, ["ja-JP"])).toBe("shift_jis");
+  });
+
+  it("samples only non-ASCII lines, at most five, shortened", () => {
+    expect(csvSampleLines("a,b\nann\u00e9e,1\nx\n\u8868,2\r\n" + "\u00e9".repeat(130))).toEqual(["ann\u00e9e,1", "\u8868,2", `${"\u00e9".repeat(119)}…`]);
+    expect(csvSampleLines(Array.from({ length: 9 }, (_, i) => `\u00e9${i}`).join("\n"))).toHaveLength(5);
+    expect(csvSampleLines("plain,ascii\n1,2\n")).toEqual([]);
+  });
+
+  it("reads Western single-byte text as Windows-1252 without a double-byte language", () => {
     // "Year,Note\nann\u00e9e,caf\u00e9\n" in Windows-1252: E9 also decodes as a Big5 lead byte.
     const western = new Uint8Array([0x59, 0x65, 0x61, 0x72, 0x2c, 0x4e, 0x6f, 0x74, 0x65, 0x0a, 0x61, 0x6e, 0x6e, 0xe9, 0x65, 0x2c, 0x63, 0x61, 0x66, 0xe9, 0x0a]).buffer;
-    for (const languages of [["en-US"], ["zh-TW"], ["ja-JP"]]) expect(guessCsvEncoding(western, languages)).toBe("windows-1252");
+    for (const languages of [["en-US"], ["fr-FR"], []]) expect(guessCsvEncoding(western, languages)).toBe("windows-1252");
     expect(new TextDecoder().decode(toUtf8Bytes(western, "windows-1252"))).toBe("Year,Note\nann\u00e9e,caf\u00e9\n");
   });
 
