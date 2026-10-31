@@ -9,6 +9,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 
@@ -91,7 +92,7 @@ import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } 
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
 import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
@@ -106,6 +107,20 @@ import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
 type ActiveTab = "table" | "summary" | "report" | "brief" | "interop";
+
+/** Rendered width of a sized column without a stored width; matches `.ts-grid--sized`. */
+const SIZED_COLUMN_DEFAULT_WIDTH = 160;
+
+let columnMeasureCanvas: HTMLCanvasElement | null = null;
+
+/** Text widths in the grid's own font, through one reused offscreen canvas. */
+function textMeasure(font: string): (text: string) => number {
+  columnMeasureCanvas ??= document.createElement("canvas");
+  const context = columnMeasureCanvas.getContext("2d");
+  if (!context) return (text) => text.length * 7;
+  context.font = font;
+  return (text) => context.measureText(text).width;
+}
 
 interface EditorState {
   entity: string;
@@ -929,11 +944,16 @@ export function SheetShell(props: SheetShellProps) {
     : undefined;
   const gridSettings = useMemo<RowViewSettings>(() => {
     const ids = new Set(columns.map((column) => column.id));
+    const widths = rawGridSettings?.widths;
+    const keptWidths = widths ? Object.entries(widths).filter(([field]) => ids.has(field)) : undefined;
     return {
       sort: rawGridSettings?.sort && ids.has(rawGridSettings.sort.field) ? rawGridSettings.sort : undefined,
       filter: rawGridSettings?.filter && rawGridSettings.filter.text.trim() && ids.has(rawGridSettings.filter.field)
         ? rawGridSettings.filter : undefined,
       kept: rawGridSettings?.kept,
+      widths: keptWidths === undefined ? undefined
+        : keptWidths.length === Object.keys(widths!).length ? widths
+        : keptWidths.length > 0 ? Object.fromEntries(keptWidths) : undefined,
     };
   }, [columns, rawGridSettings]);
   const displaySignature = rowViewDisplaySignature(gridSettings);
@@ -1045,6 +1065,81 @@ export function SheetShell(props: SheetShellProps) {
       if (next === previous) return base;
       return { occurrence, byCollection: { ...base.byCollection, [collection]: next } };
     });
+  }
+
+  // Column widths are view state, like the sort and filter beside them. A drag
+  // previews on the header cell itself and commits one width on release.
+  const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement } | null>(null);
+
+  /** A stored width wins; otherwise the width the table currently gives it. */
+  function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
+    const stored = settings.widths?.[field];
+    if (stored !== undefined) return stored;
+    return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
+  }
+
+  function resizeColumnBy(field: string, delta: number, th: HTMLElement | null): void {
+    updateGridSettings((current) => rowViewWithWidth(current, field, columnWidthOf(current, field, th) + delta));
+  }
+
+  function autoFitColumn(field: string, th: HTMLElement | null): void {
+    const displayName = columns.find((column) => column.id === field)?.display_name;
+    if (displayName === undefined) return;
+    // Measure in the body cells' font, the one the widest value is drawn in.
+    const sample = gridScrollRef.current?.querySelector("td.ts-cell") ?? th;
+    const measure = textMeasure(sample ? getComputedStyle(sample).font : "");
+    const texts = displayRows.slice(0, 2000).map((row) => fieldClipboardText(fieldForColumn(row, field)));
+    updateGridSettings((current) => rowViewWithWidth(current, field, autoFitWidth(texts, displayName, measure)));
+  }
+
+  function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
+    const th = event.currentTarget.closest("th");
+    if (event.button !== 0 || !th) return;
+    // The header owns its own gestures: never let a resize begin a rename or a
+    // column-action menu. The press is not cancelled, so the double-click that
+    // fits the column still arrives as a compatibility mouse event.
+    event.stopPropagation();
+    const startWidth = columnWidthOf(gridSettings, field, th);
+    columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveColumnResize(event: ReactPointerEvent<HTMLSpanElement>): void {
+    const session = columnResizeRef.current;
+    if (!session) return;
+    event.stopPropagation();
+    session.width = clampColumnWidth(session.startWidth + event.clientX - session.startX);
+    session.th.style.width = `${session.width}px`;
+  }
+
+  function endColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
+    const session = columnResizeRef.current;
+    columnResizeRef.current = null;
+    if (!session || session.field !== field) return;
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    // A press without a move stores nothing: it must not turn every column of
+    // a shared-width grid into a fixed one.
+    if (session.width === session.startWidth) return;
+    updateGridSettings((current) => rowViewWithWidth(current, field, session.width));
+  }
+
+  /** Losing the pointer without releasing it keeps the width it started with. */
+  function cancelColumnResize(): void {
+    const session = columnResizeRef.current;
+    columnResizeRef.current = null;
+    if (session) session.th.style.width = `${session.startWidth}px`;
+  }
+
+  function onColumnResizeKeyDown(event: ReactKeyboardEvent<HTMLSpanElement>, field: string): void {
+    const th = event.currentTarget.closest("th");
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault(); event.stopPropagation();
+      resizeColumnBy(field, (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 64 : 16), th);
+    } else if (event.key === "Enter") {
+      event.preventDefault(); event.stopPropagation();
+      autoFitColumn(field, th);
+    }
   }
 
   function keepGridRows(entities: readonly string[]): void {
@@ -3792,12 +3887,18 @@ export function SheetShell(props: SheetShellProps) {
       const result = j4Results.find((candidate) => candidate.definitionId === id);
       return !result || result.diagnostics.length > 0;
     });
+    const salesCatalog = salesCatalogLayoutEligible(view!, salesCatalogLayout);
+    // Widths belong to columns the grid shows; a resize is available wherever
+    // the dense header actions are.
+    const columnWidths = gridSettings.widths;
+    const sizedGrid = columnWidths !== undefined && Object.keys(columnWidths).length > 0;
+    const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined}>
               <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
@@ -3878,6 +3979,22 @@ export function SheetShell(props: SheetShellProps) {
                 </details>
                 {table.native_table_profile && index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
               </> : null}</div>
+              {resizable ? <span
+                className="ts-col-resize"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={`Resize ${column.display_name}`}
+                aria-valuenow={columnWidths?.[column.id] ?? SIZED_COLUMN_DEFAULT_WIDTH}
+                aria-valuemin={COLUMN_WIDTH_MIN}
+                aria-valuemax={COLUMN_WIDTH_MAX}
+                tabIndex={0}
+                onPointerDown={event => startColumnResize(event, column.id)}
+                onPointerMove={moveColumnResize}
+                onPointerUp={event => endColumnResize(event, column.id)}
+                onPointerCancel={cancelColumnResize}
+                onDoubleClick={event => { event.stopPropagation(); autoFitColumn(column.id, event.currentTarget.closest("th")); }}
+                onKeyDown={event => onColumnResizeKeyDown(event, column.id)}
+              /> : null}
             </th>)}
           </tr>
         </thead>
