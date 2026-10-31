@@ -87,7 +87,7 @@ import { suggestedCopyName } from "./copy-name.js";
 import { workFileOpenRefusal } from "./work-file-copy.js";
 import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } from "./save-close.js";
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
-import { chooseImportType, chosenImportTypes, importConfirmationMessage, importAdmitsDates, importRefusalMessage, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
+import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
 import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
@@ -725,8 +725,8 @@ export function SheetShell(props: SheetShellProps) {
   const importSuggestions = useMemo<string[][]>(
     () => {
       const sheets = interop?.importInspection?.source.sheets ?? [];
-      const dates = importAdmitsDates(sheets);
-      return sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column, dates)));
+      const large = largeImport(sheets);
+      return sheets.map((sheet) => sheet.columns.map((_, column) => suggestColumnType(sheet.rows, column, large)));
     },
     [interop?.importInspection],
   );
@@ -3399,7 +3399,7 @@ export function SheetShell(props: SheetShellProps) {
           {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
-            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text or finite Number columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
+            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text, Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
               <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />

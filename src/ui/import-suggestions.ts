@@ -31,21 +31,23 @@ function isoDateText(text: string): boolean {
 }
 
 // Work's MAX_DATA_ROWS: when any sheet has more rows, the import takes the
-// large-table profile, which admits only Text and Number columns.
+// large-table profile, whose dates must fall in 1900-01-01..9999-12-31.
 const TYPED_IMPORT_ROWS = 64;
+const LARGE_IMPORT_FIRST_DATE = "1900-01-01";
 
-/** Whether this source can import Date columns (no sheet over Work's 64 rows). */
-export function importAdmitsDates(sheets: ReadonlyArray<{ rows: readonly unknown[] }>): boolean {
-  return sheets.every(sheet => sheet.rows.length <= TYPED_IMPORT_ROWS);
+/** Whether this source takes Work's large-table profile (a sheet over 64 rows). */
+export function largeImport(sheets: ReadonlyArray<{ rows: readonly unknown[] }>): boolean {
+  return sheets.some(sheet => sheet.rows.length > TYPED_IMPORT_ROWS);
 }
 
 /**
  * Advisory type for one source column: Number for plain decimals, Date for
- * YYYY-MM-DD dates where the import admits them, otherwise Text. The user
+ * YYYY-MM-DD dates and spreadsheet date cells (from 1900 in a large import),
+ * Yes/No for spreadsheet TRUE/FALSE cells, otherwise Text. The user
  * still confirms it, and the core remains the parser and validator.
  */
-export function suggestColumnType(rows: readonly SourceCell[][], column: number, datesAdmitted = true): ImportColumnType {
-  let numbers = 0, dates = 0;
+export function suggestColumnType(rows: readonly SourceCell[][], column: number, large = false): ImportColumnType {
+  let numbers = 0, dates = 0, booleans = 0;
   for (const row of rows) {
     const value = row[column]?.value;
     if (!value || value.kind === "empty") continue;
@@ -54,14 +56,17 @@ export function suggestColumnType(rows: readonly SourceCell[][], column: number,
       numbers++;
     } else if (value.kind === "text" && losslessNumberText(value.value)) {
       numbers++;
-    } else if (value.kind === "text" && isoDateText(value.value)) {
+    } else if ((value.kind === "text" && isoDateText(value.value)) || value.kind === "date") {
+      if (large && value.value < LARGE_IMPORT_FIRST_DATE) return "text";
       dates++;
+    } else if (value.kind === "boolean") {
+      booleans++;
     } else {
       return "text";
     }
-    if (numbers > 0 && dates > 0) return "text";
+    if (Number(numbers > 0) + Number(dates > 0) + Number(booleans > 0) > 1) return "text";
   }
-  return numbers > 0 ? "number" : dates > 0 && datesAdmitted ? "date" : "text";
+  return numbers > 0 ? "number" : dates > 0 ? "date" : booleans > 0 ? "boolean" : "text";
 }
 
 export function sourcePreviewText(value: SourceValue | undefined): string {
@@ -79,7 +84,7 @@ export function importRefusalMessage(error: unknown): string {
   // Work's typed capacity refusal (#588) is the authority; the patterns cover older producer wording.
   const capacity = (error as { failure?: { code?: unknown } } | null)?.failure?.code === "capacity_exceeded";
   const lead = capacity || BEYOND_LIMITS.test(detail)
-    ? "This file is outside what this beta can open: one headered sheet with 1–16 plain Text or finite Number columns, up to 8,406 rows and 25,218 cells (including missing cells). Other file-size, style and feature limits also apply."
+    ? "This file is outside what this beta can open: one headered sheet with 1–16 plain Text, finite Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells (including missing cells). Other file-size, style and feature limits also apply."
     : DAMAGED.test(detail)
       ? "This file could not be read. It may be damaged, or not a valid CSV or Excel (.xlsx) file."
       : "The spreadsheet could not be inspected.";

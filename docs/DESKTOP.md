@@ -22,7 +22,7 @@ Sheet UI / application (unchanged)
 - Each channel attaches a fresh host **generation**; older frames are refused.
   A transport failure or runtime panic is terminal: the resident work is
   discarded and the in-flight operation is an unknown outcome, never replayed.
-- The Rust dependency is pinned to an immutable Work revision: the same `e618d0a558e7cb891a5d72413f1293b2bc92b81a` source as the
+- The Rust dependency is pinned to an immutable Work revision: the same `fac94ef3942c10b287b7f9df9463c1a694ee1fad` source as the
   Web kit. Each re-pin's reproducible exports and hashes are recorded on
   [#246](https://github.com/nurockplayer/tachiko-sheet/issues/246) (the first
   in [the #160 handback](160-kit-handback.md)). Re-pin only together with a
@@ -82,11 +82,11 @@ Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.
 
-Large imports support one headered, default-style table with 1–16 Text/finite
-Number columns, at most 8,406 data rows and 25,218 logical cells (including
-missing cells). Byte/XML/ZIP limits and unsupported-feature checks also apply.
-Capacity formulas, Date/Boolean columns, constraints, saved definitions and
-Dedup are excluded from the enlarged profile. Work still owns admission.
+Large imports support one headered, default-style table with 1–16 Text,
+finite Number, Date (1900-01-01 through 9999-12-31) or Yes/No columns, at most
+8,406 data rows and 25,218 logical cells (including missing cells). Byte/XML/ZIP
+limits and unsupported-feature checks also apply. Capacity formulas,
+constraints, saved definitions and Dedup are excluded from the enlarged profile. Work still owns admission.
 
 ## Retained CI engineering evidence
 

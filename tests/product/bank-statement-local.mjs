@@ -1,9 +1,12 @@
 // Everyday workflow acceptance (dogfood 2026-10-30): a bank statement CSV
 // imports with Date and Number suggestions, stays an editable native table
 // even with a blank date, totals only the rows a filter shows, and a
-// duplicate keeps the imported column names. Built product, normal UI only.
+// duplicate keeps the imported column names. A year of transactions (over
+// Work's 64-row typed limit until Work #610) keeps Date and Yes/No columns
+// through edit, Save a copy, reopen and download. Built product, normal UI only.
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +31,14 @@ await writeFile(csv, [
   "2026-10-09,Rent,-1200",
   ",Refund pending,12.30",
 ].join("\n") + "\n");
+// 300 rows: every 25th date and every 30th Cleared value is still blank.
+const YEAR_ROWS = 300;
+const yearCsv = path.join(work, "year-bank.csv");
+await writeFile(yearCsv, ["Date,Description,Amount,Cleared", ...Array.from({ length: YEAR_ROWS }, (_, row) => {
+  const date = row % 25 === 0 ? "" : new Date(Date.UTC(2026, 0, 1 + row)).toISOString().slice(0, 10);
+  const cleared = row % 30 === 0 ? "" : String(row % 2 === 0);
+  return `${date},Item ${row},${row % 3 === 0 ? 1000 : -row}.25,${cleared}`;
+})].join("\n") + "\n");
 
 // The column menu is a toolbar on narrow layouts and a header menu otherwise.
 async function chooseColumnAction(page, name, action) {
@@ -119,6 +130,80 @@ try {
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual(await page.locator("#ts-active-table option").allTextContents(), ["october-bank"], "one Undo removes the copy");
   checks.push("Duplicate table keeps imported column names, stays native, and one Undo removes it");
+
+  // 5. A year of transactions (300 rows) keeps Date and Yes/No columns.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+  await (await homeImportInput(page)).setInputFiles(yearCsv);
+  await preview.waitFor();
+  assert.deepEqual(await types.evaluateAll(selects => selects.map(select => select.value)), ["date", "text", "number", "text"], "Date is suggested above 64 rows");
+  await types.nth(3).selectOption("boolean");
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await ready();
+  const fieldTypes = async () => (await observedTable(page)).columns.map(column => column.field_type);
+  table = await observedTable(page);
+  assert.deepEqual(table.columns.map(column => column.field_type), ["date", "text", "number", "boolean"]);
+  assert.equal(table.rows.length, YEAR_ROWS);
+  assert.equal((await shownRows())[0][0], "", "row 0 has no date yet");
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").first().dblclick();
+  await editor.fill("2026-12-31"); await editor.press("Enter"); await ready();
+  assert.equal((await shownRows())[0][0], "2026-12-31");
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Year statement");
+  await page.getByRole("button", { name: "Create copy", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+  await page.getByRole("button", { name: "Open saved Year statement", exact: true }).click();
+  await ready();
+  assert.deepEqual(await fieldTypes(), ["date", "text", "number", "boolean"], "types survive reopen");
+  assert.equal((await shownRows())[0][0], "2026-12-31", "the edit survives reopen");
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  const downloads = {};
+  for (const format of ["csv", "xlsx"]) {
+    await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    await consent.waitFor();
+    const downloaded = page.waitForEvent("download");
+    await consent.getByRole("button", { name: "Download", exact: true }).click();
+    const file = path.join(work, `year-export.${format}`);
+    await (await downloaded).saveAs(file);
+    await consent.waitFor({ state: "detached" });
+    downloads[format] = await readFile(file);
+  }
+  const lines = downloads.csv.toString("utf8").trim().split(/\r?\n/);
+  assert.equal(lines.length, YEAR_ROWS + 1);
+  assert.equal(lines[0], "Date,Description,Amount,Cleared");
+  // Work's CSV writes a blank position as "" (distinct from a missing column).
+  assert.equal(lines[1], '2026-12-31,Item 0,1000.25,""');
+  assert.match(lines[2], /^2026-01-02,Item 1,-1\.25,false$/);
+  // The XLSX keeps real dates (date-formatted t="d" cells) and Yes/No cells.
+  const xlsx = JSON.parse(execFileSync("python3", ["-I", "-c", `
+import json, re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+sheet = z.read("xl/worksheets/sheet1.xml").decode()
+styles = z.read("xl/styles.xml").decode()
+cell = lambda ref: (re.search(r'<c r="' + ref + r'"[^>]*?(?:/>|>.*?</c>)', sheet) or [None])[0]
+codes = dict(re.findall(r'<numFmt numFmtId="(\\d+)" formatCode="([^"]*)"', styles))
+xfs = re.findall(r'<xf [^>]*?numFmtId="(\\d+)"', re.search(r'<cellXfs[^>]*>(.*?)</cellXfs>', styles, re.S).group(1))
+def format_of(ref):
+    style = re.search(r' s="(\\d+)"', cell(ref) or "")
+    return codes.get(xfs[int(style.group(1))]) if style else None
+print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3"), "d3": cell("D3"), "d4": cell("D4"), "a2Format": format_of("A2"), "a3Format": format_of("A3")}))
+`, path.join(work, "year-export.xlsx")], { encoding: "utf8" }));
+  assert.equal(xlsx.rows, YEAR_ROWS + 1, "header and every row");
+  assert.equal(xlsx.a2Format, "yyyy-mm-dd", "the edited date cell uses the yyyy-mm-dd format");
+  assert.equal(xlsx.a3Format, "yyyy-mm-dd", "an imported date cell uses the yyyy-mm-dd format");
+  assert.match(xlsx.a2, /t="d"><v>2026-12-31<\/v>/, "the edited date is a date cell");
+  assert.match(xlsx.a3, /t="d"><v>2026-01-02<\/v>/);
+  assert.match(xlsx.d3, /t="b"><v>0<\/v>/, "Cleared false is a Yes/No cell");
+  assert.match(xlsx.d4, /t="b"><v>1<\/v>/);
+  checks.push("a 300-row statement imports with Date and Yes/No columns, edits, saves, reopens and downloads as CSV/XLSX");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {

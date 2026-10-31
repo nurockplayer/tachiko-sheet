@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
-import { importAdmitsDates, chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
+import { largeImport, chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 
 const cell = (value: SourceValue): SourceCell => ({ value, formula: null, style: {} as SourceCell["style"] });
 const text = (value: string) => cell({ kind: "text", value });
@@ -19,12 +19,23 @@ describe("import type suggestions", () => {
     expect(suggestColumnType(column(text("0001-01-01"), text("0099-12-31"), text("0004-02-29")), 0), "years 1–99 are read as written").toBe("date");
     expect(suggestColumnType(column(text("0000-01-01")), 0)).toBe("text");
     expect(suggestColumnType(column(text("0099-02-29")), 0)).toBe("text");
-    // Over Work's 64 rows the import admits only Text and Number.
+    // Over Work's 64 rows the large-table profile takes dates from 1900-01-01.
     const dates = (rows: number) => Array.from({ length: rows }, () => [text("2026-10-01")]);
-    expect(importAdmitsDates([{ rows: dates(64) }, { rows: [] }])).toBe(true);
-    expect(importAdmitsDates([{ rows: dates(1) }, { rows: dates(65) }])).toBe(false);
-    expect(suggestColumnType(dates(65), 0, false)).toBe("text");
-    expect(suggestColumnType(dates(64), 0, true)).toBe("date");
+    expect(largeImport([{ rows: dates(64) }, { rows: [] }])).toBe(false);
+    expect(largeImport([{ rows: dates(1) }, { rows: dates(65) }])).toBe(true);
+    expect(suggestColumnType(dates(65), 0, true)).toBe("date");
+    expect(suggestColumnType([...dates(65), [text("1900-01-01")], [text("9999-12-31")]], 0, true)).toBe("date");
+    expect(suggestColumnType([...dates(65), [text("1899-12-31")]], 0, true)).toBe("text");
+    expect(suggestColumnType([...dates(64), [text("1899-12-31")]], 0, false)).toBe("date");
+    // Spreadsheet date and TRUE/FALSE cells arrive typed from the XLSX reader.
+    const date = (value: string) => cell({ kind: "date", value });
+    const yes = (value: boolean) => cell({ kind: "boolean", value });
+    expect(suggestColumnType(column(date("2026-10-01"), cell({ kind: "empty" }), text("2026-10-02")), 0)).toBe("date");
+    expect(suggestColumnType([...dates(65), [date("1899-12-31")]], 0, true)).toBe("text");
+    expect(suggestColumnType(column(yes(true), yes(false), cell({ kind: "empty" })), 0)).toBe("boolean");
+    expect(suggestColumnType(column(yes(true), text("x")), 0)).toBe("text");
+    expect(suggestColumnType(column(yes(true), date("2026-10-01")), 0)).toBe("text");
+    expect(suggestColumnType(column(yes(true), cell({ kind: "number", value: 1 })), 0)).toBe("text");
     for (const value of ["2026-02-30", "2025-02-29", "2026-13-01", "2026/10/01", "2026-1-5", "01-10-2026", "0000-01-01"]) {
       expect(suggestColumnType(column(text("2026-10-01"), text(value)), 0), value).toBe("text");
     }
@@ -54,7 +65,7 @@ describe("import type suggestions", () => {
 describe("import refusal message", () => {
   it("explains beta size limits and damaged files in plain language, keeping the detail", () => {
     const limit = importRefusalMessage(new Error("project transfer is invalid: Text capacity requires one headered, default-style 8,406-row three-Text table"));
-    expect(limit).toMatch(/^This file is outside what this beta can open: .*1–16.*Text or finite Number.*8,406 rows.*25,218 cells.*Nothing was imported\. \(Details: project transfer is invalid: Text capacity/);
+    expect(limit).toMatch(/^This file is outside what this beta can open: .*1–16.*Text, finite Number, Date or Yes\/No.*8,406 rows.*25,218 cells.*Nothing was imported\. \(Details: project transfer is invalid: Text capacity/);
     expect(importRefusalMessage(new Error("project transfer is invalid: CSV exceeds 8,406 row or column bounds"))).toMatch(/outside what this beta can open.*CSV exceeds/);
     expect(importRefusalMessage(new Error("project transfer is invalid: Missing ZIP end directory"))).toMatch(/^This file could not be read\./);
     expect(importRefusalMessage(new Error("something else"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: something else)");
