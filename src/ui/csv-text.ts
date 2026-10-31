@@ -3,7 +3,7 @@
 export type CsvDelimiter = "," | ";" | "\t";
 export type CsvEncoding = "utf-8" | "utf-16le" | "big5" | "shift_jis" | "gb18030" | "euc-kr" | "windows-1252";
 
-/** Tie-break order: a candidate must beat the previous one, so tab wins ties, then semicolon, then comma. */
+/** Tie-break order after the preferred separator: a candidate must beat the previous one, so tab wins ties, then comma, then semicolon. */
 const DELIMITER_CANDIDATES: readonly CsvDelimiter[] = ["\t", ",", ";"];
 const ENCODING_CANDIDATES: readonly CsvEncoding[] = ["big5", "shift_jis", "gb18030", "euc-kr"];
 const RECORD_LIMIT = 10;
@@ -15,9 +15,8 @@ interface CsvRecord {
   empty: boolean;
 }
 
-/** Split up to `RECORD_LIMIT` records, honouring "quoted" fields with doubled quotes and embedded newlines.
- *  `splits`, when given, counts unquoted separators after the header record, and those with a digit on both sides. */
-function scanRecords(text: string, delimiter: CsvDelimiter, splits?: { all: number; betweenDigits: number }): CsvRecord[] {
+/** Split up to `RECORD_LIMIT` records, honouring "quoted" fields with doubled quotes and embedded newlines. */
+function scanRecords(text: string, delimiter: CsvDelimiter): CsvRecord[] {
   const records: CsvRecord[] = [];
   let fields = 1;
   let recordStart = 0;
@@ -32,13 +31,7 @@ function scanRecords(text: string, delimiter: CsvDelimiter, splits?: { all: numb
       atFieldStart = false;
       continue;
     }
-    if (char === delimiter) {
-      if (splits && records.length > 0) {
-        splits.all++;
-        if (/\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "")) splits.betweenDigits++;
-      }
-      fields++; atFieldStart = true; continue;
-    }
+    if (char === delimiter) { fields++; atFieldStart = true; continue; }
     if (char === '"' && atFieldStart) { inQuotes = true; continue; }
     if (char === "\n" || char === "\r") {
       records.push({ fields, empty: text.slice(recordStart, i).trim() === "" });
@@ -57,12 +50,10 @@ function scanRecords(text: string, delimiter: CsvDelimiter, splits?: { all: numb
 }
 
 /** Parse up to 10 records (respect "quoted" fields incl. doubled quotes and newlines). A candidate qualifies when the
- *  header record has >= 1 of it and every later non-empty record has the same count. The `preferred` separator
- *  (comma for .csv, tab for Excel's tab-delimited .txt) wins whenever it qualifies, because a consistent file in it
- *  is never re-split by a separator that only appears inside its fields. Otherwise the qualifying candidate with the
- *  most header separators wins (ties → "\t", ",", ";"). None qualifies → `preferred`. The preview shows the choice.
- *  Exception: when every comma in the data records sits between digits, it is a decimal comma (`12,50`, European
- *  Excel exports; the header may still read `Amount,EUR`), so a qualifying semicolon wins over such a comma. */
+ *  header record has >= 1 of it and every later non-empty record has the same count. The qualifying candidate that
+ *  splits the header into the most fields wins: a semicolon file with commas inside fields (`Tokyo,Japan`,
+ *  `Amount,EUR`, `12,50` from comma-decimal locales) reads as semicolons. Ties → `preferred` (comma for .csv, tab
+ *  for Excel's tab-delimited .txt), then "\t", ",", ";". None qualifies → `preferred`. The preview shows the choice. */
 export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","): CsvDelimiter {
   const separatorsOf = (delimiter: CsvDelimiter): number => {
     const [header, ...rest] = scanRecords(text, delimiter);
@@ -70,9 +61,8 @@ export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","):
     if (rest.some(record => !record.empty && record.fields !== header.fields)) return 0;
     return header.fields - 1;
   };
-  if (separatorsOf(preferred) > 0 && !(preferred === "," && onlyDecimalCommas(text) && separatorsOf(";") > 0)) return preferred;
   let chosen = preferred;
-  let chosenSeparators = 0;
+  let chosenSeparators = separatorsOf(preferred);
   for (const delimiter of DELIMITER_CANDIDATES) {
     const separators = delimiter === preferred ? 0 : separatorsOf(delimiter);
     if (separators > chosenSeparators) {
@@ -81,12 +71,6 @@ export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","):
     }
   }
   return chosen;
-}
-
-function onlyDecimalCommas(text: string): boolean {
-  const splits = { all: 0, betweenDigits: 0 };
-  scanRecords(text, ",", splits);
-  return splits.all > 0 && splits.all === splits.betweenDigits;
 }
 
 function preferredEncoding(language: string): CsvEncoding | null {

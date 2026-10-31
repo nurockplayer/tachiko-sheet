@@ -44,18 +44,15 @@ describe("detectCsvDelimiter", () => {
     expect(detectCsvDelimiter('Name,Note\n"a\nb",1\n')).toBe(",");
   });
 
-  it("keeps a consistent comma file as commas even when another separator is more frequent", () => {
-    expect(detectCsvDelimiter("a,b;c\nx,y;z\n")).toBe(",");
-    // Digits on both sides of every data comma read as decimal commas: "1,2;3" is two fields.
-    expect(detectCsvDelimiter("a,b;c\n1,2;3\n")).toBe(";");
+  it("keeps commas on a tie and reads the separator that gives more fields", () => {
+    expect(detectCsvDelimiter("a,b;c\n1,2;3\n")).toBe(",");
     expect(detectCsvDelimiter("Name,Address;Note\nJane,Tokyo;home\n")).toBe(",");
-    expect(detectCsvDelimiter("Name;first;last,Amount\nJane;Mary;Doe,10\n")).toBe(",");
+    expect(detectCsvDelimiter("Name;Address,City;Amount\nA;Tokyo,Japan;10\nB;Osaka,Japan;20\n")).toBe(";");
   });
 
-  it("reads semicolons when every comma is a decimal comma", () => {
+  it("reads a comma-decimal export as semicolons", () => {
     expect(detectCsvDelimiter("Item;Category;Amount,EUR\nCoffee;Food;12,50\nTaxi;Travel;8,00\n")).toBe(";");
     expect(detectCsvDelimiter('Item;Note;Amount,EUR\nCoffee;"Smith, J";12,50\nTaxi;x;8,00\n')).toBe(";");
-    expect(detectCsvDelimiter("Total,Count\n12,50\n")).toBe(",");
   });
 
   it("prefers tab for Excel's tab-delimited text and falls back to it", () => {

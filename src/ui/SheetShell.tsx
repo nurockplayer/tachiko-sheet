@@ -1069,7 +1069,7 @@ export function SheetShell(props: SheetShellProps) {
 
   // Column widths are view state, like the sort and filter beside them. A drag
   // previews on the header cell itself and commits one width on release.
-  const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement } | null>(null);
+  const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement; rendered: Record<string, number> } | null>(null);
 
   /** A stored width wins; otherwise the width the table currently gives it. */
   function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
@@ -1078,8 +1078,27 @@ export function SheetShell(props: SheetShellProps) {
     return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
   }
 
+  /** Every column's width as drawn now, in column order after the row gutter. */
+  function renderedColumnWidths(): Record<string, number> {
+    const headers = gridScrollRef.current?.querySelectorAll<HTMLElement>("thead th.ts-column-header") ?? [];
+    const widths: Record<string, number> = {};
+    columns.forEach((column, index) => {
+      const th = headers[index];
+      if (th) widths[column.id] = clampColumnWidth(th.getBoundingClientRect().width);
+    });
+    return widths;
+  }
+
+  /** The first sized column keeps every other column as it was drawn, instead
+   *  of handing them a default width the user never chose. */
+  function withColumnWidth(current: RowViewSettings, field: string, px: number, rendered: Record<string, number>): RowViewSettings {
+    const base = current.widths && Object.keys(current.widths).length > 0 ? current : { ...current, widths: rendered };
+    return rowViewWithWidth(base, field, px);
+  }
+
   function resizeColumnBy(field: string, delta: number, th: HTMLElement | null): void {
-    updateGridSettings((current) => rowViewWithWidth(current, field, columnWidthOf(current, field, th) + delta));
+    const rendered = renderedColumnWidths();
+    updateGridSettings((current) => withColumnWidth(current, field, columnWidthOf(current, field, th) + delta, rendered));
   }
 
   function autoFitColumn(field: string, th: HTMLElement | null): void {
@@ -1095,7 +1114,8 @@ export function SheetShell(props: SheetShellProps) {
     // Every shown row, like Excel: a long value far down must not stay cut off.
     // Distinct texts only, so repeated values are measured once.
     const texts = [...new Set(displayRows.map((row) => fieldClipboardText(fieldForColumn(row, field))))];
-    updateGridSettings((current) => rowViewWithWidth(current, field, autoFitWidth(texts, displayName, measure)));
+    const rendered = renderedColumnWidths();
+    updateGridSettings((current) => withColumnWidth(current, field, autoFitWidth(texts, displayName, measure), rendered));
   }
 
   function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
@@ -1106,7 +1126,7 @@ export function SheetShell(props: SheetShellProps) {
     // fits the column still arrives as a compatibility mouse event.
     event.stopPropagation();
     const startWidth = columnWidthOf(gridSettings, field, th);
-    columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th };
+    columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th, rendered: renderedColumnWidths() };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -1127,7 +1147,7 @@ export function SheetShell(props: SheetShellProps) {
     // A press without a move stores nothing: it must not turn every column of
     // a shared-width grid into a fixed one.
     if (session.width === session.startWidth) return;
-    updateGridSettings((current) => rowViewWithWidth(current, field, session.width));
+    updateGridSettings((current) => withColumnWidth(current, field, session.width, session.rendered));
   }
 
   /** Losing the pointer without releasing it keeps the width it started with. */

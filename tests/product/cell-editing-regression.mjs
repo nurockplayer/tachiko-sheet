@@ -181,9 +181,13 @@ const cases = [
     const width = () => header.evaluate((node) => node.getBoundingClientRect().width);
     await separator.focus();
     const start = await width();
+    const neighbour = page.locator("thead th.ts-column-header").nth(1);
+    const neighbourStart = await neighbour.evaluate((node) => node.getBoundingClientRect().width);
     for (let press = 0; press < 3; press += 1) await page.keyboard.press("ArrowRight");
     const widened = await width();
     assert.ok(Math.abs(widened - (start + 48)) <= 2, `three ArrowRight presses widen the column by 48px (${start} → ${widened})`);
+    const neighbourAfter = await neighbour.evaluate((node) => node.getBoundingClientRect().width);
+    assert.ok(Math.abs(neighbourAfter - neighbourStart) <= 2, `the first resize leaves the next column as drawn (${neighbourStart} → ${neighbourAfter})`);
     for (let press = 0; press < 6; press += 1) await page.keyboard.press("ArrowLeft");
     const narrowed = await width();
     assert.ok(Math.abs(narrowed - Math.max(48, widened - 96)) <= 2, `six ArrowLeft presses narrow the column by 96px, never below 48px (${widened} → ${narrowed})`);
