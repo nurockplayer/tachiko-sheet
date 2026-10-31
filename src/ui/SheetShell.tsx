@@ -1102,8 +1102,9 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function autoFitColumn(field: string, th: HTMLElement | null): void {
-    const displayName = columns.find((column) => column.id === field)?.display_name;
-    if (displayName === undefined) return;
+    const column = columns.find((candidate) => candidate.id === field);
+    if (!column) return;
+    const displayName = column.display_name;
     // Measure in the body cells' font, the one the widest value is drawn in.
     const sample = gridScrollRef.current?.querySelector("td.ts-cell") ?? th;
     // Built from longhands: Chromium returns an empty `font` shorthand when a
@@ -1113,7 +1114,8 @@ export function SheetShell(props: SheetShellProps) {
     const measure = textMeasure(style ? `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}` : "");
     // Every shown row, like Excel: a long value far down must not stay cut off.
     // Distinct texts only, so repeated values are measured once.
-    const texts = [...new Set(displayRows.map((row) => fieldClipboardText(fieldForColumn(row, field))))];
+    // The text the cell draws: number formats and "Calculation failed" included.
+    const texts = [...new Set(displayRows.map((row) => cellDisplay(row, column).text))];
     const rendered = renderedColumnWidths();
     updateGridSettings((current) => withColumnWidth(current, field, autoFitWidth(texts, displayName, measure), rendered));
   }
