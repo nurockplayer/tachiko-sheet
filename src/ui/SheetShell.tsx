@@ -5230,13 +5230,13 @@ export function SheetShell(props: SheetShellProps) {
               return <><div className="ts-import-csv">
                 <label className="ts-summary-field">
                   <span className="ts-field-label">Separator</span>
-                  <select value={csv.delimiter} disabled={importPending || controlsLocked} onChange={(event) => reread(event.currentTarget.value as CsvDelimiter, csv.encoding)}>
+                  <select aria-label="Separator" value={csv.delimiter} disabled={importPending || controlsLocked} onChange={(event) => reread(event.currentTarget.value as CsvDelimiter, csv.encoding)}>
                     {(Object.keys(CSV_DELIMITER_LABELS) as CsvDelimiter[]).map((value) => <option key={value} value={value}>{CSV_DELIMITER_LABELS[value]}</option>)}
                   </select>
                 </label>
                 <label className="ts-summary-field">
                   <span className="ts-field-label">Text encoding</span>
-                  <select value={csv.encoding} disabled={importPending || controlsLocked} onChange={(event) => reread(csv.delimiter, event.currentTarget.value as CsvEncoding)}>
+                  <select aria-label="Text encoding" value={csv.encoding} disabled={importPending || controlsLocked} onChange={(event) => reread(csv.delimiter, event.currentTarget.value as CsvEncoding)}>
                     {(Object.keys(CSV_ENCODING_LABELS) as CsvEncoding[]).map((value) => <option key={value} value={value}>{CSV_ENCODING_LABELS[value]}</option>)}
                   </select>
                 </label>
