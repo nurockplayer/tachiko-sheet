@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, ColumnTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CapacityProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -72,6 +72,7 @@ interface Hooks {
   queryTable?: (collection: string) => Promise<TableProjection>;
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
   queryCapacity?: (revision: string) => Promise<CapacityProjection>;
+  queryGroupTotals?: (revision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope) => Promise<GroupTotalsProjection>;
   bootstrap?: () => Promise<BootstrapProjection>;
 }
 
@@ -110,6 +111,7 @@ class FakeClient {
     trackerCommand: [] as TrackerCommand[],
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string; columnNames?: Record<string, string> }>,
     queryColumnTotals: [] as Array<{ revision: string; collection: string; entities: string[] }>,
+    queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
     setColumnNumberFormat: [] as Array<{ revision: string; collection: string; field: string; format: NumberFormat | null }>,
     copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
@@ -334,6 +336,22 @@ class FakeClient {
     this.#requireOpen();
     this.#requireRevision(revision);
     return { revision, rows: entities.length, column_totals: { impact: entities.length * 2 } };
+  }
+
+  async queryGroupTotals(revision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsProjection> {
+    this.calls.queryGroupTotals.push({ revision, collection, dimensions, measures, scope });
+    const hook = this.hooks.queryGroupTotals;
+    if (hook !== undefined) return hook(revision, collection, dimensions, measures, scope);
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return {
+      revision,
+      dimensions,
+      measures,
+      rows: 2,
+      totals: [3],
+      groups: [{ keys: [{ kind: "text", value: "Food" }], rows: 2, totals: [3] }],
+    };
   }
 
   async queryCapacity(revision: string): Promise<CapacityProjection> {
@@ -1895,6 +1913,66 @@ describe("queryColumnTotals", () => {
     Object.defineProperty(client, "queryColumnTotals", { value: undefined });
 
     await expect(runtime.queryColumnTotals(witnessOf(view), COLLECTION.key, ["e1"])).resolves.toBeNull();
+  });
+});
+
+describe("queryGroupTotals", () => {
+  const DIMENSIONS: GroupDimension[] = [{ field: "category" }];
+  const MEASURES = ["impact"];
+
+  it("asks Work for grouped totals at the witness revision without publishing", async () => {
+    const { runtime, client, view } = await opened();
+
+    const outcome = await runtime.queryGroupTotals(witnessOf(view), COLLECTION.key, DIMENSIONS, MEASURES, { kind: "all" });
+
+    expect(client.calls.queryGroupTotals).toEqual([{
+      revision: view.revision, collection: COLLECTION.key, dimensions: DIMENSIONS, measures: MEASURES, scope: { kind: "all" },
+    }]);
+    expect(outcome).toEqual({
+      kind: "result",
+      projection: {
+        revision: view.revision,
+        dimensions: DIMENSIONS,
+        measures: MEASURES,
+        rows: 2,
+        totals: [3],
+        groups: [{ keys: [{ kind: "text", value: "Food" }], rows: 2, totals: [3] }],
+      },
+    });
+    expect(client.calls.trackerCommand).toEqual([]);
+  });
+
+  it("skips a read whose witness is no longer live", async () => {
+    const { runtime, client, view } = await opened();
+
+    await expect(runtime.queryGroupTotals({ ...witnessOf(view), revision: "rev-obsolete" }, COLLECTION.key, DIMENSIONS, MEASURES, { kind: "all" })).resolves.toBeNull();
+    expect(client.calls.queryGroupTotals).toEqual([]);
+  });
+
+  it("returns null when the installed client lacks the query", async () => {
+    const { runtime, client, view } = await opened();
+    Object.defineProperty(client, "queryGroupTotals", { value: undefined });
+
+    await expect(runtime.queryGroupTotals(witnessOf(view), COLLECTION.key, DIMENSIONS, MEASURES, { kind: "all" })).resolves.toBeNull();
+  });
+
+  it("returns Work's grouped-totals refusal as data", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.queryGroupTotals = async () => { throw new FakeDesignerRuntimeError("group_limit_exceeded", client.currentRevision); };
+
+    await expect(runtime.queryGroupTotals(witnessOf(view), COLLECTION.key, DIMENSIONS, MEASURES, { kind: "all" })).resolves.toEqual({
+      kind: "refused", code: "group_limit_exceeded", message: "group_limit_exceeded",
+    });
+  });
+
+  it("rejects a reply at another revision", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.queryGroupTotals = async (_revision, _collection, dimensions, measures) => ({
+      revision: "rev-other", dimensions, measures, rows: 0, totals: [], groups: [],
+    });
+
+    await expect(failure(runtime.queryGroupTotals(witnessOf(view), COLLECTION.key, DIMENSIONS, MEASURES, { kind: "all" })))
+      .resolves.toMatchObject({ name: "SheetSessionError", code: "incoherent-reply" });
   });
 });
 
