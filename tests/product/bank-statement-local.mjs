@@ -189,10 +189,16 @@ z = zipfile.ZipFile(sys.argv[1])
 sheet = z.read("xl/worksheets/sheet1.xml").decode()
 styles = z.read("xl/styles.xml").decode()
 cell = lambda ref: (re.search(r'<c r="' + ref + r'"[^>]*?(?:/>|>.*?</c>)', sheet) or [None])[0]
-print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3"), "d3": cell("D3"), "d4": cell("D4"), "dateFormat": 'formatCode="yyyy-mm-dd"' in styles}))
+codes = dict(re.findall(r'<numFmt numFmtId="(\\d+)" formatCode="([^"]*)"', styles))
+xfs = re.findall(r'<xf [^>]*?numFmtId="(\\d+)"', re.search(r'<cellXfs[^>]*>(.*?)</cellXfs>', styles, re.S).group(1))
+def format_of(ref):
+    style = re.search(r' s="(\\d+)"', cell(ref) or "")
+    return codes.get(xfs[int(style.group(1))]) if style else None
+print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3"), "d3": cell("D3"), "d4": cell("D4"), "a2Format": format_of("A2"), "a3Format": format_of("A3")}))
 `, path.join(work, "year-export.xlsx")], { encoding: "utf8" }));
   assert.equal(xlsx.rows, YEAR_ROWS + 1, "header and every row");
-  assert.equal(xlsx.dateFormat, true, "dates carry a yyyy-mm-dd format");
+  assert.equal(xlsx.a2Format, "yyyy-mm-dd", "the edited date cell uses the yyyy-mm-dd format");
+  assert.equal(xlsx.a3Format, "yyyy-mm-dd", "an imported date cell uses the yyyy-mm-dd format");
   assert.match(xlsx.a2, /t="d"><v>2026-12-31<\/v>/, "the edited date is a date cell");
   assert.match(xlsx.a3, /t="d"><v>2026-01-02<\/v>/);
   assert.match(xlsx.d3, /t="b"><v>0<\/v>/, "Cleared false is a Yes/No cell");
