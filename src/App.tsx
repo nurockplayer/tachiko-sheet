@@ -1376,7 +1376,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (format === "csv") {
         const encoding = csv?.encoding ?? guessCsvEncoding(raw, navigator.languages?.length ? navigator.languages : [navigator.language]);
         bytes = toUtf8Bytes(raw, encoding);
-        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536))));
+        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536)), lower.endsWith(".txt") ? "\t" : ","));
         // A non-UTF-8 guess is shown with real lines from the whole file, not just the first rows.
         csvRead = encoding === "utf-8" ? { delimiter, encoding, samples: [] }
           : { delimiter, encoding, samples: csvSampleLines(new TextDecoder().decode(bytes)), sourceBytes: raw.slice(0) };

@@ -44,9 +44,19 @@ describe("detectCsvDelimiter", () => {
     expect(detectCsvDelimiter('Name,Note\n"a\nb",1\n')).toBe(",");
   });
 
-  it("prefers tab, then comma, then semicolon on ties", () => {
+  it("keeps a consistent comma file as commas even when another separator is more frequent", () => {
     expect(detectCsvDelimiter("a,b;c\n1,2;3\n")).toBe(",");
     expect(detectCsvDelimiter("Name,Address;Note\nJane,Tokyo;home\n")).toBe(",");
+    expect(detectCsvDelimiter("Name;first;last,Amount\nJane;Mary;Doe,10\n")).toBe(",");
+  });
+
+  it("prefers tab for Excel's tab-delimited text and falls back to it", () => {
+    expect(detectCsvDelimiter("a,b\tc\n1,2\t3\n", "\t")).toBe("\t");
+    expect(detectCsvDelimiter("Name\nLunch\n", "\t")).toBe("\t");
+    expect(detectCsvDelimiter("a;b\n1;2\n", "\t")).toBe(";");
+  });
+
+  it("prefers tab, then semicolon when comma does not qualify", () => {
     expect(detectCsvDelimiter("a;b\tc\n1;2\t3\n")).toBe("\t");
   });
 

@@ -50,23 +50,28 @@ function scanRecords(text: string, delimiter: CsvDelimiter): CsvRecord[] {
 }
 
 /** Parse up to 10 records (respect "quoted" fields incl. doubled quotes and newlines). A candidate qualifies when the
- *  header record has >= 1 of it and every later non-empty record has the same count. Prefer the qualifying candidate
- *  with the most header separators; ties → "\t", then ",", then ";" (an unquoted ";" inside a comma file must not win).
- *  None qualifies → ",". */
-export function detectCsvDelimiter(text: string): CsvDelimiter {
-  let chosen: CsvDelimiter | null = null;
+ *  header record has >= 1 of it and every later non-empty record has the same count. The `preferred` separator
+ *  (comma for .csv, tab for Excel's tab-delimited .txt) wins whenever it qualifies, because a consistent file in it
+ *  is never re-split by a separator that only appears inside its fields. Otherwise the qualifying candidate with the
+ *  most header separators wins (ties → "\t", ",", ";"). None qualifies → `preferred`. The preview shows the choice. */
+export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","): CsvDelimiter {
+  const separatorsOf = (delimiter: CsvDelimiter): number => {
+    const [header, ...rest] = scanRecords(text, delimiter);
+    if (!header || header.empty || header.fields < 2) return 0;
+    if (rest.some(record => !record.empty && record.fields !== header.fields)) return 0;
+    return header.fields - 1;
+  };
+  if (separatorsOf(preferred) > 0) return preferred;
+  let chosen = preferred;
   let chosenSeparators = 0;
   for (const delimiter of DELIMITER_CANDIDATES) {
-    const [header, ...rest] = scanRecords(text, delimiter);
-    if (!header || header.empty || header.fields < 2) continue;
-    if (rest.some(record => !record.empty && record.fields !== header.fields)) continue;
-    const separators = header.fields - 1;
+    const separators = delimiter === preferred ? 0 : separatorsOf(delimiter);
     if (separators > chosenSeparators) {
       chosen = delimiter;
       chosenSeparators = separators;
     }
   }
-  return chosen ?? ",";
+  return chosen;
 }
 
 function preferredEncoding(language: string): CsvEncoding | null {
