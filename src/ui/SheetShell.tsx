@@ -45,6 +45,7 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
 import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
@@ -781,6 +782,8 @@ export function SheetShell(props: SheetShellProps) {
   const priorChartModesRef = useRef(new Map<string, ResultChartMode>());
   const focusedSalesOccurrenceRef = useRef<string | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
+  /** The file behind the open import preview, so a separator or encoding change re-reads it. */
+  const spreadsheetFileRef = useRef<File | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const resultsOccurrenceRef = useRef<string | null>(null);
@@ -2888,11 +2891,12 @@ export function SheetShell(props: SheetShellProps) {
     </label>;
   }
 
-  async function inspectSpreadsheet(file: File | null): Promise<void> {
+  async function inspectSpreadsheet(file: File | null, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<void> {
     if (!file) return;
+    spreadsheetFileRef.current = file;
     setLocalError(null);
     setImportError(null);
-    try { await onInspectImport(file); }
+    try { await onInspectImport(file, csv); }
     catch (error) { setImportError(importRefusalMessage(error)); }
   }
 
@@ -3562,7 +3566,7 @@ export function SheetShell(props: SheetShellProps) {
             <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text, Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
-              <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+              <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,.tsv,.txt,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
             </label>
           </div>
           {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
@@ -5074,6 +5078,25 @@ export function SheetShell(props: SheetShellProps) {
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
             >Review import preview</h2>
             <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Check each column's type before importing. Suggested: Number for plain numbers, Date for YYYY-MM-DD dates, otherwise Text.</p>
+            {(() => {
+              const csv = interop?.importInspection?.csv;
+              if (!csv) return null;
+              const reread = (delimiter: CsvDelimiter, encoding: CsvEncoding) => void inspectSpreadsheet(spreadsheetFileRef.current, { delimiter, encoding });
+              return <div className="ts-import-csv">
+                <label className="ts-summary-field">
+                  <span className="ts-field-label">Separator</span>
+                  <select value={csv.delimiter} disabled={importPending || controlsLocked} onChange={(event) => reread(event.currentTarget.value as CsvDelimiter, csv.encoding)}>
+                    {(Object.keys(CSV_DELIMITER_LABELS) as CsvDelimiter[]).map((value) => <option key={value} value={value}>{CSV_DELIMITER_LABELS[value]}</option>)}
+                  </select>
+                </label>
+                <label className="ts-summary-field">
+                  <span className="ts-field-label">Text encoding</span>
+                  <select value={csv.encoding} disabled={importPending || controlsLocked} onChange={(event) => reread(csv.delimiter, event.currentTarget.value as CsvEncoding)}>
+                    {(Object.keys(CSV_ENCODING_LABELS) as CsvEncoding[]).map((value) => <option key={value} value={value}>{CSV_ENCODING_LABELS[value]}</option>)}
+                  </select>
+                </label>
+              </div>;
+            })()}
           </div>
           <div className="ts-dialog-scroll">
             {(() => {

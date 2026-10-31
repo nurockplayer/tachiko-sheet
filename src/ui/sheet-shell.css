@@ -2088,6 +2088,17 @@ body { margin: 0; }
 
 .ts-modal--import .ts-import-columns { gap: 20px; }
 
+.ts-modal--import .ts-import-csv {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ts-modal--import .ts-import-csv select {
+  width: 100%;
+  min-height: 32px;
+}
+
 .ts-modal--import .ts-import-columns h3.ts-h2 {
   margin-bottom: 10px;
   font-size: 14px;
