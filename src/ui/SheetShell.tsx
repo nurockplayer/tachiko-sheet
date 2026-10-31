@@ -1787,8 +1787,8 @@ export function SheetShell(props: SheetShellProps) {
   const hasMeasureColumns = useMemo(() => measureColumns(columns).length > 0, [columns]);
   const [groupPanel, setGroupPanel] = useState<{ setup: GroupSetup; occurrence: string; collection: string } | null>(null);
   const [groupScopeChoice, setGroupScopeChoice] = useState<GroupTotalsScopeChoice>("shown");
-  const [groupResult, setGroupResult] = useState<{ key: string; outcome: GroupTotalsOutcome } | null>(null);
-  const [groupPending, setGroupPending] = useState(false);
+  // The answer for one question key; a null outcome means that question has no answer.
+  const [groupResult, setGroupResult] = useState<{ key: string; outcome: GroupTotalsOutcome | null } | null>(null);
   const groupTriggerRef = useRef<HTMLElement | null>(null);
 
   function openGroupTotals(column: TableColumn, trigger: HTMLElement | null): void {
@@ -1796,14 +1796,13 @@ export function SheetShell(props: SheetShellProps) {
     setGroupPanel({ setup: defaultGroupSetup(column, columns), occurrence: view.occurrence, collection: table.collection.key });
     groupTriggerRef.current = trigger;
     setGroupScopeChoice("shown");
-    setGroupResult(null);
-    setGroupPending(true);
+    // The query effect owns pending and results: reopening the same question
+    // keeps its current answer instead of waiting for a query that never runs.
   }
 
   function closeGroupTotals(): void {
     setGroupPanel(null);
     setGroupResult(null);
-    setGroupPending(false);
     const trigger = groupTriggerRef.current;
     groupTriggerRef.current = null;
     const target = trigger?.isConnected ? trigger : gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
@@ -1823,7 +1822,6 @@ export function SheetShell(props: SheetShellProps) {
     const panelHadFocus = document.querySelector<HTMLElement>(".ts-group-totals")?.contains(document.activeElement) ?? false;
     setGroupPanel(null);
     setGroupResult(null);
-    setGroupPending(false);
     groupTriggerRef.current = null;
     if (panelHadFocus) gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']")?.focus();
   }, [groupPanel, groupPanelLive]);
@@ -1840,22 +1838,18 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     if (!groupQueryKey || !groupQueryDimensions || !groupPanel || !witness || !table || !onQueryGroupTotals) return;
     let current = true;
-    setGroupPending(true);
     onQueryGroupTotals(witness, table.collection.key, groupQueryDimensions, groupPanel.setup.measures, groupScope).then(outcome => {
       if (!current) return;
       // A reply at another revision is never shown as current.
       if (outcome?.kind === "result" && outcome.projection.revision !== witness.revision) {
-        setGroupResult(null);
-        setGroupPending(false);
+        setGroupResult({ key: groupQueryKey, outcome: null });
         return;
       }
-      setGroupResult(outcome ? { key: groupQueryKey, outcome } : null);
-      setGroupPending(false);
+      setGroupResult({ key: groupQueryKey, outcome });
     }, () => {
       if (!current) return;
       // A failed read is not an answer: never leave older totals looking current.
-      setGroupResult(null);
-      setGroupPending(false);
+      setGroupResult({ key: groupQueryKey, outcome: null });
     });
     return () => { current = false; };
     // groupQueryKey captures the witness, collection, setup and scope.
@@ -3987,9 +3981,9 @@ export function SheetShell(props: SheetShellProps) {
           {groupPanel && groupPanelLive ? <GroupTotalsPane
             columns={columns}
             setup={groupPanel.setup}
-            // Only this question's answer, or the last one while its update is pending.
-            outcome={groupResult && (groupResult.key === groupQueryKey || groupPending) ? groupResult.outcome : null}
-            pending={groupPending}
+            // Until the current question is answered, the last answer stays dimmed as pending.
+            outcome={groupResult?.outcome ?? null}
+            pending={groupResult?.key !== groupQueryKey}
             filterHidesRows={groupFilterHidesRows}
             shownRows={displayRows.length}
             totalRows={table ? rowSource(table).total : 0}

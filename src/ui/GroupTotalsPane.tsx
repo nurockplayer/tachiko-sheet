@@ -3,7 +3,7 @@
  * Every decision — which columns group, which rows are covered — belongs to
  * the shell; this component only renders the chosen question and its answer.
  */
-import { useState, type ClipboardEvent as ReactClipboardEvent } from "react";
+import { useEffect, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import type { ColumnProjection } from "../../public/core-kit/runtime/protocol.js";
 import type { GroupTotalsOutcome } from "../runtime/session.js";
 import { formatNumberFor } from "./field-display.js";
@@ -51,6 +51,8 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
   const projection = outcome?.kind === "result" ? outcome.projection : null;
   const refusal = outcome?.kind === "refused" ? groupRefusalMessage(outcome.code, outcome.message) : null;
   const tsv = projection ? groupTotalsTsv(projection, props.columns) : null;
+  // "Copied" describes one answer; a new answer clears it.
+  useEffect(() => setCopyStatus(null), [tsv]);
   const measureColumnsOfReply = projection
     ? projection.measures.map((id) => props.columns.find((column) => column.id === id))
     : [];
