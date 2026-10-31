@@ -179,7 +179,8 @@ try {
   const lines = downloads.csv.toString("utf8").trim().split(/\r?\n/);
   assert.equal(lines.length, YEAR_ROWS + 1);
   assert.equal(lines[0], "Date,Description,Amount,Cleared");
-  assert.match(lines[1], /^2026-12-31,Item 0,1000\.25,$/);
+  // Work's CSV writes a blank position as "" (distinct from a missing column).
+  assert.equal(lines[1], '2026-12-31,Item 0,1000.25,""');
   assert.match(lines[2], /^2026-01-02,Item 1,-1\.25,false$/);
   // The XLSX keeps real dates (date-formatted t="d" cells) and Yes/No cells.
   const xlsx = JSON.parse(execFileSync("python3", ["-I", "-c", `
