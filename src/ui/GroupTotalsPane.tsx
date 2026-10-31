@@ -92,6 +92,9 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
   function copyTable(event: ReactClipboardEvent<HTMLTableElement>): void {
     if (!tsv || !event.clipboardData) return;
     event.preventDefault();
+    // A dimmed answer belongs to the previous question; never copy it as this
+    // one. The status line already says "Updating…".
+    if (props.pending) return;
     event.clipboardData.setData("text/plain", tsv);
   }
 
