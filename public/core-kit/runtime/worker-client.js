@@ -280,6 +280,16 @@ export class WorkerDesignerClient {
             entities,
         }));
     }
+    async queryGroupTotals(expectedRevision, collection, dimensions, measures, scope) {
+        return expectResponse("group_totals", await this.#command({
+            type: "query_group_totals",
+            expected_revision: expectedRevision,
+            collection,
+            dimensions,
+            measures,
+            scope,
+        }));
+    }
     async queryFields(expectedRevision, fields) {
         return expectResponse("fields", await this.#command({
             type: "query_fields",
@@ -391,6 +401,9 @@ function expectResponse(type, response) {
             break;
         case "column_totals":
             validateColumnTotals(response.payload);
+            break;
+        case "group_totals":
+            validateGroupTotals(response.payload);
             break;
         case "opened":
             validateTablePresence(response.payload.table);
@@ -528,6 +541,56 @@ function validateColumnTotals(totals) {
         if (total !== null && !Number.isFinite(total)) {
             throw new Error("Invalid Worker column total.");
         }
+    }
+}
+function validateGroupTotals(totals) {
+    if (!Number.isInteger(totals.rows) || totals.rows < 0) {
+        throw new Error("Invalid Worker group totals row count.");
+    }
+    validateGroupTotalValues(totals.totals, totals.measures.length);
+    for (const group of totals.groups) {
+        if (!Number.isInteger(group.rows) || group.rows < 0) {
+            throw new Error("Invalid Worker group row count.");
+        }
+        if (group.keys.length !== totals.dimensions.length) {
+            throw new Error("Invalid Worker group key count.");
+        }
+        group.keys.forEach(validateGroupKey);
+        validateGroupTotalValues(group.totals, totals.measures.length);
+    }
+}
+function validateGroupTotalValues(values, measures) {
+    if (values.length !== measures) {
+        throw new Error("Invalid Worker group total count.");
+    }
+    for (const total of values) {
+        if (total !== null && !Number.isFinite(total)) {
+            throw new Error("Invalid Worker group total.");
+        }
+    }
+}
+function validateGroupKey(key) {
+    if (key === null || typeof key !== "object") {
+        throw new Error("Invalid Worker group key.");
+    }
+    switch (key.kind) {
+        case "boolean":
+            if (typeof key.value !== "boolean")
+                throw new Error("Invalid Worker group key value.");
+            return;
+        case "date":
+        case "month":
+        case "year":
+        case "text":
+            if (typeof key.value !== "string")
+                throw new Error("Invalid Worker group key value.");
+            return;
+        case "blank":
+            if (Object.hasOwn(key, "value"))
+                throw new Error("Invalid Worker group key value.");
+            return;
+        default:
+            throw new Error("Invalid Worker group key kind.");
     }
 }
 function validateLocatedInView(located) {
