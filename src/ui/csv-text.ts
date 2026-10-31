@@ -15,8 +15,9 @@ interface CsvRecord {
   empty: boolean;
 }
 
-/** Split up to `RECORD_LIMIT` records, honouring "quoted" fields with doubled quotes and embedded newlines. */
-function scanRecords(text: string, delimiter: CsvDelimiter): CsvRecord[] {
+/** Split up to `RECORD_LIMIT` records, honouring "quoted" fields with doubled quotes and embedded newlines.
+ *  `splits`, when given, counts unquoted separators after the header record, and those with a digit on both sides. */
+function scanRecords(text: string, delimiter: CsvDelimiter, splits?: { all: number; betweenDigits: number }): CsvRecord[] {
   const records: CsvRecord[] = [];
   let fields = 1;
   let recordStart = 0;
@@ -31,7 +32,13 @@ function scanRecords(text: string, delimiter: CsvDelimiter): CsvRecord[] {
       atFieldStart = false;
       continue;
     }
-    if (char === delimiter) { fields++; atFieldStart = true; continue; }
+    if (char === delimiter) {
+      if (splits && records.length > 0) {
+        splits.all++;
+        if (/\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "")) splits.betweenDigits++;
+      }
+      fields++; atFieldStart = true; continue;
+    }
     if (char === '"' && atFieldStart) { inQuotes = true; continue; }
     if (char === "\n" || char === "\r") {
       records.push({ fields, empty: text.slice(recordStart, i).trim() === "" });
@@ -53,7 +60,9 @@ function scanRecords(text: string, delimiter: CsvDelimiter): CsvRecord[] {
  *  header record has >= 1 of it and every later non-empty record has the same count. The `preferred` separator
  *  (comma for .csv, tab for Excel's tab-delimited .txt) wins whenever it qualifies, because a consistent file in it
  *  is never re-split by a separator that only appears inside its fields. Otherwise the qualifying candidate with the
- *  most header separators wins (ties → "\t", ",", ";"). None qualifies → `preferred`. The preview shows the choice. */
+ *  most header separators wins (ties → "\t", ",", ";"). None qualifies → `preferred`. The preview shows the choice.
+ *  Exception: when every comma in the data records sits between digits, it is a decimal comma (`12,50`, European
+ *  Excel exports; the header may still read `Amount,EUR`), so a qualifying semicolon wins over such a comma. */
 export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","): CsvDelimiter {
   const separatorsOf = (delimiter: CsvDelimiter): number => {
     const [header, ...rest] = scanRecords(text, delimiter);
@@ -61,7 +70,7 @@ export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","):
     if (rest.some(record => !record.empty && record.fields !== header.fields)) return 0;
     return header.fields - 1;
   };
-  if (separatorsOf(preferred) > 0) return preferred;
+  if (separatorsOf(preferred) > 0 && !(preferred === "," && onlyDecimalCommas(text) && separatorsOf(";") > 0)) return preferred;
   let chosen = preferred;
   let chosenSeparators = 0;
   for (const delimiter of DELIMITER_CANDIDATES) {
@@ -72,6 +81,12 @@ export function detectCsvDelimiter(text: string, preferred: CsvDelimiter = ","):
     }
   }
   return chosen;
+}
+
+function onlyDecimalCommas(text: string): boolean {
+  const splits = { all: 0, betweenDigits: 0 };
+  scanRecords(text, ",", splits);
+  return splits.all > 0 && splits.all === splits.betweenDigits;
 }
 
 function preferredEncoding(language: string): CsvEncoding | null {
