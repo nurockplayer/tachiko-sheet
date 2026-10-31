@@ -1372,13 +1372,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (!format) throw new Error("Choose a .csv, .tsv, .txt or .xlsx file.");
       const raw = await file.arrayBuffer();
       let bytes = raw;
-      let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[] } | undefined;
+      let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[]; sourceBytes?: ArrayBuffer } | undefined;
       if (format === "csv") {
         const encoding = csv?.encoding ?? guessCsvEncoding(raw, navigator.languages?.length ? navigator.languages : [navigator.language]);
         bytes = toUtf8Bytes(raw, encoding);
         const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536))));
         // A non-UTF-8 guess is shown with real lines from the whole file, not just the first rows.
-        csvRead = { delimiter, encoding, samples: encoding === "utf-8" ? [] : csvSampleLines(new TextDecoder().decode(bytes)) };
+        csvRead = encoding === "utf-8" ? { delimiter, encoding, samples: [] }
+          : { delimiter, encoding, samples: csvSampleLines(new TextDecoder().decode(bytes)), sourceBytes: raw.slice(0) };
       }
       const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true });
       const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}) } as ImportInspection;
@@ -1422,7 +1423,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       markNotSaved();
       setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       cleanupPreviewContextRef.current = null;
-      importedSourceRef.current = { name: pending.name, format: pending.format, bytes: bytes.slice(0), metadata: imported.metadata, ledger: imported.ledger };
+      // The preserved source is the user's file as chosen, not the UTF-8 text Work read.
+      importedSourceRef.current = { name: pending.name, format: pending.format, bytes: (pending.csv?.sourceBytes ?? bytes).slice(0), metadata: imported.metadata, ledger: imported.ledger };
       setCurrentness("current");
       setOutcome("idle");
       importBytesRef.current = null;

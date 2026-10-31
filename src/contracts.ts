@@ -441,7 +441,8 @@ export interface ImportInspection {
   format: SpreadsheetFormat;
   source: SourceWorkbook;
   /** How a delimited text file was read at the file boundary. Absent for .xlsx. */
-  csv?: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[] };
+  /** `sourceBytes` keeps the file exactly as chosen when it was decoded to UTF-8 for reading. */
+  csv?: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[]; sourceBytes?: ArrayBuffer };
 }
 
 export interface InteropState {
