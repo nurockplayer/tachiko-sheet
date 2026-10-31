@@ -4,7 +4,7 @@ export type CsvDelimiter = "," | ";" | "\t";
 export type CsvEncoding = "utf-8" | "utf-16le" | "big5" | "shift_jis" | "gb18030" | "euc-kr" | "windows-1252";
 
 /** Tie-break order: a candidate must beat the previous one, so tab wins ties, then semicolon, then comma. */
-const DELIMITER_CANDIDATES: readonly CsvDelimiter[] = ["\t", ";", ","];
+const DELIMITER_CANDIDATES: readonly CsvDelimiter[] = ["\t", ",", ";"];
 const ENCODING_CANDIDATES: readonly CsvEncoding[] = ["big5", "shift_jis", "gb18030", "euc-kr"];
 const RECORD_LIMIT = 10;
 
@@ -51,7 +51,8 @@ function scanRecords(text: string, delimiter: CsvDelimiter): CsvRecord[] {
 
 /** Parse up to 10 records (respect "quoted" fields incl. doubled quotes and newlines). A candidate qualifies when the
  *  header record has >= 1 of it and every later non-empty record has the same count. Prefer the qualifying candidate
- *  with the most header separators; ties → "\t", then ";", then ",". None qualifies → ",". */
+ *  with the most header separators; ties → "\t", then ",", then ";" (an unquoted ";" inside a comma file must not win).
+ *  None qualifies → ",". */
 export function detectCsvDelimiter(text: string): CsvDelimiter {
   let chosen: CsvDelimiter | null = null;
   let chosenSeparators = 0;
@@ -82,7 +83,8 @@ const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 /** "utf-8" if `new TextDecoder("utf-8", { fatal: true })` succeeds (a UTF-8 BOM is fine, Work strips it).
  *  FF FE BOM → "utf-16le". Otherwise try, in order, the language-preferred encoding (zh-TW/zh-HK/zh-Hant* → big5,
  *  ja* → shift_jis, zh-CN/zh-Hans/zh → gb18030, ko* → euc-kr), then big5, shift_jis, gb18030, euc-kr, each with
- *  fatal: true; first that decodes wins; fallback "windows-1252". */
+ *  fatal: true; first that decodes wins; fallback "windows-1252". Bytes whose high bytes mostly stand alone are
+ *  Western single-byte text and read as "windows-1252" before any double-byte candidate. */
 export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[]): CsvEncoding {
   try {
     UTF8_DECODER.decode(bytes);
@@ -92,6 +94,9 @@ export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[
   }
   const head = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 2));
   if (head[0] === 0xff && head[1] === 0xfe) return "utf-16le";
+  // Western single-byte text (é = E9 between ASCII letters) also decodes as
+  // Big5 or Shift_JIS without an error; double-byte text pairs its high bytes.
+  if (mostlyIsolatedHighBytes(new Uint8Array(bytes))) return "windows-1252";
   const preferred = languages.flatMap(language => preferredEncoding(language) ?? []);
   for (const encoding of [...preferred, ...ENCODING_CANDIDATES]) {
     try {
@@ -102,6 +107,17 @@ export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[
     }
   }
   return "windows-1252";
+}
+
+/** True when most bytes >= 0x80 stand alone rather than in high-high pairs. */
+function mostlyIsolatedHighBytes(bytes: Uint8Array): boolean {
+  let high = 0, isolated = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i]! < 0x80) continue;
+    if (i + 1 < bytes.length && bytes[i + 1]! >= 0x80) { high += 2; i++; }
+    else { high += 1; isolated += 1; }
+  }
+  return high > 0 && isolated * 2 > high;
 }
 
 /** utf-8 → the same bytes (copy). Otherwise TextDecoder(encoding) → TextEncoder (UTF-8), dropping a UTF-16 BOM. */
