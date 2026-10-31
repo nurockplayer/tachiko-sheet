@@ -9,6 +9,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 
@@ -45,6 +46,8 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
+import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
 import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
@@ -89,7 +92,7 @@ import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } 
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
 import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
@@ -104,6 +107,20 @@ import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
 type ActiveTab = "table" | "summary" | "report" | "brief" | "interop";
+
+/** Rendered width of a sized column without a stored width; matches `.ts-grid--sized`. */
+const SIZED_COLUMN_DEFAULT_WIDTH = 160;
+
+let columnMeasureCanvas: HTMLCanvasElement | null = null;
+
+/** Text widths in the grid's own font, through one reused offscreen canvas. */
+function textMeasure(font: string): (text: string) => number {
+  columnMeasureCanvas ??= document.createElement("canvas");
+  const context = columnMeasureCanvas.getContext("2d");
+  if (!context) return (text) => text.length * 7;
+  context.font = font;
+  return (text) => context.measureText(text).width;
+}
 
 interface EditorState {
   entity: string;
@@ -780,6 +797,8 @@ export function SheetShell(props: SheetShellProps) {
   const priorChartModesRef = useRef(new Map<string, ResultChartMode>());
   const focusedSalesOccurrenceRef = useRef<string | null>(null);
   const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
+  /** The file behind the open import preview, so a separator or encoding change re-reads it. */
+  const spreadsheetFileRef = useRef<File | null>(null);
   const lastNotesOccurrenceRef = useRef<string | null>(null);
   const lastCellRef = useRef<HTMLTableCellElement | null>(null);
   const resultsOccurrenceRef = useRef<string | null>(null);
@@ -925,11 +944,16 @@ export function SheetShell(props: SheetShellProps) {
     : undefined;
   const gridSettings = useMemo<RowViewSettings>(() => {
     const ids = new Set(columns.map((column) => column.id));
+    const widths = rawGridSettings?.widths;
+    const keptWidths = widths ? Object.entries(widths).filter(([field]) => ids.has(field)) : undefined;
     return {
       sort: rawGridSettings?.sort && ids.has(rawGridSettings.sort.field) ? rawGridSettings.sort : undefined,
       filter: rawGridSettings?.filter && rawGridSettings.filter.text.trim() && ids.has(rawGridSettings.filter.field)
         ? rawGridSettings.filter : undefined,
       kept: rawGridSettings?.kept,
+      widths: keptWidths === undefined ? undefined
+        : keptWidths.length === Object.keys(widths!).length ? widths
+        : keptWidths.length > 0 ? Object.fromEntries(keptWidths) : undefined,
     };
   }, [columns, rawGridSettings]);
   const displaySignature = rowViewDisplaySignature(gridSettings);
@@ -1041,6 +1065,81 @@ export function SheetShell(props: SheetShellProps) {
       if (next === previous) return base;
       return { occurrence, byCollection: { ...base.byCollection, [collection]: next } };
     });
+  }
+
+  // Column widths are view state, like the sort and filter beside them. A drag
+  // previews on the header cell itself and commits one width on release.
+  const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement } | null>(null);
+
+  /** A stored width wins; otherwise the width the table currently gives it. */
+  function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
+    const stored = settings.widths?.[field];
+    if (stored !== undefined) return stored;
+    return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
+  }
+
+  function resizeColumnBy(field: string, delta: number, th: HTMLElement | null): void {
+    updateGridSettings((current) => rowViewWithWidth(current, field, columnWidthOf(current, field, th) + delta));
+  }
+
+  function autoFitColumn(field: string, th: HTMLElement | null): void {
+    const displayName = columns.find((column) => column.id === field)?.display_name;
+    if (displayName === undefined) return;
+    // Measure in the body cells' font, the one the widest value is drawn in.
+    const sample = gridScrollRef.current?.querySelector("td.ts-cell") ?? th;
+    const measure = textMeasure(sample ? getComputedStyle(sample).font : "");
+    const texts = displayRows.slice(0, 2000).map((row) => fieldClipboardText(fieldForColumn(row, field)));
+    updateGridSettings((current) => rowViewWithWidth(current, field, autoFitWidth(texts, displayName, measure)));
+  }
+
+  function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
+    const th = event.currentTarget.closest("th");
+    if (event.button !== 0 || !th) return;
+    // The header owns its own gestures: never let a resize begin a rename or a
+    // column-action menu. The press is not cancelled, so the double-click that
+    // fits the column still arrives as a compatibility mouse event.
+    event.stopPropagation();
+    const startWidth = columnWidthOf(gridSettings, field, th);
+    columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveColumnResize(event: ReactPointerEvent<HTMLSpanElement>): void {
+    const session = columnResizeRef.current;
+    if (!session) return;
+    event.stopPropagation();
+    session.width = clampColumnWidth(session.startWidth + event.clientX - session.startX);
+    session.th.style.width = `${session.width}px`;
+  }
+
+  function endColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
+    const session = columnResizeRef.current;
+    columnResizeRef.current = null;
+    if (!session || session.field !== field) return;
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    // A press without a move stores nothing: it must not turn every column of
+    // a shared-width grid into a fixed one.
+    if (session.width === session.startWidth) return;
+    updateGridSettings((current) => rowViewWithWidth(current, field, session.width));
+  }
+
+  /** Losing the pointer without releasing it keeps the width it started with. */
+  function cancelColumnResize(): void {
+    const session = columnResizeRef.current;
+    columnResizeRef.current = null;
+    if (session) session.th.style.width = `${session.startWidth}px`;
+  }
+
+  function onColumnResizeKeyDown(event: ReactKeyboardEvent<HTMLSpanElement>, field: string): void {
+    const th = event.currentTarget.closest("th");
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault(); event.stopPropagation();
+      resizeColumnBy(field, (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 64 : 16), th);
+    } else if (event.key === "Enter") {
+      event.preventDefault(); event.stopPropagation();
+      autoFitColumn(field, th);
+    }
   }
 
   function keepGridRows(entities: readonly string[]): void {
@@ -2501,6 +2600,82 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
+    const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
+    const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
+    const selectionIdentity = view && collectionIdentity && displayRows.length > 0 && columns.length > 0 ? { view, identity: collectionIdentity } : null;
+    // Excel Ctrl/Cmd+Arrow jumps to the edge of the filled run, or the table edge.
+    if (!draft && mod && arrowKey) {
+      const target = edgeAddress(address(position), event.key, displayRows.length, columns.length,
+        (row, column) => fieldClipboardText(fieldForColumn(displayRows[row]!, columns[column]!.id)) === "");
+      const row = displayRows[target.row], column = columns[target.column];
+      if (row && column) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
+          extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+        } else {
+          setCellSelection(null);
+          setSelectedEntity(rowEntity(row));
+          focusCell(rowEntity(row), column.id);
+        }
+      }
+      return;
+    }
+    // Home/End reach the row ends; with Ctrl/Cmd, the table corners.
+    if (!draft && !event.altKey && (event.key === "Home" || event.key === "End")) {
+      const target = homeEndAddress(address(position), event.key, mod, displayRows.length, columns.length);
+      const row = displayRows[target.row], column = columns[target.column];
+      if (row && column) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
+          extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+        } else {
+          setCellSelection(null);
+          setSelectedEntity(rowEntity(row));
+          focusCell(rowEntity(row), column.id);
+        }
+      }
+      return;
+    }
+    // Ctrl/Cmd+A selects the whole table without moving focus.
+    if (!draft && mod && !event.shiftKey && event.key.toLowerCase() === "a" && selectionIdentity && clipboardPosition(event.target)) {
+      event.preventDefault();
+      setCellSelection({
+        identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
+        anchor: { entity: rowEntity(displayRows[0]!), field: columns[0]!.id },
+        end: { entity: rowEntity(displayRows.at(-1)!), field: columns.at(-1)!.id },
+      });
+      return;
+    }
+    // Shift+Space selects the focused row; Ctrl/Cmd+Space the focused column.
+    if (!draft && event.key === " " && selectionIdentity && clipboardPosition(event.target)) {
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        setCellSelection({
+          identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
+          anchor: { entity: position.entity, field: columns[0]!.id },
+          end: { entity: position.entity, field: columns.at(-1)!.id },
+        });
+      } else if (mod && !event.shiftKey) {
+        event.preventDefault();
+        setCellSelection({
+          identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
+          anchor: { entity: rowEntity(displayRows[0]!), field: position.field },
+          end: { entity: rowEntity(displayRows.at(-1)!), field: position.field },
+        });
+      }
+      return;
+    }
+    // Ctrl/Cmd+; seeds today's date in an editable Date cell, as Excel does.
+    if (!draft && mod && !event.shiftKey && event.key === ";") {
+      event.preventDefault();
+      const column = columns.find(candidate => candidate.id === position.field);
+      const editable = Boolean(currentEditorSlot(position)) && !controlsLocked;
+      if (column?.field_type === "date" && editable && !formulaCellAt(position)) beginEdit(entity, position.field, todayIsoDate());
+      else announceClipboard("Ctrl+; enters today’s date in a Date cell.", false, true);
+      return;
+    }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
       const next = stepAddress(address(position), event.key, displayRows.length, columns.length);
       const row = displayRows[next.row], column = columns[next.column];
@@ -2811,11 +2986,12 @@ export function SheetShell(props: SheetShellProps) {
     </label>;
   }
 
-  async function inspectSpreadsheet(file: File | null): Promise<void> {
+  async function inspectSpreadsheet(file: File | null, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<void> {
     if (!file) return;
+    spreadsheetFileRef.current = file;
     setLocalError(null);
     setImportError(null);
-    try { await onInspectImport(file); }
+    try { await onInspectImport(file, csv); }
     catch (error) { setImportError(importRefusalMessage(error)); }
   }
 
@@ -3485,7 +3661,7 @@ export function SheetShell(props: SheetShellProps) {
             <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text, Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
-              <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+              <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,.tsv,.txt,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
             </label>
           </div>
           {importError && !interop?.importInspection ? <p className="ts-dialog-error" role="alert">{importError}</p> : null}
@@ -3711,12 +3887,18 @@ export function SheetShell(props: SheetShellProps) {
       const result = j4Results.find((candidate) => candidate.definitionId === id);
       return !result || result.diagnostics.length > 0;
     });
+    const salesCatalog = salesCatalogLayoutEligible(view!, salesCatalogLayout);
+    // Widths belong to columns the grid shows; a resize is available wherever
+    // the dense header actions are.
+    const columnWidths = gridSettings.widths;
+    const sizedGrid = columnWidths !== undefined && Object.keys(columnWidths).length > 0;
+    const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalogLayoutEligible(view!, salesCatalogLayout) ? " ts-grid--sales-catalog" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined}>
               <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
@@ -3797,6 +3979,22 @@ export function SheetShell(props: SheetShellProps) {
                 </details>
                 {table.native_table_profile && index === columns.length - 1 && onAddColumn ? <button type="button" className="ts-button ts-column-add" disabled={columnChangesBlocked} onClick={event => openColumnDialog("add", event.currentTarget)} aria-label="+ column" data-column-action="+ column" /> : null}
               </> : null}</div>
+              {resizable ? <span
+                className="ts-col-resize"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={`Resize ${column.display_name}`}
+                aria-valuenow={columnWidths?.[column.id] ?? SIZED_COLUMN_DEFAULT_WIDTH}
+                aria-valuemin={COLUMN_WIDTH_MIN}
+                aria-valuemax={COLUMN_WIDTH_MAX}
+                tabIndex={0}
+                onPointerDown={event => startColumnResize(event, column.id)}
+                onPointerMove={moveColumnResize}
+                onPointerUp={event => endColumnResize(event, column.id)}
+                onPointerCancel={cancelColumnResize}
+                onDoubleClick={event => { event.stopPropagation(); autoFitColumn(column.id, event.currentTarget.closest("th")); }}
+                onKeyDown={event => onColumnResizeKeyDown(event, column.id)}
+              /> : null}
             </th>)}
           </tr>
         </thead>
@@ -4997,6 +5195,25 @@ export function SheetShell(props: SheetShellProps) {
               data-autofocus={interop.importInspection.source.ledger.length ? "true" : undefined}
             >Review import preview</h2>
             <p className="ts-subtle">{interop.importInspection.name}: {interop.importInspection.source.sheets.length} sheet(s). Check each column's type before importing. Suggested: Number for plain numbers, Date for YYYY-MM-DD dates, otherwise Text.</p>
+            {(() => {
+              const csv = interop?.importInspection?.csv;
+              if (!csv) return null;
+              const reread = (delimiter: CsvDelimiter, encoding: CsvEncoding) => void inspectSpreadsheet(spreadsheetFileRef.current, { delimiter, encoding });
+              return <div className="ts-import-csv">
+                <label className="ts-summary-field">
+                  <span className="ts-field-label">Separator</span>
+                  <select value={csv.delimiter} disabled={importPending || controlsLocked} onChange={(event) => reread(event.currentTarget.value as CsvDelimiter, csv.encoding)}>
+                    {(Object.keys(CSV_DELIMITER_LABELS) as CsvDelimiter[]).map((value) => <option key={value} value={value}>{CSV_DELIMITER_LABELS[value]}</option>)}
+                  </select>
+                </label>
+                <label className="ts-summary-field">
+                  <span className="ts-field-label">Text encoding</span>
+                  <select value={csv.encoding} disabled={importPending || controlsLocked} onChange={(event) => reread(csv.delimiter, event.currentTarget.value as CsvEncoding)}>
+                    {(Object.keys(CSV_ENCODING_LABELS) as CsvEncoding[]).map((value) => <option key={value} value={value}>{CSV_ENCODING_LABELS[value]}</option>)}
+                  </select>
+                </label>
+              </div>;
+            })()}
           </div>
           <div className="ts-dialog-scroll">
             {(() => {

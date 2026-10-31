@@ -2088,6 +2088,17 @@ body { margin: 0; }
 
 .ts-modal--import .ts-import-columns { gap: 20px; }
 
+.ts-modal--import .ts-import-csv {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ts-modal--import .ts-import-csv select {
+  width: 100%;
+  min-height: 32px;
+}
+
 .ts-modal--import .ts-import-columns h3.ts-h2 {
   margin-bottom: 10px;
   font-size: 14px;
@@ -3007,6 +3018,45 @@ body { margin: 0; }
 .ts-column-overflow .ts-command-menu .ts-button { text-align: left; }
 .ts-column-add { flex: none; min-height: 24px; padding: 1px 5px; font-size: 11px; }
 .ts-column-header .ts-col-head:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/*
+ * Sized columns: a header cell carries an explicit width and the table grows
+ * to fit its columns instead of sharing the viewport. Columns without a width
+ * keep a fixed default, so dragging one never silently resizes the others.
+ */
+.ts-grid--sized {
+  width: max-content;
+  min-width: 100%;
+}
+.ts-grid--sized .ts-column-header:not([style*="width"]) { width: 160px; }
+.ts-grid--sized th,
+.ts-grid--sized td,
+.ts-grid--sized .ts-column-header .ts-col-head { max-width: none; }
+
+/* The drag target on a column's trailing edge; sticky header cells already
+   position it, so it needs no offset of its own. */
+.ts-col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.ts-col-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+}
+.ts-col-resize:hover::after,
+.ts-col-resize:focus-visible::after { background: var(--ts-accent); }
+.ts-col-resize:focus-visible { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
 .ts-column-status:empty { display: none; }
 .ts-column-heading [data-column-action]::before { content: attr(data-column-action); }
 

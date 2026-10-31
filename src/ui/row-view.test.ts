@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, type RowViewSettings } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -203,6 +203,12 @@ describe("rowViewDisplaySignature", () => {
     expect(rowViewDisplaySignature({ filter: { field: "c-name", text: "asc" } }))
       .not.toBe(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } }));
   });
+
+  it("ignores column widths, so resizing keeps the cell selection", () => {
+    const sorted: RowViewSettings = { sort: { field: "c-name", direction: "asc" } };
+    const sized: RowViewSettings = { ...sorted, widths: { "c-name": 240 } };
+    expect(rowViewDisplaySignature(sized)).toBe(rowViewDisplaySignature(sorted));
+  });
 });
 
 describe("rowViewBlockRows", () => {
@@ -216,6 +222,43 @@ describe("rowViewBlockRows", () => {
     expect(rowViewBlockRows(sorted, 0, 2).map(row => row.id)).toEqual(["a", "b"]);
     // Clearing the first displayed row targets A, never the stored first row C.
     expect(rowViewBlockRows(sorted, 0, 1).map(row => row.id)).toEqual(["a"]);
+  });
+});
+
+describe("column widths", () => {
+  it("clamps a dragged width to whole pixels inside the allowed range", () => {
+    expect(clampColumnWidth(120.4)).toBe(120);
+    expect(clampColumnWidth(120.6)).toBe(121);
+    expect(clampColumnWidth(10)).toBe(COLUMN_WIDTH_MIN);
+    expect(clampColumnWidth(5000)).toBe(COLUMN_WIDTH_MAX);
+  });
+
+  it("sets one column width and keeps the same settings object for an unchanged width", () => {
+    const settings: RowViewSettings = { sort: { field: "c-name", direction: "asc" } };
+    const sized = rowViewWithWidth(settings, "c-name", 240);
+    expect(sized.widths).toEqual({ "c-name": 240 });
+    expect(settings.widths).toBeUndefined();
+    expect(rowViewWithWidth(sized, "c-name", 240)).toBe(sized);
+    expect(rowViewWithWidth(sized, "c-name", 300).widths).toEqual({ "c-name": 300 });
+    expect(rowViewWithWidth(sized, "c-price", 80).widths).toEqual({ "c-name": 240, "c-price": 80 });
+  });
+
+  it("drops the width of a removed column and keeps settings identity otherwise", () => {
+    const settings: RowViewSettings = { widths: { "c-name": 240, "c-price": 80 } };
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name", "c-price"]))).toBe(settings);
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name"]))).toEqual({ widths: { "c-name": 240 } });
+    expect(rowViewSettingsForColumns(settings, new Set())).toEqual({ widths: undefined });
+  });
+
+  it("fits the header or the widest text plus padding", () => {
+    const measure = (text: string) => text.length * 7;
+    // The cell text is wider than the header plus its markers.
+    expect(autoFitWidth(["Alpha", "A much longer value"], "Name", measure)).toBe(19 * 7 + 22);
+    // Without text, the header keeps room for the sort/filter markers and menu.
+    expect(autoFitWidth([], "Name", measure)).toBe(4 * 7 + 28 + 22);
+    // A header longer than every value drives the width.
+    expect(autoFitWidth(["id"], "A rather long column heading", measure)).toBe(28 * 7 + 28 + 22);
+    expect(autoFitWidth(["x".repeat(200)], "Name", measure)).toBe(COLUMN_WIDTH_MAX);
   });
 });
 

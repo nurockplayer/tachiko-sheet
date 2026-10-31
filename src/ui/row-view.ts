@@ -17,6 +17,36 @@ export interface RowViewSettings {
   filter?: RowViewFilter;
   /** Rows just added or edited while a filter is active; visible until it changes. */
   kept?: ReadonlySet<string>;
+  /** Column id → CSS px. A view width, never part of the work file. */
+  widths?: Readonly<Record<string, number>>;
+}
+
+/** The narrowest and widest a column may be dragged, in CSS px. */
+export const COLUMN_WIDTH_MIN = 48;
+export const COLUMN_WIDTH_MAX = 800;
+
+/** A dragged width is a whole number of CSS pixels inside the allowed range. */
+export function clampColumnWidth(px: number): number {
+  const rounded = Math.round(px);
+  if (!Number.isFinite(rounded)) return COLUMN_WIDTH_MIN;
+  return Math.min(COLUMN_WIDTH_MAX, Math.max(COLUMN_WIDTH_MIN, rounded));
+}
+
+/** Set one column's width; an unchanged width returns the same settings object. */
+export function rowViewWithWidth(settings: RowViewSettings, field: string, px: number): RowViewSettings {
+  const width = clampColumnWidth(px);
+  if (settings.widths?.[field] === width) return settings;
+  return { ...settings, widths: { ...settings.widths, [field]: width } };
+}
+
+/**
+ * The width a double-click fits: the header plus its sort/filter markers and
+ * menu, or the widest cell text, plus the cell padding and its border.
+ */
+export function autoFitWidth(texts: readonly string[], header: string, measure: (text: string) => number): number {
+  let widest = measure(header) + 28;
+  for (const text of texts) widest = Math.max(widest, measure(text));
+  return clampColumnWidth(widest + 22);
 }
 
 /** View settings scoped to one work occurrence; the record survives a missing projection. */
@@ -79,12 +109,17 @@ export function rowViewRecordForOccurrence(current: RowViewRecord, occurrence: s
 export function rowViewSettingsForColumns(settings: RowViewSettings, columnIds: ReadonlySet<string>): RowViewSettings {
   const dropSort = settings.sort !== undefined && !columnIds.has(settings.sort.field);
   const dropFilter = settings.filter !== undefined && !columnIds.has(settings.filter.field);
-  if (!dropSort && !dropFilter) return settings;
+  const keptWidths = settings.widths
+    ? Object.fromEntries(Object.entries(settings.widths).filter(([field]) => columnIds.has(field)))
+    : undefined;
+  const dropWidths = keptWidths !== undefined && Object.keys(keptWidths).length !== Object.keys(settings.widths!).length;
+  if (!dropSort && !dropFilter && !dropWidths) return settings;
   return {
     ...settings,
     sort: dropSort ? undefined : settings.sort,
     filter: dropFilter ? undefined : settings.filter,
     kept: dropFilter ? undefined : settings.kept,
+    widths: dropWidths ? (Object.keys(keptWidths!).length > 0 ? keptWidths : undefined) : settings.widths,
   };
 }
 

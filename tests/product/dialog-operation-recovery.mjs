@@ -79,7 +79,7 @@ try {
   await input.setInputFiles(invalidNumberCsv);
   const failedImportDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await failedImportDialog.waitFor();
-  await failedImportDialog.locator("select").first().selectOption("number");
+  await failedImportDialog.locator(".ts-import-column select").first().selectOption("number");
   const failedImportAction = failedImportDialog.getByRole("button", { name: "Import file", exact: true });
   await failedImportAction.scrollIntoViewIfNeeded();
   const scrolledAction = await failedImportDialog.evaluate((dialog) => ({

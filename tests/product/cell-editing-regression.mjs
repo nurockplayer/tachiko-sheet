@@ -149,6 +149,51 @@ const cases = [
     assert.deepEqual(await state(page), before);
     assert.equal(await dispatches(page), count);
   }],
+  ["Excel arrow, Home and End keys travel the filled table and Select All covers it", async (page) => {
+    const titleColumn = page.locator(`td[data-work-field="${fields.title}"]:not([data-entry-field])`);
+    const entities = await titleColumn.evaluateAll((nodes) => nodes.map((node) => node.dataset.workEntity));
+    assert.ok(entities.length > 1, "the example has more than one row");
+    const activeEntity = () => page.evaluate(() => document.activeElement?.dataset.workEntity ?? null);
+    const activeField = () => page.evaluate(() => document.activeElement?.dataset.workField ?? null);
+    const firstTitle = titleColumn.first();
+    await firstTitle.focus();
+    assert.equal(await activeEntity(), entities[0], "starts in the first row");
+    await page.keyboard.press("ControlOrMeta+ArrowDown");
+    assert.equal(await activeEntity(), entities.at(-1), "Ctrl+ArrowDown reaches the last filled row");
+    await page.keyboard.press("ControlOrMeta+ArrowUp");
+    assert.equal(await activeEntity(), entities[0], "Ctrl+ArrowUp returns to the first row");
+    const rowFields = await firstTitle.evaluate((node) => [...node.parentElement.querySelectorAll("td[data-work-field]")].map((td) => td.dataset.workField));
+    await page.keyboard.press("End");
+    assert.equal(await activeField(), rowFields.at(-1), "End reaches the last column of the focused row");
+    await page.keyboard.press("Home");
+    assert.equal(await activeField(), rowFields[0], "Home returns to the first column");
+    await page.keyboard.press("ControlOrMeta+a");
+    const selected = await page.locator("td[data-work-field]:not([data-entry-field])").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-selected")));
+    assert.equal(selected.length, entities.length * rowFields.length, "Select All covers every table cell");
+    assert.ok(selected.every((value) => value === "true"), "every table cell shows the selected state");
+    assert.equal(await focused(firstTitle), true, "Select All keeps focus where it was");
+  }],
+  ["Column borders widen by keyboard and fit the content on double-click", async (page) => {
+    // #281: a column width is view state only, so resizing never disturbs the
+    // cell focus and selection behaviour the previous case covers.
+    const separator = page.getByRole("separator", { name: /^Resize / }).first();
+    const header = page.locator("thead th.ts-column-header").first();
+    const width = () => header.evaluate((node) => node.getBoundingClientRect().width);
+    await separator.focus();
+    const start = await width();
+    for (let press = 0; press < 3; press += 1) await page.keyboard.press("ArrowRight");
+    const widened = await width();
+    assert.ok(Math.abs(widened - (start + 48)) <= 2, `three ArrowRight presses widen the column by 48px (${start} → ${widened})`);
+    await separator.dblclick();
+    const fitted = await width();
+    assert.ok(fitted >= 48 && fitted <= 800, `double-click fits the content to a usable width (${fitted}px)`);
+    const firstTitle = page.locator(`td[data-work-field="${fields.title}"]:not([data-entry-field])`).first();
+    await firstTitle.focus();
+    await page.keyboard.press("ControlOrMeta+a");
+    const selected = await page.locator("td[data-work-field]:not([data-entry-field])").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-selected")));
+    assert.ok(selected.length > 0 && selected.every((value) => value === "true"), "Select All still covers every table cell after a resize");
+    assert.equal(await focused(firstTitle), true, "Select All still keeps focus where it was");
+  }],
   ["Tab and Shift+Tab publish complete scalars once before moving grid focus", async (page) => {
     let input = await entry(page, "impact", "F2"); await replace(input, "12345");
     await published(page, input, "impact", "12345", "Tab");
@@ -349,7 +394,7 @@ const cases = [
     const input = await homeImportInput(page);
     await input.setInputFiles(messyCsv);
     const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
-    await dialog.locator("select").nth(1).selectOption("number");
+    await dialog.locator(".ts-import-column select").nth(1).selectOption("number");
     await dialog.getByRole("button", { name: "Import file", exact: true }).click();
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
     before = await state(page); count = await dispatches(page); draft = "4";

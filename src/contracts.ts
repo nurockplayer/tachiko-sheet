@@ -23,6 +23,7 @@ import type {
 } from "../public/core-kit/runtime/interop-protocol.js";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import type { LocalHistorySnapshot } from "./application/local-history.js";
+import type { CsvDelimiter, CsvEncoding } from "./ui/csv-text.js";
 export type {
   CleanupOperation,
   CleanupPreview,
@@ -422,7 +423,8 @@ export interface SheetShellProps {
   interop?: InteropState | null;
   /** The user's file name for imported work; display only. */
   importedSourceName?: string | null;
-  onInspectImport?(file: File): Promise<ImportInspection>;
+  /** `csv` re-reads the same file with a chosen separator or text encoding. */
+  onInspectImport?(file: File, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;
   onCancelImport?(): void;
   onPreviewTrim?(witness: ViewWitness, fields: FieldTarget[]): Promise<CleanupPreview | null>;
@@ -438,6 +440,8 @@ export interface ImportInspection {
   name: string;
   format: SpreadsheetFormat;
   source: SourceWorkbook;
+  /** How a delimited text file was read at the file boundary. Absent for .xlsx. */
+  csv?: { delimiter: CsvDelimiter; encoding: CsvEncoding };
 }
 
 export interface InteropState {

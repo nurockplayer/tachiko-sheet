@@ -92,7 +92,7 @@ try {
   await (await homeImportInput(page)).setInputFiles(csv);
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await preview.waitFor();
-  const types = preview.locator("select");
+  const types = preview.locator(".ts-import-column select");
   assert.deepEqual(await types.evaluateAll(selects => selects.map(select => select.value)), ["date", "text", "number"], "Date and Number are suggested");
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await ready();
@@ -322,6 +322,32 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.equal(copiedLines.length, editedGroups.length + 2);
   assert.equal(copiedLines.at(-1), `Total\t${SPENDING_ROWS}\t${sumFor(spending)}`, "the Total line ends with the unformatted total");
   checks.push("Copy writes the same header, groups and Total row as TSV");
+
+  // 7. A statement saved by Taiwanese Excel: Big5 text, semicolons. The preview
+  // reads it as such, and either choice can be changed before importing.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+  const big5Csv = path.join(work, "taipei-bank.csv");
+  // 日期;摘要;金額 / 2026-10-01;午餐;120 / 2026-10-02;捷運;35 in Big5 (午 ends in byte 0x5C).
+  await writeFile(big5Csv, Buffer.from("a4e9b4c13bba4bad6e3baaf7c3420a323032362d31302d30313ba4c8c05c3b3132300a323032362d31302d30323bb1b6b9423b33350a", "hex"));
+  await (await homeImportInput(page)).setInputFiles(big5Csv);
+  await preview.waitFor();
+  assert.equal(await preview.getByLabel("Separator", { exact: true }).inputValue(), ";", "a semicolon file is read with semicolons");
+  assert.equal(await preview.getByLabel("Text encoding", { exact: true }).inputValue(), "big5", "a Big5 file is read as Big5");
+  const previewHeaders = () => preview.locator(".ts-import-preview th").allTextContents();
+  assert.deepEqual(await previewHeaders(), ["日期", "摘要", "金額"]);
+  await preview.getByLabel("Separator", { exact: true }).selectOption(",");
+  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 1);
+  await preview.getByLabel("Separator", { exact: true }).selectOption(";");
+  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 3);
+  assert.deepEqual(await preview.locator(".ts-import-column select").evaluateAll(selects => selects.map(select => select.value)), ["date", "text", "number"]);
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await ready();
+  assert.deepEqual(await headers(), ["日期", "摘要", "金額"]);
+  assert.deepEqual(await shownRows(), [["2026-10-01", "午餐", "120"], ["2026-10-02", "捷運", "35"]]);
+  checks.push("a Big5, semicolon-separated CSV from Excel opens with its separator and encoding shown and changeable");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {

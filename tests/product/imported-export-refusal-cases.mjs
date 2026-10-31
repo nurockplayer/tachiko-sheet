@@ -8,7 +8,7 @@ export async function runImportedExportRefusalCases(page, { close, prepare, down
   const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
   await (await homeImportInput(page)).setInputFiles({ name: "layout.csv", mimeType: "text/csv", buffer: Buffer.from("Item,Amount\nTea,2\n") });
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  await preview.locator("select").nth(1).selectOption("number");
+  await preview.locator(".ts-import-column select").nth(1).selectOption("number");
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await preview.waitFor({ state: "detached" }); await ready();
   assert.equal((await page.evaluate(() => window.__exportEvidence.table)).native_table_profile, true);
