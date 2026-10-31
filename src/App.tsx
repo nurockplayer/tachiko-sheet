@@ -1373,15 +1373,27 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const raw = await file.arrayBuffer();
       let bytes = raw;
       let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[]; sourceBytes?: ArrayBuffer } | undefined;
+      let preferredDelimiter: CsvDelimiter = ",";
       if (format === "csv") {
         const encoding = csv?.encoding ?? guessCsvEncoding(raw, navigator.languages?.length ? navigator.languages : [navigator.language]);
         bytes = toUtf8Bytes(raw, encoding);
-        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536)), lower.endsWith(".txt") ? "\t" : ","));
+        preferredDelimiter = lower.endsWith(".tsv") || lower.endsWith(".txt") ? "\t" : ",";
+        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536)), preferredDelimiter));
         // A non-UTF-8 guess is shown with real lines from the whole file, not just the first rows.
         csvRead = encoding === "utf-8" ? { delimiter, encoding, samples: [] }
           : { delimiter, encoding, samples: csvSampleLines(new TextDecoder().decode(bytes)), sourceBytes: raw.slice(0) };
       }
-      const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true });
+      let source: Awaited<ReturnType<typeof runtime.inspectSpreadsheet>>;
+      try {
+        source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true });
+      } catch (error) {
+        // A wrong separator guess (for example an empty trailing header) must
+        // not keep the user from the preview, where Separator can be changed:
+        // retry once with the file type's own separator.
+        if (!csvRead || csv?.delimiter || csvRead.delimiter === preferredDelimiter) throw error;
+        csvRead = { ...csvRead, delimiter: preferredDelimiter };
+        source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: preferredDelimiter, header: true }).catch(() => { throw error; });
+      }
       const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}) } as ImportInspection;
       importBytesRef.current = bytes.slice(0);
       setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });

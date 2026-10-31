@@ -344,6 +344,18 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await preview.waitFor({ state: "detached" });
   await waitForColdHome(page);
   checks.push("a failed separator re-read keeps the preview and its choices; Cancel returns home");
+  // A guess that cannot be read (semicolons leave an empty last header) falls
+  // back to the file type's separator, so the preview still opens.
+  const fallbackCsv = path.join(work, "guess-fails.csv");
+  await writeFile(fallbackCsv, "Name,Last; First;\nDoe,Alpha; Beta;\n");
+  await (await homeImportInput(page)).setInputFiles(fallbackCsv);
+  await preview.waitFor();
+  assert.equal(await preview.getByLabel("Separator", { exact: true }).inputValue(), ",", "an unreadable separator guess falls back to comma");
+  assert.deepEqual(await preview.locator(".ts-import-preview th").allTextContents(), ["Name", "Last; First;"]);
+  await preview.getByRole("button", { name: "Cancel", exact: true }).click();
+  await preview.waitFor({ state: "detached" });
+  await waitForColdHome(page);
+  checks.push("an unreadable separator guess falls back to comma and the preview opens");
   const big5Csv = path.join(work, "taipei-bank.csv");
   // 日期;摘要;金額 / 2026-10-01;午餐;120 / 2026-10-02;捷運;35 in Big5 (午 ends in byte 0x5C).
   await writeFile(big5Csv, Buffer.from("a4e9b4c13bba4bad6e3baaf7c3420a323032362d31302d30313ba4c8c05c3b3132300a323032362d31302d30323bb1b6b9423b33350a", "hex"));
