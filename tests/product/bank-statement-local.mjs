@@ -312,8 +312,10 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await page.waitForFunction(() => window.__printed === 1);
   assert.equal(await page.evaluate(() => window.__printedRows), SPENDING_ROWS, "Print… prints every shown row");
   assert.equal(await page.evaluate(() => window.__printedTotal), (await page.getByTestId(`total:${amountColumn}`).textContent())?.trim(), "the printed total matches the grid footer");
+  assert.equal(await page.getByTestId("print-root").count(), 1, "the print copy waits for afterprint (window.print may return early)");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
-  checks.push("Print… prints all 120 shown rows with the footer total, then removes the print copy");
+  checks.push("Print… prints all 120 shown rows with the footer total, then removes the print copy after afterprint");
 
   await chooseColumnAction(page, "Category", "Filter");
   await page.getByLabel("Filter Category", { exact: true }).fill("Food");

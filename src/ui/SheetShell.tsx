@@ -1906,8 +1906,9 @@ export function SheetShell(props: SheetShellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownTotalsKey, onQueryShownTotals]);
   const footerTotals = shownTotalsKey && shownTotals?.key === shownTotalsKey ? shownTotals : null;
-  // Print carries the same totals the grid footer shows, and only while it shows them.
-  const printTotals = footerTotals?.totals ?? table?.column_totals;
+  // Print carries totals only for the rows it prints: under a filter, the
+  // shown-row totals once they arrive, never the whole-table fallback.
+  const printTotals = shownEntities ? footerTotals?.totals : table?.column_totals;
   const printHasTotals = printTotals !== undefined && Object.keys(printTotals).length > 0;
 
   // Grouped totals are a read too: Sheet picks the question, Work groups and sums.
@@ -3204,37 +3205,30 @@ export function SheetShell(props: SheetShellProps) {
   });
 
   // The print-only table must be in the document before the system dialog
-  // snapshots it, and gone afterwards. A browser's window.print() blocks until
-  // the dialog closes. In the macOS app it returns at once and the print
-  // operation reads the page later, so the table stays until afterprint or
-  // the user's next press or key back in the window.
+  // snapshots it, and gone afterwards. window.print() may return before the
+  // page is read (the macOS app, Safari), so the table stays until afterprint
+  // or the user's next press or key back in the window.
   useEffect(() => {
     if (!printing) return;
-    const desktop = "__TAURI_INTERNALS__" in window;
     let settled = false;
     const finish = () => {
       if (settled) return;
       settled = true;
       setPrinting(false);
     };
-    const events = ["afterprint", ...(desktop ? ["pointerdown", "keydown"] : [])];
+    const events = ["afterprint", "pointerdown", "keydown"];
     let second = 0;
     const first = requestAnimationFrame(() => {
       second = requestAnimationFrame(() => {
-        try {
-          window.print();
-        } finally {
-          if (desktop) for (const name of events) window.addEventListener(name, finish, { once: true, capture: true });
-          else finish();
-        }
+        window.addEventListener("afterprint", finish, { once: true, capture: true });
+        window.print();
+        for (const name of events.slice(1)) window.addEventListener(name, finish, { once: true, capture: true });
       });
     });
-    if (!desktop) window.addEventListener("afterprint", finish, { once: true });
     return () => {
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
       for (const name of events) window.removeEventListener(name, finish, { capture: true });
-      window.removeEventListener("afterprint", finish);
     };
   }, [printing]);
 
