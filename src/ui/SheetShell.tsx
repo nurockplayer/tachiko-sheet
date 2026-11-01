@@ -3222,7 +3222,8 @@ export function SheetShell(props: SheetShellProps) {
     const finish = () => {
       if (settled) return;
       settled = true;
-      setPrinting(0);
+      // Only this request's copy: a newer Cmd/Ctrl+P in the same keydown wins.
+      setPrinting(current => current === printing ? 0 : current);
     };
     const events = ["afterprint", "pointerdown", "keydown"];
     let second = 0;

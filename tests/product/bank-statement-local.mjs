@@ -321,6 +321,15 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   // A second Print… before afterprint prints again instead of being swallowed.
   await page.getByTestId("print-table").click();
   await page.waitForFunction(() => window.__printed === 2);
+  // So does Cmd/Ctrl+P from the grid while that copy still waits.
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").first().click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 3);
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").first().focus();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+P" : "Control+P");
+  await page.waitForFunction(() => window.__printed === 4);
+  assert.equal(await page.getByTestId("print-root").count(), 1, "a keyboard reprint keeps its print copy");
   await page.evaluate(() => { window.__printed = 1; });
   await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
