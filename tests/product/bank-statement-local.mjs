@@ -404,15 +404,17 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   // A column type the person chose survives the re-read.
   const qtyType = preview.locator(".ts-import-columns select").nth(1);
   await qtyType.selectOption("text");
-  await keepTotal.check();
+  // The checkbox shows Work's re-read, so it changes once that arrives.
+  await keepTotal.click();
   await preview.getByText(/This row totals the column above it/).waitFor({ state: "detached" });
   assert.equal(await keepTotal.isChecked(), true, "the choice stays visible once the finding is gone");
   assert.equal(await totalFinding(), 0);
   await preview.getByText("6 rows", { exact: true }).waitFor(); // the Total row is now a data row
   assert.equal(await qtyType.inputValue(), "text", "keeping the Total row keeps the chosen column types");
   await qtyType.selectOption("number");
-  await keepTotal.uncheck();
+  await keepTotal.click();
   await preview.getByText(/This row totals the column above it/).waitFor();
+  assert.equal(await keepTotal.isChecked(), false);
   assert.equal(await totalFinding(), 1);
   await preview.getByText("5 rows", { exact: true }).waitFor();
   for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
@@ -422,7 +424,21 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const invoiceRows = await shownRows();
   assert.deepEqual(invoiceRows.map(row => row[0]), ["Paper", "Toner", "Pens", "Stapler", "Folders"], "five items, no Total row");
   assert.deepEqual(invoiceRows.map(row => row[3]), ["$35.00", "$96.00", "$24.00", "$12.90", "$30.00"], "B*C amounts calculate and keep the Excel currency format");
-  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained, can be kept, and is left out by default");
+  // Importing with the Total row kept brings it in as a sixth row.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+  await (await homeImportInput(page)).setInputFiles(path.join(root, "tests/fixtures/excel/invoice.xlsx"));
+  await preview.waitFor();
+  await keepTotal.click();
+  await preview.getByText("6 rows", { exact: true }).waitFor();
+  for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await ready();
+  const keptRows = await shownRows();
+  assert.deepEqual(keptRows.map(row => row[0]), ["Paper", "Toner", "Pens", "Stapler", "Folders", "Total"], "the kept Total row imports as data");
+  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained, left out by default, and imported as a row when kept");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {
