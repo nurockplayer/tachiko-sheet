@@ -1737,6 +1737,8 @@ export function SheetShell(props: SheetShellProps) {
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   // Downloads snapshot the published revision, so unpublished drafts block them.
   const spreadsheetDraftLocked = cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  // Print, like a download, waits for unapplied edits: it prints Work's values.
+  const printBlocked = controlsLocked || spreadsheetDraftLocked || displayRows.length === 0;
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
@@ -3190,18 +3192,20 @@ export function SheetShell(props: SheetShellProps) {
   });
 
   // Ctrl/Cmd+P prints the table while focus is inside the grid, as in Excel.
+  // Capture phase: the cell editor stops its keys from bubbling. Inside the
+  // grid the shortcut never prints the app page; while an edit is unapplied
+  // it does nothing, as Excel ignores Print in edit mode.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (!table || tab !== "table" || printing || controlsLocked || displayRows.length === 0 ||
-          event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
+      if (!table || tab !== "table" || event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
           !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "p") return;
       const target = event.target instanceof Node ? event.target : null;
       if (!target || !gridScrollRef.current?.contains(target)) return;
       event.preventDefault();
-      setPrinting(true);
+      if (!printing && !printBlocked) setPrinting(true);
     };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
+    window.addEventListener("keydown", keydown, { capture: true });
+    return () => window.removeEventListener("keydown", keydown, { capture: true });
   });
 
   // The print-only table must be in the document before the system dialog
@@ -4252,7 +4256,7 @@ export function SheetShell(props: SheetShellProps) {
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
             : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
-          <button type="button" className="ts-button" data-testid="print-table" disabled={controlsLocked || displayRows.length === 0} onClick={() => setPrinting(true)}>Print…</button>
+          <button type="button" className="ts-button" data-testid="print-table" disabled={printBlocked} title={spreadsheetDraftLocked ? "Apply or cancel the edit first, so the printout matches what you see." : undefined} onClick={() => setPrinting(true)}>Print…</button>
         </div>
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>

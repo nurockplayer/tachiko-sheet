@@ -328,6 +328,21 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const shownCells = await groupTable("Category").locator("tfoot tr > *").evaluateAll(cells => cells.map(cell => cell.textContent?.trim() ?? ""));
   assert.equal(shownCells[1], String(shownSpending.length));
   assert.equal(shownCells[2], String(sumFor(shownSpending)), "the Total row covers only the shown rows");
+  // Printing under the filter prints the shown rows with their own totals.
+  await page.waitForFunction(() => document.querySelector('[data-testid="totals-scope"]')?.getAttribute("title")?.startsWith("Totals for the"));
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 2);
+  assert.equal(await page.evaluate(() => window.__printedRows), shownSpending.length, "a filtered print prints only the shown rows");
+  assert.equal(await page.evaluate(() => window.__printedTotal), (await page.getByTestId(`total:${amountColumn}`).textContent())?.trim(), "a filtered print totals the shown rows like the footer");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
+  // An unapplied cell edit holds Print, so the printout never disagrees with the editor.
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").nth(2).dblclick();
+  await editor.fill("-1.50");
+  assert.equal(await page.getByTestId("print-table").isDisabled(), true, "Print waits for an unapplied edit");
+  await editor.press("Escape");
+  assert.equal(await page.getByTestId("print-table").isDisabled(), false);
+  checks.push("a filtered print has only the shown rows and their totals; an unapplied edit holds Print");
   await panel.getByRole("radio", { name: `All rows (${SPENDING_ROWS})`, exact: true }).check();
   await waitForGroupRows(editedGroups);
   assert.equal((await groupTable("Category").locator("tfoot tr > *").last().textContent()), String(sumFor(spending)), "All rows restores the whole-table total");
