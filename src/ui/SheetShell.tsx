@@ -103,6 +103,7 @@ import { useHostCopy } from "./host-copy.js";
 import { CellOptionsPopup } from "./CellOptionsPopup.js";
 import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
 import { useHostFiles } from "../host/host-files.js";
+import { PrintTable } from "./PrintTable.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
@@ -708,6 +709,8 @@ export function SheetShell(props: SheetShellProps) {
   const [gridHeaderHeight, setGridHeaderHeight] = useState(32);
   const gridFooterHeightRef = useRef(0);
   const [gridFooterHeight, setGridFooterHeight] = useState(0);
+  // The print-only copy of the table exists only while a print is in flight.
+  const [printing, setPrinting] = useState(false);
   const gridScrollFrameRef = useRef<number | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
@@ -1903,6 +1906,9 @@ export function SheetShell(props: SheetShellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownTotalsKey, onQueryShownTotals]);
   const footerTotals = shownTotalsKey && shownTotals?.key === shownTotalsKey ? shownTotals : null;
+  // Print carries the same totals the grid footer shows, and only while it shows them.
+  const printTotals = footerTotals?.totals ?? table?.column_totals;
+  const printHasTotals = printTotals !== undefined && Object.keys(printTotals).length > 0;
 
   // Grouped totals are a read too: Sheet picks the question, Work groups and sums.
   const allEntities = useMemo(
@@ -3182,6 +3188,56 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", keydown);
   });
 
+  // Ctrl/Cmd+P prints the table while focus is inside the grid, as in Excel.
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (!table || tab !== "table" || printing || controlsLocked || displayRows.length === 0 ||
+          event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "p") return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || !gridScrollRef.current?.contains(target)) return;
+      event.preventDefault();
+      setPrinting(true);
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
+
+  // The print-only table must be in the document before the system dialog
+  // snapshots it, and gone afterwards. A browser's window.print() blocks until
+  // the dialog closes. In the macOS app it returns at once and the print
+  // operation reads the page later, so the table stays until afterprint or
+  // the user's next press or key back in the window.
+  useEffect(() => {
+    if (!printing) return;
+    const desktop = "__TAURI_INTERNALS__" in window;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      setPrinting(false);
+    };
+    const events = ["afterprint", ...(desktop ? ["pointerdown", "keydown"] : [])];
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        try {
+          window.print();
+        } finally {
+          if (desktop) for (const name of events) window.addEventListener(name, finish, { once: true, capture: true });
+          else finish();
+        }
+      });
+    });
+    if (!desktop) window.addEventListener("afterprint", finish, { once: true });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+      for (const name of events) window.removeEventListener(name, finish, { capture: true });
+      window.removeEventListener("afterprint", finish);
+    };
+  }, [printing]);
+
   function cancelDelete(): void {
     if (deletePending) return;
     setDeleteSelection(null); setDeleteError(null);
@@ -4120,7 +4176,7 @@ export function SheetShell(props: SheetShellProps) {
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
-        {(table.native_table_profile && onInsertRow && onRemoveRows) || (compactColumnActions && focusedColumn) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
+        <div className="ts-actions ts-row-actions ts-table-row-actions">
           {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
@@ -4202,7 +4258,8 @@ export function SheetShell(props: SheetShellProps) {
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
             : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
-        </div> : onInsertRow && onRemoveRows && !table.native_table_profile ? <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
+          <button type="button" className="ts-button" data-testid="print-table" disabled={controlsLocked || displayRows.length === 0} onClick={() => setPrinting(true)}>Print…</button>
+        </div>
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>
           {groupPanel && groupPanelLive ? <GroupTotalsPane
@@ -5318,6 +5375,13 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
         );
       })() : null}
+      {printing && table ? <PrintTable
+        tableName={names.table(table.collection.id) ?? table.collection.display_name}
+        columns={columns}
+        rows={displayRows}
+        totals={printHasTotals ? printTotals : undefined}
+        viewStatus={rowViewStatusText(columns, gridSettings, displayRows.length, rowSource(table).total)}
+      /> : null}
     </div>
   );
 }

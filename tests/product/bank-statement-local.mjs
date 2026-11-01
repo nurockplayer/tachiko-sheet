@@ -298,6 +298,23 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
     "the edited Amount changes the Food group at the new revision");
   checks.push("editing an Amount updates the affected group after the new revision arrives");
 
+  // Print… prints every shown row (not only the windowed ones) and the footer totals.
+  await page.evaluate((column) => {
+    window.__printed = 0;
+    window.print = () => {
+      const root = document.querySelector('[data-testid="print-root"]');
+      window.__printedRows = root?.querySelectorAll("tbody tr").length ?? -1;
+      window.__printedTotal = root?.querySelector(`tfoot [data-column="${column}"]`)?.textContent?.trim() ?? null;
+      window.__printed++;
+    };
+  }, amountColumn);
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 1);
+  assert.equal(await page.evaluate(() => window.__printedRows), SPENDING_ROWS, "Print… prints every shown row");
+  assert.equal(await page.evaluate(() => window.__printedTotal), (await page.getByTestId(`total:${amountColumn}`).textContent())?.trim(), "the printed total matches the grid footer");
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
+  checks.push("Print… prints all 120 shown rows with the footer total, then removes the print copy");
+
   await chooseColumnAction(page, "Category", "Filter");
   await page.getByLabel("Filter Category", { exact: true }).fill("Food");
   await page.getByLabel("Filter Category", { exact: true }).press("Enter"); await ready();

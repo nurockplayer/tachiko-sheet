@@ -1,0 +1,69 @@
+/* The printable table lives in the main document, hidden until Print runs. */
+.ts-print-root {
+  display: none;
+}
+
+@page {
+  margin: 12mm;
+}
+
+@page wide {
+  size: landscape;
+}
+
+@media print {
+  /* Print only the table, not the application around it. */
+  body > :not(.ts-print-root) {
+    display: none !important;
+  }
+
+  .ts-print-root {
+    display: block;
+    color: #000;
+    background: #fff;
+  }
+
+  .ts-print-root[data-orientation="landscape"] {
+    page: wide;
+  }
+
+  .ts-print-root .ts-print-title {
+    margin: 0 0 4mm;
+    font: 700 14pt system-ui, sans-serif;
+  }
+
+  .ts-print-root .ts-print-meta {
+    margin: 0 0 3mm;
+    font: 400 9pt system-ui, sans-serif;
+  }
+
+  .ts-print-root .ts-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font: 10pt system-ui, sans-serif;
+  }
+
+  .ts-print-root .ts-print-table th,
+  .ts-print-root .ts-print-table td {
+    border: 0.5pt solid #999;
+    padding: 2pt 4pt;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+
+  .ts-print-root .ts-print-table td.ts-print-number,
+  .ts-print-root .ts-print-table .ts-print-total {
+    text-align: right;
+  }
+
+  /* Column headers repeat at the top of every page. */
+  .ts-print-root .ts-print-table thead {
+    display: table-header-group;
+  }
+
+  .ts-print-root .ts-print-table tr {
+    break-inside: avoid;
+  }
+}
