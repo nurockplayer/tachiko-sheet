@@ -384,6 +384,33 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.deepEqual(await shownRows(), [["2026-10-01", "午餐", "120"], ["2026-10-02", "捷運", "35"]]);
   checks.push("a Big5, semicolon-separated CSV from Excel opens with its separator and encoding shown and changeable");
 
+  // 8. An Excel invoice (Work #621): a title row and a blank row above the
+  // header, and a Total row that Work leaves out unless the user keeps it.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+  await (await homeImportInput(page)).setInputFiles(path.join(root, "tests/fixtures/excel/invoice.xlsx"));
+  await preview.waitFor();
+  const invoicePreviewRows = () => preview.locator(".ts-import-preview tbody tr").count();
+  assert.deepEqual(await preview.locator(".ts-import-preview th").allTextContents(), ["Item", "Qty", "Unit price", "Amount"], "the header on row 3 is found below the title");
+  assert.equal(await invoicePreviewRows(), 5, "the Total row is not a data row");
+  const keepTotal = preview.getByLabel("Keep the Total row as data", { exact: true });
+  assert.equal(await keepTotal.isChecked(), false);
+  assert.equal(await preview.getByText(/This row totals the column above it/).count(), 1, "the preview says why the Total row is left out");
+  await keepTotal.check();
+  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview tbody tr").length === 6);
+  await keepTotal.uncheck();
+  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview tbody tr").length === 5);
+  for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await ready();
+  assert.deepEqual(await headers(), ["Item", "Qty", "Unit price", "Amount"]);
+  const invoiceRows = await shownRows();
+  assert.deepEqual(invoiceRows.map(row => row[0]), ["Paper", "Toner", "Pens", "Stapler", "Folders"], "five items, no Total row");
+  assert.deepEqual(invoiceRows.map(row => row[3]), ["$35.00", "$96.00", "$24.00", "$12.90", "$30.00"], "B*C amounts calculate and keep the Excel currency format");
+  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained, can be kept, and is left out by default");
+
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {
   await context?.close();
