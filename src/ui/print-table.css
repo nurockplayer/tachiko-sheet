@@ -12,8 +12,9 @@
 }
 
 @media print {
-  /* Print only the table, not the application around it. */
-  body > :not(.ts-print-root) {
+  /* Print only the table, and only while Print… has put it in the page: a
+     plain Cmd/Ctrl+P or File > Print without it prints the page as usual. */
+  body:has(> .ts-print-root) > :not(.ts-print-root) {
     display: none !important;
   }
 
