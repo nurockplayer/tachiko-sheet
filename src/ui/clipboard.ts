@@ -124,7 +124,7 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
 /** A type-only core refusal cannot reliably identify one cell in a block. */
 export function pasteRefusal(message: string, fieldType?: string, refusalCode?: string): string {
   if (refusalCode === "request_too_large") return "The pasted text is too large to paste here. Nothing was pasted.";
-  if (fieldType === "number") return "A pasted value needs a number, such as 12.5, 1,300 or 12%. Do not include currency symbols. Nothing was pasted.";
+  if (fieldType === "number") return "A pasted value needs a number, such as 12.5, 1,300, 12% or $1,234.50. Nothing was pasted.";
   if (fieldType === "date") return "A pasted value needs a date with the year first, such as 2026-10-07 or 2026/10/7. Nothing was pasted.";
   if (fieldType === "boolean") return "A pasted Yes/No value must be true or false. Nothing was pasted.";
   return message;

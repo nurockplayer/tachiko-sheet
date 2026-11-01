@@ -61,6 +61,8 @@ export function findingCategoryLabel(category: FidelityFinding["category"]): str
   return CATEGORY_WORDING[category];
 }
 
+const SUMMARY_ROW_EXCLUDED = "This row totals the column above it (SUM, AVERAGE or COUNT), so it is not imported as a data row. Tachiko shows column totals; export does not write this row. Choose keep_summary_rows to import it as data.";
+
 export function findingMessage(message: string, code?: string): string {
   // Exact producer wording is required for a translation. A new/changed
   // warning remains verbatim rather than inheriting an inaccurate promise.
@@ -89,6 +91,13 @@ export function findingMessage(message: string, code?: string): string {
       const [table, sheet] = [quoted(names[1]!), quoted(names[2]!)];
       return table === sheet ? `The table downloads as the sheet “${sheet}”.` : `The table “${table}” downloads as the sheet “${sheet}”, because spreadsheet sheet names are limited.`;
     }
+  }
+  if (code === "summary_row_excluded" && message === SUMMARY_ROW_EXCLUDED) {
+    return "This row totals the column above it (SUM, AVERAGE or COUNT), so it is not imported as a row. Tachiko shows column totals instead, and downloads leave this row out. To import it as an ordinary row, choose “Keep the Total row as data”.";
+  }
+  if (code === "number_format_currency_mapped") {
+    const mapped = /^XLSX number format "(.*)" mapped to ([A-Z]{3}) currency$/.exec(message);
+    if (mapped) return `The Excel format ${mapped[1]} shows as ${mapped[2]} currency.`;
   }
   if (/^Saved keyed-grouped-sum definition .+ and its calculated results are excluded\.$/.test(message)) {
     return "The saved summary and its calculated values are not included. Save a copy of your work to keep them.";

@@ -16,6 +16,7 @@ import {
   type Currentness,
   type FieldTarget,
   type ImportInspection,
+  type ImportReread,
   type ImportedSourceAttachment,
   type ImportSelection,
   type InteropState,
@@ -1371,7 +1372,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return end >= 0 ? text.slice(0, end + 1) : text;
   }
 
-  async function inspectImport(file: File, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<ImportInspection> {
+  async function inspectImport(file: File, csv?: ImportReread): Promise<ImportInspection> {
     if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the open work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
     const generation = ++inspectGenerationRef.current;
@@ -1383,6 +1384,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const delimited = lower.endsWith(".csv") || lower.endsWith(".tsv") || lower.endsWith(".txt");
       const format = delimited ? "csv" : lower.endsWith(".xlsx") ? "xlsx" : null;
       if (!format) throw new Error("Choose a .csv, .tsv, .txt or .xlsx file.");
+      // Work reads a Total row as data only in XLSX; CSV refuses the option.
+      const keepSummaryRows = format === "xlsx" && csv?.keepSummaryRows === true;
       const raw = await file.arrayBuffer();
       let bytes = raw;
       let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[]; sourceBytes?: ArrayBuffer } | undefined;
@@ -1398,7 +1401,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       let source: Awaited<ReturnType<typeof runtime.inspectSpreadsheet>>;
       try {
-        source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true });
+        source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true, ...(keepSummaryRows ? { keep_summary_rows: true } : {}) });
       } catch (error) {
         // A wrong separator guess (for example an empty trailing header) must
         // not keep the user from the preview, where Separator can be changed:
@@ -1407,7 +1410,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         csvRead = { ...csvRead, delimiter: preferredDelimiter };
         source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: preferredDelimiter, header: true }).catch(() => { throw error; });
       }
-      const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}) } as ImportInspection;
+      const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}), ...(keepSummaryRows ? { keepSummaryRows } : {}) } as ImportInspection;
       if (generation !== inspectGenerationRef.current) return inspection;
       importBytesRef.current = bytes.slice(0);
       setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
@@ -1436,7 +1439,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // latest same-occurrence report, dirty marker, and save receipt.
       checkpointBeforeOpen(true);
       setCurrentness("pending");
-      const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: pending.csv?.delimiter ?? ",", header: true }, selection);
+      const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: pending.csv?.delimiter ?? ",", header: true, ...(pending.keepSummaryRows ? { keep_summary_rows: true } : {}) }, selection);
       // Import installs a different work occurrence. Never present an older
       // work's groups or definition IDs against this newly imported view.
       installJ4DefinitionIds([]);
