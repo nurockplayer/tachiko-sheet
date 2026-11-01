@@ -104,6 +104,7 @@ import { useHostCopy } from "./host-copy.js";
 import { CellOptionsPopup } from "./CellOptionsPopup.js";
 import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
 import { useHostFiles } from "../host/host-files.js";
+import { PrintTable } from "./PrintTable.js";
 import "./sheet-shell.css";
 
 type EditableKind = "number" | "text" | "boolean" | "date";
@@ -709,6 +710,12 @@ export function SheetShell(props: SheetShellProps) {
   const [gridHeaderHeight, setGridHeaderHeight] = useState(32);
   const gridFooterHeightRef = useRef(0);
   const [gridFooterHeight, setGridFooterHeight] = useState(0);
+  // The print-only copy of the table exists only while a print is in flight.
+  // A print request number (0 = none): a new request reprints even while the
+  // previous copy is still waiting for afterprint.
+  const [printing, setPrinting] = useState(0);
+  const printRequestRef = useRef(0);
+  const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
@@ -1745,6 +1752,8 @@ export function SheetShell(props: SheetShellProps) {
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
   // Downloads snapshot the published revision, so unpublished drafts block them.
   const spreadsheetDraftLocked = cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  // Print, like a download, waits for unapplied edits: it prints Work's values.
+  const printBlocked = controlsLocked || spreadsheetDraftLocked || displayRows.length === 0;
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
@@ -1914,6 +1923,15 @@ export function SheetShell(props: SheetShellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownTotalsKey, onQueryShownTotals]);
   const footerTotals = shownTotalsKey && shownTotals?.key === shownTotalsKey ? shownTotals : null;
+  // Print carries totals only for the rows it prints: under a filter, the
+  // shown-row totals once they arrive, never the whole-table fallback.
+  const printTotals = shownEntities ? footerTotals?.totals : table?.column_totals;
+  const printHasTotals = printTotals !== undefined && Object.keys(printTotals).length > 0;
+  // Under a filter whose totals have not arrived (or failed), the printout
+  // says it has none rather than silently dropping them.
+  const printTotalsNote = shownEntities && !footerTotals && table?.column_totals && Object.keys(table.column_totals).length > 0
+    ? "Totals for these rows were not ready when this was printed, so they are not shown."
+    : null;
 
   // Grouped totals are a read too: Sheet picks the question, Work groups and sums.
   const allEntities = useMemo(
@@ -3193,6 +3211,52 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", keydown);
   });
 
+  // Ctrl/Cmd+P prints the table while focus is inside the grid, as in Excel.
+  // Capture phase: the cell editor stops its keys from bubbling. Inside the
+  // grid the shortcut never prints the app page; while an edit is unapplied
+  // it does nothing, as Excel ignores Print in edit mode.
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (!table || tab !== "table" || event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "p") return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || !gridScrollRef.current?.contains(target)) return;
+      event.preventDefault();
+      if (!printBlocked) requestPrint();
+    };
+    window.addEventListener("keydown", keydown, { capture: true });
+    return () => window.removeEventListener("keydown", keydown, { capture: true });
+  });
+
+  // The print-only table must be in the document before the system dialog
+  // snapshots it, and gone afterwards. window.print() may return before the
+  // page is read (the macOS app, Safari), so the table stays until afterprint
+  // or the user's next press or key back in the window.
+  useEffect(() => {
+    if (!printing) return;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      // Only this request's copy: a newer Cmd/Ctrl+P in the same keydown wins.
+      setPrinting(current => current === printing ? 0 : current);
+    };
+    const events = ["afterprint", "pointerdown", "keydown"];
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        window.addEventListener("afterprint", finish, { once: true, capture: true });
+        window.print();
+        for (const name of events.slice(1)) window.addEventListener(name, finish, { once: true, capture: true });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+      for (const name of events) window.removeEventListener(name, finish, { capture: true });
+    };
+  }, [printing]);
+
   function cancelDelete(): void {
     if (deletePending) return;
     setDeleteSelection(null); setDeleteError(null);
@@ -4131,7 +4195,7 @@ export function SheetShell(props: SheetShellProps) {
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
-        {(table.native_table_profile && onInsertRow && onRemoveRows) || (compactColumnActions && focusedColumn) ? <div className="ts-actions ts-row-actions ts-table-row-actions">
+        <div className="ts-actions ts-row-actions ts-table-row-actions">
           {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
@@ -4213,7 +4277,8 @@ export function SheetShell(props: SheetShellProps) {
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
             : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
-        </div> : onInsertRow && onRemoveRows && !table.native_table_profile ? <p className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</p> : null}
+          <button type="button" className="ts-button" data-testid="print-table" disabled={printBlocked} title={spreadsheetDraftLocked ? "Apply or cancel the edit first, so the printout matches what you see." : undefined} onClick={requestPrint}>Print…</button>
+        </div>
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>
           {groupPanel && groupPanelLive ? <GroupTotalsPane
@@ -5341,6 +5406,14 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
         );
       })() : null}
+      {printing > 0 && table ? <PrintTable
+        tableName={names.table(table.collection.id) ?? table.collection.display_name}
+        columns={columns}
+        rows={displayRows}
+        totals={printHasTotals ? printTotals : undefined}
+        totalsNote={printTotalsNote}
+        viewStatus={rowViewStatusText(columns, gridSettings, displayRows.length, rowSource(table).total)}
+      /> : null}
     </div>
   );
 }
