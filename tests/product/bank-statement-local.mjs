@@ -409,7 +409,7 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await preview.getByText(/This row totals the column above it/).waitFor({ state: "detached" });
   assert.equal(await keepTotal.isChecked(), true, "the choice stays visible once the finding is gone");
   assert.equal(await totalFinding(), 0);
-  await preview.getByText("6 rows", { exact: true }).waitFor(); // the Total row is now a data row
+  await preview.getByText("First 5 of 6 rows", { exact: true }).waitFor(); // the Total row is now a data row
   assert.equal(await qtyType.inputValue(), "text", "keeping the Total row keeps the chosen column types");
   await qtyType.selectOption("number");
   await keepTotal.click();
@@ -432,7 +432,7 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await (await homeImportInput(page)).setInputFiles(path.join(root, "tests/fixtures/excel/invoice.xlsx"));
   await preview.waitFor();
   await keepTotal.click();
-  await preview.getByText("6 rows", { exact: true }).waitFor();
+  await preview.getByText("First 5 of 6 rows", { exact: true }).waitFor();
   for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await ready();
