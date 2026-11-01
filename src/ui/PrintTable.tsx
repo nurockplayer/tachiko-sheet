@@ -14,6 +14,8 @@ export interface PrintTableContentProps {
   totals?: Record<string, number | null>;
   /** The grid's one-line view status, when sort or filter is active. */
   viewStatus?: string | null;
+  /** Why a printout that would have totals has none (shown-row totals not ready). */
+  totalsNote?: string | null;
 }
 
 /**
@@ -21,7 +23,7 @@ export interface PrintTableContentProps {
  * window.print() prints the whole document and a print-only element is the
  * only shape that works the same in browsers and the macOS app.
  */
-export function PrintTableContent({ tableName, columns, rows, totals, viewStatus }: PrintTableContentProps) {
+export function PrintTableContent({ tableName, columns, rows, totals, viewStatus, totalsNote }: PrintTableContentProps) {
   return (
     <div
       className="ts-print-root"
@@ -70,6 +72,7 @@ export function PrintTableContent({ tableName, columns, rows, totals, viewStatus
           </tfoot>
         ) : null}
       </table>
+      {!totals && totalsNote ? <p className="ts-print-meta" data-testid="print-totals-note">{totalsNote}</p> : null}
     </div>
   );
 }

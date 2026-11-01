@@ -47,4 +47,14 @@ describe("PrintTableContent", () => {
     expect(count(foot, /<td /g)).toBe(7);
     expect(foot).toContain('data-column="c6"');
   });
+
+  it("says so when a filtered printout has no totals yet, and only then", () => {
+    const columns = [column("a", "number")];
+    const note = "Totals for these rows were not ready when this was printed, so they are not shown.";
+    const pending = renderToStaticMarkup(<PrintTableContent tableName="T" columns={columns} rows={rows(columns, 2)} totalsNote={note} />);
+    expect(pending).not.toContain("<tfoot>");
+    expect(pending).toContain(note);
+    const ready = renderToStaticMarkup(<PrintTableContent tableName="T" columns={columns} rows={rows(columns, 2)} totals={{ a: 3 }} totalsNote={note} />);
+    expect(ready).not.toContain(note);
+  });
 });

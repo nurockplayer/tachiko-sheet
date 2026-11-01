@@ -1916,6 +1916,11 @@ export function SheetShell(props: SheetShellProps) {
   // shown-row totals once they arrive, never the whole-table fallback.
   const printTotals = shownEntities ? footerTotals?.totals : table?.column_totals;
   const printHasTotals = printTotals !== undefined && Object.keys(printTotals).length > 0;
+  // Under a filter whose totals have not arrived (or failed), the printout
+  // says it has none rather than silently dropping them.
+  const printTotalsNote = shownEntities && !footerTotals && table?.column_totals && Object.keys(table.column_totals).length > 0
+    ? "Totals for these rows were not ready when this was printed, so they are not shown."
+    : null;
 
   // Grouped totals are a read too: Sheet picks the question, Work groups and sums.
   const allEntities = useMemo(
@@ -5383,6 +5388,7 @@ export function SheetShell(props: SheetShellProps) {
         columns={columns}
         rows={displayRows}
         totals={printHasTotals ? printTotals : undefined}
+        totalsNote={printTotalsNote}
         viewStatus={rowViewStatusText(columns, gridSettings, displayRows.length, rowSource(table).total)}
       /> : null}
     </div>
