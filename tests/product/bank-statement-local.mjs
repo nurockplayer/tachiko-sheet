@@ -371,6 +371,12 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 1);
   await preview.getByLabel("Separator", { exact: true }).selectOption(";");
   await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 3);
+  await preview.getByLabel("Text encoding", { exact: true }).selectOption("windows-1252");
+  await page.waitForFunction(() => !document.querySelector(".ts-import-preview th")?.textContent?.includes("日期"));
+  assert.notDeepEqual(await previewHeaders(), ["日期", "摘要", "金額"], "another Text encoding re-reads the file");
+  await preview.getByLabel("Text encoding", { exact: true }).selectOption("big5");
+  await page.waitForFunction(() => document.querySelector(".ts-import-preview th")?.textContent === "日期");
+  assert.deepEqual(await previewHeaders(), ["日期", "摘要", "金額"], "choosing Big5 again restores the text");
   assert.deepEqual(await preview.locator(".ts-import-column select").evaluateAll(selects => selects.map(select => select.value)), ["date", "text", "number"]);
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await ready();
