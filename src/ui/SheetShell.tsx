@@ -2632,9 +2632,10 @@ export function SheetShell(props: SheetShellProps) {
     const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
     const selectionIdentity = view && collectionIdentity && displayRows.length > 0 && columns.length > 0 ? { view, identity: collectionIdentity } : null;
     // Excel Ctrl/Cmd+Arrow jumps to the edge of the filled run, or the table edge.
+    // A cell is filled when it shows text, "Calculation failed" included.
     if (!draft && mod && arrowKey) {
       const target = edgeAddress(address(position), event.key, displayRows.length, columns.length,
-        (row, column) => fieldClipboardText(fieldForColumn(displayRows[row]!, columns[column]!.id)) === "");
+        (row, column) => cellDisplay(displayRows[row]!, columns[column]!).text === "");
       const row = displayRows[target.row], column = columns[target.column];
       if (row && column) {
         event.preventDefault();
