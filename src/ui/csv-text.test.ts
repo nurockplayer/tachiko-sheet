@@ -114,6 +114,15 @@ describe("guessCsvEncoding and toUtf8Bytes", () => {
     expect(decoded(toUtf8Bytes(bytes.buffer, "utf-16le"))).toBe("名稱,金額\n午餐,120\n");
   });
 
+  it("detects ASCII-heavy UTF-16LE without a BOM, which UTF-8 would also accept", () => {
+    const text = "Name,Amount\nLunch,120\n";
+    const bytes = new Uint8Array(text.length * 2);
+    for (let i = 0; i < text.length; i++) bytes[i * 2] = text.charCodeAt(i);
+    expect(guessCsvEncoding(bytes.buffer, [])).toBe("utf-16le");
+    expect(decoded(toUtf8Bytes(bytes.buffer, "utf-16le"))).toBe(text);
+    expect(guessCsvEncoding(new TextEncoder().encode(text).buffer as ArrayBuffer, [])).toBe("utf-8");
+  });
+
   it("labels every encoding and delimiter", () => {
     expect(CSV_ENCODING_LABELS["utf-8"]).toBe("Unicode (UTF-8)");
     expect(CSV_ENCODING_LABELS.shift_jis).toBe("Japanese (Shift_JIS)");

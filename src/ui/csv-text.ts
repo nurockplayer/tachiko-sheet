@@ -85,11 +85,25 @@ function preferredEncoding(language: string): CsvEncoding | null {
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 /** "utf-8" if `new TextDecoder("utf-8", { fatal: true })` succeeds (a UTF-8 BOM is fine, Work strips it).
- *  FF FE BOM → "utf-16le". Otherwise try, in order, the language-preferred encoding (zh-TW/zh-HK/zh-Hant* → big5,
+ *  FF FE BOM, or NUL in at least 30% of the odd bytes (and at most 5% of the even ones) of the first 4 KiB → "utf-16le"
+ *  (checked first: NUL is valid UTF-8). Otherwise try, in order, the language-preferred encoding (zh-TW/zh-HK/zh-Hant* → big5,
  *  ja* → shift_jis, zh-CN/zh-Hans/zh → gb18030, ko* → euc-kr), then big5, shift_jis, gb18030, euc-kr, each with
  *  fatal: true; first that decodes wins; fallback "windows-1252". After the language-preferred encodings, bytes
  *  whose high bytes mostly stand alone are read as "windows-1252" before the other double-byte candidates. */
 export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[]): CsvEncoding {
+  // NUL is valid UTF-8, so UTF-16LE without a BOM ("N\0a\0m\0e\0") would pass
+  // the UTF-8 check: text with NUL in most odd bytes and few even ones is UTF-16LE.
+  const sample = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 4096) & ~1);
+  if (sample.length >= 4) {
+    let oddNul = 0;
+    let evenNul = 0;
+    for (let i = 0; i < sample.length; i += 2) {
+      if (sample[i] === 0) evenNul++;
+      if (sample[i + 1] === 0) oddNul++;
+    }
+    const pairs = sample.length / 2;
+    if (oddNul >= pairs * 0.3 && evenNul <= pairs * 0.05) return "utf-16le";
+  }
   try {
     UTF8_DECODER.decode(bytes);
     return "utf-8";
