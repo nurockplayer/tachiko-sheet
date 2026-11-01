@@ -123,6 +123,17 @@ describe("guessCsvEncoding and toUtf8Bytes", () => {
     expect(guessCsvEncoding(new TextEncoder().encode(text).buffer as ArrayBuffer, [])).toBe("utf-8");
   });
 
+  it("detects UTF-16BE from its BOM or its NUL pattern", () => {
+    const text = "名稱,Amount\nLunch,120\n";
+    const be = (bom: boolean) => {
+      const units = [...(bom ? [0xfeff] : []), ...Array.from(text, (char) => char.charCodeAt(0))];
+      return new Uint8Array(units.flatMap((unit) => [unit >> 8, unit & 0xff])).buffer;
+    };
+    expect(guessCsvEncoding(be(true), [])).toBe("utf-16be");
+    expect(decoded(toUtf8Bytes(be(true), "utf-16be"))).toBe(text);
+    expect(guessCsvEncoding(be(false), [])).toBe("utf-16be");
+  });
+
   it("labels every encoding and delimiter", () => {
     expect(CSV_ENCODING_LABELS["utf-8"]).toBe("Unicode (UTF-8)");
     expect(CSV_ENCODING_LABELS.shift_jis).toBe("Japanese (Shift_JIS)");

@@ -1,7 +1,7 @@
 /** Separator and text-encoding helpers for CSV/TSV files saved by other spreadsheets. */
 
 export type CsvDelimiter = "," | ";" | "\t";
-export type CsvEncoding = "utf-8" | "utf-16le" | "big5" | "shift_jis" | "gb18030" | "euc-kr" | "windows-1252";
+export type CsvEncoding = "utf-8" | "utf-16le" | "utf-16be" | "big5" | "shift_jis" | "gb18030" | "euc-kr" | "windows-1252";
 
 /** Tie-break order after the preferred separator: a candidate must beat the previous one, so tab wins ties, then comma, then semicolon. */
 const DELIMITER_CANDIDATES: readonly CsvDelimiter[] = ["\t", ",", ";"];
@@ -85,8 +85,8 @@ function preferredEncoding(language: string): CsvEncoding | null {
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 /** "utf-8" if `new TextDecoder("utf-8", { fatal: true })` succeeds (a UTF-8 BOM is fine, Work strips it).
- *  FF FE BOM, or NUL in at least 30% of the odd bytes (and at most 5% of the even ones) of the first 4 KiB → "utf-16le"
- *  (checked first: NUL is valid UTF-8). Otherwise try, in order, the language-preferred encoding (zh-TW/zh-HK/zh-Hant* → big5,
+ *  FF FE BOM, or NUL in at least 30% of the odd bytes (and at most 5% of the even ones) of the first 4 KiB → "utf-16le";
+ *  FE FF BOM or the mirrored NUL pattern → "utf-16be" (checked first: NUL is valid UTF-8). Otherwise try, in order, the language-preferred encoding (zh-TW/zh-HK/zh-Hant* → big5,
  *  ja* → shift_jis, zh-CN/zh-Hans/zh → gb18030, ko* → euc-kr), then big5, shift_jis, gb18030, euc-kr, each with
  *  fatal: true; first that decodes wins; fallback "windows-1252". After the language-preferred encodings, bytes
  *  whose high bytes mostly stand alone are read as "windows-1252" before the other double-byte candidates. */
@@ -103,6 +103,7 @@ export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[
     }
     const pairs = sample.length / 2;
     if (oddNul >= pairs * 0.3 && evenNul <= pairs * 0.05) return "utf-16le";
+    if (evenNul >= pairs * 0.3 && oddNul <= pairs * 0.05) return "utf-16be";
   }
   try {
     UTF8_DECODER.decode(bytes);
@@ -112,6 +113,7 @@ export function guessCsvEncoding(bytes: ArrayBuffer, languages: readonly string[
   }
   const head = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 2));
   if (head[0] === 0xff && head[1] === 0xfe) return "utf-16le";
+  if (head[0] === 0xfe && head[1] === 0xff) return "utf-16be";
   const decodes = (encoding: CsvEncoding): boolean => {
     try {
       new TextDecoder(encoding, { fatal: true }).decode(bytes);
@@ -162,7 +164,8 @@ export function toUtf8Bytes(bytes: ArrayBuffer, encoding: CsvEncoding): ArrayBuf
 
 export const CSV_ENCODING_LABELS: Record<CsvEncoding, string> = {
   "utf-8": "Unicode (UTF-8)",
-  "utf-16le": "Unicode (UTF-16)",
+  "utf-16le": "Unicode (UTF-16 LE)",
+  "utf-16be": "Unicode (UTF-16 BE)",
   "big5": "Traditional Chinese (Big5)",
   "shift_jis": "Japanese (Shift_JIS)",
   "gb18030": "Simplified Chinese (GB18030)",
