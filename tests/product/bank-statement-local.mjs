@@ -398,10 +398,16 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const keepTotal = preview.getByLabel("Keep the Total row as data", { exact: true });
   assert.equal(await keepTotal.isChecked(), false);
   assert.equal(await preview.getByText(/This row totals the column above it/).count(), 1, "the preview says why the Total row is left out");
+  // Keeping it re-reads the workbook: Work no longer reports the row as left
+  // out (the preview shows only the first five rows, so count the finding).
+  const totalFinding = () => preview.getByText(/This row totals the column above it/).count();
   await keepTotal.check();
-  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview tbody tr").length === 6);
+  await preview.getByText(/This row totals the column above it/).waitFor({ state: "detached" });
+  assert.equal(await keepTotal.isChecked(), true, "the choice stays visible once the finding is gone");
+  assert.equal(await totalFinding(), 0);
   await keepTotal.uncheck();
-  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview tbody tr").length === 5);
+  await preview.getByText(/This row totals the column above it/).waitFor();
+  assert.equal(await totalFinding(), 1);
   for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await ready();
