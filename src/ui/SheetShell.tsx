@@ -710,7 +710,11 @@ export function SheetShell(props: SheetShellProps) {
   const gridFooterHeightRef = useRef(0);
   const [gridFooterHeight, setGridFooterHeight] = useState(0);
   // The print-only copy of the table exists only while a print is in flight.
-  const [printing, setPrinting] = useState(false);
+  // A print request number (0 = none): a new request reprints even while the
+  // previous copy is still waiting for afterprint.
+  const [printing, setPrinting] = useState(0);
+  const printRequestRef = useRef(0);
+  const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
@@ -3202,7 +3206,7 @@ export function SheetShell(props: SheetShellProps) {
       const target = event.target instanceof Node ? event.target : null;
       if (!target || !gridScrollRef.current?.contains(target)) return;
       event.preventDefault();
-      if (!printing && !printBlocked) setPrinting(true);
+      if (!printBlocked) requestPrint();
     };
     window.addEventListener("keydown", keydown, { capture: true });
     return () => window.removeEventListener("keydown", keydown, { capture: true });
@@ -3218,7 +3222,7 @@ export function SheetShell(props: SheetShellProps) {
     const finish = () => {
       if (settled) return;
       settled = true;
-      setPrinting(false);
+      setPrinting(0);
     };
     const events = ["afterprint", "pointerdown", "keydown"];
     let second = 0;
@@ -4256,7 +4260,7 @@ export function SheetShell(props: SheetShellProps) {
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
             : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
-          <button type="button" className="ts-button" data-testid="print-table" disabled={printBlocked} title={spreadsheetDraftLocked ? "Apply or cancel the edit first, so the printout matches what you see." : undefined} onClick={() => setPrinting(true)}>Print…</button>
+          <button type="button" className="ts-button" data-testid="print-table" disabled={printBlocked} title={spreadsheetDraftLocked ? "Apply or cancel the edit first, so the printout matches what you see." : undefined} onClick={requestPrint}>Print…</button>
         </div>
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
           </div>
@@ -5373,7 +5377,7 @@ export function SheetShell(props: SheetShellProps) {
         </Modal>
         );
       })() : null}
-      {printing && table ? <PrintTable
+      {printing > 0 && table ? <PrintTable
         tableName={names.table(table.collection.id) ?? table.collection.display_name}
         columns={columns}
         rows={displayRows}

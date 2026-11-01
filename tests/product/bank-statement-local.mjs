@@ -313,6 +313,15 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.equal(await page.evaluate(() => window.__printedRows), SPENDING_ROWS, "Print… prints every shown row");
   assert.equal(await page.evaluate(() => window.__printedTotal), (await page.getByTestId(`total:${amountColumn}`).textContent())?.trim(), "the printed total matches the grid footer");
   assert.equal(await page.getByTestId("print-root").count(), 1, "the print copy waits for afterprint (window.print may return early)");
+  // In print media only the print copy shows; the app is hidden.
+  await page.emulateMedia({ media: "print" });
+  assert.deepEqual(await page.evaluate(() => [...document.body.children].filter(element => getComputedStyle(element).display !== "none").map(element => element.dataset.testid ?? element.id)),
+    ["print-root"], "printing shows only the table");
+  await page.emulateMedia({ media: null });
+  // A second Print… before afterprint prints again instead of being swallowed.
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 2);
+  await page.evaluate(() => { window.__printed = 1; });
   await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
   checks.push("Print… prints all 120 shown rows with the footer total, then removes the print copy after afterprint");
