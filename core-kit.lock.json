@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "3737adfc4fa1261ffa038857b29e2420dce0b3b8",
+  "sourceCommit": "f64d94b665e37e154cea54d18affcf60faa41283",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "6f0f934a29f383fdfda1c8bad1d1c5595efc1d55817da35e85288ec00fd9ab32",
+  "artifactManifestSha256": "67070020c839cac8b10b9273679eea939b2f42dff1181ff58cfd3c57d1dad994",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6542826094",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6563144516",
   "qualificationArtifactReview": {
-    "sourceCommit": "3737adfc4fa1261ffa038857b29e2420dce0b3b8",
-    "artifactManifestSha256": "6f0f934a29f383fdfda1c8bad1d1c5595efc1d55817da35e85288ec00fd9ab32",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6542826094"
+    "sourceCommit": "f64d94b665e37e154cea54d18affcf60faa41283",
+    "artifactManifestSha256": "67070020c839cac8b10b9273679eea939b2f42dff1181ff58cfd3c57d1dad994",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6563144516"
   },
-  "notes": "Re-pin to Work main 3737adfc (Work #614: read-only grouped totals by one or two keys; Work #616: XLSX General written as built-in number format 0, so Numbers shows decimals)"
+  "notes": "Re-pin to Work main f64d94b6 (Work #621: XLSX header below title rows, Total rows recognised and kept on request, whole-column totals bind; #620: Number input accepts one currency marker; #623: Excel currency formats mapped; #626: kit types for the layout options)"
 }

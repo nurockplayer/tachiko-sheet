@@ -1,9 +1,24 @@
 import type { FieldProjection, FieldTarget, OpenedProjection, StoredValueProjection } from "./protocol.ts";
 export type SpreadsheetFormat = "csv" | "xlsx";
 export type ImportFieldType = "text" | "number" | "boolean" | "date";
+/** `header_rows` (1-based header row per sheet; missing or null = detect) and `keep_summary_rows` are XLSX only; CSV refuses them. */
 export type ImportOptions = {
     delimiter: string;
     header: boolean;
+    header_rows?: (number | null)[];
+    keep_summary_rows?: boolean;
+};
+/** Where the imported grid sat in the source sheet; omitted when the header is row 1 and no Total row was recognised. */
+export type SourceLayout = {
+    rows_above_header?: number;
+    summary_row?: {
+        row: number;
+        cells: Array<{
+            column: number;
+            aggregate: "total" | "average" | "count";
+            formula: string;
+        }>;
+    };
 };
 export type FidelityFinding = {
     category: "native_equivalent" | "preserved_readable" | "converted" | "unsupported_safe_disabled" | "lossy_on_export";
@@ -46,6 +61,7 @@ export type SourceWorkbook = {
             width: number | null;
         }>;
         rows: SourceCell[][];
+        layout?: SourceLayout;
     }>;
     ledger: FidelityFinding[];
 };

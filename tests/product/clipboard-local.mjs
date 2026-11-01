@@ -241,7 +241,8 @@ try {
   await cell(table, 0, 0).press("F2");
   assert.equal(await page.locator('.ts-clipboard-status[role="alert"]:visible').count(), 0, "starting an edit clears refusal");
   await page.getByTestId("cell-editor").press("Escape");
-  for (const text of ["bad\t1,30\ttrue", "bad\t$5\ttrue"]) await unchangedPaste(text, /needs a number/);
+  // Work #619: one currency marker is a number now; a comma decimal with a currency is still refused.
+  for (const text of ["bad\t1,30\ttrue", "bad\t€12,50\ttrue"]) await unchangedPaste(text, /needs a number/);
   assert.equal(await unchangedPaste("bad\t\ttrue", /This Number column needs a value in every row/, true), 0);
   checks.push("3 invalid Number, locale and currency refused by Work; blank required Number refused locally; no revision/history change");
   for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/], ['"unclosed', /unfinished quote/], ['"x"tail', /malformed quotes/], [Array(129).fill("a\t1\ttrue").join("\n"), /128-row/]]) {
@@ -257,13 +258,14 @@ try {
   checks.push("4 ragged, too-wide, malformed and oversized blocks refused before publication; exact history preserved across every refusal");
 
   // Several whole rows pasted into the new row append to the table in one
-  // publication; Undo removes them together.
-  await draftFirst().focus(); await paste(draftFirst(), "a\t1\ttrue\nb\t2\tfalse");
+  // publication; Undo removes them together. Amounts copied with a currency
+  // marker (Work #619) arrive as plain numbers.
+  await draftFirst().focus(); await paste(draftFirst(), "a\t$1\ttrue\nb\tNT$2\tfalse");
   await status().filter({ hasText: "Added 2 rows" }).waitFor(); await ready();
   const appended = values(await projection());
   assert.equal(appended.length, pasted.length + 2, "both pasted rows were appended");
   assert.deepEqual(appended.slice(0, pasted.length), pasted, "existing rows are unchanged");
-  assert.deepEqual(appended.slice(pasted.length), [["a", 1, true], ["b", 2, false]], "appended rows hold the pasted typed values in order");
+  assert.deepEqual(appended.slice(pasted.length), [["a", 1, true], ["b", 2, false]], "appended rows hold the pasted typed values in order, currency markers read as numbers");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual(values(await projection()), pasted);
   // Under a filter that excludes them, rows added by paste stay visible.
@@ -374,7 +376,7 @@ try {
   assert.deepEqual((await projection()).rows, table.rows);
   checks.push("217.1 imported 2x3 at selection top-left: one edit_cells, one publication, one Undo/Redo and preserved focus");
 
-  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,30\t2", "bad\t$5\t2"]) {
+  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,30\t2", "bad\t€5,00\t2"]) {
     assert.equal(await unchangedPaste(text, /needs a number/), 1);
   }
   // #229: structurally native imported optional Number now clears explicitly.

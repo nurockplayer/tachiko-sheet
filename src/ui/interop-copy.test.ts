@@ -95,6 +95,11 @@ describe("native table download disclosures", () => {
 
   it("names the sheet a table downloads as, and keeps an unreadable message verbatim", () => {
     expect(findingMessage('Worksheet name "Invoices" mapped to "Invoices".', "native_tables_worksheet_name")).toBe("The table downloads as the sheet “Invoices”.");
+    // Work #621 / #622: exact producer wording only; anything else stays verbatim.
+    const summary = "This row totals the column above it (SUM, AVERAGE or COUNT), so it is not imported as a data row. Tachiko shows column totals; export does not write this row. Choose keep_summary_rows to import it as data.";
+    expect(findingMessage(summary, "summary_row_excluded")).toMatch(/^This row totals the column above it .*“Keep the Total row as data”\.$/);
+    expect(findingMessage(`${summary} More.`, "summary_row_excluded")).toBe(`${summary} More.`);
+    expect(findingMessage('XLSX number format "[$NT$-404]#,##0" mapped to TWD currency', "number_format_currency_mapped")).toBe("The Excel format [$NT$-404]#,##0 shows as TWD currency.");
     expect(findingMessage('Worksheet name "Q3: \\"plan\\"" mapped to "Q3 plan".', "native_tables_worksheet_name"))
       .toBe("The table “Q3: \"plan\"” downloads as the sheet “Q3 plan”, because spreadsheet sheet names are limited.");
     expect(findingMessage("Worksheet name changed.", "native_tables_worksheet_name")).toBe("Worksheet name changed.");

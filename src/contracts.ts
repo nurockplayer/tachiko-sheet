@@ -424,7 +424,7 @@ export interface SheetShellProps {
   /** The user's file name for imported work; display only. */
   importedSourceName?: string | null;
   /** `csv` re-reads the same file with a chosen separator or text encoding. */
-  onInspectImport?(file: File, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<ImportInspection>;
+  onInspectImport?(file: File, csv?: ImportReread): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;
   onCancelImport?(): void;
   onPreviewTrim?(witness: ViewWitness, fields: FieldTarget[]): Promise<CleanupPreview | null>;
@@ -436,6 +436,9 @@ export interface SheetShellProps {
   onDownload?(format: SpreadsheetFormat | "ro"): Promise<boolean>;
 }
 
+/** A re-read of the chosen file with a different reading: CSV separator and encoding, or an XLSX Total row kept as data. */
+export interface ImportReread { delimiter?: CsvDelimiter; encoding?: CsvEncoding; keepSummaryRows?: boolean }
+
 export interface ImportInspection {
   name: string;
   format: SpreadsheetFormat;
@@ -443,6 +446,8 @@ export interface ImportInspection {
   /** How a delimited text file was read at the file boundary. Absent for .xlsx. */
   /** `sourceBytes` keeps the file exactly as chosen when it was decoded to UTF-8 for reading. */
   csv?: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[]; sourceBytes?: ArrayBuffer };
+  /** XLSX: the user chose to import a recognised Total row as an ordinary row. */
+  keepSummaryRows?: boolean;
 }
 
 export interface InteropState {
