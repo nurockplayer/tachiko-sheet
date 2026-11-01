@@ -63,7 +63,7 @@ async function importWorkbook(page) {
   await (await homeImportInput(page)).setInputFiles(fixture);
   const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
-  const types = dialog.locator("select");
+  const types = dialog.locator(".ts-import-column select");
   await types.nth(2).selectOption("number");
   await types.nth(4).selectOption("number");
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();

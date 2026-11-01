@@ -93,7 +93,7 @@ async function importSource(page, file) {
   await (await homeImportInput(page)).setInputFiles(file);
   const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.waitFor();
-  const types = dialog.locator("select");
+  const types = dialog.locator(".ts-import-column select");
   assert.equal(await types.count(), COLS);
   for (let c = 0; c < COLS; c++) {
     const type = c % 2 === 0 ? "text" : "number";
@@ -231,7 +231,7 @@ try {
       const review = page.getByRole("dialog", { name: "Review import preview", exact: true });
       await review.or(page.getByRole("alert")).first().waitFor();
       if (await review.count()) {
-        await review.locator("select").nth(1).selectOption("number");
+        await review.locator(".ts-import-column select").nth(1).selectOption("number");
         await review.getByRole("button", { name: "Import file", exact: true }).click();
         await review.getByRole("alert").waitFor();
         assert.match(await review.getByRole("alert").textContent(), /column could not be converted to Number/);

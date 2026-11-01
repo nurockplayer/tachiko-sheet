@@ -15,7 +15,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   }, text);
   await (await homeImportInput(page)).setInputFiles({ name: "optional-entry.csv", mimeType: "text/csv", buffer: Buffer.from("Row,Note,Amount,Extra\nblank,,,\npresent,kept,2,present-extra\n") });
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  for (const [i, type] of ["text", "text", "number", "text"].entries()) await preview.locator("select").nth(i).selectOption(type);
+  for (const [i, type] of ["text", "text", "number", "text"].entries()) await preview.locator(".ts-import-column select").nth(i).selectOption(type);
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await preview.waitFor({ state: "detached" }); await ready();
   const baseline = await projection();

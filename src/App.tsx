@@ -53,6 +53,7 @@ import {
   RuntimeStartupError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
+import { csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type CsvDelimiter, type CsvEncoding } from "./ui/csv-text.js";
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { copyFailureReason } from "./ui/save-close.js";
@@ -428,6 +429,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return () => { current = false; };
   }, [runtime, view]);
   const importBytesRef = useRef<ArrayBuffer | null>(null);
+  // Cancel bumps this, so an inspection still running (a Separator or Text
+  // encoding re-read) cannot reopen the preview it was cancelled from.
+  const inspectGenerationRef = useRef(0);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
   // An ephemeral, user-consented delivery candidate; never canonical state.
   const preparedDownloadRef = useRef<PreparedDownload | null>(null);
@@ -1358,25 +1362,61 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
-  async function inspectImport(file: File): Promise<ImportInspection> {
+  /** The first 64 KiB, cut after the last line break when the file is longer,
+   *  so a record cut off by the sample does not count against its separator. */
+  function delimiterSample(bytes: ArrayBuffer): string {
+    const text = new TextDecoder().decode(bytes.slice(0, 65_536));
+    if (bytes.byteLength <= 65_536) return text;
+    const end = Math.max(text.lastIndexOf("\n"), text.lastIndexOf("\r"));
+    return end >= 0 ? text.slice(0, end + 1) : text;
+  }
+
+  async function inspectImport(file: File, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<ImportInspection> {
     if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the open work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
+    const generation = ++inspectGenerationRef.current;
     try {
       setMessage(null);
       guardReplacement();
       checkpointBeforeOpen();
       const lower = file.name.toLowerCase();
-      const format = lower.endsWith(".csv") ? "csv" : lower.endsWith(".xlsx") ? "xlsx" : null;
-      if (!format) throw new Error("Choose a .csv or .xlsx file.");
-      const bytes = await file.arrayBuffer();
-      const source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: ",", header: true });
-      const inspection = { name: file.name, format, source } as ImportInspection;
+      const delimited = lower.endsWith(".csv") || lower.endsWith(".tsv") || lower.endsWith(".txt");
+      const format = delimited ? "csv" : lower.endsWith(".xlsx") ? "xlsx" : null;
+      if (!format) throw new Error("Choose a .csv, .tsv, .txt or .xlsx file.");
+      const raw = await file.arrayBuffer();
+      let bytes = raw;
+      let csvRead: { delimiter: CsvDelimiter; encoding: CsvEncoding; samples: string[]; sourceBytes?: ArrayBuffer } | undefined;
+      let preferredDelimiter: CsvDelimiter = ",";
+      if (format === "csv") {
+        const encoding = csv?.encoding ?? guessCsvEncoding(raw, navigator.languages?.length ? navigator.languages : [navigator.language]);
+        bytes = toUtf8Bytes(raw, encoding);
+        preferredDelimiter = lower.endsWith(".tsv") || lower.endsWith(".txt") ? "\t" : ",";
+        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(delimiterSample(bytes), preferredDelimiter));
+        // A non-UTF-8 guess is shown with real lines from the whole file, not just the first rows.
+        csvRead = encoding === "utf-8" ? { delimiter, encoding, samples: [] }
+          : { delimiter, encoding, samples: csvSampleLines(new TextDecoder().decode(bytes)), sourceBytes: raw.slice(0) };
+      }
+      let source: Awaited<ReturnType<typeof runtime.inspectSpreadsheet>>;
+      try {
+        source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: csvRead?.delimiter ?? ",", header: true });
+      } catch (error) {
+        // A wrong separator guess (for example an empty trailing header) must
+        // not keep the user from the preview, where Separator can be changed:
+        // retry once with the file type's own separator.
+        if (!csvRead || csv?.delimiter || csvRead.delimiter === preferredDelimiter) throw error;
+        csvRead = { ...csvRead, delimiter: preferredDelimiter };
+        source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: preferredDelimiter, header: true }).catch(() => { throw error; });
+      }
+      const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}) } as ImportInspection;
+      if (generation !== inspectGenerationRef.current) return inspection;
       importBytesRef.current = bytes.slice(0);
       setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       setMessage(null);
       return inspection;
     } catch (error) {
-      clearOpenCheckpoint();
+      // A failed separator/encoding re-read keeps the open preview, so the
+      // checkpoint of the work behind it must survive for Cancel to restore.
+      if (!csv) clearOpenCheckpoint();
       throw error;
     } finally { end(); }
   }
@@ -1396,7 +1436,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // latest same-occurrence report, dirty marker, and save receipt.
       checkpointBeforeOpen(true);
       setCurrentness("pending");
-      const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: ",", header: true }, selection);
+      const imported = await runtime.importSpreadsheet(bytes, pending.format, { delimiter: pending.csv?.delimiter ?? ",", header: true }, selection);
       // Import installs a different work occurrence. Never present an older
       // work's groups or definition IDs against this newly imported view.
       installJ4DefinitionIds([]);
@@ -1411,7 +1451,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       markNotSaved();
       setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       cleanupPreviewContextRef.current = null;
-      importedSourceRef.current = { name: pending.name, format: pending.format, bytes: bytes.slice(0), metadata: imported.metadata, ledger: imported.ledger };
+      // The preserved source is the user's file as chosen, not the UTF-8 text Work read.
+      importedSourceRef.current = { name: pending.name, format: pending.format, bytes: (pending.csv?.sourceBytes ?? bytes).slice(0), metadata: imported.metadata, ledger: imported.ledger };
       setCurrentness("current");
       setOutcome("idle");
       importBytesRef.current = null;
@@ -1438,6 +1479,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function cancelImport(): void {
+    inspectGenerationRef.current++;
     const checkpoint = openRecoveryCheckpointRef.current;
     importBytesRef.current = null;
     if (checkpoint) {

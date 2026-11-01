@@ -92,7 +92,7 @@ try {
   await (await homeImportInput(page)).setInputFiles(csv);
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await preview.waitFor();
-  const types = preview.locator("select");
+  const types = preview.locator(".ts-import-column select");
   assert.deepEqual(await types.evaluateAll(selects => selects.map(select => select.value)), ["date", "text", "number"], "Date and Number are suggested");
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await ready();
@@ -322,6 +322,67 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.equal(copiedLines.length, editedGroups.length + 2);
   assert.equal(copiedLines.at(-1), `Total\t${SPENDING_ROWS}\t${sumFor(spending)}`, "the Total line ends with the unformatted total");
   checks.push("Copy writes the same header, groups and Total row as TSV");
+
+  // 7. A statement saved by Taiwanese Excel: Big5 text, semicolons. The preview
+  // reads it as such, and either choice can be changed before importing.
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
+  if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
+  // A re-read that fails (comma leaves an empty header here) keeps the preview,
+  // its choices and the recovery checkpoint; Cancel still leaves cleanly.
+  const rereadCsv = path.join(work, "reread-fails.csv");
+  await writeFile(rereadCsv, "A;B,\n1;2\n");
+  await (await homeImportInput(page)).setInputFiles(rereadCsv);
+  await preview.waitFor();
+  assert.equal(await preview.getByLabel("Separator", { exact: true }).inputValue(), ";");
+  await preview.getByLabel("Separator", { exact: true }).selectOption(",");
+  await preview.getByRole("alert").waitFor();
+  assert.equal(await preview.getByLabel("Separator", { exact: true }).inputValue(), ";", "a failed re-read keeps the last good choice");
+  assert.deepEqual(await preview.locator(".ts-import-preview th").allTextContents(), ["A", "B,"], "a failed re-read keeps the last good preview");
+  await preview.getByRole("button", { name: "Cancel", exact: true }).click();
+  await preview.waitFor({ state: "detached" });
+  await waitForColdHome(page);
+  checks.push("a failed separator re-read keeps the preview and its choices; Cancel returns home");
+  // A guess that cannot be read (semicolons leave an empty last header) falls
+  // back to the file type's separator, so the preview still opens.
+  const fallbackCsv = path.join(work, "guess-fails.csv");
+  await writeFile(fallbackCsv, "Name,Last; First;\nDoe,Alpha; Beta;\n");
+  await (await homeImportInput(page)).setInputFiles(fallbackCsv);
+  await preview.waitFor();
+  assert.equal(await preview.getByLabel("Separator", { exact: true }).inputValue(), ",", "an unreadable separator guess falls back to comma");
+  assert.deepEqual(await preview.locator(".ts-import-preview th").allTextContents(), ["Name", "Last; First;"]);
+  await preview.getByRole("button", { name: "Cancel", exact: true }).click();
+  await preview.waitFor({ state: "detached" });
+  await waitForColdHome(page);
+  checks.push("an unreadable separator guess falls back to comma and the preview opens");
+  const big5Csv = path.join(work, "taipei-bank.csv");
+  // 日期;摘要;金額 / 2026-10-01;午餐;120 / 2026-10-02;捷運;35 in Big5 (午 ends in byte 0x5C).
+  await writeFile(big5Csv, Buffer.from("a4e9b4c13bba4bad6e3baaf7c3420a323032362d31302d30313ba4c8c05c3b3132300a323032362d31302d30323bb1b6b9423b33350a", "hex"));
+  await (await homeImportInput(page)).setInputFiles(big5Csv);
+  await preview.waitFor();
+  assert.equal(await preview.getByLabel("Separator", { exact: true }).inputValue(), ";", "a semicolon file is read with semicolons");
+  assert.equal(await preview.getByLabel("Text encoding", { exact: true }).inputValue(), "big5", "a Big5 file is read as Big5");
+  const previewHeaders = () => preview.locator(".ts-import-preview th").allTextContents();
+  assert.deepEqual(await previewHeaders(), ["日期", "摘要", "金額"]);
+  assert.deepEqual(await preview.getByRole("list", { name: "Lines with non-English text", exact: true }).locator("li").allTextContents(),
+    ["日期;摘要;金額", "2026-10-01;午餐;120", "2026-10-02;捷運;35"], "a non-UTF-8 guess shows real lines to confirm");
+  await preview.getByLabel("Separator", { exact: true }).selectOption(",");
+  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 1);
+  await preview.getByLabel("Separator", { exact: true }).selectOption(";");
+  await page.waitForFunction(() => document.querySelectorAll(".ts-import-preview th").length === 3);
+  await preview.getByLabel("Text encoding", { exact: true }).selectOption("windows-1252");
+  await page.waitForFunction(() => !document.querySelector(".ts-import-preview th")?.textContent?.includes("日期"));
+  assert.notDeepEqual(await previewHeaders(), ["日期", "摘要", "金額"], "another Text encoding re-reads the file");
+  await preview.getByLabel("Text encoding", { exact: true }).selectOption("big5");
+  await page.waitForFunction(() => document.querySelector(".ts-import-preview th")?.textContent === "日期");
+  assert.deepEqual(await previewHeaders(), ["日期", "摘要", "金額"], "choosing Big5 again restores the text");
+  assert.deepEqual(await preview.locator(".ts-import-column select").evaluateAll(selects => selects.map(select => select.value)), ["date", "text", "number"]);
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await ready();
+  assert.deepEqual(await headers(), ["日期", "摘要", "金額"]);
+  assert.deepEqual(await shownRows(), [["2026-10-01", "午餐", "120"], ["2026-10-02", "捷運", "35"]]);
+  checks.push("a Big5, semicolon-separated CSV from Excel opens with its separator and encoding shown and changeable");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {

@@ -64,7 +64,7 @@ try {
   await (await homeImportInput(page)).setInputFiles(fixture);
   const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await importDialog.waitFor();
-  const columnTypes = importDialog.locator("select");
+  const columnTypes = importDialog.locator(".ts-import-column select");
   for (let index = 0; index < 5; index += 1) await columnTypes.nth(index).selectOption(index === 2 || index === 3 ? "number" : "text");
   await importDialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();

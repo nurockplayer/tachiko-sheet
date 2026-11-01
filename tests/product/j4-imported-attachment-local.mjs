@@ -85,7 +85,7 @@ async function importFixture(page) {
   assert.equal(importActions[1].width, 168);
   assert.equal(importActions[0].height, 32);
   assert.match(await dialog.textContent(), /2 sheet\(s\)/, "the normal import review must expose both source sheets");
-  const columns = dialog.locator("select");
+  const columns = dialog.locator(".ts-import-column select");
   await page.setViewportSize({ width: 320, height: 640 });
   const compactPanel = await dialog.boundingBox();
   assert.equal(Math.round(compactPanel.x), 16, "long import review stays inset on a phone");
@@ -262,8 +262,8 @@ try {
   await (await homeImportInput(page)).setInputFiles(fixture);
   const unknownImport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await unknownImport.waitFor();
-  await unknownImport.locator("select").nth(2).selectOption("number");
-  await unknownImport.locator("select").nth(4).selectOption("number");
+  await unknownImport.locator(".ts-import-column select").nth(2).selectOption("number");
+  await unknownImport.locator(".ts-import-column select").nth(4).selectOption("number");
   await unknownImport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("project-ready").count(), 0);
@@ -299,8 +299,8 @@ try {
   await (await homeImportInput(page)).setInputFiles(fixture);
   const replyLossImport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await replyLossImport.waitFor();
-  await replyLossImport.locator("select").nth(2).selectOption("number");
-  await replyLossImport.locator("select").nth(4).selectOption("number");
+  await replyLossImport.locator(".ts-import-column select").nth(2).selectOption("number");
+  await replyLossImport.locator(".ts-import-column select").nth(4).selectOption("number");
   await replyLossImport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("operation-outcome").filter({ hasText: "Outcome needs review" }).waitFor();
   assert.equal(
@@ -342,8 +342,8 @@ try {
   await (await homeImportInput(page)).setInputFiles(fixture);
   const projectionLossImport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await projectionLossImport.waitFor();
-  await projectionLossImport.locator("select").nth(2).selectOption("number");
-  await projectionLossImport.locator("select").nth(4).selectOption("number");
+  await projectionLossImport.locator(".ts-import-column select").nth(2).selectOption("number");
+  await projectionLossImport.locator(".ts-import-column select").nth(4).selectOption("number");
   await projectionLossImport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByRole("heading", { name: "Refresh required", exact: true }).waitFor();
   assert.equal(await page.getByTestId("operation-outcome").count(), 0, "known import publication recovery keeps outcome idle");
@@ -469,8 +469,8 @@ try {
   await (await homeImportInput(page)).setInputFiles(exported);
   const reimport = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await reimport.waitFor();
-  await reimport.locator("select").nth(2).selectOption("number");
-  await reimport.locator("select").nth(4).selectOption("number");
+  await reimport.locator(".ts-import-column select").nth(2).selectOption("number");
+  await reimport.locator(".ts-import-column select").nth(4).selectOption("number");
   await reimport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   assert.deepEqual(await visibleTable(page, "sheet_1"), {

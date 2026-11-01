@@ -9,7 +9,7 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
   async function importFile(file, types, expectedNative) {
     await (await homeImportInput(page)).setInputFiles(file);
     const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-    for (const [index, type] of types.entries()) await preview.locator("select").nth(index).selectOption(type);
+    for (const [index, type] of types.entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
     await preview.getByRole("button", { name: "Import file", exact: true }).click();
     await preview.waitFor({ state: "detached" }); await ready();
     const table = await projection();
