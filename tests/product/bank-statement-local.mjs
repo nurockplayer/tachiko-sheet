@@ -298,6 +298,43 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
     "the edited Amount changes the Food group at the new revision");
   checks.push("editing an Amount updates the affected group after the new revision arrives");
 
+  // Print… prints every shown row (not only the windowed ones) and the footer totals.
+  await page.evaluate((column) => {
+    window.__printed = 0;
+    window.print = () => {
+      const root = document.querySelector('[data-testid="print-root"]');
+      window.__printedRows = root?.querySelectorAll("tbody tr").length ?? -1;
+      window.__printedTotal = root?.querySelector(`tfoot [data-column="${column}"]`)?.textContent?.trim() ?? null;
+      window.__printed++;
+    };
+  }, amountColumn);
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 1);
+  assert.equal(await page.evaluate(() => window.__printedRows), SPENDING_ROWS, "Print… prints every shown row");
+  assert.equal(await page.evaluate(() => window.__printedTotal), (await page.getByTestId(`total:${amountColumn}`).textContent())?.trim(), "the printed total matches the grid footer");
+  assert.equal(await page.getByTestId("print-root").count(), 1, "the print copy waits for afterprint (window.print may return early)");
+  // In print media only the print copy shows; the app is hidden.
+  await page.emulateMedia({ media: "print" });
+  assert.deepEqual(await page.evaluate(() => [...document.body.children].filter(element => getComputedStyle(element).display !== "none").map(element => element.dataset.testid ?? element.id)),
+    ["print-root"], "printing shows only the table");
+  await page.emulateMedia({ media: null });
+  // A second Print… before afterprint prints again instead of being swallowed.
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 2);
+  // So does Cmd/Ctrl+P from the grid while that copy still waits.
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").first().click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 3);
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").first().focus();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+P" : "Control+P");
+  await page.waitForFunction(() => window.__printed === 4);
+  assert.equal(await page.getByTestId("print-root").count(), 1, "a keyboard reprint keeps its print copy");
+  await page.evaluate(() => { window.__printed = 1; });
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
+  checks.push("Print… prints all 120 shown rows with the footer total, then removes the print copy after afterprint");
+
   await chooseColumnAction(page, "Category", "Filter");
   await page.getByLabel("Filter Category", { exact: true }).fill("Food");
   await page.getByLabel("Filter Category", { exact: true }).press("Enter"); await ready();
@@ -309,6 +346,21 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const shownCells = await groupTable("Category").locator("tfoot tr > *").evaluateAll(cells => cells.map(cell => cell.textContent?.trim() ?? ""));
   assert.equal(shownCells[1], String(shownSpending.length));
   assert.equal(shownCells[2], String(sumFor(shownSpending)), "the Total row covers only the shown rows");
+  // Printing under the filter prints the shown rows with their own totals.
+  await page.waitForFunction(() => document.querySelector('[data-testid="totals-scope"]')?.getAttribute("title")?.startsWith("Totals for the"));
+  await page.getByTestId("print-table").click();
+  await page.waitForFunction(() => window.__printed === 2);
+  assert.equal(await page.evaluate(() => window.__printedRows), shownSpending.length, "a filtered print prints only the shown rows");
+  assert.equal(await page.evaluate(() => window.__printedTotal), (await page.getByTestId(`total:${amountColumn}`).textContent())?.trim(), "a filtered print totals the shown rows like the footer");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-root"]').length === 0);
+  // An unapplied cell edit holds Print, so the printout never disagrees with the editor.
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").nth(2).dblclick();
+  await editor.fill("-1.50");
+  assert.equal(await page.getByTestId("print-table").isDisabled(), true, "Print waits for an unapplied edit");
+  await editor.press("Escape");
+  assert.equal(await page.getByTestId("print-table").isDisabled(), false);
+  checks.push("a filtered print has only the shown rows and their totals; an unapplied edit holds Print");
   await panel.getByRole("radio", { name: `All rows (${SPENDING_ROWS})`, exact: true }).check();
   await waitForGroupRows(editedGroups);
   assert.equal((await groupTable("Category").locator("tfoot tr > *").last().textContent()), String(sumFor(spending)), "All rows restores the whole-table total");
