@@ -429,6 +429,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return () => { current = false; };
   }, [runtime, view]);
   const importBytesRef = useRef<ArrayBuffer | null>(null);
+  // Cancel bumps this, so an inspection still running (a Separator or Text
+  // encoding re-read) cannot reopen the preview it was cancelled from.
+  const inspectGenerationRef = useRef(0);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
   // An ephemeral, user-consented delivery candidate; never canonical state.
   const preparedDownloadRef = useRef<PreparedDownload | null>(null);
@@ -1359,9 +1362,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
   }
 
+  /** The first 64 KiB, cut after the last line break when the file is longer,
+   *  so a record cut off by the sample does not count against its separator. */
+  function delimiterSample(bytes: ArrayBuffer): string {
+    const text = new TextDecoder().decode(bytes.slice(0, 65_536));
+    if (bytes.byteLength <= 65_536) return text;
+    const end = Math.max(text.lastIndexOf("\n"), text.lastIndexOf("\r"));
+    return end >= 0 ? text.slice(0, end + 1) : text;
+  }
+
   async function inspectImport(file: File, csv?: { delimiter?: CsvDelimiter; encoding?: CsvEncoding }): Promise<ImportInspection> {
     if (blockUnknownOpenRecovery()) throw new Error("Recovery is pending. Refresh or close the open work first.");
     if (!begin()) throw new Error("Another operation is in progress.");
+    const generation = ++inspectGenerationRef.current;
     try {
       setMessage(null);
       guardReplacement();
@@ -1378,7 +1391,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         const encoding = csv?.encoding ?? guessCsvEncoding(raw, navigator.languages?.length ? navigator.languages : [navigator.language]);
         bytes = toUtf8Bytes(raw, encoding);
         preferredDelimiter = lower.endsWith(".tsv") || lower.endsWith(".txt") ? "\t" : ",";
-        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(new TextDecoder().decode(bytes.slice(0, 65_536)), preferredDelimiter));
+        const delimiter = csv?.delimiter ?? (lower.endsWith(".tsv") ? "\t" : detectCsvDelimiter(delimiterSample(bytes), preferredDelimiter));
         // A non-UTF-8 guess is shown with real lines from the whole file, not just the first rows.
         csvRead = encoding === "utf-8" ? { delimiter, encoding, samples: [] }
           : { delimiter, encoding, samples: csvSampleLines(new TextDecoder().decode(bytes)), sourceBytes: raw.slice(0) };
@@ -1395,6 +1408,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         source = await runtime.inspectSpreadsheet(bytes, format, { delimiter: preferredDelimiter, header: true }).catch(() => { throw error; });
       }
       const inspection = { name: file.name, format, source, ...(csvRead ? { csv: csvRead } : {}) } as ImportInspection;
+      if (generation !== inspectGenerationRef.current) return inspection;
       importBytesRef.current = bytes.slice(0);
       setInterop({ importInspection: inspection, metadata: null, ledger: source.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       setMessage(null);
@@ -1465,6 +1479,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function cancelImport(): void {
+    inspectGenerationRef.current++;
     const checkpoint = openRecoveryCheckpointRef.current;
     importBytesRef.current = null;
     if (checkpoint) {
