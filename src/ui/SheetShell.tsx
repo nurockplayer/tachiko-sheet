@@ -744,6 +744,9 @@ export function SheetShell(props: SheetShellProps) {
   const [importPending, setImportPending] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx" | "ro" | null>(null);
   const [importChoice, setImportChoice] = useState<ImportTypeChoice | null>(null);
+  // Re-reading the same workbook (the Total-row choice) keeps the column types
+  // the person already chose; a different file starts from its suggestions.
+  const carriedImportTypesRef = useRef<{ file: File | null; types: string[][] } | null>(null);
   const importSuggestions = useMemo<string[][]>(
     () => {
       const sheets = interop?.importInspection?.source.sheets ?? [];
@@ -753,6 +756,13 @@ export function SheetShell(props: SheetShellProps) {
     [interop?.importInspection],
   );
   const importTypes = chosenImportTypes(importChoice, importSuggestions);
+  useEffect(() => {
+    const carried = carriedImportTypesRef.current;
+    carriedImportTypesRef.current = null;
+    if (!carried || carried.file !== spreadsheetFileRef.current || carried.types.length !== importSuggestions.length ||
+        !carried.types.every((types, sheet) => types.length === importSuggestions[sheet]!.length)) return;
+    setImportChoice({ basis: importSuggestions, types: carried.types });
+  }, [importSuggestions]);
   const [j4Catalog, setJ4Catalog] = useState<KeyedGroupedSumBindingCatalog | null>(null);
   const [j4Binding, setJ4Binding] = useState<KeyedGroupedSumBindingChoice | null>(null);
   const j4PresentationCatalog = useMemo(() => j4Catalog ? bindingCatalogNames(j4Catalog, interop?.metadata ?? null, importedSourceName) : null, [j4Catalog, interop?.metadata, importedSourceName]);
@@ -5262,7 +5272,10 @@ export function SheetShell(props: SheetShellProps) {
               return <>
                 {summaryChoice ? <div className="ts-dialog-field ts-import-summary-choice"><label>
                   <input type="checkbox" checked={keepSummaryRows} disabled={importPending || controlsLocked}
-                    onChange={(event) => void inspectSpreadsheet(spreadsheetFileRef.current, { keepSummaryRows: event.currentTarget.checked })} />
+                    onChange={(event) => {
+                      carriedImportTypesRef.current = importChoice ? { file: spreadsheetFileRef.current, types: importTypes } : null;
+                      void inspectSpreadsheet(spreadsheetFileRef.current, { keepSummaryRows: event.currentTarget.checked });
+                    }} />
                   {" "}Keep the Total row as data
                 </label></div> : null}
                 {attention.length ? <ul className="ts-ledger" aria-label="Import preview changes and warnings">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}

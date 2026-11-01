@@ -401,13 +401,20 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   // Keeping it re-reads the workbook: Work no longer reports the row as left
   // out (the preview shows only the first five rows, so count the finding).
   const totalFinding = () => preview.getByText(/This row totals the column above it/).count();
+  // A column type the person chose survives the re-read.
+  const qtyType = preview.locator(".ts-import-columns select").nth(1);
+  await qtyType.selectOption("text");
   await keepTotal.check();
   await preview.getByText(/This row totals the column above it/).waitFor({ state: "detached" });
   assert.equal(await keepTotal.isChecked(), true, "the choice stays visible once the finding is gone");
   assert.equal(await totalFinding(), 0);
+  await preview.getByText("6 rows", { exact: true }).waitFor(); // the Total row is now a data row
+  assert.equal(await qtyType.inputValue(), "text", "keeping the Total row keeps the chosen column types");
+  await qtyType.selectOption("number");
   await keepTotal.uncheck();
   await preview.getByText(/This row totals the column above it/).waitFor();
   assert.equal(await totalFinding(), 1);
+  await preview.getByText("5 rows", { exact: true }).waitFor();
   for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await ready();

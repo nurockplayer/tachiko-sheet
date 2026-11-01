@@ -376,7 +376,7 @@ try {
   assert.deepEqual((await projection()).rows, table.rows);
   checks.push("217.1 imported 2x3 at selection top-left: one edit_cells, one publication, one Undo/Redo and preserved focus");
 
-  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,30\t2", "bad\t$5\t2"]) {
+  for (const text of ["bad\tabc\t1\nother\t2\t3", "bad\t1,30\t2", "bad\t€5,00\t2"]) {
     assert.equal(await unchangedPaste(text, /needs a number/), 1);
   }
   // #229: structurally native imported optional Number now clears explicitly.
