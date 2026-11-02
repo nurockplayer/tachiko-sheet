@@ -476,10 +476,9 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const invoiceRows = await shownRows();
   assert.deepEqual(invoiceRows.map(row => row[0]), ["Paper", "Toner", "Pens", "Stapler", "Folders"], "five items, no Total row");
   assert.deepEqual(invoiceRows.map(row => row[3]), ["$35.00", "$96.00", "$24.00", "$12.90", "$30.00"], "B*C amounts calculate and keep the Excel currency format");
-  // Importing with the Total row kept: Work admits whole-column totals only,
-  // so this invoice's =SUM(D4:D8) is a blocking finding and Work refuses the
-  // import (reported to Work). The refusal is shown, the preview stays open
-  // with the choice, and nothing is imported.
+  // Importing with the Total row kept (Work #625): Tachiko does not calculate
+  // =SUM(D4:D8) over a range, so it keeps Excel's last calculated value and
+  // says so; the row imports as a sixth, ordinary row.
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   await unsaved.or(page.getByRole("heading", { name: "Tachiko Sheet", exact: true })).first().waitFor();
   if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
@@ -488,13 +487,21 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await preview.waitFor();
   await keepTotal.click();
   await preview.getByText("First 5 of 6 rows", { exact: true }).waitFor();
-  assert.equal(await preview.getByText(/Invoice!D9: Only numeric arithmetic/).count(), 1, "the kept Total row's SUM over a range is named");
+  assert.equal(await preview.getByText(/Tachiko kept the value Excel last calculated for =SUM\(D4:D8\)\. It is a plain value now/).count(), 1, "the kept Total row's SUM is explained");
   for (const [index, type] of ["text", "number", "number", "number"].entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
-  await preview.getByRole("alert").filter({ hasText: /The import was not applied/ }).waitFor();
-  assert.equal(await keepTotal.isChecked(), true, "the refused import keeps the preview and the choice");
-  assert.equal(await page.locator('[data-testid="project-ready"]').count(), 0, "nothing is imported");
-  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, its range SUM is named and Work refuses the import visibly");
+  await ready();
+  const keptRows = await shownRows();
+  assert.deepEqual(keptRows.map(row => row[0]), ["Paper", "Toner", "Pens", "Stapler", "Folders", "Total"], "the kept Total row imports as data");
+  assert.equal(keptRows[5][3], "$197.90", "the Total row keeps Excel's calculated value");
+  // The kept value is a plain value: changing Paper's Qty recalculates its
+  // Amount (B*C) but not the Total row.
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").nth(1).dblclick();
+  await editor.fill("20"); await editor.press("Enter"); await ready();
+  const editedKept = await shownRows();
+  assert.equal(editedKept[0][3], "$70.00", "Paper's Amount recalculates");
+  assert.equal(editedKept[5][3], "$197.90", "the kept Total stays Excel's value and does not recalculate");
+  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90, says it will not recalculate, and stays $197.90 after an edit");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {
