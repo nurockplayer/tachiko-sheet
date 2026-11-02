@@ -100,6 +100,9 @@ describe("native table download disclosures", () => {
     expect(findingMessage(summary, "summary_row_excluded")).toMatch(/^This row totals the column above it .*“Keep the Total row as data”\.$/);
     expect(findingMessage(`${summary} More.`, "summary_row_excluded")).toBe(`${summary} More.`);
     expect(findingMessage('XLSX number format "[$NT$-404]#,##0" mapped to TWD currency', "number_format_currency_mapped")).toBe("The Excel format [$NT$-404]#,##0 shows as TWD currency.");
+    const kept = "Kept Excel's last calculated value of =SUM(D4:D8); it will not recalculate in Tachiko, and export writes the value. Tachiko calculates numeric arithmetic, comparisons, binary MIN/MAX, IF, AND, OR, NOT, ROUND, ISBLANK and SUM, AVERAGE or COUNT over one whole column.";
+    expect(findingMessage(kept, "unsupported_formula_kept_value")).toBe("Tachiko kept the value Excel last calculated for =SUM(D4:D8). It is a plain value now: it will not recalculate, and downloads write the value, not the formula.");
+    expect(findingMessage(kept.replace("SUM, AVERAGE", "SUM or AVERAGE"), "unsupported_formula_kept_value")).toBe(kept.replace("SUM, AVERAGE", "SUM or AVERAGE"));
     expect(findingMessage('Worksheet name "Q3: \\"plan\\"" mapped to "Q3 plan".', "native_tables_worksheet_name"))
       .toBe("The table “Q3: \"plan\"” downloads as the sheet “Q3 plan”, because spreadsheet sheet names are limited.");
     expect(findingMessage("Worksheet name changed.", "native_tables_worksheet_name")).toBe("Worksheet name changed.");

@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "f64d94b665e37e154cea54d18affcf60faa41283",
+  "sourceCommit": "fae5c79c9eb35822661ba108ccf649f8f1af896b",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -72,7 +72,7 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "2c5f7872ee570fff15889857eb6a7d10021c0c331e09114c5408e213ef29baf8"
+      "sha256": "b9bbd3d9bac8fee5a7cc209629a2a8aae2cbb1f1bddce1a4579f4c14bda44ee6"
     },
     {
       "path": "experimental-client.d.ts",
