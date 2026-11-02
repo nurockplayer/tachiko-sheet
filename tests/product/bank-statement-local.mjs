@@ -494,7 +494,14 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const keptRows = await shownRows();
   assert.deepEqual(keptRows.map(row => row[0]), ["Paper", "Toner", "Pens", "Stapler", "Folders", "Total"], "the kept Total row imports as data");
   assert.equal(keptRows[5][3], "$197.90", "the Total row keeps Excel's calculated value");
-  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90 and says it will not recalculate");
+  // The kept value is a plain value: changing Paper's Qty recalculates its
+  // Amount (B*C) but not the Total row.
+  await grid.locator("tbody tr.ts-row").first().locator(".ts-cell").nth(1).dblclick();
+  await editor.fill("20"); await editor.press("Enter"); await ready();
+  const editedKept = await shownRows();
+  assert.equal(editedKept[0][3], "$70.00", "Paper's Amount recalculates");
+  assert.equal(editedKept[5][3], "$197.90", "the kept Total stays Excel's value and does not recalculate");
+  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90, says it will not recalculate, and stays $197.90 after an edit");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {
