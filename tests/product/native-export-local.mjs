@@ -54,7 +54,7 @@ else:
    result.append({'name':s.attrib['name'],'rows':rows})
 print(json.dumps(result,ensure_ascii=False))
 `, file], { encoding: "utf8" }));
-async function prepare(page, format, { cancel = false, sales = false } = {}) {
+async function prepare(page, format, { cancel = false, sales = false, formulas = false } = {}) {
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
   const trigger = page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true });
   const count = downloads.length;
@@ -63,6 +63,9 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
   await dialog.waitFor();
   assert.equal(downloads.length, count, "preparation never downloads without acknowledgement");
   const changes = dialog.getByLabel("Export changes and warnings", { exact: true });
+  if (formulas) {
+    assert.equal(await changes.getByText(/Formulas download as spreadsheet formulas, with their current values saved alongside/).count(), 1, "the native-table download explains formulas and their saved values");
+  }
   if (await changes.count()) {
     // Findings are worded for people: table names, not ids; no engine limits vocabulary.
     assert.doesNotMatch(await changes.textContent(), /native_table_|workbook:|collections|MiB|Tachiko source|Undo\/Redo/);
@@ -97,6 +100,16 @@ async function prepare(page, format, { cancel = false, sales = false } = {}) {
   await (await downloaded).saveAs(file);
   await dialog.waitFor({ state: "detached" });
   await page.waitForFunction(element => element === document.activeElement, await trigger.elementHandle());
+  if (formulas) {
+    const formulaCells = JSON.parse(execFileSync("python3", ["-I", "-c", String.raw`
+import json, re, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+ sheet = z.read("xl/worksheets/sheet1.xml").decode()
+print(json.dumps([cell for cell in re.findall(r'<c [^>]*>.*?</c>', sheet, re.S) if "<f>" in cell]))
+`, file], { encoding: "utf8" }));
+    assert.equal(formulaCells.length, 1, "exactly one native-table cell downloads as a formula");
+    assert.match(formulaCells[0], /<f>[^<]+<\/f><v>9<\/v>/, "the exported formula keeps its calculated value of 9");
+  }
   return parse(file);
 }
 async function close(page) {
@@ -175,6 +188,31 @@ try {
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
   assert.deepEqual((await prepare(page,"csv"))[0], ["Item","Amount","Paid"]);
   checks.push("a moved column downloads in its new place (CSV and XLSX); Undo restores the export order");
+
+  // A formula authored in a native table is disclosed and written with its current value.
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  await page.getByRole("button", { name: "+ column", exact: true }).click();
+  const addDouble = page.getByRole("dialog", { name: "Add column", exact: true });
+  await addDouble.getByLabel("Column name", { exact: true }).fill("Double");
+  await addDouble.getByLabel("Column type", { exact: true }).selectOption("number");
+  await addDouble.getByRole("button", { name: "Add column", exact: true }).click();
+  await addDouble.waitFor({ state: "detached" }); await ready(page);
+  const formulaTable = await page.evaluate(() => structuredClone(window.__exportEvidence.table));
+  const amountKey = formulaTable.columns.find(column => column.display_name === "Amount").key;
+  const doubleId = formulaTable.columns.find(column => column.display_name === "Double").id;
+  const doubleCellId = `cell:${formulaTable.rows[0].id}:${doubleId}`;
+  await page.getByTestId(doubleCellId).click();
+  const formulaBar = page.getByTestId("formula-bar-input");
+  await formulaBar.fill(`[.${amountKey}] * 2`);
+  await formulaBar.press("Enter"); await ready(page);
+  await page.waitForFunction(id => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "9", doubleCellId);
+  await prepare(page, "xlsx", { formulas: true });
+  // Restore the original schema and rows for the following draft/refusal cases.
+  for (let step = 0; step < 2; step++) {
+    await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
+  }
+  assert.deepEqual(await prepare(page, "csv"), [["Item","Amount","Paid"],["Tea 茶","4.5","true"],["Train","12","false"]]);
+  checks.push("a native-table formula downloads as an XLSX formula with cached value 9 and the formula disclosure; Undo restores the original table");
 
   // Downloads snapshot the published revision: an unfinished new-row draft blocks them.
   await page.getByRole("tab",{name:"Table",exact:true}).click();

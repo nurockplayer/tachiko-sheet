@@ -103,10 +103,10 @@ export function findingMessage(message: string, code?: string): string {
     const count = /^The workbook holds more than (\d+) formulas, so they export as computed values\. Retain the Tachiko source to keep the formulas\.$/.exec(message);
     if (count) return `This workbook has more than ${count[1]} formulas, so the download writes their current values instead of the formulas. Save a copy of your work to keep the formulas.`;
     if (/^Formula cell exports its current computed value only: the formula is longer than the export profile allows\. Retain the Tachiko source to keep the formula\.$/.test(message)) {
-      return "This formula downloads as its current value only, because it is too long for a spreadsheet file. Save a copy of your work to keep the formula.";
+      return "This formula downloads as its current value only, because it is longer than Tachiko can write into a spreadsheet file. Save a copy of your work to keep the formula.";
     }
     if (/^Formula cell exports its current computed value only: the formula is outside the native XLSX formula grammar\. Retain the Tachiko source to keep the formula\.$/.test(message)) {
-      return "This formula downloads as its current value only, because a spreadsheet file cannot hold it as a formula. Save a copy of your work to keep the formula.";
+      return "This formula downloads as its current value only, because Tachiko cannot write this kind of formula into a spreadsheet file yet. Save a copy of your work to keep the formula.";
     }
   }
   if (code === "native_tables_formulas_written" && /^Formula cells export as Excel formulas over the exported cells, with their current computed Number kept as the cached value\.$/.test(message)) {
