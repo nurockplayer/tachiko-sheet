@@ -102,13 +102,19 @@ async function prepare(page, format, { cancel = false, sales = false, formulas =
   await page.waitForFunction(element => element === document.activeElement, await trigger.elementHandle());
   if (formulas) {
     const formulaCells = JSON.parse(execFileSync("python3", ["-I", "-c", String.raw`
-import json, re, sys, zipfile
+import json, sys, zipfile, xml.etree.ElementTree as E
 with zipfile.ZipFile(sys.argv[1]) as z:
- sheet = z.read("xl/worksheets/sheet1.xml").decode()
-print(json.dumps([cell for cell in re.findall(r'<c [^>]*>.*?</c>', sheet, re.S) if "<f>" in cell]))
+ sheet = E.fromstring(z.read("xl/worksheets/sheet1.xml"))
+n = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+print(json.dumps([
+ {"r": cell.get("r"), "formula": cell.findtext("s:f", namespaces=n), "value": cell.findtext("s:v", namespaces=n)}
+ for cell in sheet.findall(".//s:c", n) if cell.find("s:f", n) is not None
+]))
 `, file], { encoding: "utf8" }));
     assert.equal(formulaCells.length, 1, "exactly one native-table cell downloads as a formula");
-    assert.match(formulaCells[0], /<f>[^<]+<\/f><v>9<\/v>/, "the exported formula keeps its calculated value of 9");
+    assert.equal(formulaCells[0].r, "D2", "the formula is in the first Double cell");
+    assert.equal(formulaCells[0].formula.replaceAll(" ", ""), "B2*2", "Double references Amount in the same row");
+    assert.equal(formulaCells[0].value, "9", "the exported formula keeps its calculated value of 9");
   }
   return parse(file);
 }

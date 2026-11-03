@@ -511,12 +511,16 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   await (await invoiceDownloaded).saveAs(invoiceExport);
   await invoiceConsent.waitFor({ state: "detached" });
   const invoiceXlsx = JSON.parse(execFileSync("python3", ["-I", "-c", `
-import json, re, sys, zipfile
+import json, re, sys, zipfile, xml.etree.ElementTree as E
 z = zipfile.ZipFile(sys.argv[1])
 sheet = z.read("xl/worksheets/sheet1.xml").decode()
 cells = re.findall(r'<c [^>]*>.*?</c>', sheet, re.S)
+n = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 print(json.dumps({
-    "formulas": [cell for cell in cells if "<f>" in cell],
+    "formulas": [
+        {"r": cell.get("r"), "formula": cell.findtext("s:f", namespaces=n), "value": cell.findtext("s:v", namespaces=n)}
+        for cell in E.fromstring(sheet).findall(".//s:c", n) if cell.find("s:f", n) is not None
+    ],
     "paper": [cell for cell in cells if "<v>70</v>" in cell],
     "total": [cell for cell in cells if "<v>197.9</v>" in cell],
     "dCells": [cell for cell in cells if re.search(r' r="D[0-9]+"', cell)],
@@ -524,8 +528,13 @@ print(json.dumps({
 `, invoiceExport], { encoding: "utf8" }));
   try {
     assert.equal(invoiceXlsx.formulas.length, 5, "the five item Amount cells download as formulas");
+    for (const cell of invoiceXlsx.formulas) {
+      const row = /^D([1-9][0-9]*)$/.exec(cell.r);
+      assert.ok(row, `the invoice formula is in an Amount cell: ${cell.r}`);
+      assert.equal(cell.formula.replaceAll(" ", ""), `B${row[1]}*C${row[1]}`, `${cell.r} multiplies Qty and Unit price in its own row`);
+    }
     assert.equal(invoiceXlsx.paper.length, 1, "Paper's edited Amount is present once");
-    assert.match(invoiceXlsx.paper[0], /<f>[^<]+<\/f><v>70<\/v>/, "Paper's formula keeps its edited calculated value");
+    assert.ok(invoiceXlsx.formulas.some(cell => cell.value === "70"), "Paper's edited Amount is one of the checked formulas");
     assert.equal(invoiceXlsx.total.length, 1, "the kept Total is present once");
     assert.doesNotMatch(invoiceXlsx.total[0], /<f>/, "the kept Total downloads as a plain value, not a formula");
   } catch (error) {
