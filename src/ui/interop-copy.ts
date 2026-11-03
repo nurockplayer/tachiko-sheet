@@ -99,6 +99,19 @@ export function findingMessage(message: string, code?: string): string {
     const kept = /^Kept Excel's last calculated value of (=.+); it will not recalculate in Tachiko, and export writes the value\. Tachiko calculates numeric arithmetic, comparisons, binary MIN\/MAX, IF, AND, OR, NOT, ROUND, ISBLANK and SUM, AVERAGE or COUNT over one whole column\.$/.exec(message);
     if (kept) return `Tachiko kept the value Excel last calculated for ${kept[1]}. It is a plain value now: it will not recalculate, and downloads write the value, not the formula.`;
   }
+  if (code === "native_tables_formula_value_only") {
+    const count = /^The workbook holds more than (\d+) formulas, so they export as computed values\. Retain the Tachiko source to keep the formulas\.$/.exec(message);
+    if (count) return `This workbook has more than ${count[1]} formulas, so the download writes their current values instead of the formulas. Save a copy of your work to keep the formulas.`;
+    if (/^Formula cell exports its current computed value only: the formula is longer than the export profile allows\. Retain the Tachiko source to keep the formula\.$/.test(message)) {
+      return "This formula downloads as its current value only, because it is too long for a spreadsheet file. Save a copy of your work to keep the formula.";
+    }
+    if (/^Formula cell exports its current computed value only: the formula is outside the native XLSX formula grammar\. Retain the Tachiko source to keep the formula\.$/.test(message)) {
+      return "This formula downloads as its current value only, because a spreadsheet file cannot hold it as a formula. Save a copy of your work to keep the formula.";
+    }
+  }
+  if (code === "native_tables_formulas_written" && /^Formula cells export as Excel formulas over the exported cells, with their current computed Number kept as the cached value\.$/.test(message)) {
+    return "Formulas download as spreadsheet formulas, with their current values saved alongside, so Excel shows the same numbers when it opens the file.";
+  }
   if (code === "number_format_currency_mapped") {
     const mapped = /^XLSX number format "(.*)" mapped to ([A-Z]{3}) currency$/.exec(message);
     if (mapped) return `The Excel format ${mapped[1]} shows as ${mapped[2]} currency.`;

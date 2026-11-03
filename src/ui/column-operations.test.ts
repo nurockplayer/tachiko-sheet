@@ -24,7 +24,7 @@ describe("column intent", () => {
   it("translates authoritative refusal evidence", () => {
     expect(columnRefusal("schema field 'x' is still referenced by a formula or saved definition")).toMatch(/used by a formula or cross-table summary/);
     expect(columnRefusal("a native table needs at least one column")).toMatch(/Keep at least one column/);
-    expect(columnRefusal("raw", "number")).toMatch(/Enter a number/);
+    expect(columnRefusal("raw", "number")).toBe("Enter a number for the existing rows, such as 12.5, 1,300, 12% or $1,234.50. Nothing was changed.");
     expect(columnRefusal("unfamiliar refusal")).toBe("unfamiliar refusal");
   });
 });
