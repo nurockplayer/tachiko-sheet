@@ -195,6 +195,8 @@ try {
   const addDouble = page.getByRole("dialog", { name: "Add column", exact: true });
   await addDouble.getByLabel("Column name", { exact: true }).fill("Double");
   await addDouble.getByLabel("Column type", { exact: true }).selectOption("number");
+  await addDouble.getByLabel("Fill existing rows", { exact: true }).check();
+  await addDouble.getByLabel(/^Fill all/).fill("0");
   await addDouble.getByRole("button", { name: "Add column", exact: true }).click();
   await addDouble.waitFor({ state: "detached" }); await ready(page);
   const formulaTable = await page.evaluate(() => structuredClone(window.__exportEvidence.table));
