@@ -531,7 +531,7 @@ print(json.dumps({
     for (const cell of invoiceXlsx.formulas) {
       const row = /^D([1-9][0-9]*)$/.exec(cell.r);
       assert.ok(row, `the invoice formula is in an Amount cell: ${cell.r}`);
-      assert.equal(cell.formula.replaceAll(" ", ""), `B${row[1]}*C${row[1]}`, `${cell.r} multiplies Qty and Unit price in its own row`);
+      assert.equal(cell.formula, `('Invoice'!$B$${row[1]}*'Invoice'!$C$${row[1]})`, `${cell.r} uses the exact exported formula with absolute references to Invoice Qty and Unit price in its own row`);
     }
     assert.equal(invoiceXlsx.paper.length, 1, "Paper's edited Amount is present once");
     assert.ok(invoiceXlsx.formulas.some(cell => cell.value === "70"), "Paper's edited Amount is one of the checked formulas");
