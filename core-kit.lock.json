@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "fae5c79c9eb35822661ba108ccf649f8f1af896b",
+  "sourceCommit": "6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "812b4d581dbbf6fe939cc1b977406bf3c952d29bc7376a20c517249210fc02d3",
+  "artifactManifestSha256": "58b8b1a13b6b57ff48a87045c26019adcbe5b09b9b5dcc0c0f753cc64bc1b5f0",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6572034066",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6614366038",
   "qualificationArtifactReview": {
-    "sourceCommit": "fae5c79c9eb35822661ba108ccf649f8f1af896b",
-    "artifactManifestSha256": "812b4d581dbbf6fe939cc1b977406bf3c952d29bc7376a20c517249210fc02d3",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6572034066"
+    "sourceCommit": "6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0",
+    "artifactManifestSha256": "58b8b1a13b6b57ff48a87045c26019adcbe5b09b9b5dcc0c0f753cc64bc1b5f0",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6614366038"
   },
-  "notes": "Re-pin to Work main fae5c79c (Work #625: XLSX formulas Tachiko cannot calculate keep Excel's last calculated value with a non-blocking finding; #628/#630: circular-reference failures without O(n^2) memory)"
+  "notes": "Re-pin to Work main 6172a53f (Work #632: native XLSX export writes Excel formulas with cached values, value-only findings for formulas it cannot write; #634: imported MIN/MAX over a blank optional cell matches Excel, kept cached values beyond engine limits)"
 }

@@ -501,7 +501,47 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   const editedKept = await shownRows();
   assert.equal(editedKept[0][3], "$70.00", "Paper's Amount recalculates");
   assert.equal(editedKept[5][3], "$197.90", "the kept Total stays Excel's value and does not recalculate");
-  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90, says it will not recalculate, and stays $197.90 after an edit");
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+  const invoiceConsent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+  await invoiceConsent.waitFor();
+  const invoiceDownloaded = page.waitForEvent("download");
+  await invoiceConsent.getByRole("button", { name: "Download", exact: true }).click();
+  const invoiceExport = path.join(work, "invoice-export.xlsx");
+  await (await invoiceDownloaded).saveAs(invoiceExport);
+  await invoiceConsent.waitFor({ state: "detached" });
+  const invoiceXlsx = JSON.parse(execFileSync("python3", ["-I", "-c", `
+import json, re, sys, zipfile, xml.etree.ElementTree as E
+z = zipfile.ZipFile(sys.argv[1])
+sheet = z.read("xl/worksheets/sheet1.xml").decode()
+cells = re.findall(r'<c [^>]*>.*?</c>', sheet, re.S)
+n = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+print(json.dumps({
+    "formulas": [
+        {"r": cell.get("r"), "formula": cell.findtext("s:f", namespaces=n), "value": cell.findtext("s:v", namespaces=n)}
+        for cell in E.fromstring(sheet).findall(".//s:c", n) if cell.find("s:f", n) is not None
+    ],
+    "paper": [cell for cell in cells if "<v>70</v>" in cell],
+    "total": [cell for cell in cells if "<v>197.9</v>" in cell],
+    "dCells": [cell for cell in cells if re.search(r' r="D[0-9]+"', cell)],
+}))
+`, invoiceExport], { encoding: "utf8" }));
+  try {
+    assert.equal(invoiceXlsx.formulas.length, 5, "the five item Amount cells download as formulas");
+    for (const cell of invoiceXlsx.formulas) {
+      const row = /^D([1-9][0-9]*)$/.exec(cell.r);
+      assert.ok(row, `the invoice formula is in an Amount cell: ${cell.r}`);
+      assert.equal(cell.formula, `('Invoice'!$B$${row[1]}*'Invoice'!$C$${row[1]})`, `${cell.r} uses the exact exported formula with absolute references to Invoice Qty and Unit price in its own row`);
+    }
+    assert.equal(invoiceXlsx.paper.length, 1, "Paper's edited Amount is present once");
+    assert.ok(invoiceXlsx.formulas.some(cell => cell.value === "70"), "Paper's edited Amount is one of the checked formulas");
+    assert.equal(invoiceXlsx.total.length, 1, "the kept Total is present once");
+    assert.doesNotMatch(invoiceXlsx.total[0], /<f>/, "the kept Total downloads as a plain value, not a formula");
+  } catch (error) {
+    console.error("Invoice D-column cells:", JSON.stringify(invoiceXlsx.dCells));
+    throw error;
+  }
+  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90, says it will not recalculate, and stays $197.90 after an edit; XLSX downloads the five item formulas with cached values, including Paper's edited 70, and Total as the plain value 197.9");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {

@@ -61,6 +61,31 @@ describe("current imported structure disclosures", () => {
 });
 
 describe("native table download disclosures", () => {
+  it.each([
+    ["native_tables_formula_value_only",
+      "The workbook holds more than 1000 formulas, so they export as computed values. Retain the Tachiko source to keep the formulas.",
+      "This workbook has more than 1000 formulas, so the download writes their current values instead of the formulas. Save a copy of your work to keep the formulas."],
+    ["native_tables_formula_value_only",
+      "Formula cell exports its current computed value only: the formula is longer than the export profile allows. Retain the Tachiko source to keep the formula.",
+      "This formula downloads as its current value only, because it is longer than Tachiko can write into a spreadsheet file. Save a copy of your work to keep the formula."],
+    ["native_tables_formula_value_only",
+      "Formula cell exports its current computed value only: the formula is outside the native XLSX formula grammar. Retain the Tachiko source to keep the formula.",
+      "This formula downloads as its current value only, because Tachiko cannot write this kind of formula into a spreadsheet file yet. Save a copy of your work to keep the formula."],
+    ["native_tables_formulas_written",
+      "Formula cells export as Excel formulas over the exported cells, with their current computed Number kept as the cached value.",
+      "Formulas download as spreadsheet formulas, with their current values saved alongside, so Excel shows the same numbers when it opens the file."],
+  ])("words the exact %s finding and preserves changed wording", (code, message, copy) => {
+    expect(findingMessage(message, code)).toBe(copy);
+    expect(findingMessage(`Changed. ${message}`, code)).toBe(`Changed. ${message}`);
+    expect(findingMessage(`${message} More.`, code)).toBe(`${message} More.`);
+    expect(findingMessage(message, "unknown_code")).toBe(message);
+  });
+
+  it("keeps an unknown formula export reason verbatim", () => {
+    const message = "Formula cell exports its current computed value only: Formula reference is unavailable. Retain the Tachiko source to keep the formula.";
+    expect(findingMessage(message, "native_tables_formula_value_only")).toBe(message);
+  });
+
   it("words the native export findings without engine vocabulary", () => {
     for (const message of [
       "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.",
