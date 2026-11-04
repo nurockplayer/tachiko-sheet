@@ -483,11 +483,23 @@ const cases = [
     const impact = cellAt(first, "impact"), friction = cellAt(first, "friction");
     let count = await dispatches(page);
 
+    // A formula that reads its own cell can never be the expected preview:
+    // Work refuses the cycle and the bar explains it.
+    await typeFormula(impact, "=C2*D2");
+    const selfError = page.locator(".ts-formula-bar-error");
+    await selfError.waitFor();
+    assert.match((await selfError.textContent()).trim(), /depend on its own result/,
+      "a formula that reads the cell it is stored in is refused");
+    assert.equal(await dispatches(page), count, "the refused self-reference publishes nothing");
+    assert.equal(await preview.count(), 0, "a refused formula opens no preview");
+    await bar.press("Escape");
+
     // A same-row reference needs no note: both formulas are shown, over the
-    // grid, without publishing the read and without moving the rows.
+    // grid, without publishing the read and without moving the rows. The
+    // target is the priority column, which the formula does not read.
     const product = (await numberIn(impact)) * (await numberIn(friction));
     const gridTop = (await rows.first().boundingBox()).y;
-    await typeFormula(impact, "=C2*D2");
+    await typeFormula(cellAt(first, "priority"), "=C2*D2");
     await preview.waitFor();
     assert.equal(await preview.getAttribute("role"), "group");
     assert.equal(await preview.getAttribute("aria-label"), "Formula translation");
@@ -499,17 +511,17 @@ const cases = [
     await page.getByTestId("a1-preview-apply").click();
     await preview.waitFor({ state: "hidden" });
     await page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
-      [`cell:${first}:${fields.impact}`, String(product)]);
+      [`cell:${first}:${fields.priority}`, String(product)]);
     assert.equal(await dispatches(page), count + 1, "Apply publishes the translated source once");
-    await impact.click();
+    await cellAt(first, "priority").click();
     assert.equal(await barText(), "[.impact]*[.friction]", "the bar shows Work's stored source, not the Excel text");
 
     // A second Excel formula in another row still previews after the first was
     // applied: a formula withdraws Work's native row profile, which must not
     // turn translation off for the rest of the table.
     count = await dispatches(page);
-    const thirdBefore = (await cellAt(second, "impact").textContent()).trim();
-    await typeFormula(cellAt(second, "impact"), "=C3*D2");
+    const thirdBefore = (await cellAt(second, "priority").textContent()).trim();
+    await typeFormula(cellAt(second, "priority"), "=C3*D2");
     await preview.waitFor();
     assert.match((await preview.locator(".ts-a1-preview-note").textContent()).trim(), /Copying this formula/,
       "a reference to another row warns that copying will not move it");
@@ -517,7 +529,7 @@ const cases = [
     await bar.press("Escape");
     await preview.waitFor({ state: "hidden" });
     assert.equal(await barText(), "=C3*D2", "Escape keeps the typed text in the bar");
-    assert.equal((await cellAt(second, "impact").textContent()).trim(), thirdBefore, "Escape publishes nothing");
+    assert.equal((await cellAt(second, "priority").textContent()).trim(), thirdBefore, "Escape publishes nothing");
     assert.equal(await dispatches(page), count, "Escape publishes nothing");
     await bar.press("Escape");
 
