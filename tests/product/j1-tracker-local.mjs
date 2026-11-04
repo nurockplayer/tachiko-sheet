@@ -204,6 +204,7 @@ try {
   // and the first column draws its Excel letter before its name.
   const gutterHead = page.locator(".ts-grid thead th.ts-gutter-head");
   assert.equal((await gutterHead.textContent())?.trim(), "Row", "the gutter head keeps its Row text for frozen seeds");
+  assert.equal(await gutterHead.getAttribute("aria-label"), "Row 1 (column names)", "the accessible name is not the drawn CSS number plus Row");
   assert.equal(await gutterHead.evaluate((th) => getComputedStyle(th, "::before").content), '"1"', "the header row draws A1 row 1");
   assert.equal(
     await page.locator(".ts-grid thead th.ts-column-header").first()

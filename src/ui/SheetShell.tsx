@@ -4005,7 +4005,7 @@ export function SheetShell(props: SheetShellProps) {
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
-            <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW}><span className="ts-visually-hidden">Row</span></th>
+            <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
             {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined}>
               <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
