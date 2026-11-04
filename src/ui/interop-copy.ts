@@ -63,9 +63,34 @@ export function findingCategoryLabel(category: FidelityFinding["category"]): str
 
 const SUMMARY_ROW_EXCLUDED = "This row totals the column above it (SUM, AVERAGE or COUNT), so it is not imported as a data row. Tachiko shows column totals; export does not write this row. Choose keep_summary_rows to import it as data.";
 
-export function findingMessage(message: string, code?: string): string {
+const ESCAPE_SEQUENCE_CODE = "native_tables_xlsx_escape_sequence";
+
+/**
+ * Work refused a worksheet name holding a literal SpreadsheetML `_xHHHH_`
+ * escape (#637/#640). The code arrives as the failure code or inside Work's
+ * diagnostic text.
+ */
+export function isEscapeSequenceRefusal(code: string | undefined, ...texts: Array<string | undefined>): boolean {
+  return code === ESCAPE_SEQUENCE_CODE || texts.some((text) => text?.includes(ESCAPE_SEQUENCE_CODE) === true);
+}
+
+/**
+ * Plain copy for that refusal. The table name comes from Work's own
+ * `worksheet "…"` text (message or location); without one, the sheet is not
+ * guessed and the sentence says “This table”.
+ */
+export function escapeSequenceMessage(...texts: Array<string | undefined>): string {
+  const source = texts.filter(Boolean).join(" ");
+  const named = /worksheet ("(?:[^"\\]|\\.)*")/.exec(source)?.[1];
+  const table = named ? quoted(named) : "";
+  const pattern = /_x[0-9A-Fa-f]{4}_/.exec(table || source)?.[0] ?? "_xHHHH_";
+  return `${table ? `The table “${table}”` : "This table"} can't be downloaded as an Excel sheet: Excel would read “${pattern}” in its name as a hidden character code. Rename the table and download again.`;
+}
+
+export function findingMessage(message: string, code?: string, location?: string): string {
   // Exact producer wording is required for a translation. A new/changed
   // warning remains verbatim rather than inheriting an inaccurate promise.
+  if (isEscapeSequenceRefusal(code, message, location)) return escapeSequenceMessage(message, location);
   if (code === "imported_spreadsheet_unrepresentable") {
     return `The original workbook layout cannot represent this table. ${message}`;
   }
