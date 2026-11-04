@@ -1,3 +1,4 @@
+import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat } from "./protocol.ts";
 export interface DesignerClient {
@@ -10,6 +11,7 @@ export interface DesignerClient {
     exportNativeTablesSpreadsheet?(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeTrackerSpreadsheet?(expectedRevision: string, presentation: NativeTrackerExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeBudgetSpreadsheet?(expectedRevision: string, presentation: NativeBudgetExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
+    translateA1Formula?(input: TranslateA1FormulaInput): Promise<A1Translation>;
     previewCleanup?(expectedRevision: string, operation: CleanupOperation): Promise<CleanupPreview>;
     commitCleanup?(expectedRevision: string, previewId: string): Promise<PublicationProjection>;
     copyFormula?(expectedRevision: string, request: FormulaCopy): Promise<PublicationProjection>;

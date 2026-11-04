@@ -1,3 +1,4 @@
+import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
 import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
@@ -14,6 +15,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeTrackerSpreadsheet(expectedRevision: string, presentation: NativeTrackerExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeBudgetSpreadsheet(expectedRevision: string, presentation: NativeBudgetExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
+    translateA1Formula(input: TranslateA1FormulaInput): Promise<A1Translation>;
     previewCleanup(expectedRevision: string, operation: CleanupOperation): Promise<CleanupPreview>;
     commitCleanup(expectedRevision: string, previewId: string): Promise<PublicationProjection>;
     newBudget(): Promise<OpenedProjection>;

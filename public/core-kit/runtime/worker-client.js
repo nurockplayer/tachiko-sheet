@@ -92,6 +92,15 @@ export class WorkerDesignerClient {
             throw new Error("Expected native Budget spreadsheet export.");
         return reply.export;
     }
+    async translateA1Formula(input) {
+        return expectResponse("a1_translation", await this.#command({ type: "translate_a1_formula",
+            expected_revision: input.expectedRevision, collection_id: input.collectionId,
+            row_entity_id: input.rowEntityId, target_field_id: input.targetFieldId,
+            text: input.text, geometry: {
+                header_row: input.geometry.headerRow, rows: input.geometry.rows, columns: input.geometry.columns,
+                ...(input.geometry.sheets === undefined ? {} : { sheets: Object.fromEntries(Object.entries(input.geometry.sheets).map(([name, sheet]) => [name, { collection_id: sheet.collectionId, header_row: sheet.headerRow, rows: sheet.rows, columns: sheet.columns }])) }),
+            } }));
+    }
     async previewCleanup(expectedRevision, operation) {
         return expectResponse("cleanup_preview", await this.#command({ type: "preview_cleanup", expected_revision: expectedRevision, operation }));
     }
