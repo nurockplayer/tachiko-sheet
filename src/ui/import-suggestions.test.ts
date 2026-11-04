@@ -77,6 +77,17 @@ describe("import refusal message", () => {
     expect(importRefusalMessage(new Error("TableRows capacity exceeded: maximum 8406, attempted 8407"))).toMatch(/^This file is outside what this beta can open/);
     expect(importRefusalMessage(new Error("Server capacity exceeded"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: Server capacity exceeded)");
   });
+
+  it("names the refused sheet and limit when Work reports a typed import capacity failure", () => {
+    const failure = {
+      code: "capacity_exceeded", current_revision: "r1", message: "capacity", diagnostics: [],
+      limit: "table_rows", collection: "Orders", attempted: 200, maximum: 128,
+    };
+    const typed = Object.assign(new Error("capacity"), { failure });
+    expect(importRefusalMessage(typed)).toBe(
+      "The sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet. The workbook was not imported.",
+    );
+  });
 });
 
 describe("import confirmation errors", () => {

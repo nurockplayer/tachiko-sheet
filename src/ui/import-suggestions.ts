@@ -1,4 +1,6 @@
 import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
+import { isCapacityFailure, type FailureProjection } from "../../public/core-kit/runtime/protocol.js";
+import { importCapacityMessage } from "./capacity-message.js";
 
 export type ImportColumnType = "text" | "number" | "boolean" | "date";
 
@@ -82,7 +84,11 @@ const DAMAGED = /unclosed quoted field|Missing ZIP|invalid ZIP|not a valid|malfo
 export function importRefusalMessage(error: unknown): string {
   const detail = error instanceof Error && error.message.length > 0 ? error.message : "";
   // Work's typed capacity refusal (#588) is the authority; the patterns cover older producer wording.
-  const capacity = (error as { failure?: { code?: unknown } } | null)?.failure?.code === "capacity_exceeded";
+  // #638/#639: an import over the admitted profile names the limit and the
+  // sheet Work refused, instead of the older general beta sentence.
+  const failure = (error as { failure?: FailureProjection } | null)?.failure;
+  if (failure && isCapacityFailure(failure)) return importCapacityMessage(failure);
+  const capacity = failure?.code === "capacity_exceeded";
   const lead = capacity || BEYOND_LIMITS.test(detail)
     ? "This file is outside what this beta can open: one headered sheet with 1–16 plain Text, finite Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells (including missing cells). Other file-size, style and feature limits also apply."
     : DAMAGED.test(detail)
