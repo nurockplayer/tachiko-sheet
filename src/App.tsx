@@ -58,7 +58,7 @@ import { csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { copyFailureReason } from "./ui/save-close.js";
-import { findingColumnTables } from "./ui/interop-copy.js";
+import { escapeSequenceMessage, findingColumnTables, isEscapeSequenceRefusal } from "./ui/interop-copy.js";
 import { useHostFiles } from "./host/host-files.js";
 import { COPY_CHANGED_MESSAGE, validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
 
@@ -325,13 +325,17 @@ function describe(error: unknown, fallback: string): string {
 export function describeExportRefusal(error: unknown): string {
   // Public runtime failures carry located diagnostics. Do not expose the
   // transport error/code in place of the actual reason the file was refused.
-  const failure = (error as { failure?: { code?: string; diagnostics?: Array<{ path: string; message: string }> } } | null)?.failure;
+  const failure = (error as { failure?: { code?: string; message?: string; diagnostics?: Array<{ path: string; message: string }> } } | null)?.failure;
   if (failure?.code === "stale_revision") {
     return "The work changed before the file was prepared. Refresh the work and prepare it again.";
   }
   if (failure?.code === "imported_spreadsheet_export_refused") {
     return "This table changed in ways the original workbook layout can't represent, so it can't be downloaded in that layout. Your work is unchanged.";
   }
+  // Work #637/#640: a literal SpreadsheetML escape in the sheet name is
+  // refused by code or by a diagnostic that names the code.
+  const failureText = [failure?.message, ...(failure?.diagnostics ?? []).map((diagnostic) => `${diagnostic.path} ${diagnostic.message}`)].join(" ");
+  if (isEscapeSequenceRefusal(failure?.code, failureText)) return escapeSequenceMessage(failureText);
   if (failure?.code === "native_tables_export_refused") {
     const details = failure.diagnostics?.map((diagnostic) =>
       `${diagnostic.path ? `${diagnostic.path}: ` : ""}${diagnostic.message}`).join(" ");

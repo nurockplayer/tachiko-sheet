@@ -4625,7 +4625,7 @@ export function SheetShell(props: SheetShellProps) {
       <h2 className="ts-content-heading">Import &amp; export</h2>
       <section className="ts-interop-section" aria-label="Import & export changes and warnings">
         <h3 className="ts-content-heading">Changes and warnings</h3>
-        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}
+        {interop?.ledger.length ? <ul className="ts-ledger">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {findingMessage(finding.message, finding.code, finding.location)}</li>)}</ul> : <p className="ts-empty">No import or export details are available for this work.</p>}
       </section>
       <section className="ts-interop-section" aria-label="Cleanup preview">
         <h3 className="ts-content-heading">Cleanup</h3>
@@ -5349,13 +5349,13 @@ export function SheetShell(props: SheetShellProps) {
                     }} />
                   {" "}Keep the Total row as data
                 </label></div> : null}
-                {attention.length ? <ul className="ts-ledger" aria-label="Import preview changes and warnings">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
+                {attention.length ? <ul className="ts-ledger" aria-label="Import preview changes and warnings">{attention.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code, finding.location)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">Nothing in this file needs your attention before import.</p>}
               </>;
             })()}
             <div className="ts-import-columns">{interop.importInspection.source.sheets.map((sheet, sheetIndex) => <section key={sheet.name}><h3 className="ts-h2">{sheet.name}</h3>{sheet.rows.length ? <div className="ts-import-preview-scroll"><table className="ts-import-preview" aria-label={`First rows of ${sheet.name}`}><thead><tr>{sheet.columns.map((column, columnIndex) => <th key={columnIndex} scope="col">{column.name}</th>)}</tr></thead><tbody>{sheet.rows.slice(0, 5).map((row, rowIndex) => <tr key={rowIndex}>{sheet.columns.map((_, columnIndex) => <td key={columnIndex}>{sourcePreviewText(row[columnIndex]?.value)}</td>)}</tr>)}</tbody></table><p className="ts-hint">{sheet.rows.length > 5 ? `First 5 of ${sheet.rows.length.toLocaleString("en-US")} rows` : `${sheet.rows.length} row${sheet.rows.length === 1 ? "" : "s"}`}</p></div> : null}{sheet.columns.map((column, columnIndex) => <label className="ts-import-column" key={column.name}>{column.name}{importSuggestions[sheetIndex]?.[columnIndex] === "number" ? <span className="ts-import-suggested"> · Number suggested from its values</span> : null}<select value={importTypes[sheetIndex]?.[columnIndex] ?? "text"} disabled={importPending} onChange={(event) => { const nextType = event.currentTarget.value; setImportChoice((current) => chooseImportType(current, importSuggestions, sheetIndex, columnIndex, nextType)); }}><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="date">Date</option></select></label>)}</section>)}</div>
             {(() => {
               const notes = interop.importInspection.source.ledger.filter((finding) => !finding.blocking && INFORMATIONAL_FINDINGS.has(finding.category));
-              return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code)}</li>)}</ul></details> : null;
+              return notes.length ? <details className="ts-import-notes"><summary>Import details ({notes.length})</summary><ul className="ts-ledger" aria-label="Import details">{notes.map((finding, index) => <li key={`${finding.code}-${index}`}>{finding.location}: {findingMessage(finding.message, finding.code, finding.location)}</li>)}</ul></details> : null;
             })()}
           </div>
           {importErrorMessage ? <p className="ts-dialog-error ts-dialog-error--import" role="alert">{importErrorMessage}</p> : null}
@@ -5375,7 +5375,7 @@ export function SheetShell(props: SheetShellProps) {
           </> : <p className="ts-hint">This work has no attached spreadsheet file or report settings to leave out.</p> : interop?.ledger.length ? <ul className="ts-ledger" aria-label="Export changes and warnings">{interop.ledger.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{findingCategoryLabel(finding.category)}</strong>: {((location) => location ? <><span className="ts-ledger-location">{location}</span>: </> : null)(findingLocation(finding.location,
                 (collection) => names.table(collection) ?? view?.collections.find((summary) => summary.id === collection)?.display_name,
                 (collection, field) => (table?.collection.id === collection ? names.column(collection, field) : null)
-                  ?? ledgerColumns?.collections.find((summary) => summary.id === collection)?.fields.find((column) => column.id === field)?.displayName, finding.code))}{findingMessage(finding.message, finding.code)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
+                  ?? ledgerColumns?.collections.find((summary) => summary.id === collection)?.fields.find((column) => column.id === field)?.displayName, finding.code))}{findingMessage(finding.message, finding.code, finding.location)}</li>)}</ul> : <p className="ts-hint ts-dialog-success">No changes or losses were reported for this file.</p>}
         </div>
         <div className="ts-dialog-actions">
           <button type="button" className="ts-button" disabled={busy} onClick={cancelDownload}>Cancel</button>
