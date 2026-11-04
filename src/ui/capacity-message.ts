@@ -28,6 +28,36 @@ export function capacityMessage(failure: CapacityFailureProjection, subject = "T
   }
 }
 
+/**
+ * Explain Work's typed import refusal (#638/#639): the workbook is over the
+ * admitted import profile. Work may stop counting early, so every count says
+ * "at least" and never pretends to be exact. The sheet named by
+ * `table_rows`/`table_fields` is Work's own sheet name.
+ */
+export function importCapacityMessage(failure: CapacityFailureProjection): string {
+  const maximum = failure.maximum.toLocaleString("en-US");
+  const attempted = failure.attempted.toLocaleString("en-US");
+  const notImported = "The workbook was not imported.";
+  switch (failure.limit) {
+    case "table_rows":
+      return `The sheet “${failure.collection}” has at least ${attempted} rows; Tachiko can import up to ${maximum} rows per sheet. ${notImported}`;
+    case "table_fields":
+      return `The sheet “${failure.collection}” has at least ${attempted} columns; Tachiko can import up to ${maximum} columns per sheet. ${notImported}`;
+    case "collections":
+      return `The workbook has at least ${attempted} sheets; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "total_entities":
+      return `The workbook has at least ${attempted} rows in all; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "formulas":
+      return `The workbook has at least ${attempted} formulas; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "populated_cells":
+      return `The workbook has at least ${attempted} filled cells; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "formula_ast_nodes":
+      return `The workbook's formulas have at least ${attempted} parts in all; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "dependency_edges":
+      return `The workbook's formulas have at least ${attempted} references in all; Tachiko can import up to ${maximum}. ${notImported}`;
+  }
+}
+
 /** Work's capacity usage for one table, bound to the view it was read for. */
 export interface CapacityReading { occurrence: string; revision: string; collectionId: string; rows: number; maximum: number }
 
