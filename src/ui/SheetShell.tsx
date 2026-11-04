@@ -87,7 +87,7 @@ import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { FormulaBar } from "./FormulaBar.js";
-import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarSource, formulaBarState, formulaColumnNameHint, formulaHandoffSettlement, formulaReferenceInsertion, inCellFormulaSource, insertFormulaReference, isFormulaCell, rowLabel, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
+import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarSource, formulaBarState, formulaColumnNameHint, formulaHandoffSettlement, formulaReferenceInsertion, hiddenRowTargetLabel, inCellFormulaSource, insertFormulaReference, isFormulaCell, rowLabel, tableAdmitsFormulas, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
 import { suggestedCopyName } from "./copy-name.js";
@@ -2385,7 +2385,10 @@ export function SheetShell(props: SheetShellProps) {
     }
     // Text without a bracketed Tachiko reference may be Excel's A1 syntax:
     // Work reads it against the displayed grid before anything is stored.
-    if (onTranslateA1Formula && table?.native_table_profile && !isTachikoFormulaSource(source)) {
+    // `state.editable` already means this table admits formulas — a check that
+    // must not use `native_table_profile`, because the first formula withdraws
+    // that profile while Work keeps accepting formulas in the same table.
+    if (onTranslateA1Formula && table && state.editable && !isTachikoFormulaSource(source)) {
       const translation = await onTranslateA1Formula(witness, {
         collectionId: table.collection.id,
         rowEntityId: state.target.entity,
@@ -2691,9 +2694,11 @@ export function SheetShell(props: SheetShellProps) {
       }
       const intent = completionIntent();
       // A cell formula with no bracketed Tachiko reference may be Excel A1
-      // text: Work reads it against the displayed grid first.
+      // text: Work reads it against the displayed grid first, under the same
+      // admission rule as the bar (never `native_table_profile`, which one
+      // formula withdraws while Work still accepts formulas in that table).
       let sourceToCommit = formulaSource;
-      if (witness && table?.native_table_profile && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource)) {
+      if (witness && table && tableAdmitsFormulas(table) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource)) {
         const translation = await onTranslateA1Formula(witness, {
           collectionId: table.collection.id,
           rowEntityId: slot.target.entity,
@@ -4839,10 +4844,8 @@ export function SheetShell(props: SheetShellProps) {
                   // A hidden row has no displayed number, so name it by its
                   // first column value like the bar names the focused row.
                   const row = rowSource(table).byEntity(change.target.entity);
-                  const label = row ? rowLabel(row, columns) : "";
-                  const hiddenName = label ? `Hidden row “${label}”, ${name}` : `Hidden row, ${name}`;
                   return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
-                    <td>{displayIndex === undefined ? hiddenName : `Row ${a1RowNumber(displayIndex)}, ${name}`}</td>
+                    <td>{displayIndex === undefined ? hiddenRowTargetLabel(row ? rowLabel(row, columns) : "", name) : `Row ${a1RowNumber(displayIndex)}, ${name}`}</td>
                   </tr>;
                 })}</tbody>
               </table>

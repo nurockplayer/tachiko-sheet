@@ -468,6 +468,108 @@ const cases = [
     }
     await page.locator('.ts-report-canvas[data-report-ready="true"]').waitFor();
   }],
+  ["Excel A1 formulas translate with a preview before applying", async (page) => {
+    const bar = page.getByTestId("formula-bar-input");
+    const preview = page.getByTestId("a1-preview");
+    const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
+    assert.equal(await rows.count(), 3, "the fixture displays three data rows");
+    const entityAt = async (index) => rows.nth(index).locator("td[data-work-field]").first().getAttribute("data-work-entity");
+    const [first, second] = [await entityAt(0), await entityAt(1)];
+    const cellAt = (entity, key) => page.getByTestId(`cell:${entity}:${fields[key]}`);
+    const numberIn = async (target) => Number((await target.textContent()).trim());
+    const barText = () => bar.inputValue();
+    const codeAt = async (index) => (await preview.locator(".ts-a1-preview-code").nth(index).textContent()).trim();
+    const typeFormula = async (target, source) => { await target.click(); await bar.fill(source); await bar.press("Enter"); };
+    const impact = cellAt(first, "impact"), friction = cellAt(first, "friction");
+    let count = await dispatches(page);
+
+    // A same-row reference needs no note: both formulas are shown, over the
+    // grid, without publishing the read and without moving the rows.
+    const product = (await numberIn(impact)) * (await numberIn(friction));
+    const gridTop = (await rows.first().boundingBox()).y;
+    await typeFormula(impact, "=C2*D2");
+    await preview.waitFor();
+    assert.equal(await preview.getAttribute("role"), "group");
+    assert.equal(await preview.getAttribute("aria-label"), "Formula translation");
+    assert.equal(await codeAt(0), "=C2*D2", "the preview shows the Excel text as typed");
+    assert.equal(await codeAt(1), "[.impact]*[.friction]", "a same-row reference becomes a bare field reference");
+    assert.equal(await preview.locator(".ts-a1-preview-note").count(), 0, "a same-row reference carries no note");
+    assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) <= 1, "the preview overlays the grid without moving it");
+    assert.equal(await dispatches(page), count, "the translation is a read and publishes nothing");
+    await page.getByTestId("a1-preview-apply").click();
+    await preview.waitFor({ state: "hidden" });
+    await page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
+      [`cell:${first}:${fields.impact}`, String(product)]);
+    assert.equal(await dispatches(page), count + 1, "Apply publishes the translated source once");
+    await impact.click();
+    assert.equal(await barText(), "[.impact]*[.friction]", "the bar shows Work's stored source, not the Excel text");
+
+    // A second Excel formula in another row still previews after the first was
+    // applied: a formula withdraws Work's native row profile, which must not
+    // turn translation off for the rest of the table.
+    count = await dispatches(page);
+    const thirdBefore = (await cellAt(second, "impact").textContent()).trim();
+    await typeFormula(cellAt(second, "impact"), "=C3*D2");
+    await preview.waitFor();
+    assert.match((await preview.locator(".ts-a1-preview-note").textContent()).trim(), /Copying this formula/,
+      "a reference to another row warns that copying will not move it");
+    assert.equal(await dispatches(page), count, "the preview is still a read");
+    await bar.press("Escape");
+    await preview.waitFor({ state: "hidden" });
+    assert.equal(await barText(), "=C3*D2", "Escape keeps the typed text in the bar");
+    assert.equal((await cellAt(second, "impact").textContent()).trim(), thirdBefore, "Escape publishes nothing");
+    assert.equal(await dispatches(page), count, "Escape publishes nothing");
+    await bar.press("Escape");
+
+    // A whole-column SUM keeps the note that it covers rows added later.
+    count = await dispatches(page);
+    const frictionBefore = await numberIn(friction);
+    await typeFormula(friction, "=SUM(C2:C4)");
+    await preview.waitFor();
+    assert.match((await preview.locator(".ts-a1-preview-note").textContent()).trim(), /entire column/,
+      "a whole-column aggregate says it tracks the whole column");
+    await page.getByTestId("a1-preview-keep-editing").click();
+    await preview.waitFor({ state: "hidden" });
+    assert.equal(await barText(), "=SUM(C2:C4)", "Keep editing closes the preview and keeps the draft");
+    assert.equal(await numberIn(friction), frictionBefore, "Keep editing publishes nothing");
+    assert.equal(await dispatches(page), count, "Keep editing publishes nothing");
+    await bar.press("Escape");
+
+    // A reference outside the table is refused with Work's span selected.
+    count = await dispatches(page);
+    const frictionDraftBefore = await numberIn(friction);
+    await typeFormula(friction, "=B99*2");
+    const error = page.locator(".ts-formula-bar-error");
+    await error.waitFor();
+    assert.match((await error.textContent()).trim(), /“B99” is outside the table/);
+    await page.waitForFunction(() => {
+      const input = document.querySelector('[data-testid="formula-bar-input"]');
+      return Boolean(input && input.value.slice(input.selectionStart, input.selectionEnd) === "B99");
+    });
+    assert.equal(await barText(), "=B99*2", "the refused text stays in the bar");
+    assert.equal(await numberIn(friction), frictionDraftBefore, "a refusal publishes nothing");
+    assert.equal(await dispatches(page), count, "the refused translation was a read");
+    await bar.press("Escape");
+
+    // An in-cell Excel formula opens the same preview in the bar.
+    count = await dispatches(page);
+    const secondImpact = cellAt(second, "impact");
+    const secondBefore = (await secondImpact.textContent()).trim();
+    await secondImpact.dblclick();
+    const input = editor(page);
+    await input.fill("=D2*2");
+    await input.press("Enter");
+    await preview.waitFor();
+    await page.waitForFunction(() => document.activeElement?.dataset.testid === "formula-bar-input");
+    assert.equal(await barText(), "=D2*2", "the cell editor hands its draft to the bar");
+    assert.equal(await editor(page).count(), 0, "only the bar holds the draft");
+    await bar.press("Escape");
+    await preview.waitFor({ state: "hidden" });
+    assert.equal(await barText(), "=D2*2", "Escape keeps the in-cell text in the bar");
+    await bar.press("Escape");
+    assert.equal((await secondImpact.textContent()).trim(), secondBefore, "the in-cell formula was never applied");
+    assert.equal(await dispatches(page), count, "the in-cell translation and Escape publish nothing");
+  }],
 ];
 const launchOptions = { headless: true,
   ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}),

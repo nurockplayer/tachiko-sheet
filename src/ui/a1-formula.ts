@@ -67,22 +67,24 @@ export function a1RefusalText(input: {
   /** The last column's A1 letter. */
   lastColumn: string;
 }): string {
-  const span = input.spanText ? `“${input.spanText}”` : "";
+  // Work quotes the offending text only when its span names something; the
+  // sentence still needs a subject, which never starts with a stray space.
+  const subject = (fallback: string) => `${input.spanText ? `“${input.spanText}”` : fallback} `;
   switch (input.code) {
     case "out_of_bounds":
-      return `${span} is outside the table: it has rows 2–${input.lastRow} and columns A–${input.lastColumn}.`;
+      return `${subject("This cell reference")}is outside the table: it has rows 2–${input.lastRow} and columns A–${input.lastColumn}.`;
     case "header_reference":
-      return `${span} is the row of column names. Refer to a data row (2–${input.lastRow}).`;
+      return `${subject("That reference")}is the row of column names. Refer to a data row (2–${input.lastRow}).`;
     case "unsupported_range":
-      return `${span} isn't supported: SUM, AVERAGE and COUNT work only over a whole column (for example B2:B${input.lastRow}) while no filter hides rows.`;
+      return `${subject("That range")}isn't supported: SUM, AVERAGE and COUNT work only over a whole column (for example B2:B${input.lastRow}) while no filter hides rows.`;
     case "unsupported_function":
-      return `${span} isn't available. Formulas can use IF, AND, OR, NOT, ROUND, ISBLANK, MIN, MAX, and SUM, AVERAGE or COUNT over a whole column.`;
+      return `${subject("That function")}isn't available. Formulas can use IF, AND, OR, NOT, ROUND, ISBLANK, MIN, MAX, and SUM, AVERAGE or COUNT over a whole column.`;
     case "unsupported_operator":
-      return `${span} isn't supported in formulas.`;
+      return `${subject("That operator")}isn't supported in formulas.`;
     case "unknown_sheet":
-      return `${span} refers to another table. References to other tables aren't available yet.`;
+      return `${subject("That reference")}refers to another table. References to other tables aren't available yet.`;
     case "formula_syntax":
-      return span ? `The formula can't be read near ${span}.` : "The formula can't be read.";
+      return input.spanText ? `The formula can't be read near “${input.spanText}”.` : "The formula can't be read.";
     case "formula_type_mismatch":
       return ["This column can't hold the result of this formula.", input.message].filter(Boolean).join(" ");
     case "formula_cycle":

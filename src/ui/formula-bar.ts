@@ -397,7 +397,7 @@ export function formulaBarDraftValue(state: FormulaBarState, draft: FormulaBarDr
  * the bar trusts that instead of guessing a profile from column types. A
  * tracker is never one, whatever its rows project.
  */
-function tableAdmitsFormulas(table: WorkbookView["table"]): boolean {
+export function tableAdmitsFormulas(table: WorkbookView["table"]): boolean {
   if (table.tracker_profile === true) return false;
   if (table.native_table_profile) return true;
   return rowSource(table).allRowsForNow().some((row) => row.fields.some((field) => field.formula !== null));
@@ -415,4 +415,12 @@ export function rowLabel(row: TableRow, columns: readonly TableColumn[]): string
   const stored = first ? fieldForColumn(row, first.id)?.stored : null;
   if (!stored) return "";
   return stored.kind === "text" ? stored.value.trim() : stored.kind === "number" ? String(stored.value) : "";
+}
+
+/**
+ * A cleanup target on a row no filter displays: named by its first value when
+ * it has one, since there is no displayed A1 row number to give.
+ */
+export function hiddenRowTargetLabel(rowName: string, columnName: string): string {
+  return rowName ? `Hidden row “${rowName}”, ${columnName}` : `Hidden row, ${columnName}`;
 }
