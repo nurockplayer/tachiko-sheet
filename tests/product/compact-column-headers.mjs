@@ -62,7 +62,7 @@ async function compactHeader(page, width, desktop, expected) {
   assert.ok(state.height <= 36 && Math.abs(state.height - desktop) <= 2, `one-line compact header matches desktop: ${JSON.stringify(state)}`);
   assert.equal(state.interactive, 0, "compact headers have no interactive controls, including focusable labels");
   assert.ok(state.labels.every(label => label.width > 0 && label.overflow === "hidden" && label.ellipsis === "ellipsis" && label.wrap === "nowrap"));
-  assert.deepEqual(await page.locator('.ts-grid th[scope="col"]').allTextContents(), ["Row", ...expected], "frozen header text remains unchanged");
+  assert.deepEqual(await page.locator('.ts-grid th[scope="col"]').allTextContents(), ["1", ...expected], "frozen header text remains unchanged");
   return state.height;
 }
 

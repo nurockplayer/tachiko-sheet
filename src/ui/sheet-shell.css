@@ -3013,6 +3013,11 @@ body { margin: 0; }
   color: var(--ts-grid-header-foreground);
 }
 .ts-column-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; min-height: 24px; }
+/* The A1 letter of the column, before its name. CSS-only so the header's text
+   stays exactly the display name for acceptance readback and export. `attr()`
+   reads the element the pseudo-element belongs to, so the heading carries the
+   same attribute as its header cell. */
+.ts-column-header[data-column-letter] .ts-column-heading::before { content: attr(data-column-letter); color: var(--ts-ink-soft); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
 .ts-column-header .ts-col-head { position: static; z-index: auto; display: block; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ts-column-overflow { position: relative; flex: none; }
 .ts-column-overflow > summary { min-width: 28px; min-height: 24px; opacity: 0; pointer-events: none; }

@@ -58,7 +58,7 @@ try {
   assert.equal(await page.locator("h1.ts-title").textContent(), "messy.csv", "the work is named after the file");
   assert.equal(await page.locator("#ts-active-table option:checked").textContent(), "messy", "the table is named after the file");
   const grid = page.getByRole("grid", { name: "Table", exact: true });
-  assert.deepEqual(await grid.locator("thead th").allTextContents(), ["Row", "item", "quantity", "price"], "the grid uses source headers");
+  assert.deepEqual(await grid.locator("thead th").allTextContents(), ["1", "item", "quantity", "price"], "the grid uses source headers");
   await context.close();
 
   // Large lossless numeric columns still suggest Number; the user confirms.

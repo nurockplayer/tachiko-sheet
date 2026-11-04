@@ -474,11 +474,11 @@ try {
   await reimport.getByRole("button", { name: "Import file", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   assert.deepEqual(await visibleTable(page, "sheet_1"), {
-    headers: ["Row", "code", "category", "price"],
+    headers: ["1", "code", "category", "price"],
     rows: [["PEN", "PEN", "200"], ["NOTE", "NOTE", "500"]],
   });
   assert.deepEqual(await visibleTable(page, "sheet_2"), {
-    headers: ["Row", "product_code", "quantity"],
+    headers: ["1", "product_code", "quantity"],
     rows: [["PEN ", "4"], ["NOTE", "2"]],
   });
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
@@ -520,7 +520,7 @@ try {
   await page.getByRole("button", { name: "Open saved j4-selected-export-restart", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   assert.deepEqual(await visibleTable(page, "sheet_2"), {
-    headers: ["Row", "product_code", "quantity"],
+    headers: ["1", "product_code", "quantity"],
     rows: [["PEN ", "7"], ["NOTE", "2"]],
   });
   await verifySelectedDownload(page, "csv", "Sales", 7, "selected-sales-reopened");

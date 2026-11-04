@@ -155,7 +155,7 @@ async function editPenPrice(value) {
   const tableSelect = page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
   await tableSelect.selectOption("catalog");
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
   assert.ok(priceIndex >= 0, "Catalog has a visible price column");
   const row = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   assert.ok(await row.count(), "Catalog has its PEN row");

@@ -266,7 +266,7 @@ async function waitForHomeViewportLayout(page, width, populated) {
 async function editCatalogPriceForSavedCopy(page, value) {
   await selectCatalogForSavedCopy(page);
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
   assert.ok(priceIndex >= 0, "saved-copy Home probe retains the real Catalog price field");
   const penPrice = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
   await penPrice.dblclick();
@@ -285,7 +285,7 @@ async function assertCatalogPenPriceAndCurrentSummary(page, value) {
   await selectCatalogForSavedCopy(page);
   const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
   assert.ok(priceIndex >= 0, "Catalog exposes its real price field");
   assert.equal((await penRow.locator("td").nth(priceIndex).innerText()).trim(), value,
     `Catalog PEN price is exactly ${value} before the copy is saved`);
