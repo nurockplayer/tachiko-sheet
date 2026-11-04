@@ -3,12 +3,7 @@ import type { NewTableColumn } from "../contracts.js";
 import { nameRefusals, type NameRefusals } from "./name-refusals.js";
 import { newColumnInput, supportsOptional, REQUIRED_HELP, REQUIRED_TYPE_NOTE } from "./column-requiredness.js";
 import { Modal } from "./Modal.js";
-
-function columnLetter(ordinal: number): string {
-  let name = "";
-  for (let n = ordinal; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(65 + (n - 1) % 26) + name;
-  return name;
-}
+import { a1ColumnLetter } from "./a1-geometry.js";
 
 export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }: {
   onCreate(name: string, columns: NewTableColumn[]): Promise<boolean>;
@@ -64,8 +59,8 @@ export function NewTableDialog({ onCreate, onCancel, onSuccess, onDraftChange }:
       </div>)}
       <button type="button" className="ts-button" disabled={pending} onClick={() => { const next = serial.current++; clearErrors(); setColumns(current => {
         let ordinal = 1;
-        while (current.some(column => column.name.trim().toUpperCase() === columnLetter(ordinal))) ordinal += 1;
-        return [...current, { id: next, name: columnLetter(ordinal), field_type: "text", required: false }];
+        while (current.some(column => column.name.trim().toUpperCase() === a1ColumnLetter(ordinal - 1))) ordinal += 1;
+        return [...current, { id: next, name: a1ColumnLetter(ordinal - 1), field_type: "text", required: false }];
       }); }}>Add column</button>
     </div>
     {error ? <p className="ts-dialog-error" role="alert">{error}</p> : null}

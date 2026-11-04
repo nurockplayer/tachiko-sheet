@@ -1,5 +1,6 @@
 import type { Currentness, FieldTarget, WorkbookView } from "../contracts.js";
 import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
+import { a1RowNumber } from "./a1-geometry.js";
 import { DRAFT_ROW } from "./row-entry-model.js";
 import { rowSource } from "./row-source.js";
 
@@ -63,7 +64,7 @@ export function formulaBarState(input: {
   if (!row) return empty;
   const field = fieldForColumn(row, column.id);
   const target = field?.target ?? { entity: input.focus.entity, field: column.id };
-  const rowName = rowLabel(row, input.columns) || (displayed ? `Row ${index + 1}` : "Hidden row");
+  const rowName = rowLabel(row, input.columns) || (displayed ? `Row ${a1RowNumber(index)}` : "Hidden row");
   const reason = !tableAdmitsFormulas(input.table) ? FORMULA_BAR_NON_NATIVE
     : !columnCanHoldFormula(field, column) ? FORMULA_BAR_COLUMN
     : input.currentness === "unknown" ? FORMULA_BAR_UNKNOWN

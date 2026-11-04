@@ -200,7 +200,19 @@ try {
   await page.getByLabel("Filter Status", { exact: true }).fill("Todo");
   await page.getByLabel("Filter Status", { exact: true }).press("Enter"); await ready();
   assert.deepEqual(await displayedNames(), ["入庫", "驗收"]);
-  checks.push("5 Priority descending sort reverses the entered order; with the Status Todo filter, the display is 入庫 then 驗收.");
+  // A1 geometry: the header row is row 1, displayed data rows start at row 2,
+  // and the first column draws its Excel letter before its name.
+  const gutterHead = page.locator(".ts-grid thead th.ts-gutter-head");
+  assert.equal((await gutterHead.textContent())?.trim(), "Row", "the gutter head keeps its Row text for frozen seeds");
+  assert.equal(await gutterHead.getAttribute("aria-label"), "Row 1 (column names)", "the accessible name is not the drawn CSS number plus Row");
+  assert.equal(await gutterHead.evaluate((th) => getComputedStyle(th, "::before").content), '"1"', "the header row draws A1 row 1");
+  assert.equal(
+    await page.locator(".ts-grid thead th.ts-column-header").first()
+      .evaluate((th) => getComputedStyle(th.querySelector(".ts-column-heading"), "::before").content),
+    '"A"', "the first column header draws its A1 letter");
+  const rowHeads = () => page.locator(".ts-grid tbody tr.ts-row .ts-row-head").allTextContents();
+  assert.deepEqual(await rowHeads(), ["2", "3"], "sorted and filtered rows keep their A1 numbers in displayed order");
+  checks.push("5 Priority descending sort reverses the entered order; with the Status Todo filter, the display is 入庫 then 驗收; the gutter head reads Row and draws 1, the first column shows letter A, and the two shown rows read 2 and 3.");
 
   // 6. Edit under sort/filter.
   let editor = await editDisplayed("入庫", "Priority", "");

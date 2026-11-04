@@ -58,6 +58,7 @@ import { isComposingEvent } from "./composition-event.js";
 import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
+import { A1_HEADER_ROW, a1ColumnLetter, a1RowNumber } from "./a1-geometry.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
 import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
@@ -1122,7 +1123,8 @@ export function SheetShell(props: SheetShellProps) {
   function autoFitColumn(field: string, th: HTMLElement | null): void {
     const column = columns.find((candidate) => candidate.id === field);
     if (!column) return;
-    const displayName = column.display_name;
+    // The header draws its A1 letter before the name; fit both or the name clips.
+    const displayName = `${a1ColumnLetter(columns.indexOf(column))} ${column.display_name}`;
     // Measure in the body cells' font, the one the widest value is drawn in.
     const sample = gridScrollRef.current?.querySelector("td.ts-cell") ?? th;
     // Built from longhands: Chromium returns an empty `font` shorthand when a
@@ -4001,9 +4003,11 @@ export function SheetShell(props: SheetShellProps) {
       <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
-            <th scope="col" className="ts-gutter-head">Row</th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined}>
-              <div className="ts-column-heading"><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
+            {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
+                readback); the A1 row number is drawn by CSS, like the letters. */}
+            <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined}>
+              <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
               {gridSettings.sort?.field === column.id ? <span className="ts-column-view-marker" aria-hidden="true" title={`Sorted ${gridSettings.sort.direction === "asc" ? "A to Z" : "Z to A"}${sortColumnName ? ` by ${sortColumnName}` : ""}`}>{gridSettings.sort.direction === "asc" ? "↑" : "↓"}</span> : null}
@@ -4332,7 +4336,7 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(row);
     const isSelectedRow = entity === selectedEntity;
     return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
-      <th scope="row" className="ts-row-head">{index + 1}</th>
+      <th scope="row" className="ts-row-head">{a1RowNumber(index)}</th>
       {columns.map((column) => renderCell(row, entity, column))}
     </tr>;
   }
@@ -4538,7 +4542,7 @@ export function SheetShell(props: SheetShellProps) {
       <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief-panel">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
         <h1 className="ts-content-heading">Brief</h1>
-        <p className="ts-content-meta">{displayIndex === undefined ? "Same record as Table" : `Row ${displayIndex + 1} · same record as Table`}</p>
+        <p className="ts-content-meta">{displayIndex === undefined ? "Same record as Table" : `Row ${a1RowNumber(displayIndex)} · same record as Table`}</p>
         <div className="ts-brief-layout">
           <section className="ts-brief-facts" aria-labelledby="brief-facts-heading">
             <h2 className="ts-content-heading" id="brief-facts-heading">Linked facts</h2>
@@ -4637,10 +4641,12 @@ export function SheetShell(props: SheetShellProps) {
               <table className="ts-interop-targets" aria-label="Cleanup targets">
                 <thead><tr><th scope="col">Target</th></tr></thead>
                 <tbody>{preview.changes.map((change, index) => {
-                  const row = rowSource(table).indexOf(change.target.entity);
-                  const column = columns.find((candidate) => candidate.id === change.target.field);
+                  // The label follows the grid's displayed A1 row, like the row
+                  // heads; a row a filter hides has no displayed number.
+                  const displayIndex = rowIndexByEntity.get(change.target.entity);
+                  const name = columns.find((candidate) => candidate.id === change.target.field)?.display_name ?? change.target.field;
                   return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
-                    <td>{`Row ${row + 1}, ${column?.display_name ?? change.target.field}`}</td>
+                    <td>{displayIndex === undefined ? `Hidden row, ${name}` : `Row ${a1RowNumber(displayIndex)}, ${name}`}</td>
                   </tr>;
                 })}</tbody>
               </table>
