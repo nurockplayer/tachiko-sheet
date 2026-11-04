@@ -356,7 +356,7 @@ try {
   await catalogPicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const catalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = catalogHeaders.filter((header) => header !== "1").indexOf("price");
+  const priceIndex = catalogHeaders.filter((header) => header !== "Row").indexOf("price");
   assert.ok(priceIndex >= 0, "Sales Catalog exposes its price field");
   const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   const priceCell = penRow.locator("td").nth(priceIndex);

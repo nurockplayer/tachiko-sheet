@@ -1251,7 +1251,8 @@ describe("SheetShell static rendering", () => {
   it("keeps internal revision, collection, and row identities out of normal chrome", () => {
     const markup = render({ view: makeView() });
     expect(markup).toContain("2 rows");
-    expect(markup).toContain(">1</th>");
+    // The header row is row 1, so the first data row head reads 2.
+    expect(markup).toContain(">2</th>");
     expect(markup).not.toContain("release_items ·");
     expect(markup).not.toContain("revision rev-1");
     expect(markup).not.toContain("playtest_notes");

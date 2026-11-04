@@ -558,7 +558,7 @@ async function salesJourney() {
   await screenshot("sales-summary");
   await timed("edit_price", () => evaluate(`
     await visibleTable("catalog");
-    const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "1");
+    const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
     const price = headers.indexOf("price");
     const row = [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].find((r) => r.textContent.includes("PEN"));
     dblclick(row.querySelectorAll("td")[price]);
@@ -658,7 +658,7 @@ async function salesJourney() {
   // An edit still being published counts as unsaved work, even on clean work.
   const inFlight = await evaluate(`
     await visibleTable("catalog");
-    const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "1");
+    const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
     const row = [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].find((r) => r.textContent.includes("PEN"));
     dblclick(row.querySelectorAll("td")[headers.indexOf("price")]);
     fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "300");

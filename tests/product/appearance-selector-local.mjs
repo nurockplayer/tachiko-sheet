@@ -245,7 +245,7 @@ try {
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
   assert.ok(priceIndex >= 0);
   const cell = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
   await cell.focus();

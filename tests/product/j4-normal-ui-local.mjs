@@ -55,7 +55,7 @@ async function enterSalesFromHome(page, { addAnotherSummary = false } = {}) {
   await resultsPane.waitFor();
   assert.equal(await resultsPane.locator(".ts-result-card").count(), 1, "Sales lands with its per-definition Results card");
   const catalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = catalogHeaders.filter((header) => header !== "1").indexOf("price");
+  const priceIndex = catalogHeaders.filter((header) => header !== "Row").indexOf("price");
   assert.ok(priceIndex >= 0, "Catalog exposes its visible price column");
   const penPrice = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(priceIndex);
   await penPrice.waitFor();
@@ -175,7 +175,7 @@ async function verifyConfiguredSalesSaveReopen(page, initialCopyName) {
   await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
   const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" });
   await penRow.first().locator("td").nth(priceIndex).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
@@ -746,7 +746,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const cleanHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const cleanPriceIndex = cleanHeaders.filter((header) => header !== "1").indexOf("price");
+  const cleanPriceIndex = cleanHeaders.filter((header) => header !== "Row").indexOf("price");
   const cleanPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   const cleanCell = cleanPenRow.locator("td").nth(cleanPriceIndex);
   const cleanEntity = await cleanCell.getAttribute("data-work-entity");
@@ -802,7 +802,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const catalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const categoryIndex = catalogHeaders.filter((header) => header !== "1").indexOf("category");
+  const categoryIndex = catalogHeaders.filter((header) => header !== "Row").indexOf("category");
   assert.ok(categoryIndex >= 0, "Catalog must expose its visible category field.");
   const catalogRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   const catalogCategory = catalogRow.locator("td").nth(categoryIndex);
@@ -922,7 +922,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const draftHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const draftPriceIndex = draftHeaders.filter((header) => header !== "1").indexOf("price");
+  const draftPriceIndex = draftHeaders.filter((header) => header !== "Row").indexOf("price");
   const draftPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   await draftPenRow.locator("td").nth(draftPriceIndex).dblclick();
   const draftEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
@@ -951,7 +951,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const rejectedHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const rejectedPriceIndex = rejectedHeaders.filter((header) => header !== "1").indexOf("price");
+  const rejectedPriceIndex = rejectedHeaders.filter((header) => header !== "Row").indexOf("price");
   const rejectedPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   await rejectedPenRow.locator("td").nth(rejectedPriceIndex).dblclick();
   const rejectedEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
@@ -968,7 +968,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await tablePicker.selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const headers = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
   assert.ok(priceIndex >= 0, "Catalog must expose its visible price field.");
   const penRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" });
   await penRow.first().locator("td").nth(priceIndex).dblclick();
@@ -1023,7 +1023,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const failureHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const failurePriceIndex = failureHeaders.filter((header) => header !== "1").indexOf("price");
+  const failurePriceIndex = failureHeaders.filter((header) => header !== "Row").indexOf("price");
   const failurePenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   await failurePenRow.locator("td").nth(failurePriceIndex).dblclick();
   const failureEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
@@ -1127,7 +1127,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   assert.equal(await page.getByTestId("currentness").getAttribute("data-currentness"), "current");
   assert.equal((await page.locator("[data-testid=work-state]").textContent())?.trim(), "Edited — not saved", "successful Refresh confirms observation without saving the publication");
   const recoveredCatalogHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const recoveredPriceIndex = recoveredCatalogHeaders.filter((header) => header !== "1").indexOf("price");
+  const recoveredPriceIndex = recoveredCatalogHeaders.filter((header) => header !== "Row").indexOf("price");
   const recoveredPenPrice = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first().locator("td").nth(recoveredPriceIndex);
   assert.equal((await recoveredPenPrice.locator(".ts-cell-value").textContent())?.trim(), "250", "one successful Refresh confirms the published scalar value");
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
@@ -1252,7 +1252,7 @@ if (process.env.TACHIKO_SHEET_CAPTURE_HELPER_IMPORT !== "1") try {
   await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).selectOption("catalog");
   await page.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const pendingHeaders = await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const pendingPriceIndex = pendingHeaders.filter((header) => header !== "1").indexOf("price");
+  const pendingPriceIndex = pendingHeaders.filter((header) => header !== "Row").indexOf("price");
   const pendingPenRow = page.locator('table[aria-label="Table"] tbody tr').filter({ hasText: "PEN" }).first();
   await pendingPenRow.locator("td").nth(pendingPriceIndex).dblclick();
   const pendingEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });

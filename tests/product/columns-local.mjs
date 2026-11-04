@@ -323,7 +323,7 @@ try {
   const resultsBefore = await resultTable().innerText();
   const labels = table.columns.map(c => c.display_name);
   assert.deepEqual(await page.locator('.ts-col-head').allTextContents(), labels);
-  assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["1", ...labels], "frozen header readback excludes every disclosure/action label");
+  assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels], "frozen header readback excludes every disclosure/action label");
   await page.mouse.move(0, 0);
   for (const column of table.columns) assert.equal(await columnActions(column.display_name).evaluate(n => getComputedStyle(n).opacity), column.id === price.id ? "1" : "0", "only the focused column is revealed at rest");
   const categoryHeader = page.getByRole("columnheader", { name: "category", exact: true });
@@ -384,7 +384,7 @@ try {
   await actions.press("Enter"); for (let stop = 0; stop < 10; stop++) await page.keyboard.press("Tab");
   assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).evaluate(n => n === document.activeElement), true, "Tab exits the disclosure without a trap");
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
-  assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["1", ...labels]);
+  assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
   checks.push("column disclosure: stable clean header text; hover/focused-column/compact discovery; Enter/Space open; Tab reaches Rename/Remove, Sort/Filter and exits; Escape and dialog cancellation return focus");
   const compactHeaders = await assertCompactColumnHeaders(page, screens);
   await writeFile(path.join(evidence, "compact-headers.json"), JSON.stringify(compactHeaders, null, 2));

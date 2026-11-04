@@ -316,7 +316,7 @@ async function editCatalogPrice(target, rowName, value) {
   await selector.selectOption("catalog");
   await target.getByRole("columnheader", { name: "price", exact: true }).waitFor();
   const headers = await target.locator('table[aria-label="Table"] th[scope="col"]').allTextContents();
-  const priceIndex = headers.filter((header) => header !== "1").indexOf("price");
+  const priceIndex = headers.filter((header) => header !== "Row").indexOf("price");
   assert.ok(priceIndex >= 0, "Catalog has a visible price column");
   const row = target.locator('table[aria-label="Table"] tbody tr').filter({ hasText: rowName }).first();
   assert.ok(await row.count(), `Catalog has a ${rowName} row`);

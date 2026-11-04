@@ -3013,6 +3013,10 @@ body { margin: 0; }
   color: var(--ts-grid-header-foreground);
 }
 .ts-column-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; min-height: 24px; }
+/* The A1 number of the header row, drawn like the data row heads. The cell's
+   text stays "Row" for frozen seeds and accessible readback. */
+.ts-gutter-head[data-row-number]::before { content: attr(data-row-number); font-size: 14px; font-variant-numeric: tabular-nums; }
+
 /* The A1 letter of the column, before its name. CSS-only so the header's text
    stays exactly the display name for acceptance readback and export. `attr()`
    reads the element the pseudo-element belongs to, so the heading carries the
