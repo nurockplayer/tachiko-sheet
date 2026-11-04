@@ -1,3 +1,4 @@
+import type { A1Translation, TranslateA1FormulaInput } from "./runtime/protocol.ts";
 import { projectTransferFromEntries, projectTransferFromFiles, type CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 import type { SpreadsheetExport, SpreadsheetFormat } from "./runtime/interop-protocol.ts";
 import { DesignerRuntimeError, type DesignerClient } from "./runtime/client.ts";
@@ -13,6 +14,7 @@ export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v
  * and the vendored kit makes that stronger contract explicit for consumers.
  */
 export interface ExperimentalDesignerClient extends DesignerClient {
+    translateA1Formula(input: TranslateA1FormulaInput): Promise<A1Translation>;
     queryCapacity(expectedRevision?: string): Promise<CapacityProjection>;
     /** Explicit absence for one optional native Text/Number slot. */
     clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
@@ -49,3 +51,4 @@ export { DesignerRuntimeError, isCapacityFailure, isFormulaFailure, projectTrans
 export type { DesignerClient };
 export type { CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 export type { BootstrapProjection, CapacityFailureProjection, CapacityLimitName, CapacityLimits, CapacityProjection, CapacityUsage, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, ColumnProjection, ConstraintFailureProjection, ConstraintFailureReason, DiagnosticProjection, FailureCode, FailureProjection, FieldConstraint, FieldConstraintInput, NumberFormat, FieldBatchProjection, FormulaFailureCode, FormulaFailureProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, ScalarEditInput, TrackerCommand, OpenedProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";
+export type { A1Geometry, A1SheetGeometry, A1Translation, A1TranslationNote, A1RefusalCode, TranslateA1FormulaInput } from "./runtime/protocol.ts";
