@@ -4641,10 +4641,12 @@ export function SheetShell(props: SheetShellProps) {
               <table className="ts-interop-targets" aria-label="Cleanup targets">
                 <thead><tr><th scope="col">Target</th></tr></thead>
                 <tbody>{preview.changes.map((change, index) => {
-                  const row = rowSource(table).indexOf(change.target.entity);
-                  const column = columns.find((candidate) => candidate.id === change.target.field);
+                  // The label follows the grid's displayed A1 row, like the row
+                  // heads; a row a filter hides has no displayed number.
+                  const displayIndex = rowIndexByEntity.get(change.target.entity);
+                  const name = columns.find((candidate) => candidate.id === change.target.field)?.display_name ?? change.target.field;
                   return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
-                    <td>{`Row ${row + 1}, ${column?.display_name ?? change.target.field}`}</td>
+                    <td>{displayIndex === undefined ? `Hidden row, ${name}` : `Row ${a1RowNumber(displayIndex)}, ${name}`}</td>
                   </tr>;
                 })}</tbody>
               </table>
