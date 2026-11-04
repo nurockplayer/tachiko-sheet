@@ -410,7 +410,7 @@ function columnCanHoldFormula(field: TableRow["fields"][number] | null, column: 
 }
 
 /** The row's first readable value, never an internal ID. */
-function rowLabel(row: TableRow, columns: readonly TableColumn[]): string {
+export function rowLabel(row: TableRow, columns: readonly TableColumn[]): string {
   const first = columns[0];
   const stored = first ? fieldForColumn(row, first.id)?.stored : null;
   if (!stored) return "";
