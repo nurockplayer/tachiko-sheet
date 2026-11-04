@@ -47,6 +47,18 @@ export function a1TranslationNeedsPreview(
   return outcome.source !== text.trim() || outcome.notes.length > 0;
 }
 
+/**
+ * Whether an in-cell translation still belongs to the cell and text it was
+ * requested for. Typing, moving to another cell, or closing the editor while
+ * Work reads makes the pending answer obsolete.
+ */
+export function a1EditorStillCurrent(
+  expected: { entity: string; field: string; value: string },
+  live: { entity: string; field: string; value: string } | null,
+): boolean {
+  return live !== null && live.entity === expected.entity && live.field === expected.field && live.value === expected.value;
+}
+
 /** Work's notes in plain words; the sheet never re-derives their meaning. */
 export const A1_NOTE_TEXT: Record<A1TranslationNote, string> = {
   relative_copy_semantics_changed: "A reference to another row now points at that exact row. Copying this formula to other rows will not move it the way Excel does.",

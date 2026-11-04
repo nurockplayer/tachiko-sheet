@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { A1_NOTE_TEXT, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_NOTE_TEXT, a1EditorStillCurrent, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 
 describe("isTachikoFormulaSource", () => {
   it("treats a bracketed reference as Tachiko source and anything else as Excel text", () => {
@@ -37,6 +37,21 @@ describe("a1TranslationNeedsPreview", () => {
     expect(a1TranslationNeedsPreview(" B2*C2 ", { source: "B2*C2", notes: [] })).toBe(false);
     expect(a1TranslationNeedsPreview("B2*C2", { source: "[.impact]*[.friction]", notes: [] })).toBe(true);
     expect(a1TranslationNeedsPreview("B2*C2", { source: "B2*C2", notes: ["relative_copy_semantics_changed"] })).toBe(true);
+  });
+});
+
+describe("a1EditorStillCurrent", () => {
+  const requested = { entity: "row-1", field: "impact", value: "=D2*2" };
+
+  it("keeps an answer for the same cell and the same text", () => {
+    expect(a1EditorStillCurrent(requested, { ...requested })).toBe(true);
+  });
+
+  it("drops an answer after more typing, another cell, or a closed editor", () => {
+    expect(a1EditorStillCurrent(requested, { ...requested, value: "=D2*3" })).toBe(false);
+    expect(a1EditorStillCurrent(requested, { ...requested, entity: "row-2" })).toBe(false);
+    expect(a1EditorStillCurrent(requested, { ...requested, field: "friction" })).toBe(false);
+    expect(a1EditorStillCurrent(requested, null)).toBe(false);
   });
 });
 

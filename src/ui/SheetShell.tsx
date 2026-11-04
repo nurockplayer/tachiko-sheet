@@ -59,7 +59,7 @@ import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1Geometry, a1RowNumber } from "./a1-geometry.js";
-import { a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { a1EditorStillCurrent, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
@@ -648,6 +648,10 @@ export function SheetShell(props: SheetShellProps) {
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
   const [resultsHidden, setResultsHidden] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
+  // The live editor state for async continuations: a translation that returns
+  // after the user typed more or moved cells must not touch the editor.
+  const editorRef = useRef<EditorState | null>(null);
+  useLayoutEffect(() => { editorRef.current = editor; }, [editor]);
   // The allowed-values list under the cell editor; another cell key means a fresh, open list.
   const [cellOptionsUi, setCellOptionsUi] = useState<CellOptionsUi & { key: string } | null>(null);
   // Every edit session, including reopening the same cell, starts with the list open.
@@ -818,6 +822,9 @@ export function SheetShell(props: SheetShellProps) {
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | null>(null);
   const formulaInputRef = useRef<HTMLInputElement | null>(null);
+  // One formula commit at a time: a second Apply or Enter while Work is
+  // deciding must not publish the same edit twice.
+  const formulaCommitInFlightRef = useRef(false);
   // The identity currently displayed by the bar; a late refusal compares it
   // before publishing a message meant for another cell.
   const formulaIdentityRef = useRef("");
@@ -2289,6 +2296,21 @@ export function SheetShell(props: SheetShellProps) {
     source: string,
     then: "stay" | "next" | "previous" = "stay",
   ): Promise<void> {
+    // Apply and Enter can both arrive before React has committed the pending
+    // state; the ref is the synchronous gate and the preview stays bound.
+    if (formulaCommitInFlightRef.current) return;
+    formulaCommitInFlightRef.current = true;
+    try {
+      await commitFormulaSourceOnce(source, then);
+    } finally {
+      formulaCommitInFlightRef.current = false;
+    }
+  }
+
+  async function commitFormulaSourceOnce(
+    source: string,
+    then: "stay" | "next" | "previous" = "stay",
+  ): Promise<void> {
     const state = formulaState;
     if (!witness || !state.target) return;
     setA1Preview(null);
@@ -2448,6 +2470,16 @@ export function SheetShell(props: SheetShellProps) {
     const preview = boundA1Preview;
     if (!preview) {
       setA1Preview(null);
+      return;
+    }
+    // Same admission as Enter in the bar. Applying while a commit is pending,
+    // work is locked, or another draft blocks must not publish; the preview
+    // stays bound until the commit settles.
+    const state = formulaState;
+    if (!witness || !state.target || !state.editable || commitPending || controlsLocked || rowCommandPendingRef.current) return;
+    if (refuseWhileCellDraft("editing a formula", false)) return;
+    if (rowDraftActive) {
+      setLocalError(FORMULA_BAR_DRAFT_ROW_HINT);
       return;
     }
     if (formulaIdentityRef.current !== preview.identity || witness?.revision !== preview.revision) {
@@ -2706,6 +2738,17 @@ export function SheetShell(props: SheetShellProps) {
           text: formulaSource,
           geometry: a1Geometry(displayRows, columns),
         });
+        // The read belongs to this cell and this text. Typing more while Work
+        // decides (or moving to another cell) makes this answer obsolete: drop
+        // it without closing or changing the editor. The live input value is
+        // the source of truth, as in the bar's own guard.
+        const liveEditor = editorRef.current && editorInputRef.current
+          ? { entity: editorRef.current.entity, field: editorRef.current.field, value: editorInputRef.current.value }
+          : null;
+        if (!a1EditorStillCurrent(
+          { entity: slot.target.entity, field: slot.target.field, value: editor.value },
+          liveEditor,
+        )) return false;
         if (translation?.kind === "refused") {
           focusRejectedEditorRef.current = intent;
           setLocalError(a1RefusalFor(formulaSource, translation).message);
