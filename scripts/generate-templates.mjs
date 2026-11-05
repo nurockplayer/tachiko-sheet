@@ -179,7 +179,7 @@ window.__runPlan = async plan => {
       expected_revision: table.revision,
       collection,
       start_entity: null,
-      start_field: table.columns[0].key,
+      start_field: table.columns[0].id,
       rows: plan.rows,
     });
     let revision = pasted.resulting_revision;
