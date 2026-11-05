@@ -121,6 +121,12 @@ describe("native table download disclosures", () => {
       .toBe("Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.");
   });
 
+  it("promises a download reopens only within Work's import size, not just its geometry (#290)", () => {
+    const worded = findingMessage("Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The shared incoming geometry is 32 sheets, 32 columns, 128 rows per sheet and 1,024 total rows, with separate 2 MiB source/8 MiB expanded bounds; its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.");
+    expect(worded).toMatch(/no larger than 2 MB \(8 MB unpacked\)/);
+    expect(worded).not.toMatch(/same size/);
+  });
+
   it("finds the tables whose columns findings name, and words a rule that is not kept", () => {
     expect(findingColumnTables([
       { location: "collection a/field f1" }, { location: "collection b/header/field f2" }, { location: "c/f3" },
