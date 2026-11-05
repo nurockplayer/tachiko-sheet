@@ -36,6 +36,15 @@ async function open(page, label) {
     `${label} opens as unsaved work`);
 }
 
+async function saveCopy(page, name) {
+  await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save a copy", exact: true });
+  await dialog.getByRole("textbox", { name: "Copy name", exact: true }).fill(name);
+  await dialog.getByRole("button", { name: "Create copy", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+}
+
 async function close(page) {
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Unsaved work", exact: true });
@@ -68,7 +77,21 @@ try {
   const invoice = await grid(page);
   assert.equal(invoice.length, 5, "Invoice has five rows");
   assert.deepEqual(invoice[0], ["Paper", "10", "$3.50", "$35.00"], "Invoice Paper Amount is quantity times unit price");
-  checks.push("invoice: 5 rows, calculated Amount");
+  assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true,
+    "opening a template adds no Undo step");
+  await page.locator('table[aria-label="Table"] tbody tr.ts-row').first().locator("td").nth(1).dblclick();
+  await page.getByTestId("cell-editor").fill("12");
+  await page.getByTestId("cell-editor").press("Enter");
+  await ready(page);
+  assert.equal((await grid(page))[0][3], "$42.00", "Amount recalculates from the edited Qty");
+  await saveCopy(page, "Invoice saved");
+  await close(page);
+  await page.getByRole("button", { name: "Open saved Invoice saved", exact: true }).click();
+  await ready(page);
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  assert.deepEqual((await grid(page))[0], ["Paper", "12", "$3.50", "$42.00"],
+    "the saved copy keeps the edited Qty and its calculated Amount");
+  checks.push("invoice: 5 rows, calculated Amount; an edit recalculates and Save a copy reopens with it");
   await close(page);
 
   await open(page, "Task tracker");
