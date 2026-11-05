@@ -223,7 +223,7 @@ function assertMetadataToCoreReferences(metadata, inventory) {
   assert.deepEqual(inventory.map((table) => table.columns.map((column) => column.id)), sheets.map((sheet) => sheet.columns.map((column) => column.field_id)), "source field IDs remain bound to producer field IDs");
   assert.deepEqual(inventory.map((table) => table.rows.map((row) => row.id)), sheets.map((sheet) => sheet.rows.map((row) => row.entity_id)), "source entity IDs remain bound to producer row IDs");
 }
-async function inspectSavedDateRecord(name, expectedFirstDate) {
+async function inspectSavedDateRecord(name, expectedFirstDate, expectedLedger = (ledger) => ledger) {
   const record = await savedRecord(name);
   assert.equal(record.kind, "opaque");
   assert.equal(record.source?.name, "date-only.csv");
@@ -231,7 +231,7 @@ async function inspectSavedDateRecord(name, expectedFirstDate) {
   assert.equal(record.source?.sha256, fixturePins["date-only.csv"]);
   const fixedSource = JSON.parse(await readFile(path.join(prep, "fixtures/date-only-private.json"), "utf8"));
   assert.deepEqual(normalizeFreshImportIds(record.source.metadata), normalizeFreshImportIds(fixedSource.metadata));
-  assert.deepEqual(record.source.ledger, currentLedger(fixedSource.ledger));
+  assert.deepEqual(record.source.ledger, expectedLedger(fixedSource.ledger));
   const core = await inspectSavedCore(name, record.source.metadata);
   assert.deepEqual(core.inventory.map((table) => table.columns.map((column) => column.type)), [["text", "text", "number", "number", "date"]]);
   assertMetadataToCoreReferences(record.source.metadata, core.inventory);
@@ -353,7 +353,7 @@ try {
     const beforeSaveRuntime = await snapshot();
     const name = `${prefix}-Date`;
     await saveCopy(name);
-    const savedEvidence = await inspectSavedDateRecord(name, "2026-09-28");
+    const savedEvidence = await inspectSavedDateRecord(name, "2026-09-28", currentLedger);
     assert.equal(savedEvidence.record.coreHash, beforeSaveRuntime.opaqueBytesHash, "normal Date Save preserves the exact same-work core bytes and IDs before reopen");
     assert.equal(savedEvidence.record.source.sha256, fixturePins["date-only.csv"]);
     await home();
