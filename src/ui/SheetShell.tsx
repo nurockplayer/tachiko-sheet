@@ -709,6 +709,10 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  // The live grid focus for async continuations: a translation that returns
+  // after the user moved to another cell must not touch the editor it left.
+  const focusedKeyRef = useRef<string | null>(null);
+  useLayoutEffect(() => { focusedKeyRef.current = focusedKey; }, [focusedKey]);
   // The active match is a cell, not an index, so sort/filter/edits re-resolve it.
   const [find, setFind] = useState<{ query: string; active: { entity: string; field: string } | null } | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
@@ -2729,6 +2733,8 @@ export function SheetShell(props: SheetShellProps) {
       // text: Work reads it against the displayed grid first, under the same
       // admission rule as the bar (never `native_table_profile`, which one
       // formula withdraws while Work still accepts formulas in that table).
+      // The answer belongs to this cell's instance as it is at submit.
+      const submissionIdentity = formulaState.identity;
       let sourceToCommit = formulaSource;
       if (witness && table && tableAdmitsFormulas(table) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource)) {
         const translation = await onTranslateA1Formula(witness, {
@@ -2738,16 +2744,23 @@ export function SheetShell(props: SheetShellProps) {
           text: formulaSource,
           geometry: a1Geometry(displayRows, columns),
         });
-        // The read belongs to this cell and this text. Typing more while Work
-        // decides (or moving to another cell) makes this answer obsolete: drop
-        // it without closing or changing the editor. The live input value is
-        // the source of truth, as in the bar's own guard.
+        // The read belongs to this cell, this text and this focus. Typing more
+        // while Work decides, moving the grid focus to another cell, or a
+        // changed revision makes this answer obsolete: drop it without closing
+        // or changing the editor. The live input value is the source of truth,
+        // as in the bar's own guard, and the focus is read through a ref
+        // because moving it need not have re-rendered this closure yet.
+        const [focusEntity, focusField] = focusedKeyRef.current?.split("\u0000") ?? [];
         const liveEditor = editorRef.current && editorInputRef.current
           ? { entity: editorRef.current.entity, field: editorRef.current.field, value: editorInputRef.current.value }
           : null;
         if (!a1EditorStillCurrent(
-          { entity: slot.target.entity, field: slot.target.field, value: editor.value },
-          liveEditor,
+          { entity: editor.entity, field: editor.field, value: editor.value, identity: submissionIdentity },
+          {
+            editor: liveEditor,
+            focus: focusEntity && focusField ? { entity: focusEntity, field: focusField } : null,
+            identity: formulaIdentityRef.current,
+          },
         )) return false;
         if (translation?.kind === "refused") {
           focusRejectedEditorRef.current = intent;

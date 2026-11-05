@@ -41,17 +41,33 @@ describe("a1TranslationNeedsPreview", () => {
 });
 
 describe("a1EditorStillCurrent", () => {
-  const requested = { entity: "row-1", field: "impact", value: "=D2*2" };
+  const requested = { entity: "row-1", field: "impact", value: "=D2*2", identity: "view\u0000row-1\u0000impact" };
+  const live = (overrides = {}) => ({
+    editor: { entity: requested.entity, field: requested.field, value: requested.value },
+    focus: { entity: requested.entity, field: requested.field },
+    identity: requested.identity,
+    ...overrides,
+  });
 
-  it("keeps an answer for the same cell and the same text", () => {
-    expect(a1EditorStillCurrent(requested, { ...requested })).toBe(true);
+  it("keeps an answer for the same cell, text and focus", () => {
+    expect(a1EditorStillCurrent(requested, live())).toBe(true);
   });
 
   it("drops an answer after more typing, another cell, or a closed editor", () => {
-    expect(a1EditorStillCurrent(requested, { ...requested, value: "=D2*3" })).toBe(false);
-    expect(a1EditorStillCurrent(requested, { ...requested, entity: "row-2" })).toBe(false);
-    expect(a1EditorStillCurrent(requested, { ...requested, field: "friction" })).toBe(false);
-    expect(a1EditorStillCurrent(requested, null)).toBe(false);
+    expect(a1EditorStillCurrent(requested, live({ editor: { ...live().editor, value: "=D2*3" } }))).toBe(false);
+    expect(a1EditorStillCurrent(requested, live({ editor: { ...live().editor, entity: "row-2" } }))).toBe(false);
+    expect(a1EditorStillCurrent(requested, live({ editor: { ...live().editor, field: "friction" } }))).toBe(false);
+    expect(a1EditorStillCurrent(requested, live({ editor: null }))).toBe(false);
+  });
+
+  it("drops an answer once the grid focus left the edited cell", () => {
+    expect(a1EditorStillCurrent(requested, live({ focus: { entity: "row-2", field: "impact" } }))).toBe(false);
+    expect(a1EditorStillCurrent(requested, live({ focus: { entity: "row-1", field: "friction" } }))).toBe(false);
+    expect(a1EditorStillCurrent(requested, live({ focus: null }))).toBe(false);
+  });
+
+  it("drops an answer once the revision changed the cell's identity", () => {
+    expect(a1EditorStillCurrent(requested, live({ identity: "newer-view\u0000row-1\u0000impact" }))).toBe(false);
   });
 });
 

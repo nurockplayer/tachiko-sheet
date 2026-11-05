@@ -48,15 +48,23 @@ export function a1TranslationNeedsPreview(
 }
 
 /**
- * Whether an in-cell translation still belongs to the cell and text it was
- * requested for. Typing, moving to another cell, or closing the editor while
- * Work reads makes the pending answer obsolete.
+ * Whether an in-cell translation still belongs to the cell, text and focus it
+ * was requested for. Typing, moving focus to another cell, a changed revision,
+ * or closing the editor while Work reads makes the pending answer obsolete.
  */
 export function a1EditorStillCurrent(
-  expected: { entity: string; field: string; value: string },
-  live: { entity: string; field: string; value: string } | null,
+  expected: { entity: string; field: string; value: string; identity: string },
+  live: {
+    editor: { entity: string; field: string; value: string } | null;
+    focus: { entity: string; field: string } | null;
+    identity: string;
+  },
 ): boolean {
-  return live !== null && live.entity === expected.entity && live.field === expected.field && live.value === expected.value;
+  return live.editor !== null && live.focus !== null &&
+    live.editor.entity === expected.entity && live.editor.field === expected.field &&
+    live.editor.value === expected.value &&
+    live.focus.entity === expected.entity && live.focus.field === expected.field &&
+    live.identity === expected.identity;
 }
 
 /** Work's notes in plain words; the sheet never re-derives their meaning. */
