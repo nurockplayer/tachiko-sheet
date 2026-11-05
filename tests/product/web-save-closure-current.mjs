@@ -40,6 +40,12 @@ const sourcePins = {
   "acceptance/web-save-closure/adapter.ego.mjs": "061c8a4701355685d442fe658d31491d3a7359de302421cda6446fea5983aa1a",
   "tests/product/home-entry.mjs": "bd6336b4938eb9b023eb70a1441d9e9a4523bb9d84483f6a5f536ea84a04d5e6",
 };
+// Work #644 reworded this producer sentence. A fresh import's ledger carries the
+// new text; the recorded fixtures keep the wording they were pinned with, and
+// every other ledger field still compares exactly.
+const currentLedger = (ledger) => ledger.map((entry) => entry.code === "stable_reference_binding"
+  ? { ...entry, message: "Worksheet coordinates and selected types were accepted as stable semantic identities; same-row references export as relative A1 so a spreadsheet fill-down follows the row, and other references as absolute coordinates to those identities." }
+  : entry);
 const fixturePins = {
   "date-only.csv": "7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5",
   "unrelated-date.xlsx": "5c48a7fde664b7e230fe4cd773cb08c3c8e18a32c28c0cbfc204aa06953d0cfa",
@@ -225,7 +231,7 @@ async function inspectSavedDateRecord(name, expectedFirstDate) {
   assert.equal(record.source?.sha256, fixturePins["date-only.csv"]);
   const fixedSource = JSON.parse(await readFile(path.join(prep, "fixtures/date-only-private.json"), "utf8"));
   assert.deepEqual(normalizeFreshImportIds(record.source.metadata), normalizeFreshImportIds(fixedSource.metadata));
-  assert.deepEqual(record.source.ledger, fixedSource.ledger);
+  assert.deepEqual(record.source.ledger, currentLedger(fixedSource.ledger));
   const core = await inspectSavedCore(name, record.source.metadata);
   assert.deepEqual(core.inventory.map((table) => table.columns.map((column) => column.type)), [["text", "text", "number", "number", "date"]]);
   assertMetadataToCoreReferences(record.source.metadata, core.inventory);
@@ -409,7 +415,7 @@ try {
     const fixedCsv = file === "date-only.csv" ? JSON.parse(await readFile(path.join(prep, "fixtures/date-only-private.json"), "utf8")) : undefined;
     const fixedSource = fixedXlsx ?? fixedCsv;
     assert.deepEqual(normalizeFreshImportIds(saved.source.metadata), normalizeFreshImportIds(fixedSource.metadata), "complete fixed metadata (only fresh import IDs normalized across imports)");
-    assert.deepEqual(saved.source.ledger, fixedSource.ledger, "complete fixed source preservation ledger");
+    assert.deepEqual(saved.source.ledger, currentLedger(fixedSource.ledger), "complete fixed source preservation ledger");
     const inspectedBeforeReopen = await inspectSavedCore(copyName, saved.source.metadata);
     assertFixedCoreInventory(file, inspectedBeforeReopen.inventory, saved.source.metadata);
     await home();

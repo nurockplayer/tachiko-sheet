@@ -99,6 +99,17 @@ describe("native table download disclosures", () => {
     expect(findingMessage(message, "unknown_code")).toBe(message);
   });
 
+  it("words both the relative A1 export findings and the absolute wording older saved copies carry", () => {
+    for (const [message, copy] of [
+      ["Worksheet coordinates and selected types were accepted as stable semantic identities; same-row references export as relative A1 so a spreadsheet fill-down follows the row, and other references as absolute coordinates to those identities.",
+        "The sheet’s cell positions and your column types were accepted. Exported formulas refer to their own row relatively, so filling down in a spreadsheet follows the row; other references use absolute cell addresses."],
+      ["Export is rebuilt from current stable identities and authoritative values. Same-row references export as relative A1 so a spreadsheet fill-down follows the row; other formula references use current absolute worksheet coordinates. Deleted rows are omitted.",
+        "The file uses current values. Formulas refer to their own row relatively, so filling down in a spreadsheet follows the row; other references use current absolute cell addresses. Deleted rows are left out."],
+      ["Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.",
+        "The sheet’s cell positions and your column types were accepted. Exported formulas use absolute cell references."],
+    ]) expect(findingMessage(message)).toBe(copy);
+  });
+
   it("keeps an unknown formula export reason verbatim", () => {
     const message = "Formula cell exports its current computed value only: Formula reference is unavailable. Retain the Tachiko source to keep the formula.";
     expect(findingMessage(message, "native_tables_formula_value_only")).toBe(message);

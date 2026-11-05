@@ -21,6 +21,10 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
     "All supported sheets and cell values were checked. Formulas still need to be checked and recalculated before use.",
   "Worksheet coordinates and selected types were accepted as stable semantic identities; formula export uses absolute references to those identities.":
     "The sheet’s cell positions and your column types were accepted. Exported formulas use absolute cell references.",
+  "Worksheet coordinates and selected types were accepted as stable semantic identities; same-row references export as relative A1 so a spreadsheet fill-down follows the row, and other references as absolute coordinates to those identities.":
+    "The sheet’s cell positions and your column types were accepted. Exported formulas refer to their own row relatively, so filling down in a spreadsheet follows the row; other references use absolute cell addresses.",
+  "Export is rebuilt from current stable identities and authoritative values. Same-row references export as relative A1 so a spreadsheet fill-down follows the row; other formula references use current absolute worksheet coordinates. Deleted rows are omitted.":
+    "The file uses current values. Formulas refer to their own row relatively, so filling down in a spreadsheet follows the row; other references use current absolute cell addresses. Deleted rows are left out.",
   "Export is rebuilt from current stable identities and authoritative values. Formula references use current absolute worksheet coordinates; deleted rows are omitted.":
     "The file uses current values. Formula references use current absolute cell addresses; deleted rows are left out.",
   "Surviving source columns and rows retain source order and identity-bound presentation. Added columns and rows append in current canonical order with default presentation; removed columns and deleted rows are omitted. Blank optional values are empty cells.":
