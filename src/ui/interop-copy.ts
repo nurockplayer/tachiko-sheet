@@ -39,6 +39,8 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
     "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.",
   "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.":
     "A download holds up to 32 tables, each with up to 32 columns and 128 rows (1,024 rows in all). Tachiko opens spreadsheets of up to 4 sheets, 16 columns and 64 rows (some larger text-only tables too), so a larger download may not open here again.",
+  "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The shared incoming geometry is 32 sheets, 32 columns, 128 rows per sheet and 1,024 total rows, with separate 2 MiB source/8 MiB expanded bounds; its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.":
+    "Downloads hold up to 32 tables, 32 columns and 128 rows per table (1,024 rows in all). Files up to the same size can be opened again; larger downloads may not reopen.",
   "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.":
     "Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.",
   "Session Undo/Redo history is excluded.":

@@ -189,7 +189,7 @@ try {
     await escapePreview.getByRole("button", { name: "Import file", exact: true }).click();
     await ready(escapePage);
     const escapeGrid = escapePage.getByRole("grid", { name: "Table", exact: true });
-    const note = () => escapeGrid.locator("tbody tr.ts-row").first().locator("td").nth(2).textContent();
+    const note = () => escapeGrid.locator("tbody tr.ts-row").first().locator("td").nth(1).textContent();
     assert.equal(await note(), "Line1\rLine2", "the escaped character arrives as one cell value with a real line break");
     await escapePage.getByRole("tab", { name: "Import & export", exact: true }).click();
     await escapePage.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
