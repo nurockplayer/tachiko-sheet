@@ -17,8 +17,8 @@ export interface TemplatePickerViewProps {
 
 export function TemplatePickerView({ disabled, error, opening, onOpen }: TemplatePickerViewProps) {
   return (
-    <section className="ts-home-other ts-home-templates" aria-label="Start from a template">
-      <h2 className="ts-home-other-title">Start from a template</h2>
+    <div className="ts-home-templates" role="group" aria-label="Start from a template">
+      <h3 className="ts-home-other-title">Start from a template</h3>
       <div className="ts-home-other-list">
         {TEMPLATES.map((template) => (
           <div className="ts-home-other-row" key={template.id}>
@@ -35,7 +35,7 @@ export function TemplatePickerView({ disabled, error, opening, onOpen }: Templat
         ))}
         {error ? <p className="ts-dialog-error" role="alert">{error}</p> : null}
       </div>
-    </section>
+    </div>
   );
 }
 

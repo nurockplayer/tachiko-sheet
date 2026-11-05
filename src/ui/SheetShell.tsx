@@ -3758,9 +3758,6 @@ export function SheetShell(props: SheetShellProps) {
             <span className="ts-home-other-copy"><strong>New table</strong><span>Start an empty table with your own columns.</span></span>
             <button type="button" className="ts-button" disabled={fileActionsLocked} onClick={(event) => { newTableTriggerRef.current = event.currentTarget; setNewTableOpen(true); }}>New table…</button>
           </div> : null}
-          {onOpenTemplate && !recoveryLocked && !startupLocked && import.meta.env.MODE !== "desktop"
-            ? <TemplatePicker disabled={fileActionsLocked} onOpenTemplate={onOpenTemplate} />
-            : null}
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
             <span className="ts-home-other-copy"><strong>Open a Tachiko work file</strong><span>Open tables, values, formulas and summaries from a .ro file. The file stays unchanged.</span></span>
@@ -3790,6 +3787,9 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" onClick={() => void openExample()} disabled={fileActionsLocked} aria-label="Open release plan example">Open</button>
           </div>
         </div>
+        {onOpenTemplate && !recoveryLocked && !startupLocked && import.meta.env.MODE !== "desktop"
+          ? <TemplatePicker disabled={fileActionsLocked} onOpenTemplate={onOpenTemplate} />
+          : null}
       </section>
     );
     const mobileReturning = hasSavedCopies && compactHomeLayout;

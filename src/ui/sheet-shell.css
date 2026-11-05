@@ -2825,6 +2825,7 @@ body { margin: 0; }
 .ts-home-other { grid-area: other; min-width: 0; }
 .ts-home-other-title { margin: 0; padding: 0 0 12px; border-bottom: 1px solid var(--ts-home-border); color: var(--ts-home-secondary); font-size: 13px; font-weight: 600; line-height: 20px; }
 .ts-home-other-list { display: grid; }
+.ts-home-templates { display: grid; margin-top: 20px; }
 
 .ts-home-other-row {
   display: grid;
