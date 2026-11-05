@@ -39,6 +39,8 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
     "CSV includes only cell values from the selected sheet. Formulas, formatting, and other sheets are not kept; keep the source work.",
   "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.":
     "A download holds up to 32 tables, each with up to 32 columns and 128 rows (1,024 rows in all). Tachiko opens spreadsheets of up to 4 sheets, 16 columns and 64 rows (some larger text-only tables too), so a larger download may not open here again.",
+  "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The shared incoming geometry is 32 sheets, 32 columns, 128 rows per sheet and 1,024 total rows, with separate 2 MiB source/8 MiB expanded bounds; its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.":
+    "Downloads hold up to 32 tables, 32 columns and 128 rows per table (1,024 rows in all). Files up to the same size can be opened again; larger downloads may not reopen.",
   "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.":
     "Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.",
   "Session Undo/Redo history is excluded.":
@@ -63,9 +65,34 @@ export function findingCategoryLabel(category: FidelityFinding["category"]): str
 
 const SUMMARY_ROW_EXCLUDED = "This row totals the column above it (SUM, AVERAGE or COUNT), so it is not imported as a data row. Tachiko shows column totals; export does not write this row. Choose keep_summary_rows to import it as data.";
 
-export function findingMessage(message: string, code?: string): string {
+const ESCAPE_SEQUENCE_CODE = "native_tables_xlsx_escape_sequence";
+
+/**
+ * Work refused a worksheet name holding a literal SpreadsheetML `_xHHHH_`
+ * escape (#637/#640). The code arrives as the failure code or inside Work's
+ * diagnostic text.
+ */
+export function isEscapeSequenceRefusal(code: string | undefined, ...texts: Array<string | undefined>): boolean {
+  return code === ESCAPE_SEQUENCE_CODE || texts.some((text) => text?.includes(ESCAPE_SEQUENCE_CODE) === true);
+}
+
+/**
+ * Plain copy for that refusal. The table name comes from Work's own
+ * `worksheet "…"` text (message or location); without one, the sheet is not
+ * guessed and the sentence says “This table”.
+ */
+export function escapeSequenceMessage(...texts: Array<string | undefined>): string {
+  const source = texts.filter(Boolean).join(" ");
+  const named = /worksheet ("(?:[^"\\]|\\.)*")/.exec(source)?.[1];
+  const table = named ? quoted(named) : "";
+  const pattern = /_x[0-9A-Fa-f]{4}_/.exec(table || source)?.[0] ?? "_xHHHH_";
+  return `${table ? `The table “${table}”` : "This table"} can't be downloaded as an Excel sheet: Excel would read “${pattern}” in its name as a hidden character code. Rename the table and download again.`;
+}
+
+export function findingMessage(message: string, code?: string, location?: string): string {
   // Exact producer wording is required for a translation. A new/changed
   // warning remains verbatim rather than inheriting an inaccurate promise.
+  if (isEscapeSequenceRefusal(code, message, location)) return escapeSequenceMessage(message, location);
   if (code === "imported_spreadsheet_unrepresentable") {
     return `The original workbook layout cannot represent this table. ${message}`;
   }

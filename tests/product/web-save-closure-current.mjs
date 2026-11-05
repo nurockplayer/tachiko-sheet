@@ -47,9 +47,9 @@ const fixturePins = {
   "date-only-private.bin": "2ecbb31f59c39550ff856a61c69af11ed0ea4c3ebd89b26ba19fe3d54608dec9",
   "date-only-private.json": "1312dabec0cfb6b8cbf38f6239478198b6e94bdf55b0c09c9e90e04490ee89b0",
   "rows-64.csv": "494c650dc55391a804b5479c64236bc7e05f9fb13c39cc0bd5c835ce66672c07",
-  "fields-16.csv": "77424cc5b9161699a2557bf8c099e0c5541e5a8bb7dfc9d6fee3dd9d709bc8cb",
+  "fields-32.csv": "c290f2c7aef7e6af5481f3827a3f17ae36a8a754fd8ee210ca28cf1d886c7b15",
   "rows-8407.csv": "084ea2c83af94b61aab2117ca26f42c573269b7ef11b1f4a581631e228f68001",
-  "fields-17.csv": "4139cce2a9cdc211b4035a727ef125742fcd1459bae2ab3232616561831397e4",
+  "fields-33.csv": "38ff8c07d2e5661731ca620f8f90450d88536b4cf5b48117af0c639aca1fa277",
 };
 for (const [file, expected] of Object.entries(sourcePins)) assert.equal(sha256(await readFile(path.join(root, file))), expected, `immutable source drift: ${file}`);
 for (const [file, expected] of Object.entries(fixturePins)) assert.equal(sha256(await readFile(path.join(prep, "fixtures", file))), expected, `frozen fixture drift: ${file}`);
@@ -64,9 +64,9 @@ const expectedCases = [
   "C-empty-unrelated-Date-schema-refusal",
   "D-canonical-opaque-complete-copy-controls",
   "E-CSV64-row-control",
-  "E-CSV16-column-control",
+  "E-CSV32-column-control",
   "E-profile-refusal-rows-8407.csv",
-  "E-profile-refusal-fields-17.csv",
+  "E-profile-refusal-fields-33.csv",
   "F-existing-read-fault-no-publication-recovery",
   "R-unchanged-private-reader-Date-fixture",
 ];
@@ -524,7 +524,7 @@ try {
     return { plain: { ...plain, bytes: undefined }, saved: { ...saved, bytes: undefined }, savedView, after, report, controls };
   });
 
-  for (const [caseIndex, file, size] of [[5, "rows-64.csv", 64], [6, "fields-16.csv", 16]]) await runCase(expectedCases[caseIndex], async () => {
+  for (const [caseIndex, file, size] of [[5, "rows-64.csv", 64], [6, "fields-32.csv", 32]]) await runCase(expectedCases[caseIndex], async () => {
     await importFile(file);
     const before = await readView();
     assert.deepEqual(before.cells, file.startsWith("rows") ? Array.from({ length: size }, (_, index) => [`row${index}`]) : [Array(size).fill("x")]);
@@ -541,13 +541,13 @@ try {
     return { before, after };
   });
 
-  for (const [caseIndex, file] of [[7, "rows-8407.csv"], [8, "fields-17.csv"]]) await runCase(expectedCases[caseIndex], async () => {
+  for (const [caseIndex, file, pattern] of [[7, "rows-8407.csv", /has at least 8,407 rows; Tachiko can import up to 8,406 rows per sheet\./], [8, "fields-33.csv", /has at least 33 columns; Tachiko can import up to 32 columns per sheet\./]]) await runCase(expectedCases[caseIndex], async () => {
     await launchExampleThenClose();
     const before = await counts();
     await activePage.locator('input[type="file"][accept*=".csv"]').setInputFiles(path.join(prep, "fixtures", file));
-    // Work words the bound per producer ("CSV exceeds …", then #588's typed
-    // "TableRows capacity exceeded …"); Sheet's beta-limit explanation covers both.
-    await activePage.getByRole("alert").filter({ hasText: "outside what this beta can open" }).waitFor();
+    // Work #639 gives a typed capacity refusal; Sheet names the sheet and counts.
+    // Work #636 moved the per-sheet column limit to 32.
+    await activePage.getByRole("alert").filter({ hasText: pattern }).waitFor();
     assert.equal(await activePage.locator(".ts-modal--import").count(), 0, "over-profile input is rejected before review/import dispatch");
     assert.equal((await counts()).importSpreadsheet ?? 0, before.importSpreadsheet ?? 0, "oversize CSV never reaches producer import");
     assert.equal(await activePage.getByTestId("project-ready").count(), 0, "rejected input does not publish a workbook");

@@ -436,4 +436,16 @@ describe("spreadsheet export refusal", () => {
     expect(describeExportRefusal({ failure: { code: "stale_revision" } })).toContain("Refresh");
     expect(describeExportRefusal(new Error("new failure"))).toContain("new failure");
   });
+  it("explains a SpreadsheetML escape refusal by code or diagnostic, naming the table", () => {
+    const expected = "The table “Q_x0031_” can't be downloaded as an Excel sheet: Excel would read “_x0031_” in its name as a hidden character code. Rename the table and download again.";
+    expect(describeExportRefusal({ failure: {
+      code: "native_tables_xlsx_escape_sequence",
+      message: "Literal SpreadsheetML _xHHHH_ escape sequences in worksheet names are refused because Excel may decode them and change worksheet identity.",
+      diagnostics: [{ path: 'worksheet "Q_x0031_"/sheet-name', message: "SpreadsheetML escape patterns in worksheet names are refused" }],
+    } })).toBe(expected);
+    expect(describeExportRefusal({ failure: {
+      code: "native_tables_export_refused",
+      diagnostics: [{ path: 'worksheet "Q_x0031_"/sheet-name', message: "native_tables_xlsx_escape_sequence at worksheet \"Q_x0031_\"/sheet-name: SpreadsheetML escape patterns in worksheet names are refused" }],
+    } })).toBe(expected);
+  });
 });

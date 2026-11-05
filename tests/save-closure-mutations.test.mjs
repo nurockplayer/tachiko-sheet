@@ -35,8 +35,8 @@ import { readCommittedSourceIdentities } from '../scripts/runner-source-identity
 const currentCases = [
   'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
   'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
-  'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV16-column-control',
-  'E-profile-refusal-rows-8407.csv', 'E-profile-refusal-fields-17.csv',
+  'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV32-column-control',
+  'E-profile-refusal-rows-8407.csv', 'E-profile-refusal-fields-33.csv',
   'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
 ];
 

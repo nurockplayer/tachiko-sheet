@@ -28,6 +28,38 @@ export function capacityMessage(failure: CapacityFailureProjection, subject = "T
   }
 }
 
+/**
+ * Explain Work's typed import refusal (#638/#639): the workbook is over the
+ * admitted import profile. Work may stop counting early, so every count says
+ * "at least" and never pretends to be exact. The sheet named by
+ * `table_rows`/`table_fields` is Work's own sheet name. The message opens
+ * with the same beta-limit sentence as every other import-size refusal.
+ */
+export function importCapacityMessage(failure: CapacityFailureProjection): string {
+  const maximum = failure.maximum.toLocaleString("en-US");
+  const attempted = failure.attempted.toLocaleString("en-US");
+  const notImported = "The workbook was not imported.";
+  const outside = "This file is outside what this beta can open:";
+  switch (failure.limit) {
+    case "table_rows":
+      return `${outside} the sheet “${failure.collection}” has at least ${attempted} rows; Tachiko can import up to ${maximum} rows per sheet. ${notImported}`;
+    case "table_fields":
+      return `${outside} the sheet “${failure.collection}” has at least ${attempted} columns; Tachiko can import up to ${maximum} columns per sheet. ${notImported}`;
+    case "collections":
+      return `${outside} the workbook has at least ${attempted} sheets; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "total_entities":
+      return `${outside} the workbook has at least ${attempted} rows in all; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "formulas":
+      return `${outside} the workbook has at least ${attempted} formulas; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "populated_cells":
+      return `${outside} the workbook has at least ${attempted} filled cells; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "formula_ast_nodes":
+      return `${outside} the workbook's formulas have at least ${attempted} parts in all; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "dependency_edges":
+      return `${outside} the workbook's formulas have at least ${attempted} references in all; Tachiko can import up to ${maximum}. ${notImported}`;
+  }
+}
+
 /** Work's capacity usage for one table, bound to the view it was read for. */
 export interface CapacityReading { occurrence: string; revision: string; collectionId: string; rows: number; maximum: number }
 

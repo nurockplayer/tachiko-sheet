@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { findingColumnTables, findingCategoryLabel, findingLocation, findingMessage } from "./interop-copy.js";
 
+describe("SpreadsheetML escape refusal", () => {
+  const plain = "Literal SpreadsheetML _xHHHH_ escape sequences in worksheet names are refused because Excel may decode them and change worksheet identity.";
+  const located = 'native_tables_xlsx_escape_sequence at worksheet "Q_x0031_"/sheet-name: SpreadsheetML escape patterns in worksheet names are refused';
+  const expected = "The table “Q_x0031_” can't be downloaded as an Excel sheet: Excel would read “_x0031_” in its name as a hidden character code. Rename the table and download again.";
+
+  it("names the table Work refused, from either message shape", () => {
+    expect(findingMessage(plain, "native_tables_xlsx_escape_sequence", 'worksheet "Q_x0031_"/sheet-name')).toBe(expected);
+    expect(findingMessage(located, "native_tables_xlsx_escape_sequence")).toBe(expected);
+    expect(findingMessage(located, "future_code")).toBe(expected);
+  });
+
+  it("falls back to “This table” when Work did not name the sheet", () => {
+    expect(findingMessage(plain, "native_tables_xlsx_escape_sequence")).toBe(
+      "This table can't be downloaded as an Excel sheet: Excel would read “_xHHHH_” in its name as a hidden character code. Rename the table and download again.",
+    );
+  });
+});
+
 describe("import/export disclosure copy", () => {
   it("translates the exact producer presence loss separately from general CSV limits", () => {
     const original = "CSV cannot distinguish an absent optional Text value from present empty Text; both export as an empty field. Retain the Tachiko source to preserve presence.";
@@ -89,6 +107,7 @@ describe("native table download disclosures", () => {
   it("words the native export findings without engine vocabulary", () => {
     for (const message of [
       "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.",
+      "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The shared incoming geometry is 32 sheets, 32 columns, 128 rows per sheet and 1,024 total rows, with separate 2 MiB source/8 MiB expanded bounds; its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.",
       "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.",
       "Session Undo/Redo history is excluded.",
       "Sheet presentation, view sorting/filtering and per-cell formatting are excluded; Dates use yyyy-mm-dd.",

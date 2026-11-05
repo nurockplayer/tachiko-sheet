@@ -1,10 +1,11 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0",
+  "sourceCommit": "eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
+    "translateA1Formula",
     "createExperimentalDesignerClient",
     "projectTransferFromFiles",
     "projectTransferFromEntries",
@@ -72,11 +73,11 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "3af5ec4cfe407764b25b40faeb82e473a9d76ac878120e3456456d77b3f59827"
+      "sha256": "d80a690ce1c4367887f72d64724cdaa07a49485d8695db7cb2f8ebb06ea65bba"
     },
     {
       "path": "experimental-client.d.ts",
-      "sha256": "86aad04efee4d7220d63c0f93e865403c0c7471149d7a7194292701701d1721c"
+      "sha256": "9b852c170b32028e9508a3f374192452f7dedca8b96f1cc1af8fdc63be4eb03a"
     },
     {
       "path": "experimental-client.js",
@@ -116,7 +117,7 @@
     },
     {
       "path": "runtime/client.d.ts",
-      "sha256": "a1c4de993bb5893e139af289b876f790ae6af1d548d6298f2358a9d19c0e99f8"
+      "sha256": "f32af0c0f129e715b0e262c705956a2a6fad2e949ab067ea33daf83bdb3ec9f2"
     },
     {
       "path": "runtime/client.js",
@@ -132,7 +133,7 @@
     },
     {
       "path": "runtime/protocol.d.ts",
-      "sha256": "e1534c08c97267ae3fb63d7c7a2e2cd83d6b1957ae793500cc55ab6a5ca3bcaa"
+      "sha256": "c663610aa122bfd9fc015cf87f46b215b4963d17e742541215dcb4013e171be0"
     },
     {
       "path": "runtime/protocol.js",
@@ -148,11 +149,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "ced78259f05ee43158ba01fadbfffb3d85008d9008fb1c1596385086014d20ba"
+      "sha256": "482ea1fedbb10efb04e9ea2dd6a0209311fd57e26359775af17c591bf37c886a"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "7e5548cc86fac250b1f5afd3e536b6e25840a495033fa907e8960db6c5044131"
+      "sha256": "2531a74a69cb73aee0c1239d725f04d73f7b27b92641b1d5611144f593949955"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

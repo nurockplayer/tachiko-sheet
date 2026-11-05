@@ -3415,7 +3415,7 @@ dependencies = [
 [[package]]
 name = "tachiko-designer-runtime"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "quick-xml 0.37.5",
  "serde",
@@ -3430,7 +3430,7 @@ dependencies = [
 [[package]]
 name = "tachiko-diff-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "tachiko-formula-engine",
  "tachiko-semantic-core",
@@ -3440,7 +3440,7 @@ dependencies = [
 [[package]]
 name = "tachiko-formula-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "tachiko-semantic-core",
  "thiserror 2.0.21",
@@ -3449,7 +3449,7 @@ dependencies = [
 [[package]]
 name = "tachiko-merge-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "tachiko-formula-engine",
  "tachiko-semantic-core",
@@ -3458,7 +3458,7 @@ dependencies = [
 [[package]]
 name = "tachiko-semantic-core"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "serde",
 ]
@@ -3482,7 +3482,7 @@ dependencies = [
 [[package]]
 name = "tachiko-storage"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "renamore",
  "ryu-js",
@@ -3497,7 +3497,7 @@ dependencies = [
 [[package]]
 name = "tachiko-workspace-engine"
 version = "0.1.0"
-source = "git+https://github.com/nurockplayer/tachiko-work?rev=6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0#6172a53f24c4748a0f2cbafc4452e1e6ddb36bb0"
+source = "git+https://github.com/nurockplayer/tachiko-work?rev=eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d#eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d"
 dependencies = [
  "serde",
  "tachiko-diff-engine",

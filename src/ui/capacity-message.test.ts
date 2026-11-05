@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CapacityFailureProjection } from "../../public/core-kit/runtime/protocol.js";
-import { capacityForView, capacityMessage } from "./capacity-message.js";
+import { capacityForView, capacityMessage, importCapacityMessage } from "./capacity-message.js";
 
 const base = { code: "capacity_exceeded", current_revision: "r1", message: "capacity", diagnostics: [], maximum: 1000, attempted: 1200 } as const;
 
@@ -23,6 +23,31 @@ describe("capacityMessage", () => {
   it("names a refused table that is not the one on screen", () => {
     const failure = { ...base, limit: "table_rows", collection: "c-other" } as unknown as CapacityFailureProjection;
     expect(capacityMessage(failure, "The table “Orders”")).toBe("The table “Orders” can hold up to 1,000 rows; this change would make 1,200. Nothing was changed.");
+  });
+});
+
+describe("importCapacityMessage", () => {
+  // Work may stop counting early, so a limit it names is a lower bound.
+  it.each([
+    ["table_rows", "This file is outside what this beta can open: the sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet. The workbook was not imported."],
+    ["table_fields", "This file is outside what this beta can open: the sheet “Orders” has at least 40 columns; Tachiko can import up to 32 columns per sheet. The workbook was not imported."],
+    ["collections", "This file is outside what this beta can open: the workbook has at least 40 sheets; Tachiko can import up to 32. The workbook was not imported."],
+    ["total_entities", "This file is outside what this beta can open: the workbook has at least 2,000 rows in all; Tachiko can import up to 1,024. The workbook was not imported."],
+    ["formulas", "This file is outside what this beta can open: the workbook has at least 40 formulas; Tachiko can import up to 32. The workbook was not imported."],
+  ] as const)("names the %s limit and the refused sheet", (limit, expected) => {
+    const failure = {
+      ...base,
+      limit,
+      attempted: limit === "total_entities" ? 2000 : limit === "table_rows" ? 200 : 40,
+      maximum: limit === "total_entities" ? 1024 : limit === "table_rows" ? 128 : 32,
+      ...(limit === "table_rows" || limit === "table_fields" ? { collection: "Orders" } : {}),
+    } as unknown as CapacityFailureProjection;
+    expect(importCapacityMessage(failure)).toBe(expected);
+  });
+
+  it("never names a sheet for a workbook-wide limit", () => {
+    const failure = { ...base, limit: "formulas", maximum: 32, attempted: 40 } as unknown as CapacityFailureProjection;
+    expect(importCapacityMessage(failure)).not.toContain("sheet “");
   });
 });
 

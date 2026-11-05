@@ -10,6 +10,7 @@ It never imports Tachiko parsers or writers. Values are invented synthetic data
 import csv
 import io
 import json
+import re
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
@@ -99,6 +100,10 @@ def parse_csv(path):
     return list(csv.reader(io.StringIO(data.decode("utf-8"), newline="")))
 
 
+def decode_xstring(value):
+    return re.sub(r"_x([0-9a-fA-F]{4})_", lambda match: chr(int(match[1], 16)), value)
+
+
 def parse_xlsx(path):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -139,7 +144,7 @@ def parse_xlsx(path):
                     value = shared[int(value)]
                 elif kind == "inlineStr":
                     value = "".join(cell.find(f"{{{MAIN}}}is").itertext())
-                out.append(value)
+                out.append(decode_xstring(value))
             rows.append(out)
         return rows
 
