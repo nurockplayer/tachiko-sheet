@@ -85,7 +85,7 @@ describe("import refusal message", () => {
     };
     const typed = Object.assign(new Error("capacity"), { failure });
     expect(importRefusalMessage(typed)).toBe(
-      "The sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet. The workbook was not imported.",
+      "This file is outside what this beta can open: the sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet. The workbook was not imported.",
     );
   });
 });

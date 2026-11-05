@@ -162,7 +162,7 @@ try {
     const refusal = overPage.locator('p.ts-dialog-error[role="alert"]');
     await refusal.waitFor();
     const message = await refusal.textContent();
-    assert.match(message, /^The sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet\. The workbook was not imported\./,
+    assert.match(message, /^This file is outside what this beta can open: the sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet\. The workbook was not imported\./,
       "the refusal names the sheet, says how much was found and the limit, and that nothing was imported");
     assert.equal(await overPage.getByRole("dialog", { name: "Review import preview", exact: true }).count(), 0, "an over-limit workbook opens no preview");
     assert.equal(await overPage.locator('[data-testid="project-ready"]').count(), 0, "an over-limit workbook opens no work");
@@ -189,7 +189,6 @@ try {
     await escapePreview.getByRole("button", { name: "Import file", exact: true }).click();
     await ready(escapePage);
     const escapeGrid = escapePage.getByRole("grid", { name: "Table", exact: true });
-    // The row head is a th, so data cells are td 0 (Item) and td 1 (Note).
     const note = () => escapeGrid.locator("tbody tr.ts-row").first().locator("td").nth(1).textContent();
     assert.equal(await note(), "Line1\rLine2", "the escaped character arrives as one cell value with a real line break");
     await escapePage.getByRole("tab", { name: "Import & export", exact: true }).click();

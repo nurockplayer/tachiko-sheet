@@ -19,8 +19,8 @@ const expectedPrerequisites = [
 const expectedCurrent = [
   'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
   'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
-  'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV16-column-control',
-  'E-profile-refusal-rows-8407.csv', 'E-profile-refusal-fields-17.csv',
+  'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV32-column-control',
+  'E-profile-refusal-rows-8407.csv', 'E-profile-refusal-fields-33.csv',
   'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
 ];
 const expectedProduction = ['production-sales-edit-save-process-restart-reopen-edit-png'];
@@ -104,7 +104,7 @@ if (process.argv[2] === '--record-build') {
   const aggregate = JSON.parse(await readFile(path.join(evidenceRoot, 'summary.json'), 'utf8'));
   if (aggregate.gates?.saveClosure !== 'PASS' || JSON.stringify(aggregate.candidateIdentity) !== JSON.stringify(candidate)) throw new Error('BLOCKED: a matching PASS save-closure aggregate is required before recording the production build');
   const frozenSeedHashes = {
-    'tests/product/web-save-closure-current.mjs': '42fc6bab43e8499815c7b0a4f6eefb7ad4d9611fdaa237aaf72d07a4e433e5a6',
+    'tests/product/web-save-closure-current.mjs': '5351cf9e75cac910dc53ab300a65e53d0f449fd6e7d5377363719f0d6c1b1f8e',
     'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
     'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
   };
@@ -121,7 +121,7 @@ let server;
 try {
   summary.candidate = await candidateIdentity();
   const frozen = {
-    'tests/product/web-save-closure-current.mjs': '42fc6bab43e8499815c7b0a4f6eefb7ad4d9611fdaa237aaf72d07a4e433e5a6',
+    'tests/product/web-save-closure-current.mjs': '5351cf9e75cac910dc53ab300a65e53d0f449fd6e7d5377363719f0d6c1b1f8e',
     'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
     'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
   };
