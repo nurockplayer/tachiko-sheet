@@ -29,11 +29,11 @@ describe("capacityMessage", () => {
 describe("importCapacityMessage", () => {
   // Work may stop counting early, so a limit it names is a lower bound.
   it.each([
-    ["table_rows", "The sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet. The workbook was not imported."],
-    ["table_fields", "The sheet “Orders” has at least 40 columns; Tachiko can import up to 32 columns per sheet. The workbook was not imported."],
-    ["collections", "The workbook has at least 40 sheets; Tachiko can import up to 32. The workbook was not imported."],
-    ["total_entities", "The workbook has at least 2,000 rows in all; Tachiko can import up to 1,024. The workbook was not imported."],
-    ["formulas", "The workbook has at least 40 formulas; Tachiko can import up to 32. The workbook was not imported."],
+    ["table_rows", "This file is outside what this beta can open: the sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet. The workbook was not imported."],
+    ["table_fields", "This file is outside what this beta can open: the sheet “Orders” has at least 40 columns; Tachiko can import up to 32 columns per sheet. The workbook was not imported."],
+    ["collections", "This file is outside what this beta can open: the workbook has at least 40 sheets; Tachiko can import up to 32. The workbook was not imported."],
+    ["total_entities", "This file is outside what this beta can open: the workbook has at least 2,000 rows in all; Tachiko can import up to 1,024. The workbook was not imported."],
+    ["formulas", "This file is outside what this beta can open: the workbook has at least 40 formulas; Tachiko can import up to 32. The workbook was not imported."],
   ] as const)("names the %s limit and the refused sheet", (limit, expected) => {
     const failure = {
       ...base,

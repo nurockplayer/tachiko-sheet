@@ -162,7 +162,7 @@ try {
     const refusal = overPage.locator('p.ts-dialog-error[role="alert"]');
     await refusal.waitFor();
     const message = await refusal.textContent();
-    assert.match(message, /^The sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet\. The workbook was not imported\./,
+    assert.match(message, /^This file is outside what this beta can open: the sheet “Orders” has at least 200 rows; Tachiko can import up to 128 rows per sheet\. The workbook was not imported\./,
       "the refusal names the sheet, says how much was found and the limit, and that nothing was imported");
     assert.equal(await overPage.getByRole("dialog", { name: "Review import preview", exact: true }).count(), 0, "an over-limit workbook opens no preview");
     assert.equal(await overPage.locator('[data-testid="project-ready"]').count(), 0, "an over-limit workbook opens no work");
