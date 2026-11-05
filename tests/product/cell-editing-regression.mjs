@@ -526,7 +526,7 @@ const cases = [
       [`cell:${first}:${fields.priority}`, String(product)]);
     assert.equal(await dispatches(page), count + 1, "Apply publishes the translated source once");
     await cellAt(first, "priority").click();
-    assert.equal(await barText(), "[.impact]*[.friction]", "the bar shows Work's stored source, not the Excel text");
+    assert.equal(await barText(), "([.impact] * [.friction])", "the bar shows Work's stored source, not the Excel text");
 
     // A second Excel formula in another row still previews after the first was
     // applied: a formula withdraws Work's native row profile, which must not
