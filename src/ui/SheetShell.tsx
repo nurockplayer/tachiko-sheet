@@ -2429,10 +2429,13 @@ export function SheetShell(props: SheetShellProps) {
         setFormulaRefusal({ identity: state.identity, message });
         // The refusal stays in the bar; focus and the offending span return
         // only if the user has not chosen somewhere else and no modal holds it.
+        // An Escape in these frames already reverted the text and handed focus
+        // to the cell; taking it back would turn the next cell click into a
+        // reference inserted for the old target.
         requestAnimationFrame(() => requestAnimationFrame(() => {
           if (formulaIdentityRef.current !== state.identity || document.querySelector('[aria-modal="true"]')) return;
           const input = formulaInputRef.current;
-          if (!input || input.disabled || input.readOnly) return;
+          if (!input || input.disabled || input.readOnly || input.value !== typed) return;
           withAppFocus(() => {
             input.focus();
             input.setSelectionRange(offset + start, offset + end);

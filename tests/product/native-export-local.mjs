@@ -113,7 +113,7 @@ print(json.dumps([
 `, file], { encoding: "utf8" }));
     assert.equal(formulaCells.length, 1, "exactly one native-table cell downloads as a formula");
     assert.equal(formulaCells[0].r, "D2", "the formula is in the first Double cell");
-    assert.equal(formulaCells[0].formula, "('Expenses'!$B$2*2)", "Double uses the exact exported formula with an absolute reference to Expenses Amount");
+    assert.equal(formulaCells[0].formula, "(B2*2)", "Double uses the exact exported formula with a relative same-row reference to Amount (Work #644)");
     assert.equal(formulaCells[0].value, "9", "the exported formula keeps its calculated value of 9");
   }
   return parse(file);
