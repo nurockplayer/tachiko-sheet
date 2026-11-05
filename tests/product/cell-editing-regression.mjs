@@ -500,7 +500,19 @@ const cases = [
     const product = (await numberIn(impact)) * (await numberIn(friction));
     const gridTop = (await rows.first().boundingBox()).y;
     await typeFormula(cellAt(first, "priority"), "=C2*D2");
-    await preview.waitFor();
+    // A missing preview names what the page shows instead, so a CI failure
+    // carries its own cause.
+    await preview.waitFor().catch(async (error) => {
+      const state = {
+        bar: await bar.inputValue().catch(() => null),
+        barError: await page.locator(".ts-formula-bar-error").allTextContents(),
+        alerts: await page.getByRole("alert").allTextContents(),
+        published: (await dispatches(page)) - count,
+        priority: await cellAt(first, "priority").evaluate((cell) => ({ text: cell.textContent.trim(), readonly: cell.getAttribute("aria-readonly") })).catch(() => null),
+        headers: await page.locator("th[data-column-letter]").evaluateAll((cells) => cells.map((cell) => `${cell.dataset.columnLetter}:${cell.textContent.trim()}`)),
+      };
+      throw new Error(`the A1 preview did not open: ${JSON.stringify(state)}`, { cause: error });
+    });
     assert.equal(await preview.getAttribute("role"), "group");
     assert.equal(await preview.getAttribute("aria-label"), "Formula translation");
     assert.equal(await codeAt(0), "=C2*D2", "the preview shows the Excel text as typed");

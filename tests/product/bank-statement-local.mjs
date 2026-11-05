@@ -531,7 +531,9 @@ print(json.dumps({
     for (const cell of invoiceXlsx.formulas) {
       const row = /^D([1-9][0-9]*)$/.exec(cell.r);
       assert.ok(row, `the invoice formula is in an Amount cell: ${cell.r}`);
-      assert.equal(cell.formula, `('Invoice'!$B$${row[1]}*'Invoice'!$C$${row[1]})`, `${cell.r} uses the exact exported formula with absolute references to Invoice Qty and Unit price in its own row`);
+      // Work #644/#646: Excel's same-row =B4*C4 imports as a same-row formula and
+      // downloads as relative A1 again, so a fill-down in Excel follows the row.
+      assert.equal(cell.formula, `(B${row[1]}*C${row[1]})`, `${cell.r} downloads as a relative same-row formula over Qty and Unit price, like the imported =B${row[1]}*C${row[1]}`);
     }
     assert.equal(invoiceXlsx.paper.length, 1, "Paper's edited Amount is present once");
     assert.ok(invoiceXlsx.formulas.some(cell => cell.value === "70"), "Paper's edited Amount is one of the checked formulas");
@@ -541,7 +543,7 @@ print(json.dumps({
     console.error("Invoice D-column cells:", JSON.stringify(invoiceXlsx.dCells));
     throw error;
   }
-  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90, says it will not recalculate, and stays $197.90 after an edit; XLSX downloads the five item formulas with cached values, including Paper's edited 70, and Total as the plain value 197.9");
+  checks.push("an Excel invoice with a title row opens with its row-3 header; the Total row is explained and left out by default; kept, it imports as a row with Excel's calculated $197.90, says it will not recalculate, and stays $197.90 after an edit; XLSX downloads the five item formulas as relative same-row A1 (=B4*C4 stays =B4*C4) with cached values, including Paper's edited 70, and Total as the plain value 197.9");
 
   console.log(JSON.stringify({ status: "PASS", checks }));
 } finally {
