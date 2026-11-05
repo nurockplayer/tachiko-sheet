@@ -24,6 +24,7 @@ import type {
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import type { LocalHistorySnapshot } from "./application/local-history.js";
 import type { CsvDelimiter, CsvEncoding } from "./ui/csv-text.js";
+import type { TemplateId } from "./ui/templates.js";
 export type {
   CleanupOperation,
   CleanupPreview,
@@ -387,6 +388,7 @@ export interface SheetShellProps {
   /** Grouped totals by one or two columns; the sheet only chooses the question. */
   onQueryGroupTotals?(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsOutcome | null>;
   onOpenExample(): Promise<void>;
+  onOpenTemplate?(id: TemplateId): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
   onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<CommitOutcome>;

@@ -57,6 +57,7 @@ import { SheetShell } from "./ui/SheetShell.js";
 import { csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type CsvDelimiter, type CsvEncoding } from "./ui/csv-text.js";
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
+import { templateLabel, type TemplateId } from "./ui/templates.js";
 import { copyFailureReason } from "./ui/save-close.js";
 import { escapeSequenceMessage, findingColumnTables, isEscapeSequenceRefusal } from "./ui/interop-copy.js";
 import { useHostFiles } from "./host/host-files.js";
@@ -1128,6 +1129,39 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setOutcome("idle");
       }
       throw new Error(describe(error, "The example work could not be opened."));
+    } finally {
+      end();
+    }
+  }
+
+  async function openTemplate(id: TemplateId): Promise<void> {
+    if (blockUnknownOpenRecovery()) return;
+    if (!begin()) return;
+    try {
+      guardReplacement();
+      setMessage(null);
+      setCurrentness("pending");
+      const response = await fetch(`/templates/${id}.ro`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`The ${templateLabel(id)} template is unavailable.`);
+      const bytes = await response.arrayBuffer();
+      if ((await replaceWork(() => runtime.openWorkFile(bytes))).kind !== "confirmed") return;
+      recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
+      importBytesRef.current = null;
+    } catch (error) {
+      if (error instanceof OpenedProjectionRecoveryError) {
+        failClosedAfterOpenRecovery(error);
+        return;
+      } else if (viewRef.current === null && dirtyRef.current &&
+        (unknownOpenRecoveryRef.current || provenanceUnconfirmedRef.current)) {
+        setCurrentness("unknown");
+        setOutcome("unknown");
+        setMessage("Recovery is pending. Refresh to re-read the open work before opening another project.");
+        return;
+      } else {
+        setCurrentness("current");
+        setOutcome("idle");
+      }
+      throw new Error(describe(error, "The template could not be opened."));
     } finally {
       end();
     }
@@ -2283,6 +2317,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onQueryShownTotals={queryShownTotals}
           onQueryGroupTotals={queryGroupTotals}
           onOpenExample={openExample}
+          onOpenTemplate={openTemplate}
           onOpenSaved={openSaved}
           onSelectCollection={selectCollection}
           onCommit={commit}
