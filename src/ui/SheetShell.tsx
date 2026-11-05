@@ -4013,7 +4013,7 @@ export function SheetShell(props: SheetShellProps) {
           {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
-            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Large imports: one headered sheet, 1–16 Text, Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
+            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Up to 32 sheets of 32 columns and 128 rows each (1,024 rows in all). One plain sheet without formulas can hold up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
               <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,.tsv,.txt,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
