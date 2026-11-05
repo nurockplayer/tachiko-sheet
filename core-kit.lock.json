@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d",
+  "sourceCommit": "6fcc2ab47aed933ce976b735962b6eb73d94811e",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "9c17ecd996ca4cd3877201689abb75fee3c5f6436b51786c64493604c390cdb5",
+  "artifactManifestSha256": "98894a1381a616f0debdf031fd50a1729356d18de333c7eb90999c7d17388477",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6640826233",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6667794597",
   "qualificationArtifactReview": {
-    "sourceCommit": "eb79def2a12b1a3a88bc2fceafdf8cb7e4a0636d",
-    "artifactManifestSha256": "9c17ecd996ca4cd3877201689abb75fee3c5f6436b51786c64493604c390cdb5",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6640826233"
+    "sourceCommit": "6fcc2ab47aed933ce976b735962b6eb73d94811e",
+    "artifactManifestSha256": "98894a1381a616f0debdf031fd50a1729356d18de333c7eb90999c7d17388477",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6667794597"
   },
-  "notes": "Re-pin to Work main eb79def2 (Work #642: read-only translateA1Formula, Excel A1 formula text to Tachiko source with notes and typed span refusals; #636/#639/#640: import capacity admission, over-limit messages, ST_Xstring escapes)"
+  "notes": "Re-pin to Work main 6fcc2ab4 (Work #653: translateA1Formula leaves column rules to the commit, fixes #647; #646: XLSX import keeps same-row relative A1 as [.field]; #644: XLSX export writes same-row references as relative A1)"
 }
