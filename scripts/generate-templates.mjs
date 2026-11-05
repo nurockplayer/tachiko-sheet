@@ -278,7 +278,10 @@ function checkValues(label, plan, observed) {
   if (plan.constraints) {
     for (const item of plan.constraints ?? []) {
       const column = observed.columns.find(candidate => candidate.display_name === item.column);
-      assert.deepEqual(column.constraint, item.constraint, `${label} keeps the ${item.column} list`);
+      assert.equal(column.constraint?.kind, item.constraint.kind, `${label} keeps the ${item.column} list`);
+      // Work's projection orders an allowed-values list itself.
+      assert.deepEqual([...column.constraint.values].sort(), [...item.constraint.values].sort(),
+        `${label} keeps every ${item.column} list value`);
     }
   }
   for (const item of plan.number_formats ?? []) {
