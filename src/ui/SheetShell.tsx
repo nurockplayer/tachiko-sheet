@@ -570,8 +570,7 @@ export function SheetShell(props: SheetShellProps) {
     sync();
     compact.addEventListener("change", sync);
     const reposition = () => {
-      const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
-      if (disclosure) positionColumnToolbar(disclosure);
+      repositionOpenColumnMenu();
     };
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
@@ -3844,6 +3843,11 @@ export function SheetShell(props: SheetShellProps) {
     }
   }, [columnChangesBlocked]);
 
+  function repositionOpenColumnMenu(): void {
+    const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-overflow[open]");
+    if (disclosure) positionColumnToolbar(disclosure);
+  }
+
   function positionColumnToolbar(disclosure: HTMLDetailsElement): void {
     const summary = disclosure.querySelector("summary");
     const menu = disclosure.querySelector<HTMLElement>(".ts-command-menu");
@@ -3854,7 +3858,8 @@ export function SheetShell(props: SheetShellProps) {
     // Place it horizontally first: wrapping, and therefore height, follows the
     // width the menu actually takes at its final position.
     const width = menu.getBoundingClientRect().width;
-    menu.style.left = `${Math.max(16, Math.min(trigger.left, window.innerWidth - width - 16))}px`;
+    const left = disclosure.classList.contains("ts-column-toolbar") ? trigger.left : trigger.right - width;
+    menu.style.left = `${Math.max(16, Math.min(left, window.innerWidth - width - 16))}px`;
     const height = menu.getBoundingClientRect().height;
     menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16))}px`;
   }
@@ -3882,8 +3887,7 @@ export function SheetShell(props: SheetShellProps) {
   // makes the menu taller. Re-clamp the open compact menu for that content.
   useLayoutEffect(() => {
     if (!filterDraft) return;
-    const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
-    if (disclosure) positionColumnToolbar(disclosure);
+    repositionOpenColumnMenu();
   }, [filterDraft]);
 
   function openColumnDialog(kind: "add" | "rename" | "remove", trigger: HTMLElement, field?: string): void {
@@ -4333,9 +4337,10 @@ export function SheetShell(props: SheetShellProps) {
               {!compactColumnActions ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
-                  if (!disclosure.open) { setFilterDraft(null); return; }
+                  if (!disclosure.open) { resetColumnToolbar(disclosure); setFilterDraft(null); return; }
                   if (columnChangesBlocked) { disclosure.open = false; return; }
                   gridScrollRef.current?.querySelectorAll<HTMLDetailsElement>(".ts-column-overflow[open]").forEach(other => { if (other !== disclosure) other.open = false; });
+                  positionColumnToolbar(disclosure);
                 }} onBlur={event => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     event.currentTarget.open = false;
@@ -4543,7 +4548,7 @@ export function SheetShell(props: SheetShellProps) {
               onApplyPreview={applyA1Preview}
               onKeepEditingPreview={keepEditingA1Preview}
             />
-            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={event => { if (gridWindowed) onGridScroll(event); repositionOpenColumnMenu(); }}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.

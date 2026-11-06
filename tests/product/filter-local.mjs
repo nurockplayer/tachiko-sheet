@@ -43,6 +43,15 @@ const condition = async (name, op, value) => {
 };
 const pick = async values => {
   await openFilter("Region"); await page.getByLabel("Filter type for Region").selectOption("values");
+  const controls = page.locator('.ts-column-overflow[open] .ts-row-view-filter input[type="checkbox"], .ts-column-overflow[open] .ts-row-view-filter button[type="submit"]');
+  for (const control of await controls.all()) {
+    await control.scrollIntoViewIfNeeded();
+    assert.equal(await control.evaluate(node => {
+      const rect = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit === node || node.contains(hit);
+    }), true, "filter control receives pointer at its centre");
+  }
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   for (const value of values) await page.getByLabel(value, { exact: true }).check();
   await page.getByRole("button", { name: "Apply", exact: true }).click();
@@ -84,5 +93,11 @@ try {
   await page.getByLabel("Value for Qty").fill("Infinity"); await page.getByRole("alert").filter({ hasText: "Enter a number." }).waitFor();
   await page.getByRole("button", { name: "Apply", exact: true }).click(); await page.getByRole("alert").filter({ hasText: "Enter a number." }).waitFor();
   assert.equal(await publications(), before + 1);
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 900, height: 420 });
+  await page.getByRole("columnheader", { name: "Item", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for Item", exact: true }).click();
+  await page.locator('.ts-column-overflow[open] .ts-command-menu button').last().click();
+  await page.getByLabel("Filter Item", { exact: true }).waitFor();
   console.log("PASS: local multi-column value and condition filters do not publish");
 } finally { await context.close(); await browser.close(); }

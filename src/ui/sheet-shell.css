@@ -3206,6 +3206,15 @@ body { margin: 0; }
 }
 
 .ts-column-toolbar > summary { min-width: 72px; min-height: 44px; opacity: 1; pointer-events: auto; font-size: 14px; line-height: 20px; }
+.ts-column-overflow:not(.ts-column-toolbar)[open] .ts-command-menu {
+  position: fixed;
+  right: auto;
+  top: 16px;
+  left: 16px;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.ts-column-overflow:not(.ts-column-toolbar)[open] .ts-command-menu:not([style*="left"]) { visibility: hidden; }
 .ts-column-toolbar[open] .ts-command-menu {
   position: fixed;
   left: 16px;
