@@ -8,8 +8,8 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { CapacityProjection, ColumnTotalsProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
-import type { GroupTotalsOutcome } from "./runtime/session.js";
+import type { A1Geometry, CapacityProjection, ColumnTotalsProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
+import type { A1TranslationOutcome, GroupTotalsOutcome } from "./runtime/session.js";
 import type {
   CleanupOperation,
   CleanupPreview,
@@ -92,6 +92,15 @@ export type RowCommandOutcome =
   | { kind: "refused"; message: string; fieldType?: string; refusalCode?: string; blankCount?: number; nameFailures?: readonly NameFailure[] }
   | { kind: "recovery" };
 
+/** The A1 text Work translates, its target cell and the grid geometry it reads addresses against. */
+export interface A1TranslationRequest {
+  collectionId: string;
+  rowEntityId: string;
+  targetFieldId: string;
+  text: string;
+  geometry: A1Geometry;
+}
+
 export interface SheetRuntime {
   /** Read-only, cached client/kit readiness; never opens or creates work. */
   prepare(): Promise<void>;
@@ -117,6 +126,8 @@ export interface SheetRuntime {
   queryColumnTotals(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
   /** Work's grouped Number totals over one scope; null when the kit lacks it or the revision moved. */
   queryGroupTotals(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsOutcome | null>;
+  /** Work's read-only Excel A1 translation; null when the kit lacks it or the revision moved. */
+  translateA1Formula(witness: ViewWitness, input: A1TranslationRequest): Promise<A1TranslationOutcome | null>;
   openFiles(files: FileList): Promise<WorkbookView>;
   openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
   /**
@@ -387,6 +398,8 @@ export interface SheetShellProps {
   onQueryShownTotals?(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
   /** Grouped totals by one or two columns; the sheet only chooses the question. */
   onQueryGroupTotals?(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsOutcome | null>;
+  /** Work's read-only Excel A1 translation for the displayed grid geometry. */
+  onTranslateA1Formula?(witness: ViewWitness, input: A1TranslationRequest): Promise<A1TranslationOutcome | null>;
   onOpenExample(): Promise<void>;
   onOpenTemplate?(id: TemplateId): Promise<void>;
   onOpenSaved(name: string): Promise<void>;

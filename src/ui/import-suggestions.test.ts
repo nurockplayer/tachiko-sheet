@@ -65,7 +65,7 @@ describe("import type suggestions", () => {
 describe("import refusal message", () => {
   it("explains beta size limits and damaged files in plain language, keeping the detail", () => {
     const limit = importRefusalMessage(new Error("project transfer is invalid: Text capacity requires one headered, default-style 8,406-row three-Text table"));
-    expect(limit).toMatch(/^This file is outside what this beta can open: .*1–16.*Text, finite Number, Date or Yes\/No.*8,406 rows.*25,218 cells.*Nothing was imported\. \(Details: project transfer is invalid: Text capacity/);
+    expect(limit).toMatch(/^This file is outside what this beta can open: up to 32 sheets, each with up to 32 columns and 128 data rows \(1,024 rows in all\).*1–16 columns, up to 8,406 rows and 25,218 cells.*Nothing was imported\. \(Details: project transfer is invalid: Text capacity/);
     expect(importRefusalMessage(new Error("project transfer is invalid: CSV exceeds 8,406 row or column bounds"))).toMatch(/outside what this beta can open.*CSV exceeds/);
     expect(importRefusalMessage(new Error("project transfer is invalid: Missing ZIP end directory"))).toMatch(/^This file could not be read\./);
     expect(importRefusalMessage(new Error("something else"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: something else)");

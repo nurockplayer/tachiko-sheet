@@ -13,6 +13,24 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Re-pin (Work #662 formula limit 256; #663 new rows in a calculated column
+    // calculate by themselves; #674 change_column_type; #677 typed import capacity
+    // limit): two clean detached lead exports match byte for byte; receipt with inventory on #246.
+    sourceCommit: '71032325756b2b448cbef58f7ead47d29683565c',
+    artifactManifestSha256: 'ffb76ab60b09cc617db5caf271532235cc552c0d108fbfa19877173ee69beb7c',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6692018212',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6692018212',
+  },
+  {
+    // Re-pin (Work #653 translateA1Formula leaves column rules to the commit;
+    // #646/#644 same-row relative A1 on XLSX import and export): two clean
+    // detached lead exports match byte for byte in all 25 files; receipt with inventory on #246.
+    sourceCommit: '6fcc2ab47aed933ce976b735962b6eb73d94811e',
+    artifactManifestSha256: '98894a1381a616f0debdf031fd50a1729356d18de333c7eb90999c7d17388477',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6667794597',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6667794597',
+  },
+  {
     // Re-pin (Work #642 read-only translateA1Formula; #636/#639/#640 import
     // capacity, over-limit messages, ST_Xstring escapes): two clean detached
     // lead exports match byte for byte in all 25 files; receipt with inventory on #246.

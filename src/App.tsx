@@ -24,6 +24,7 @@ import {
   type KeyedGroupedSumBindingChoice,
   type KeyedGroupedSumResult,
   type LocalCopies,
+  type A1TranslationRequest,
   LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE,
   type OperationOutcome,
   type PresentationAttachment,
@@ -1803,6 +1804,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return runtime.queryGroupTotals(witness, collection, dimensions, measures, scope);
   }
 
+  function translateA1Formula(witness: ViewWitness, input: A1TranslationRequest) {
+    // A read only: Work translates the Excel text; nothing is stored here.
+    return runtime.translateA1Formula(witness, input);
+  }
+
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
@@ -2316,6 +2322,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onDuplicateTable={copies.createWorkFile ? duplicateTable : undefined}
           onQueryShownTotals={queryShownTotals}
           onQueryGroupTotals={queryGroupTotals}
+          onTranslateA1Formula={translateA1Formula}
           onOpenExample={openExample}
           onOpenTemplate={openTemplate}
           onOpenSaved={openSaved}

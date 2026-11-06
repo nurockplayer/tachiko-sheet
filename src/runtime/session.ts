@@ -12,7 +12,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -34,6 +34,7 @@ import {
   type CellEdit,
   type PasteCellInput,
   type ColumnInitializer,
+  type A1TranslationRequest,
   type ConfirmedPublication,
   type SheetRuntime,
   type ImportedWorkbook,
@@ -145,6 +146,16 @@ const GROUP_REFUSAL_CODES: readonly GroupTotalsRefusalCode[] = [
   "result_size_exceeded",
   "invalid_group_query",
 ];
+
+/** One read-only A1 translation: Work's source and notes, or its located refusal. */
+export type A1TranslationOutcome =
+  | { kind: "translated"; revision: string; source: string; notes: A1TranslationNote[] }
+  | {
+      kind: "refused";
+      code: A1RefusalCode | string;
+      message: string;
+      span: { start: number; end: number };
+    };
 
 const noop = (): void => undefined;
 
@@ -759,6 +770,66 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       kind: "refused",
       code: code as GroupTotalsRefusalCode,
       message: failure?.message ?? (error instanceof Error ? error.message : String(code)),
+    };
+  }
+
+  /**
+   * Work's read-only A1 translation at the grid geometry the sheet displays.
+   * The bar forwards the user's text unchanged; Work owns parsing, references
+   * and the readable refusal with its UTF-8 byte span.
+   */
+  function translateA1Formula(
+    witness: ViewWitness,
+    input: A1TranslationRequest,
+  ): Promise<A1TranslationOutcome | null> {
+    return enqueue(async () => {
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const translate = client.translateA1Formula;
+      if (typeof translate !== "function") return null;
+      // An advisory read queued behind a change that moved the revision is obsolete; skip it.
+      const live = session();
+      if (witness.occurrence !== live.scope || witness.revision !== live.revision) return null;
+      let translation: A1Translation;
+      try {
+        translation = await afterUsable(
+          expected,
+          dispatch(kit, () => translate.call(client, {
+            expectedRevision: witness.revision,
+            collectionId: input.collectionId,
+            rowEntityId: input.rowEntityId,
+            targetFieldId: input.targetFieldId,
+            text: input.text,
+            geometry: input.geometry,
+          })),
+        );
+      } catch (error) {
+        const refusal = a1Refusal(kit, error);
+        if (refusal) return refusal;
+        throw error;
+      }
+      if (translation.revision !== witness.revision) {
+        throw new SheetSessionError("incoherent-reply", "The formula translation does not match the requested revision.");
+      }
+      return { kind: "translated", revision: translation.revision, source: translation.source, notes: translation.notes };
+    });
+  }
+
+  /** Work's located A1 refusal as data; any other error is not a refusal. */
+  function a1Refusal(kit: CoreKit, error: unknown): A1TranslationOutcome | null {
+    if (typeof kit.DesignerRuntimeError !== "function" || !(error instanceof kit.DesignerRuntimeError)) return null;
+    const failure = (error as { failure?: { code?: string; message?: string; span?: { start?: number; end?: number } } }).failure;
+    const code = failure?.code;
+    if (typeof code !== "string" || code.length === 0) return null;
+    const span = failure?.span;
+    const located = typeof span?.start === "number" && typeof span.end === "number" &&
+      Number.isFinite(span.start) && Number.isFinite(span.end);
+    return {
+      kind: "refused",
+      code,
+      message: failure?.message ?? (error instanceof Error ? error.message : code),
+      span: located ? { start: span.start as number, end: span.end as number } : { start: 0, end: 0 },
     };
   }
 
@@ -1397,7 +1468,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, queryColumnTotals, queryGroupTotals, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

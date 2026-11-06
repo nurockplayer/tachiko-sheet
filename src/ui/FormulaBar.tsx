@@ -11,6 +11,8 @@ export interface FormulaBarProps {
   pending: boolean;
   /** Work's refusal message, shown verbatim below the bar. */
   error: { message: string; position?: number } | null;
+  /** Work's notes about the last translated formula, shown until the next edit. */
+  translationNote?: string | null;
   onChange?(value: string): void;
   onKeyDown?(event: ReactKeyboardEvent<HTMLInputElement>): void;
   inputRef?(node: HTMLInputElement | null): void;
@@ -86,8 +88,8 @@ export function FormulaBar(props: FormulaBarProps) {
           shares that line instead of adding one, so the bar keeps its height
           while the message is shown and the grid never moves. */}
       <div className="ts-formula-bar-notes">
-        <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason">
-          {state.reason ?? state.note ?? ""}
+        <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason" aria-live="polite" title={state.reason || state.note ? undefined : props.translationNote ?? undefined}>
+          {state.reason ?? state.note ?? props.translationNote ?? ""}
         </p>
         {props.error ? (
           <>

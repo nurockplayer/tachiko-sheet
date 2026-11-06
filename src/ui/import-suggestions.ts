@@ -90,7 +90,7 @@ export function importRefusalMessage(error: unknown): string {
   if (failure && isCapacityFailure(failure)) return importCapacityMessage(failure);
   const capacity = failure?.code === "capacity_exceeded";
   const lead = capacity || BEYOND_LIMITS.test(detail)
-    ? "This file is outside what this beta can open: one headered sheet with 1–16 plain Text, finite Number, Date or Yes/No columns, up to 8,406 rows and 25,218 cells (including missing cells). Other file-size, style and feature limits also apply."
+    ? "This file is outside what this beta can open: up to 32 sheets, each with up to 32 columns and 128 data rows (1,024 rows in all), with up to 32 formulas. One headered sheet of plain Text, finite Number, Date or Yes/No values without formulas can instead hold 1–16 columns, up to 8,406 rows and 25,218 cells (including missing cells). Other file-size, style and feature limits also apply."
     : DAMAGED.test(detail)
       ? "This file could not be read. It may be damaged, or not a valid CSV or Excel (.xlsx) file."
       : "The spreadsheet could not be inspected.";
