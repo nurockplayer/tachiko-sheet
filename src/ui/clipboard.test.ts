@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PASTE_MAX_ROWS, clipboardBoolean, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type PasteContext } from "./clipboard.js";
+import { cutBlockRefusal, PASTE_MAX_CHARS, PASTE_MAX_ROWS, clipboardBoolean, decodeTsv, encodeTsv, pasteRefusal, rectangle, routePaste, stepAddress, type PasteContext } from "./clipboard.js";
 
 describe("quoted TSV", () => {
   it.each([
@@ -172,5 +172,14 @@ describe("append-paste presence encoding", () => {
     expect(routePaste([["", ""]], optional)).toEqual({ kind: "edit", rows: [["", ""]] });
     expect(routePaste([["", ""]], { ...optional, draft: true, start: { row: 1, column: 0 } }))
       .toEqual({ kind: "draft", rows: [["", ""]] });
+  });
+});
+
+describe("cutBlockRefusal", () => {
+  it("refuses only a block that paste could not take back", () => {
+    expect(cutBlockRefusal(PASTE_MAX_ROWS, "x")).toBe(null);
+    expect(cutBlockRefusal(PASTE_MAX_ROWS + 1, "x")).toContain("Nothing was cut.");
+    expect(cutBlockRefusal(1, "x".repeat(PASTE_MAX_CHARS))).toBe(null);
+    expect(cutBlockRefusal(1, "x".repeat(PASTE_MAX_CHARS + 1))).toContain("Nothing was cut.");
   });
 });

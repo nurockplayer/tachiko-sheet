@@ -301,6 +301,7 @@ fn request_quit(app: &AppHandle) {
 }
 
 /// Whether the app may terminate now without asking.
+#[cfg(target_os = "macos")]
 fn quit_decided(app: &AppHandle) -> bool {
     app.state::<LeaveGuard>().closing.load(Ordering::SeqCst)
         || app.get_webview_window(MAIN_WINDOW).is_none()
@@ -311,11 +312,13 @@ fn quit_decided(app: &AppHandle) -> bool {
 fn is_app_url(url: &Url) -> bool {
     match url.scheme() {
         "tauri" => url.host_str() == Some("localhost"),
-        // `tauri dev` serves the frontend from the Vite dev server.
+        // Windows serves the bundled frontend from this origin; `tauri dev`
+        // serves it from the Vite dev server.
         "http" => {
-            cfg!(debug_assertions)
-                && url.host_str() == Some("localhost")
-                && url.port() == Some(5174)
+            (cfg!(windows) && url.host_str() == Some("tauri.localhost"))
+                || (cfg!(debug_assertions)
+                    && url.host_str() == Some("localhost")
+                    && url.port() == Some(5174))
         }
         _ => false,
     }
@@ -347,11 +350,25 @@ fn on_navigation(app: &AppHandle, url: &Url) -> bool {
     } else if app_url {
         open_bundled_page(app, url);
     } else if matches!(url.scheme(), "http" | "https" | "mailto") {
-        let _ = std::process::Command::new("/usr/bin/open")
-            .arg(url.as_str())
-            .spawn();
+        open_externally(url);
     }
     false
+}
+
+/// Hand a web or mail link to the OS's default app.
+fn open_externally(url: &Url) {
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("/usr/bin/open");
+    #[cfg(target_os = "linux")]
+    let mut command = std::process::Command::new("xdg-open");
+    // An AppImage's bundled libraries must not reach the browser it starts.
+    #[cfg(target_os = "linux")]
+    command.env_remove("LD_LIBRARY_PATH");
+    #[cfg(windows)]
+    let mut command = std::process::Command::new("rundll32");
+    #[cfg(windows)]
+    command.arg("url.dll,FileProtocolHandler");
+    let _ = command.arg(url.as_str()).spawn();
 }
 
 /// Show a bundled read-only page (license notices) without replacing the Sheet.
@@ -520,7 +537,8 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     if let Some(MenuItemKind::Submenu(app_submenu)) = menu.items()?.into_iter().next() {
         for (position, item) in app_submenu.items()?.into_iter().enumerate() {
             if let MenuItemKind::Predefined(predefined) = &item
-                && predefined.text()?.starts_with("Quit")
+                // Windows and Linux labels carry a mnemonic marker, as in `&Quit`.
+                && predefined.text()?.replace('&', "").starts_with("Quit")
             {
                 app_submenu.remove(&item)?;
                 let quit = MenuItem::with_id(
@@ -613,7 +631,12 @@ pub fn run() {
                     app.handle(),
                     e2e::Hooks {
                         quit: request_quit,
+                        // Only macOS routes `NSApplication terminate:`; elsewhere
+                        // the OS's quit already goes through the same leave guard.
+                        #[cfg(target_os = "macos")]
                         terminate: termination::terminate_like_the_os,
+                        #[cfg(not(target_os = "macos"))]
+                        terminate: request_quit,
                     },
                 );
             }
@@ -622,4 +645,22 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Tachiko Sheet");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_app(url: &str) -> bool {
+        is_app_url(&Url::parse(url).unwrap())
+    }
+
+    #[test]
+    fn only_the_bundled_origin_is_the_app() {
+        assert!(is_app("tauri://localhost/"));
+        assert_eq!(is_app("http://tauri.localhost/"), cfg!(windows));
+        assert!(!is_app("http://tauri.localhost.example.com/"));
+        assert!(!is_app("https://tauri.localhost/"));
+        assert!(!is_app("https://example.com/"));
+    }
 }

@@ -22,7 +22,7 @@ Sheet UI / application (unchanged)
 - Each channel attaches a fresh host **generation**; older frames are refused.
   A transport failure or runtime panic is terminal: the resident work is
   discarded and the in-flight operation is an unknown outcome, never replayed.
-- The Rust dependency is pinned to an immutable Work revision: the same `6fcc2ab47aed933ce976b735962b6eb73d94811e` source as the
+- The Rust dependency is pinned to an immutable Work revision: the same `71032325756b2b448cbef58f7ead47d29683565c` source as the
   Web kit. Each re-pin's reproducible exports and hashes are recorded on
   [#246](https://github.com/nurockplayer/tachiko-sheet/issues/246) (the first
   in [the #160 handback](160-kit-handback.md)). Re-pin only together with a
@@ -70,15 +70,70 @@ relaunch, reopen, CSV/XLSX export checked cell-by-cell by an independent oracle,
 existing-export refusal, malformed and dimension-limit refusals), plus the close, ⌘Q,
 Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 
+## Install with Homebrew
+
+```sh
+brew install --cask nurockplayer/tap/tachiko-sheet
+```
+
+The cask lives in [nurockplayer/homebrew-tap](https://github.com/nurockplayer/homebrew-tap).
+Publishing a `v*` release runs `.github/workflows/update-cask.yml`, which checks the
+DMG against `SHA256SUMS.txt` and points the cask at it. The run needs the
+`TAP_DEPLOY_KEY` secret (a write deploy key on the tap only) and fails visibly
+without it. The DMG must be named `Tachiko-Sheet-<tag>-macos-universal.dmg`. To
+re-run it for an existing release with a universal DMG, start the workflow by hand
+with the tag.
+
+Homebrew does not change the Gatekeeper limit below.
+
+## Release
+
+A `v*` tag whose version matches `src-tauri/tauri.conf.json` runs
+`.github/workflows/release.yml`, which builds all three platforms and creates a
+**draft** GitHub Release with the installers and `SHA256SUMS.txt`. Publishing
+that draft by hand is what runs the cask update above; nothing is published
+automatically. The release body comes from `docs/release-notes.md`.
+
+## Build on Windows and Linux
+
+The desktop host builds on Windows and Linux as well. CI
+(`.github/workflows/desktop-platforms.yml`) runs the host unit tests and builds
+the bundles on every pull request and push to `main` that touches the host or
+`tests/desktop/`, and retains them as a 7-day artifact. It then builds the same
+app as the packaged e2e variant (`--no-bundle --features e2e`) and starts that
+executable on each OS with `tests/desktop/packaged-smoke.mjs`, under `xvfb-run`
+on Linux. That run proves the packaged app starts and serves the page from its
+own origin (`http://tauri.localhost` on Windows, `tauri://localhost` on Linux),
+imports a CSV through the native runtime and shows it, publishes a cell edit,
+asks about unsaved work on both Close and Quit and keeps the app, window and
+edit when the answer is Cancel, writes a CSV export through the host's
+create-new-file save, refuses an existing export name without touching the
+file, and exits with code 0 when the answer is Discard.
+
+What CI still does not prove on Windows and Linux: a real install from the NSIS
+installer or AppImage, a real close/quit dialog a person operates (the answer is
+scripted), and real menus (the test reaches the same host paths through the e2e
+channel). On the matching OS, build locally with:
+
+```bash
+pnpm desktop:build:windows   # NSIS installer under src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+pnpm desktop:build:linux     # AppImage + .deb under src-tauri/target/x86_64-unknown-linux-gnu/release/bundle
+```
+
+These bundles are **unsigned**: Windows SmartScreen and the Linux package
+tools show an unknown-publisher warning, and there is no code signing.
+
 ## Current limits
 
 - **Unsigned preview.** The app is ad-hoc signed and not notarized, so
   Gatekeeper blocks a downloaded copy until it is allowed in System Settings →
   Privacy & Security. Developer ID signing and notarization need the owner's
-  Apple Developer credentials.
+  Apple Developer credentials. The Windows installer and the Linux packages are
+  unsigned too, so SmartScreen and the Linux package tools warn about an
+  unknown publisher.
 - Logging out or shutting down while Tachiko Sheet is open is cancelled once
   so the app can ask about unsaved work; afterwards, log out or shut down again.
-- Apple Silicon only. No file associations or Finder "Open With".
+- No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.
 
