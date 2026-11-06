@@ -841,6 +841,14 @@ export function SheetShell(props: SheetShellProps) {
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
   useEffect(() => {
+    const enableGridClipboard = (event: Event) => {
+      const active = document.activeElement;
+      if (active instanceof HTMLTableCellElement && active.matches("td[data-work-field]") && gridScrollRef.current?.contains(active)) event.preventDefault();
+    };
+    for (const type of ["beforecut", "beforecopy", "beforepaste"]) document.addEventListener(type, enableGridClipboard, true);
+    return () => { for (const type of ["beforecut", "beforecopy", "beforepaste"]) document.removeEventListener(type, enableGridClipboard, true); };
+  }, []);
+  useEffect(() => {
     const finish = () => {
       suppressClickRef.current = dragSelectRef.current?.moved ?? false;
       dragSelectRef.current = null;
