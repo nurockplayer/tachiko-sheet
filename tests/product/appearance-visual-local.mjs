@@ -2419,7 +2419,7 @@ async function auditHomeViewportBounds(page, browser) {
           y: exampleActionRect.y,
           bottom: exampleActionRect.bottom,
         },
-        otherActions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
+        otherActions: [...document.querySelectorAll(".ts-home-other-row:not(.ts-home-templates *) label.ts-home-file-action, .ts-home-other-row:not(.ts-home-templates *) > button")].map((action) => {
           const rect = action.getBoundingClientRect();
           return { label: action.textContent.trim(), x: rect.x, right: rect.right, y: rect.y, width: rect.width, height: rect.height };
         }),
