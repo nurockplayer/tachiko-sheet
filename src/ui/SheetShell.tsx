@@ -105,7 +105,7 @@ import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage, findingLocation } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
 import { CellOptionsPopup } from "./CellOptionsPopup.js";
-import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
+import { findGridMatches, findStatusText, replaceTargets, stepGridMatch } from "./find-in-grid.js";
 import { useHostFiles } from "../host/host-files.js";
 import { PrintTable } from "./PrintTable.js";
 import "./sheet-shell.css";
@@ -518,6 +518,7 @@ export function SheetShell(props: SheetShellProps) {
     onInspectImport = async () => { throw new Error("Spreadsheet import is unavailable."); },
     onImportCandidate = async () => false,
     onCancelImport = () => undefined,
+    onPreviewReplace,
     onPreviewTrim = async () => null,
     onPreviewDeduplicate = async () => null,
     onCommitCleanup = async () => false,
@@ -714,6 +715,10 @@ export function SheetShell(props: SheetShellProps) {
   const focusedKeyRef = useRef<string | null>(null);
   useLayoutEffect(() => { focusedKeyRef.current = focusedKey; }, [focusedKey]);
   // The active match is a cell, not an index, so sort/filter/edits re-resolve it.
+  const [replaceDraft, setReplaceDraft] = useState<string | null>(null);
+  const [replacePreviewId, setReplacePreviewId] = useState<string | null>(null);
+  const [replaceMessage, setReplaceMessage] = useState("");
+  const replaceRequestRef = useRef(0);
   const [find, setFind] = useState<{ query: string; active: { entity: string; field: string } | null } | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const findOriginRef = useRef<HTMLElement | null>(null);
@@ -2651,7 +2656,16 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(() => requestAnimationFrame(() => cellRefs.current.get(key)?.scrollIntoView({ block: "nearest", inline: "nearest" })));
   }
 
+  function cancelReplacePreview(): void {
+    replaceRequestRef.current++;
+    if (replacePreviewId) onCancelCleanup();
+    setReplacePreviewId(null);
+    setReplaceMessage("");
+  }
+
   function closeFind(): void {
+    cancelReplacePreview();
+    setReplaceDraft(null);
     const match = findIndex >= 0 ? findMatches[findIndex] : undefined;
     const origin = findOriginRef.current;
     const originKey = findOriginKeyRef.current;
@@ -4466,7 +4480,7 @@ export function SheetShell(props: SheetShellProps) {
               event.preventDefault(); event.stopPropagation(); closeFind();
             }}>
               <input ref={findInputRef} type="search" aria-label="Find in table" placeholder="Find…" value={find.query}
-                onChange={(event) => setFind({ query: event.currentTarget.value, active: null })}
+                onChange={(event) => { cancelReplacePreview(); setFind({ query: event.currentTarget.value, active: null }); }}
                 onKeyDown={(event) => {
                   if (isComposingEvent(event) || event.key !== "Enter") return;
                   event.preventDefault(); goToFindMatch(event.shiftKey ? -1 : 1);
@@ -4474,7 +4488,44 @@ export function SheetShell(props: SheetShellProps) {
               <span className="ts-find-status" role="status" aria-live="polite">{find.query.trim() ? findStatusText(findMatches.length, findIndex) : ""}</span>
               <button type="button" className="ts-button ts-button--ghost" aria-label="Previous match" disabled={findMatches.length === 0 || editor !== null || formulaDraftActive} onClick={() => goToFindMatch(-1)}>↑</button>
               <button type="button" className="ts-button ts-button--ghost" aria-label="Next match" disabled={findMatches.length === 0 || editor !== null || formulaDraftActive} onClick={() => goToFindMatch(1)}>↓</button>
+              {onPreviewReplace ? <button type="button" className="ts-button ts-button--ghost" onClick={() => { cancelReplacePreview(); setReplaceDraft(replaceDraft === null ? "" : null); }}>Replace…</button> : null}
               <button type="button" className="ts-button ts-button--ghost" onClick={closeFind}>Close</button>
+              {replaceDraft !== null ? <div className="ts-replace-area">
+                <div className="ts-replace-row">
+                  <input aria-label="Replace with" placeholder="Replace with…" value={replaceDraft} onChange={event => { cancelReplacePreview(); setReplaceDraft(event.currentTarget.value); }} />
+                  <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !!editor || formulaDraftActive || rowDraftActive || !find.query || !witness} onClick={() => {
+                    if (!witness || !onPreviewReplace) return;
+                    cancelReplacePreview();
+                    const targets = replaceTargets(displayRows, columns, find.query);
+                    if (!targets.length) { setReplaceMessage(`No Text cells contain exactly “${find.query}”. Replace matches upper and lower case exactly, and only in Text cells.`); return; }
+                    if (targets.length > 1024) { setReplaceMessage("Replace covers up to 1,024 cells at a time. Filter the table to fewer rows."); return; }
+                    const request = replaceRequestRef.current;
+                    void onPreviewReplace(witness, targets, find.query, replaceDraft).then(result => {
+                      if (request !== replaceRequestRef.current) { if (result) onCancelCleanup(); return; }
+                      if (result) setReplacePreviewId(result.preview_id);
+                    });
+                  }}>Preview replace</button>
+                </div>
+                {replaceMessage ? <p role="status">{replaceMessage}</p> : null}
+                {interop?.cleanupPreview && interop.cleanupPreview.preview_id === replacePreviewId ? (() => {
+                  const preview = interop.cleanupPreview;
+                  const count = preview.changes.length;
+                  return <div className="ts-replace-preview">
+                    <strong>{count} {count === 1 ? "cell" : "cells"} would change</strong>
+                    <div className="ts-replace-table-scroll"><table className="ts-interop-targets" aria-label="Replace preview">
+                      <thead><tr><th scope="col">Target</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
+                      <tbody>{preview.changes.slice(0, 20).map((change, index) => <tr key={`${change.target.entity}-${change.target.field}-${index}`}><td>{cleanupTargetLabel(change.target)}</td><td>{fieldClipboardText(change.before)}</td><td>{String(change.after?.value ?? "")}</td></tr>)}</tbody>
+                    </table></div>
+                    {count > 20 ? <p>and {count - 20} more.</p> : null}
+                    {findMatches.length !== count ? <p>Find ignores case and looks at all shown text. Replace changes only Text cells that match exactly.</p> : null}
+                    <div className="ts-row-actions"><button type="button" className="ts-button" onClick={cancelReplacePreview}>Cancel preview</button>
+                      <button type="button" className="ts-button ts-button--primary" disabled={!count || controlsLocked || !witness} onClick={() => {
+                        if (!witness || refuseWhileCellDraft("applying a replace preview")) return;
+                        void onCommitCleanup(witness, preview.preview_id).then(ok => { if (ok) { setReplacePreviewId(null); announceClipboard(`Replaced ${count} ${count === 1 ? "cell" : "cells"}. Save to keep these changes.`, false, true); } });
+                      }}>Replace {count} {count === 1 ? "cell" : "cells"}</button></div>
+                  </div>;
+                })() : null}
+              </div> : null}
             </div> : null}
             <FormulaBar
               state={formulaState}
@@ -4931,6 +4982,13 @@ export function SheetShell(props: SheetShellProps) {
     );
   }
 
+  function cleanupTargetLabel(target: FieldTarget): string {
+    const displayIndex = rowIndexByEntity.get(target.entity);
+    const name = columns.find(candidate => candidate.id === target.field)?.display_name ?? target.field;
+    const row = table ? rowSource(table).byEntity(target.entity) : undefined;
+    return displayIndex === undefined ? hiddenRowTargetLabel(row ? rowLabel(row, columns) : "", name) : `Row ${a1RowNumber(displayIndex)}, ${name}`;
+  }
+
   function renderInteropPanel(): ReactNode {
     if (!view || !table) return null;
     const rows = rowSource(table).allRowsForNow();
@@ -4958,15 +5016,8 @@ export function SheetShell(props: SheetShellProps) {
               <table className="ts-interop-targets" aria-label="Cleanup targets">
                 <thead><tr><th scope="col">Target</th></tr></thead>
                 <tbody>{preview.changes.map((change, index) => {
-                  // The label follows the grid's displayed A1 row, like the row
-                  // heads; a row a filter hides has no displayed number.
-                  const displayIndex = rowIndexByEntity.get(change.target.entity);
-                  const name = columns.find((candidate) => candidate.id === change.target.field)?.display_name ?? change.target.field;
-                  // A hidden row has no displayed number, so name it by its
-                  // first column value like the bar names the focused row.
-                  const row = rowSource(table).byEntity(change.target.entity);
                   return <tr key={`${change.target.entity}-${change.target.field}-${index}`}>
-                    <td>{displayIndex === undefined ? hiddenRowTargetLabel(row ? rowLabel(row, columns) : "", name) : `Row ${a1RowNumber(displayIndex)}, ${name}`}</td>
+                    <td>{cleanupTargetLabel(change.target)}</td>
                   </tr>;
                 })}</tbody>
               </table>

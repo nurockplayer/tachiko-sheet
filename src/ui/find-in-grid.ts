@@ -1,5 +1,5 @@
 import { cellDisplay } from "./field-display.js";
-import { rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
+import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
 
 export interface GridMatch { entity: string; field: string; rowIndex: number }
 
@@ -25,4 +25,14 @@ export function stepGridMatch(count: number, current: number, direction: 1 | -1)
 
 export function findStatusText(count: number, current: number): string {
   return count === 0 ? "No matches" : `${current < 0 ? 0 : current + 1} of ${count}`;
+}
+
+/** Stored Text cells eligible for Work's exact, case-sensitive replace. */
+export function replaceTargets(rows: readonly TableRow[], columns: readonly TableColumn[], query: string): { entity: string; field: string }[] {
+  if (!query) return [];
+  return rows.flatMap(row => columns.flatMap(column => {
+    const field = fieldForColumn(row, column.id);
+    return column.field_type === "text" && field?.formula == null && field?.stored?.kind === "text" && field.stored.value.includes(query)
+      ? [{ entity: rowEntity(row), field: column.id }] : [];
+  }));
 }
