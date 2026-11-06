@@ -17,17 +17,16 @@
 //!   same save returns the original outcome instead of a guess.
 //! - The bytes go to an exclusively created temporary file in the destination
 //!   folder, which is moved into place only if the name is still free
-//!   (`RENAME_EXCL`), checked to be that file, and the folder flushed.
+//!   (`RENAME_EXCL`, or the OS's equivalent), checked to be that file, and the
+//!   folder flushed.
 
 use std::collections::{HashMap, VecDeque};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::ffi::CString;
-#[cfg(unix)]
-use std::fs::File;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
@@ -267,6 +266,14 @@ fn identity(path: &Path) -> io::Result<Identity> {
     Ok((metadata.dev(), metadata.ino()))
 }
 
+/// The identity of a file this process holds open, from its own handle, so no
+/// other program can swap the name in between.
+#[cfg(unix)]
+fn open_identity(file: &File) -> io::Result<Identity> {
+    let metadata = file.metadata()?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
 /// The identity of the entry at `path`; a symlink is not followed.
 ///
 /// Windows has no stat identity, so a handle is opened on the entry itself
@@ -280,9 +287,16 @@ fn identity(path: &Path) -> io::Result<Identity> {
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
+    open_identity(&file)
+}
+
+/// The identity of a file this process holds open, from its own handle, so no
+/// other program can swap the name in between.
+#[cfg(windows)]
+fn open_identity(file: &File) -> io::Result<Identity> {
     let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
-    // SAFETY: both are valid for the duration of the call, and the handle comes
-    // from the file that stays open above.
+    // SAFETY: both are valid for the duration of the call, and the caller keeps
+    // the file open.
     if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, information.as_mut_ptr()) }
         == 0
     {
@@ -432,7 +446,7 @@ pub fn write_new(bytes: &[u8], destination: &Path) -> Result<(), WriteError> {
     #[cfg(unix)]
     options.mode(0o666);
     let mut output = options.open(&temporary).map_err(not_saved)?;
-    let ours = identity(&temporary).map_err(not_saved)?;
+    let ours = open_identity(&output).map_err(not_saved)?;
     let still_ours = |path: &Path| identity(path).is_ok_and(|named| named == ours);
     let prepared = output
         .write_all(bytes)
