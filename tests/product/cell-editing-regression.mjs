@@ -501,6 +501,7 @@ const cases = [
     // A same-row reference commits on Enter: one publish, no extra step. The
     // target is the priority column, which the formula does not read.
     const product = (await numberIn(impact)) * (await numberIn(friction));
+    const priorityBefore = (await cellAt(first, "priority").textContent()).trim();
     const gridTop = (await rows.first().boundingBox()).y;
     count = await dispatches(page);
     await cellAt(first, "priority").click();
@@ -527,6 +528,10 @@ const cases = [
     assert.equal(await barText(), "([.impact] * [.friction])", "the bar shows Work's stored source, not the Excel text");
     assert.equal(await reasonText(), "", "a same-row reference carries no note");
 
+    // One commit is one history step: a single Undo restores the old value.
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await valueIs(`cell:${first}:${fields.priority}`, priorityBefore);
+
     // A second Excel formula in another row still translates after the first
     // committed: a formula withdraws Work's native row profile, which must not
     // turn translation off for the rest of the table.
@@ -544,9 +549,11 @@ const cases = [
     await bar.press("Escape");
 
     // A whole-column SUM commits too, and keeps the note that it covers rows
-    // added later.
+    // added later. It goes in the second row's friction: a whole-column SUM in
+    // the first row's friction (D2) covers the cells the later formulas read,
+    // so writing them against D2 would make them depend on themselves.
     count = await dispatches(page);
-    await typeFormula(friction, "=SUM(C2:C4)");
+    await typeFormula(cellAt(second, "friction"), "=SUM(C2:C4)");
     await page.waitForFunction(() => /entire column/.test(document.querySelector('[data-testid="formula-bar-reason"]')?.textContent ?? ""));
     assert.match(await reasonText(), /entire column/,
       "a whole-column aggregate says it tracks the whole column");
@@ -577,7 +584,15 @@ const cases = [
     const input = editor(page);
     await input.fill("=D2*2");
     await input.press("Enter");
-    await editor(page).waitFor({ state: "hidden" });
+    await editor(page).waitFor({ state: "hidden" }).catch(async (error) => {
+      const state = {
+        editor: await editor(page).inputValue().catch(() => null),
+        alerts: await page.getByRole("alert").allTextContents().catch(() => []),
+        published: (await dispatches(page)) - count,
+        cell: await secondImpact.evaluate((node) => node.textContent.trim()).catch(() => null),
+      };
+      throw new Error(`the in-cell A1 formula did not commit: ${JSON.stringify(state)}`, { cause: error });
+    });
     await valueIs(`cell:${second}:${fields.impact}`, String(secondProduct));
     assert.equal(await dispatches(page), count + 1, "Enter publishes the in-cell translation once");
     const destination = await secondImpact.evaluate((node) => {

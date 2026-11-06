@@ -282,6 +282,11 @@ try {
   assert.equal(await cellEditor.inputValue(), `=${amountLetter}2`, "clicking a cell while typing a formula inserts its A1 address");
   await cellEditor.press("End"); await cellEditor.pressSequentially(" * 2"); await cellEditor.press("Enter");
   await ready();
+  // Enter commits after Work reads the A1 text, so wait for the committed
+  // value itself rather than the bar's own idle state.
+  const taxCellId = await cell(table, 0, taxAt).getAttribute("data-testid");
+  await page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
+    [taxCellId, String(doubled[0])]);
   assert.deepEqual((await taxText()).slice(0, 1), doubled.slice(0, 1), "a formula into a blank cell calculates");
   // The formula bar takes a leading "=" too.
   await cell(table, 0, taxAt).click();
