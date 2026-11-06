@@ -70,6 +70,21 @@ relaunch, reopen, CSV/XLSX export checked cell-by-cell by an independent oracle,
 existing-export refusal, malformed and dimension-limit refusals), plus the close, ⌘Q,
 Dock-quit (`terminate:`), reload and link guards with a scripted dialog answer.
 
+## Install with Homebrew
+
+```sh
+brew install --cask nurockplayer/tap/tachiko-sheet
+```
+
+The cask lives in [nurockplayer/homebrew-tap](https://github.com/nurockplayer/homebrew-tap).
+Publishing a `v*` release runs `.github/workflows/update-cask.yml`, which checks the
+DMG against `SHA256SUMS.txt` and points the cask at it. The run needs the
+`TAP_DEPLOY_KEY` secret (a write deploy key on the tap only) and fails visibly
+without it. The DMG must be named `Tachiko-Sheet-<tag>-macos-arm64.dmg`. To re-run
+it for an existing release, start the workflow by hand with the tag.
+
+Homebrew does not change the Gatekeeper limit below.
+
 ## Current limits
 
 - **Unsigned preview.** The app is ad-hoc signed and not notarized, so
