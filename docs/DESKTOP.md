@@ -80,10 +80,18 @@ The cask lives in [nurockplayer/homebrew-tap](https://github.com/nurockplayer/ho
 Publishing a `v*` release runs `.github/workflows/update-cask.yml`, which checks the
 DMG against `SHA256SUMS.txt` and points the cask at it. The run needs the
 `TAP_DEPLOY_KEY` secret (a write deploy key on the tap only) and fails visibly
-without it. The DMG must be named `Tachiko-Sheet-<tag>-macos-arm64.dmg`. To re-run
-it for an existing release, start the workflow by hand with the tag.
+without it. The DMG must be named `Tachiko-Sheet-<tag>-macos-universal.dmg`. To
+re-run it for an existing release, start the workflow by hand with the tag.
 
 Homebrew does not change the Gatekeeper limit below.
+
+## Release
+
+A `v*` tag whose version matches `src-tauri/tauri.conf.json` runs
+`.github/workflows/release.yml`, which builds all three platforms and creates a
+**draft** GitHub Release with the installers and `SHA256SUMS.txt`. Publishing
+that draft by hand is what runs the cask update above; nothing is published
+automatically. The release body comes from `docs/release-notes.md`.
 
 ## Build on Windows and Linux
 
@@ -105,10 +113,12 @@ tools show an unknown-publisher warning, and there is no code signing.
 - **Unsigned preview.** The app is ad-hoc signed and not notarized, so
   Gatekeeper blocks a downloaded copy until it is allowed in System Settings →
   Privacy & Security. Developer ID signing and notarization need the owner's
-  Apple Developer credentials.
+  Apple Developer credentials. The Windows installer and the Linux packages are
+  unsigned too, so SmartScreen and the Linux package tools warn about an
+  unknown publisher.
 - Logging out or shutting down while Tachiko Sheet is open is cancelled once
   so the app can ask about unsaved work; afterwards, log out or shut down again.
-- Apple Silicon only. No file associations or Finder "Open With".
+- No file associations or Finder "Open With".
 - Opening a project folder and importing files use the system Open panel via the
   existing file inputs; there is no native menu "Open…" yet.
 

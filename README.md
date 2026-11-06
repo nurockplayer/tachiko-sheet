@@ -13,6 +13,17 @@ The [live handoff](https://github.com/nurockplayer/tachiko-sheet/issues/2) recor
 exact candidate, platform, signing and test evidence. This is not a claim of
 full Driver certification, completed human acceptance or general availability.
 
+## Download
+
+Installers for macOS, Windows and Linux are on the
+[Releases page](https://github.com/nurockplayer/tachiko-sheet/releases).
+
+**macOS 13 or later (Apple Silicon or Intel):** open the DMG and drag Tachiko Sheet to Applications. Try to open it once, then go to System Settings > Privacy & Security and choose Open Anyway. With Homebrew: `brew install --cask nurockplayer/tap/tachiko-sheet`.
+
+**Windows 10 or 11 (x64):** run the installer. When SmartScreen says it protected your PC, choose More info, then Run anyway.
+
+**Linux (x64):** make the AppImage executable with `chmod +x`, then run it, or install the deb with `sudo apt install ./Tachiko-Sheet-*.deb`. Both need WebKitGTK 4.1 (Ubuntu 22.04 or later).
+
 Start with the live [Mission #1](https://github.com/nurockplayer/tachiko-sheet/issues/1), [current handoff #2](https://github.com/nurockplayer/tachiko-sheet/issues/2), and [AGENTS.md](AGENTS.md).
 
 - [Product scope and first slice](docs/SPEC.md)
