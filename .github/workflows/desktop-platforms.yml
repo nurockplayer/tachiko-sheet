@@ -40,6 +40,9 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_TERM_COLOR: never
+      # npm scripts run under cmd.exe on Windows, where the scripts' inline
+      # `CI=true` prefix cannot be parsed; the job supplies it here.
+      CI: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
