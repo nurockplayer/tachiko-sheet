@@ -24,6 +24,7 @@ import type {
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import type { LocalHistorySnapshot } from "./application/local-history.js";
 import type { CsvDelimiter, CsvEncoding } from "./ui/csv-text.js";
+import type { TemplateId } from "./ui/templates.js";
 export type {
   CleanupOperation,
   CleanupPreview,
@@ -400,6 +401,7 @@ export interface SheetShellProps {
   /** Work's read-only Excel A1 translation for the displayed grid geometry. */
   onTranslateA1Formula?(witness: ViewWitness, input: A1TranslationRequest): Promise<A1TranslationOutcome | null>;
   onOpenExample(): Promise<void>;
+  onOpenTemplate?(id: TemplateId): Promise<void>;
   onOpenSaved(name: string): Promise<void>;
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
   onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<CommitOutcome>;

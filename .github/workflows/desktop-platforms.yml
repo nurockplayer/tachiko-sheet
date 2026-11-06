@@ -1,0 +1,134 @@
+name: Sheet desktop (Windows, Linux)
+
+on:
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "tests/desktop/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/desktop-platforms.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src-tauri/**"
+      - "tests/desktop/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/desktop-platforms.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheet-desktop-platforms-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: ${{ matrix.os }} desktop app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            build: pnpm desktop:build:windows
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            build: pnpm desktop:build:linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: never
+      # npm scripts run under cmd.exe on Windows, where the scripts' inline
+      # `CI=true` prefix cannot be parsed; the job supplies it here.
+      CI: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          node-version-file: false
+          version: 12.11.2
+          install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf libayatana-appindicator3-dev libxdo-dev xvfb
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target ${{ matrix.target }}
+          rustup default 1.97.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Desktop host unit tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+
+      - name: Build the packaged app and bundle
+        run: ${{ matrix.build }}
+
+      - name: Retain the bundle (7 days)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-desktop-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: src-tauri/target/${{ matrix.target }}/release/bundle
+
+      # The same app plus the e2e script channel, built after the production
+      # bundle has been retained. --no-bundle leaves the executable at
+      # src-tauri/target/<target>/release/ for the smoke test below.
+      - name: Build the packaged e2e variant
+        run: pnpm exec tauri build --target ${{ matrix.target }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
+        env:
+          CI: "true"
+
+      - name: Launch the packaged app and check the unsaved-work guard (Linux)
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_COMPOSITING_MODE: 1
+        run: |
+          release="src-tauri/target/${{ matrix.target }}/release"
+          binary="$release/tachiko-sheet-desktop"
+          test -x "$binary" || binary="$(find "$release" -maxdepth 1 -type f -perm -u+x -name 'tachiko*' | head -n 1)"
+          test -n "$binary" || { echo "no packaged executable under $release"; ls -la "$release"; exit 1; }
+          xvfb-run -a node tests/desktop/packaged-smoke.mjs "$binary"
+
+      - name: Launch the packaged app and check the unsaved-work guard (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          release="src-tauri/target/${{ matrix.target }}/release"
+          binary="$release/tachiko-sheet-desktop.exe"
+          test -f "$binary" || binary="$(find "$release" -maxdepth 1 -type f -name 'tachiko*.exe' | head -n 1)"
+          test -n "$binary" || { echo "no packaged executable under $release"; ls -la "$release"; exit 1; }
+          node tests/desktop/packaged-smoke.mjs "$binary"
+
+      # The smoke test keeps its folders when it fails so the run's evidence
+      # (host log, app output, page alerts) can be read afterwards.
+      - name: Retain smoke diagnostics on failure (7 days)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-desktop-smoke-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/tachiko-desktop-smoke-*

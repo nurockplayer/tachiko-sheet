@@ -31,3 +31,30 @@ export function a1Geometry(
     columns: columns.map((column) => column.id),
   };
 }
+
+/** Bytes of row ids one request may carry: Work's wire limit is 65,536 bytes for the whole request. */
+const A1_GEOMETRY_ROW_BYTES = 60_000;
+
+/**
+ * The geometry one formula needs: the displayed rows from its first to its last
+ * address, including its own row, with the header row moved to just above them,
+ * so A1 numbers still mean what the grid shows. A range needs every row. Null
+ * when that doesn't fit in one request.
+ */
+export function a1GeometryFor(
+  displayRows: readonly TableRow[],
+  columns: readonly { id: string }[],
+  ownerEntity: string,
+  references: { rows: readonly number[]; range: boolean },
+): { headerRow: number; rows: string[]; columns: string[] } | null {
+  const full = a1Geometry(displayRows, columns);
+  const owner = full.rows.indexOf(ownerEntity);
+  let geometry = full;
+  if (!references.range && owner >= 0) {
+    const ownerRow = a1RowNumber(owner);
+    const first = Math.max(Math.min(ownerRow, ...references.rows), A1_HEADER_ROW + 1);
+    const last = Math.max(ownerRow, ...references.rows);
+    geometry = { ...full, headerRow: first - 1, rows: full.rows.slice(first - 2, last - 1) };
+  }
+  return new TextEncoder().encode(JSON.stringify(geometry.rows)).length <= A1_GEOMETRY_ROW_BYTES ? geometry : null;
+}
