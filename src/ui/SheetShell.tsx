@@ -209,7 +209,7 @@ export function salesCatalogLayoutEligible(view: WorkbookView, marker: SalesCata
 /** One-line view status; null when the grid is showing its untouched order. */
 export function rowViewStatusText(
   columns: readonly Pick<TableColumn, "id" | "display_name">[],
-  settings: Pick<RowViewSettings, "sort" | "filter">,
+  settings: Pick<RowViewSettings, "sort" | "filters">,
   shownRows: number,
   totalRows: number,
 ): string | null {
