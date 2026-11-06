@@ -59,7 +59,7 @@ import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
-import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1References, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1NoteText, a1References, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
@@ -140,17 +140,6 @@ interface EditorState {
 interface GridPosition {
   entity: string;
   field: string;
-}
-
-/** A translated Excel formula waiting for the user to apply it, bound to its cell and revision. */
-interface A1Preview {
-  identity: string;
-  revision: string;
-  /** The Excel text without its leading "=", exactly as Work read it. */
-  typed: string;
-  source: string;
-  notes: A1TranslationNote[];
-  then: "stay" | "next" | "previous";
 }
 
 interface HistoryFocusRequest {
@@ -732,9 +721,9 @@ export function SheetShell(props: SheetShellProps) {
   // Bound to the exact cell/revision instance that raised it, so a message is
   // never displayed under a different cell without any effect or extra render.
   const [formulaRefusal, setFormulaRefusal] = useState<{ identity: string; message: string; position?: number } | null>(null);
-  // A translated Excel formula waiting for Apply/Keep editing. Bound to the
-  // same cell and revision instance as the bar draft it came from.
-  const [a1Preview, setA1Preview] = useState<A1Preview | null>(null);
+  // Work's note about the last translated formula stays until the next edit starts.
+  const [a1Note, setA1Note] = useState<string | null>(null);
+  useEffect(() => { if (editor || formulaDraft) setA1Note(null); }, [editor, formulaDraft]);
   const [gridRange, setGridRange] = useState<GridWindowRange>({ start: 0, end: 80 });
   const gridRowHeightRef = useRef(32);
   // Mirrors the ref so a measured pitch change re-renders spacer heights.
@@ -1071,9 +1060,6 @@ export function SheetShell(props: SheetShellProps) {
   const formulaError = formulaRefusal && formulaRefusal.identity === formulaState.identity
     ? { message: formulaRefusal.message, ...(formulaRefusal.position !== undefined ? { position: formulaRefusal.position } : {}) }
     : null;
-  // The preview follows the same rule as the draft and refusal: only the exact
-  // cell/revision instance that produced it shows it.
-  const boundA1Preview = a1Preview && a1Preview.identity === formulaState.identity ? a1Preview : null;
   useLayoutEffect(() => {
     formulaIdentityRef.current = formulaState.identity;
   }, [formulaState.identity]);
@@ -2176,14 +2162,12 @@ export function SheetShell(props: SheetShellProps) {
     }
     setClipboardMessage(null);
     setFormulaRefusal(null);
-    setA1Preview(null);
     setFormulaDraft({ identity: formulaState.identity, value });
   }
 
   function cancelFormulaEdit(): void {
     setFormulaDraft(null);
     setFormulaRefusal(null);
-    setA1Preview(null);
     if (focusedPosition) withAppFocus(() => focusCell(focusedPosition.entity, focusedPosition.field));
   }
 
@@ -2312,19 +2296,20 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /**
-   * Send one formula source through the existing updateFormula path. Apply and
-   * the unmodified Tachiko path share it, so a preview never changes the commit.
+   * Send one formula source through the existing updateFormula path. A
+   * translated Excel formula and the unmodified Tachiko path share it.
+   * Returns whether Work accepted the commit.
    */
   async function commitFormulaSource(
     source: string,
     then: "stay" | "next" | "previous" = "stay",
-  ): Promise<void> {
-    // Apply and Enter can both arrive before React has committed the pending
-    // state; the ref is the synchronous gate and the preview stays bound.
-    if (formulaCommitInFlightRef.current) return;
+  ): Promise<boolean> {
+    // A second Enter can arrive before React has committed the pending state;
+    // the ref is the synchronous gate.
+    if (formulaCommitInFlightRef.current) return false;
     formulaCommitInFlightRef.current = true;
     try {
-      await commitFormulaSourceOnce(source, then);
+      return await commitFormulaSourceOnce(source, then);
     } finally {
       formulaCommitInFlightRef.current = false;
     }
@@ -2333,10 +2318,10 @@ export function SheetShell(props: SheetShellProps) {
   async function commitFormulaSourceOnce(
     source: string,
     then: "stay" | "next" | "previous" = "stay",
-  ): Promise<void> {
+  ): Promise<boolean> {
     const state = formulaState;
-    if (!witness || !state.target) return;
-    setA1Preview(null);
+    if (!witness || !state.target) return false;
+    setA1Note(null);
     const offset = formulaBarSource(formulaBarDraftValue(state, formulaDraft)).offset;
     const position = focusedPosition;
     // The handoff that follows this commit belongs to the focus and the open
@@ -2351,7 +2336,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!outcome || !outcome.accepted) {
       // The refusal belongs to this cell and this revision. A changed identity
       // means the projection moved on; never show this message under it.
-      if (formulaIdentityRef.current !== state.identity) return;
+      if (formulaIdentityRef.current !== state.identity) return false;
       // A refusal keeps the user's text in the bar and Work's words verbatim,
       // with Work's own character position when it supplies one.
       const hint = formulaColumnNameHint(source, outcome?.sourcePosition, columns);
@@ -2372,7 +2357,7 @@ export function SheetShell(props: SheetShellProps) {
           input.select();
         });
       }));
-      return;
+      return false;
     }
     setFormulaDraft(null);
     setFormulaRefusal(null);
@@ -2408,6 +2393,7 @@ export function SheetShell(props: SheetShellProps) {
       if (++frames < 10) requestAnimationFrame(refocusBar);
     };
     requestAnimationFrame(refocusBar);
+    return true;
   }
 
   async function submitFormula(then: "stay" | "next" | "previous" = "stay"): Promise<void> {
@@ -2425,7 +2411,6 @@ export function SheetShell(props: SheetShellProps) {
     if (source === state.source) {
       setFormulaDraft(null);
       setFormulaRefusal(null);
-      setA1Preview(null);
       return;
     }
     // Text without a bracketed Tachiko reference may be Excel's A1 syntax:
@@ -2472,57 +2457,11 @@ export function SheetShell(props: SheetShellProps) {
         return;
       }
       if (translation) {
-        if (!a1TranslationNeedsPreview(source, translation)) {
-          await commitFormulaSource(translation.source, then);
-          return;
-        }
-        setA1Preview({
-          identity: state.identity,
-          revision: witness.revision,
-          typed: source,
-          source: translation.source,
-          notes: translation.notes,
-          then,
-        });
+        if (await commitFormulaSource(translation.source, then)) setA1Note(a1NoteText(translation.notes));
         return;
       }
     }
     await commitFormulaSource(source, then);
-  }
-
-  /** Close the translated preview and leave the user's Excel text in the bar. */
-  function keepEditingA1Preview(): void {
-    setA1Preview(null);
-    requestAnimationFrame(() => {
-      const input = formulaInputRef.current;
-      if (!input || input.disabled || input.readOnly) return;
-      withAppFocus(() => input.focus());
-    });
-  }
-
-  /** Commit the translation the user confirmed, unless its cell or revision moved on. */
-  function applyA1Preview(): void {
-    const preview = boundA1Preview;
-    if (!preview) {
-      setA1Preview(null);
-      return;
-    }
-    // Same admission as Enter in the bar. Applying while a commit is pending,
-    // work is locked, or another draft blocks must not publish; the preview
-    // stays bound until the commit settles.
-    const state = formulaState;
-    if (!witness || !state.target || !state.editable || commitPending || controlsLocked || rowCommandPendingRef.current) return;
-    if (refuseWhileCellDraft("editing a formula", false)) return;
-    if (rowDraftActive) {
-      setLocalError(FORMULA_BAR_DRAFT_ROW_HINT);
-      return;
-    }
-    if (formulaIdentityRef.current !== preview.identity || witness?.revision !== preview.revision) {
-      setA1Preview(null);
-      void submitFormula(preview.then);
-      return;
-    }
-    void commitFormulaSource(preview.source, preview.then);
   }
 
   /** Focus is still where the commit left it: the bar, or the body its disabled input dropped to. */
@@ -2572,20 +2511,6 @@ export function SheetShell(props: SheetShellProps) {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     // The bar's input is not a cell editor; drop keys before the grid sees them.
     event.stopPropagation();
-    // A translated Excel formula waiting to be applied owns Enter and Escape:
-    // Enter applies it, Escape leaves the user's text in the bar to edit.
-    if (boundA1Preview) {
-      if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        event.preventDefault();
-        applyA1Preview();
-        return;
-      }
-      if (event.key === "Escape" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        event.preventDefault();
-        keepEditingA1Preview();
-        return;
-      }
-    }
     const changed = formulaBarDraftValue(formulaState, formulaDraft) !== formulaState.source;
     const action = formulaBarKeyAction(event, changed);
     if (!action) return;
@@ -2767,6 +2692,7 @@ export function SheetShell(props: SheetShellProps) {
       // The answer belongs to this cell's instance as it is at submit.
       const submissionIdentity = formulaState.identity;
       let sourceToCommit = formulaSource;
+      let notes: A1TranslationNote[] = [];
       // Only text naming an address or a range can need Work's geometry; any
       // other formula commits exactly as it did before translation.
       const references = a1References(formulaSource);
@@ -2819,30 +2745,10 @@ export function SheetShell(props: SheetShellProps) {
           setLocalError(a1RefusalFor(formulaSource, translation).message);
           return false;
         }
-        if (translation && a1TranslationNeedsPreview(formulaSource, translation)) {
-          // The bar shows the same preview, bound to the cell being edited; the
-          // cell editor closes so only one draft is pending. Returning false
-          // stops the caller from moving focus into the grid.
-          setEditor(null);
-          setLocalError(null);
-          setFormulaRefusal(null);
-          setFormulaDraft({ identity: formulaState.identity, value: `=${formulaSource}` });
-          setA1Preview({
-            identity: formulaState.identity,
-            revision: witness.revision,
-            typed: formulaSource,
-            source: translation.source,
-            notes: translation.notes,
-            then: "stay",
-          });
-          requestAnimationFrame(() => {
-            const input = formulaInputRef.current;
-            if (!input || input.disabled || input.readOnly) return;
-            withAppFocus(() => input.focus());
-          });
-          return false;
+        if (translation) {
+          sourceToCommit = translation.source;
+          notes = translation.notes;
         }
-        if (translation) sourceToCommit = translation.source;
       }
       // Sheet forwards the source unchanged; Work parses, validates and stores it.
       const outcome = await runCommit(slot.target, { kind: "formula", source: sourceToCommit });
@@ -2852,6 +2758,7 @@ export function SheetShell(props: SheetShellProps) {
         setLocalError([outcome?.message ?? "The formula was not applied. The draft was kept so you can correct it.", hint].filter(Boolean).join(" "));
         return false;
       }
+      setA1Note(a1NoteText(notes));
       setEditor(null);
       setLocalError(null);
       if (completionMayUpdateUi(intent)) withAppFocus(() => focusCell(editor.entity, editor.field));
@@ -4482,12 +4389,10 @@ export function SheetShell(props: SheetShellProps) {
               draft={formulaDraft}
               pending={commitPending}
               error={formulaError}
-              preview={boundA1Preview ? { typed: boundA1Preview.typed, source: boundA1Preview.source, notes: boundA1Preview.notes } : null}
+              translationNote={a1Note}
               inputRef={bindFormulaInput}
               onChange={changeFormulaDraft}
               onKeyDown={onFormulaKeyDown}
-              onApplyPreview={applyA1Preview}
-              onKeepEditingPreview={keepEditingA1Preview}
             />
             <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={gridWindowed ? onGridScroll : undefined}>
               {/* React removes old keyed rows/spacers before adding their replacements.

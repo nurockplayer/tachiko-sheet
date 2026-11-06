@@ -281,10 +281,6 @@ try {
   await cell(table, 0, amountAt).click();
   assert.equal(await cellEditor.inputValue(), `=${amountLetter}2`, "clicking a cell while typing a formula inserts its A1 address");
   await cellEditor.press("End"); await cellEditor.pressSequentially(" * 2"); await cellEditor.press("Enter");
-  const a1Preview = page.getByTestId("a1-preview");
-  await a1Preview.waitFor();
-  await page.getByTestId("a1-preview-apply").click();
-  await a1Preview.waitFor({ state: "hidden" });
   await ready();
   assert.deepEqual((await taxText()).slice(0, 1), doubled.slice(0, 1), "a formula into a blank cell calculates");
   // The formula bar takes a leading "=" too.

@@ -469,9 +469,9 @@ const cases = [
     }
     await page.locator('.ts-report-canvas[data-report-ready="true"]').waitFor();
   }],
-  ["Excel A1 formulas translate with a preview before applying", async (page) => {
+  ["Excel A1 formulas commit on Enter", async (page) => {
     const bar = page.getByTestId("formula-bar-input");
-    const preview = page.getByTestId("a1-preview");
+    const reason = page.getByTestId("formula-bar-reason");
     const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
     assert.equal(await rows.count(), 3, "the fixture displays three data rows");
     const entityAt = async (index) => rows.nth(index).locator("td[data-work-field]").first().getAttribute("data-work-entity");
@@ -479,19 +479,16 @@ const cases = [
     const cellAt = (entity, key) => page.getByTestId(`cell:${entity}:${fields[key]}`);
     const numberIn = async (target) => Number((await target.textContent()).trim());
     const barText = () => bar.inputValue();
-    const codeAt = async (index) => (await preview.locator(".ts-a1-preview-code").nth(index).textContent()).trim();
     const typeFormula = async (target, source) => { await target.click(); await bar.fill(source); await bar.press("Enter"); };
-    // Closing the preview refocuses the bar a frame later. Escape after that
-    // hands focus to the cell; a click while the bar holds it inserts a reference.
-    const leaveBar = async () => {
-      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-      await bar.press("Escape");
-      await page.waitForFunction(() => document.activeElement?.dataset.testid !== "formula-bar-input");
+    const reasonText = async () => (await reason.textContent()).trim();
+    const valueIs = (id, text) => {
+      const selector = `[data-testid="${id}"]`;
+      return page.waitForFunction(([selector, text]) => document.querySelector(selector)?.textContent.trim() === text, [selector, text]);
     };
     const impact = cellAt(first, "impact"), friction = cellAt(first, "friction");
     let count = await dispatches(page);
 
-    // A formula that reads its own cell can never be the expected preview:
+    // A formula that reads its own cell can never be the expected result:
     // Work refuses the cycle and the bar explains it.
     await typeFormula(impact, "=C2*D2");
     const selfError = page.locator(".ts-formula-bar-error");
@@ -499,73 +496,61 @@ const cases = [
     assert.match((await selfError.textContent()).trim(), /depend on its own result/,
       "a formula that reads the cell it is stored in is refused");
     assert.equal(await dispatches(page), count, "the refused self-reference publishes nothing");
-    assert.equal(await preview.count(), 0, "a refused formula opens no preview");
     await bar.press("Escape");
 
-    // A same-row reference needs no note: both formulas are shown, over the
-    // grid, without publishing the read and without moving the rows. The
+    // A same-row reference commits on Enter: one publish, no extra step. The
     // target is the priority column, which the formula does not read.
     const product = (await numberIn(impact)) * (await numberIn(friction));
     const gridTop = (await rows.first().boundingBox()).y;
-    await typeFormula(cellAt(first, "priority"), "=C2*D2");
-    // A missing preview names what the page shows instead, so a CI failure
+    count = await dispatches(page);
+    await cellAt(first, "priority").click();
+    await bar.fill("=C2*D2");
+    assert.equal(await dispatches(page), count, "typing an Excel formula publishes nothing");
+    await bar.press("Enter");
+    // A missing value names what the page shows instead, so a CI failure
     // carries its own cause.
-    await preview.waitFor().catch(async (error) => {
+    await valueIs(`cell:${first}:${fields.priority}`, String(product)).catch(async (error) => {
       const state = {
         bar: await bar.inputValue().catch(() => null),
         barError: await page.locator(".ts-formula-bar-error").allTextContents(),
         alerts: await page.getByRole("alert").allTextContents(),
+        reason: await reasonText().catch(() => null),
         published: (await dispatches(page)) - count,
         priority: await cellAt(first, "priority").evaluate((cell) => ({ text: cell.textContent.trim(), readonly: cell.getAttribute("aria-readonly") })).catch(() => null),
         headers: await page.locator("th[data-column-letter]").evaluateAll((cells) => cells.map((cell) => `${cell.dataset.columnLetter}:${cell.textContent.trim()}`)),
       };
-      throw new Error(`the A1 preview did not open: ${JSON.stringify(state)}`, { cause: error });
+      throw new Error(`the A1 formula did not commit: ${JSON.stringify(state)}`, { cause: error });
     });
-    assert.equal(await preview.getAttribute("role"), "group");
-    assert.equal(await preview.getAttribute("aria-label"), "Formula translation");
-    assert.equal(await codeAt(0), "=C2*D2", "the preview shows the Excel text as typed");
-    assert.equal(await codeAt(1), "[.impact]*[.friction]", "a same-row reference becomes a bare field reference");
-    assert.equal(await preview.locator(".ts-a1-preview-note").count(), 0, "a same-row reference carries no note");
-    assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) <= 1, "the preview overlays the grid without moving it");
-    assert.equal(await dispatches(page), count, "the translation is a read and publishes nothing");
-    await page.getByTestId("a1-preview-apply").click();
-    await preview.waitFor({ state: "hidden" });
-    await page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
-      [`cell:${first}:${fields.priority}`, String(product)]);
-    assert.equal(await dispatches(page), count + 1, "Apply publishes the translated source once");
+    assert.equal(await dispatches(page), count + 1, "Enter publishes the translated source once");
+    assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) <= 1, "committing the formula does not move the grid");
     await cellAt(first, "priority").click();
     assert.equal(await barText(), "([.impact] * [.friction])", "the bar shows Work's stored source, not the Excel text");
+    assert.equal(await reasonText(), "", "a same-row reference carries no note");
 
-    // A second Excel formula in another row still previews after the first was
-    // applied: a formula withdraws Work's native row profile, which must not
+    // A second Excel formula in another row still translates after the first
+    // committed: a formula withdraws Work's native row profile, which must not
     // turn translation off for the rest of the table.
     count = await dispatches(page);
-    const thirdBefore = (await cellAt(second, "priority").textContent()).trim();
     await typeFormula(cellAt(second, "priority"), "=C3*D2");
-    await preview.waitFor();
-    assert.match((await preview.locator(".ts-a1-preview-note").textContent()).trim(), /Copying this formula/,
-      "a reference to another row warns that copying will not move it");
-    assert.equal(await dispatches(page), count, "the preview is still a read");
-    await bar.press("Escape");
-    await preview.waitFor({ state: "hidden" });
-    assert.equal(await barText(), "=C3*D2", "Escape keeps the typed text in the bar");
-    assert.equal((await cellAt(second, "priority").textContent()).trim(), thirdBefore, "Escape publishes nothing");
-    assert.equal(await dispatches(page), count, "Escape publishes nothing");
+    await page.waitForFunction(() => /Copying this formula/.test(document.querySelector('[data-testid="formula-bar-reason"]')?.textContent ?? ""));
+    assert.equal(await dispatches(page), count + 1, "Enter publishes the second translation once");
+    // The note is a hint, not a gate: it stays until the next edit starts,
+    // after focus moves to another cell, and typing in the bar clears it.
+    await cellAt(first, "friction").click();
+    assert.match(await reasonText(), /Copying this formula/, "the note stays after focus moves");
+    await bar.fill("=[.friction]*2");
+    await page.waitForFunction(() => (document.querySelector('[data-testid="formula-bar-reason"]')?.textContent ?? "").trim() === "");
+    assert.equal(await reasonText(), "", "the next edit clears the note");
     await bar.press("Escape");
 
-    // A whole-column SUM keeps the note that it covers rows added later.
+    // A whole-column SUM commits too, and keeps the note that it covers rows
+    // added later.
     count = await dispatches(page);
-    const frictionBefore = await numberIn(friction);
     await typeFormula(friction, "=SUM(C2:C4)");
-    await preview.waitFor();
-    assert.match((await preview.locator(".ts-a1-preview-note").textContent()).trim(), /entire column/,
+    await page.waitForFunction(() => /entire column/.test(document.querySelector('[data-testid="formula-bar-reason"]')?.textContent ?? ""));
+    assert.match(await reasonText(), /entire column/,
       "a whole-column aggregate says it tracks the whole column");
-    await page.getByTestId("a1-preview-keep-editing").click();
-    await preview.waitFor({ state: "hidden" });
-    assert.equal(await barText(), "=SUM(C2:C4)", "Keep editing closes the preview and keeps the draft");
-    assert.equal(await numberIn(friction), frictionBefore, "Keep editing publishes nothing");
-    assert.equal(await dispatches(page), count, "Keep editing publishes nothing");
-    await bar.press("Escape");
+    assert.equal(await dispatches(page), count + 1, "Enter publishes the whole-column aggregate once");
 
     // A reference outside the table is refused with Work's span selected.
     count = await dispatches(page);
@@ -583,27 +568,27 @@ const cases = [
     assert.equal(await dispatches(page), count, "the refused translation was a read");
     await bar.press("Escape");
 
-    // An in-cell Excel formula opens the same preview in the bar.
+    // An in-cell Excel formula commits on the same Enter, and focus moves on
+    // exactly as for any other committed value.
     count = await dispatches(page);
     const secondImpact = cellAt(second, "impact");
-    const secondBefore = (await secondImpact.textContent()).trim();
+    const secondProduct = (await numberIn(friction)) * 2;
     await secondImpact.dblclick();
     const input = editor(page);
     await input.fill("=D2*2");
     await input.press("Enter");
-    await preview.waitFor();
-    await page.waitForFunction(() => document.activeElement?.dataset.testid === "formula-bar-input");
-    assert.equal(await barText(), "=D2*2", "the cell editor hands its draft to the bar");
-    assert.equal(await editor(page).count(), 0, "only the bar holds the draft");
-    await bar.press("Escape");
-    await preview.waitFor({ state: "hidden" });
-    assert.equal(await barText(), "=D2*2", "Escape keeps the in-cell text in the bar");
-    await leaveBar();
-    assert.equal((await secondImpact.textContent()).trim(), secondBefore, "the in-cell formula was never applied");
-    assert.equal(await dispatches(page), count, "the in-cell translation and Escape publish nothing");
+    await editor(page).waitFor({ state: "hidden" });
+    await valueIs(`cell:${second}:${fields.impact}`, String(secondProduct));
+    assert.equal(await dispatches(page), count + 1, "Enter publishes the in-cell translation once");
+    const destination = await secondImpact.evaluate((node) => {
+      const field = node.dataset.testid.split(":").at(-1);
+      return [...(node.parentElement.nextElementSibling?.querySelectorAll("td") ?? [])].find(cell => cell.dataset.testid?.endsWith(":" + field))?.dataset.testid ?? null;
+    });
+    assert.ok(destination, "the committed cell has a displayed neighbour below");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id, destination);
 
     // A translation that returns after more typing belongs to the old text:
-    // the editor keeps the new text and nothing previews or publishes.
+    // the editor keeps the new text and nothing publishes.
     count = await dispatches(page);
     const staleTyping = await entry(page, "impact");
     await staleTyping.fill("=D2*2");
@@ -614,12 +599,11 @@ const cases = [
     });
     await page.waitForTimeout(500);
     assert.equal(await editor(page).inputValue(), "=D2*3", "typing more keeps the editor and its new text");
-    assert.equal(await preview.count(), 0, "a stale translation opens no preview");
     assert.equal(await dispatches(page), count, "a stale translation publishes nothing");
     await editor(page).press("Escape");
 
     // A translation that returns after Escape belongs to a closed editor: it
-    // must not reopen a preview, publish, or change the cell.
+    // must not publish or change the cell.
     count = await dispatches(page);
     const impactBefore = (await cellAt(first, "impact").textContent()).trim();
     const staleEscape = await entry(page, "impact");
@@ -630,7 +614,6 @@ const cases = [
     });
     await page.waitForTimeout(500);
     assert.equal(await editor(page).count(), 0, "Escape closes the editor");
-    assert.equal(await preview.count(), 0, "a late translation opens no preview");
     assert.equal(await dispatches(page), count, "a late translation publishes nothing");
     assert.equal((await cellAt(first, "impact").textContent()).trim(), impactBefore, "the cell is unchanged");
 
@@ -641,23 +624,21 @@ const cases = [
     assert.equal(await editor(page).inputValue(), "=D2", "a click while typing = inserts the A1 address");
     await editor(page).press("Escape");
 
-    // An address already typed stays A1 alongside the clicked one, so Enter
-    // reads both into one preview.
+    // An address already typed stays A1 alongside the clicked one, and Enter
+    // commits both translations at once.
     insert = await entry(page, "impact");
     await insert.fill("=D2*");
     await cellAt(first, "friction").click();
     assert.equal(await editor(page).inputValue(), "=D2*D2", "a typed address and a clicked cell both use A1");
+    const frictionNow = await numberIn(friction);
+    count = await dispatches(page);
     await editor(page).press("Enter");
-    await preview.waitFor();
-    assert.equal(await codeAt(0), "=D2*D2", "the preview shows the typed Excel text");
-    assert.equal(await codeAt(1), "[.friction]*[.friction]", "both A1 references are translated");
-    await page.waitForFunction(() => document.activeElement?.dataset.testid === "formula-bar-input");
-    await bar.press("Escape");
-    await preview.waitFor({ state: "hidden" });
-    await leaveBar();
+    await editor(page).waitFor({ state: "hidden" });
+    await valueIs(`cell:${first}:${fields.impact}`, String(frictionNow ** 2));
+    assert.equal(await dispatches(page), count + 1, "Enter publishes both A1 references once");
 
     // A draft that already has brackets keeps the projection's token, and a
-    // bracketed formula commits with no translation and no preview.
+    // bracketed formula commits with no translation.
     insert = await entry(page, "impact");
     await insert.fill("=[.friction]*");
     await cellAt(first, "friction").click();
@@ -666,14 +647,12 @@ const cases = [
     count = await dispatches(page);
     await editor(page).press("Enter");
     await editor(page).waitFor({ state: "hidden" });
-    assert.equal(await preview.count(), 0, "a bracketed formula needs no translation");
     assert.equal(await dispatches(page), count + 1, "the bracket formula publishes once");
-    await page.waitForFunction(([id, text]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === text,
-      [`cell:${first}:${fields.impact}`, String(bracketProduct)]);
+    await valueIs(`cell:${first}:${fields.impact}`, String(bracketProduct));
   }],
   ["a 2,000-row table refuses references that span too many rows", async (page) => {
     // A range over every row needs the whole collection in one request, which
-    // the sheet refuses before Work reads it; nearby addresses still preview.
+    // the sheet refuses before Work reads it; nearby addresses still translate.
     page.setDefaultTimeout(60000);
     const csv = ["Name,Amount,Total", ...Array.from({ length: 2000 }, (_, index) => `Row ${index + 1},${index + 1},${(index + 1) * 2}`)].join("\n");
     const folder = await mkdtemp(path.join(tmpdir(), "a1-large-"));
@@ -688,7 +667,6 @@ const cases = [
     await dialog.getByRole("button", { name: "Import file", exact: true }).click();
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
     const bar = page.getByTestId("formula-bar-input");
-    const preview = page.getByTestId("a1-preview");
     const error = page.locator(".ts-formula-bar-error");
     const total = page.locator("tbody tr.ts-row").first().locator("td[data-work-field]").nth(2);
     const totalId = await total.getAttribute("data-testid");
@@ -706,15 +684,15 @@ const cases = [
     assert.equal((await page.locator(`[data-testid="${totalId}"]`).textContent()).trim(), "2", "the refused formula changes nothing");
     await bar.press("Escape");
 
-    // An address near this row keeps a small geometry, so the preview opens.
+    // An address near this row keeps a small geometry, so Enter commits the
+    // translated source and Work refuses it as it refuses any formula here.
     count = await dispatches(page);
     await total.click();
     await bar.fill("=B2*2");
     await bar.press("Enter");
-    await preview.waitFor();
-    assert.equal(await dispatches(page), count, "the translation is a read");
-    await bar.press("Escape");
-    await preview.waitFor({ state: "hidden" });
+    await error.waitFor();
+    assert.match((await error.textContent()).trim(), /Text capacity/, "Work answers the translated formula itself");
+    assert.equal(await dispatches(page), count + 1, "the translated formula reaches Work exactly once");
     await bar.press("Escape");
 
     // A range over the whole column does not fit one request.
@@ -725,7 +703,6 @@ const cases = [
     await error.waitFor();
     assert.equal((await error.textContent()).trim(),
       "This formula's cell references span too many rows for a table this large. Use references closer to this row; ranges over a whole column need a smaller table for now.");
-    assert.equal(await preview.count(), 0, "no preview for a refused geometry");
     assert.equal(await dispatches(page), count, "the refusal publishes nothing");
     await bar.press("Escape");
     await rm(folder, { recursive: true, force: true });

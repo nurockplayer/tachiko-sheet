@@ -1270,52 +1270,6 @@ body { margin: 0; }
 }
 .ts-formula-bar-error-details:focus-visible { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
 .ts-formula-bar-position { font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* Work's translation of an Excel formula, shown over the grid until the user
-   applies it. It is an overlay, never a line in the bar, so the rows under it
-   keep their place while it is open. */
-.ts-a1-preview {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 30;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: min(420px, 90vw);
-  max-height: min(50vh, 280px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px 10px;
-  border: 1px solid var(--ts-line-strong);
-  border-radius: var(--ts-radius);
-  background: var(--ts-surface);
-  box-shadow: var(--ts-shadow);
-}
-.ts-a1-preview-row { display: flex; gap: 8px; align-items: baseline; }
-.ts-a1-preview-label {
-  flex: 0 0 auto;
-  color: var(--ts-ink-soft);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.ts-a1-preview-code {
-  min-width: 0;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--ts-surface-sunken);
-  font: 12px/17px ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.ts-a1-preview-note { margin: 0; color: var(--ts-ink-soft); font-size: 12px; line-height: 16px; }
-.ts-a1-preview-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 2px; }
-@media (forced-colors: active) {
-  .ts-a1-preview { border-color: CanvasText; }
-  .ts-a1-preview-code { border: 1px solid CanvasText; }
-}
 .ts-cell--formula { cursor: default; }
 .ts-results-pane {
   order: 2;
