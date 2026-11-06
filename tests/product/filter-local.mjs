@@ -95,9 +95,11 @@ try {
   assert.equal(await publications(), before + 1);
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 900, height: 420 });
-  await page.getByRole("columnheader", { name: "Item", exact: true }).hover();
-  await page.getByRole("button", { name: "Column actions for Item", exact: true }).click();
-  await page.locator('.ts-column-overflow[open] .ts-command-menu button').last().click();
-  await page.getByLabel("Filter Item", { exact: true }).waitFor();
+  await page.getByRole("columnheader", { name: "Qty", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for Qty", exact: true }).click();
+  const lastItem = page.locator('.ts-column-overflow[open] .ts-command-menu button').last();
+  assert.equal(await lastItem.getAttribute("aria-label"), "Filter…");
+  await lastItem.click();
+  await page.getByLabel("Filter Qty", { exact: true }).waitFor();
   console.log("PASS: local multi-column value and condition filters do not publish");
 } finally { await context.close(); await browser.close(); }

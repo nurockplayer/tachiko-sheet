@@ -4353,7 +4353,12 @@ export function SheetShell(props: SheetShellProps) {
                   event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
                 }}>
                   <summary role="button" aria-label={`Column actions for ${column.display_name}`} aria-disabled={columnChangesBlocked} tabIndex={columnChangesBlocked ? -1 : 0} data-column-action="…" onClick={event => {
-                    if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) event.preventDefault();
+                    event.preventDefault();
+                    if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+                    const disclosure = event.currentTarget.closest("details")!;
+                    disclosure.open = !disclosure.open;
+                    if (disclosure.open) positionColumnToolbar(disclosure);
+                    else resetColumnToolbar(disclosure);
                   }} />
                   <div className="ts-command-menu">
                     {table.native_table_profile ? ([...(renameAvailable ? ["rename"] : []), ...(onRemoveColumn ? ["remove"] : [])] as Array<"rename" | "remove">).map(kind => <button key={kind} type="button" className="ts-button" aria-label={kind === "rename" ? "Rename…" : "Remove…"} data-column-action={kind === "rename" ? "Rename…" : "Remove…"} disabled={columnChangesBlocked} onClick={event => {
