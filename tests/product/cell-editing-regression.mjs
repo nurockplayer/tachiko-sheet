@@ -416,6 +416,7 @@ const cases = [
     // Issue reproduction: imported CSV, unapplied Number 3 -> 4, then a trim
     // preview with real whitespace changes is committed from another tab.
     await page.getByRole("button", { name: "Close project", exact: true }).click();
+    await page.getByRole("button", { name: "Close without saving", exact: true }).click();
     const input = await homeImportInput(page);
     await input.setInputFiles(messyCsv);
     const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
@@ -480,6 +481,13 @@ const cases = [
     const barText = () => bar.inputValue();
     const codeAt = async (index) => (await preview.locator(".ts-a1-preview-code").nth(index).textContent()).trim();
     const typeFormula = async (target, source) => { await target.click(); await bar.fill(source); await bar.press("Enter"); };
+    // Closing the preview refocuses the bar a frame later. Escape after that
+    // hands focus to the cell; a click while the bar holds it inserts a reference.
+    const leaveBar = async () => {
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      await bar.press("Escape");
+      await page.waitForFunction(() => document.activeElement?.dataset.testid !== "formula-bar-input");
+    };
     const impact = cellAt(first, "impact"), friction = cellAt(first, "friction");
     let count = await dispatches(page);
 
@@ -590,7 +598,7 @@ const cases = [
     await bar.press("Escape");
     await preview.waitFor({ state: "hidden" });
     assert.equal(await barText(), "=D2*2", "Escape keeps the in-cell text in the bar");
-    await bar.press("Escape");
+    await leaveBar();
     assert.equal((await secondImpact.textContent()).trim(), secondBefore, "the in-cell formula was never applied");
     assert.equal(await dispatches(page), count, "the in-cell translation and Escape publish nothing");
 
@@ -646,7 +654,7 @@ const cases = [
     await page.waitForFunction(() => document.activeElement?.dataset.testid === "formula-bar-input");
     await bar.press("Escape");
     await preview.waitFor({ state: "hidden" });
-    await bar.press("Escape");
+    await leaveBar();
 
     // A draft that already has brackets keeps the projection's token, and a
     // bracketed formula commits with no translation and no preview.

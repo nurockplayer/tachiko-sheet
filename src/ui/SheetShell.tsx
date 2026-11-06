@@ -2792,7 +2792,7 @@ export function SheetShell(props: SheetShellProps) {
             geometry,
           });
         } finally {
-          a1TranslatingRef.current = null;
+          if (a1TranslatingRef.current === editor.instance) a1TranslatingRef.current = null;
         }
         // The read belongs to this cell, this text, this focus and this row
         // order. Typing more while Work decides, moving the grid focus to
