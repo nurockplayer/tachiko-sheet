@@ -301,6 +301,7 @@ fn request_quit(app: &AppHandle) {
 }
 
 /// Whether the app may terminate now without asking.
+#[cfg(target_os = "macos")]
 fn quit_decided(app: &AppHandle) -> bool {
     app.state::<LeaveGuard>().closing.load(Ordering::SeqCst)
         || app.get_webview_window(MAIN_WINDOW).is_none()

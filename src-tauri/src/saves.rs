@@ -20,12 +20,14 @@
 //!   (`RENAME_EXCL`), checked to be that file, and the folder flushed.
 
 use std::collections::{HashMap, VecDeque};
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::ffi::CString;
+#[cfg(unix)]
+use std::fs::File;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
@@ -318,14 +320,14 @@ fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
 /// link, which also refuses an existing name, then removes `from`.
 #[cfg(target_os = "linux")]
 fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
-    let (from, to) = (c_path(from)?, c_path(to)?);
+    let (from_c, to_c) = (c_path(from)?, c_path(to)?);
     // SAFETY: both are valid NUL-terminated paths for the duration of the call.
     let renamed = unsafe {
         libc::renameat2(
             libc::AT_FDCWD,
-            from.as_ptr(),
+            from_c.as_ptr(),
             libc::AT_FDCWD,
-            to.as_ptr(),
+            to_c.as_ptr(),
             libc::RENAME_NOREPLACE,
         )
     };
@@ -340,15 +342,50 @@ fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
     std::fs::remove_file(from)
 }
 
+/// The NUL-terminated wide form of `path` for a Windows file API. A long
+/// absolute path is given the `\\?\` verbatim prefix, as std's own file calls
+/// do; without it `MoveFileExW` stops at `MAX_PATH`.
+#[cfg(windows)]
+fn wide_path(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt as _;
+
+    const MAX_PATH: usize = 260;
+    let backslash = u16::from(b'\\');
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    let verbatim = [backslash, backslash, u16::from(b'?'), backslash];
+    if path.is_absolute() && wide.len() >= MAX_PATH && !wide.starts_with(&verbatim) {
+        let mut prefixed = if wide.starts_with(&[backslash, backslash]) {
+            // A UNC path: `\\server\share` becomes `\\?\UNC\server\share`.
+            vec![
+                backslash,
+                backslash,
+                u16::from(b'?'),
+                backslash,
+                u16::from(b'U'),
+                u16::from(b'N'),
+                u16::from(b'C'),
+                backslash,
+            ]
+        } else {
+            verbatim.to_vec()
+        };
+        let rest = if wide.starts_with(&[backslash, backslash]) {
+            &wide[2..]
+        } else {
+            &wide[..]
+        };
+        prefixed.extend_from_slice(rest);
+        wide = prefixed;
+    }
+    wide.push(0);
+    wide
+}
+
 /// Move `from` to `to` only if `to` does not exist (`MoveFileExW` without
 /// `MOVEFILE_REPLACE_EXISTING`): an existing entry is never replaced.
 #[cfg(windows)]
 fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt as _;
-
-    let wide =
-        |path: &Path| -> Vec<u16> { path.as_os_str().encode_wide().chain(Some(0)).collect() };
-    let (from, to) = (wide(from), wide(to));
+    let (from, to) = (wide_path(from), wide_path(to));
     // SAFETY: both are valid NUL-terminated wide strings for the call, which
     // does not keep them.
     if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_WRITE_THROUGH) } != 0 {
