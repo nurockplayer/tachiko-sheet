@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
+import { A1_NOTE_TEXT, type A1TranslationPreview } from "./a1-formula.js";
 import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalIsTruncated, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
 
 export interface FormulaBarProps {
@@ -11,9 +12,13 @@ export interface FormulaBarProps {
   pending: boolean;
   /** Work's refusal message, shown verbatim below the bar. */
   error: { message: string; position?: number } | null;
+  /** Work's translation of the typed Excel formula, waiting for Apply. */
+  preview?: A1TranslationPreview | null;
   onChange?(value: string): void;
   onKeyDown?(event: ReactKeyboardEvent<HTMLInputElement>): void;
   inputRef?(node: HTMLInputElement | null): void;
+  onApplyPreview?(): void;
+  onKeepEditingPreview?(): void;
 }
 
 /** Dense spreadsheet chrome: `fx`, the focused cell name, then the source. */
@@ -106,6 +111,29 @@ export function FormulaBar(props: FormulaBarProps) {
             >Details</button> : null}
             <div className="ts-formula-bar-error-details" id={detailsId} hidden={!detailsOpen || !errorTruncated} tabIndex={0}>{errorText}</div>
           </>
+        ) : null}
+        {/* Excel text that Work would rewrite: the source it stores and the
+            notes that say how it differs, then Apply or Keep editing. The
+            panel overlays the grid instead of adding a line, so the rows under
+            it never move while it is open. */}
+        {props.preview ? (
+          <div className="ts-a1-preview" role="group" aria-label="Formula translation" data-testid="a1-preview">
+            <div className="ts-a1-preview-row">
+              <span className="ts-a1-preview-label">Excel formula</span>
+              <code className="ts-a1-preview-code">{`=${props.preview.typed}`}</code>
+            </div>
+            <div className="ts-a1-preview-row">
+              <span className="ts-a1-preview-label">Tachiko formula</span>
+              <code className="ts-a1-preview-code">{props.preview.source}</code>
+            </div>
+            {props.preview.notes.map((note) => (
+              <p key={note} className="ts-a1-preview-note">{A1_NOTE_TEXT[note]}</p>
+            ))}
+            <div className="ts-a1-preview-actions">
+              <button type="button" className="ts-button ts-button--primary" data-testid="a1-preview-apply" onClick={props.onApplyPreview}>Apply</button>
+              <button type="button" className="ts-button" data-testid="a1-preview-keep-editing" onClick={props.onKeepEditingPreview}>Keep editing</button>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>

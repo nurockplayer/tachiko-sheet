@@ -13,6 +13,15 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Re-pin (Work #653 translateA1Formula leaves column rules to the commit;
+    // #646/#644 same-row relative A1 on XLSX import and export): two clean
+    // detached lead exports match byte for byte in all 25 files; receipt with inventory on #246.
+    sourceCommit: '6fcc2ab47aed933ce976b735962b6eb73d94811e',
+    artifactManifestSha256: '98894a1381a616f0debdf031fd50a1729356d18de333c7eb90999c7d17388477',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6667794597',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6667794597',
+  },
+  {
     // Re-pin (Work #642 read-only translateA1Formula; #636/#639/#640 import
     // capacity, over-limit messages, ST_Xstring escapes): two clean detached
     // lead exports match byte for byte in all 25 files; receipt with inventory on #246.

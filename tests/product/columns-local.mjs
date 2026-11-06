@@ -270,11 +270,22 @@ try {
   // A spreadsheet user's first try names the column. Work refuses; Sheet says how to refer to it.
   await cellEditor.fill("=Amount * 2"); await cellEditor.press("Enter");
   await page.getByText(`“Amount” is a column. Click one of its cells to insert a reference, or write [.${amountKey}].`, { exact: false }).first().waitFor();
-  // Type "=", click the Amount cell to insert its reference, then finish the formula.
+  // Type "=", click the Amount cell: a draft with no bracket is A1 text, so
+  // the click inserts the address the grid shows, and Enter reads it in Work.
+  const amountLetter = (() => {
+    let name = "";
+    for (let n = amountAt + 1; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
+    return name;
+  })();
   await cellEditor.fill("=");
   await cell(table, 0, amountAt).click();
-  assert.equal(await cellEditor.inputValue(), `=[.${amountKey}]`, "clicking a cell while typing a formula inserts its reference");
-  await cellEditor.press("End"); await cellEditor.pressSequentially(" * 2"); await cellEditor.press("Enter"); await ready();
+  assert.equal(await cellEditor.inputValue(), `=${amountLetter}2`, "clicking a cell while typing a formula inserts its A1 address");
+  await cellEditor.press("End"); await cellEditor.pressSequentially(" * 2"); await cellEditor.press("Enter");
+  const a1Preview = page.getByTestId("a1-preview");
+  await a1Preview.waitFor();
+  await page.getByTestId("a1-preview-apply").click();
+  await a1Preview.waitFor({ state: "hidden" });
+  await ready();
   assert.deepEqual((await taxText()).slice(0, 1), doubled.slice(0, 1), "a formula into a blank cell calculates");
   // The formula bar takes a leading "=" too.
   await cell(table, 0, taxAt).click();

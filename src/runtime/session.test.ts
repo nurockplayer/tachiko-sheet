@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { CapacityProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1Translation, CapacityProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat, TranslateA1FormulaInput } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -48,10 +48,10 @@ const CANONICAL_FILES: readonly CanonicalProjectFile[] = [
 class FakeDesignerRuntimeError extends Error {
   readonly failure: FailureProjection;
 
-  constructor(code: string, currentRevision: string) {
+  constructor(code: string, currentRevision: string, span?: { start: number; end: number }) {
     super(code);
     this.name = "DesignerRuntimeError";
-    this.failure = { code, message: code, current_revision: currentRevision, diagnostics: [] };
+    this.failure = { code, message: code, current_revision: currentRevision, diagnostics: [], ...(span ? { span } : {}) };
   }
 }
 
@@ -73,6 +73,7 @@ interface Hooks {
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
   queryCapacity?: (revision: string) => Promise<CapacityProjection>;
   queryGroupTotals?: (revision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope) => Promise<GroupTotalsProjection>;
+  translateA1Formula?: (input: TranslateA1FormulaInput) => Promise<A1Translation>;
   bootstrap?: () => Promise<BootstrapProjection>;
 }
 
@@ -112,6 +113,7 @@ class FakeClient {
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string; columnNames?: Record<string, string> }>,
     queryColumnTotals: [] as Array<{ revision: string; collection: string; entities: string[] }>,
     queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
+    translateA1Formula: [] as TranslateA1FormulaInput[],
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
     setColumnNumberFormat: [] as Array<{ revision: string; collection: string; field: string; format: NumberFormat | null }>,
     copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
@@ -352,6 +354,15 @@ class FakeClient {
       totals: [3],
       groups: [{ keys: [{ kind: "text", value: "Food" }], rows: 2, totals: [3] }],
     };
+  }
+
+  async translateA1Formula(input: TranslateA1FormulaInput): Promise<A1Translation> {
+    this.calls.translateA1Formula.push(input);
+    const hook = this.hooks.translateA1Formula;
+    if (hook !== undefined) return hook(input);
+    this.#requireOpen();
+    this.#requireRevision(input.expectedRevision);
+    return { revision: input.expectedRevision, source: input.text, notes: [] };
   }
 
   async queryCapacity(revision: string): Promise<CapacityProjection> {
@@ -1972,6 +1983,61 @@ describe("queryGroupTotals", () => {
     });
 
     await expect(failure(runtime.queryGroupTotals(witnessOf(view), COLLECTION.key, DIMENSIONS, MEASURES, { kind: "all" })))
+      .resolves.toMatchObject({ name: "SheetSessionError", code: "incoherent-reply" });
+  });
+});
+
+describe("translateA1Formula", () => {
+  const GEOMETRY: A1Geometry = { headerRow: 1, rows: ["e1", "e2"], columns: ["title", "impact"] };
+  const REQUEST = { collectionId: COLLECTION.key, rowEntityId: "e1", targetFieldId: "impact", text: "B2*C2", geometry: GEOMETRY };
+
+  it("asks Work to read the A1 text at the witness revision without publishing", async () => {
+    const { runtime, client, view } = await opened();
+
+    const outcome = await runtime.translateA1Formula(witnessOf(view), REQUEST);
+
+    expect(client.calls.translateA1Formula).toEqual([{ expectedRevision: view.revision, ...REQUEST }]);
+    expect(outcome).toEqual({ kind: "translated", revision: view.revision, source: "B2*C2", notes: [] });
+    expect(client.calls.updateFormula).toEqual([]);
+  });
+
+  it("returns Work's located refusal as data", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.translateA1Formula = async () => { throw new FakeDesignerRuntimeError("out_of_bounds", client.currentRevision, { start: 0, end: 3 }); };
+
+    await expect(runtime.translateA1Formula(witnessOf(view), REQUEST)).resolves.toEqual({
+      kind: "refused", code: "out_of_bounds", message: "out_of_bounds", span: { start: 0, end: 3 },
+    });
+  });
+
+  it("gives an unlocated refusal an empty span", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.translateA1Formula = async () => { throw new FakeDesignerRuntimeError("formula_syntax", client.currentRevision); };
+
+    await expect(runtime.translateA1Formula(witnessOf(view), REQUEST)).resolves.toEqual({
+      kind: "refused", code: "formula_syntax", message: "formula_syntax", span: { start: 0, end: 0 },
+    });
+  });
+
+  it("returns null when the installed client lacks the translation", async () => {
+    const { runtime, client, view } = await opened();
+    Object.defineProperty(client, "translateA1Formula", { value: undefined });
+
+    await expect(runtime.translateA1Formula(witnessOf(view), REQUEST)).resolves.toBeNull();
+  });
+
+  it("skips a read whose witness is no longer live", async () => {
+    const { runtime, client, view } = await opened();
+
+    await expect(runtime.translateA1Formula({ ...witnessOf(view), revision: "rev-obsolete" }, REQUEST)).resolves.toBeNull();
+    expect(client.calls.translateA1Formula).toEqual([]);
+  });
+
+  it("rejects a reply at another revision", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.translateA1Formula = async (input) => ({ revision: "rev-other", source: input.text, notes: [] });
+
+    await expect(failure(runtime.translateA1Formula(witnessOf(view), REQUEST)))
       .resolves.toMatchObject({ name: "SheetSessionError", code: "incoherent-reply" });
   });
 });
