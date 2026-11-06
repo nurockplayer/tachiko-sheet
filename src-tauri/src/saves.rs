@@ -20,15 +20,31 @@
 //!   (`RENAME_EXCL`), checked to be that file, and the folder flushed.
 
 use std::collections::{HashMap, VecDeque};
-use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
-use std::os::fd::AsRawFd;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::ffi::CString;
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt as _;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle,
+    MOVEFILE_WRITE_THROUGH, MoveFileExW,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
@@ -237,10 +253,48 @@ impl std::fmt::Display for WriteError {
     }
 }
 
-fn identity(metadata: &std::fs::Metadata) -> (u64, u64) {
-    (metadata.dev(), metadata.ino())
+/// Which entry a name refers to: the device and inode on Unix, the volume
+/// serial and file index on Windows. Reading it can fail; that is a file that
+/// is not ours.
+type Identity = (u64, u64);
+
+/// The identity of the entry at `path`; a symlink is not followed.
+#[cfg(unix)]
+fn identity(path: &Path) -> io::Result<Identity> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    Ok((metadata.dev(), metadata.ino()))
 }
 
+/// The identity of the entry at `path`; a symlink is not followed.
+///
+/// Windows has no stat identity, so a handle is opened on the entry itself
+/// (sharing read, write and delete) and queried. `FILE_FLAG_OPEN_REPARSE_POINT`
+/// stops a link from being followed, and `FILE_FLAG_BACKUP_SEMANTICS` lets the
+/// same call look at a directory.
+#[cfg(windows)]
+fn identity(path: &Path) -> io::Result<Identity> {
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
+    // SAFETY: both are valid for the duration of the call, and the handle comes
+    // from the file that stays open above.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, information.as_mut_ptr()) }
+        == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the call succeeded, so it filled the struct.
+    let information = unsafe { information.assume_init() };
+    Ok((
+        u64::from(information.dwVolumeSerialNumber),
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    ))
+}
+
+#[cfg(unix)]
 fn c_path(path: &Path) -> io::Result<CString> {
     CString::new(path.as_os_str().as_bytes())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "the name contains a NUL byte"))
@@ -248,10 +302,56 @@ fn c_path(path: &Path) -> io::Result<CString> {
 
 /// Move `from` to `to` only if `to` does not exist (`renamex_np` with
 /// `RENAME_EXCL`): an existing entry is never replaced.
+#[cfg(target_os = "macos")]
 fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
     let (from, to) = (c_path(from)?, c_path(to)?);
     // SAFETY: both are valid NUL-terminated paths for the duration of the call.
     if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+/// Move `from` to `to` only if `to` does not exist (`renameat2` with
+/// `RENAME_NOREPLACE`). A filesystem without that flag falls back to a hard
+/// link, which also refuses an existing name, then removes `from`.
+#[cfg(target_os = "linux")]
+fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    let (from, to) = (c_path(from)?, c_path(to)?);
+    // SAFETY: both are valid NUL-terminated paths for the duration of the call.
+    let renamed = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if renamed == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() != Some(libc::EINVAL) && error.raw_os_error() != Some(libc::ENOSYS) {
+        return Err(error);
+    }
+    std::fs::hard_link(from, to)?;
+    std::fs::remove_file(from)
+}
+
+/// Move `from` to `to` only if `to` does not exist (`MoveFileExW` without
+/// `MOVEFILE_REPLACE_EXISTING`): an existing entry is never replaced.
+#[cfg(windows)]
+fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+
+    let wide =
+        |path: &Path| -> Vec<u16> { path.as_os_str().encode_wide().chain(Some(0)).collect() };
+    let (from, to) = (wide(from), wide(to));
+    // SAFETY: both are valid NUL-terminated wide strings for the call, which
+    // does not keep them.
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_WRITE_THROUGH) } != 0 {
         Ok(())
     } else {
         Err(io::Error::last_os_error())
@@ -290,16 +390,13 @@ pub fn write_new(bytes: &[u8], destination: &Path) -> Result<(), WriteError> {
         std::process::id(),
         UNIQUE.fetch_add(1, Ordering::SeqCst)
     ));
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o666)
-        .open(&temporary)
-        .map_err(not_saved)?;
-    let ours = output.metadata().map_err(not_saved)?;
-    let still_ours = |path: &Path| {
-        std::fs::symlink_metadata(path).is_ok_and(|named| identity(&named) == identity(&ours))
-    };
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o666);
+    let mut output = options.open(&temporary).map_err(not_saved)?;
+    let ours = identity(&temporary).map_err(not_saved)?;
+    let still_ours = |path: &Path| identity(path).is_ok_and(|named| named == ours);
     let prepared = output
         .write_all(bytes)
         .and_then(|()| output.sync_all())
@@ -316,7 +413,7 @@ pub fn write_new(bytes: &[u8], destination: &Path) -> Result<(), WriteError> {
         if still_ours(&temporary) {
             let _ = std::fs::remove_file(&temporary);
         }
-        return Err(if error.raw_os_error() == Some(libc::EEXIST) {
+        return Err(if error.kind() == io::ErrorKind::AlreadyExists {
             WriteError::Exists
         } else {
             not_saved(error)
@@ -328,11 +425,18 @@ pub fn write_new(bytes: &[u8], destination: &Path) -> Result<(), WriteError> {
             "another program changed the file while it was being saved",
         )));
     }
-    let directory = File::open(folder).map_err(unconfirmed)?;
-    // F_FULLFSYNC where the volume supports it on a folder, else fsync.
-    // SAFETY: the descriptor is open for the duration of the call.
-    if directory.sync_all().is_err() && unsafe { libc::fsync(directory.as_raw_fd()) } != 0 {
-        return Err(unconfirmed(io::Error::last_os_error()));
+    #[cfg(unix)]
+    {
+        let directory = File::open(folder).map_err(unconfirmed)?;
+        // F_FULLFSYNC where the volume supports it on a folder, else fsync.
+        // SAFETY: the descriptor is open for the duration of the call.
+        if directory.sync_all().is_err() && unsafe { libc::fsync(directory.as_raw_fd()) } != 0 {
+            return Err(unconfirmed(io::Error::last_os_error()));
+        }
+    }
+    #[cfg(windows)]
+    {
+        // Nothing to flush: MOVEFILE_WRITE_THROUGH already flushed the move.
     }
     Ok(())
 }
@@ -383,19 +487,22 @@ mod tests {
         assert!(matches!(write_new(b"new", &file), Err(WriteError::Exists)));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "old");
 
-        let target = dir.join("elsewhere.txt");
-        std::fs::write(&target, "precious").unwrap();
-        let link = dir.join("Linked.csv");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
-        assert!(matches!(write_new(b"new", &link), Err(WriteError::Exists)));
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "precious");
+        #[cfg(unix)]
+        {
+            let target = dir.join("elsewhere.txt");
+            std::fs::write(&target, "precious").unwrap();
+            let link = dir.join("Linked.csv");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            assert!(matches!(write_new(b"new", &link), Err(WriteError::Exists)));
+            assert_eq!(std::fs::read_to_string(&target).unwrap(), "precious");
 
-        // A named pipe without a writer would block an open: it is never opened.
-        let pipe = dir.join("Pipe.csv");
-        let path = c_path(&pipe).unwrap();
-        // SAFETY: a valid NUL-terminated path.
-        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
-        assert!(matches!(write_new(b"new", &pipe), Err(WriteError::Exists)));
+            // A named pipe without a writer would block an open: it is never opened.
+            let pipe = dir.join("Pipe.csv");
+            let path = c_path(&pipe).unwrap();
+            // SAFETY: a valid NUL-terminated path.
+            assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+            assert!(matches!(write_new(b"new", &pipe), Err(WriteError::Exists)));
+        }
 
         // The final move never replaces a name taken after the first check.
         let raced = dir.join("Raced.csv");
@@ -403,10 +510,21 @@ mod tests {
         std::fs::write(&temporary, "new").unwrap();
         std::fs::write(&raced, "theirs").unwrap();
         assert_eq!(
-            rename_new(&temporary, &raced).unwrap_err().raw_os_error(),
-            Some(libc::EEXIST)
+            rename_new(&temporary, &raced).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
         );
         assert_eq!(std::fs::read_to_string(&raced).unwrap(), "theirs");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_existing_file_is_refused_and_left_unchanged() {
+        let dir = scratch("windows-exists");
+        let file = dir.join("Report.csv");
+        std::fs::write(&file, "old").unwrap();
+        assert!(matches!(write_new(b"new", &file), Err(WriteError::Exists)));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "old");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

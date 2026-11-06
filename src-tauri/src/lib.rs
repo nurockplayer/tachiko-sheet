@@ -613,7 +613,12 @@ pub fn run() {
                     app.handle(),
                     e2e::Hooks {
                         quit: request_quit,
+                        // Only macOS routes `NSApplication terminate:`; elsewhere
+                        // the OS's quit already goes through the same leave guard.
+                        #[cfg(target_os = "macos")]
                         terminate: termination::terminate_like_the_os,
+                        #[cfg(not(target_os = "macos"))]
+                        terminate: request_quit,
                     },
                 );
             }
