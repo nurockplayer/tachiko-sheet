@@ -15,7 +15,7 @@ type TrackedCommand = { witness: ViewWitness; dispatch(): Promise<ConfirmedPubli
   | { kind: "history"; direction: "undo" | "redo" }
 );
 export type MutationCommand = TrackedCommand
-  | { kind: "cleanup"; witness: ViewWitness; dispatch(): Promise<WorkbookView> }
+  | { kind: "cleanup"; witness: ViewWitness; recordHistory: boolean; dispatch(): Promise<ConfirmedPublication> }
   | { kind: "summary"; witness: ViewWitness; dispatch(): Promise<{ publication: PublicationProjection }> };
 export type MutationCompletion =
   | { kind: "published"; focusTarget: FieldTarget | null; addedEntities?: readonly string[] }
@@ -172,8 +172,10 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         port.markNotSaved();
         port.setCurrentness("current");
       } else if (command.kind === "cleanup") {
-        const next = await command.dispatch();
+        const confirmed = await command.dispatch();
+        const next = confirmed.view;
         published = true;
+        if (command.recordHistory) port.installHistory(confirmScalarHistory(before.history, next, confirmed.publication, true));
         port.clearResults();
         port.endInitial(command.witness.occurrence);
         port.installView(next);
