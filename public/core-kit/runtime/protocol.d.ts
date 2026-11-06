@@ -16,7 +16,8 @@ export type BootstrapProjection = {
     collections: CollectionSummary[];
     keyed_grouped_sum_definition_ids?: string[];
 };
-export type CapacityLimits = Record<CapacityLimitName, number>;
+/** `projection_bytes` refuses an import; it is not a counted resource. */
+export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes">, number>;
 export type CapacityUsage = {
     collections: number;
     total_entities: number;
@@ -418,7 +419,7 @@ export type FailureProjection = {
     row_count?: number;
 };
 /** Runtime accounting limit named by a capacity refusal. */
-export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges";
+export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges" | "projection_bytes";
 export type CapacityFailureProjection = FailureProjection & {
     code: "capacity_exceeded";
     limit: CapacityLimitName;
@@ -493,6 +494,12 @@ export type TrackerCommand = {
         entity: string;
         input: ScalarEditInput;
     }>;
+} | {
+    type: "change_column_type";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    field_type: string;
 } | {
     type: "set_column_requiredness";
     expected_revision: string;

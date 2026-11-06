@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1References, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1NoteText, a1References, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 
 describe("isTachikoFormulaSource", () => {
   it("treats a bracketed reference as Tachiko source and anything else as Excel text", () => {
@@ -57,12 +57,14 @@ describe("utf8SpanToUtf16", () => {
   });
 });
 
-describe("a1TranslationNeedsPreview", () => {
-  it("asks for confirmation when the source changes or Work adds a note", () => {
-    expect(a1TranslationNeedsPreview("B2*C2", { source: "B2*C2", notes: [] })).toBe(false);
-    expect(a1TranslationNeedsPreview(" B2*C2 ", { source: "B2*C2", notes: [] })).toBe(false);
-    expect(a1TranslationNeedsPreview("B2*C2", { source: "[.impact]*[.friction]", notes: [] })).toBe(true);
-    expect(a1TranslationNeedsPreview("B2*C2", { source: "B2*C2", notes: ["relative_copy_semantics_changed"] })).toBe(true);
+describe("a1NoteText", () => {
+  it("joins Work's notes into one line, or nothing when there are none", () => {
+    expect(a1NoteText([])).toBe(null);
+    expect(a1NoteText(["relative_copy_semantics_changed"])).toContain("Copying this formula");
+    expect(a1NoteText(["relative_copy_semantics_changed", "range_tracks_collection"]))
+      .toContain("Copying this formula");
+    expect(a1NoteText(["relative_copy_semantics_changed", "range_tracks_collection"]))
+      .toContain("entire column");
   });
 });
 

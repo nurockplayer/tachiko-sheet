@@ -22,7 +22,7 @@ Sheet UI / application (unchanged)
 - Each channel attaches a fresh host **generation**; older frames are refused.
   A transport failure or runtime panic is terminal: the resident work is
   discarded and the in-flight operation is an unknown outcome, never replayed.
-- The Rust dependency is pinned to an immutable Work revision: the same `6fcc2ab47aed933ce976b735962b6eb73d94811e` source as the
+- The Rust dependency is pinned to an immutable Work revision: the same `71032325756b2b448cbef58f7ead47d29683565c` source as the
   Web kit. Each re-pin's reproducible exports and hashes are recorded on
   [#246](https://github.com/nurockplayer/tachiko-sheet/issues/246) (the first
   in [the #160 handback](160-kit-handback.md)). Re-pin only together with a
@@ -97,8 +97,22 @@ automatically. The release body comes from `docs/release-notes.md`.
 
 The desktop host builds on Windows and Linux as well. CI
 (`.github/workflows/desktop-platforms.yml`) runs the host unit tests and builds
-the bundles on every pull request and push to `main` that touches the host, and
-retains them as a 7-day artifact. On the matching OS, build locally with:
+the bundles on every pull request and push to `main` that touches the host or
+`tests/desktop/`, and retains them as a 7-day artifact. It then builds the same
+app as the packaged e2e variant (`--no-bundle --features e2e`) and starts that
+executable on each OS with `tests/desktop/packaged-smoke.mjs`, under `xvfb-run`
+on Linux. That run proves the packaged app starts and serves the page from its
+own origin (`http://tauri.localhost` on Windows, `tauri://localhost` on Linux),
+imports a CSV through the native runtime and shows it, publishes a cell edit,
+asks about unsaved work on both Close and Quit and keeps the app, window and
+edit when the answer is Cancel, writes a CSV export through the host's
+create-new-file save, refuses an existing export name without touching the
+file, and exits with code 0 when the answer is Discard.
+
+What CI still does not prove on Windows and Linux: a real install from the NSIS
+installer or AppImage, a real close/quit dialog a person operates (the answer is
+scripted), and real menus (the test reaches the same host paths through the e2e
+channel). On the matching OS, build locally with:
 
 ```bash
 pnpm desktop:build:windows   # NSIS installer under src-tauri/target/x86_64-pc-windows-msvc/release/bundle

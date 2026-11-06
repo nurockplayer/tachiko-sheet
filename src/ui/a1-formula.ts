@@ -1,12 +1,5 @@
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 
-/** Work's readable translation of one Excel A1 formula, and the text it came from. */
-export interface A1TranslationPreview {
-  typed: string;
-  source: string;
-  notes: A1TranslationNote[];
-}
-
 /**
  * Tachiko references are always bracketed (`[.field]`), so any text without a
  * `[` is Excel's A1 syntax and needs Work's read-only translation first.
@@ -39,12 +32,9 @@ export function utf8SpanToUtf16(text: string, span: { start: number; end: number
   return [start, Math.max(start, toIndex(span.end))];
 }
 
-/** Whether a translation differs from the typed text, so it needs confirmation. */
-export function a1TranslationNeedsPreview(
-  text: string,
-  outcome: { source: string; notes: readonly A1TranslationNote[] },
-): boolean {
-  return outcome.source !== text.trim() || outcome.notes.length > 0;
+/** Work's notes as one line, or nothing when the formula has none. */
+export function a1NoteText(notes: readonly A1TranslationNote[]): string | null {
+  return notes.length ? notes.map((note) => A1_NOTE_TEXT[note]).join(" ") : null;
 }
 
 /**
