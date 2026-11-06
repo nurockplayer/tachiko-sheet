@@ -8,6 +8,10 @@ does not replace its existing role, Ready, acceptance, review or merge rules.
 
 At fresh intake, read the upstream [Mission](https://github.com/nurockplayer/tachiko-work/blob/main/docs/vision/mission.md), its [Constitution](https://github.com/nurockplayer/tachiko-work/blob/main/docs/vision/product-constitution.md) when purpose or scope is at issue, and [Work #486](https://github.com/nurockplayer/tachiko-work/issues/486) for the founder's clarification. Sheet is the first major client serving that mission, not a replacement mission or the boundary of Work. Revisit this context when changing target users, client boundaries, release claims or priorities, not on every unchanged loop. Handoffs are pointers plus new information; routine tasks need no extra mission checklist.
 
+## Saying something is absent or undecided
+
+Before saying a decision, policy or file is absent, undecided or superseded, search both repositories: `git -C <clone> fetch` then `git -C <clone> grep -i <term> origin/main` in Work and Sheet, and `gh search issues <term> --repo nurockplayer/tachiko-work --repo nurockplayer/tachiko-sheet` (all states, comments included; `gh search prs` likewise). `gh search code` has returned nothing on these repositories and GitHub's license API returns 404 on Work's dual license, so neither is evidence. Say "not found in <what you searched>", never "does not exist". A README or an Issue comment is not the authority: apply Work's [knowledge authority](https://github.com/nurockplayer/tachiko-work/blob/main/docs/governance/knowledge-authority.md).
+
 ## Current authority and routing
 
 Read live [#1](https://github.com/nurockplayer/tachiko-sheet/issues/1), [#2](https://github.com/nurockplayer/tachiko-sheet/issues/2), `docs/DELIVERY.md`, and the active Issue/PR. Use `docs/UPSTREAM.md` for relevant core authority. #1 owns the product Mission; #2 holds the current handoff and explicit founder routing records. Read `docs/PRODUCT-PRINCIPLES.md` once at intake and use `docs/MVP-EXECUTION.md` as the compact execution map.
