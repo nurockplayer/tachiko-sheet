@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -72,17 +72,42 @@ describe("rowViewOrder", () => {
 
   it("filters on the displayed text without case sensitivity and trims the query", () => {
     const rows = [alpha, beta, gamma];
-    expect(rowViewOrder(rows, columns, { filter: { field: "c-name", text: "  BET " } }).map(row => row.id))
+    expect(rowViewOrder(rows, columns, { filters: [{ field: "c-name", kind: "contains" as const, text: "  BET " }] }).map(row => row.id))
       .toEqual(["beta"]);
-    expect(rowViewOrder(rows, columns, { filter: { field: "c-name", text: "   " } })).toEqual(rows);
+    expect(rowViewOrder(rows, columns, { filters: [{ field: "c-name", kind: "contains" as const, text: "   " }] })).toEqual(rows);
   });
 
   it("keeps edited or added rows visible even when they stop matching the filter", () => {
     const kept = new Set(["beta"]);
     expect(rowViewOrder([alpha, beta, gamma], columns, {
-      filter: { field: "c-name", text: "alpha" },
+      filters: [{ field: "c-name", kind: "contains" as const, text: "alpha" }],
       kept,
     }).map(row => row.id)).toEqual(["alpha", "beta"]);
+  });
+});
+
+describe("multiple filters", () => {
+  const dateColumn: TableColumn = { id: "due", key: "due", display_name: "Due", field_type: "date", required: false };
+  const dated = { ...alpha, fields: [...alpha.fields, field("alpha", "due", { kind: "date", value: "2026-04-10" })] };
+  it("ANDs displayed values and numeric comparisons, excluding blanks even for not equal", () => {
+    expect(rowViewOrder([alpha, beta, blankPrice], columns, { filters: [
+      { field: "c-name", kind: "values", values: ["Alpha", "Delta"] },
+      { field: "c-price", kind: "number", op: "<>", value: 2 },
+    ] }).map(row => row.id)).toEqual(["alpha"]);
+    expect(rowViewOrder([alpha, beta, blankPrice], columns, { filters: [{ field: "c-price", kind: "number", op: ">=", value: 10 }] }).map(row => row.id)).toEqual(["alpha"]);
+  });
+  it("compares stored dates and excludes missing dates", () => {
+    expect(rowViewOrder([dated, beta], [...columns, dateColumn], { filters: [{ field: "due", kind: "date", op: ">=", value: "2026-04-01" }] }).map(row => row.id)).toEqual(["alpha"]);
+    expect(rowViewOrder([dated, beta], [...columns, dateColumn], { filters: [{ field: "due", kind: "date", op: "<>", value: "2026-04-10" }] })).toEqual([]);
+  });
+  it("sorts distinct displayed choices with blank first and reports truncation", () => {
+    expect(rowViewValueChoices([beta, blankName, alpha, alpha], columns[0]!, 2)).toEqual({ values: ["", "Alpha"], truncated: true });
+  });
+  it("drops only the removed column filter and invalidates kept rows", () => {
+    const settings: RowViewSettings = { filters: [{ field: "c-name", kind: "contains", text: "a" }, { field: "c-price", kind: "number", op: ">=", value: 2 }], kept: new Set(["beta"]) };
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name"])).filters).toEqual([settings.filters![0]]);
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name"])).kept).toBeUndefined();
+    expect(rowViewDisplaySignature(settings)).toBe(rowViewDisplaySignature({ filters: [...settings.filters!].reverse() }));
   });
 });
 
@@ -100,21 +125,19 @@ describe("rowViewPasteRefusal", () => {
     expect(rowViewPasteRefusal({}, 2, 2, 3)).toBe(null);
     expect(rowViewPasteRefusal({ sort: { field: "c-name", direction: "asc" } }, 2, 2, 3))
       .toBe("Clear the sort to paste past the last row.");
-    expect(rowViewPasteRefusal({ filter: { field: "c-name", text: "a" } }, 2, 2, 3))
+    expect(rowViewPasteRefusal({ filters: [{ field: "c-name", kind: "contains" as const, text: "a" }] }, 2, 2, 3))
       .toBe("Clear the filter to paste past the visible rows.");
-    expect(rowViewPasteRefusal({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "a" } }, 2, 2, 3))
+    expect(rowViewPasteRefusal({ sort: { field: "c-name", direction: "asc" }, filters: [{ field: "c-name", kind: "contains" as const, text: "a" }] }, 2, 2, 3))
       .toBe("Clear the sort and filter to paste past the visible rows.");
   });
 
   it("allows a paste that ends on the last displayed row", () => {
-    const settings = { sort: { field: "c-name", direction: "asc" as const }, filter: { field: "c-name", text: "a" } };
+    const settings = { sort: { field: "c-name", direction: "asc" as const }, filters: [{ field: "c-name", kind: "contains" as const, text: "a" }] };
     expect(rowViewPasteRefusal(settings, 0, 2, 2)).toBe(null);
     expect(rowViewPasteRefusal(settings, 1, 2, 3)).toBe(null);
   });
 
-  it("ignores a filter whose text is blank", () => {
-    expect(rowViewPasteRefusal({ filter: { field: "c-name", text: "   " } }, 2, 2, 3)).toBe(null);
-  });
+
 });
 
 describe("rowViewRecordForOccurrence", () => {
@@ -134,24 +157,24 @@ describe("rowViewRecordForOccurrence", () => {
 
 describe("rowViewSettingsForColumns", () => {
   it("drops settings that reference a removed column", () => {
-    const settings = { sort: { field: "c-name", direction: "asc" as const }, filter: { field: "c-price", text: "1" }, kept: new Set(["alpha"]) };
+    const settings = { sort: { field: "c-name", direction: "asc" as const }, filters: [{ field: "c-price", kind: "contains" as const, text: "1" }], kept: new Set(["alpha"]) };
     expect(rowViewSettingsForColumns(settings, new Set(["c-price"]))).toEqual({
-      sort: undefined, filter: { field: "c-price", text: "1" }, kept: new Set(["alpha"]),
+      sort: undefined, filters: [{ field: "c-price", kind: "contains" as const, text: "1" }], kept: new Set(["alpha"]),
     });
     expect(rowViewSettingsForColumns(settings, new Set(["c-name"]))).toEqual({
-      sort: { field: "c-name", direction: "asc" }, filter: undefined, kept: undefined,
+      sort: { field: "c-name", direction: "asc" }, filters: undefined, kept: undefined,
     });
   });
 
   it("keeps settings through a rename, which leaves the id unchanged", () => {
-    const settings = { sort: { field: "c-name", direction: "asc" as const }, filter: { field: "c-price", text: "1" }, kept: new Set(["alpha"]) };
+    const settings = { sort: { field: "c-name", direction: "asc" as const }, filters: [{ field: "c-price", kind: "contains" as const, text: "1" }], kept: new Set(["alpha"]) };
     expect(rowViewSettingsForColumns(settings, new Set(["c-name", "c-price"]))).toBe(settings);
   });
 });
 
 describe("confirmed insertion visibility", () => {
   const added = row("added", { name: "Zeta", price: 99 });
-  const filtered = { filter: { field: "c-name", text: "alpha" } };
+  const filtered = { filters: [{ field: "c-name", kind: "contains" as const, text: "alpha" }] };
 
   it("keeps a reported inserted row visible under the active filter", () => {
     const settings = rowViewKeepingRows(filtered, ["added"]);
@@ -179,9 +202,9 @@ describe("confirmed insertion visibility", () => {
 
   it("is discarded when the filter changes or is cleared, but kept when re-applied unchanged", () => {
     const settings = rowViewKeepingRows(filtered, ["added"]);
-    expect(rowViewSettingsForFilter(settings, "c-name", "alpha").kept).toBe(settings.kept);
-    expect(rowViewSettingsForFilter(settings, "c-name", "beta").kept).toBeUndefined();
-    expect(rowViewSettingsForFilter(settings, "c-name", "  ").kept).toBeUndefined();
+    expect(rowViewSettingsForFilter(settings, "c-name", { field: "c-name", kind: "contains", text: "alpha" }).kept).toBe(settings.kept);
+    expect(rowViewSettingsForFilter(settings, "c-name", { field: "c-name", kind: "contains", text: "beta" }).kept).toBeUndefined();
+    expect(rowViewSettingsForFilter(settings, "c-name", null).kept).toBeUndefined();
   });
 });
 
@@ -195,12 +218,12 @@ describe("rowViewDisplaySignature", () => {
   });
 
   it("changes with the filter and keeps the sort and filter apart", () => {
-    const filtered = rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "a" } });
+    const filtered = rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filters: [{ field: "c-name", kind: "contains" as const, text: "a" }] });
     expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } })).not.toBe(filtered);
-    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "b" } })).not.toBe(filtered);
-    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filter: { field: "c-name", text: "a" } })).toBe(filtered);
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filters: [{ field: "c-name", kind: "contains" as const, text: "b" }] })).not.toBe(filtered);
+    expect(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" }, filters: [{ field: "c-name", kind: "contains" as const, text: "a" }] })).toBe(filtered);
     // Each part is delimited, so a filter text cannot impersonate a sort.
-    expect(rowViewDisplaySignature({ filter: { field: "c-name", text: "asc" } }))
+    expect(rowViewDisplaySignature({ filters: [{ field: "c-name", kind: "contains" as const, text: "asc" }] }))
       .not.toBe(rowViewDisplaySignature({ sort: { field: "c-name", direction: "asc" } }));
   });
 

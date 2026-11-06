@@ -3242,3 +3242,7 @@ body { margin: 0; }
 }
 
 .ts-grid--drag-selecting { user-select: none; }
+
+.ts-filter-values { max-height: 180px; overflow-y: auto; }
+.ts-filter-values label { display: flex; align-items: center; gap: 0.35rem; }
+.ts-row-view-filter .ts-filter-values input { width: auto; }
