@@ -71,8 +71,9 @@ try {
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("grid", { name: "Table", exact: true }).getByRole("columnheader", { name: "Item", exact: true }).hover();
   await page.getByRole("button", { name: "Column actions for Item", exact: true }).click();
-  await page.getByRole("button", { name: "Filter…", exact: true }).focus();
-  await page.getByRole("button", { name: "Filter…", exact: true }).press("Enter");
+  // A real click: the grid must get its height back when the replace area closes,
+  // or the short grid clips this menu and the row actions below take the click.
+  await page.getByRole("button", { name: "Filter…", exact: true }).click();
   await page.getByLabel("Filter Item", { exact: true }).fill("apple"); await page.getByLabel("Filter Item", { exact: true }).press("Enter"); await ready();
   await page.keyboard.press("ControlOrMeta+F"); await find.fill("Red"); await page.getByRole("button", { name: "Replace…" }).click(); await replacement.fill("Green");
   await page.getByRole("button", { name: "Preview replace" }).click(); await page.getByRole("button", { name: "Replace 1 cell", exact: true }).click();

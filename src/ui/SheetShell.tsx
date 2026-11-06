@@ -1927,7 +1927,7 @@ export function SheetShell(props: SheetShellProps) {
       grid.style.removeProperty("--ts-grid-available-height");
       grid.style.removeProperty("--ts-sales-grid-max-height");
     };
-  }, [view, tab, currentness, errorMessage, busy, commitPending, salesCatalogLayout]);
+  }, [view, tab, currentness, errorMessage, busy, commitPending, salesCatalogLayout, find !== null, replaceDraft !== null, replacePreviewId, replaceMessage]);
 
   useEffect(() => {
     onDraftChangeRef.current(draftActive);
