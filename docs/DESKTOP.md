@@ -85,6 +85,21 @@ it for an existing release, start the workflow by hand with the tag.
 
 Homebrew does not change the Gatekeeper limit below.
 
+## Build on Windows and Linux
+
+The desktop host builds on Windows and Linux as well. CI
+(`.github/workflows/desktop-platforms.yml`) runs the host unit tests and builds
+the bundles on every pull request and push to `main` that touches the host, and
+retains them as a 7-day artifact. On the matching OS, build locally with:
+
+```bash
+pnpm desktop:build:windows   # NSIS installer under src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+pnpm desktop:build:linux     # AppImage + .deb under src-tauri/target/x86_64-unknown-linux-gnu/release/bundle
+```
+
+These bundles are **unsigned**: Windows SmartScreen and the Linux package
+tools show an unknown-publisher warning, and there is no code signing.
+
 ## Current limits
 
 - **Unsigned preview.** The app is ad-hoc signed and not notarized, so
