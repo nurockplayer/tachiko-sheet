@@ -30,9 +30,12 @@ import {
   formulaSubmitHandoffOutcome,
   formulaReferenceInsertion,
   formulaReferenceToken,
+  hiddenRowTargetLabel,
   insertFormulaReference,
   isFormulaCell,
   positionedAfterFormulaSubmit,
+  rowLabel,
+  tableAdmitsFormulas,
   type FormulaGridPosition,
   type FormulaHandoffGrid,
   type FormulaSubmitHandoff, formulaBarSource, formulaColumnNameHint } from "./formula-bar.js";
@@ -688,5 +691,39 @@ describe("formulaColumnNameHint", () => {
     expect(formulaColumnNameHint("Hours*Rate", 20, columns)).toBeNull();
     expect(formulaColumnNameHint("Hoursly", 1, columns)).toBeNull();
     expect(formulaColumnNameHint("Rate*2", 1, columns)).toBeNull();
+  });
+});
+
+describe("rowLabel", () => {
+  it("names a row by its first readable value, never an internal ID", () => {
+    expect(rowLabel(plainRow, columns)).toBe("Rent");
+    expect(rowLabel(formulaRow, columns)).toBe("Reserve");
+    expect(rowLabel({ id: "row-4", key: "row-4", fields: [field("e4", "task", { kind: "text", value: "   " })] }, columns)).toBe("");
+    expect(rowLabel({ id: "row-5", key: "row-5", fields: [] }, columns)).toBe("");
+  });
+
+  it("falls back to a number in the first column", () => {
+    expect(rowLabel({ id: "row-6", key: "row-6", fields: [field("e6", "task", { kind: "number", value: 42 })] }, columns)).toBe("42");
+  });
+});
+
+describe("hiddenRowTargetLabel", () => {
+  it("names a hidden cleanup target by its first value when it has one", () => {
+    expect(hiddenRowTargetLabel("PEN", "Name")).toBe("Hidden row “PEN”, Name");
+    expect(hiddenRowTargetLabel("", "Name")).toBe("Hidden row, Name");
+  });
+});
+
+describe("tableAdmitsFormulas", () => {
+  it("keeps admitting formulas after the first formula withdraws the native profile", () => {
+    // Work drops native_table_profile once a formula value exists, yet keeps
+    // accepting formula updates: the projected formula is the evidence.
+    expect(tableAdmitsFormulas(table(false, { rows: [formulaRow, plainRow] }))).toBe(true);
+    expect(tableAdmitsFormulas(table(false, { rows: [plainRow, scalarRow] }))).toBe(false);
+    expect(tableAdmitsFormulas(table(true))).toBe(true);
+  });
+
+  it("never admits formulas in a tracker, whatever its rows project", () => {
+    expect(tableAdmitsFormulas(table(false, { rows: [formulaRow], tracker: true }))).toBe(false);
   });
 });
