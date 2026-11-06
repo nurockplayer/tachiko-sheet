@@ -97,7 +97,7 @@ import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } 
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
 import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
@@ -1287,10 +1287,17 @@ export function SheetShell(props: SheetShellProps) {
       if (error) { setFilterDraft({ ...draft, attempted: true }); return; }
       if (draft.mode === "values" && !draft.checked.length) return;
       const filter: RowViewFilter | null = draft.mode === "contains" ? { field: column.id, kind: "contains", text: draft.text }
-        : draft.mode === "values" ? (!choices.truncated && draft.checked.length === choices.values.length ? null : { field: column.id, kind: "values", values: draft.checked })
+        : draft.mode === "values" ? (rowViewChoicesAllChecked(choices, draft.checked) ? null : { field: column.id, kind: "values", values: draft.checked })
         : column.field_type === "date" ? { field: column.id, kind: "date", op: draft.op, value: draft.text }
         : { field: column.id, kind: "number", op: draft.op, value: Number(draft.text) };
       applyGridFilter(column.id, filter); close(element);
+    };
+    // An IME's Enter confirms the composition; it must not apply the filter.
+    const textKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+      const action = rowViewFilterKeyAction({ key: event.key, composing: isComposingEvent(event) || props.appearancePreference.getSnapshot().composing, keyCode: event.nativeEvent.keyCode });
+      if (!action) { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); } return; }
+      event.preventDefault(); event.stopPropagation();
+      if (action === "cancel") { setFilterDraft(null); close(event.currentTarget); } else apply(event.currentTarget);
     };
     const ops: RowViewComparison[] = ["=", "<>", "<", "<=", ">", ">="];
     const labels = column.field_type === "date" ? ["on", "not on", "before", "on or before", "after", "on or after"] : ["is", "is not", "less than", "at most", "more than", "at least"];
@@ -1303,18 +1310,13 @@ export function SheetShell(props: SheetShellProps) {
         <option value="contains">Contains</option><option value="values">Pick values</option>
         {column.field_type === "number" || column.field_type === "date" ? <option value="condition">Condition</option> : null}
       </select>
-      {draft.mode === "contains" ? <input autoFocus aria-label={`Filter ${column.display_name}`} placeholder="Contains…" value={draft.text} onChange={event => setFilterDraft({ ...draft, text: event.currentTarget.value })} onKeyDown={event => {
-        const action = rowViewFilterKeyAction({ key: event.key, composing: isComposingEvent(event) || props.appearancePreference.getSnapshot().composing, keyCode: event.nativeEvent.keyCode });
-        if (!action) { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); } return; }
-        event.preventDefault(); event.stopPropagation();
-        if (action === "cancel") { setFilterDraft(null); close(event.currentTarget); } else apply(event.currentTarget);
-      }} /> : draft.mode === "values" ? <>
+      {draft.mode === "contains" ? <input autoFocus aria-label={`Filter ${column.display_name}`} placeholder="Contains…" value={draft.text} onChange={event => setFilterDraft({ ...draft, text: event.currentTarget.value })} onKeyDown={textKeyDown} /> : draft.mode === "values" ? <>
         <div className="ts-filter-value-actions"><button type="button" className="ts-button ts-button--ghost" onClick={() => setFilterDraft({ ...draft, checked: choices.values })}>Select all</button><button type="button" className="ts-button ts-button--ghost" onClick={() => setFilterDraft({ ...draft, checked: [] })}>Clear</button></div>
         <div className="ts-filter-values">{choices.values.map(value => <label key={value}><input type="checkbox" checked={draft.checked.includes(value)} onChange={event => setFilterDraft({ ...draft, checked: event.currentTarget.checked ? [...draft.checked, value] : draft.checked.filter(item => item !== value) })} />{value || "(Blank)"}</label>)}</div>
         {choices.truncated ? <p>Showing the first 200 values. Use Contains for the rest.</p> : null}
       </> : <>
         <select aria-label={`Condition for ${column.display_name}`} value={draft.op} onChange={event => setFilterDraft({ ...draft, op: event.currentTarget.value as RowViewComparison })}>{ops.map((op, i) => <option key={op} value={op}>{labels[i]}</option>)}</select>
-        <input aria-label={`Value for ${column.display_name}`} type={column.field_type === "date" ? "date" : "text"} value={draft.text} onChange={event => setFilterDraft({ ...draft, text: event.currentTarget.value })} />
+        <input aria-label={`Value for ${column.display_name}`} type={column.field_type === "date" ? "date" : "text"} value={draft.text} onChange={event => setFilterDraft({ ...draft, text: event.currentTarget.value })} onKeyDown={textKeyDown} />
         {error && (draft.text.trim() || draft.attempted) ? <span role="alert">{error}</span> : null}
       </>}
       <button type="submit" className="ts-button" disabled={draft.mode === "values" && !draft.checked.length}>Apply</button>

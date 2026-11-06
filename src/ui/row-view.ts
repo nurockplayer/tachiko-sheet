@@ -226,6 +226,11 @@ export function rowViewValueChoices(rows: readonly TableRow[], column: TableColu
   return { values: values.slice(0, limit), truncated: values.length > limit };
 }
 
+/** Whether every value on offer is checked, so the filter would hide nothing. A checked value an edit has since removed doesn't count. */
+export function rowViewChoicesAllChecked(choices: { values: readonly string[]; truncated: boolean }, checked: readonly string[]): boolean {
+  return !choices.truncated && choices.values.every(value => checked.includes(value));
+}
+
 function matchesFilter(row: TableRow, column: TableColumn, filter: RowViewFilter): boolean {
   const display = cellDisplay(row, column).text;
   if (filter.kind === "contains") return display.trim().toLowerCase().includes(filter.text.trim().toLowerCase());

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewChoicesAllChecked, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -295,5 +295,17 @@ describe("rowViewFilterKeyAction", () => {
     expect(rowViewFilterKeyAction({ key: "Enter", composing: true })).toBe(null);
     expect(rowViewFilterKeyAction({ key: "Enter", keyCode: 229 })).toBe(null);
     expect(rowViewFilterKeyAction({ key: "p" })).toBe(null);
+  });
+});
+
+describe("rowViewChoicesAllChecked", () => {
+  it("compares membership, not counts", () => {
+    expect(rowViewChoicesAllChecked({ values: ["B", "C"], truncated: false }, ["A", "B"])).toBe(false);
+    expect(rowViewChoicesAllChecked({ values: ["B", "C"], truncated: false }, ["C", "B"])).toBe(true);
+    expect(rowViewChoicesAllChecked({ values: ["B", "C"], truncated: false }, ["A", "B", "C"])).toBe(true);
+  });
+
+  it("never treats a truncated list as complete", () => {
+    expect(rowViewChoicesAllChecked({ values: ["B"], truncated: true }, ["B"])).toBe(false);
   });
 });
