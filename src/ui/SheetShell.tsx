@@ -4548,7 +4548,7 @@ export function SheetShell(props: SheetShellProps) {
               onApplyPreview={applyA1Preview}
               onKeepEditingPreview={keepEditingA1Preview}
             />
-            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={event => { if (gridWindowed) onGridScroll(event); repositionOpenColumnMenu(); }}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={() => { if (gridWindowed) onGridScroll(); repositionOpenColumnMenu(); }}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.
