@@ -343,7 +343,7 @@ try {
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   const notices = page.locator(".ts-notices");
   const noticeLinks = notices.getByRole("link");
-  assert.deepEqual(await noticeLinks.allTextContents(), ["app third-party licenses", "Work third-party licenses", "MIT", "Apache-2.0"]);
+  assert.deepEqual(await noticeLinks.allTextContents(), ["app licenses", "Work licenses", "MIT", "Apache-2.0"]);
   assert.deepEqual(await noticeLinks.evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [
     "/THIRD_PARTY_LICENSES.md", "/core-kit/notices/THIRD_PARTY_LICENSES.md", "/core-kit/notices/LICENSE-MIT", "/core-kit/notices/LICENSE-APACHE",
   ]);

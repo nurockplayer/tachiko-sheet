@@ -2381,9 +2381,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         />
       {reloadRequired || startupUnavailable ? null : <footer className="ts-notices">
         <span>Tachiko Sheet · software licenses: </span>
-        <a href="/THIRD_PARTY_LICENSES.md">app third-party licenses</a>
+        <a href="/THIRD_PARTY_LICENSES.md">app licenses</a>
         <span aria-hidden="true"> · </span>
-        <a href="/core-kit/notices/THIRD_PARTY_LICENSES.md">Work third-party licenses</a>
+        <a href="/core-kit/notices/THIRD_PARTY_LICENSES.md">Work licenses</a>
         <span aria-hidden="true"> · </span>
         <a href="/core-kit/notices/LICENSE-MIT">MIT</a>
         <span aria-hidden="true"> · </span>

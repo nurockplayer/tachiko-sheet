@@ -1257,8 +1257,8 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
       const compact = width <= 599;
       const legalLabel = `${width}x${height} ${profile}/${legalNotice.density} legal footer`;
       const expectedLinks = [
-        { text: "app third-party licenses", href: "/THIRD_PARTY_LICENSES.md" },
-        { text: "Work third-party licenses", href: "/core-kit/notices/THIRD_PARTY_LICENSES.md" },
+        { text: "app licenses", href: "/THIRD_PARTY_LICENSES.md" },
+        { text: "Work licenses", href: "/core-kit/notices/THIRD_PARTY_LICENSES.md" },
         { text: "MIT", href: "/core-kit/notices/LICENSE-MIT" },
         { text: "Apache-2.0", href: "/core-kit/notices/LICENSE-APACHE" },
       ];
