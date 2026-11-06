@@ -840,6 +840,8 @@ export function SheetShell(props: SheetShellProps) {
   const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
+  // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
+  // cancelled, and the Mac app's Cmd+X, Cmd+C and Cmd+V go through that menu.
   useEffect(() => {
     const enableGridClipboard = (event: Event) => {
       const active = document.activeElement;
