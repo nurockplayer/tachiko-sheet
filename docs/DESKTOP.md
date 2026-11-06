@@ -81,7 +81,8 @@ Publishing a `v*` release runs `.github/workflows/update-cask.yml`, which checks
 DMG against `SHA256SUMS.txt` and points the cask at it. The run needs the
 `TAP_DEPLOY_KEY` secret (a write deploy key on the tap only) and fails visibly
 without it. The DMG must be named `Tachiko-Sheet-<tag>-macos-universal.dmg`. To
-re-run it for an existing release, start the workflow by hand with the tag.
+re-run it for an existing release with a universal DMG, start the workflow by hand
+with the tag.
 
 Homebrew does not change the Gatekeeper limit below.
 

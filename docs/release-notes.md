@@ -9,4 +9,4 @@ These downloads aren't signed yet, so your computer warns you the first time. Ch
 
 **Windows 10 or 11 (x64):** run the installer. When SmartScreen says it protected your PC, choose More info, then Run anyway.
 
-**Linux (x64):** install the deb with `sudo apt install ./Tachiko-Sheet-*.deb` (Ubuntu 22.04 or later). Or make the AppImage executable with `chmod +x` and run it; the AppImage needs FUSE 2, which Ubuntu leaves out by default: `sudo apt install libfuse2t64` on 24.04, `sudo apt install libfuse2` on 22.04.
+**Linux (x64, Ubuntu 24.04 or later):** install the deb with `sudo apt install ./Tachiko-Sheet-*.deb`. Or make the AppImage executable with `chmod +x` and run it; the AppImage needs FUSE 2, which Ubuntu leaves out by default: `sudo apt install libfuse2t64`.
