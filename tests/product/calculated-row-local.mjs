@@ -25,9 +25,13 @@ const projection = () => page.evaluate(() => window.__calculatedRow.workers[0].t
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 
-async function add(name, type, fill) {
+async function openAddColumn() {
   await page.getByRole("button", { name: "+ column", exact: true }).click();
-  const d = dialog("Add column");
+  return dialog("Add column");
+}
+
+async function add(name, type, fill) {
+  const d = await openAddColumn();
   await d.getByLabel("Column name", { exact: true }).fill(name);
   await d.getByLabel("Column type", { exact: true }).selectOption(type);
   await d.getByLabel("Required", { exact: true }).check();
@@ -144,7 +148,7 @@ try {
     await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click(); await ready();
   }
   await add("Amount", "number", "12.5");
-  let d = dialog("Add column");
+  let d = await openAddColumn();
   await d.getByLabel("Column name", { exact: true }).fill("Double");
   await d.getByLabel("Column type", { exact: true }).selectOption("number");
   await d.getByLabel("Required", { exact: true }).uncheck();
