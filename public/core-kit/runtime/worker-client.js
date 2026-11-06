@@ -124,6 +124,9 @@ export class WorkerDesignerClient {
     async clearField(expectedRevision, target) {
         return expectResponse("published", await this.#command({ type: "edit_scalar", expected_revision: expectedRevision, target, input: { kind: "clear" } }));
     }
+    async changeColumnType(expectedRevision, collection, field, fieldType) {
+        return this.trackerCommand({ type: "change_column_type", expected_revision: expectedRevision, collection, field, field_type: fieldType });
+    }
     async setColumnRequiredness(expectedRevision, collection, field, required) {
         return this.trackerCommand({ type: "set_column_requiredness", expected_revision: expectedRevision, collection, field, required });
     }

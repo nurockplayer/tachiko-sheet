@@ -256,7 +256,7 @@ describe("FormulaBar", () => {
     for (const html of [editable, readOnly]) {
       expect(html.match(/data-testid="formula-bar-reason"/g)).toHaveLength(1);
     }
-    expect(editable).toMatch(/<p class="ts-hint ts-formula-bar-reason"[^>]*data-testid="formula-bar-reason">\s*<\/p>/);
+    expect(editable).toMatch(/<p class="ts-hint ts-formula-bar-reason"[^>]*data-testid="formula-bar-reason"[^>]*>\s*<\/p>/);
     expect(readOnly).toContain(FORMULA_BAR_NON_NATIVE);
   });
 
