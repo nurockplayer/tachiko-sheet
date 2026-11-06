@@ -58,6 +58,7 @@ import { isComposingEvent } from "./composition-event.js";
 import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
+import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
 import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1NoteText, a1References, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
@@ -493,6 +494,7 @@ export function SheetShell(props: SheetShellProps) {
     onQueryGroupTotals,
     onTranslateA1Formula,
     onOpenExample,
+    onOpenTemplate,
     onOpenSaved,
     onSelectCollection = async () => {},
     onCommit,
@@ -3993,6 +3995,9 @@ export function SheetShell(props: SheetShellProps) {
             <button type="button" className="ts-button" onClick={() => void openExample()} disabled={fileActionsLocked} aria-label="Open release plan example">Open</button>
           </div>
         </div>
+        {onOpenTemplate && !recoveryLocked && !startupLocked && import.meta.env.MODE !== "desktop"
+          ? <TemplatePicker disabled={fileActionsLocked} onOpenTemplate={onOpenTemplate} />
+          : null}
       </section>
     );
     const mobileReturning = hasSavedCopies && compactHomeLayout;

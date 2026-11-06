@@ -1690,8 +1690,9 @@ async function auditHomeViewportBounds(page, browser) {
             const headerRect = document.querySelector(".ts-home-head").getBoundingClientRect();
             const grid = document.querySelector(".ts-home-grid");
             const panelOrder = [...grid.querySelectorAll(":scope > section")].map((node) => node.getAttribute("aria-label"));
-            const otherRows = [...document.querySelectorAll(".ts-home-other-row")];
-            const rowActions = otherRows.map((row) => row.querySelector("button, label.ts-home-file-action"));
+            const otherRows = [...document.querySelectorAll(".ts-home-other-row:not(.ts-home-templates *)")];
+            const templateRows = [...document.querySelectorAll(".ts-home-templates .ts-home-other-row")];
+            const rowActions = [...otherRows, ...templateRows].map((row) => row.querySelector("button, label.ts-home-file-action"));
             const actionBoxes = rowActions.map((node) => { const rect = node.getBoundingClientRect(); return { x: rect.x, right: rect.right, width: rect.width, height: rect.height }; });
             const flow = document.querySelector(".ts-home-example-flow");
             const flowRect = flow.getBoundingClientRect();
@@ -1729,6 +1730,7 @@ async function auditHomeViewportBounds(page, browser) {
               folders: document.querySelectorAll('.ts-home-other-row input[type="file"][multiple]').length,
               workFiles: document.querySelectorAll('.ts-home-other-row input[type="file"][accept=".ro"][aria-label="Open work file"]:not([multiple])').length,
               actionNames: otherRows.map((row) => row.querySelector(".ts-home-other-copy strong")?.textContent?.trim()),
+              templateNames: templateRows.map((row) => row.querySelector(".ts-home-other-copy strong")?.textContent?.trim()),
               appearance: document.querySelectorAll(".ts-home-head .ts-appearance-trigger").length,
             };
           });
@@ -1771,6 +1773,7 @@ async function auditHomeViewportBounds(page, browser) {
               await emptyPage.evaluate(() => document.activeElement?.blur());
             }
           }
+          assert.deepEqual(layout.templateNames, ["Budget", "Invoice", "Task tracker", "Gradebook"], "Templates follow the other ways to start");
           assert.equal(layout.rows, 5, "Other ways starts with New table and retains work-file, import, folder, and release-plan example actions");
           assert.deepEqual(layout.actionNames, ["New table", "Open a Tachiko work file", "Import a CSV or Excel file", "Open a project folder", "Release plan example"]);
           assert.equal(layout.imports, 1, "Home retains one real single-file import input");
@@ -2079,7 +2082,7 @@ async function auditHomeViewportBounds(page, browser) {
       label: section.getAttribute("aria-label"),
       rect: (() => { const rect = section.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom }; })(),
     })),
-    actions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
+    actions: [...document.querySelectorAll(".ts-home-other-row:not(.ts-home-templates *) label.ts-home-file-action, .ts-home-other-row:not(.ts-home-templates *) > button")].map((action) => {
       const rect = action.getBoundingClientRect();
       return { label: action.textContent.trim(), x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right };
     }),
@@ -2416,7 +2419,7 @@ async function auditHomeViewportBounds(page, browser) {
           y: exampleActionRect.y,
           bottom: exampleActionRect.bottom,
         },
-        otherActions: [...document.querySelectorAll(".ts-home-other-row label.ts-home-file-action, .ts-home-other-row > button")].map((action) => {
+        otherActions: [...document.querySelectorAll(".ts-home-other-row:not(.ts-home-templates *) label.ts-home-file-action, .ts-home-other-row:not(.ts-home-templates *) > button")].map((action) => {
           const rect = action.getBoundingClientRect();
           return { label: action.textContent.trim(), x: rect.x, right: rect.right, y: rect.y, width: rect.width, height: rect.height };
         }),
