@@ -1257,7 +1257,8 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
       const compact = width <= 599;
       const legalLabel = `${width}x${height} ${profile}/${legalNotice.density} legal footer`;
       const expectedLinks = [
-        { text: "third-party licenses", href: "/core-kit/notices/THIRD_PARTY_LICENSES.md" },
+        { text: "app third-party licenses", href: "/THIRD_PARTY_LICENSES.md" },
+        { text: "Work third-party licenses", href: "/core-kit/notices/THIRD_PARTY_LICENSES.md" },
         { text: "MIT", href: "/core-kit/notices/LICENSE-MIT" },
         { text: "Apache-2.0", href: "/core-kit/notices/LICENSE-APACHE" },
       ];
@@ -1266,7 +1267,7 @@ async function auditWorkbookViewportBounds(page, width, height, profile, expectI
       evidence(legalNotice.text === "Tachiko Sheet · software licenses: ",
         `${legalLabel} preserves the exact notice copy`, legalNotice);
       evidence(JSON.stringify(legalNotice.links.map(({ text, href }) => ({ text, href }))) === JSON.stringify(expectedLinks),
-        `${legalLabel} preserves all three notice destinations and labels in order`, legalNotice);
+        `${legalLabel} preserves all four notice destinations and labels in order`, legalNotice);
       evidence(legalNotice.fontSize === "11px" && legalNotice.lineHeight === "16px" && legalNotice.fontWeight === "400" && legalNotice.boxSizing === "border-box",
         `${legalLabel} uses the approved global legal-notice type recipe`, legalNotice);
       evidence(legalNotice.fontFamily === legalNotice.appFontFamily,

@@ -1,0 +1,74 @@
+name: Sheet third-party notices
+
+# Proves the checked-in THIRD_PARTY_LICENSES.md matches a fresh generation from
+# the locked dependency closure and is built only from allow-listed licenses.
+on:
+  pull_request:
+    paths:
+      - "src-tauri/Cargo.lock"
+      - "src-tauri/Cargo.toml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "scripts/generate-third-party-licenses.mjs"
+      - "scripts/third-party-overrides/**"
+      - "THIRD_PARTY_LICENSES.md"
+      - "public/THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/third-party-notices.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src-tauri/Cargo.lock"
+      - "src-tauri/Cargo.toml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "scripts/generate-third-party-licenses.mjs"
+      - "scripts/third-party-overrides/**"
+      - "THIRD_PARTY_LICENSES.md"
+      - "public/THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/third-party-notices.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheet-third-party-notices-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  notices:
+    name: Notices match a fresh generation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          node-version-file: false
+          version: 12.11.2
+          install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Regenerate and compare the notices
+        run: node scripts/generate-third-party-licenses.mjs --check

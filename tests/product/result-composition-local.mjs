@@ -343,9 +343,9 @@ try {
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   const notices = page.locator(".ts-notices");
   const noticeLinks = notices.getByRole("link");
-  assert.deepEqual(await noticeLinks.allTextContents(), ["third-party licenses", "MIT", "Apache-2.0"]);
+  assert.deepEqual(await noticeLinks.allTextContents(), ["app third-party licenses", "Work third-party licenses", "MIT", "Apache-2.0"]);
   assert.deepEqual(await noticeLinks.evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [
-    "/core-kit/notices/THIRD_PARTY_LICENSES.md", "/core-kit/notices/LICENSE-MIT", "/core-kit/notices/LICENSE-APACHE",
+    "/THIRD_PARTY_LICENSES.md", "/core-kit/notices/THIRD_PARTY_LICENSES.md", "/core-kit/notices/LICENSE-MIT", "/core-kit/notices/LICENSE-APACHE",
   ]);
   const workbookBottom = await page.locator(".ts-workbook").evaluate((node) => node.getBoundingClientRect().bottom);
   const noticeBox = await notices.boundingBox();
@@ -354,7 +354,7 @@ try {
   assert.ok(await noticeLinks.evaluateAll((links) => links.every((link) => {
     const rect = link.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
-  })), "all three legal notice links are reachable by page scrolling at phone height");
+  })), "all four legal notice links are reachable by page scrolling at phone height");
   await saveScreenshot(page, "notices-phone.png", false);
   if (evidenceDir) await writeFile(path.join(evidenceDir, "composition-observations.json"), JSON.stringify({ actualGroups: actual, reportCategories: reportRows, reportTypography, briefRows, briefDesktopColumns, briefCompactColumns, summaryGeometry, emptyReportGeometry, reportGeometry, reportSequence, shortHeight: { lastSummaryRow, finalBinding, exportReachability, removeReachability, longFactReachability, explanationReachability }, observations, notices: { ...noticeBox, workbookBottom } }, null, 2));
   console.log(JSON.stringify({ status: "PASS", fixture: { sheets: 2, groups: categories.length, longCategoryLength: categories[1].length }, views: observations.length, viewportSamples: [[1512, 982], [834, 1194], [512, 900], [360, 640], [320, 640], [320, 450]], width512Label: "effective-width layout proxy only; not actual browser zoom evidence", shortHeight: "actual panel scroll reachability checked for all three views at 320×450", evidence: evidenceDir ?? null }));

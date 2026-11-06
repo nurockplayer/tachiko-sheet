@@ -151,6 +151,55 @@ jobs:
               ;;
           esac
 
+      - name: Check the installers carry the notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$GITHUB_WORKSPACE/THIRD_PARTY_LICENSES.md"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          check_one() {
+            local label="$1" found="$2"
+            if [ -z "$found" ]; then
+              echo "::error::$label does not contain THIRD_PARTY_LICENSES.md."
+              exit 1
+            fi
+            if ! cmp -s "$expected" "$found"; then
+              echo "::error::$label carries a THIRD_PARTY_LICENSES.md that differs from the repository's."
+              exit 1
+            fi
+            echo "$label carries the complete notices."
+          }
+          case "${{ matrix.name }}" in
+            macos-universal)
+              installer="$(ls release-assets/*.dmg)"
+              mount="$work/mnt"
+              mkdir -p "$mount"
+              hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$installer" >/dev/null
+              trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
+              found="$(find "$mount" -path '*/Contents/Resources/THIRD_PARTY_LICENSES.md' -print -quit)"
+              check_one "the macOS DMG" "$found"
+              ;;
+            linux-x64)
+              deb="$(ls release-assets/*.deb)"
+              mkdir -p "$work/deb"
+              dpkg-deb -x "$deb" "$work/deb"
+              check_one "the Linux .deb" "$(find "$work/deb" -name THIRD_PARTY_LICENSES.md -print -quit)"
+              appimage="$(ls release-assets/*.AppImage)"
+              chmod +x "$appimage"
+              mkdir -p "$work/appimage"
+              (cd "$work/appimage" && "$appimage" --appimage-extract >/dev/null)
+              check_one "the Linux AppImage" "$(find "$work/appimage" -name THIRD_PARTY_LICENSES.md -print -quit)"
+              ;;
+            windows-x64)
+              installer="$(ls release-assets/*.exe)"
+              sevenzip="$(command -v 7z || echo '/c/Program Files/7-Zip/7z.exe')"
+              mkdir -p "$work/nsis"
+              (cd "$work/nsis" && "$sevenzip" x -y "$installer" >/dev/null)
+              check_one "the Windows setup" "$(find "$work/nsis" -name THIRD_PARTY_LICENSES.md -print -quit)"
+              ;;
+          esac
+
       - name: Upload the installers (7 days)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
