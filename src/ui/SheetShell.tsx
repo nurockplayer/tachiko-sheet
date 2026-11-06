@@ -1358,7 +1358,6 @@ export function SheetShell(props: SheetShellProps) {
       const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile), "cut");
       if (!view || !witness || !onEditCells) { announceClipboard("Cutting cells is not available in this view.", true, true); return; }
       const rows = clipboardRows(position);
-      event.preventDefault();
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", encodeTsv(rows));
       if (!edits.length) { announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }

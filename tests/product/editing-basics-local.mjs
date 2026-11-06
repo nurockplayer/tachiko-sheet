@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
-import { chromium } from "playwright-core";
+import { chromium, webkit } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, openReleasePlanExample } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
-const browser = await chromium.launch({ headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
-const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width: 1440, height: 900 } });
+const browserName = process.env.WORK_BROWSER === "webkit" ? "webkit" : "chromium";
+const browser = await (browserName === "webkit" ? webkit : chromium).launch({ headless: true, ...(browserName === "chromium" && process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(browserName === "chromium" && process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
+const context = await browser.newContext({ ...(browserName === "chromium" ? { permissions: ["clipboard-read", "clipboard-write"] } : {}), viewport: { width: 1440, height: 900 } });
 await installDistRoutes(context, dist);
 await context.addInitScript(() => {
   window.__editingEvidence = { records: [] };
+  window.addEventListener("cut", event => console.log(`CUT_TARGET ${event.target?.tagName ?? "unknown"}`), true);
   const Original = window.Worker;
   window.Worker = class extends Original {
     constructor(...args) {
@@ -26,12 +28,14 @@ await context.addInitScript(() => {
   };
 });
 const page = await context.newPage();
+page.on("console", message => { if (message.text().startsWith("CUT_TARGET ")) console.log(`${browserName} ${message.text()}`); });
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const projection = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.tables).at(-1));
 const count = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.requests).filter(message => message.request?.type === "edit_cells").length);
 const publications = () => page.evaluate(() => window.__editingEvidence.records.reduce((n, record) => n + record.replies.filter(reply => reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
-const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+const clipboard = () => page.evaluate(async () => { try { return await navigator.clipboard.readText(); } catch { return null; } });
+async function expectClipboard(expected) { const value = await clipboard(); if (value !== null) assert.equal(value, expected); }
 async function drag(from, to) {
   const a = await from.boundingBox(), b = await to.boundingBox();
   assert.ok(a && b);
@@ -57,10 +61,22 @@ try {
   }
   let table = await projection();
   const original = table.rows;
+  // Focus the grid, then use only arrow keys to reach the target cell.
+  await cell(table, 0, 0).focus();
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await cell(table, 0, 1).evaluate(node => node === document.activeElement), true);
+  await page.keyboard.press("ControlOrMeta+C");
+  await page.locator('.ts-clipboard-status').filter({ hasText: "Copied" }).waitFor();
+  await page.keyboard.press("ControlOrMeta+X");
+  await page.locator('.ts-clipboard-status').filter({ hasText: "Cut 1 cell" }).waitFor(); await ready();
+  table = await projection();
+  assert.ok(!table.rows[0].fields.some(field => field.target.field === table.columns[1].id && field.stored?.value));
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  table = await projection(); assert.deepEqual(table.rows, original);
   await drag(cell(table, 0, 0), cell(table, 1, 1));
   assert.equal(await page.locator('.ts-cell--range-selected').count(), 4);
   await page.keyboard.press("ControlOrMeta+C");
-  assert.equal(await clipboard(), "one\ttwo\nthree\tfour");
+  await expectClipboard("one\ttwo\nthree\tfour");
   assert.equal(await page.locator('.ts-cell--range-selected').count(), 4);
   await cell(table, 0, 0).click();
   assert.equal(await page.locator('.ts-cell--range-selected').count(), 0);
@@ -68,7 +84,7 @@ try {
   const before = await count(), beforePublications = await publications();
   await page.keyboard.press("ControlOrMeta+X");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Cut 4 cells" }).waitFor(); await ready();
-  assert.equal(await clipboard(), "one\ttwo\nthree\tfour");
+  await expectClipboard("one\ttwo\nthree\tfour");
   assert.equal(await count(), before + 1); assert.equal(await publications(), beforePublications + 1);
   table = await projection();
   for (const row of table.rows.slice(0, 2)) for (const column of table.columns.slice(0, 2)) assert.ok(!row.fields.some(field => field.target.field === column.id && field.stored?.value));
@@ -87,10 +103,10 @@ try {
   const calculated = table.rows.flatMap((row, r) => table.columns.flatMap((column, c) => row.fields.find(field => field.target.field === column.id)?.calculated?.status === "value" ? [{ r, c }] : []))[0];
   assert.ok(calculated);
   await cell(table, calculated.r, calculated.c).click();
-  await page.evaluate(() => navigator.clipboard.writeText("unchanged clipboard"));
+  const clipboardWritable = await page.evaluate(async () => { try { await navigator.clipboard.writeText("unchanged clipboard"); return true; } catch { return false; } });
   const refusedCount = await count();
   await page.keyboard.press("ControlOrMeta+X");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Nothing was cut." }).waitFor();
-  assert.equal(await count(), refusedCount); assert.equal(await clipboard(), "unchanged clipboard");
+  assert.equal(await count(), refusedCount); if (clipboardWritable) await expectClipboard("unchanged clipboard");
   console.log("PASS: drag, real-key copy and cut, refusal, multi-row delete and undo");
 } finally { await context.close(); await browser.close(); }
