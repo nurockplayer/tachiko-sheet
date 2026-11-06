@@ -42,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          dmg="Tachiko-Sheet-$TAG-macos-arm64.dmg"
+          dmg="Tachiko-Sheet-$TAG-macos-universal.dmg"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$dmg" --pattern SHA256SUMS.txt
           grep -F "  $dmg" SHA256SUMS.txt | sha256sum --check --strict
           echo "sha256=$(sha256sum "$dmg" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"

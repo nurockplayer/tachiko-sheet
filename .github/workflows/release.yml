@@ -1,0 +1,221 @@
+name: Sheet release
+
+# A v* tag builds macOS, Windows and Linux installers and puts them in a draft
+# GitHub Release. Publishing that draft is a manual step; publishing it runs
+# update-cask.yml.
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "scripts/release-names.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheet-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Check the tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require a tag that matches the app version
+        id: tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" != "tag" ]; then
+            echo "tag=v0.0.0-pr" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag="$REF_NAME"
+          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag $tag is not v<major>.<minor>.<patch> with an optional -prerelease suffix."
+            exit 1
+          fi
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          tag_version=${tag#v}
+          tag_version=${tag_version%%-*}
+          if [ "$tag_version" != "$version" ]; then
+            echo "::error::Tag $tag says version $tag_version but src-tauri/tauri.conf.json says $version."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-15
+            rust_targets: aarch64-apple-darwin x86_64-apple-darwin
+            build: pnpm desktop:build:macos
+          - name: windows-x64
+            os: windows-2025
+            rust_targets: x86_64-pc-windows-msvc
+            build: pnpm desktop:build:windows
+          - name: linux-x64
+            os: ubuntu-24.04
+            rust_targets: x86_64-unknown-linux-gnu
+            build: pnpm desktop:build:linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: never
+      # npm scripts run under cmd.exe on Windows, where the scripts' inline
+      # `CI=true` prefix cannot be parsed; the job supplies it here.
+      CI: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          node-version-file: false
+          version: 12.11.2
+          install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf libayatana-appindicator3-dev libxdo-dev
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          for target in ${{ matrix.rust_targets }}; do
+            rustup toolchain install 1.97.1 --profile minimal --target "$target"
+          done
+          rustup default 1.97.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the packaged app and bundle
+        run: ${{ matrix.build }}
+
+      - name: Collect the installers
+        shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          copy_one() {
+            shopt -s nullglob
+            local matches=( $1 )
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::$1 matched ${#matches[@]} files, expected exactly one."
+              exit 1
+            fi
+            cp "${matches[0]}" "release-assets/$2"
+          }
+          case "${{ matrix.name }}" in
+            macos-universal)
+              copy_one 'src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg' "Tachiko-Sheet-$TAG-macos-universal.dmg"
+              ;;
+            windows-x64)
+              copy_one 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' "Tachiko-Sheet-$TAG-windows-x64-setup.exe"
+              ;;
+            linux-x64)
+              copy_one 'src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage' "Tachiko-Sheet-$TAG-linux-x64.AppImage"
+              copy_one 'src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb' "Tachiko-Sheet-$TAG-linux-x64.deb"
+              ;;
+          esac
+
+      - name: Upload the installers (7 days)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-release-${{ matrix.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
+          path: release-assets/*
+
+  release:
+    name: Draft the GitHub release
+    needs: [version, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      # Downloading this run's artifacts through the API needs Actions read.
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Download the installers
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Check the installers and write the checksums
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          for file in \
+            "Tachiko-Sheet-$TAG-macos-universal.dmg" \
+            "Tachiko-Sheet-$TAG-windows-x64-setup.exe" \
+            "Tachiko-Sheet-$TAG-linux-x64.AppImage" \
+            "Tachiko-Sheet-$TAG-linux-x64.deb"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Missing $file."
+              exit 1
+            fi
+          done
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          prerelease=()
+          case "$TAG" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
+          gh release create "$TAG" --draft --verify-tag \
+            --title "Tachiko Sheet $TAG" \
+            --notes-file ../docs/release-notes.md \
+            "${prerelease[@]}" \
+            "Tachiko-Sheet-$TAG-macos-universal.dmg" \
+            "Tachiko-Sheet-$TAG-windows-x64-setup.exe" \
+            "Tachiko-Sheet-$TAG-linux-x64.AppImage" \
+            "Tachiko-Sheet-$TAG-linux-x64.deb" \
+            SHA256SUMS.txt
