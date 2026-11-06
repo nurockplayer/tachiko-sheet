@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
-import { A1_HEADER_ROW, a1ColumnLetter, a1Geometry, a1RowNumber } from "./a1-geometry.js";
+import { A1_HEADER_ROW, a1ColumnLetter, a1Geometry, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
 const columns: TableColumn[] = [
@@ -54,5 +54,47 @@ describe("a1Geometry", () => {
   it("keeps the displayed order, not the stored one", () => {
     expect(a1Geometry([row("beta", "Beta"), row("alpha", "Alpha")], columns).rows).toEqual(["beta", "alpha"]);
     expect(a1Geometry([], columns)).toEqual({ headerRow: 1, rows: [], columns: ["c-name", "c-price"] });
+  });
+});
+
+describe("a1GeometryFor", () => {
+  // row-2 is display index 0 (A1 row 2) through row-9 at A1 row 9.
+  const rows = Array.from({ length: 8 }, (_, index) => row(`row-${index + 2}`, `Row ${index + 2}`));
+
+  it("keeps the owner row and the rows it names, with the header just above", () => {
+    expect(a1GeometryFor(rows, columns, "row-5", { rows: [3], range: false })).toEqual({
+      headerRow: 2,
+      rows: ["row-3", "row-4", "row-5"],
+      columns: ["c-name", "c-price"],
+    });
+  });
+
+  it("clamps a reference to row 1 to the first data row", () => {
+    expect(a1GeometryFor(rows, columns, "row-5", { rows: [1], range: false })).toEqual({
+      headerRow: 1,
+      rows: ["row-2", "row-3", "row-4", "row-5"],
+      columns: ["c-name", "c-price"],
+    });
+  });
+
+  it("clamps an address past the end to the last displayed row", () => {
+    expect(a1GeometryFor(rows, columns, "row-5", { rows: [99], range: false })).toEqual({
+      headerRow: 4,
+      rows: ["row-5", "row-6", "row-7", "row-8", "row-9"],
+      columns: ["c-name", "c-price"],
+    });
+  });
+
+  it("keeps every row for a range", () => {
+    expect(a1GeometryFor(rows, columns, "row-5", { rows: [2, 9], range: true })).toEqual(a1Geometry(rows, columns));
+  });
+
+  it("keeps every row when the owner is not displayed", () => {
+    expect(a1GeometryFor(rows, columns, "row-elsewhere", { rows: [3], range: false })).toEqual(a1Geometry(rows, columns));
+  });
+
+  it("returns null when the row ids do not fit one request", () => {
+    const many = Array.from({ length: 2_000 }, (_, index) => row(`row-${index}-${"x".repeat(40)}`, `Row ${index}`));
+    expect(a1GeometryFor(many, columns, many[0]!.id, { rows: [2], range: true })).toBeNull();
   });
 });

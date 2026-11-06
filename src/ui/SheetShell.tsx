@@ -58,8 +58,8 @@ import { isComposingEvent } from "./composition-event.js";
 import { ColumnDialog } from "./ColumnDialog.js";
 import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./column-operations.js";
 import { NewTableDialog } from "./NewTableDialog.js";
-import { A1_HEADER_ROW, a1ColumnLetter, a1Geometry, a1RowNumber } from "./a1-geometry.js";
-import { a1EditorStillCurrent, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
+import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1References, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
@@ -133,6 +133,8 @@ interface EditorState {
   kind: EditableKind;
   value: string;
   original: string;
+  /** A reopened editor is a new editing session even when it holds the same text. */
+  instance: number;
 }
 
 interface GridPosition {
@@ -652,6 +654,11 @@ export function SheetShell(props: SheetShellProps) {
   // after the user typed more or moved cells must not touch the editor.
   const editorRef = useRef<EditorState | null>(null);
   useLayoutEffect(() => { editorRef.current = editor; }, [editor]);
+  // Every opened editor is a new instance; a translation belongs to the one it
+  // was requested for, even when the user cancelled and retyped the same text.
+  const editorInstanceRef = useRef(0);
+  // The editor whose A1 translation is waiting: one request per editor at a time.
+  const a1TranslatingRef = useRef<number | null>(null);
   // The allowed-values list under the cell editor; another cell key means a fresh, open list.
   const [cellOptionsUi, setCellOptionsUi] = useState<CellOptionsUi & { key: string } | null>(null);
   // Every edit session, including reopening the same cell, starts with the list open.
@@ -1010,6 +1017,10 @@ export function SheetShell(props: SheetShellProps) {
     () => table ? rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings) : [],
     [columns, gridSettings, table],
   );
+  // The live row order for async continuations: a translation read against one
+  // display order must not be applied after the rows moved under it.
+  const displayRowsRef = useRef(displayRows);
+  useLayoutEffect(() => { displayRowsRef.current = displayRows; }, [displayRows]);
   const findMatches = useMemo(() => find ? findGridMatches(displayRows, columns, find.query) : [], [find?.query, displayRows, columns]);
   const findIndex = find?.active ? findMatches.findIndex(match => match.entity === find.active!.entity && match.field === find.active!.field) : -1;
   const gridOrder = useMemo(() => {
@@ -2098,6 +2109,7 @@ export function SheetShell(props: SheetShellProps) {
       kind: slot.kind,
       value: seed === undefined ? original : seed,
       original,
+      instance: ++editorInstanceRef.current,
     });
   }
 
@@ -2120,7 +2132,7 @@ export function SheetShell(props: SheetShellProps) {
     const original = boundRowDraft?.values[column.id] ?? "";
     selectEditorValueOnFocusRef.current = seed === undefined;
     focusRejectedEditorRef.current = null;
-    setEditor({ entity: DRAFT_ROW, field: column.id, kind, original, value: seed ?? original });
+    setEditor({ entity: DRAFT_ROW, field: column.id, kind, original, value: seed ?? original, instance: ++editorInstanceRef.current });
     if (seed !== undefined) changeRowDraft(column.id, seed);
   }
 
@@ -2202,8 +2214,8 @@ export function SheetShell(props: SheetShellProps) {
   /**
    * A cell click while the bar or an in-cell formula holds the caret inserts
    * that cell's reference token instead of moving focus or committing. The
-   * token comes from the projection alone; Sheet never parses or rewrites the
-   * formula text.
+   * token comes from the projection, or from the grid's displayed address
+   * when the draft is A1 text; Sheet never parses or rewrites the formula text.
    */
   function referenceForCell(row: TableRow | null, column: TableColumn, draft: boolean): { token: string; into: "bar" | "cell" } | null {
     const into = formulaCaretInBar() ? "bar" : formulaCaretInCellEditor() ? "cell" : null;
@@ -2218,7 +2230,14 @@ export function SheetShell(props: SheetShellProps) {
       formulaRowKey: formulaEntity ? rowSource(table).byEntity(formulaEntity)?.key ?? null : null,
       hasProjectedField: row !== null && fieldForColumn(row, column.id) !== null,
     });
-    return token ? { token, into } : null;
+    if (!token) return null;
+    const draftText = into === "bar" ? formulaBarDraftValue(formulaState, formulaDraft) : editor?.value ?? "";
+    // A draft that already has [brackets] keeps them; any other draft is A1, the addresses the grid shows.
+    if (!onTranslateA1Formula || isTachikoFormulaSource(draftText)) return { token, into };
+    const rowIndex = row ? rowIndexByEntity.get(rowEntity(row)) : undefined;
+    const columnIndex = columns.findIndex((candidate) => candidate.id === column.id);
+    if (rowIndex === undefined || columnIndex < 0) return { token, into };
+    return { token: `${a1ColumnLetter(columnIndex)}${a1RowNumber(rowIndex)}`, into };
   }
 
   /** The bar or an in-cell formula owns the caret and this cell can name a Work address. */
@@ -2414,16 +2433,25 @@ export function SheetShell(props: SheetShellProps) {
     // `state.editable` already means this table admits formulas — a check that
     // must not use `native_table_profile`, because the first formula withdraws
     // that profile while Work keeps accepting formulas in the same table.
-    if (onTranslateA1Formula && table && state.editable && !isTachikoFormulaSource(source)) {
+    // Only text naming an address or a range can need Work's geometry; a
+    // formula with no address commits exactly as it did before translation.
+    const references = a1References(source);
+    if (onTranslateA1Formula && table && state.editable && !isTachikoFormulaSource(source) && (references.rows.length > 0 || references.range)) {
+      const geometry = a1GeometryFor(displayRows, columns, state.target.entity, references);
+      if (!geometry) {
+        setFormulaRefusal({ identity: state.identity, message: A1_TOO_MANY_ROWS });
+        return;
+      }
+      const requestedRows = displayRows;
       const translation = await onTranslateA1Formula(witness, {
         collectionId: table.collection.id,
         rowEntityId: state.target.entity,
         targetFieldId: state.target.field,
         text: source,
-        geometry: a1Geometry(displayRows, columns),
+        geometry,
       });
-      // The read belongs to the cell, revision and text it started under.
-      if (formulaIdentityRef.current !== state.identity || formulaInputRef.current?.value !== typed) return;
+      // The read belongs to the cell, revision, text and row order it started under.
+      if (formulaIdentityRef.current !== state.identity || formulaInputRef.current?.value !== typed || displayRowsRef.current !== requestedRows) return;
       if (translation?.kind === "refused") {
         const { message, start, end } = a1RefusalFor(source, translation);
         setFormulaRefusal({ identity: state.identity, message });
@@ -2739,26 +2767,47 @@ export function SheetShell(props: SheetShellProps) {
       // The answer belongs to this cell's instance as it is at submit.
       const submissionIdentity = formulaState.identity;
       let sourceToCommit = formulaSource;
-      if (witness && table && tableAdmitsFormulas(table) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource)) {
-        const translation = await onTranslateA1Formula(witness, {
-          collectionId: table.collection.id,
-          rowEntityId: slot.target.entity,
-          targetFieldId: slot.target.field,
-          text: formulaSource,
-          geometry: a1Geometry(displayRows, columns),
-        });
-        // The read belongs to this cell, this text and this focus. Typing more
-        // while Work decides, moving the grid focus to another cell, or a
-        // changed revision makes this answer obsolete: drop it without closing
-        // or changing the editor. The live input value is the source of truth,
-        // as in the bar's own guard, and the focus is read through a ref
-        // because moving it need not have re-rendered this closure yet.
+      // Only text naming an address or a range can need Work's geometry; any
+      // other formula commits exactly as it did before translation.
+      const references = a1References(formulaSource);
+      if (witness && table && tableAdmitsFormulas(table) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource) && (references.rows.length > 0 || references.range)) {
+        const geometry = a1GeometryFor(displayRows, columns, slot.target.entity, references);
+        if (!geometry) {
+          focusRejectedEditorRef.current = intent;
+          setLocalError(A1_TOO_MANY_ROWS);
+          return false;
+        }
+        const requestedRows = displayRows;
+        // A second Enter or blur while this editor's read waits starts no
+        // second request; the answer arrives for the instance that asked.
+        if (a1TranslatingRef.current === editor.instance) return false;
+        a1TranslatingRef.current = editor.instance;
+        let translation: Awaited<ReturnType<NonNullable<SheetShellProps["onTranslateA1Formula"]>>>;
+        try {
+          translation = await onTranslateA1Formula(witness, {
+            collectionId: table.collection.id,
+            rowEntityId: slot.target.entity,
+            targetFieldId: slot.target.field,
+            text: formulaSource,
+            geometry,
+          });
+        } finally {
+          a1TranslatingRef.current = null;
+        }
+        // The read belongs to this cell, this text, this focus and this row
+        // order. Typing more while Work decides, moving the grid focus to
+        // another cell, cancelling and retyping, a changed revision, or rows
+        // moving makes this answer obsolete: drop it without closing or
+        // changing the editor. The live input value is the source of truth, as
+        // in the bar's own guard, and the focus is read through a ref because
+        // moving it need not have re-rendered this closure yet.
         const [focusEntity, focusField] = focusedKeyRef.current?.split("\u0000") ?? [];
         const liveEditor = editorRef.current && editorInputRef.current
-          ? { entity: editorRef.current.entity, field: editorRef.current.field, value: editorInputRef.current.value }
+          ? { entity: editorRef.current.entity, field: editorRef.current.field, value: editorInputRef.current.value, instance: editorRef.current.instance }
           : null;
+        if (displayRowsRef.current !== requestedRows) return false;
         if (!a1EditorStillCurrent(
-          { entity: editor.entity, field: editor.field, value: editor.value, identity: submissionIdentity },
+          { entity: editor.entity, field: editor.field, value: editor.value, identity: submissionIdentity, instance: editor.instance },
           {
             editor: liveEditor,
             focus: focusEntity && focusField ? { entity: focusEntity, field: focusField } : null,

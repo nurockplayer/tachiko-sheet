@@ -48,24 +48,34 @@ export function a1TranslationNeedsPreview(
 }
 
 /**
- * Whether an in-cell translation still belongs to the cell, text and focus it
- * was requested for. Typing, moving focus to another cell, a changed revision,
- * or closing the editor while Work reads makes the pending answer obsolete.
+ * Whether an in-cell translation still belongs to the cell, text, focus and
+ * editor instance it was requested for. Typing, moving focus to another cell,
+ * a changed revision, cancelling and retyping the same text, or closing the
+ * editor while Work reads makes the pending answer obsolete.
  */
 export function a1EditorStillCurrent(
-  expected: { entity: string; field: string; value: string; identity: string },
+  expected: { entity: string; field: string; value: string; identity: string; instance: number },
   live: {
-    editor: { entity: string; field: string; value: string } | null;
+    editor: { entity: string; field: string; value: string; instance: number } | null;
     focus: { entity: string; field: string } | null;
     identity: string;
   },
 ): boolean {
   return live.editor !== null && live.focus !== null &&
     live.editor.entity === expected.entity && live.editor.field === expected.field &&
-    live.editor.value === expected.value &&
+    live.editor.value === expected.value && live.editor.instance === expected.instance &&
     live.focus.entity === expected.entity && live.focus.field === expected.field &&
     live.identity === expected.identity;
 }
+
+/** The A1 row numbers the text names outside string literals, and whether it has a range. */
+export function a1References(text: string): { rows: number[]; range: boolean } {
+  const outsideStrings = text.replace(/"(?:[^"]|"")*"?/g, '""');
+  const rows = [...outsideStrings.matchAll(/(?<![\p{L}\p{N}_.])\$?[A-Za-z]{1,3}\$?(\d+)(?![\p{L}\p{N}_(])/gu)].map((match) => Number(match[1]));
+  return { rows, range: outsideStrings.includes(":") };
+}
+
+export const A1_TOO_MANY_ROWS = "This formula's cell references span too many rows for a table this large. Use references closer to this row; ranges over a whole column need a smaller table for now.";
 
 /** Work's notes in plain words; the sheet never re-derives their meaning. */
 export const A1_NOTE_TEXT: Record<A1TranslationNote, string> = {

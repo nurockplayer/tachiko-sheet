@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { A1_NOTE_TEXT, a1EditorStillCurrent, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1References, a1RefusalText, a1TranslationNeedsPreview, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 
 describe("isTachikoFormulaSource", () => {
   it("treats a bracketed reference as Tachiko source and anything else as Excel text", () => {
@@ -8,6 +8,32 @@ describe("isTachikoFormulaSource", () => {
     expect(isTachikoFormulaSource("IF([.done], 1, 0)")).toBe(true);
     expect(isTachikoFormulaSource("B2*C2")).toBe(false);
     expect(isTachikoFormulaSource("")).toBe(false);
+  });
+});
+
+describe("a1References", () => {
+  it("names no rows for text without an address", () => {
+    for (const text of ["1+2", "IF(TRUE,1,2)", "LOG10(5)", '"B2"&1', "1.5E3", "Amount*2"]) {
+      expect(a1References(text), text).toEqual({ rows: [], range: false });
+    }
+  });
+
+  it("names the row of every A1 address outside string literals", () => {
+    expect(a1References("B3*$C$4").rows).toEqual([3, 4]);
+    expect(a1References("b3").rows).toEqual([3]);
+    expect(a1References("Sheet2!B3").rows).toEqual([3]);
+  });
+
+  it("marks a range", () => {
+    expect(a1References("SUM(B2:B9)")).toEqual({ rows: [2, 9], range: true });
+    expect(a1References("SUM(B:B)")).toEqual({ rows: [], range: true });
+  });
+});
+
+describe("A1_TOO_MANY_ROWS", () => {
+  it("names the way out", () => {
+    expect(A1_TOO_MANY_ROWS).toContain("closer to this row");
+    expect(A1_TOO_MANY_ROWS).toContain("smaller table");
   });
 });
 
@@ -41,9 +67,9 @@ describe("a1TranslationNeedsPreview", () => {
 });
 
 describe("a1EditorStillCurrent", () => {
-  const requested = { entity: "row-1", field: "impact", value: "=D2*2", identity: "view\u0000row-1\u0000impact" };
+  const requested = { entity: "row-1", field: "impact", value: "=D2*2", identity: "view\u0000row-1\u0000impact", instance: 7 };
   const live = (overrides = {}) => ({
-    editor: { entity: requested.entity, field: requested.field, value: requested.value },
+    editor: { entity: requested.entity, field: requested.field, value: requested.value, instance: requested.instance },
     focus: { entity: requested.entity, field: requested.field },
     identity: requested.identity,
     ...overrides,
@@ -58,6 +84,10 @@ describe("a1EditorStillCurrent", () => {
     expect(a1EditorStillCurrent(requested, live({ editor: { ...live().editor, entity: "row-2" } }))).toBe(false);
     expect(a1EditorStillCurrent(requested, live({ editor: { ...live().editor, field: "friction" } }))).toBe(false);
     expect(a1EditorStillCurrent(requested, live({ editor: null }))).toBe(false);
+  });
+
+  it("drops an answer once the editor was reopened for the same text", () => {
+    expect(a1EditorStillCurrent(requested, live({ editor: { ...live().editor, instance: requested.instance + 1 } }))).toBe(false);
   });
 
   it("drops an answer once the grid focus left the edited cell", () => {
