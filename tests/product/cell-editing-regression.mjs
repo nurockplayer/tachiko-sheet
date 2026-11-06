@@ -653,23 +653,24 @@ const cases = [
     assert.equal(await dispatches(page), count + 1, "Enter publishes both A1 references once");
 
     // A draft that already has brackets keeps the projection's token, and a
-    // bracketed formula commits with no translation. It starts in the first
-    // row's priority, the same row as the clicked cell (another row's token is
-    // table-qualified) and still a plain value: a committed formula opens in
-    // the bar, not the cell editor.
-    const bracketTarget = cellAt(first, "priority");
+    // bracketed formula commits with no translation. It starts in the third
+    // row's impact, a plain value (a formula cell, which priority is in the
+    // fixture, opens in the bar instead), and clicks that same row's friction
+    // (another row's token is table-qualified).
+    const third = await entityAt(2);
+    const bracketTarget = cellAt(third, "impact");
     await bracketTarget.dblclick();
     const bracketInput = editor(page);
     await bracketInput.waitFor();
     await bracketInput.fill("=[.friction]*");
-    await cellAt(first, "friction").click();
+    await cellAt(third, "friction").click();
     assert.equal(await editor(page).inputValue(), "=[.friction]*[.friction]", "a bracket draft inserts the bracket token");
-    const bracketProduct = (await numberIn(friction)) ** 2;
+    const bracketProduct = (await numberIn(cellAt(third, "friction"))) ** 2;
     count = await dispatches(page);
     await editor(page).press("Enter");
     await editor(page).waitFor({ state: "hidden" });
     assert.equal(await dispatches(page), count + 1, "the bracket formula publishes once");
-    await valueIs(`cell:${first}:${fields.priority}`, String(bracketProduct));
+    await valueIs(`cell:${third}:${fields.impact}`, String(bracketProduct));
   }],
   ["a 2,000-row table refuses references that span too many rows", async (page) => {
     // A range over every row needs the whole collection in one request, which
