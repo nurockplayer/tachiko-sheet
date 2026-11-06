@@ -46,7 +46,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
@@ -835,6 +835,28 @@ export function SheetShell(props: SheetShellProps) {
   // editor; rechecked when the refocus is finally applied.
   const focusRejectedEditorRef = useRef<{ generation: number; occurrence: string | null } | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const [dragSelecting, setDragSelecting] = useState(false);
+  // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
+  // cancelled, and the Mac app's Cmd+X, Cmd+C and Cmd+V go through that menu.
+  useEffect(() => {
+    const enableGridClipboard = (event: Event) => {
+      const active = document.activeElement;
+      if (active instanceof HTMLTableCellElement && active.matches("td[data-work-field]") && gridScrollRef.current?.contains(active)) event.preventDefault();
+    };
+    for (const type of ["beforecut", "beforecopy", "beforepaste"]) document.addEventListener(type, enableGridClipboard, true);
+    return () => { for (const type of ["beforecut", "beforecopy", "beforepaste"]) document.removeEventListener(type, enableGridClipboard, true); };
+  }, []);
+  useEffect(() => {
+    const finish = () => {
+      suppressClickRef.current = dragSelectRef.current?.moved ?? false;
+      dragSelectRef.current = null;
+      setDragSelecting(false);
+    };
+    window.addEventListener("mouseup", finish);
+    return () => window.removeEventListener("mouseup", finish);
+  }, []);
   const resultsHideButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultsShowButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultsFocusRevealFrameRef = useRef<number | null>(null);
@@ -1311,20 +1333,49 @@ export function SheetShell(props: SheetShellProps) {
     return cell?.dataset.workEntity && cell.dataset.workField ? { entity: cell.dataset.workEntity, field: cell.dataset.workField } : null;
   }
 
+  function clipboardRows(position: GridPosition): string[][] {
+    const point = address(position);
+    const area = position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point);
+    return area ? displayRows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldClipboardText(fieldForColumn(row, column.id))))
+      : [[boundRowDraft?.values[position.field] ?? ""]];
+  }
+
   function copyGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
     setClipboardMessage(null);
     const position = clipboardPosition(event.target);
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
     event.preventDefault();
-    const point = address(position);
-    const area = position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point);
-    const rows = area ? displayRows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldClipboardText(fieldForColumn(row, column.id))))
-      : [[boundRowDraft?.values[position.field] ?? ""]];
+    const rows = clipboardRows(position);
     try {
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", encodeTsv(rows));
       announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`);
     } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
+  }
+
+  function cutGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+    setClipboardMessage(null);
+    const position = clipboardPosition(event.target);
+    if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
+    event.preventDefault();
+    if (position.entity === DRAFT_ROW) { announceClipboard("Cut is not available in the new row.", true); return; }
+    if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
+      announceClipboard("Finish the current edit or operation before cutting cells.", true, true); return;
+    }
+    const at = address(position), area = selectionRectangle ?? rectangle(at, at);
+    try {
+      const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile), "cut");
+      if (!view || !witness || !onEditCells) { announceClipboard("Cutting cells is not available in this view.", true, true); return; }
+      const rows = clipboardRows(position);
+      const text = encodeTsv(rows);
+      const tooLarge = cutBlockRefusal(rows.length, text);
+      if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
+      if (!event.clipboardData) throw new Error("No clipboard data");
+      event.clipboardData.setData("text/plain", text);
+      if (!edits.length) { announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
+      keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
+      void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut");
+    } catch (error) { announceClipboard(error instanceof CellClearRefusal ? (error.message === FORMULA_BAR_GUIDANCE ? `${error.message} Nothing was cut.` : error.message) : explain(error, "Cut could not access the clipboard."), true, true); }
   }
 
   function pasteGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
@@ -1413,7 +1464,7 @@ export function SheetShell(props: SheetShellProps) {
     }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
   }
 
-  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled", noun: "clear" | "fill"): Promise<boolean> {
+  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut", noun: "clear" | "fill" | "cut"): Promise<boolean> {
     const intent = completionIntent();
     rowCommandPendingRef.current = true;
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
@@ -3710,7 +3761,7 @@ export function SheetShell(props: SheetShellProps) {
     setCommitPending(true);
     setRowError(null);
     try {
-      const result = await onRemoveRows(witness, view.table.collection.key, [selectedEntity]);
+      const result = await onRemoveRows(witness, view.table.collection.key, selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? displayRows.slice(selectionRectangle.top, selectionRectangle.bottom + 1).map(rowEntity) : [selectedEntity]);
       if (result.kind === "refused") setRowError({ message: result.message });
       if (result.kind === "confirmed" && completionMayUpdateUi(intent)) {
         requestAnimationFrame(() => {
@@ -4213,7 +4264,7 @@ export function SheetShell(props: SheetShellProps) {
     const sizedGrid = columnWidths !== undefined && Object.keys(columnWidths).length > 0;
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
@@ -4414,7 +4465,7 @@ export function SheetShell(props: SheetShellProps) {
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
-          {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>Delete row</button> : null}
+          {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>{selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? `Delete ${selectionRectangle.bottom - selectionRectangle.top + 1} rows` : "Delete row"}</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
             if (columnChangesBlocked) { closeColumnToolbar(event.currentTarget); return; }
@@ -4493,7 +4544,7 @@ export function SheetShell(props: SheetShellProps) {
               {renderFilterEditor(focusedColumn)}
             </div>
           </details> : null}
-          {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it. Undo restores a deleted row.</span>
+          {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it, or select cells across several rows to delete those rows. Undo restores deleted rows.</span>
             : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
           <button type="button" className="ts-button" data-testid="print-table" disabled={printBlocked} title={spreadsheetDraftLocked ? "Apply or cancel the edit first, so the printout matches what you see." : undefined} onClick={requestPrint}>Print…</button>
         </div>
@@ -4637,12 +4688,26 @@ export function SheetShell(props: SheetShellProps) {
             insertReferenceFromCell(event, row, column, draft);
             return;
           }
+          if (event.button === 0 && !event.shiftKey && !draft && !editor) {
+            dragSelectRef.current = { anchor: { entity, field: column.id }, moved: false };
+            suppressClickRef.current = false;
+          }
           if (event.shiftKey && !draft && !editor) event.preventDefault();
+        }}
+        onMouseEnter={(event) => {
+          if (!dragSelectRef.current) return;
+          if (event.buttons === 0) { dragSelectRef.current = null; setDragSelecting(false); return; }
+          if (event.buttons === 1 && !draft) {
+            dragSelectRef.current.moved = true;
+            setDragSelecting(true);
+            extendSelection(dragSelectRef.current.anchor, { entity, field: column.id });
+          }
         }}
         onClick={(event) => {
           if (cellEditorOwnsPointer(event.target as Element | null)) return;
           // The press above only inserted a reference; the bar keeps the caret.
           if (cellInsertsReference(row, column, draft)) return;
+          if (suppressClickRef.current) { suppressClickRef.current = false; setSelectedEntity(entity); return; }
           setSelectedEntity(entity);
           if (event.shiftKey && !draft && focusedKey) {
             const [priorEntity, priorField] = focusedKey.split("\u0000");

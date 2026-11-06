@@ -76,6 +76,10 @@ describe("native empty intent and atomic clear request shaping", () => {
       expect(() => clearCellEdits([row], [col], one, true)).toThrow(/non-editable/);
     }
   });
+  it("uses cut wording for refusals", () => {
+    expect(() => clearCellEdits([], [column("text")], one, true, "cut")).toThrow("Nothing was cut.");
+    expect(() => clearCellEdits([present(column("number", true))], [column("number", true)], one, true, "cut")).toThrow("Nothing was cut.");
+  });
   it("sends a Work formula to the formula bar instead of clearing it", () => {
     const col = column("number");
     const formulaRow = { ...present(col, 4), fields: present(col, 4).fields.map(f => ({ ...f, formula: { source: "1 + 2" } })) };

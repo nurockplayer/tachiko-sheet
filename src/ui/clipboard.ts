@@ -23,6 +23,13 @@ export const PASTE_MAX_CHARS = 1_048_576;
 const TOO_MANY_ROWS = `The pasted block exceeds the ${PASTE_MAX_ROWS}-row limit. Nothing was pasted.`;
 /** A plain-language refusal of the clipboard text itself; shown as written. */
 export class ClipboardRefusal extends Error {}
+/** Why a block must not be cut: its source would be cleared but it could not be pasted back. */
+export function cutBlockRefusal(rowCount: number, text: string): string | null {
+  return rowCount > PASTE_MAX_ROWS || text.length > PASTE_MAX_CHARS
+    ? `This selection is too large to paste back (up to ${PASTE_MAX_ROWS} rows). Nothing was cut.`
+    : null;
+}
+
 export function decodeTsv(text: string, maxRows = PASTE_MAX_ROWS, maxChars = PASTE_MAX_CHARS): string[][] {
   if (text.length > maxChars) throw new ClipboardRefusal("The pasted text is too large to paste here. Nothing was pasted.");
   const rows: string[][] = [];
