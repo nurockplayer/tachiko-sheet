@@ -3187,6 +3187,7 @@ body { margin: 0; }
   gap: 4px;
   min-width: 0;
 }
+.ts-row-view-filter select,
 .ts-row-view-filter input {
   font: inherit;
   min-width: 0;
@@ -3254,5 +3255,10 @@ body { margin: 0; }
 .ts-grid--drag-selecting { user-select: none; }
 
 .ts-filter-values { max-height: 180px; overflow-y: auto; }
+.ts-filter-value-actions { display: flex; gap: 6px; }
+.ts-row-view-filter [role="alert"] { color: var(--ts-error-ink); }
+.ts-row-view-filter-title { font-weight: 600; white-space: normal; }
+/* The filter editor replaces the column's actions, so its controls stay in view. */
+.ts-command-menu:has(.ts-row-view-filter) > .ts-button { display: none; }
 .ts-filter-values label { display: flex; align-items: center; gap: 0.35rem; }
 .ts-row-view-filter .ts-filter-values input { width: auto; }

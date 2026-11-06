@@ -90,6 +90,7 @@ try {
   await pick(["(Blank)"]); await page.getByText("Showing 1 of 6 rows", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Clear filter", exact: true }).click();
   await openFilter("Qty"); await page.getByLabel("Filter type for Qty").selectOption("condition");
+  assert.equal(await page.getByRole("button", { name: "Rename…", exact: true }).isVisible(), false, "the editor replaces the column's actions");
   await page.getByLabel("Value for Qty").fill("Infinity"); await page.getByRole("alert").filter({ hasText: "Enter a number." }).waitFor();
   await page.getByRole("button", { name: "Apply", exact: true }).click(); await page.getByRole("alert").filter({ hasText: "Enter a number." }).waitFor();
   assert.equal(await publications(), before + 1);

@@ -664,7 +664,7 @@ export function SheetShell(props: SheetShellProps) {
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [columnAnnouncement, setColumnAnnouncement] = useState<string | null>(null);
   const [gridViews, setGridViews] = useState<RowViewRecord>({ occurrence: null, byCollection: {} });
-  const [filterDraft, setFilterDraft] = useState<{ field: string; mode: "contains" | "values" | "condition"; text: string; op: RowViewComparison; checked: string[] } | null>(null);
+  const [filterDraft, setFilterDraft] = useState<{ field: string; mode: "contains" | "values" | "condition"; text: string; op: RowViewComparison; checked: string[]; attempted?: boolean } | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
   const [newTableOpen, setNewTableOpen] = useState(false);
@@ -1285,7 +1285,8 @@ export function SheetShell(props: SheetShellProps) {
     const error = draft.mode === "condition" && (!draft.text.trim() || (column.field_type === "number" && !Number.isFinite(Number(draft.text))))
       ? column.field_type === "date" ? "Enter a date." : "Enter a number." : null;
     const apply = (element: Element): void => {
-      if (error || (draft.mode === "values" && !draft.checked.length)) return;
+      if (error) { setFilterDraft({ ...draft, attempted: true }); return; }
+      if (draft.mode === "values" && !draft.checked.length) return;
       const filter: RowViewFilter | null = draft.mode === "contains" ? { field: column.id, kind: "contains", text: draft.text }
         : draft.mode === "values" ? (!choices.truncated && draft.checked.length === choices.values.length ? null : { field: column.id, kind: "values", values: draft.checked })
         : column.field_type === "date" ? { field: column.id, kind: "date", op: draft.op, value: draft.text }
@@ -1297,7 +1298,9 @@ export function SheetShell(props: SheetShellProps) {
     return <form className="ts-row-view-filter" onSubmit={event => { event.preventDefault(); apply(event.currentTarget); }} onKeyDown={event => {
       if (event.key === "Escape" && !isComposingEvent(event)) { event.preventDefault(); event.stopPropagation(); setFilterDraft(null); close(event.currentTarget); }
     }}>
-      <select aria-label={`Filter type for ${column.display_name}`} value={draft.mode} onChange={event => setFilterDraft({ ...draft, mode: event.currentTarget.value as typeof draft.mode })}>
+      <strong className="ts-row-view-filter-title">Filter {column.display_name}</strong>
+      {/* Filter… hides when the editor opens, so focus must land here first or the menu closes on blur. */}
+      <select autoFocus={draft.mode !== "contains"} aria-label={`Filter type for ${column.display_name}`} value={draft.mode} onChange={event => setFilterDraft({ ...draft, mode: event.currentTarget.value as typeof draft.mode })}>
         <option value="contains">Contains</option><option value="values">Pick values</option>
         {column.field_type === "number" || column.field_type === "date" ? <option value="condition">Condition</option> : null}
       </select>
@@ -1307,13 +1310,13 @@ export function SheetShell(props: SheetShellProps) {
         event.preventDefault(); event.stopPropagation();
         if (action === "cancel") { setFilterDraft(null); close(event.currentTarget); } else apply(event.currentTarget);
       }} /> : draft.mode === "values" ? <>
-        <div><button type="button" onClick={() => setFilterDraft({ ...draft, checked: choices.values })}>Select all</button> <button type="button" onClick={() => setFilterDraft({ ...draft, checked: [] })}>Clear</button></div>
+        <div className="ts-filter-value-actions"><button type="button" className="ts-button ts-button--ghost" onClick={() => setFilterDraft({ ...draft, checked: choices.values })}>Select all</button><button type="button" className="ts-button ts-button--ghost" onClick={() => setFilterDraft({ ...draft, checked: [] })}>Clear</button></div>
         <div className="ts-filter-values">{choices.values.map(value => <label key={value}><input type="checkbox" checked={draft.checked.includes(value)} onChange={event => setFilterDraft({ ...draft, checked: event.currentTarget.checked ? [...draft.checked, value] : draft.checked.filter(item => item !== value) })} />{value || "(Blank)"}</label>)}</div>
         {choices.truncated ? <p>Showing the first 200 values. Use Contains for the rest.</p> : null}
       </> : <>
         <select aria-label={`Condition for ${column.display_name}`} value={draft.op} onChange={event => setFilterDraft({ ...draft, op: event.currentTarget.value as RowViewComparison })}>{ops.map((op, i) => <option key={op} value={op}>{labels[i]}</option>)}</select>
         <input aria-label={`Value for ${column.display_name}`} type={column.field_type === "date" ? "date" : "text"} value={draft.text} onChange={event => setFilterDraft({ ...draft, text: event.currentTarget.value })} />
-        {error ? <span role="alert">{error}</span> : null}
+        {error && (draft.text.trim() || draft.attempted) ? <span role="alert">{error}</span> : null}
       </>}
       <button type="submit" className="ts-button" disabled={draft.mode === "values" && !draft.checked.length}>Apply</button>
       {current ? <button type="button" className="ts-button" onClick={event => { applyGridFilter(column.id, null); close(event.currentTarget); }}>Clear this filter</button> : null}
