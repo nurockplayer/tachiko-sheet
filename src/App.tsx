@@ -14,6 +14,7 @@ import {
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CanonicalProjectFile,
   type Currentness,
+  type CleanupOperation,
   type FieldTarget,
   type ImportInspection,
   type ImportReread,
@@ -473,6 +474,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     revision: string;
     collection: string;
     previewId: string;
+    replace: boolean;
   };
   const cleanupPreviewContextRef = useRef<CleanupPreviewContext | null>(null);
   // Independent of the old-work checkpoint: an unknown Open may start from
@@ -659,12 +661,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       : current);
   }
 
-  function setCleanupPreview(preview: NonNullable<InteropState["cleanupPreview"]>, view: WorkbookView): void {
+  function setCleanupPreview(preview: NonNullable<InteropState["cleanupPreview"]>, view: WorkbookView, replace: boolean): void {
     cleanupPreviewContextRef.current = {
       occurrence: view.occurrence,
       revision: view.revision,
       collection: view.table.collection.key,
       previewId: preview.preview_id,
+      replace,
     };
     setInterop((current) => current
       ? { ...current, cleanupPreview: preview }
@@ -1534,40 +1537,32 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     clearOpenCheckpoint();
   }
 
-  async function previewTrim(witness: ViewWitness, fields: FieldTarget[]) {
+  async function previewCleanupOperation(witness: ViewWitness, operation: CleanupOperation) {
     if (blockUnknownOpenRecovery()) return null;
     if (!begin()) return null;
     try {
-      const preview = await runtime.previewCleanup(witness, { kind: "trim", fields });
+      const preview = await runtime.previewCleanup(witness, operation);
       const live = viewRef.current;
       if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
         setOutcome("idle");
         setMessage("The cleanup preview belongs to an older work view.");
         return null;
       }
-      setCleanupPreview(preview, live);
+      setCleanupPreview(preview, live, operation.kind === "replace");
       setOutcome("idle");
       return preview;
-    } catch (error) { setOutcome("idle"); setMessage(describe(error, "A cleanup preview could not be created.")); return null; }
+    } catch (error) { setOutcome("idle"); setMessage(describe(error, operation.kind === "deduplicate" ? "A duplicate-row preview could not be created." : "A cleanup preview could not be created.")); return null; }
     finally { end(); }
   }
 
-  async function previewDeduplicate(witness: ViewWitness, entities: string[], fields: string[]) {
-    if (blockUnknownOpenRecovery()) return null;
-    if (!begin()) return null;
-    try {
-      const preview = await runtime.previewCleanup(witness, { kind: "deduplicate", entities, key_fields: fields });
-      const live = viewRef.current;
-      if (!live || live.occurrence !== witness.occurrence || live.revision !== witness.revision) {
-        setOutcome("idle");
-        setMessage("The cleanup preview belongs to an older work view.");
-        return null;
-      }
-      setCleanupPreview(preview, live);
-      setOutcome("idle");
-      return preview;
-    } catch (error) { setOutcome("idle"); setMessage(describe(error, "A duplicate-row preview could not be created.")); return null; }
-    finally { end(); }
+  function previewTrim(witness: ViewWitness, fields: FieldTarget[]) {
+    return previewCleanupOperation(witness, { kind: "trim", fields });
+  }
+  function previewReplace(witness: ViewWitness, fields: FieldTarget[], find: string, replacement: string) {
+    return previewCleanupOperation(witness, { kind: "replace", fields, find, replacement });
+  }
+  function previewDeduplicate(witness: ViewWitness, entities: string[], fields: string[]) {
+    return previewCleanupOperation(witness, { kind: "deduplicate", entities, key_fields: fields });
   }
 
   function commitCleanup(witness: ViewWitness, previewId: string): Promise<boolean> {
@@ -1582,7 +1577,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       return Promise.resolve(false);
     }
     if (!begin()) return Promise.resolve(false);
-    return mutationCompletion.run({ kind: "cleanup", witness, dispatch: () => runtime.commitCleanup(witness, previewId) }, result => result.kind === "published", end);
+    return mutationCompletion.run({ kind: "cleanup", witness, recordHistory: context.replace, dispatch: () => runtime.commitCleanup(witness, previewId) }, result => result.kind === "published", end);
   }
 
   function cancelCleanup(): void {
@@ -2372,6 +2367,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onInspectImport={inspectImport}
           onImportCandidate={importCandidate}
           onCancelImport={cancelImport}
+          onPreviewReplace={previewReplace}
           onPreviewTrim={previewTrim}
           onPreviewDeduplicate={previewDeduplicate}
           onCommitCleanup={commitCleanup}

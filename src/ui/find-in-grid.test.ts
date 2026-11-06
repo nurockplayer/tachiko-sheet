@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findGridMatches, findStatusText, stepGridMatch } from "./find-in-grid.js";
+import { findGridMatches, findStatusText, replaceTargets, stepGridMatch } from "./find-in-grid.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
 const column = (id: string): TableColumn => ({ id, key: id, display_name: id, field_type: "text", required: false });
@@ -37,5 +37,17 @@ describe("find in grid", () => {
     expect(findStatusText(0, -1)).toBe("No matches");
     expect(findStatusText(3, -1)).toBe("0 of 3");
     expect(findStatusText(3, 1)).toBe("2 of 3");
+  });
+});
+
+describe("replace targets", () => {
+  it("selects only exact stored text matches, preserving spaces", () => {
+    const columns = [column("a"), column("b"), { ...column("n"), field_type: "number" as const }, column("formula"), column("blank")];
+    const sample = row("r1", { a: "Red apple", b: " red pear", n: "Red", formula: "Red" });
+    sample.fields.find(field => field.target.field === "formula")!.formula = { source: "Red" } as never;
+    expect(replaceTargets([sample], columns, "Red").map(target => target.field)).toEqual(["a"]);
+    expect(replaceTargets([sample], columns, " red").map(target => target.field)).toEqual(["b"]);
+    expect(replaceTargets([sample], columns, "RED")).toEqual([]);
+    expect(replaceTargets([sample], columns, "")).toEqual([]);
   });
 });
