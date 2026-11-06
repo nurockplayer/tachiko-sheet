@@ -473,6 +473,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     revision: string;
     collection: string;
     previewId: string;
+    replace: boolean;
   };
   const cleanupPreviewContextRef = useRef<CleanupPreviewContext | null>(null);
   // Independent of the old-work checkpoint: an unknown Open may start from
@@ -659,12 +660,13 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       : current);
   }
 
-  function setCleanupPreview(preview: NonNullable<InteropState["cleanupPreview"]>, view: WorkbookView): void {
+  function setCleanupPreview(preview: NonNullable<InteropState["cleanupPreview"]>, view: WorkbookView, replace: boolean): void {
     cleanupPreviewContextRef.current = {
       occurrence: view.occurrence,
       revision: view.revision,
       collection: view.table.collection.key,
       previewId: preview.preview_id,
+      replace,
     };
     setInterop((current) => current
       ? { ...current, cleanupPreview: preview }
@@ -1512,7 +1514,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         setMessage("The cleanup preview belongs to an older work view.");
         return null;
       }
-      setCleanupPreview(preview, live);
+      setCleanupPreview(preview, live, operation.kind === "replace");
       setOutcome("idle");
       return preview;
     } catch (error) { setOutcome("idle"); setMessage(describe(error, operation.kind === "deduplicate" ? "A duplicate-row preview could not be created." : "A cleanup preview could not be created.")); return null; }
@@ -1541,7 +1543,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       return Promise.resolve(false);
     }
     if (!begin()) return Promise.resolve(false);
-    return mutationCompletion.run({ kind: "cleanup", witness, dispatch: () => runtime.commitCleanup(witness, previewId) }, result => result.kind === "published", end);
+    return mutationCompletion.run({ kind: "cleanup", witness, recordHistory: context.replace, dispatch: () => runtime.commitCleanup(witness, previewId) }, result => result.kind === "published", end);
   }
 
   function cancelCleanup(): void {

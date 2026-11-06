@@ -4514,7 +4514,7 @@ export function SheetShell(props: SheetShellProps) {
                     <strong>{count} {count === 1 ? "cell" : "cells"} would change</strong>
                     <div className="ts-replace-table-scroll"><table className="ts-interop-targets" aria-label="Replace preview">
                       <thead><tr><th scope="col">Target</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
-                      <tbody>{preview.changes.slice(0, 20).map((change, index) => <tr key={`${change.target.entity}-${change.target.field}-${index}`}><td>{cleanupTargetLabel(change.target)}</td><td>{fieldClipboardText(change.before)}</td><td>{String(change.after?.value ?? "")}</td></tr>)}</tbody>
+                      <tbody>{preview.changes.slice(0, 20).map((change, index) => <tr key={`${change.target.entity}-${change.target.field}-${index}`}><td>{cleanupTargetLabel(change.target)}</td><td>{fieldClipboardText(change.before)}</td><td>{String(change.after && "value" in change.after ? change.after.value : "")}</td></tr>)}</tbody>
                     </table></div>
                     {count > 20 ? <p>and {count - 20} more.</p> : null}
                     {findMatches.length !== count ? <p>Find ignores case and looks at all shown text. Replace changes only Text cells that match exactly.</p> : null}

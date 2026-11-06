@@ -14,6 +14,7 @@ function row(id: string, entity: string): Row {
     stored: { kind: "text", value: entity }, formula: null, calculated: null, diagnostics: [], editable_scalar: "text" }] };
 }
 const witness = { occurrence: "sales", revision: "r0" };
+const publication = () => ({ base_revision: "r0", resulting_revision: "r1", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] });
 /** `snapshot` reports state like App does, where each call is a fresh object. */
 function harness(snapshot = false) {
   const state: ReturnType<MutationCompletionPort["state"]> = { view: view(), history: { ...emptyLocalHistory(view()), undoCount: 1 }, currentness: "current", savedRevision: "r0", definitionIds: ["d1"], results: [] };
@@ -125,9 +126,15 @@ describe("mutation completion boundaries", () => {
     await h.completion.run({ kind: "history", direction: "undo", witness, dispatch: async () => { throw new Error("refused"); } });
     expect(h.recovery).toMatchObject({ kind: "unknown-outcome" }); expect(h.state.history.undoCount).toBe(0);
   });
+  it("admits a confirmed replace publication to local history", async () => {
+    const h = harness();
+    const result = await h.completion.run({ kind: "cleanup", witness, recordHistory: true, dispatch: async () => ({ view: view("r1"), publication: publication() }) });
+    expect(result.kind).toBe("published");
+    expect(h.state.history).toMatchObject({ undoCount: 2, redoCount: 0, revision: "r1" });
+  });
   it("leaves cleanup summaries to explicit Refresh rather than re-querying on publication", async () => {
     const h = harness();
-    const result = await h.completion.run({ kind: "cleanup", witness, dispatch: async () => view("r1") });
+    const result = await h.completion.run({ kind: "cleanup", witness, recordHistory: false, dispatch: async () => ({ view: view("r1"), publication: publication() }) });
     expect(result.kind).toBe("published"); expect(h.reads).toBe(0); expect(h.state.definitionIds).toEqual(["d1"]);
     expect(h.state.results).toEqual([]); expect(h.state.savedRevision).toBeNull(); expect(h.dirty).toBe(true);
   });
@@ -172,7 +179,7 @@ describe("52aef66 completion effect order", () => {
       const command: MutationCommand = path === "scalar" ? { kind: "scalar", witness, edit: { kind: "number", input: "250" }, dispatch }
         : path === "insert" || path === "delete" ? { kind: "rows", witness, dispatch }
         : path === "undo" || path === "redo" ? { kind: "history", witness, direction: path, dispatch }
-        : path === "cleanup" ? { kind: "cleanup", witness, dispatch: async () => { h.effects.push("dispatch"); return view("r1"); } }
+        : path === "cleanup" ? { kind: "cleanup", witness, recordHistory: false, dispatch: async () => { h.effects.push("dispatch"); return { view: view("r1"), publication: publication() }; } }
         : { kind: "summary", witness, dispatch };
       if (path === "summary") h.port.setMessage(null); // App's binding preflight.
       await h.completion.run(command, completion => completion, h.finish);
