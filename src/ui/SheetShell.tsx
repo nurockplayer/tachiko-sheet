@@ -46,7 +46,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
@@ -1367,8 +1367,11 @@ export function SheetShell(props: SheetShellProps) {
       const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile), "cut");
       if (!view || !witness || !onEditCells) { announceClipboard("Cutting cells is not available in this view.", true, true); return; }
       const rows = clipboardRows(position);
+      const text = encodeTsv(rows);
+      const tooLarge = cutBlockRefusal(rows.length, text);
+      if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
       if (!event.clipboardData) throw new Error("No clipboard data");
-      event.clipboardData.setData("text/plain", encodeTsv(rows));
+      event.clipboardData.setData("text/plain", text);
       if (!edits.length) { announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
       keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
       void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut");
