@@ -322,6 +322,7 @@ function markdownLink(text) {
 function render({ rust, js, pending }) {
   const blocks = [];
   const push = (line = '') => blocks.push(line);
+  const texts = new Map();
   const licenseRows = [];
   const addText = (row, file) => {
     const text = normalizeEol(file.text);
