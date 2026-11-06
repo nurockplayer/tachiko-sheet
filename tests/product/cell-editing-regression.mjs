@@ -475,7 +475,7 @@ const cases = [
     const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
     assert.equal(await rows.count(), 3, "the fixture displays three data rows");
     const entityAt = async (index) => rows.nth(index).locator("td[data-work-field]").first().getAttribute("data-work-entity");
-    const [first, second] = [await entityAt(0), await entityAt(1)];
+    const [first, second, third] = [await entityAt(0), await entityAt(1), await entityAt(2)];
     const cellAt = (entity, key) => page.getByTestId(`cell:${entity}:${fields[key]}`);
     const numberIn = async (target) => Number((await target.textContent()).trim());
     const barText = () => bar.inputValue();
@@ -653,9 +653,14 @@ const cases = [
     assert.equal(await dispatches(page), count + 1, "Enter publishes both A1 references once");
 
     // A draft that already has brackets keeps the projection's token, and a
-    // bracketed formula commits with no translation.
-    insert = await entry(page, "impact");
-    await insert.fill("=[.friction]*");
+    // bracketed formula commits with no translation. It starts in the third
+    // row's impact: a cell that already holds a formula opens in the bar, not
+    // in the cell editor, and the formula above committed one.
+    const thirdImpact = cellAt(third, "impact");
+    await thirdImpact.dblclick();
+    const bracketInput = editor(page);
+    await bracketInput.waitFor();
+    await bracketInput.fill("=[.friction]*");
     await cellAt(first, "friction").click();
     assert.equal(await editor(page).inputValue(), "=[.friction]*[.friction]", "a bracket draft inserts the bracket token");
     const bracketProduct = (await numberIn(friction)) ** 2;
@@ -663,7 +668,7 @@ const cases = [
     await editor(page).press("Enter");
     await editor(page).waitFor({ state: "hidden" });
     assert.equal(await dispatches(page), count + 1, "the bracket formula publishes once");
-    await valueIs(`cell:${first}:${fields.impact}`, String(bracketProduct));
+    await valueIs(`cell:${third}:${fields.impact}`, String(bracketProduct));
   }],
   ["a 2,000-row table refuses references that span too many rows", async (page) => {
     // A range over every row needs the whole collection in one request, which
