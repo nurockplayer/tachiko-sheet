@@ -416,7 +416,6 @@ const cases = [
     // Issue reproduction: imported CSV, unapplied Number 3 -> 4, then a trim
     // preview with real whitespace changes is committed from another tab.
     await page.getByRole("button", { name: "Close project", exact: true }).click();
-    await page.getByRole("button", { name: "Close without saving", exact: true }).click();
     const input = await homeImportInput(page);
     await input.setInputFiles(messyCsv);
     const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
@@ -637,13 +636,13 @@ const cases = [
     // An address already typed stays A1 alongside the clicked one, so Enter
     // reads both into one preview.
     insert = await entry(page, "impact");
-    await insert.fill("=B2*");
+    await insert.fill("=D2*");
     await cellAt(first, "friction").click();
-    assert.equal(await editor(page).inputValue(), "=B2*D2", "a typed address and a clicked cell both use A1");
+    assert.equal(await editor(page).inputValue(), "=D2*D2", "a typed address and a clicked cell both use A1");
     await editor(page).press("Enter");
     await preview.waitFor();
-    assert.equal(await codeAt(0), "=B2*D2", "the preview shows the typed Excel text");
-    assert.equal(await codeAt(1), "[.area]*[.friction]", "both A1 references are translated");
+    assert.equal(await codeAt(0), "=D2*D2", "the preview shows the typed Excel text");
+    assert.equal(await codeAt(1), "[.friction]*[.friction]", "both A1 references are translated");
     await page.waitForFunction(() => document.activeElement?.dataset.testid === "formula-bar-input");
     await bar.press("Escape");
     await preview.waitFor({ state: "hidden" });
@@ -652,10 +651,10 @@ const cases = [
     // A draft that already has brackets keeps the projection's token, and a
     // bracketed formula commits with no translation and no preview.
     insert = await entry(page, "impact");
-    await insert.fill("=[.impact]*");
+    await insert.fill("=[.friction]*");
     await cellAt(first, "friction").click();
-    assert.equal(await editor(page).inputValue(), "=[.impact]*[.friction]", "a bracket draft inserts the bracket token");
-    const bracketProduct = (await numberIn(impact)) * (await numberIn(friction));
+    assert.equal(await editor(page).inputValue(), "=[.friction]*[.friction]", "a bracket draft inserts the bracket token");
+    const bracketProduct = (await numberIn(friction)) ** 2;
     count = await dispatches(page);
     await editor(page).press("Enter");
     await editor(page).waitFor({ state: "hidden" });
@@ -673,7 +672,6 @@ const cases = [
     const file = path.join(folder, "large.csv");
     await writeFile(file, `${csv}\n`);
     await page.getByRole("button", { name: "Close project", exact: true }).click();
-    await page.getByRole("button", { name: "Close without saving", exact: true }).click();
     const input = await homeImportInput(page);
     await input.setInputFiles(file);
     const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
@@ -688,12 +686,17 @@ const cases = [
     const totalId = await total.getAttribute("data-testid");
     let count = await dispatches(page);
 
-    // A formula with no address commits exactly as before translation.
+    // A formula with no address goes straight to Work, as before translation,
+    // with no oversized read in front of it. Work holds this table in its text
+    // capacity profile, which takes no formula yet, and says so itself.
     await total.click();
     await bar.fill("=1+2");
     await bar.press("Enter");
-    await page.waitForFunction((id) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "3", totalId);
-    assert.equal(await dispatches(page), count + 1, "=1+2 publishes exactly once");
+    await error.waitFor();
+    assert.match((await error.textContent()).trim(), /Text capacity/, "Work answers the formula, not the transport");
+    assert.equal(await dispatches(page), count + 1, "=1+2 reaches Work exactly once");
+    assert.equal((await page.locator(`[data-testid="${totalId}"]`).textContent()).trim(), "2", "the refused formula changes nothing");
+    await bar.press("Escape");
 
     // An address near this row keeps a small geometry, so the preview opens.
     count = await dispatches(page);
