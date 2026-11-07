@@ -1546,21 +1546,32 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /** Ctrl+Enter fills the selection with the entry the editor holds. */
-  function fillSelection(area: CellRectangle): void {
+  async function fillSelection(area: CellRectangle): Promise<void> {
     if (!editor || !table || !view || !witness || commitPending || controlsLocked || rowCommandPendingRef.current) return;
+    if (formulaDraftActive) { setLocalError("Apply or cancel the formula you are editing before changing this cell."); return; }
+    if (!onEditCells) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
     const position = { entity: editor.entity, field: editor.field };
+    let edits: CellEdit[];
     try {
-      const edits = fillSelectionPlan(displayRows, columns, area, editor.value, Boolean(table.native_table_profile));
-      keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-      if (!onEditCells) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
-      setEditor(null);
-      withAppFocus(() => focusCell(position.entity, position.field));
-      if (!edits.length) announceClipboard("The selected cells are unchanged.", false, true);
-      else void publishCells(() => onEditCells(witness, edits), edits.length, "Filled", "fill");
+      edits = fillSelectionPlan(displayRows, columns, area, editor.value, Boolean(table.native_table_profile));
     } catch (error) {
       if (error instanceof FillSelectionRefusal || error instanceof CellClearRefusal) announceClipboard(error.message, true, true);
       else announceClipboard(explain(error, "These cells cannot be filled here."), true, true);
+      return;
     }
+    const intent = completionIntent();
+    if (!edits.length) {
+      setEditor(null);
+      withAppFocus(() => focusCell(position.entity, position.field));
+      announceClipboard("The selected cells are unchanged.", false, true);
+      return;
+    }
+    keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
+    // Like any other commit, a refused fill keeps what the user typed.
+    if (await publishCells(() => onEditCells(witness, edits), edits.length, "Filled", "fill")) {
+      setEditor(null);
+      if (completionMayUpdateUi(intent)) withAppFocus(() => focusCell(position.entity, position.field));
+    } else focusRejectedEditorRef.current = intent;
   }
 
   // Reconcile roving state from every installed projection, independently of
@@ -3191,7 +3202,7 @@ export function SheetShell(props: SheetShellProps) {
       // behaves like Enter, keeping focus on the cell.
       if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && !event.repeat && editor.entity !== DRAFT_ROW) {
         const area = selectionRectangle;
-        if (area) fillSelection(area);
+        if (area) void fillSelection(area);
         else {
           const intent = completionIntent();
           void commitEditor().then((accepted) => {

@@ -1,10 +1,12 @@
 import type { CellEdit } from "../contracts.js";
 import { cellEditSlot, cellEditorUnchanged, pastedCellEdit } from "./cell-edit-slot.js";
 import { EDIT_CELLS_MAX, type CellRectangle } from "./clipboard.js";
+import { parseBooleanDraft } from "./field-display.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
 export class FillSelectionRefusal extends Error {}
 
+const BOOLEAN_ENTRY = "Enter true or false for a boolean cell. Nothing was filled.";
 const NOT_EDITABLE = "The selection includes a cell that can't be edited here. Nothing was filled.";
 
 /** Ctrl+Enter request shaping: one entry for every cell of the selected rectangle. */
@@ -28,7 +30,10 @@ export function fillSelectionPlan(
       const slot = row && column ? cellEditSlot(row, column) : null;
       if (!slot || slot.formula) throw new FillSelectionRefusal(NOT_EDITABLE);
       if (cellEditorUnchanged(slot, slot.original, raw)) continue;
-      const edit = pastedCellEdit(slot, raw, native);
+      // pastedCellEdit takes folded tokens, so "TRUE" or a typo would otherwise be stored as false.
+      const parsed = slot.kind === "boolean" && raw !== "" ? parseBooleanDraft(raw) : null;
+      if (slot.kind === "boolean" && raw !== "" && parsed === null) throw new FillSelectionRefusal(BOOLEAN_ENTRY);
+      const edit = pastedCellEdit(slot, parsed === null ? raw : String(parsed), native);
       if (edit) edits.push(edit);
     }
   }

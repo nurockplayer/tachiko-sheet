@@ -801,6 +801,17 @@ const cases = [
     const after = await projection(page);
     const values = after.rows.map((_, row) => fieldAt(after, row, 0)?.stored?.value);
     assert.deepEqual(values, ["fill", "fill", "fill"], `Ctrl+Enter did not fill the whole selection with one entry: ${JSON.stringify(values)}`);
+    await newTable(page, "Refused entry", [{ name: "Amount", type: "number" }]);
+    for (let row = 0; row < 2; row += 1) await addRow(page, [String(row + 1)], row + 1);
+    const numbers = await projection(page);
+    await page.getByTestId(cellIdFor(numbers, 0, 0)).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.type("abc");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+Enter");
+    await settle(page);
+    assert.equal(await page.getByTestId("cell-editor").inputValue(), "abc", "a refused Ctrl+Enter discarded what was typed");
+    assert.deepEqual(await filledColumn(page, numbers, 0, 2).then((cells) => cells.map(String)), ["1", "2"], "a refused Ctrl+Enter changed cells");
   } },
   { id: "39", name: "Fill down by keyboard", tier: "B", run: async (page) => {
     await newTable(page, "Fill down", [{ name: "Value", type: "number" }]);

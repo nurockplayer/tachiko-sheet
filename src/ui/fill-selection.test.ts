@@ -25,6 +25,33 @@ function row(index: number, values: Record<string, string>, formulas: string[] =
 const area = (top: number, left: number, bottom: number, right: number) => rectangle({ row: top, column: left }, { row: bottom, column: right });
 
 describe("fill selection request planning", () => {
+  describe("boolean cells", () => {
+    const flag: TableColumn = { ...column("a"), field_type: "boolean" };
+    const flagRow: TableRow = {
+      id: "row-0",
+      key: "row-0",
+      fields: [{
+        target: { entity: "entity-0", field: "a" },
+        address: "0.a",
+        stored: { kind: "boolean" as const, value: false },
+        formula: null,
+        calculated: null,
+        diagnostics: [],
+        editable_scalar: "boolean" as const,
+      }],
+    };
+
+    it("reads an entry the way a cell commit does", () => {
+      expect(fillSelectionPlan([flagRow], [flag], area(0, 0, 0, 0), " TRUE ", true)).toEqual([
+        { target: { entity: "entity-0", field: "a" }, input: { kind: "boolean", value: true } },
+      ]);
+    });
+
+    it("refuses an entry that isn't true or false instead of storing false", () => {
+      expect(() => fillSelectionPlan([flagRow], [flag], area(0, 0, 0, 0), "maybe", true)).toThrow(FillSelectionRefusal);
+    });
+  });
+
   it("fills every cell of the rectangle with the entry", () => {
     const rows = [row(0, { a: "old-a", b: "old-b" }), row(1, { a: "next-a", b: "next-b" })];
     expect(fillSelectionPlan(rows, columns, area(0, 0, 1, 1), "fill", true)).toEqual([
