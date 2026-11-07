@@ -1597,6 +1597,10 @@ const cases = [
     await settle(page);
     const shown = (await page.getByTestId(id).textContent()).trim();
     assert.ok(shown.startsWith("="), `Ctrl+grave left the result ${JSON.stringify(shown)} instead of showing the formula`);
+    await page.keyboard.press("Control+`");
+    await settle(page);
+    const back = (await page.getByTestId(id).textContent()).trim();
+    assert.ok(!back.startsWith("="), `a second Ctrl+grave left the formula ${JSON.stringify(back)} instead of the result`);
   } },
   { id: "50", name: "Enter current date", tier: "C", run: async (page) => {
     await newTable(page, "Today", [{ name: "When", type: "date" }, { name: "Note" }]);
