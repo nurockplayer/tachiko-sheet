@@ -140,6 +140,12 @@ async function replaceCell(page, id, text) {
   await settle(page);
 }
 
+// The handle's square is a pseudo-element in the corner of the handle's cell.
+async function fillHandleBox(page) {
+  const cell = await page.getByTestId("fill-handle").locator("xpath=ancestor::td").boundingBox();
+  return { x: cell.x + cell.width - 7, y: cell.y + cell.height - 7, width: 7, height: 7 };
+}
+
 async function dragCells(page, from, to) {
   const start = await page.getByTestId(from).boundingBox();
   const end = await page.getByTestId(to).boundingBox();
@@ -488,7 +494,7 @@ const cases = [
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 1, 2), "9", "the copied formula pasted as its value, not the row-shifted formula");
   } },
-  { id: "22", name: "Fill handle", tier: "A", run: async (page) => {
+  { id: "22", name: "Fill handle", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await newTable(page, "Fill", [{ name: "Value", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 1)], row + 1);
     const table = await projection(page);
@@ -500,6 +506,142 @@ const cases = [
     await page.mouse.up();
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 2, 0), "1", "dragging the lower-right corner filled nothing; there is no fill handle");
+
+    // Values copy down; one Undo restores the whole fill.
+    const values = async () => {
+      const latest = await projection(page);
+      return Promise.all([0, 1, 2, 3].map(async (row) => await cellText(page, latest, row, 0)));
+    };
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "Undo did not restore the values the corner drag replaced");
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const handleBox = await fillHandleBox(page);
+    const thirdRow = await page.getByTestId(cellIdFor(table, 2, 0)).boundingBox();
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(thirdRow.x + thirdRow.width / 2, thirdRow.y + thirdRow.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "1", "1", "4"], "dragging the handle to the third row did not fill 1,1,1,4");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "one Undo did not restore 1,2,3,4");
+
+    // Overshooting past the last row fills to the last row.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const overshootHandle = await fillHandleBox(page);
+    const lastRow = await page.getByTestId(cellIdFor(table, 3, 0)).boundingBox();
+    await page.mouse.move(overshootHandle.x + overshootHandle.width / 2, overshootHandle.y + overshootHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lastRow.x + lastRow.width / 2, lastRow.y + lastRow.height * 1.5, { steps: 8 });
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "1", "1", "1"], "dragging past the last row did not fill to the last row");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+
+    // Escape during the drag cancels it: the release fills nothing.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const escapeHandle = await fillHandleBox(page);
+    await page.mouse.move(escapeHandle.x + escapeHandle.width / 2, escapeHandle.y + escapeHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lastRow.x + lastRow.width / 2, lastRow.y + lastRow.height / 2, { steps: 8 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "releasing after Escape still filled");
+
+    // A right-press on the handle opens the cell menu and starts no drag.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const rightHandle = await fillHandleBox(page);
+    await page.mouse.click(rightHandle.x + rightHandle.width / 2, rightHandle.y + rightHandle.height / 2, { button: "right" });
+    await page.getByRole("menu", { name: "Cell actions" }).waitFor();
+    await page.keyboard.press("Escape");
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "a right-press on the fill handle changed cells");
+
+    // A formula copies with its rows shifted, so each target recalculates.
+    await newTable(page, "Fill formula", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
+    for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
+    const formulaTable = await projection(page);
+    const total = (row) => cellIdFor(formulaTable, row, 2);
+    await page.getByTestId(total(0)).press("F2");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("=A2*B2");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, total(0), "6");
+    await page.getByTestId(total(0)).click();
+    const formulaHandle = await fillHandleBox(page);
+    const formulaTarget = await page.getByTestId(total(2)).boundingBox();
+    await page.mouse.move(formulaHandle.x + formulaHandle.width / 2, formulaHandle.y + formulaHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(formulaTarget.x + formulaTarget.width / 2, formulaTarget.y + formulaTarget.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 1, 2), "9", "the dragged formula did not shift to row 3 (9)");
+    assert.equal(await cellText(page, await projection(page), 2, 2), "12", "the dragged formula did not shift to row 4 (12)");
+
+    // Double-click fills to the adjacent column's last filled row.
+    await newTable(page, "Fill double", [{ name: "Left", type: "number" }, { name: "Right", type: "number" }]);
+    for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 1)], row + 1);
+    const doubleTable = await projection(page);
+    await replaceCell(page, cellIdFor(doubleTable, 0, 1), "9");
+    const snapshot = async () => {
+      const latest = await projection(page);
+      const cells = [];
+      for (let row = 0; row < 4; row += 1) for (let column = 0; column < 2; column += 1) cells.push(await cellText(page, latest, row, column));
+      return cells;
+    };
+    // Pressing the handle without moving fills nothing and says nothing.
+    await page.getByTestId(cellIdFor(doubleTable, 0, 1)).click();
+    const pressBox = await fillHandleBox(page);
+    const beforePress = await snapshot();
+    await page.mouse.click(pressBox.x + pressBox.width / 2, pressBox.y + pressBox.height / 2);
+    await settle(page);
+    assert.deepEqual(await snapshot(), beforePress, "pressing the fill handle without moving changed cells");
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "", "pressing the fill handle without moving announced a message");
+
+    await page.getByTestId(cellIdFor(doubleTable, 0, 1)).click();
+    const doubleHandle = await fillHandleBox(page);
+    await page.mouse.dblclick(doubleHandle.x + doubleHandle.width / 2, doubleHandle.y + doubleHandle.height / 2);
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 3, 1), "9", "double-clicking the fill handle did not fill to the adjacent column's last row");
+
+    // A selection of several rows is refused with a message and changes nothing.
+    await page.getByTestId(cellIdFor(doubleTable, 0, 0)).click();
+    await page.getByTestId(cellIdFor(doubleTable, 1, 0)).click({ modifiers: ["Shift"] });
+    const beforeRangeDrag = await snapshot();
+    const rangeHandle = await fillHandleBox(page);
+    const rangeTarget = await page.getByTestId(cellIdFor(doubleTable, 3, 0)).boundingBox();
+    await page.mouse.move(rangeHandle.x + rangeHandle.width / 2, rangeHandle.y + rangeHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rangeTarget.x + rangeTarget.width / 2, rangeTarget.y + rangeTarget.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await settle(page);
+    assert.match((await page.locator(".ts-clipboard-status").first().textContent()).trim(), /^Fill from one row\./, "dragging a multi-row selection's handle announced nothing");
+    assert.deepEqual(await snapshot(), beforeRangeDrag, "dragging a multi-row selection's handle changed cells");
+
+    // The existing ways to fill still work.
+    await dragCells(page, cellIdFor(doubleTable, 0, 0), cellIdFor(doubleTable, 1, 0));
+    assert.equal(await selectedCount(page), 2, "a plain drag across cells no longer selects a range");
+    await settle(page);
+    await page.keyboard.press("Control+d");
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 1, 0), "1", "Ctrl+D no longer fills down after the fill handle was added");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    // Undo publishes a new revision, which drops the range; select it again.
+    await dragCells(page, cellIdFor(doubleTable, 0, 0), cellIdFor(doubleTable, 1, 0));
+    assert.equal(await selectedCount(page), 2, "the range did not come back after Undo");
+    await page.getByTestId(cellIdFor(doubleTable, 0, 0)).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Fill down", exact: true }).click();
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 1, 0), "1", "the cell menu's Fill down no longer fills");
   } },
   { id: "23", name: "Row operations", tier: "A", run: async (page) => {
     await example(page);
