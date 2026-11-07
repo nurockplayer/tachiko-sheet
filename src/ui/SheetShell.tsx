@@ -708,7 +708,7 @@ export function SheetShell(props: SheetShellProps) {
   const [closeOpen, setCloseOpen] = useState(false);
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
-  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
   // after the user moved to another cell must not touch the editor it left.
@@ -1557,7 +1557,7 @@ export function SheetShell(props: SheetShellProps) {
   function closeCellMenu(): void {
     const open = cellMenu;
     setCellMenu(null);
-    if (open) focusCell(open.position.entity, open.position.field);
+    if (open) focusCell(open.activeCell.entity, open.activeCell.field);
   }
 
   /**
@@ -1574,7 +1574,7 @@ export function SheetShell(props: SheetShellProps) {
       setSelectedEntity(position.entity);
       focusCell(position.entity, position.field);
     }
-    setCellMenu({ x, y, position });
+    setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position });
   }
 
   /** The filter editor lives in the column heading's disclosure, so open that one first. */
@@ -1617,8 +1617,7 @@ export function SheetShell(props: SheetShellProps) {
       { label: "Clear contents", shortcut: "Delete", disabled: blocked, run: command(() => clearGrid(position)) },
       { label: "Fill down", shortcut: menuShortcut("D", mac), disabled: blocked || rows < 2, run: command(() => fillDown()) },
       "separator",
-      ...(rowDeleteAvailable ? [{ label: rows > 1 ? `Delete ${rows} rows` : "Delete row", disabled: rowDeleteBlocked, run: command(() => { void deleteRow(); }) }] : []),
-      "separator",
+      ...(rowDeleteAvailable ? [{ label: rows > 1 ? `Delete ${rows} rows` : "Delete row", disabled: rowDeleteBlocked, run: command(() => { void deleteRow(); }) }, "separator" as const] : []),
       { label: "Sort A → Z", disabled: viewBlocked, run: command(() => setGridSort(position.field, "asc")) },
       { label: "Sort Z → A", disabled: viewBlocked, run: command(() => setGridSort(position.field, "desc")) },
       { label: "Filter…", disabled: viewBlocked, run: command(() => openCellFilter(position.field)) },

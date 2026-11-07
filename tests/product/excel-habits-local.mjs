@@ -937,6 +937,7 @@ const cases = [
     await page.getByTestId(id(1, 2)).click({ button: "right" });
     assert.equal(await selectedCount(page), 4, "right-clicking inside the selection cleared it");
     await page.keyboard.press("Escape");
+    assert.equal(await activeId(page), id(0, 1), "closing the menu moved the active cell off the selection's anchor");
     await page.getByTestId(id(0, 5)).click({ button: "right" });
     assert.equal(await selectedCount(page), 0, "right-clicking outside the selection did not move it to that cell");
     await page.keyboard.press("Escape");
@@ -954,6 +955,7 @@ const cases = [
     await item("Paste").click();
     await waitForCellText(page, id(0, 6), areas[0]);
     assert.equal(await cellText(page, await projection(page), 1, 6), areas[1], "Paste from the cell menu did not write the second row");
+    await settle(page);
     await page.keyboard.press("Control+z");
     await waitForCellText(page, id(0, 6), source);
 
@@ -962,6 +964,7 @@ const cases = [
     await item("Cut").click();
     await waitForCellText(page, id(0, 6), "");
     assert.equal((await clipboard(page)).trim(), source, "Cut from the cell menu did not put the cell on the clipboard");
+    await settle(page);
     await page.keyboard.press("Control+z");
     await waitForCellText(page, id(0, 6), source);
 
@@ -970,6 +973,7 @@ const cases = [
     await page.getByTestId(id(0, 0)).click({ button: "right" });
     await item("Clear contents").click();
     await waitForCellText(page, id(0, 0), "");
+    await settle(page);
     await page.keyboard.press("Control+z");
     await waitForCellText(page, id(0, 0), original);
 
@@ -979,6 +983,7 @@ const cases = [
     assert.equal(await item("Delete 2 rows").count(), 1, "the menu did not name the two-row delete");
     await item("Delete 2 rows").click();
     await page.waitForFunction(() => document.querySelectorAll("tbody tr.ts-row").length === 1);
+    await settle(page);
     await page.keyboard.press("Control+z");
     await page.waitForFunction(() => document.querySelectorAll("tbody tr.ts-row").length === 3);
 
@@ -1173,7 +1178,8 @@ for (const testCase of cases) {
     await withTimeout(testCase.run(page), CASE_TIMEOUT_MS);
   } catch (cause) {
     outcome = "GAP";
-    error = firstLine(cause);
+    const line = cause?.stack?.match(/excel-habits-local\.mjs:(\d+)/)?.[1];
+    error = `${firstLine(cause)}${line ? ` (line ${line})` : ""}`;
     if (cause instanceof SetupFailure) harnessBroke = true;
   } finally {
     await context.close().catch(() => {});
