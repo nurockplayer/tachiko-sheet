@@ -58,6 +58,16 @@ fn settle(window: &mut Window, cx: &mut App) {
     window.render_frame(cx);
 }
 
+/// Kit's cell ids differ by kind: fixed columns use `table-cell:{row}:{col}`,
+/// scrollable columns `table-cell-{row}:{col}`.
+fn cell_id(row: usize, col: usize) -> String {
+    if col == 0 {
+        format!("table-cell:{row}:{col}")
+    } else {
+        format!("table-cell-{row}:{col}")
+    }
+}
+
 /// How many registered elements carry this id, and how many of them are
 /// visible. Used only in the failure message below.
 fn probe(window: &Window, id: &str) -> (usize, usize) {
@@ -71,9 +81,9 @@ fn describe_probe(window: &Window, id: &str, registered: usize, visible: usize) 
         .try_find("table")
         .map(|element| format!("{:?}", element.bounds()))
         .unwrap_or_else(|| "table id not registered".to_string());
-    let corner = probe(window, "table-cell:0:0");
-    let first_col = probe(window, "table-cell:1:0");
-    let first_row = probe(window, "table-cell:0:1");
+    let corner = probe(window, &cell_id(0, 0));
+    let first_col = probe(window, &cell_id(1, 0));
+    let first_row = probe(window, &cell_id(0, 1));
     format!(
         "no visible table cell {id}: find_all returned {registered} element(s), {visible} visible; \
          probe 0:0 -> {} registered/{} visible, 1:0 -> {}/{}, 0:1 -> {}/{}; table bounds {table}",
@@ -140,16 +150,11 @@ fn assert_g1(cx: &mut TestAppContext, dims: GridSize) {
 
         // The column range is relative to the scrollable columns, so assert
         // the last cell's element instead.
-        cell_center(
-            window,
-            &format!("table-cell:{}:{}", dims.rows - 1, dims.cols - 1),
-        );
+        cell_center(window, &cell_id(dims.rows - 1, dims.cols - 1));
 
         let first_row = rows.start;
         assert!(
-            !window
-                .find_all(format!("table-cell:{first_row}:0"))
-                .is_empty(),
+            !window.find_all(cell_id(first_row, 0)).is_empty(),
             "fixed first column is not rendered at row {first_row}"
         );
     })
@@ -182,8 +187,8 @@ fn drag_2_1_to_5_3(cx: &mut TestAppContext, dims: GridSize) -> Option<String> {
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
         settle(window, cx);
-        let from = cell_center(window, "table-cell:2:1");
-        let to = cell_center(window, "table-cell:5:3");
+        let from = cell_center(window, &cell_id(2, 1));
+        let to = cell_center(window, &cell_id(5, 3));
         window.drag(from, to, cx);
         range_label(&content, cx)
     })
@@ -218,12 +223,12 @@ fn shift_press_selects_range(cx: &mut TestAppContext, dims: GridSize) -> Option<
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
         settle(window, cx);
-        press_cell(window, cx, "table-cell:2:1", false, false);
+        press_cell(window, cx, &cell_id(2, 1), false, false);
         settle(window, cx);
-        press_cell(window, cx, "table-cell:5:3", true, false);
+        press_cell(window, cx, &cell_id(5, 3), true, false);
         settle(window, cx);
         let label = range_label(&content, cx);
-        press_cell(window, cx, "table-cell:5:3", true, true);
+        press_cell(window, cx, &cell_id(5, 3), true, true);
         settle(window, cx);
         label
     })
@@ -258,7 +263,7 @@ fn shift_arrows_select_range(cx: &mut TestAppContext, dims: GridSize) -> Option<
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
         settle(window, cx);
-        window.click("table-cell:2:1", cx);
+        window.click(cell_id(2, 1), cx);
         settle(window, cx);
         window.press("shift-down", cx);
         window.press("shift-down", cx);
@@ -304,8 +309,8 @@ fn g2d_drag_after_scrolling_has_no_offset_error(cx: &mut TestAppContext) {
         table.update(cx, |table, cx| table.scroll_to_row(5_000, cx));
         settle(window, cx);
 
-        let from = cell_center(window, "table-cell:5002:1");
-        let to = cell_center(window, "table-cell:5005:3");
+        let from = cell_center(window, &cell_id(5002, 1));
+        let to = cell_center(window, &cell_id(5005, 3));
         window.drag(from, to, cx);
         settle(window, cx);
 
@@ -325,7 +330,7 @@ fn g1c_scroll_timing_10k(cx: &mut TestAppContext) {
     let (handle, _content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
         settle(window, cx);
-        let position = cell_center(window, "table-cell:0:0");
+        let position = cell_center(window, &cell_id(0, 0));
         let mut samples = Vec::with_capacity(200);
         for _ in 0..200 {
             let start = Instant::now();
