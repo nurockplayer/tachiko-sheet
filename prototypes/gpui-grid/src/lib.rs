@@ -364,12 +364,10 @@ impl GridApp {
     /// Escape belong to the composition until the mark clears.
     ///
     /// The state entity routes the IME calls through the same public handler
-    /// the element installs; only the bounds are needed for point queries, and
-    /// a missing element has no composition.
+    /// the element installs; the bounds it takes are only used for point
+    /// queries, and the editor is mounted whenever this path runs.
     fn editor_is_composing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(bounds) = self.editor.read(cx).input_bounds() else {
-            return false;
-        };
+        let bounds = self.editor.read(cx).input_bounds();
         let mut handler = ElementInputHandler::new(bounds, self.editor.clone());
         handler.marked_text_range(window, cx).is_some()
     }
