@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
 import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
 import { DetachedReportPresentations } from "./application/detached-report-presentations.js";
-import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE, WORK_FILE_DESKTOP_UNAVAILABLE } from "./application/work-file.js";
+import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
 import type { FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope } from "../public/core-kit/runtime/protocol.js";
@@ -1089,7 +1089,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   async function openWorkFile(file: File): Promise<void> {
     if (blockUnknownOpenRecovery() || !begin()) return;
     try {
-      if (import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
       requireWorkFileName(file.name);
       guardReplacement();
       setMessage(null);
@@ -1597,7 +1596,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setMessage(null);
     setInterop((current) => ({ importInspection: null, metadata: null, ledger: [], cleanupPreview: null, ...current, ledgerColumns: undefined, downloadStatus: "idle", downloadError: null }));
     try {
-      if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
       // Any download snapshots the published revision; unpublished edits would be silently missing.
       if (currentness !== "current" || draftDirtyRef.current || reportDraftDirtyRef.current) {
         throw new Error("Finish or cancel unfinished edits and wait for the values before preparing a download.");
@@ -1644,7 +1642,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setMessage(null);
     setInterop((current) => current ? { ...current, downloadError: null } : current);
     try {
-      if (format === "ro" && import.meta.env.MODE === "desktop") throw new Error(WORK_FILE_DESKTOP_UNAVAILABLE);
       if (format === "ro" && !preparedDownloadIsCurrent(prepared, await runtime.read(), "ro")) {
         throw new Error("The work changed after this download was prepared. Prepare it again and review it before downloading.");
       }
@@ -2293,7 +2290,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           copiesStatus={savedCopiesStatus}
           onRetryCopies={refreshCopies}
           onOpenWorkFile={openWorkFile}
-          workFileUnavailableReason={import.meta.env.MODE === "desktop" ? WORK_FILE_DESKTOP_UNAVAILABLE : null}
           workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}

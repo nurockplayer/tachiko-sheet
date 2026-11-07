@@ -690,9 +690,44 @@ for w in list where (w[kCGWindowOwnerName as String] as? String) == "Tachiko She
 async function namedTableJourney() {
   const name = "desktop-named-table";
   const labels = ["Item Name", "項目", "Amount"];
+  // The host writes the .ro through its Save sheet; opening it again shows the same table.
+  const workFileRoundTrip = async (expected) => {
+    for (const entry of await readdir(downloads)) await rm(path.join(downloads, entry), { force: true });
+    await evaluate(`
+      click(tab("Import & export"));
+      click(await waitFor(() => [...document.querySelectorAll("button")].find(el => nameOf(el) === "Download work file (.ro)" && !el.disabled), "enabled .ro Download"));
+      const consent = await waitFor(() => dialog("Confirm download"), "download consent");
+      click(await waitFor(() => button("Download", consent), "enabled Download"));
+      await waitFor(() => !dialog("Confirm download"), "consent closed");
+      return true;
+    `);
+    let file;
+    for (let attempt = 0; attempt < 600 && !file; attempt++) {
+      file = (await readdir(downloads)).find((entry) => entry.endsWith(".ro") && !entry.startsWith("."));
+      if (!file) await sleep(100);
+    }
+    assert.ok(file, `.ro was written by the native host; folder: ${JSON.stringify(await readdir(downloads))}`);
+    await closeToHome();
+    const bytes = (await readFile(path.join(downloads, file))).toString("base64");
+    await evaluate(`
+      const input = await waitFor(() => document.querySelector('[data-testid="open-work-file"]'), "work file input");
+      const bytes = Uint8Array.from(atob(${JSON.stringify(bytes)}), (c) => c.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], ${JSON.stringify(file)}));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await waitFor(() => document.querySelector('[data-testid="project-ready"][aria-busy="false"]'), "opened work file");
+      return true;
+    `);
+    const opened = await snapshot();
+    assert.equal(opened.name, expected.name, "a .ro saved by the host reopens with its table name");
+    assert.deepEqual(opened.columns, expected.columns, "a .ro saved by the host reopens with its columns");
+    assert.deepEqual(opened.cells.map((cell) => cell.value), expected.cells.map((cell) => cell.value), "a .ro saved by the host reopens with its values");
+    await closeToHome();
+  };
   pid = await timed("launch", launch);
   await coldHome();
-  assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), true, "external desktop .ro Open stays disabled");
+  assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), false, "desktop .ro Open is available");
   // The host's File and Edit menus: each id must really be in the menu, and reaches the page's own command.
   const menuCommand = (id) => evaluate(`await window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id: ${JSON.stringify(id)} }); return true;`);
   await menuCommand("new-table");
@@ -759,7 +794,8 @@ async function namedTableJourney() {
   assert.deepEqual(initial.cells.map(cell => cell.value), ["Tea", "飲食", "4.5"]);
   await evaluate(`
     click(tab("Import & export"));
-    await waitFor(() => [...document.querySelectorAll("button")].some(el => nameOf(el) === "Download work file (.ro)" && el.disabled), "disabled desktop .ro Download");
+    await waitFor(() => [...document.querySelectorAll("button")].some(el => nameOf(el) === "Download work file (.ro)" && !el.disabled), "desktop .ro Download");
+    click(tab("Table"));
     return true;
   `);
   await saveCopy(name);
@@ -770,6 +806,10 @@ async function namedTableJourney() {
   await openSaved(name);
   assert.deepEqual(await snapshot(), initial, "full native restart preserves every name, cell identity and value");
   assert.doesNotMatch(await evaluate(`return document.body.innerText;`), /Download the work file to keep these changes/);
+
+  await workFileRoundTrip(initial);
+  await openSaved(name);
+  assert.deepEqual(await snapshot(), initial, "opening a .ro leaves the saved copy as it was");
 
   await menuCommand("save-copy");
   await evaluate(`

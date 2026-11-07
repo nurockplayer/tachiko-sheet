@@ -1331,18 +1331,6 @@ describe("work-file entry and Save availability", () => {
     expect(markup).toContain(`id="${save![1]}"`);
     expect(markup).toContain("Download the work file to keep these changes.");
   });
-
-  it("keeps desktop Open visibly unavailable with an associated explanation", () => {
-    const reason = "Opening and downloading work files is available in the browser version only.";
-    const markup = render({ view: null, workFileUnavailableReason: reason });
-    const input = markup.match(/<input[^>]*data-testid="open-work-file"[^>]*>/);
-    expect(input).not.toBeNull();
-    expect(input![0]).toContain("disabled");
-    const description = input![0].match(/aria-describedby="([^"]+)"/);
-    expect(description).not.toBeNull();
-    expect(markup).toContain(`id="${description![1]}"`);
-    expect(markup).toContain(reason);
-  });
 });
 
 
