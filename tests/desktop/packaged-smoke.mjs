@@ -292,6 +292,20 @@ async function main() {
   pass(`location.origin is ${expectedOrigin}`);
   pass("Home offers “Choose file…”");
 
+  // 1a. The File and Edit menus have every command, and they reach the page.
+  await evaluate(`
+    await waitFor(() => button("New table"), "New table enabled");
+    const choose = (id) => window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id });
+    await choose("new-table");
+    const form = await waitFor(() => dialog("New table"), "File > New Table dialog");
+    click(button("Cancel", form));
+    await waitFor(() => !dialog("New table"), "New table dialog closed");
+    // Home ignores the rest; the host refuses a command its menu doesn't have.
+    for (const id of ["save", "save-copy", "print", "undo", "redo"]) await choose(id);
+    return true;
+  `);
+  pass("the menu has every File and Edit command, and File > New Table opens its dialog");
+
   // 1b. The notices the footer links to ship with the page.
   const notices = await evaluate(`
     const response = await fetch("/THIRD_PARTY_LICENSES.md");

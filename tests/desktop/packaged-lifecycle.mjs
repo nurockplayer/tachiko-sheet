@@ -728,6 +728,17 @@ async function namedTableJourney() {
   pid = await timed("launch", launch);
   await coldHome();
   assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), false, "desktop .ro Open is available");
+  // The host's File and Edit menus: each id must really be in the menu, and reaches the page's own command.
+  const menuCommand = (id) => evaluate(`await window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id: ${JSON.stringify(id)} }); return true;`);
+  // Wait until Home is ready: the menu does nothing while its New table is locked.
+  await evaluate(`await waitFor(() => button("New table"), "New table enabled"); return true;`);
+  await menuCommand("new-table");
+  await evaluate(`
+    const form = await waitFor(() => dialog("New table"), "File > New Table dialog");
+    click(button("Cancel", form));
+    await waitFor(() => !dialog("New table"), "New table dialog closed");
+    return true;
+  `);
   await evaluate(`
     click(await waitFor(() => button("New table"), "New table"));
     const form = await waitFor(() => dialog("New table"), "New table dialog");
@@ -802,10 +813,39 @@ async function namedTableJourney() {
   await openSaved(name);
   assert.deepEqual(await snapshot(), initial, "opening a .ro leaves the saved copy as it was");
 
-  await edit(0, 2, "7");
+  await menuCommand("save-copy");
   await evaluate(`
-    click(await waitFor(() => button("Save"), "bound Save"));
-    await waitFor(() => document.querySelector('[data-testid="save-status"]')?.textContent.includes("Saved on this device"), "bound save completed");
+    const copy = await waitFor(() => dialog("Save a copy"), "File > Save a Copy dialog");
+    click(button("Cancel", copy));
+    await waitFor(() => !dialog("Save a copy"), "Save a copy dialog closed");
+    window.__menuPrints = 0;
+    window.print = () => { window.__menuPrints += 1; };
+    return true;
+  `);
+  await menuCommand("print");
+  await evaluate(`
+    await waitFor(() => window.__menuPrints === 1, "File > Print");
+    window.dispatchEvent(new Event("afterprint"));
+    return true;
+  `);
+
+  const amount = async () => (await snapshot()).cells[2].value;
+  const amountIs = async (value, message) => {
+    for (let attempt = 0; attempt < 100 && await amount() !== value; attempt++) await sleep(100);
+    assert.equal(await amount(), value, message);
+  };
+  await edit(0, 2, "5");
+  await menuCommand("undo");
+  await amountIs("4.5", "Edit > Undo reverses the edit");
+  await menuCommand("redo");
+  await amountIs("5", "Edit > Redo restores the edit");
+  await menuCommand("undo");
+  await amountIs("4.5", "Edit > Undo reverses the edit again");
+
+  await edit(0, 2, "7");
+  await menuCommand("save");
+  await evaluate(`
+    await waitFor(() => document.querySelector('[data-testid="save-status"]')?.textContent.includes("Saved on this device"), "File > Save completed");
     return true;
   `);
   const updated = await snapshot();
