@@ -58,6 +58,29 @@ fn settle(window: &mut Window, cx: &mut App) {
     window.render_frame(cx);
 }
 
+/// How many registered elements carry this id, and how many of them are
+/// visible. Used only in the failure message below.
+fn probe(window: &Window, id: &str) -> (usize, usize) {
+    let elements = window.find_all(id.to_string());
+    let visible = elements.iter().filter(|element| element.visible()).count();
+    (elements.len(), visible)
+}
+
+fn describe_probe(window: &Window, id: &str, registered: usize, visible: usize) -> String {
+    let table = window
+        .try_find("table")
+        .map(|element| format!("{:?}", element.bounds()))
+        .unwrap_or_else(|| "table id not registered".to_string());
+    let corner = probe(window, "table-cell:0:0");
+    let first_col = probe(window, "table-cell:1:0");
+    let first_row = probe(window, "table-cell:0:1");
+    format!(
+        "no visible table cell {id}: find_all returned {registered} element(s), {visible} visible; \
+         probe 0:0 -> {} registered/{} visible, 1:0 -> {}/{}, 0:1 -> {}/{}; table bounds {table}",
+        corner.0, corner.1, first_col.0, first_col.1, first_row.0, first_row.1
+    )
+}
+
 /// The center of the first visible element with this id. The table may
 /// register a fixed copy and a scrolling copy of the same cell.
 fn cell_center(window: &Window, id: &str) -> Point<Pixels> {
@@ -65,8 +88,8 @@ fn cell_center(window: &Window, id: &str) -> Point<Pixels> {
     let visible = elements.iter().filter(|element| element.visible()).count();
     assert!(
         visible > 0,
-        "no visible table cell {id}: find_all returned {} element(s), {visible} visible",
-        elements.len()
+        "{}",
+        describe_probe(window, id, elements.len(), visible)
     );
     elements
         .into_iter()
