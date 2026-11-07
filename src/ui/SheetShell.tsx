@@ -3831,7 +3831,7 @@ export function SheetShell(props: SheetShellProps) {
         // A text field keeps its own Undo, which the menu took over from the webview.
         if (active?.closest('input, textarea, [contenteditable="true"]')) { document.execCommand(command); return; }
       }
-      if (document.querySelector('[role="dialog"], dialog')) return;
+      if (modalInteractionOpen) return;
       if (command === "new-table") {
         if (view) { setLocalError("Close this work first to start a new table."); return; }
         // controlsLocked already covers unknown currentness.
