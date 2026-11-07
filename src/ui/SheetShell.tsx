@@ -1556,6 +1556,8 @@ export function SheetShell(props: SheetShellProps) {
 
   const pasteDecodedRef = useRef(pasteDecoded);
   pasteDecodedRef.current = pasteDecoded;
+  const pasteTargetRef = useRef({ identity: collectionIdentity, revision: view?.revision, selection: boundSelection });
+  pasteTargetRef.current = { identity: collectionIdentity, revision: view?.revision, selection: boundSelection };
 
   function closeCellMenu(): void {
     const open = cellMenu;
@@ -1602,6 +1604,7 @@ export function SheetShell(props: SheetShellProps) {
     const command = (action: () => void) => () => { closeCellMenu(); action(); };
     const rows = selectionRectangle ? selectionRectangle.bottom - selectionRectangle.top + 1 : 0;
     const paste = async (): Promise<void> => {
+      const target = pasteTargetRef.current;
       let text: string;
       try { text = await navigator.clipboard.readText(); } catch {
         announceClipboard(`The clipboard can't be read from this menu. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
@@ -1612,7 +1615,12 @@ export function SheetShell(props: SheetShellProps) {
         announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true);
         return;
       }
-      // The read can take a while: this render's draft and busy checks may be out of date by now.
+      // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
+      const live = pasteTargetRef.current;
+      if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection) {
+        announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
+        return;
+      }
       pasteDecodedRef.current(position, decoded);
     };
     return [

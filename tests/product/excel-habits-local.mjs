@@ -894,7 +894,7 @@ const cases = [
     const reopened = Number(await page.getByRole("separator", { name: "Resize title", exact: true }).getAttribute("aria-valuenow"));
     assert.equal(reopened, fitted, `the column width reset on reopen (${reopened} instead of ${fitted}); widths are view state only`);
   } },
-  { id: "44", name: "Context menus", tier: "B", waitMs: 10_000, run: async (page) => {
+  { id: "44", name: "Context menus", tier: "B", waitMs: 10_000, budgetMs: 60_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
     const id = (row, column) => cellIdFor(table, row, column);
@@ -1022,8 +1022,19 @@ const cases = [
     await page.setViewportSize({ width: 1440, height: 900 });
     await settle(page);
 
+    // A slow clipboard read pastes nothing if the selection moved meanwhile.
+    const beforePaste = [await cellText(page, await projection(page), 0, 1), await cellText(page, await projection(page), 1, 1)];
+    await page.evaluate(() => { navigator.clipboard.readText = () => new Promise((resolve) => setTimeout(() => resolve("LATE"), 1500)); });
+    await page.getByTestId(id(0, 1)).click({ button: "right" });
+    await item("Paste").click();
+    await dragCells(page, id(0, 1), id(1, 1));
+    await page.locator(".ts-clipboard-status").filter({ hasText: "Nothing was pasted." }).waitFor();
+    const afterPaste = await projection(page);
+    assert.deepEqual([await cellText(page, afterPaste, 0, 1), await cellText(page, afterPaste, 1, 1)], beforePaste, "a late paste wrote over the new selection");
+
     // A press moves focus inside the menu: Enter acts on that item, not the first one.
     const before = await cellText(page, await projection(page), 0, 1);
+    await page.getByTestId(id(0, 1)).click();
     await page.getByTestId(id(0, 1)).click({ button: "right" });
     // Playwright waits forever for an aria-disabled target unless forced; the press is still a real one.
     await item("Fill down").click({ force: true });
@@ -1198,7 +1209,7 @@ for (const testCase of cases) {
   let outcome = "PASS";
   let error;
   try {
-    await withTimeout(testCase.run(page), CASE_TIMEOUT_MS);
+    await withTimeout(testCase.run(page), testCase.budgetMs ?? CASE_TIMEOUT_MS);
   } catch (cause) {
     outcome = "GAP";
     const line = cause?.stack?.match(/excel-habits-local\.mjs:(\d+)/)?.[1];
