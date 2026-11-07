@@ -20,14 +20,11 @@ export function CellContextMenu({ x, y, items, onClose }: CellContextMenuProps) 
   // when it acts, never to decide where focus goes after mount.
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  const [active, setActive] = useState(-1);
   const [box, setBox] = useState({ left: x, top: y });
 
   useLayoutEffect(() => {
     const first = nextMenuIndex(itemsRef.current, -1, "ArrowDown");
-    if (first < 0) return;
-    setActive(first);
-    itemRefs.current[first]?.focus();
+    if (first >= 0) itemRefs.current[first]?.focus();
   }, []);
 
   // The menu opens at the pointer; measure it and pull it back inside the viewport.
@@ -57,6 +54,8 @@ export function CellContextMenu({ x, y, items, onClose }: CellContextMenuProps) 
       onClose();
       return;
     }
+    // The focused item decides, since a press can move focus to any of them.
+    const active = itemRefs.current.findIndex((node) => node !== null && node === document.activeElement);
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       const item = items[active];
@@ -66,9 +65,7 @@ export function CellContextMenu({ x, y, items, onClose }: CellContextMenuProps) 
     if (!NAVIGATION_KEYS.includes(event.key)) return;
     event.preventDefault();
     const next = nextMenuIndex(items, active, event.key);
-    if (next < 0) return;
-    setActive(next);
-    itemRefs.current[next]?.focus();
+    if (next >= 0) itemRefs.current[next]?.focus();
   }
 
   return (

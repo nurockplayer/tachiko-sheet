@@ -1577,12 +1577,14 @@ export function SheetShell(props: SheetShellProps) {
     setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position });
   }
 
-  /** The filter editor lives in the column heading's disclosure, so open that one first. */
-  function openCellFilter(field: string): void {
-    const column = columns.find((candidate) => candidate.id === field);
+  /** The filter editor lives in the column's disclosure: its heading's, or the compact toolbar that follows the focused cell. */
+  function openCellFilter(position: GridPosition): void {
+    const column = columns.find((candidate) => candidate.id === position.field);
     if (!column) return;
-    const summary = gridScrollRef.current?.querySelector<HTMLElement>(`summary[aria-label="Column actions for ${CSS.escape(column.display_name)}"]`);
-    const disclosure = summary?.closest("details");
+    if (compactColumnActions) focusCell(position.entity, position.field);
+    const disclosure = compactColumnActions
+      ? document.querySelector<HTMLDetailsElement>("details.ts-column-toolbar")
+      : gridScrollRef.current?.querySelector<HTMLElement>(`summary[aria-label="Column actions for ${CSS.escape(column.display_name)}"]`)?.closest("details");
     if (!disclosure) return;
     disclosure.open = true;
     positionColumnToolbar(disclosure);
@@ -1620,7 +1622,7 @@ export function SheetShell(props: SheetShellProps) {
       ...(rowDeleteAvailable ? [{ label: rows > 1 ? `Delete ${rows} rows` : "Delete row", disabled: rowDeleteBlocked, run: command(() => { void deleteRow(); }) }, "separator" as const] : []),
       { label: "Sort A → Z", disabled: viewBlocked, run: command(() => setGridSort(position.field, "asc")) },
       { label: "Sort Z → A", disabled: viewBlocked, run: command(() => setGridSort(position.field, "desc")) },
-      { label: "Filter…", disabled: viewBlocked, run: command(() => openCellFilter(position.field)) },
+      { label: "Filter…", disabled: viewBlocked, run: command(() => openCellFilter(position)) },
     ];
   }
 

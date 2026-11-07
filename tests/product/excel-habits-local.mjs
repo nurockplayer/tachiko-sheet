@@ -1010,6 +1010,29 @@ const cases = [
     await page.locator("tbody tr.ts-row td").first().click({ button: "right" });
     await item("Filter…").click();
     await page.getByLabel("Filter type for title").waitFor();
+    await page.keyboard.press("Escape");
+
+    // In the compact layout the same item opens the toolbar's filter editor.
+    await page.setViewportSize({ width: 650, height: 900 });
+    await settle(page);
+    await page.locator("tbody tr.ts-row td").first().click({ button: "right" });
+    await item("Filter…").click();
+    await page.getByLabel("Filter type for title").waitFor();
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await settle(page);
+
+    // A press moves focus inside the menu: Enter acts on that item, not the first one.
+    const before = await cellText(page, await projection(page), 0, 1);
+    await page.getByTestId(id(0, 1)).click({ button: "right" });
+    // Playwright waits forever for an aria-disabled target unless forced; the press is still a real one.
+    await item("Fill down").click({ force: true });
+    assert.ok(await focused(item("Fill down")), "pressing the disabled Fill down did not focus it");
+    await page.keyboard.press("Enter");
+    await settle(page);
+    assert.equal(await menu.count(), 1, "Enter on the disabled item closed the menu");
+    assert.equal(await cellText(page, await projection(page), 0, 1), before, "Enter on the disabled item ran another command");
+    await page.keyboard.press("Escape");
   } },
   { id: "45", name: "Multiline editing", tier: "B", run: async (page) => {
     await example(page);
