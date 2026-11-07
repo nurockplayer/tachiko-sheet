@@ -730,7 +730,7 @@ async function namedTableJourney() {
   assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), false, "desktop .ro Open is available");
   // The host's File and Edit menus: each id must really be in the menu, and reaches the page's own command.
   const menuCommand = (id) => evaluate(`await window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id: ${JSON.stringify(id)} }); return true;`);
-  // The menu does nothing while Home's own New table is locked.
+  // Wait until Home is ready: the menu does nothing while its New table is locked.
   await evaluate(`await waitFor(() => button("New table"), "New table enabled"); return true;`);
   await menuCommand("new-table");
   await evaluate(`

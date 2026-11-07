@@ -601,6 +601,21 @@ fn run_page_command(app: &AppHandle, id: &str) {
 /// know the webview's text fields.
 fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::default(app)?;
+    // Tauri's default menu has no File submenu on Linux, and so no Quit either.
+    #[cfg(target_os = "linux")]
+    {
+        let quit = MenuItem::with_id(
+            app,
+            QUIT_MENU_ITEM,
+            "Quit Tachiko Sheet",
+            true,
+            Some("CmdOrCtrl+Q"),
+        )?;
+        menu.insert(
+            &tauri::menu::Submenu::with_items(app, "File", true, &[&quit])?,
+            0,
+        )?;
+    }
     for top in menu.items()? {
         let MenuItemKind::Submenu(submenu) = top else {
             continue;
