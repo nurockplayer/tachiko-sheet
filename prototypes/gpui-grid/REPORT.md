@@ -242,3 +242,117 @@ In `src/lib.rs`, with doc comments:
 
 The release binary is 24.9 MB on macOS, 24.9 MB on Windows and 58.2 MB on
 Linux; warm build seconds were 134, 157 and 168 (macOS, Windows, Linux).
+
+# Slice R1: the canary in real OS windows
+
+One run for every number in this slice:
+https://github.com/nurockplayer/tachiko-sheet/actions/runs/42345687489
+(2026-11-07 15:08 JST, commit `a696d72`; finished 15:22 JST). The G1 and G3
+sections above are unchanged.
+
+Every earlier number came from GPUI Kit's test platform: a headless test
+window that renders frames on demand. This slice opens the normal app window
+on each runner and measures frames there.
+
+## What runs
+
+`GPUI_GRID_SWEEP=<file>` starts a sweep from the app's first rendered frame.
+It uses `window.on_next_frame` recursively for 400 frames. Step `n` calls
+`table.scroll_to_row(n * 25 % rows, cx)` and notifies; every 20th step also
+calls `scroll_to_col(n / 20 % cols, cx)`. Each frame records the interval since
+the previous frame and counts the frames until
+`visible_range().rows()` contains the requested row. One second after the last
+step it writes one line to the file:
+
+```
+os=<os> size=<size> frames=<n> mean_ms=<> p95_ms=<> max_ms=<> \
+  max_lag_frames=<> mean_lag_frames=<>
+```
+
+Then it holds the window open for `GPUI_GRID_HOLD_MS` (default 8000 ms) and
+quits. Without the variable the app renders exactly as before; the 21 tests
+below ran with it unset.
+
+The workflow starts the release binary in the background, waits up to 120 s
+for the line, screenshots the screen while the window is still held, and prints
+the line. macOS uses `screencapture -x`, Windows uses PowerShell
+`System.Drawing.CopyFromScreen`, Linux runs the binary under
+`xvfb-run -a -s "-screen 0 1440x900x24"` with `mesa-vulkan-drivers` installed
+and `import -window root`.
+
+## Sweep readings
+
+`frames` is the frames recorded; 401 because the frame that finishes the sweep
+is counted too. `lag` is the frames until the requested row was visible.
+
+| OS | Size | frames | mean ms | p95 ms | max ms | max lag frames | mean lag frames | window opened |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| macOS | 10k | 401 | 34.43 | 38.02 | 129.58 | 1 | 1.00 | yes |
+| macOS | 100k | 401 | 34.22 | 33.60 | 310.68 | 1 | 1.00 | yes |
+| Windows | 10k | 401 | 48.89 | 90.47 | 135.15 | 1 | 1.00 | yes |
+| Windows | 100k | 401 | 49.22 | 90.24 | 135.24 | 1 | 1.00 | yes |
+| Linux | 10k | 401 | 82.51 | 96.00 | 715.03 | 1 | 1.00 | yes |
+| Linux | 100k | 401 | 80.00 | 80.01 | 96.01 | 1 | 1.00 | yes |
+
+Every step's scroll was visible on the next frame: no stale cell was measured
+at either size on any OS. The 100k numbers are not slower than 10k, which fits
+the table rendering only the rows in view.
+
+Two readings look odd but are in the raw lines. macOS 100k has p95 (33.60)
+below its mean (34.22) because a few frames of up to 310.68 ms pull the mean
+above the 95th percentile. Linux 100k has mean 80.00 and p95 80.01 with a
+96.01 ms max: that run has no large outlier, so the two sit on top of each
+other. Linux 10k is the one with a spike (715.03 ms), which is why its mean and
+max are apart.
+
+**These are not user numbers.** GitHub's hosted runners have no real GPU: the
+macOS and Windows runners draw through a software or virtual adapter, and Linux
+ran on Xvfb with `mesa-vulkan-drivers` (lavapipe) installed. The renderer each
+OS actually chose is not in the logs: the app prints nothing about its backend
+and every `window-*.log` in the artifacts is empty, so the backend is setup
+evidence here, not log evidence.
+
+## Screenshots
+
+One 10k screenshot per OS is committed under `evidence/`; the full set of six
+(10k and 100k) is in the run's artifacts.
+
+- `evidence/sweep-10k-macos.png` (1024x768): a real macOS window titled
+  "GPUI Grid Canary" over the Finder desktop, with the table drawn: the row
+  header column C0, then columns C10-C19, rows R9975 to R9977 and below. Cell
+  text is legible. The requested 1440x900 window is larger than the runner's
+  1024x768 screen, so its bottom edge is off screen.
+- `evidence/sweep-10k-windows.png` (1024x768): the same window on the Windows
+  desktop with the taskbar visible; the title bar is clipped at the top edge
+  but "GPUI Grid Canary" is readable. Table drawn with C0 and C10-C19 and rows
+  R9974-R9999, text legible.
+- `evidence/sweep-10k-linux.png` (1440x900): the whole Xvfb screen; there is no
+  window manager, so the window has no decoration and fills the 1440x900
+  screen. Table drawn with C0 and C5-C19 and rows R9950-R9981, text legible.
+  The C5 cells appear clipped on their left edge, where the fixed C0 column
+  overlaps the scrolled columns.
+
+The 100k screenshots show the same final state as the 10k ones on each OS: the
+last step requests row 399 * 25 % rows, which is 9975 for both 10k and 100k
+(399 * 25 is below 10,000), so both runs end at row 9975 and column 19. The two
+sizes differ in the sweep line, not in the final frame.
+
+## Tests
+
+The 10k and 100k test steps still run 21 cases and still report 19 passed,
+2 failed on every OS (`g3f_composition_keeps_escape_from_cancelling`,
+`g4c_paste_at_the_corner_clips_without_panic`), the same two recorded in Slice
+G3. The sweep code is inert in those runs because `GPUI_GRID_SWEEP` is unset.
+
+## Rounds
+
+- Round 1 (run 42344401962, commit `51e78d7`): the sweep did not build.
+  `entity.update(...)` returns `()` here, and the code called `.ok()` on it
+  (`E0599`); the library and binary both failed to compile, so the sweep steps
+  found no binary and their screenshots show only the desktop. No data from
+  that run.
+- Round 2 (run 42345687489, commit `a696d72`): the run quoted above.
+
+From the step logs, each sweep finished about 17 s after the binary started on
+macOS, about 24 s on Windows, and 39 s (10k) and 35 s (100k) on Linux, all well
+inside the 120 s wait.
