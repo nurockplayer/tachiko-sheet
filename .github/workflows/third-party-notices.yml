@@ -13,6 +13,8 @@ on:
       - "scripts/third-party-overrides/**"
       - "THIRD_PARTY_LICENSES.md"
       - "public/THIRD_PARTY_LICENSES.md"
+      - "public/core-kit/notices/LICENSE-MIT"
+      - "public/core-kit/notices/LICENSE-APACHE"
       - ".github/workflows/third-party-notices.yml"
   push:
     branches:
@@ -26,6 +28,8 @@ on:
       - "scripts/third-party-overrides/**"
       - "THIRD_PARTY_LICENSES.md"
       - "public/THIRD_PARTY_LICENSES.md"
+      - "public/core-kit/notices/LICENSE-MIT"
+      - "public/core-kit/notices/LICENSE-APACHE"
       - ".github/workflows/third-party-notices.yml"
 
 permissions:

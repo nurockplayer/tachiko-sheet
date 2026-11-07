@@ -208,6 +208,23 @@ function describeSource(source) {
   return source;
 }
 
+const CODE_EXTENSIONS = new Set([
+  '.rs', '.c', '.h', '.cc', '.cpp', '.js', '.mjs', '.ts', '.tsx', '.jsx', '.py',
+  '.sh', '.toml', '.json', '.yml', '.yaml', '.html', '.css', '.java', '.go',
+]);
+const LICENSE_BASENAME = /^(licen[cs]e|unlicen[cs]e|copying|notice|copyright)([-_.][^/]*)?$/i;
+
+/**
+ * True when the file name is an actual license or notice text. A source file
+ * such as `src/copying.rs` is never license text, whatever its name starts with.
+ */
+export function isLicenseFile(name) {
+  const base = path.basename(name);
+  const extension = path.extname(base).toLowerCase();
+  if (extension && CODE_EXTENSIONS.has(extension)) return false;
+  return LICENSE_BASENAME.test(base);
+}
+
 async function licenseFiles(directory, depth) {
   const found = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -216,7 +233,7 @@ async function licenseFiles(directory, depth) {
       if (depth > 0) found.push(...(await licenseFiles(full, depth - 1)));
       continue;
     }
-    if (/^(LICENSE|LICENCE|COPYING|NOTICE|UNLICENSE|COPYRIGHT)/i.test(entry.name)) found.push(full);
+    if (isLicenseFile(entry.name)) found.push(full);
   }
   return found;
 }

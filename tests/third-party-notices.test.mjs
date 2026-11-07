@@ -1,7 +1,7 @@
 // The SPDX allow-list decision the notices generator applies to every crate
 // and JavaScript package.
 import { describe, expect, it } from "vitest";
-import { MPL_EXCEPTIONS, isAllowedLicenseExpression, isAllowedPackage } from "../scripts/generate-third-party-licenses.mjs";
+import { MPL_EXCEPTIONS, isAllowedLicenseExpression, isAllowedPackage, isLicenseFile } from "../scripts/generate-third-party-licenses.mjs";
 
 describe("isAllowedLicenseExpression", () => {
   it("accepts a single allow-listed license", () => {
@@ -56,5 +56,39 @@ describe("isAllowedPackage", () => {
   it("keeps the ordinary allow-list working", () => {
     expect(isAllowedPackage("react", "19.0.0", "MIT")).toBe(true);
     expect(isAllowedPackage("example", "1.0.0", "GPL-3.0-only")).toBe(false);
+  });
+});
+
+describe("isLicenseFile", () => {
+  it("accepts license and notice text under the usual names", () => {
+    for (const name of [
+      "LICENSE",
+      "LICENSE-MIT",
+      "LICENSE.md",
+      "LICENSE.txt",
+      "COPYING",
+      "COPYING.LESSER",
+      "NOTICE",
+      "UNLICENSE",
+      "COPYRIGHT",
+      "LICENSE-APACHE-2.0",
+    ]) {
+      expect(isLicenseFile(name), name).toBe(true);
+    }
+    expect(isLicenseFile("some/pkg/LICENSE-MIT")).toBe(true);
+  });
+
+  it("refuses source files whose names merely start with a license word", () => {
+    expect(isLicenseFile("src/copying.rs")).toBe(false);
+    expect(isLicenseFile("copying.rs")).toBe(false);
+    expect(isLicenseFile("src/tests/copying.rs")).toBe(false);
+    expect(isLicenseFile("license.ts")).toBe(false);
+    expect(isLicenseFile("NOTICE.html")).toBe(false);
+    expect(isLicenseFile("copying.toml")).toBe(false);
+  });
+
+  it("refuses unrelated names", () => {
+    expect(isLicenseFile("readme.md")).toBe(false);
+    expect(isLicenseFile("licensees.txt")).toBe(false);
   });
 });
