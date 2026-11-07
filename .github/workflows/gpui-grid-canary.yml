@@ -165,6 +165,15 @@ jobs:
           fi
           xvfb-run -a -s "-screen 0 1440x900x24" bash /tmp/gpui-grid-sweep.sh
 
+      - name: Retain the macOS binary for the by-hand check
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gpui-grid-macos-binary
+          path: prototypes/gpui-grid/target/release/gpui-grid
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Retain the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
