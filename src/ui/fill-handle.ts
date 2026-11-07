@@ -14,9 +14,9 @@ export function fillDragTarget(source: CellRectangle, pointerRow: number): CellR
 
 /**
  * Excel's double-click fill limit: the last contiguous filled row below the
- * range in the adjacent column, the one to the left of the range or, when the
- * range starts at the first column, the one to its right. Null when there is
- * no such column or no filled row directly below the range.
+ * range in the adjacent column, the one to the left of the range or, when that
+ * column has nothing directly below the range, the one to its right. Null when
+ * neither does.
  */
 export function adjacentFillBottom(
   area: CellRectangle,
@@ -24,12 +24,15 @@ export function adjacentFillBottom(
   filled: (row: number, column: number) => boolean,
   rowCount: number,
 ): number | null {
-  const column = area.left > 0 ? area.left - 1 : area.right + 1 < columnCount ? area.right + 1 : null;
-  if (column === null) return null;
-  let bottom: number | null = null;
-  for (let row = area.bottom + 1; row < rowCount; row += 1) {
-    if (!filled(row, column)) break;
-    bottom = row;
-  }
-  return bottom;
+  const bottomIn = (column: number): number | null => {
+    let bottom: number | null = null;
+    for (let row = area.bottom + 1; row < rowCount; row += 1) {
+      if (!filled(row, column)) break;
+      bottom = row;
+    }
+    return bottom;
+  };
+  const left = area.left > 0 ? bottomIn(area.left - 1) : null;
+  if (left !== null) return left;
+  return area.right + 1 < columnCount ? bottomIn(area.right + 1) : null;
 }

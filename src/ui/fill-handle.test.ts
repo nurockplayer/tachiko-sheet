@@ -39,6 +39,14 @@ describe("double-click fill limit", () => {
     expect(adjacentFillBottom(cell(0, 0), 3, filled("1:1", "2:1", "3:1"), 6)).toBe(3);
   });
 
+  it("falls back to the right column when the left one has nothing below the range", () => {
+    expect(adjacentFillBottom(cell(0, 1), 3, filled("1:2", "2:2"), 6)).toBe(2);
+  });
+
+  it("prefers the left column when both have data", () => {
+    expect(adjacentFillBottom(cell(0, 1), 3, filled("1:0", "1:2", "2:2"), 6)).toBe(1);
+  });
+
   it("stops at the row before the first empty cell in the adjacent column", () => {
     expect(adjacentFillBottom(cell(0, 1), 3, filled("1:0", "2:0"), 6)).toBe(2);
   });
