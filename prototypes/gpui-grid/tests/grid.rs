@@ -8,9 +8,9 @@ use gpui_grid::{GridApp, GridSize};
 use gpui_kit::base::Root;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{
-    App, AppContext, Bounds, Entity, InputEvent as _, Modifiers, MouseButton, Point, Pixels, Render,
-    ScrollDelta, ScrollEvent, Size, TestAppContext, Window, WindowBounds, WindowHandle,
-    WindowOptions, point, px, size,
+    App, AppContext, Bounds, ClipboardItem, ElementInputHandler, Entity, InputEvent as _,
+    InputHandler as _, Modifiers, MouseButton, Point, Pixels, Render, ScrollDelta, ScrollEvent,
+    Size, TestAppContext, Window, WindowBounds, WindowHandle, WindowOptions, point, px, size,
 };
 
 /// The production entry point with deterministic test bounds, as Kit's own
@@ -315,6 +315,260 @@ fn g2d_drag_after_scrolling_has_no_offset_error(cx: &mut TestAppContext) {
         settle(window, cx);
 
         assert_eq!(range_label(&content, cx).as_deref(), Some("R5002C1:R5005C3"));
+    })
+    .unwrap();
+}
+
+/// The secondary-key chord for copy and paste on the host OS.
+fn chord(key: &str) -> String {
+    if cfg!(target_os = "macos") {
+        format!("cmd-{key}")
+    } else {
+        format!("ctrl-{key}")
+    }
+}
+
+fn delegate_cell_text(content: &Entity<GridApp>, cx: &App, row: usize, col: usize) -> String {
+    content.read(cx).table().read(cx).delegate().cell_text(row, col)
+}
+
+fn editing_cell(content: &Entity<GridApp>, cx: &App) -> Option<(usize, usize)> {
+    content.read(cx).table().read(cx).delegate().editing()
+}
+
+/// Click R2C1, type `x` plus `typed`, then commit with `final_key`. Returns
+/// the cell text, the range label and whether an editor is still mounted.
+fn edit_and_commit(
+    cx: &mut TestAppContext,
+    dims: GridSize,
+    typed: &str,
+    final_key: &str,
+) -> (String, Option<String>, bool) {
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
+        window.click(cell_id(2, 1), cx);
+        settle(window, cx);
+        window.press("x", cx);
+        settle(window, cx);
+        window.input(typed, cx);
+        settle(window, cx);
+        window.press(final_key, cx);
+        settle(window, cx);
+        (
+            delegate_cell_text(&content, cx, 2, 1),
+            range_label(&content, cx),
+            editing_cell(&content, cx).is_some(),
+        )
+    })
+    .unwrap()
+}
+
+#[gpui_kit::test]
+fn g3a_typing_and_enter_commit_10k(cx: &mut TestAppContext) {
+    let (text, label, editing) = edit_and_commit(
+        cx,
+        GridSize {
+            rows: 10_000,
+            cols: 30,
+        },
+        "yz",
+        "enter",
+    );
+    assert_eq!(text, "xyz");
+    assert_eq!(label.as_deref(), Some("R3C1:R3C1"));
+    assert!(!editing);
+}
+
+#[gpui_kit::test]
+fn g3a_typing_and_enter_commit_100k(cx: &mut TestAppContext) {
+    let (text, label, editing) = edit_and_commit(
+        cx,
+        GridSize {
+            rows: 100_000,
+            cols: 50,
+        },
+        "yz",
+        "enter",
+    );
+    assert_eq!(text, "xyz");
+    assert_eq!(label.as_deref(), Some("R3C1:R3C1"));
+    assert!(!editing);
+}
+
+#[gpui_kit::test]
+fn g3b_tab_commits_and_moves_right(cx: &mut TestAppContext) {
+    let (text, label, editing) = edit_and_commit(
+        cx,
+        GridSize {
+            rows: 10_000,
+            cols: 30,
+        },
+        "yz",
+        "tab",
+    );
+    assert_eq!(text, "xyz");
+    assert_eq!(label.as_deref(), Some("R2C2:R2C2"));
+    assert!(!editing);
+}
+
+#[gpui_kit::test]
+fn g3c_escape_cancels_without_writing(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
+        window.click(cell_id(2, 1), cx);
+        settle(window, cx);
+        window.press("x", cx);
+        settle(window, cx);
+        window.input("abc", cx);
+        settle(window, cx);
+        window.press("escape", cx);
+        settle(window, cx);
+        assert_eq!(delegate_cell_text(&content, cx, 2, 1), "R2C1");
+        assert_eq!(editing_cell(&content, cx), None);
+        assert_eq!(range_label(&content, cx).as_deref(), Some("R2C1:R2C1"));
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn g3d_composing_text_blocks_enter_until_the_mark_clears(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
+        window.click(cell_id(2, 1), cx);
+        settle(window, cx);
+        content.update(cx, |app, cx| app.begin_edit(Some(""), window, cx));
+        settle(window, cx);
+
+        let editor = content.read(cx).editor().clone();
+        let bounds = window.find("cell-editor").bounds();
+        let mut handler = ElementInputHandler::new(bounds, editor.clone());
+        handler.replace_and_mark_text_in_range(None, "ni", Some(2..2), window, cx);
+        window.press("enter", cx);
+        settle(window, cx);
+        assert_eq!(editing_cell(&content, cx), Some((2, 1)));
+        assert_eq!(delegate_cell_text(&content, cx, 2, 1), "R2C1");
+
+        let mut handler = ElementInputHandler::new(bounds, editor);
+        handler.replace_text_in_range(None, "日本", window, cx);
+        window.press("enter", cx);
+        settle(window, cx);
+        assert_eq!(delegate_cell_text(&content, cx, 2, 1), "日本");
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn g3e_edit_after_scrolling_commits_and_moves(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        let table = content.read(cx).table().clone();
+        table.update(cx, |table, cx| table.scroll_to_row(5_000, cx));
+        settle(window, cx);
+        window.click(cell_id(5002, 1), cx);
+        settle(window, cx);
+        window.press("v", cx);
+        settle(window, cx);
+        window.input("alue", cx);
+        settle(window, cx);
+        window.press("enter", cx);
+        settle(window, cx);
+        assert_eq!(delegate_cell_text(&content, cx, 5002, 1), "value");
+        assert_eq!(range_label(&content, cx).as_deref(), Some("R5003C1:R5003C1"));
+        assert_eq!(editing_cell(&content, cx), None);
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn g4a_copy_writes_the_range_as_tsv(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, _content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
+        let from = cell_center(window, &cell_id(2, 1));
+        let to = cell_center(window, &cell_id(3, 2));
+        window.drag(from, to, cx);
+        settle(window, cx);
+        let keystroke = chord("c");
+        window.press(keystroke.as_str(), cx);
+        settle(window, cx);
+        let clipboard = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default();
+        assert_eq!(clipboard, "R2C1\tR2C2\nR3C1\tR3C2");
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn g4b_paste_writes_cells_from_the_top_left(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
+        cx.write_to_clipboard(ClipboardItem::new_string("a\tb\r\nc\td".to_string()));
+        window.click(cell_id(7, 1), cx);
+        settle(window, cx);
+        let keystroke = chord("v");
+        window.press(keystroke.as_str(), cx);
+        settle(window, cx);
+        assert_eq!(delegate_cell_text(&content, cx, 7, 1), "a");
+        assert_eq!(delegate_cell_text(&content, cx, 7, 2), "b");
+        assert_eq!(delegate_cell_text(&content, cx, 8, 1), "c");
+        assert_eq!(delegate_cell_text(&content, cx, 8, 2), "d");
+        assert_eq!(range_label(&content, cx).as_deref(), Some("R7C1:R8C2"));
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn g4c_paste_at_the_corner_clips_without_panic(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        let table = content.read(cx).table().clone();
+        scroll_to_end(&table, dims, cx);
+        settle(window, cx);
+        cx.write_to_clipboard(ClipboardItem::new_string("1\t2\n3\t4".to_string()));
+        window.click(cell_id(dims.rows - 1, dims.cols - 1), cx);
+        settle(window, cx);
+        let keystroke = chord("v");
+        window.press(keystroke.as_str(), cx);
+        settle(window, cx);
+        assert_eq!(
+            delegate_cell_text(&content, cx, dims.rows - 1, dims.cols - 1),
+            "1"
+        );
+        assert_eq!(
+            delegate_cell_text(&content, cx, dims.rows - 1, dims.cols - 2),
+            format!("R{}C{}", dims.rows - 1, dims.cols - 2)
+        );
+        assert_eq!(editing_cell(&content, cx), None);
     })
     .unwrap();
 }

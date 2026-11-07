@@ -5,8 +5,11 @@
 //! index, and the only mutable state is [`RangeState`]. Selection is driven
 //! by the table's own per-cell pointer events, so there is no pixel math.
 
+use std::collections::HashMap;
+
 use gpui_kit::component::{
     ActiveTheme as _, Sizable as _, Size as ComponentSize,
+    input::{Input, InputState},
     table::{Column, DataTable, TableDelegate, TableEvent, TableState},
 };
 use gpui_kit::*;
@@ -100,6 +103,9 @@ pub struct GridDelegate {
     size: GridSize,
     columns: Vec<Column>,
     pub range: RangeState,
+    pub edits: HashMap<(usize, usize), String>,
+    pub editing: Option<(usize, usize)>,
+    pub editor: Option<Entity<InputState>>,
 }
 
 impl GridDelegate {
@@ -118,11 +124,34 @@ impl GridDelegate {
             size,
             columns,
             range: RangeState::default(),
+            edits: HashMap::new(),
+            editing: None,
+            editor: None,
         }
+    }
+
+    /// The editor element is shared by the app and the delegate; the delegate
+    /// only mounts it inside the editing cell.
+    pub fn with_editor(mut self, editor: Entity<InputState>) -> Self {
+        self.editor = Some(editor);
+        self
     }
 
     pub fn size(&self) -> GridSize {
         self.size
+    }
+
+    /// The edited value if the cell has one, otherwise its default label.
+    pub fn cell_text(&self, row: usize, col: usize) -> String {
+        self.edits
+            .get(&(row, col))
+            .cloned()
+            .unwrap_or_else(|| format!("R{row}C{col}"))
+    }
+
+    /// The cell whose editor is mounted, if any.
+    pub fn editing(&self) -> Option<(usize, usize)> {
+        self.editing
     }
 }
 
@@ -148,9 +177,9 @@ impl TableDelegate for GridDelegate {
     ) -> impl IntoElement {
         let inside = self.range.contains(row_ix, col_ix);
         let tint = cx.theme().tokens.table_active;
-        let entity = cx.entity();
-        let drag_entity = entity.clone();
-        let up_entity = entity.clone();
+        let text = self.cell_text(row_ix, col_ix);
+        let editor = self.editor.clone();
+        let editing = self.editing == Some((row_ix, col_ix));
 
         let mut cell = div()
             .id(format!("grid-cell:{row_ix}:{col_ix}"))
@@ -159,7 +188,18 @@ impl TableDelegate for GridDelegate {
         if inside {
             cell = cell.bg(tint);
         }
-        cell.child(format!("R{row_ix}C{col_ix}"))
+
+        if editing {
+            if let Some(editor) = editor {
+                return cell.child(Input::new(&editor).id("cell-editor"));
+            }
+        }
+
+        let entity = cx.entity();
+        let drag_entity = entity.clone();
+        let up_entity = entity.clone();
+
+        cell.child(text)
             .on_mouse_down(MouseButton::Left, move |event, _window, cx| {
                 let shift = event.modifiers.shift;
                 entity.update(cx, |table, cx| {
@@ -188,6 +228,7 @@ impl TableDelegate for GridDelegate {
 pub struct GridApp {
     table: Entity<TableState<GridDelegate>>,
     focus_handle: FocusHandle,
+    editor: Entity<InputState>,
 }
 
 impl GridApp {
@@ -196,10 +237,17 @@ impl GridApp {
     }
 
     pub fn with_size(size: GridSize, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // One editor entity for the whole grid; it is mounted only in the
+        // editing cell, so its text never belongs to a stored cell.
+        let editor = cx.new(|cx| InputState::new(window, cx));
         let table = cx.new(|cx| {
-            TableState::new(GridDelegate::new(size), window, cx)
-                .cell_selectable(true)
-                .row_header(true)
+            TableState::new(
+                GridDelegate::new(size).with_editor(editor.clone()),
+                window,
+                cx,
+            )
+            .cell_selectable(true)
+            .row_header(true)
         });
 
         // Plain arrow keys stay with the table; sync the range from its
@@ -229,11 +277,160 @@ impl GridApp {
         Self {
             table,
             focus_handle,
+            editor,
         }
     }
 
     pub fn table(&self) -> &Entity<TableState<GridDelegate>> {
         &self.table
+    }
+
+    pub fn editor(&self) -> &Entity<InputState> {
+        &self.editor
+    }
+
+    /// Mounts the editor in the focused cell, seeded with `initial` or with
+    /// the cell's current text, and gives it focus.
+    pub fn begin_edit(
+        &mut self,
+        initial: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((row, col)) = self.table.read(cx).delegate().range.focus else {
+            return;
+        };
+        let value = match initial {
+            Some(text) => text.to_string(),
+            None => self.table.read(cx).delegate().cell_text(row, col),
+        };
+        self.editor
+            .update(cx, |state, cx| state.set_value(value, window, cx));
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().editing = Some((row, col));
+            cx.notify();
+        });
+        let handle = self.editor.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+        cx.notify();
+    }
+
+    /// Writes the editor's value into the editing cell, clears the editor and
+    /// moves the selection one cell from there.
+    pub fn commit_and_move(
+        &mut self,
+        d_row: i64,
+        d_col: i64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.table.read(cx).delegate().editing.is_none() {
+            return;
+        }
+        let value = self.editor.read(cx).value().to_string();
+        self.table.update(cx, |table, cx| {
+            let size = table.delegate().size();
+            let Some((row, col)) = table.delegate_mut().editing.take() else {
+                return;
+            };
+            table.delegate_mut().edits.insert((row, col), value);
+            let row = (row as i64 + d_row).clamp(0, size.rows as i64 - 1) as usize;
+            let col = (col as i64 + d_col).clamp(0, size.cols as i64 - 1) as usize;
+            let delegate = table.delegate_mut();
+            delegate.range.anchor = Some((row, col));
+            delegate.range.focus = Some((row, col));
+            delegate.range.dragging = false;
+            table.scroll_to_row(row, cx);
+            table.scroll_to_col(col, cx);
+            cx.notify();
+        });
+        let handle = self.focus_handle.clone();
+        window.focus(&handle, cx);
+        cx.notify();
+    }
+
+    /// Leaves the editing cell unchanged and returns focus to the grid.
+    pub fn cancel_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().editing = None;
+            cx.notify();
+        });
+        let handle = self.focus_handle.clone();
+        window.focus(&handle, cx);
+        cx.notify();
+    }
+
+    /// Whether the focused input has marked (composing) text. Enter, Tab and
+    /// Escape belong to the composition until the mark clears.
+    fn editor_is_composing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let mut editor = self.editor.clone();
+        editor.marked_text_range(window, cx).is_some()
+    }
+
+    /// Writes the selected range as TSV. Rows end with `\n`, cells with `\t`.
+    fn copy_range(&mut self, cx: &mut Context<Self>) {
+        let Some(((r1, c1), (r2, c2))) = self.table.read(cx).delegate().range.normalized() else {
+            return;
+        };
+        let mut lines = Vec::with_capacity(r2 - r1 + 1);
+        for row in r1..=r2 {
+            let mut cells = Vec::with_capacity(c2 - c1 + 1);
+            for col in c1..=c2 {
+                cells.push(self.table.read(cx).delegate().cell_text(row, col));
+            }
+            lines.push(cells.join("\t"));
+        }
+        cx.write_to_clipboard(ClipboardItem::new_string(lines.join("\n")));
+    }
+
+    /// Pastes TSV from the clipboard at the top-left of the selection, clipping
+    /// at the grid's edges, then selects what was pasted.
+    fn paste(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        let text = text.replace('\r', "");
+        let start = {
+            let delegate = self.table.read(cx).delegate();
+            delegate
+                .range
+                .normalized()
+                .map(|(start, _)| start)
+                .or(delegate.range.focus)
+        };
+        let Some(start) = start else {
+            return;
+        };
+        let parsed: Vec<Vec<String>> = text
+            .split('\n')
+            .map(|line| line.split('\t').map(str::to_string).collect())
+            .collect();
+        let width = parsed.iter().map(Vec::len).max().unwrap_or(0);
+        self.table.update(cx, |table, cx| {
+            let size = table.delegate().size();
+            let delegate = table.delegate_mut();
+            for (d_row, line) in parsed.iter().enumerate() {
+                let row = start.0 + d_row;
+                if row >= size.rows {
+                    break;
+                }
+                for (d_col, value) in line.iter().enumerate() {
+                    let col = start.1 + d_col;
+                    if col >= size.cols {
+                        break;
+                    }
+                    delegate.edits.insert((row, col), value.clone());
+                }
+            }
+            let last_row = (start.0 + parsed.len().saturating_sub(1)).min(size.rows - 1);
+            let last_col = (start.1 + width.saturating_sub(1)).min(size.cols - 1);
+            delegate.range.anchor = Some(start);
+            delegate.range.focus = Some((last_row, last_col));
+            delegate.range.dragging = false;
+            table.scroll_to_row(last_row, cx);
+            table.scroll_to_col(last_col, cx);
+            cx.notify();
+        });
     }
 
     /// Shift plus an arrow extends the focus one cell and scrolls to it.
@@ -253,19 +450,67 @@ impl GridApp {
         cx.notify();
     }
 
-    fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        if !event.keystroke.modifiers.shift {
+    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let keystroke = &event.keystroke;
+        let editing = self.table.read(cx).delegate().editing().is_some();
+
+        if editing {
+            if self.editor_is_composing(window, cx) {
+                return;
+            }
+            match keystroke.key.as_str() {
+                "enter" => {
+                    self.commit_and_move(1, 0, window, cx);
+                    cx.stop_propagation();
+                }
+                "tab" => {
+                    self.commit_and_move(0, 1, window, cx);
+                    cx.stop_propagation();
+                }
+                "escape" => {
+                    self.cancel_edit(window, cx);
+                    cx.stop_propagation();
+                }
+                _ => {}
+            }
             return;
         }
-        let (d_row, d_col) = match event.keystroke.key.as_str() {
-            "up" => (-1, 0),
-            "down" => (1, 0),
-            "left" => (0, -1),
-            "right" => (0, 1),
-            _ => return,
-        };
-        self.extend_focus(d_row, d_col, cx);
-        cx.stop_propagation();
+
+        if keystroke.modifiers.secondary() {
+            match keystroke.key.as_str() {
+                "c" => {
+                    self.copy_range(cx);
+                    cx.stop_propagation();
+                }
+                "v" => {
+                    self.paste(cx);
+                    cx.stop_propagation();
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if keystroke.modifiers.shift {
+            let (d_row, d_col) = match keystroke.key.as_str() {
+                "up" => (-1, 0),
+                "down" => (1, 0),
+                "left" => (0, -1),
+                "right" => (0, 1),
+                _ => return,
+            };
+            self.extend_focus(d_row, d_col, cx);
+            cx.stop_propagation();
+            return;
+        }
+
+        if let Some(text) = keystroke.key_char.as_deref() {
+            if !text.is_empty() && !text.chars().any(char::is_control) {
+                let initial = text.to_string();
+                self.begin_edit(Some(&initial), window, cx);
+                cx.stop_propagation();
+            }
+        }
     }
 }
 
