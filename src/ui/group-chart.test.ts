@@ -1,7 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { chartColorSlots, chartTicks, groupChartRefusal, pieSlices, shortChartLabel } from "./group-chart";
+import type { GroupTotalsProjection } from "../../public/core-kit/runtime/protocol.js";
+import { chartColorSlots, chartTicks, groupChartPoints, groupChartRefusal, pieSlices, shortChartLabel } from "./group-chart";
 
-const points = (...values: number[]) => values.map((value, index) => ({ label: `g${index}`, value }));
+const points = (...values: number[]) => values.map((value, index) => ({ id: `g${index}`, label: `g${index}`, marked: false, value }));
+
+describe("groupChartPoints", () => {
+  const projection = (groups: GroupTotalsProjection["groups"]): GroupTotalsProjection => ({ revision: "r", dimensions: [], measures: ["m"], rows: 0, totals: [null], groups });
+
+  it("keeps a blank apart from the text spelled the same", () => {
+    const [blank, text] = groupChartPoints(projection([
+      { keys: [{ kind: "blank" }], rows: 1, totals: [1] },
+      { keys: [{ kind: "text", value: "(blank)" }], rows: 1, totals: [2] },
+    ]), 0)!;
+    expect(blank!.label).toBe(text!.label);
+    expect(blank!.id).not.toBe(text!.id);
+    expect([blank!.marked, text!.marked]).toEqual([true, false]);
+  });
+
+  it("keeps two-column keys apart when the joined labels match", () => {
+    const [first, second] = groupChartPoints(projection([
+      { keys: [{ kind: "text", value: "a · b" }, { kind: "text", value: "c" }], rows: 1, totals: [1] },
+      { keys: [{ kind: "text", value: "a" }, { kind: "text", value: "b · c" }], rows: 1, totals: [2] },
+    ]), 0)!;
+    expect(first!.id).not.toBe(second!.id);
+  });
+
+  it("answers null when a total is unavailable", () => {
+    expect(groupChartPoints(projection([{ keys: [{ kind: "blank" }], rows: 1, totals: [null] }]), 0)).toBeNull();
+  });
+});
 
 describe("groupChartRefusal", () => {
   it("refuses unavailable totals and no groups", () => {
@@ -19,6 +46,19 @@ describe("groupChartRefusal", () => {
     expect(groupChartRefusal("pie", points(1, 1, 1, 1, 1, 1, 1, 1, 1))).toMatch(/up to 8/);
     expect(groupChartRefusal("bar", points(...Array<number>(50).fill(1)))).toBeNull();
     expect(groupChartRefusal("bar", points(...Array<number>(51).fill(1)))).toMatch(/More than 50/);
+  });
+
+  it("refuses totals an axis can't scale, and every tick it does draw is finite", () => {
+    for (const extreme of [[-5e-324, 5e-324], [-1e308, 1e308], [1.7e308]]) {
+      expect(groupChartRefusal("bar", points(...extreme))).toMatch(/too large or too small/);
+    }
+    for (const edge of [[1e300, -1e300], [1e-300], [0, 1e-300]]) {
+      expect(groupChartRefusal("line", points(...edge))).toBeNull();
+      const ticks = chartTicks(edge);
+      expect(ticks.length).toBeGreaterThan(1);
+      expect(ticks.every(Number.isFinite)).toBe(true);
+      expect(new Set(ticks).size).toBe(ticks.length);
+    }
   });
 
   it("refuses a pie of zeros", () => {
@@ -46,6 +86,13 @@ describe("pieSlices", () => {
 
   it("draws one whole slice as a circle", () => {
     expect(pieSlices([5, 0], 50, 40)).toEqual([{ index: 0, fraction: 1, path: null }]);
+  });
+
+  it("draws a slice as a circle when rounding makes its ends meet", () => {
+    const [big, small] = pieSlices([1_000_000, 1], 50, 40);
+    expect(big!.fraction).toBeLessThan(1);
+    expect(big!.path).toBeNull();
+    expect(small!.path).not.toBeNull();
   });
 });
 

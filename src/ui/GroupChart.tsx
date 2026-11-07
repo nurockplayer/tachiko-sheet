@@ -46,10 +46,10 @@ function BarChart({ label, points, format }: ChartProps) {
       const path = point.value >= 0
         ? `M ${from} ${y + (row - bar) / 2} h ${width - radius} a ${radius} ${radius} 0 0 1 ${radius} ${radius} v ${bar - 2 * radius} a ${radius} ${radius} 0 0 1 ${-radius} ${radius} h ${radius - width} Z`
         : `M ${from + width} ${y + (row - bar) / 2} h ${radius - width} a ${radius} ${radius} 0 0 0 ${-radius} ${radius} v ${bar - 2 * radius} a ${radius} ${radius} 0 0 0 ${radius} ${radius} h ${width - radius} Z`;
-      return <g key={`${point.label}-${index}`} data-chart-mark={point.value}>
+      return <g key={point.id} data-chart-mark={point.value}>
         <title>{`${point.label}: ${format(point.value)}`}</title>
         <rect className="ts-chart-hit" x={0} y={y} width={WIDTH} height={row} />
-        <text className="ts-chart-label" x={left - 8} y={y + row / 2} textAnchor="end" dominantBaseline="middle">{shortChartLabel(point.label, 14)}</text>
+        <text className={point.marked ? "ts-chart-label ts-chart-label--marked" : "ts-chart-label"} x={left - 8} y={y + row / 2} textAnchor="end" dominantBaseline="middle">{shortChartLabel(point.label, 14)}</text>
         {width > 0 ? <path className="ts-chart-bar" d={path} /> : null}
       </g>;
     })}
@@ -77,11 +77,11 @@ function LineChart({ label, points, format }: ChartProps) {
       <text className="ts-chart-axis" x={left - 8} y={y(tick)} textAnchor="end" dominantBaseline="middle">{format(tick)}</text>
     </g>)}
     <polyline className="ts-chart-line" points={points.map((point, index) => `${x(index)},${y(point.value)}`).join(" ")} />
-    {points.map((point, index) => <g key={`${point.label}-${index}`} data-chart-mark={point.value}>
+    {points.map((point, index) => <g key={point.id} data-chart-mark={point.value}>
       <title>{`${point.label}: ${format(point.value)}`}</title>
       <circle className="ts-chart-hit" cx={x(index)} cy={y(point.value)} r={12} />
       <circle className="ts-chart-marker" cx={x(index)} cy={y(point.value)} r={4} />
-      {labeled(index) ? <text className="ts-chart-axis" x={x(index)} y={height - 10} textAnchor={points.length === 1 ? "middle" : index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{shortChartLabel(point.label, 10)}</text> : null}
+      {labeled(index) ? <text className={point.marked ? "ts-chart-axis ts-chart-label--marked" : "ts-chart-axis"} x={x(index)} y={height - 10} textAnchor={points.length === 1 ? "middle" : index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{shortChartLabel(point.label, 10)}</text> : null}
     </g>)}
   </svg>;
 }
@@ -89,8 +89,8 @@ function LineChart({ label, points, format }: ChartProps) {
 function PieChart({ label, points, format }: ChartProps) {
   const size = 200;
   const colors = useRef(new Map<string, number>());
-  colors.current = chartColorSlots(colors.current, points.map((point) => point.label));
-  const slot = (index: number) => colors.current.get(points[index]!.label) ?? 0;
+  colors.current = chartColorSlots(colors.current, points.map((point) => point.id));
+  const slot = (index: number) => colors.current.get(points[index]!.id) ?? 0;
   const slices = pieSlices(points.map((point) => point.value), size / 2, size / 2 - 4);
   const shareOf = (index: number) => slices.find((slice) => slice.index === index)?.fraction ?? 0;
   const percent = (fraction: number) => `${(fraction * 100).toFixed(fraction < 0.1 ? 1 : 0)}%`;
@@ -106,9 +106,9 @@ function PieChart({ label, points, format }: ChartProps) {
       })}
     </svg>
     <ul className="ts-group-chart-legend">
-      {points.map((point, index) => <li key={`${point.label}-${index}`}>
+      {points.map((point, index) => <li key={point.id}>
         <span className="ts-chart-swatch" aria-hidden="true" style={{ background: `var(--ts-chart-${slot(index) + 1})` }} />
-        <span className="ts-chart-legend-name" title={point.label}>{point.label}</span>
+        <span className={point.marked ? "ts-chart-legend-name ts-group-key-marker" : "ts-chart-legend-name"} title={point.label}>{point.label}</span>
         <span className="ts-chart-legend-value">{format(point.value)}</span>
         <span className="ts-chart-legend-value">{percent(shareOf(index))}</span>
       </li>)}

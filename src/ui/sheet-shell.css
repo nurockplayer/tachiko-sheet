@@ -1391,6 +1391,7 @@ body { margin: 0; }
 .ts-chart-baseline { stroke: var(--ts-line-strong); stroke-width: 1; }
 .ts-chart-axis { fill: var(--ts-ink-soft); font-size: 11px; font-variant-numeric: tabular-nums; }
 .ts-chart-label { fill: var(--ts-ink); font-size: 12px; }
+.ts-chart-label--marked { fill: var(--ts-ink-soft); font-style: italic; }
 .ts-chart-hit { fill: transparent; }
 g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 .ts-chart-bar { fill: var(--ts-chart-1); }
