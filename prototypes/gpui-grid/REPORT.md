@@ -132,3 +132,82 @@ The window is 1440 x 900. Check:
 - Retina sharpness: cell text and column borders.
 - Mixed Chinese and Japanese text rendering: not exercised by this slice (cell
   text is `R{row}C{col}` only).
+
+# Slice G3: editing and copy/paste (Sheet #327 gates 3 and 4)
+
+One run for every number in this slice:
+https://github.com/nurockplayer/tachiko-sheet/actions/runs/42341704656
+(2026-11-07 14:12 JST, commit `f7c8c84`). The G1 sections above are unchanged.
+
+Editing, copy and paste are throwaway canary code too. Values live in
+`GridDelegate::edits`; there is no durable store, no formula and no
+revision behind them.
+
+## Case table
+
+`pass` keeps its G1 meaning: the case ran through a real headless window and
+its assertion held. The 10k and 100k steps run the same cases.
+
+| Case | macOS | Windows | Linux | Notes |
+| --- | --- | --- | --- | --- |
+| G3a typing + Enter (10k, 100k) | pass | pass | pass | cell `xyz`, selection `R3C1`, no editor mounted |
+| G3b typing + Tab | fail | fail | fail | cell still `R2C1`; the commit never ran |
+| G3c Escape cancels | fail | fail | fail | an editor is still mounted over R2C1 |
+| G3d composing text blocks Enter | pass | pass | pass | Enter during the mark changed nothing; after the mark cleared the cell was `日本` |
+| G3e edit after scrolling to row 5,000 | pass | pass | pass | `R5002C1` holds the value, `R5003C1` selected |
+| G4a copy a 2x2 range | pass | pass | pass | clipboard exactly `R2C1\tR2C2\nR3C1\tR3C2` |
+| G4b paste 2x2 from `R7C1` | pass | pass | pass | four cells written, label `R7C1:R8C2` |
+| G4c paste 2x2 at the last cell | fail | fail | fail | corner cell kept `R9999C29` |
+
+The three failures are the same on every OS. The log lines:
+
+```
+thread 'g3b_tab_commits_and_moves_right' panicked at tests/grid.rs:410:5:
+  left: "R2C1"   right: "xyz"
+thread 'g3c_escape_cancels_without_writing' panicked at tests/grid.rs:433:9:
+  left: Some((2, 1))   right: None
+thread 'g4c_paste_at_the_corner_clips_without_panic' panicked at tests/grid.rs:563:9:
+  left: "R9999C29"   right: "1"
+```
+
+## Which key route worked
+
+Everything goes through `on_key_down` on the app root; the editor is mounted
+inside the editing cell and takes focus.
+
+- Printable start, Enter, secondary-C and secondary-V reached the root on all
+  three OS (G3a, G3d, G3e, G4a, G4b pass through real key events).
+- Tab and Escape did not produce their branch: G3b shows the cell text never
+  changed, G3c shows the editor still mounted. Enter proves the root handler
+  runs for the same focused-editor state, so the two keys were consumed below
+  it. Which component consumed them is not shown by the logs; the input's own
+  events or bindings have not been tried yet. Cause unknown.
+- G4c: the corner cell kept its default text. The test's click at the last cell
+  of the last row is the only step there that can leave the selection unset
+  (paste returns without a selection), but the logs do not show the selection
+  at that moment. Cause unknown.
+
+## IME
+
+Composition is simulated: the test marks text through
+`ElementInputHandler::replace_and_mark_text_in_range` and clears the mark with
+`replace_text_in_range`, both of which GPUI Kit's own input tests use. There is
+no native OS IME, candidate window or platform event translation here. This is
+**no substitute for gate 5 by hand**: typing Chinese and Japanese through a real
+IME on the Mac is still required.
+
+## App code
+
+In `src/lib.rs`, with doc comments:
+
+- Editing: `begin_edit`, `commit_and_move`, `cancel_edit` and
+  `editor_is_composing` are about 81 lines; the editing branch in `render_td`
+  is about 5; the editing branch of `on_key_down` is about 20. About 105 lines.
+- Copy and paste: `copy_range` and `paste` are about 62 lines; the secondary-key
+  branch of `on_key_down` is about 15. About 77 lines.
+
+## Build
+
+Adding the input widget grew the release binary from 20.4 MB to 24.9 MB on
+macOS, from 19.8 MB to 24.9 MB on Windows and from 53.6 MB to 58.2 MB on
+Linux; warm build seconds were 168, 134 and 115 (macOS, Windows, Linux).
