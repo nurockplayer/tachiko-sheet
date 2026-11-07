@@ -215,7 +215,8 @@ const cases = [
     // the real gesture when a blank workbook has cells outside a table (Work #668).
     assert.fail("there is no cell outside a table to type in");
   } },
-  { id: "04", name: "Add data below table", tier: "A", run: async (page) => {
+  // The first case to open the app pays for the kit's cold start, which has passed 4 s under load.
+  { id: "04", name: "Add data below table", tier: "A", waitMs: 15_000, run: async (page) => {
     await newTable(page, "Below", [{ name: "Item" }, { name: "Qty", type: "number" }]);
     await addRow(page, ["one", "1"], 1);
     await addRow(page, ["two", "2"], 2);
@@ -1049,7 +1050,7 @@ for (const testCase of cases) {
   await installDistRoutes(context, dist);
   await context.addInitScript(evidence);
   const page = await context.newPage();
-  page.setDefaultTimeout(4000);
+  page.setDefaultTimeout(testCase.waitMs ?? 4000);
   let outcome = "PASS";
   let error;
   try {
