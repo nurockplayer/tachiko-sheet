@@ -1,0 +1,145 @@
+# Throwaway canary for Sheet #327: the NSH grid app on three operating
+# systems. Push-only on the spike branch; never merged.
+name: nsh-grid-canary
+
+on:
+  push:
+    branches: [spike/nsh-grid]
+
+permissions:
+  contents: read
+
+jobs:
+  grid:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: macos
+            asset: nsh-macos-arm64.tar.gz
+          - os: windows-2022
+            target: windows
+            asset: nsh-windows-x86_64.zip
+          - os: ubuntu-24.04
+            target: linux
+            asset: nsh-linux-x86_64.tar.gz
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+
+      - name: Install nsh
+        run: |
+          set -euo pipefail
+          tmp="$RUNNER_TEMP"
+          github_path="$GITHUB_PATH"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            tmp="$(cygpath -u "$RUNNER_TEMP")"
+            github_path="$(cygpath -u "$GITHUB_PATH")"
+          fi
+          base="https://github.com/longbridge/nsh/releases/download/v0.4.0"
+          mkdir -p "$tmp/nsh-download"
+          cd "$tmp/nsh-download"
+          curl -fsSL -o "${{ matrix.asset }}" "$base/${{ matrix.asset }}"
+          curl -fsSL -o "${{ matrix.asset }}.sha256" "$base/${{ matrix.asset }}.sha256"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            shasum -a 256 -c "${{ matrix.asset }}.sha256"
+          else
+            sha256sum -c "${{ matrix.asset }}.sha256"
+          fi
+          # The archive holds nsh/bin/nsh (nsh\bin\nsh.exe on Windows), and
+          # that layout must stay whole.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            unzip -q "${{ matrix.asset }}" -d "$tmp"
+            path_entry="$(cygpath -w "$tmp/nsh/bin")"
+          else
+            tar -xzf "${{ matrix.asset }}" -C "$tmp"
+            path_entry="$tmp/nsh/bin"
+          fi
+          echo "$path_entry" >> "$github_path"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev xvfb
+          pkg-config --modversion gtk4
+
+      - name: Cache Cargo and NSH
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            prototypes/nsh-grid/target
+            prototypes/nsh-grid/.nsh
+          key: nsh-grid-${{ runner.os }}-${{ hashFiles('prototypes/nsh-grid/Cargo.lock') }}
+
+      - name: Headless tests (10k)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 10k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          nsh test --junit logs/headless-10k.xml 2>&1 | tee logs/headless-10k.log
+
+      - name: Real window (10k)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 10k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a nsh test --target ${{ matrix.target }} --fps --trace -v 2>&1 | tee logs/window-10k.log
+          else
+            nsh test --target ${{ matrix.target }} --fps --trace -v 2>&1 | tee logs/window-10k.log
+          fi
+
+      - name: Headless tests (100k)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 100k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          nsh test --junit logs/headless-100k.xml 2>&1 | tee logs/headless-100k.log
+
+      - name: Real window (100k)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 100k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a nsh test --target ${{ matrix.target }} --fps --trace -v 2>&1 | tee logs/window-100k.log
+          else
+            nsh test --target ${{ matrix.target }} --fps --trace -v 2>&1 | tee logs/window-100k.log
+          fi
+
+      - name: Retain the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nsh-grid-${{ matrix.target }}
+          path: prototypes/nsh-grid/logs
+          if-no-files-found: warn
