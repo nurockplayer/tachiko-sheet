@@ -274,6 +274,21 @@ print(json.dumps({"rows": sheet.count("<row "), "a2": cell("A2"), "a3": cell("A3
   assert.equal(grandCells[2], footerTotal, "the panel's Total row matches the grid footer total");
   checks.push("Totals by a column shows Work's Category groups (Food, Rent, Transport, food, blank) with the grid footer total");
 
+  // A chart draws Work's totals, unchanged, and goes away with None. Rent makes one total negative, which a pie refuses.
+  const chartMarks = () => panel.locator("[data-chart-mark]").evaluateAll(marks => marks.map(mark => Number(mark.dataset.chartMark)));
+  const groupTotals = allGroups.map(row => Number(row[row.length - 1]));
+  for (const type of ["Bar", "Line"]) {
+    await panel.getByLabel("Chart", { exact: true }).selectOption({ label: type });
+    await panel.getByRole("img", { name: `${type} chart of Amount by Category`, exact: true }).waitFor();
+    assert.deepEqual(await chartMarks(), groupTotals, `the ${type} chart draws Work's totals`);
+  }
+  await panel.getByLabel("Chart", { exact: true }).selectOption({ label: "Pie" });
+  await panel.getByText("A pie can't show negative totals. Use a bar chart.", { exact: true }).waitFor();
+  assert.equal(await panel.getByTestId("group-chart").count(), 0, "a pie of negative totals draws nothing");
+  await panel.getByLabel("Chart", { exact: true }).selectOption({ label: "None" });
+  assert.equal(await panel.getByText("A pie can't show", { exact: false }).count(), 0, "None removes the chart area");
+  checks.push("Bar and line charts of the totals draw Work's values, and a pie refuses negative totals");
+
   await panel.getByLabel("Then by", { exact: true }).selectOption({ label: "Date" });
   assert.equal(await panel.getByLabel("Then by date", { exact: true }).inputValue(), "month", "a second Date dimension defaults to month");
   const foodJanuary = spending.filter(row => row.category === "Food" && row.date.startsWith("2026-01"));

@@ -1649,6 +1649,23 @@ const cases = [
     });
     assert.ok(columnHidden, "Ctrl+0 did not hide the selected column");
   } },
+  { id: "53", name: "Chart from totals", tier: "B", budgetMs: 60_000, waitMs: 10_000, note: "Bar, line and pie of a column's totals. Not stored with the work, and not a chart placed on the sheet.", run: async (page) => {
+    await newTable(page, "Spending", [{ name: "Category" }, { name: "Amount", type: "number" }]);
+    const rows = [["Food", "30"], ["Rent", "50"], ["Food", "20"], ["Travel", "100"]];
+    for (let row = 0; row < rows.length; row += 1) await addRow(page, rows[row], row + 1);
+    await page.getByRole("grid", { name: "Table", exact: true }).getByRole("columnheader", { name: "Category", exact: true }).hover();
+    await page.getByRole("button", { name: "Column actions for Category", exact: true }).click();
+    await page.getByRole("button", { name: "Totals by this column…", exact: true }).click();
+    const panel = page.getByTestId("group-totals");
+    await panel.locator("table tbody tr").nth(2).waitFor();
+    for (const type of ["Bar", "Line", "Pie"]) {
+      await panel.getByLabel("Chart", { exact: true }).selectOption({ label: type });
+      await panel.getByRole("img", { name: `${type} chart of Amount by Category`, exact: true }).waitFor();
+      const marks = await panel.locator("[data-chart-mark]").evaluateAll((nodes) => nodes.map((node) => Number(node.dataset.chartMark)));
+      assert.deepEqual(marks, [50, 50, 100], `the ${type} chart draws values other than Work's totals`);
+    }
+    assert.ok((await panel.getByRole("listitem").filter({ hasText: "Travel" }).innerText()).includes("50%"), "the pie's legend doesn't give Travel's share");
+  } },
 ];
 
 function withTimeout(promise, ms) {
@@ -1662,9 +1679,9 @@ function withTimeout(promise, ms) {
 const results = [];
 let harnessBroke = false;
 const baseIds = Array.from({ length: 52 }, (_, index) => String(index + 1).padStart(2, "0"));
-const expectedIds = [...baseIds.slice(0, 21), "21a", ...baseIds.slice(21)];
+const expectedIds = [...baseIds.slice(0, 21), "21a", ...baseIds.slice(21), "53"];
 if (cases.length !== expectedIds.length || cases.some((testCase, index) => testCase.id !== expectedIds[index] || !testCase.name)) {
-  console.error(`HARNESS: the case list is not 52 ids 01-52 plus 21a (got ${cases.length}).`);
+  console.error(`HARNESS: the case list is not 52 ids 01-52 plus 21a and 53 (got ${cases.length}).`);
   await browser.close();
   process.exit(1);
 }

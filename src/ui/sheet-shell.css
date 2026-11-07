@@ -23,6 +23,15 @@
   --ts-accent-hover: var(--ts-profile-action-primary-hover, #5541c2);
   --ts-accent-pressed: var(--ts-profile-action-primary-pressed, #4936ab);
   --ts-accent-ink: var(--ts-profile-accent-foreground, #5542b5);
+  /* Chart hues in fixed order; validated against light and dark surfaces. */
+  --ts-chart-1: #2a78d6;
+  --ts-chart-2: #eb6834;
+  --ts-chart-3: #1baf7a;
+  --ts-chart-4: #eda100;
+  --ts-chart-5: #e87ba4;
+  --ts-chart-6: #008300;
+  --ts-chart-7: #6250d6;
+  --ts-chart-8: #e34948;
   --ts-accent-soft: var(--ts-profile-accent-background, #f0edfd);
   --ts-grid-horizontal: var(--ts-profile-grid-line-horizontal, #e9ebf1);
   --ts-grid-vertical: var(--ts-profile-grid-line-vertical, #eef0f4);
@@ -1369,6 +1378,26 @@ body { margin: 0; }
 .ts-group-totals-unavailable { color: var(--ts-ink-soft); }
 .ts-group-key-marker { color: var(--ts-ink-soft); font-style: italic; }
 .ts-group-totals-footer { display: flex; align-items: center; gap: 8px; }
+.ts-group-chart { margin-bottom: 12px; }
+.ts-group-chart-plot { display: block; width: 100%; height: auto; max-width: 640px; }
+.ts-group-chart-pie { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.ts-group-chart-disc { display: block; flex: 0 0 auto; width: 180px; height: 180px; }
+.ts-group-chart-legend { flex: 1 1 200px; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ts-ink); }
+.ts-group-chart-legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 44px; align-items: center; gap: 8px; padding: 2px 0; }
+.ts-chart-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.ts-chart-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-chart-legend-value { color: var(--ts-ink-soft); text-align: right; font-variant-numeric: tabular-nums; }
+.ts-chart-grid { stroke: var(--ts-line); stroke-width: 1; }
+.ts-chart-baseline { stroke: var(--ts-line-strong); stroke-width: 1; }
+.ts-chart-axis { fill: var(--ts-ink-soft); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ts-chart-label { fill: var(--ts-ink); font-size: 12px; }
+.ts-chart-label--marked { fill: var(--ts-ink-soft); font-style: italic; }
+.ts-chart-hit { fill: transparent; }
+g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
+.ts-chart-bar { fill: var(--ts-chart-1); }
+.ts-chart-line { fill: none; stroke: var(--ts-chart-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ts-chart-marker { fill: var(--ts-chart-1); stroke: var(--ts-surface); stroke-width: 2; }
+.ts-chart-slice { stroke: var(--ts-surface); stroke-width: 2; }
 .ts-group-totals-status { margin: 0; min-width: 0; }
 .ts-results-heading,
 .ts-result-card-heading {
@@ -3307,3 +3336,13 @@ body { margin: 0; }
 .ts-command-menu:has(.ts-row-view-filter) > .ts-button { display: none; }
 .ts-filter-values label { display: flex; align-items: center; gap: 0.35rem; }
 .ts-row-view-filter .ts-filter-values input { width: auto; }
+
+[data-ts-profile-color-scheme="dark"] {
+  --ts-chart-1: #3987e5;
+  --ts-chart-2: #d95926;
+  --ts-chart-3: #199e70;
+  --ts-chart-4: #c98500;
+  --ts-chart-5: #d55181;
+  --ts-chart-7: #9085e9;
+  --ts-chart-8: #e66767;
+}
