@@ -154,7 +154,7 @@ export interface SheetRuntime {
   inspectSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions): Promise<SourceWorkbook>;
   importSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, options: ImportOptions, selection: ImportSelection): Promise<ImportedWorkbook>;
   previewCleanup(witness: ViewWitness, operation: CleanupOperation): Promise<CleanupPreview>;
-  commitCleanup(witness: ViewWitness, previewId: string): Promise<WorkbookView>;
+  commitCleanup(witness: ViewWitness, previewId: string): Promise<ConfirmedPublication>;
   exportSpreadsheet(witness: ViewWitness, metadata: InteropMetadata, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
   exportNativeTables(witness: ViewWitness, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
   validateImportedProject(files: readonly CanonicalProjectFile[], metadata: InteropMetadata): Promise<void>;
@@ -442,6 +442,7 @@ export interface SheetShellProps {
   onInspectImport?(file: File, csv?: ImportReread): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;
   onCancelImport?(): void;
+  onPreviewReplace?(witness: ViewWitness, fields: FieldTarget[], find: string, replacement: string): Promise<CleanupPreview | null>;
   onPreviewTrim?(witness: ViewWitness, fields: FieldTarget[]): Promise<CleanupPreview | null>;
   onPreviewDeduplicate?(witness: ViewWitness, entities: string[], fields: string[]): Promise<CleanupPreview | null>;
   onCommitCleanup?(witness: ViewWitness, previewId: string): Promise<boolean>;

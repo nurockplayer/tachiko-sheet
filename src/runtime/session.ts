@@ -1340,7 +1340,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function commitCleanup(witness: ViewWitness, previewId: string): Promise<WorkbookView> {
+  function commitCleanup(witness: ViewWitness, previewId: string): Promise<ConfirmedPublication> {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
@@ -1362,7 +1362,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         const read = await loadCoherentView(kit, client, expected, live.collection);
         active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
         residentCollection = read.collection;
-        return read.view;
+        if (publication.base_revision !== live.revision || publication.resulting_revision !== read.view.revision || read.view.occurrence !== witness.occurrence) {
+          throw new Error("The cleanup publication and replacement view do not share one coherent occurrence/revision.");
+        }
+        return { view: read.view, publication };
       } catch (error) {
         active = null;
         residentCollection = live.collection;

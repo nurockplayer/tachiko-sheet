@@ -48,4 +48,8 @@ Resume from the current handoff and owning Issue/PR, not the historical bootstra
 seed or its first implementation ticket. Seed self-tests, a packaged app and
 individual green checks do not by themselves complete the product Mission.
 
-The founder created this public repository. Public visibility is not a completed release, compatibility certification, licensing decision or invitation to bypass Tachiko Work's current contribution gates. No new licensing policy is introduced by this bootstrap.
+The founder created this public repository. Public visibility is not a completed release, compatibility certification or invitation to bypass Tachiko Work's current contribution gates.
+
+## License
+
+Code is dual-licensed under [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), the same terms as Tachiko Work (the founder's direction in [tachiko-work#15](https://github.com/nurockplayer/tachiko-work/issues/15), which covers baseline local clients). External code contributions stay paused as in Tachiko Work's [licensing posture](https://github.com/nurockplayer/tachiko-work/blob/main/docs/governance/licensing-posture.md).

@@ -3112,9 +3112,15 @@ body { margin: 0; }
 .ts-find-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 4px 0;
 }
+.ts-replace-area { flex-basis: 100%; }
+.ts-replace-row { display: flex; align-items: center; gap: 8px; }
+.ts-replace-preview { max-height: 260px; overflow-y: auto; }
+.ts-replace-table-scroll { max-height: 150px; overflow: auto; }
+.ts-replace-preview p { margin: 4px 0; }
 .ts-find-bar input {
   min-width: 14rem;
 }
