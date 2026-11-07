@@ -854,6 +854,8 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   useEffect(() => {
     const finish = () => {
+      // Text the drag selected natively would turn the next press into a text drag, which ends all mouse events.
+      if (dragSelectRef.current?.moved) window.getSelection()?.removeAllRanges();
       suppressClickRef.current = dragSelectRef.current?.moved ?? false;
       dragSelectRef.current = null;
       setDragSelecting(false);
