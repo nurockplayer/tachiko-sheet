@@ -46,9 +46,9 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress } from "./clipboard.js";
+import { cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
-import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
+import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
 import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
@@ -87,6 +87,7 @@ import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, type CellOptionsUi, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
+import { fillSelectionPlan, FillSelectionRefusal } from "./fill-selection.js";
 import { FormulaBar } from "./FormulaBar.js";
 import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarSource, formulaBarState, formulaColumnNameHint, formulaHandoffSettlement, formulaReferenceInsertion, hiddenRowTargetLabel, inCellFormulaSource, insertFormulaReference, isFormulaCell, rowLabel, tableAdmitsFormulas, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
@@ -1336,7 +1337,15 @@ export function SheetShell(props: SheetShellProps) {
   function extendSelection(anchor: GridPosition, end: GridPosition): void {
     if (!view || !collectionIdentity || anchor.entity === DRAFT_ROW || end.entity === DRAFT_ROW) return;
     setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
-    focusCell(end.entity, end.field);
+    // Excel keeps focus and typing at the anchor; only the far end scrolls into view.
+    const rowIndex = rowIndexByEntity.get(end.entity);
+    if (gridWindowed && rowIndex !== undefined) revealGridRow(rowIndex);
+    cellRefs.current.get(cellKey(end.entity, end.field))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  /** An extending key starts from the selection's end; focus itself stays on the anchor. */
+  function selectionCursor(position: GridPosition): GridPosition {
+    return boundSelection && rowIndexByEntity.has(boundSelection.end.entity) ? boundSelection.end : position;
   }
 
   function clipboardPosition(target: EventTarget | null): GridPosition | null {
@@ -1530,6 +1539,24 @@ export function SheetShell(props: SheetShellProps) {
       void publishCells(publish, plan.count, "Filled", "fill");
     } catch (error) {
       if (error instanceof FillDownRefusal) announceClipboard(error.message, true, true);
+      else announceClipboard(explain(error, "These cells cannot be filled here."), true, true);
+    }
+  }
+
+  /** Ctrl+Enter fills the selection with the entry the editor holds. */
+  function fillSelection(area: CellRectangle): void {
+    if (!editor || !table || !view || !witness) return;
+    const position = { entity: editor.entity, field: editor.field };
+    try {
+      const edits = fillSelectionPlan(displayRows, columns, area, editor.value, Boolean(table.native_table_profile));
+      keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
+      if (!onEditCells) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
+      setEditor(null);
+      withAppFocus(() => focusCell(position.entity, position.field));
+      if (!edits.length) announceClipboard("The selected cells are unchanged.", false, true);
+      else void publishCells(() => onEditCells(witness, edits), edits.length, "Filled", "fill");
+    } catch (error) {
+      if (error instanceof FillSelectionRefusal || error instanceof CellClearRefusal) announceClipboard(error.message, true, true);
       else announceClipboard(explain(error, "These cells cannot be filled here."), true, true);
     }
   }
@@ -2660,6 +2687,15 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
+  /** Rows PageUp/PageDown covers: one screenful of the body, minus the overlap row Excel keeps. */
+  function gridPageRows(): number {
+    const scroller = gridScrollRef.current;
+    const heights = [...(scroller?.querySelectorAll<HTMLElement>("tbody tr.ts-row") ?? [])].map((row) => row.offsetHeight);
+    const pitch = measuredRowPitch(heights) ?? gridRowHeightRef.current;
+    const body = scroller ? Math.max(0, scroller.clientHeight - gridHeaderHeightRef.current) : 0;
+    return Math.max(1, Math.floor(body / Math.max(1, pitch)) - 1);
+  }
+
   function revealGridRow(index: number): void {
     const scroller = gridScrollRef.current;
     if (scroller) {
@@ -2947,7 +2983,8 @@ export function SheetShell(props: SheetShellProps) {
     // Excel Ctrl/Cmd+Arrow jumps to the edge of the filled run, or the table edge.
     // A cell is filled when it shows text, "Calculation failed" included.
     if (!draft && mod && arrowKey) {
-      const target = edgeAddress(address(position), event.key, displayRows.length, columns.length,
+      const from = event.shiftKey ? selectionCursor(position) : position;
+      const target = edgeAddress(address(from), event.key, displayRows.length, columns.length,
         (row, column) => cellDisplay(displayRows[row]!, columns[column]!).text === "");
       const row = displayRows[target.row], column = columns[target.column];
       if (row && column) {
@@ -2965,7 +3002,26 @@ export function SheetShell(props: SheetShellProps) {
     }
     // Home/End reach the row ends; with Ctrl/Cmd, the table corners.
     if (!draft && !event.altKey && (event.key === "Home" || event.key === "End")) {
-      const target = homeEndAddress(address(position), event.key, mod, displayRows.length, columns.length);
+      const from = event.shiftKey ? selectionCursor(position) : position;
+      const target = homeEndAddress(address(from), event.key, mod, displayRows.length, columns.length);
+      const row = displayRows[target.row], column = columns[target.column];
+      if (row && column) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
+          extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+        } else {
+          setCellSelection(null);
+          setSelectedEntity(rowEntity(row));
+          focusCell(rowEntity(row), column.id);
+        }
+      }
+      return;
+    }
+    // PageUp/PageDown move by a screenful in the same column, never to the entry row.
+    if (!draft && !mod && !event.altKey && (event.key === "PageUp" || event.key === "PageDown")) {
+      const from = event.shiftKey ? selectionCursor(position) : position;
+      const target = pageAddress(address(from), event.key, gridPageRows(), displayRows.length);
       const row = displayRows[target.row], column = columns[target.column];
       if (row && column) {
         event.preventDefault();
@@ -3019,7 +3075,7 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-      const next = stepAddress(address(position), event.key, displayRows.length, columns.length);
+      const next = stepAddress(address(selectionCursor(position)), event.key, displayRows.length, columns.length);
       const row = displayRows[next.row], column = columns[next.column];
       if (row && column) {
         event.preventDefault();
@@ -3128,6 +3184,19 @@ export function SheetShell(props: SheetShellProps) {
           void addRow(event.key === "Enter");
           return;
         }
+      }
+      // Ctrl/Cmd+Enter fills the whole selection with this entry; without one it
+      // behaves like Enter, keeping focus on the cell.
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && !event.repeat && editor.entity !== DRAFT_ROW) {
+        const area = selectionRectangle;
+        if (area) fillSelection(area);
+        else {
+          const intent = completionIntent();
+          void commitEditor().then((accepted) => {
+            if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => focusCell(position.entity, position.field));
+          });
+        }
+        return;
       }
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const step = (event.shiftKey ? -1 : 1) * (event.key === "Enter" ? columns.length : 1);

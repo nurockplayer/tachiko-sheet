@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { edgeAddress, homeEndAddress, todayIsoDate } from "./grid-navigation.js";
+import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate } from "./grid-navigation.js";
 
 const emptyExcept = (filled: readonly string[]) => (row: number, column: number): boolean => !filled.includes(`${row},${column}`);
 
@@ -56,6 +56,27 @@ describe("homeEndAddress", () => {
   it("leaves an empty or out-of-range table unchanged", () => {
     expect(homeEndAddress({ row: 0, column: 0 }, "End", true, 0, 0)).toEqual({ row: 0, column: 0 });
     expect(homeEndAddress({ row: 9, column: 0 }, "End", false, 5, 4)).toEqual({ row: 9, column: 0 });
+  });
+});
+
+describe("pageAddress", () => {
+  it("moves down or up by a page in the same column", () => {
+    expect(pageAddress({ row: 2, column: 1 }, "PageDown", 10, 100)).toEqual({ row: 12, column: 1 });
+    expect(pageAddress({ row: 12, column: 1 }, "PageUp", 10, 100)).toEqual({ row: 2, column: 1 });
+  });
+
+  it("clamps to the first and last row", () => {
+    expect(pageAddress({ row: 95, column: 0 }, "PageDown", 10, 100)).toEqual({ row: 99, column: 0 });
+    expect(pageAddress({ row: 3, column: 0 }, "PageUp", 10, 100)).toEqual({ row: 0, column: 0 });
+    expect(pageAddress({ row: 99, column: 2 }, "PageDown", 10, 100)).toEqual({ row: 99, column: 2 });
+    expect(pageAddress({ row: 0, column: 2 }, "PageUp", 10, 100)).toEqual({ row: 0, column: 2 });
+  });
+
+  it("always moves at least one row, and leaves an empty table or a missing row unchanged", () => {
+    expect(pageAddress({ row: 1, column: 0 }, "PageDown", 0, 5)).toEqual({ row: 2, column: 0 });
+    expect(pageAddress({ row: 1, column: 0 }, "PageUp", 0.4, 5)).toEqual({ row: 0, column: 0 });
+    expect(pageAddress({ row: 1, column: 0 }, "PageDown", 3, 0)).toEqual({ row: 1, column: 0 });
+    expect(pageAddress({ row: -1, column: 0 }, "PageDown", 3, 5)).toEqual({ row: -1, column: 0 });
   });
 });
 

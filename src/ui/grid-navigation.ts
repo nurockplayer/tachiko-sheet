@@ -58,6 +58,19 @@ export function homeEndAddress(
   return { row: at.row, column: key === "Home" ? 0 : columns - 1 };
 }
 
+/** PageUp/PageDown move by a screenful of rows in the same column, clamped to the table. */
+export function pageAddress(
+  at: CellAddress,
+  key: "PageUp" | "PageDown",
+  pageRows: number,
+  rowCount: number,
+): CellAddress {
+  if (rowCount <= 0 || at.row < 0) return at;
+  const step = Math.max(1, Math.floor(pageRows));
+  const row = key === "PageDown" ? Math.min(rowCount - 1, at.row + step) : Math.max(0, at.row - step);
+  return { row, column: at.column };
+}
+
 /** Local calendar date as YYYY-MM-DD (never UTC). */
 export function todayIsoDate(now: Date = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");

@@ -368,7 +368,8 @@ try {
   assert.deepEqual(importedCommand.edits[1].input, { kind: "number", input: "6.5" });
   assert.equal(await page.evaluate(() => window.__clipboardEvidence.records.reduce((sum, record) => sum + record.replies.filter(reply =>
     reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0)), importedPublicationsBefore + 1, "one imported publication receipt");
-  assert.equal(await cell(table, 1, 2).evaluate(node => node === document.activeElement), true, "paste preserves focused cell");
+  // The active cell stays at the selection's anchor, as in Excel.
+  assert.equal(await cell(table, 0, 0).evaluate(node => node === document.activeElement), true, "paste preserves focused cell");
   await capture("imported-paste");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).rows, importedBaseline.rows, "one Undo restores every original value and identity");
