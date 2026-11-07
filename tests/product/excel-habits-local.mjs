@@ -1179,6 +1179,23 @@ const cases = [
     await choice("Paste values").click();
     await waitForCellText(page, total(3), "6");
     assert.equal(await isFormula(3), false, "the cell menu's Paste values pasted the formula");
+    await settle(page);
+
+    // A slow clipboard read pastes nothing if the active cell moved meanwhile, with no range selected.
+    const qty = (row) => cellIdFor(sums, row, 0);
+    await page.evaluate(() => { navigator.clipboard.readText = () => new Promise((resolve) => setTimeout(() => resolve("99"), 1000)); });
+    await page.getByTestId(qty(0)).click();
+    await page.keyboard.press("Control+Shift+v");
+    await page.keyboard.press("ArrowDown");
+    await page.locator(".ts-clipboard-status").filter({ hasText: "Nothing was pasted." }).waitFor();
+    await settle(page);
+    assert.equal(await page.getByTestId(qty(0)).innerText(), "2", "a late paste wrote over the cell the person had left");
+    assert.equal(await page.getByTestId(qty(1)).innerText(), "3", "a late paste wrote to a cell it wasn't asked for");
+
+    // Refused access: Paste values says so, and doesn't send people to Ctrl+V, which would paste the formula.
+    await page.evaluate(() => { navigator.clipboard.readText = () => Promise.reject(new Error("refused")); });
+    await page.keyboard.press("Control+Shift+v");
+    await page.locator(".ts-clipboard-status").filter({ hasText: "Paste values isn't available" }).waitFor();
   } },
   { id: "41", name: "Change reference mode", tier: "B", run: async (page) => {
     await newTable(page, "Cycle", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);

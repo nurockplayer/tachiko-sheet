@@ -1714,9 +1714,15 @@ export function SheetShell(props: SheetShellProps) {
   async function pasteFromClipboard(position: GridPosition, valuesOnly = false): Promise<void> {
     const mac = isMacPlatform();
     const target = pasteTargetRef.current;
+    const focusedCell = (): string | null => {
+      const cell = clipboardPosition(document.activeElement);
+      return cell ? cellKey(cell.entity, cell.field) : null;
+    };
+    const focusAtRead = focusedCell();
     let text: string;
     try { text = await navigator.clipboard.readText(); } catch {
-      announceClipboard(`The clipboard can't be read here. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
+      // Ctrl+V would paste a copied formula, so it can't stand in for Paste values.
+      announceClipboard(valuesOnly ? "The clipboard can't be read here, so Paste values isn't available. Nothing was pasted." : `The clipboard can't be read here. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
       return;
     }
     let decoded: string[][];
@@ -1726,7 +1732,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
     const live = pasteTargetRef.current;
-    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection) {
+    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || focusedCell() !== focusAtRead) {
       announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
       return;
     }
