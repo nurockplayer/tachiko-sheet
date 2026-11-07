@@ -87,6 +87,7 @@ import { bindingCatalogNames } from "./binding-catalog-names.js";
 import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, type CellOptionsUi, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
+import { adjacentFillBottom, fillDragTarget } from "./fill-handle.js";
 import { fillSelectionPlan, FillSelectionRefusal } from "./fill-selection.js";
 import { FormulaBar } from "./FormulaBar.js";
 import { CellContextMenu } from "./CellContextMenu.js";
@@ -843,6 +844,13 @@ export function SheetShell(props: SheetShellProps) {
   const focusRejectedEditorRef = useRef<{ generation: number; occurrence: string | null } | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
+  const fillDragRef = useRef<{ source: CellRectangle } | null>(null);
+  const [fillPreview, setFillPreview] = useState<CellRectangle | null>(null);
+  // The window mouseup listener is registered once; it reads the live preview
+  // and the latest fillDown through refs.
+  const fillPreviewRef = useRef<CellRectangle | null>(null);
+  const fillDownRef = useRef(fillDown);
+  fillDownRef.current = fillDown;
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
   // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
@@ -862,6 +870,11 @@ export function SheetShell(props: SheetShellProps) {
       suppressClickRef.current = dragSelectRef.current?.moved ?? false;
       dragSelectRef.current = null;
       setDragSelecting(false);
+      const preview = fillPreviewRef.current;
+      fillDragRef.current = null;
+      fillPreviewRef.current = null;
+      setFillPreview(null);
+      if (preview) fillDownRef.current(preview);
     };
     window.addEventListener("mouseup", finish);
     return () => window.removeEventListener("mouseup", finish);
@@ -1531,13 +1544,12 @@ export function SheetShell(props: SheetShellProps) {
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here."), true, true); }
   }
 
-  function fillDown(): void {
+  function fillDown(area: CellRectangle | null = selectionRectangle): void {
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before filling cells.", true, true); return;
     }
     if (!table || !view || !witness) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
     try {
-      const area = selectionRectangle;
       const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length);
       keepGridRows(rowViewBlockRows(displayRows, area!.top, area!.bottom - area!.top + 1).map(rowEntity));
       if (plan.kind === "formula" ? !onCopyFormula : !onEditCells) {
@@ -4904,8 +4916,18 @@ export function SheetShell(props: SheetShellProps) {
     if (formulaCell) classes.push("ts-cell--formula");
     const coordinate = address({ entity, field: column.id });
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
+    // The fill handle sits on the active range's lower-right cell, or on the
+    // focused cell when there is no range.
+    const fillHandleCorner = !draft && !editor && !controlsLocked && Boolean(table?.native_table_profile)
+      && (selectionRectangle
+        ? coordinate.row === selectionRectangle.bottom && coordinate.column === selectionRectangle.right
+        : focusedKey === key);
+    const fillPreviewed = Boolean(fillPreview && coordinate.row > fillPreview.top
+      && coordinate.row <= fillPreview.bottom
+      && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right);
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
+    if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
     return (
@@ -4950,6 +4972,12 @@ export function SheetShell(props: SheetShellProps) {
           if (event.shiftKey && !draft && !editor) event.preventDefault();
         }}
         onMouseEnter={(event) => {
+          if (fillDragRef.current) {
+            const target = fillDragTarget(fillDragRef.current.source, coordinate.row);
+            fillPreviewRef.current = target;
+            setFillPreview(target);
+            return;
+          }
           if (!dragSelectRef.current) return;
           if (event.buttons === 0) { dragSelectRef.current = null; setDragSelecting(false); return; }
           if (event.buttons === 1 && !draft) {
@@ -5056,6 +5084,40 @@ export function SheetShell(props: SheetShellProps) {
         {editing && editor ? null : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}
+        {fillHandleCorner ? <span
+          className="ts-fill-handle"
+          aria-hidden="true"
+          data-testid="fill-handle"
+          onMouseDown={(event) => {
+            // The handle owns the press: no selection drag, text drag or focus move.
+            event.preventDefault();
+            event.stopPropagation();
+            // The second press of a double-click must not start a fill drag.
+            if (event.detail > 1) return;
+            const source = selectionRectangle ?? rectangle(coordinate, coordinate);
+            if (source.bottom > source.top) {
+              announceClipboard("Fill from one row. Filling a series isn't available yet. Nothing was filled.", true, true);
+              return;
+            }
+            fillDragRef.current = { source };
+            fillPreviewRef.current = null;
+            setFillPreview(null);
+          }}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            const source = selectionRectangle ?? rectangle(coordinate, coordinate);
+            if (source.bottom > source.top) {
+              announceClipboard("Fill from one row. Filling a series isn't available yet. Nothing was filled.", true, true);
+              return;
+            }
+            const bottom = adjacentFillBottom(source, columns.length, (row, column) => {
+              const adjacentRow = displayRows[row], adjacentColumn = columns[column];
+              return Boolean(adjacentRow && adjacentColumn && cellDisplay(adjacentRow, adjacentColumn).text !== "");
+            }, displayRows.length);
+            if (bottom !== null) fillDown({ ...source, bottom });
+          }}
+        /> : null}
         {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
       </td>
     );
