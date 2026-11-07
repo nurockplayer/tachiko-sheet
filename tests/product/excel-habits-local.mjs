@@ -476,7 +476,7 @@ const cases = [
     await replaceCell(page, cellIdFor(table, 0, 1), "4");
     await waitForCellText(page, total, "8");
   } },
-  { id: "21", name: "Copied formula references", tier: "A", budgetMs: 60_000, waitMs: 10_000, note: "Relative references only. Absolute ones are case 21a.", run: async (page) => {
+  { id: "21", name: "Copied formula references", tier: "A", budgetMs: 90_000, waitMs: 10_000, note: "Relative references only. Absolute ones are case 21a.", run: async (page) => {
     await newTable(page, "Copy down", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
     const table = await projection(page);
@@ -554,6 +554,44 @@ const cases = [
     await page.getByTestId(total(2)).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Paste", exact: true }).click();
     await waitForCellText(page, total(2), "7");
+
+    // The same text copied from elsewhere is that text, not the formula.
+    await newTable(page, "Copy provenance", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
+    for (let row = 0; row < 2; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
+    const plain = await projection(page);
+    const plainTotal = (row) => cellIdFor(plain, row, 2);
+    await page.getByTestId(plainTotal(0)).press("F2");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("=A2*B2");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, plainTotal(0), "6");
+    const pasteTotalTwo = async () => {
+      await page.getByTestId(plainTotal(1)).click();
+      await page.keyboard.press("Control+v");
+      await waitForCellText(page, plainTotal(1), "6");
+      await settle(page);
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, plainTotal(1), "");
+    };
+    await page.getByTestId(plainTotal(0)).click();
+    await page.keyboard.press("Control+c");
+    await settle(page);
+    await page.evaluate(() => {
+      const input = document.createElement("input");
+      input.id = "habit-text-source";
+      input.value = "6";
+      document.body.append(input);
+      input.select();
+    });
+    await page.keyboard.press("Control+c");
+    await page.evaluate(() => document.getElementById("habit-text-source").remove());
+    await pasteTotalTwo();
+    await page.getByTestId(plainTotal(0)).click();
+    await page.keyboard.press("Control+c");
+    await settle(page);
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await pasteTotalTwo();
   } },
   { id: "21a", name: "Absolute references copy", tier: "A", waitMs: 10_000, budgetMs: 60_000, run: async (page) => {
     await newTable(page, "Copy absolute", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
@@ -572,6 +610,9 @@ const cases = [
     await page.keyboard.press("Control+v");
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 1, 2), "6", "the absolute reference moved when copied");
+    // A value pasted by mistake would also show 6; a formula follows its own row's Price.
+    await replaceCell(page, cellIdFor(table, 1, 1), "5");
+    await waitForCellText(page, total(1), "10");
   } },
   { id: "22", name: "Fill handle", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await newTable(page, "Fill", [{ name: "Value", type: "number" }]);

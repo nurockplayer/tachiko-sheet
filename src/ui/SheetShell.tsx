@@ -1130,6 +1130,20 @@ export function SheetShell(props: SheetShellProps) {
   const clipboardIdentityRef = useRef(collectionIdentity);
   clipboardIdentityRef.current = collectionIdentity;
   const copiedFormulaRef = useRef<CopiedFormula & { identity: string | null } | null>(null);
+  // The clipboard's text can't say who wrote it, so the copy is only trusted until
+  // anything else could have copied: another copy or cut here (this capture runs
+  // before copyGrid sets the ref), or the window losing focus.
+  useEffect(() => {
+    const forget = () => { copiedFormulaRef.current = null; };
+    window.addEventListener("copy", forget, true);
+    window.addEventListener("cut", forget, true);
+    window.addEventListener("blur", forget);
+    return () => {
+      window.removeEventListener("copy", forget, true);
+      window.removeEventListener("cut", forget, true);
+      window.removeEventListener("blur", forget);
+    };
+  }, []);
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
   useEffect(() => { setCellSelection(null); setClipboardMessage(null); setFilterDraft(null); }, [collectionIdentity]);
@@ -1411,7 +1425,7 @@ export function SheetShell(props: SheetShellProps) {
         ? { entity: position.entity, field: position.field, formula: field.formula.source, text: rows[0][0]!, identity: collectionIdentity }
         : null;
       announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`);
-    } catch { copiedFormulaRef.current = null; announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
+    } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
   }
 
   function cutGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
@@ -1420,7 +1434,6 @@ export function SheetShell(props: SheetShellProps) {
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
     event.preventDefault();
     if (position.entity === DRAFT_ROW) { announceClipboard("Cut is not available in the new row.", true); return; }
-    copiedFormulaRef.current = null;
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before cutting cells.", true, true); return;
     }
@@ -1468,6 +1481,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
       && decoded.length === 1 && decoded[0]?.length === 1 && decoded[0][0] === copied.text) {
       if (pasteBlocked) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
+      if (rowDraftActive) { announceClipboard("Add or discard the new row first.", true); return; }
       const area = selectionRectangle ?? rectangle(at, at);
       try {
         const plan = formulaPastePlan(displayRows, columns, area, copied, !gridSettings.sort && !gridSettings.filters?.length);
