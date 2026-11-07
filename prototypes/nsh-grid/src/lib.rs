@@ -169,6 +169,7 @@ impl GridState {
     }
 
     fn on_visible_rows(&self, range: &DataTableRange) {
+        self.first_row.set(range.start);
         self.window.set(GridWindow {
             start: range.start.saturating_sub(2),
             end: (range.end + 2).min(self.rows),
@@ -223,10 +224,15 @@ impl GridState {
         }
     }
 
-    /// Moves the focus cell by `(d_row, d_col)`; without Shift the range
-    /// collapses onto it.
+    /// Moves by `(d_row, d_col)` from the active cell (the anchor's when the
+    /// range grows, the focus cell's when a plain key collapses it).
     fn move_focus(&self, d_row: i64, d_col: i64, shift: bool) {
-        let Some((row, column)) = self.focus.get().or(self.anchor.get()) else {
+        let from = if shift {
+            self.focus.get().or(self.anchor.get())
+        } else {
+            self.anchor.get().or(self.focus.get())
+        };
+        let Some((row, column)) = from else {
             return;
         };
         let row = (row as i64 + d_row).clamp(0, self.rows as i64 - 1) as u32;
@@ -260,6 +266,71 @@ fn range_text(anchor: Option<(u32, u32)>, focus: Option<(u32, u32)>) -> String {
 
 fn grid_screen(state: GridState) -> impl IntoElement {
     let rows = move || grid_rows(state.window.get(), &state.edits.get(), state.columns);
+    // `NSH_GRID_PLAIN=1` leaves the cells to DataTable's own text, with no
+    // per-cell view and no range tint, for the plain-vs-cells sweep run.
+    let plain = std::env::var_os("NSH_GRID_PLAIN").is_some();
+    let table = data_table()
+        .component_ref(&state.table)
+        .flex_1()
+        .columns(grid_columns(state.columns))
+        .row_count(state.rows)
+        .data_start(move || state.window.get().start)
+        .data(rows)
+        .row_height(px(24.0))
+        .cell_selectable(true)
+        // The app cannot measure the row numbers' width.
+        .row_header(false)
+        // The app keeps its own range on a modifier press.
+        .select_on_modifier_press(false)
+        .loop_selection(false)
+        .on_row_press(move |p: &DataTablePress| {
+            state.on_press((p.row, p.column.unwrap_or(0)), p.shift);
+        })
+        .on_visible_rows_change(move |range: &DataTableRange| {
+            state.on_visible_rows(range);
+        })
+        .on_visible_columns_change(move |range: &DataTableRange| {
+            state.on_visible_columns(range);
+        })
+        .on_selection_change(move |selection: &Option<DataTableSelection>| {
+            state.on_selection(selection);
+        })
+        .on_double_press(move |target: &DataTableTarget| {
+            if let (Some(row), Some(column)) = (target.row, target.column) {
+                state.begin_edit(row, column);
+            }
+        });
+    let table = if plain {
+        table
+    } else {
+        table.render_cell(move |cell: &DataTableCell| {
+            let (row, column) = (cell.row, cell.column);
+            let is_editing = move || state.editing.get() == Some((row, column));
+            let in_range = move || {
+                let (Some(anchor), Some(focus)) = (state.anchor.get(), state.focus.get()) else {
+                    return false;
+                };
+                (anchor.0.min(focus.0)..=anchor.0.max(focus.0)).contains(&row)
+                    && (anchor.1.min(focus.1)..=anchor.1.max(focus.1)).contains(&column)
+            };
+            view()
+                .flex_1()
+                .bg(move || {
+                    if in_range() {
+                        theme().secondary
+                    } else {
+                        theme().background
+                    }
+                })
+                .child(text(cell.text.clone()))
+                .child(when(is_editing, move || {
+                    view()
+                        .w(px(1.0))
+                        .h(px(1.0))
+                        .element_ref(&state.marker)
+                }))
+        })
+    };
     view()
         .flex_1()
         .gap_2()
@@ -304,6 +375,20 @@ fn grid_screen(state: GridState) -> impl IntoElement {
         )
         .child(
             view()
+                .test_id("grid-first")
+                .child(
+                    text(move || {
+                        format!(
+                            "first R{}C{}",
+                            state.first_row.get(),
+                            state.first_col.get()
+                        )
+                    })
+                    .text_size(px(13.0)),
+                ),
+        )
+        .child(
+            view()
                 .flex_1()
                 .test_id("grid-wrap")
                 .on_mouse_move(move |e: &MouseEvent| {
@@ -313,69 +398,7 @@ fn grid_screen(state: GridState) -> impl IntoElement {
                         state.dragging.set(false);
                     }
                 })
-                .child(
-                    data_table()
-                        .component_ref(&state.table)
-                        .flex_1()
-                        .columns(grid_columns(state.columns))
-                        .row_count(state.rows)
-                        .data_start(move || state.window.get().start)
-                        .data(rows)
-                        .row_height(px(24.0))
-                        .cell_selectable(true)
-                        // The app cannot measure the row numbers' width.
-                        .row_header(false)
-                        // The app keeps its own range on a modifier press.
-                        .select_on_modifier_press(false)
-                        .loop_selection(false)
-                        .render_cell(move |cell: &DataTableCell| {
-                            let (row, column) = (cell.row, cell.column);
-                            let is_editing = move || state.editing.get() == Some((row, column));
-                            let in_range = move || {
-                                let (Some(anchor), Some(focus)) =
-                                    (state.anchor.get(), state.focus.get())
-                                else {
-                                    return false;
-                                };
-                                (anchor.0.min(focus.0)..=anchor.0.max(focus.0)).contains(&row)
-                                    && (anchor.1.min(focus.1)..=anchor.1.max(focus.1))
-                                        .contains(&column)
-                            };
-                            view()
-                                .flex_1()
-                                .bg(move || {
-                                    if in_range() {
-                                        theme().secondary
-                                    } else {
-                                        theme().background
-                                    }
-                                })
-                                .child(text(cell.text.clone()))
-                                .child(when(is_editing, move || {
-                                    view()
-                                        .w(px(1.0))
-                                        .h(px(1.0))
-                                        .element_ref(&state.marker)
-                                }))
-                        })
-                        .on_row_press(move |p: &DataTablePress| {
-                            state.on_press((p.row, p.column.unwrap_or(0)), p.shift);
-                        })
-                        .on_visible_rows_change(move |range: &DataTableRange| {
-                            state.on_visible_rows(range);
-                        })
-                        .on_visible_columns_change(move |range: &DataTableRange| {
-                            state.on_visible_columns(range);
-                        })
-                        .on_selection_change(move |selection: &Option<DataTableSelection>| {
-                            state.on_selection(selection);
-                        })
-                        .on_double_press(move |target: &DataTableTarget| {
-                            if let (Some(row), Some(column)) = (target.row, target.column) {
-                                state.begin_edit(row, column);
-                            }
-                        }),
-                ),
+                .child(table),
         )
         .child(
             when(move || state.editing.get().is_some(), move || {

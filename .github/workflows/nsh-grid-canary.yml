@@ -138,6 +138,64 @@ jobs:
             nsh test --target ${{ matrix.target }} --fps --trace -v 2>&1 | tee logs/window-100k.log
           fi
 
+      - name: Sweep (10k, cells)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 10k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-10k-cells.log
+          else
+            nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-10k-cells.log
+          fi
+
+      - name: Sweep (10k, plain)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 10k
+          NSH_GRID_PLAIN: "1"
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-10k-plain.log
+          else
+            nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-10k-plain.log
+          fi
+
+      - name: Sweep (100k, cells)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 100k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-100k-cells.log
+          else
+            nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-100k-cells.log
+          fi
+
+      - name: Sweep (100k, plain)
+        working-directory: prototypes/nsh-grid
+        continue-on-error: true
+        env:
+          NSH_GRID_SIZE: 100k
+          NSH_GRID_PLAIN: "1"
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-100k-plain.log
+          else
+            nsh test --target ${{ matrix.target }} --filter "G1c" --fps --trace -v 2>&1 | tee logs/sweep-100k-plain.log
+          fi
+
       - name: Retain the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
