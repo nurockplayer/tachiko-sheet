@@ -210,25 +210,13 @@ const cases = [
     await page.keyboard.press("Enter");
     await settle(page);
   } },
-  { id: "03", name: "Blank-cell typing", tier: "A", run: async (page) => {
-    await example(page);
-    await page.locator(".ts-entry-row td[data-entry-field]").first().dblclick();
-    await page.getByTestId("cell-editor").waitFor();
-    await page.keyboard.type("Apple");
-    await page.getByTestId("cell-editor").press("Enter");
-    await settle(page);
-    await page.keyboard.press("Escape");
-    await settle(page);
-    await saveCopy(page, "habits-03");
-    await page.reload();
-    await waitForColdHome(page);
-    await page.getByRole("button", { name: "Open saved habits-03", exact: true }).click();
-    await ready(page);
-    const after = await projection(page);
-    const values = after.rows.flatMap((row) => row.fields.map((field) => field?.stored?.value));
-    assert.ok(values.includes("Apple"), "the value typed in the apparent B4 did not persist: an empty cell outside a table does not exist, only the table's draft row");
+  { id: "03", name: "Blank-cell typing", tier: "A", run: async () => {
+    // The draft row belongs to a table, and case 04 covers it. Replace this with
+    // the real gesture when a blank workbook has cells outside a table (Work #668).
+    assert.fail("there is no cell outside a table to type in");
   } },
-  { id: "04", name: "Add data below table", tier: "A", run: async (page) => {
+  // The first case to open the app pays for the kit's cold start, which has passed 4 s under load.
+  { id: "04", name: "Add data below table", tier: "A", waitMs: 15_000, run: async (page) => {
     await newTable(page, "Below", [{ name: "Item" }, { name: "Qty", type: "number" }]);
     await addRow(page, ["one", "1"], 1);
     await addRow(page, ["two", "2"], 2);
@@ -261,6 +249,7 @@ const cases = [
     await settle(page);
     const after = await projection(page);
     assert.equal(after.rows.length, 2, "a Number column refused N/A; an Excel worksheet column accepts mixed values");
+    assert.equal(String(fieldAt(after, 1, 0)?.stored?.value), "N/A", "N/A did not survive as typed");
   } },
   { id: "07", name: "Type to replace", tier: "A", run: async (page) => {
     await example(page);
@@ -504,9 +493,9 @@ const cases = [
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 1)], row + 1);
     const table = await projection(page);
     const box = await page.getByTestId(cellIdFor(table, 0, 0)).boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.move(box.x + box.width - 2, box.y + box.height - 2, { steps: 4 });
+    await page.mouse.down();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height * 3.5, { steps: 8 });
     await page.mouse.up();
     await settle(page);
@@ -538,18 +527,36 @@ const cases = [
     await settle(page);
     assert.equal(await tabs.count(), 3, "Shift+F11 added no worksheet tab; tabs cannot be renamed or deleted either");
   } },
-  { id: "25", name: "Save and reopen", tier: "A", note: "Values and formulas compared; cell styles do not exist yet.", run: async (page) => {
-    await example(page);
-    const table = await projection(page);
-    await replaceCell(page, cellIdFor(table, 0, 0), "持久保存");
-    await saveCopy(page, "habits-25");
-    await page.reload();
-    await waitForColdHome(page);
-    await page.getByRole("button", { name: "Open saved habits-25", exact: true }).click();
-    await ready(page);
-    const after = await projection(page);
-    assert.equal(fieldAt(after, 0, 0)?.stored?.value, "持久保存", "the edit did not survive save and reopen");
-    assert.ok(fieldAt(after, 0, 4)?.formula, "the formula did not survive reopen");
+  { id: "25", name: "Save and reopen", tier: "A", note: "Values and formulas compared; cell styles do not exist yet.", run: async () => {
+    // A real browser restart on one profile: a reload could keep session state alive.
+    const profile = await mkdtemp(path.join(tmpdir(), "habits-25-"));
+    let context;
+    const open = async () => {
+      context = await chromium.launchPersistentContext(profile, { ...launchOptions, viewport: { width: 1440, height: 900 } });
+      await installDistRoutes(context, dist);
+      await context.addInitScript(evidence);
+      const page = context.pages()[0] ?? await context.newPage();
+      page.setDefaultTimeout(4000);
+      return page;
+    };
+    try {
+      const page = await open();
+      await example(page);
+      const table = await projection(page);
+      await replaceCell(page, cellIdFor(table, 0, 0), "持久保存");
+      await saveCopy(page, "habits-25");
+      await context.close();
+      const reopened = await open();
+      await home(reopened);
+      await reopened.getByRole("button", { name: "Open saved habits-25", exact: true }).click();
+      await ready(reopened);
+      const after = await projection(reopened);
+      assert.equal(fieldAt(after, 0, 0)?.stored?.value, "持久保存", "the edit did not survive save, restart and reopen");
+      assert.ok(fieldAt(after, 0, 4)?.formula, "the formula did not survive restart and reopen");
+    } finally {
+      await context?.close().catch(() => {});
+      await rm(profile, { recursive: true, force: true });
+    }
   } },
   { id: "26", name: "Open an XLSX", tier: "A", note: "Opened through Home, Choose file; Ctrl+O is not a page shortcut in a browser.", run: async (page) => {
     await home(page);
@@ -723,7 +730,8 @@ const cases = [
     await page.getByText("Showing 2 of 3 rows", { exact: true }).waitFor();
     await page.getByTestId(id(0)).click();
     await page.keyboard.press("Control+ArrowDown");
-    const displayed = await page.locator("tbody tr.ts-row td:first-of-type").evaluateAll((nodes) => nodes.map((node) => node.dataset.testid));
+    const displayed = await page.locator(`tbody tr.ts-row td[data-testid$=":${table.columns[1].id}"]`).evaluateAll((nodes) => nodes.map((node) => node.dataset.testid));
+    assert.equal(displayed.length, 2, "the filter left two rows on screen");
     const landed = await activeId(page);
     assert.equal(landed, displayed.at(-1), `Ctrl+Down landed on ${JSON.stringify(landed)}, not the last displayed record ${JSON.stringify(displayed.at(-1))}`);
   } },
@@ -792,7 +800,18 @@ const cases = [
     await settle(page);
     const after = await projection(page);
     const values = after.rows.map((_, row) => fieldAt(after, row, 0)?.stored?.value);
-    assert.deepEqual(values, ["fill", "fill", "fill"], "Ctrl+Enter did not fill the whole selection with one entry");
+    assert.deepEqual(values, ["fill", "fill", "fill"], `Ctrl+Enter did not fill the whole selection with one entry: ${JSON.stringify(values)}`);
+    await newTable(page, "Refused entry", [{ name: "Amount", type: "number" }]);
+    for (let row = 0; row < 2; row += 1) await addRow(page, [String(row + 1)], row + 1);
+    const numbers = await projection(page);
+    await page.getByTestId(cellIdFor(numbers, 0, 0)).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.type("abc");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+Enter");
+    await settle(page);
+    assert.equal(await page.getByTestId("cell-editor").inputValue(), "abc", "a refused Ctrl+Enter discarded what was typed");
+    assert.deepEqual(await filledColumn(page, numbers, 0, 2).then((cells) => cells.map(String)), ["1", "2"], "a refused Ctrl+Enter changed cells");
   } },
   { id: "39", name: "Fill down by keyboard", tier: "B", run: async (page) => {
     await newTable(page, "Fill down", [{ name: "Value", type: "number" }]);
@@ -803,7 +822,8 @@ const cases = [
     await page.keyboard.press("Shift+ArrowDown");
     await page.keyboard.press("Control+d");
     await settle(page);
-    assert.deepEqual(await filledColumn(page, table, 0, 4), ["1", "1", "1", "4"], "Ctrl+D did not fill the selected range from its top cell");
+    const filled = await filledColumn(page, table, 0, 4);
+    assert.deepEqual(filled.map(String), ["1", "1", "1", "4"], `Ctrl+D did not fill the selected range from its top cell: ${JSON.stringify(filled)}`);
   } },
   { id: "40", name: "Paste Special", tier: "B", run: async (page) => {
     await example(page);
@@ -1012,7 +1032,25 @@ if (cases.length !== 52 || cases.some((testCase, index) => testCase.id !== expec
   process.exit(1);
 }
 
+// Formula cases read Work's request count, which only an acceptance build exposes.
+{
+  const context = await browser.newContext();
+  await installDistRoutes(context, dist);
+  const page = await context.newPage();
+  await home(page);
+  const instrumented = await page.evaluate(() => Boolean(window.__tachikoAcceptance));
+  await context.close();
+  if (!instrumented) {
+    console.error("HARNESS: WORK_DIST is not an acceptance build (pnpm build:acceptance).");
+    await browser.close();
+    process.exit(1);
+  }
+}
+
+// HABITS_ONLY=33,39 runs just those cases while working on them.
+const only = process.env.HABITS_ONLY?.split(",");
 for (const testCase of cases) {
+  if (only && !only.includes(testCase.id)) continue;
   if (testCase.manual) {
     const result = { id: testCase.id, name: testCase.name, tier: testCase.tier, outcome: "MANUAL", note: testCase.manual };
     results.push(result);
@@ -1023,7 +1061,7 @@ for (const testCase of cases) {
   await installDistRoutes(context, dist);
   await context.addInitScript(evidence);
   const page = await context.newPage();
-  page.setDefaultTimeout(4000);
+  page.setDefaultTimeout(testCase.waitMs ?? 4000);
   let outcome = "PASS";
   let error;
   try {
