@@ -50,18 +50,28 @@ export function groupChartRefusal(type: GroupChartType, points: readonly GroupCh
   return points.length > MAX_MARKS ? `More than ${MAX_MARKS} groups won't fit in a chart. Group by a column with fewer different values, or filter the rows first.` : null;
 }
 
-/** Round axis ticks that include zero and cover every value. */
+/** Round axis ticks that include zero and cover every value; whole steps when every value is whole. */
 export function chartTicks(values: readonly number[], wanted = 4): number[] {
   const low = Math.min(0, ...values);
   const high = Math.max(0, ...values);
   if (low === high) return [0, 1];
   const rough = (high - low) / wanted;
   const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step = ([1, 2, 5, 10].find((multiple) => multiple * magnitude >= rough) ?? 10) * magnitude;
+  const nice = ([1, 2, 5, 10].find((multiple) => multiple * magnitude >= rough) ?? 10) * magnitude;
+  const step = values.every(Number.isInteger) ? Math.max(1, nice) : nice;
   const ticks: number[] = [];
   const last = Math.ceil(high / step);
   for (let index = Math.floor(low / step); index <= last; index += 1) ticks.push(index * step);
   return ticks;
+}
+
+/**
+ * The column's format for each tick, unless it shows two ticks alike (0.5 and 1
+ * both as "1"); then plain numbers, so the scale never reads wrong.
+ */
+export function chartTickLabels(ticks: readonly number[], format: (value: number) => string): string[] {
+  const labels = ticks.map(format);
+  return new Set(labels).size === labels.length ? labels : ticks.map((tick) => String(Number(tick.toPrecision(12))));
 }
 
 export interface PieSlice {

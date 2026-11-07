@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { chartColorSlots, chartTicks, pieSlices, shortChartLabel, type GroupChartPoint, type GroupChartType } from "./group-chart.js";
+import { chartColorSlots, chartTickLabels, chartTicks, pieSlices, shortChartLabel, type GroupChartPoint, type GroupChartType } from "./group-chart.js";
 
 // The panel's usual width, so text stays at its real size there.
 const WIDTH = 340;
@@ -26,15 +26,16 @@ function BarChart({ label, points, format }: ChartProps) {
   const row = 24;
   const bar = 14;
   const ticks = chartTicks(points.map((point) => point.value), 3);
+  const tickLabels = chartTickLabels(ticks, format);
   const low = ticks[0]!;
   const high = ticks[ticks.length - 1]!;
   const x = (value: number) => left + ((value - low) / (high - low)) * (WIDTH - left - right);
   const height = top + row * points.length + 4;
   const zero = x(0);
   return <svg className="ts-group-chart-plot" data-testid="group-chart" role="img" aria-label={label} viewBox={`0 0 ${WIDTH} ${height}`}>
-    {ticks.map((tick) => <g key={tick}>
+    {ticks.map((tick, index) => <g key={tick}>
       <line className="ts-chart-grid" x1={x(tick)} x2={x(tick)} y1={top - 4} y2={height - 4} />
-      <text className="ts-chart-axis" x={x(tick)} y={top - 9} textAnchor="middle">{format(tick)}</text>
+      <text className="ts-chart-axis" x={x(tick)} y={top - 9} textAnchor="middle">{tickLabels[index]}</text>
     </g>)}
     {points.map((point, index) => {
       const y = top + row * index;
@@ -64,6 +65,7 @@ function LineChart({ label, points, format }: ChartProps) {
   const top = 12;
   const bottom = 28;
   const ticks = chartTicks(points.map((point) => point.value));
+  const tickLabels = chartTickLabels(ticks, format);
   const low = ticks[0]!;
   const high = ticks[ticks.length - 1]!;
   const x = (index: number) => points.length === 1 ? (left + WIDTH - right) / 2 : left + (index / (points.length - 1)) * (WIDTH - left - right);
@@ -72,9 +74,9 @@ function LineChart({ label, points, format }: ChartProps) {
   const every = Math.max(1, Math.ceil((points.length - 1) / 3));
   const labeled = (index: number) => index === points.length - 1 || (index % every === 0 && points.length - 1 - index >= every / 2);
   return <svg className="ts-group-chart-plot" data-testid="group-chart" role="img" aria-label={label} viewBox={`0 0 ${WIDTH} ${height}`}>
-    {ticks.map((tick) => <g key={tick}>
+    {ticks.map((tick, index) => <g key={tick}>
       <line className={tick === 0 ? "ts-chart-baseline" : "ts-chart-grid"} x1={left} x2={WIDTH - right} y1={y(tick)} y2={y(tick)} />
-      <text className="ts-chart-axis" x={left - 8} y={y(tick)} textAnchor="end" dominantBaseline="middle">{format(tick)}</text>
+      <text className="ts-chart-axis" x={left - 8} y={y(tick)} textAnchor="end" dominantBaseline="middle">{tickLabels[index]}</text>
     </g>)}
     <polyline className="ts-chart-line" points={points.map((point, index) => `${x(index)},${y(point.value)}`).join(" ")} />
     {points.map((point, index) => <g key={point.id} data-chart-mark={point.value}>

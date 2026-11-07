@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GroupTotalsProjection } from "../../public/core-kit/runtime/protocol.js";
-import { chartColorSlots, chartTicks, groupChartPoints, groupChartRefusal, pieSlices, shortChartLabel } from "./group-chart";
+import { chartColorSlots, chartTickLabels, chartTicks, groupChartPoints, groupChartRefusal, pieSlices, shortChartLabel } from "./group-chart";
 
 const points = (...values: number[]) => values.map((value, index) => ({ id: `g${index}`, label: `g${index}`, marked: false, value }));
 
@@ -72,8 +72,24 @@ describe("chartTicks", () => {
     expect(chartTicks([-12, 7])).toEqual([-15, -10, -5, 0, 5, 10]);
   });
 
+  it("steps by whole numbers when every value is whole", () => {
+    expect(chartTicks([1])).toEqual([0, 1]);
+    expect(chartTicks([0.4, 1])).toEqual([0, 0.5, 1]);
+  });
+
   it("answers for all zeros", () => {
     expect(chartTicks([0, 0])).toEqual([0, 1]);
+  });
+});
+
+describe("chartTickLabels", () => {
+  it("keeps the column's format while it tells ticks apart", () => {
+    expect(chartTickLabels([0, 10], (value) => `$${value}`)).toEqual(["$0", "$10"]);
+  });
+
+  it("falls back to plain numbers when the format shows two ticks alike", () => {
+    expect(chartTickLabels([0, 0.5, 1], (value) => Math.round(value).toString())).toEqual(["0", "0.5", "1"]);
+    expect(chartTickLabels([0, 0.1 * 3], () => "0")).toEqual(["0", "0.3"]);
   });
 });
 
