@@ -47,7 +47,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
             libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev libvulkan1 \
-            clang libclang-dev pkg-config
+            clang libclang-dev pkg-config xvfb mesa-vulkan-drivers imagemagick
 
       - name: Cache Cargo
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -94,6 +94,76 @@ jobs:
             bin="target/release/gpui-grid"
           fi
           echo "binary_bytes=$(wc -c < "$bin")" | tee logs/binary-size.txt
+
+      # Real OS windows. Each step starts the release binary twice (10k and
+      # 100k), waits for the sweep line, takes a screenshot of the screen while
+      # the window is still held, and prints the line. A window that cannot
+      # open is a finding: the exact error stays in the logs.
+      - name: Sweep in a real window (macOS)
+        if: runner.os == 'macOS'
+        working-directory: prototypes/gpui-grid
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          mkdir -p logs
+          for size in 10k 100k; do
+            GPUI_GRID_SIZE=$size GPUI_GRID_SWEEP=logs/sweep-$size.txt \
+              GPUI_GRID_HOLD_MS=8000 ./target/release/gpui-grid > logs/window-$size.log 2>&1 &
+            pid=$!
+            for i in $(seq 1 120); do [ -s logs/sweep-$size.txt ] && break; sleep 1; done
+            screencapture -x logs/screenshot-$size.png || echo "screencapture failed: $?"
+            echo "--- sweep $size"
+            cat logs/sweep-$size.txt 2>/dev/null || echo "no sweep line"
+            kill $pid 2>/dev/null || true
+            wait $pid 2>/dev/null || true
+            sleep 1
+          done
+
+      - name: Sweep in a real window (Windows)
+        if: runner.os == 'Windows'
+        working-directory: prototypes/gpui-grid
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          mkdir -p logs
+          for size in 10k 100k; do
+            GPUI_GRID_SIZE=$size GPUI_GRID_SWEEP=logs/sweep-$size.txt \
+              GPUI_GRID_HOLD_MS=8000 ./target/release/gpui-grid.exe > logs/window-$size.log 2>&1 &
+            pid=$!
+            for i in $(seq 1 120); do [ -s logs/sweep-$size.txt ] && break; sleep 1; done
+            powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$bmp=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$bmp); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$bmp.Save('logs/screenshot-$size.png')" || echo "screenshot failed: $?"
+            echo "--- sweep $size"
+            cat logs/sweep-$size.txt 2>/dev/null || echo "no sweep line"
+            taskkill //F //PID $pid 2>/dev/null || true
+            sleep 1
+          done
+
+      - name: Sweep in a real window (Linux)
+        if: runner.os == 'Linux'
+        working-directory: prototypes/gpui-grid
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          mkdir -p logs
+          cat > /tmp/gpui-grid-sweep.sh <<'SH'
+          set -u
+          for size in 10k 100k; do
+            GPUI_GRID_SIZE=$size GPUI_GRID_SWEEP=logs/sweep-$size.txt \
+              GPUI_GRID_HOLD_MS=8000 ./target/release/gpui-grid > logs/window-$size.log 2>&1 &
+            pid=$!
+            for i in $(seq 1 120); do [ -s logs/sweep-$size.txt ] && break; sleep 1; done
+            import -window root logs/screenshot-$size.png || echo "screenshot failed: $?"
+            echo "--- sweep $size"
+            cat logs/sweep-$size.txt 2>/dev/null || echo "no sweep line"
+            kill $pid 2>/dev/null || true
+            wait $pid 2>/dev/null || true
+            sleep 1
+          done
+          SH
+          if [ -f /usr/share/vulkan/icd.d/lvp_icd.x86_64.json ]; then
+            export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          fi
+          xvfb-run -a -s "-screen 0 1440x900x24" bash /tmp/gpui-grid-sweep.sh
 
       - name: Retain the logs
         if: always()
