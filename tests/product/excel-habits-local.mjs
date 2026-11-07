@@ -534,11 +534,11 @@ const cases = [
     assert.equal(await cellText(page, await projection(page), 1, 2), "9", "a value paste changed the copied formula's result");
 
     // A changed source formula makes the same clipboard text an ordinary paste.
-    // Formula cells are edited from the formula bar, so F2 rather than a double-click.
+    // A formula cell is edited in the formula bar, not in the inline editor.
     await page.getByTestId(total(0)).click();
     await page.keyboard.press("Control+c");
-    await page.getByTestId(total(0)).press("F2");
-    await page.getByTestId("cell-editor").waitFor();
+    const bar = page.getByTestId("formula-bar-input");
+    await bar.click();
     await page.keyboard.press("Control+a");
     await page.keyboard.type("=A2+B2");
     await page.keyboard.press("Enter");
