@@ -598,6 +598,9 @@ const cases = [
     await settle(page);
     await page.keyboard.press("Control+z");
     await settle(page);
+    // Undo publishes a new revision, which drops the range; select it again.
+    await dragCells(page, cellIdFor(doubleTable, 0, 0), cellIdFor(doubleTable, 1, 0));
+    assert.equal(await selectedCount(page), 2, "the range did not come back after Undo");
     await page.getByTestId(cellIdFor(doubleTable, 0, 0)).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Fill down", exact: true }).click();
     await settle(page);
