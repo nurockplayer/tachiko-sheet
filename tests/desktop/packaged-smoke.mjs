@@ -54,13 +54,16 @@ function describeExit(exit) {
   return `code ${exit.code ?? "null"}/${exit.signal ?? "no signal"}`;
 }
 
-async function launch({ closeAnswer }) {
+async function launch({ closeAnswer, openArgument = false }) {
   const { dir, scripts, downloads } = await workspace();
-  const child = spawn(binary, [], {
+  const openFixture = path.join(dir, "open-me.csv");
+  await writeFile(openFixture, "Item,Amount\nTea,4.5\n");
+  const child = spawn(binary, openArgument ? [openFixture] : [], {
     env: {
       ...process.env,
       TACHIKO_SHEET_E2E_DIR: scripts,
       TACHIKO_SHEET_E2E_DOWNLOADS: downloads,
+      TACHIKO_SHEET_E2E_OPEN_ANSWER: openFixture,
       TACHIKO_SHEET_E2E_CLOSE_ANSWER: closeAnswer,
       TACHIKO_SHEET_E2E_WINDOW_SIZE: "1000x660",
     },
@@ -300,6 +303,10 @@ async function main() {
     const form = await waitFor(() => dialog("New table"), "File > New Table dialog");
     click(button("Cancel", form));
     await waitFor(() => !dialog("New table"), "New table dialog closed");
+    await choose("open");
+    const review = await waitFor(() => dialog("Review import preview"), "File > Open import review", 30000);
+    click(button("Cancel", review));
+    await waitFor(() => !dialog("Review import preview"), "import review closed");
     // Home ignores the rest; the host refuses a command its menu doesn't have.
     for (const id of ["save", "save-copy", "print", "undo", "redo"]) await choose(id);
     return true;
@@ -362,6 +369,12 @@ async function main() {
   assert.ok(outcome, "the app exits within 30 s when the answer is Discard");
   assert.equal(outcome.code, 0, `the app exits with code 0 (got ${describeExit(outcome)})`);
   pass("Discard closes the window and the app process exits with code 0");
+
+  // 9. A file named on the command line, as a double-click starts the app, opens once Home is ready.
+  const opened = await launch({ closeAnswer: "discard", openArgument: true });
+  await evaluate(`await waitFor(() => dialog("Review import preview"), "import review of the launch argument", 60000); return true;`);
+  pass("a .csv named at launch reaches the import review");
+  await stop(opened);
 }
 
 async function diagnostics(error) {

@@ -1,3 +1,4 @@
+import type { OpenedFile } from "../host/opened-file";
 import { completionMayUpdateUi as completionIntentIsCurrent, survivingFocusedKey, firstUsableCompletionTarget } from "../app/mutation-completion.js";
 import {
   useCallback,
@@ -499,6 +500,7 @@ export function SheetShell(props: SheetShellProps) {
     onRetryCopies = async () => {},
     onOpenFiles,
     workFileSaveUnavailableReason = null,
+    takeOpenedFile,
     onOpenWorkFile = async () => { throw new Error("Opening work files is unavailable."); },
     workFileOmissions = [],
     onNewTable,
@@ -692,6 +694,8 @@ export function SheetShell(props: SheetShellProps) {
   const columnTriggerRef = useRef<HTMLElement | null>(null);
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
   const [newTableOpen, setNewTableOpen] = useState(false);
+  const openedFilePendingRef = useRef(true);
+  const [openedFileSignal, setOpenedFileSignal] = useState(0);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
@@ -3821,10 +3825,30 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", keydown);
   });
 
+  // A file the OS or File > Open gave the host waits there until the page can act on it.
+  useEffect(() => {
+    if (!takeOpenedFile || !openedFilePendingRef.current || controlsLocked || modalInteractionOpen || props.startupUnavailable === true || document.body.inert) return;
+    openedFilePendingRef.current = false;
+    void (async () => {
+      let opened: OpenedFile | null;
+      try { opened = await takeOpenedFile(); } catch { setLocalError("The file could not be opened."); return; }
+      if (!opened) return;
+      if ("refused" in opened) { setLocalError(opened.refused); return; }
+      if (view) { setLocalError(`Close this work, then open “${opened.file.name}” again.`); return; }
+      if (/\.ro$/i.test(opened.file.name)) void openWorkFile(opened.file);
+      else void inspectSpreadsheet(opened.file);
+    })();
+  }, [openedFileSignal, controlsLocked, modalInteractionOpen]);
+
   // The desktop File and Edit menus: the same commands as the buttons and keys, with the same refusals.
   useEffect(() => {
     const menuCommand = (event: Event) => {
       const command = (event as CustomEvent<string>).detail;
+      if (command === "file-opened") {
+        openedFilePendingRef.current = true;
+        setOpenedFileSignal((signal) => signal + 1);
+        return;
+      }
       if (document.body.inert) return;
       const active = document.activeElement;
       if (command === "undo" || command === "redo") {

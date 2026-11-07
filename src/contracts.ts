@@ -1,3 +1,4 @@
+import type { OpenedFile } from "./host/opened-file";
 import type {
   CanonicalProjectFile,
   CanonicalTreeExport,
@@ -377,6 +378,8 @@ export interface SheetShellProps {
   onRetryCopies?(): Promise<void>;
   onOpenFiles(files: FileList): Promise<void>;
   onOpenWorkFile?(file: File): Promise<void>;
+  /** The desktop host's file waiting to be opened; the browser has none. */
+  takeOpenedFile?: () => Promise<OpenedFile | null>;
   workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;

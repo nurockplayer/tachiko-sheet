@@ -1,3 +1,4 @@
+import type { OpenedFile } from "./opened-file";
 import { createContext, useContext } from "react";
 
 /**
@@ -19,6 +20,8 @@ export interface HostFiles {
    * readable message when nothing was saved because of a failure.
    */
   saveFile(suggestedName: string, content: Blob | Promise<Blob>): Promise<SaveOutcome>;
+  /** The file the OS or File > Open gave the desktop host, once; the browser has none. */
+  takeOpenedFile?(): Promise<OpenedFile | null>;
 }
 
 /** The browser: an ordinary download of a fresh object URL. */

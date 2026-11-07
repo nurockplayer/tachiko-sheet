@@ -45,6 +45,8 @@ const downloads = path.join(work, "downloads");
 const scripts = path.join(work, "scripts");
 await mkdir(downloads);
 await mkdir(scripts);
+const openFixture = path.join(work, "open-me.csv");
+await writeFile(openFixture, "Item,Amount\nTea,4.5\n");
 execFileSync("python3", ["-I", oracle, "generate", fixtures], { stdio: "inherit" });
 execFileSync("python3", ["-I", mixedOracle, "generate", mixedFixtures], { stdio: "inherit" });
 const expectedMixed = JSON.parse(await readFile(path.join(mixedFixtures, "expected.json"), "utf8"));
@@ -74,6 +76,7 @@ async function launch() {
   execFileSync("open", ["-n", "-a", app,
     "--env", `TACHIKO_SHEET_E2E_DIR=${scripts}`,
     "--env", `TACHIKO_SHEET_E2E_DOWNLOADS=${downloads}`,
+    "--env", `TACHIKO_SHEET_E2E_OPEN_ANSWER=${openFixture}`,
     // A person takes time in the Save panel; exports must survive that wait.
     "--env", "TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS=2500",
     // The unsaved-work dialog is answered "Cancel": closing must then not happen.
@@ -724,7 +727,28 @@ async function namedTableJourney() {
     assert.deepEqual(opened.columns, expected.columns, "a .ro saved by the host reopens with its columns");
     assert.deepEqual(opened.cells.map((cell) => cell.value), expected.cells.map((cell) => cell.value), "a .ro saved by the host reopens with its values");
     await closeToHome();
+
+    // What Finder's double-click and Open With send: an open event to the running app.
+    execFileSync("open", ["-a", app, path.join(downloads, file)]);
+    const openedByOs = await snapshot();
+    assert.equal(openedByOs.name, expected.name, "a .ro the OS opens has its table name");
+    assert.deepEqual(openedByOs.cells.map((cell) => cell.value), expected.cells.map((cell) => cell.value), "a .ro the OS opens has its values");
+    execFileSync("open", ["-a", app, openFixture]);
+    await evaluate(`await waitFor(() => document.body.innerText.includes("Close this work, then open"), "refusal over open work"); return true;`);
+    await closeToHome();
+    const reviewOpens = async (label) => evaluate(`
+      const review = await waitFor(() => dialog("Review import preview"), ${JSON.stringify(label)});
+      click(button("Cancel", review));
+      await waitFor(() => !dialog("Review import preview"), "import review closed");
+      return true;
+    `);
+    execFileSync("open", ["-a", app, openFixture]);
+    await reviewOpens("import review of a .csv the OS opened");
+    await menuCommand("open");
+    await reviewOpens("import review of a .csv from File > Open");
   };
+  const documentTypes = JSON.parse(execFileSync("plutil", ["-extract", "CFBundleDocumentTypes", "json", "-o", "-", path.join(app, "Contents", "Info.plist")], { encoding: "utf8" }));
+  assert.deepEqual(documentTypes.flatMap((type) => type.CFBundleTypeExtensions).sort(), ["csv", "ro", "xlsx"], "the app declares its file types");
   pid = await timed("launch", launch);
   await coldHome();
   assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), false, "desktop .ro Open is available");

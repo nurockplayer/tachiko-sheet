@@ -11,6 +11,7 @@
     "allow-window-close-check",
     "allow-page-identity",
     "allow-save-export",
+    "allow-take-opened-file",
     "core:webview:allow-print"
   ]
 }

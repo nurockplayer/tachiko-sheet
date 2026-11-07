@@ -10,6 +10,7 @@
 
 #[cfg(feature = "e2e")]
 mod e2e;
+mod opened_file;
 mod runtime_channel;
 mod saves;
 #[cfg(target_os = "macos")]
@@ -542,6 +543,11 @@ const NEW_TABLE: PageCommand = PageCommand {
     label: "New Table…",
     accelerator: "CmdOrCtrl+N",
 };
+const OPEN: PageCommand = PageCommand {
+    id: "open",
+    label: "Open…",
+    accelerator: "CmdOrCtrl+O",
+};
 const SAVE: PageCommand = PageCommand {
     id: "save",
     label: "Save",
@@ -571,7 +577,7 @@ const REDO: PageCommand = PageCommand {
         "Ctrl+Y"
     },
 };
-const FILE_COMMANDS: [&PageCommand; 4] = [&NEW_TABLE, &SAVE, &SAVE_COPY, &PRINT];
+const FILE_COMMANDS: [&PageCommand; 5] = [&NEW_TABLE, &OPEN, &SAVE, &SAVE_COPY, &PRINT];
 const PAGE_COMMANDS: [&PageCommand; 6] = [&NEW_TABLE, &SAVE, &SAVE_COPY, &PRINT, &UNDO, &REDO];
 
 fn page_item(app: &AppHandle, command: &PageCommand) -> tauri::Result<MenuItem<tauri::Wry>> {
@@ -592,6 +598,34 @@ fn run_page_command(app: &AppHandle, id: &str) {
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('tachiko-menu', {{ detail: '{id}' }}));"
         ));
+    }
+}
+
+/// File > Open: the host asks for the file itself, so the page never names a path.
+fn choose_file_to_open(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        #[cfg(feature = "e2e")]
+        if let Some(path) = e2e::open_answer() {
+            opened_file::offer(&app, path);
+            return;
+        }
+        let mut dialog = AsyncFileDialog::new()
+            .add_filter("Work files and spreadsheets", &opened_file::EXTENSIONS);
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            dialog = dialog.set_parent(&window);
+        }
+        if let Some(handle) = dialog.pick_file().await {
+            opened_file::offer(&app, handle.path().to_path_buf());
+        }
+    });
+}
+
+fn run_menu_command(app: &AppHandle, id: &str) {
+    if id == OPEN.id {
+        choose_file_to_open(app);
+    } else {
+        run_page_command(app, id);
     }
 }
 
@@ -683,7 +717,7 @@ fn menu_command_hook(app: &AppHandle, id: &str) -> bool {
         })
     });
     if present {
-        run_page_command(app, id);
+        run_menu_command(app, id);
     }
     present
 }
@@ -695,12 +729,13 @@ pub fn run() {
         .manage(RuntimeChannel::default())
         .manage(LeaveGuard::default())
         .manage(Saves::default())
+        .manage(opened_file::OpenedFiles::default())
         .menu(app_menu)
         .on_menu_event(|app, event| {
             if event.id() == QUIT_MENU_ITEM {
                 request_quit(app);
             } else {
-                run_page_command(app, event.id().as_ref());
+                run_menu_command(app, event.id().as_ref());
             }
         });
     #[cfg(not(feature = "e2e"))]
@@ -709,7 +744,8 @@ pub fn run() {
         runtime_dispatch,
         window_close_check,
         page_identity,
-        save_export
+        save_export,
+        opened_file::take_opened_file
     ]);
     #[cfg(feature = "e2e")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -718,6 +754,7 @@ pub fn run() {
         window_close_check,
         page_identity,
         save_export,
+        opened_file::take_opened_file,
         e2e::e2e_result,
         e2e::e2e_request_close,
         e2e::e2e_request_quit,
@@ -726,6 +763,15 @@ pub fn run() {
     ]);
     builder
         .setup(|app| {
+            // Windows and Linux hand a double-clicked file to a new process.
+            #[cfg(not(target_os = "macos"))]
+            if let Some(path) = std::env::args_os()
+                .nth(1)
+                .map(PathBuf::from)
+                .filter(|path| opened_file::supported(path))
+            {
+                opened_file::offer(app.handle(), path);
+            }
             let handle = app.handle().clone();
             let window =
                 WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
@@ -779,8 +825,19 @@ pub fn run() {
             window.set_focus()?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Tachiko Sheet");
+        .build(tauri::generate_context!())
+        .expect("error while building Tachiko Sheet")
+        .run(|app, event| {
+            // Finder's double-click and Open With, also while the app is running.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event
+                && let Some(path) = urls.iter().find_map(|url| url.to_file_path().ok())
+            {
+                opened_file::offer(app, path);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
 
 #[cfg(test)]

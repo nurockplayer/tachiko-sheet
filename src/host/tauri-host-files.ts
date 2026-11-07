@@ -1,3 +1,4 @@
+import { decodeOpenedFile } from "./opened-file";
 import { invoke } from "@tauri-apps/api/core";
 import type { HostFiles, SaveOutcome } from "./host-files.js";
 import { pageIdentity } from "./tauri-page.js";
@@ -53,6 +54,9 @@ async function save(suggestedName: string, content: Blob | Promise<Blob>): Promi
 
 /** The desktop host writes exports itself, after asking with a Save sheet. */
 export const tauriHostFiles: HostFiles = {
+  async takeOpenedFile() {
+    return decodeOpenedFile(new Uint8Array(await invoke<ArrayBuffer>("take_opened_file")));
+  },
   saveFile(suggestedName, content) {
     // Count and order the save before any await, so it is never invisible to
     // the guard and a slower encoding cannot be overtaken by a later save.

@@ -2290,6 +2290,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           copiesStatus={savedCopiesStatus}
           onRetryCopies={refreshCopies}
           onOpenWorkFile={openWorkFile}
+          takeOpenedFile={hostFiles.takeOpenedFile}
           workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}

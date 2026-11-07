@@ -35,6 +35,11 @@
     "resources": {
       "../THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md"
     },
+    "fileAssociations": [
+      { "ext": ["ro"], "name": "Tachiko Work File", "description": "Tachiko work file", "role": "Editor", "rank": "Owner", "mimeType": "application/x-tachiko-work" },
+      { "ext": ["xlsx"], "name": "Excel Workbook", "description": "Excel workbook", "role": "Viewer", "rank": "Alternate", "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      { "ext": ["csv"], "name": "CSV File", "description": "Comma-separated values", "role": "Viewer", "rank": "Alternate", "mimeType": "text/csv" }
+    ],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "-"
