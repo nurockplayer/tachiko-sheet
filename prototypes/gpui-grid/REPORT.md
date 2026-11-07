@@ -136,8 +136,8 @@ The window is 1440 x 900. Check:
 # Slice G3: editing and copy/paste (Sheet #327 gates 3 and 4)
 
 One run for every number in this slice:
-https://github.com/nurockplayer/tachiko-sheet/actions/runs/42341704656
-(2026-11-07 14:12 JST, commit `f7c8c84`). The G1 sections above are unchanged.
+https://github.com/nurockplayer/tachiko-sheet/actions/runs/42342700401
+(2026-11-07 14:26 JST, commit `b8fb041`). The G1 sections above are unchanged.
 
 Editing, copy and paste are throwaway canary code too. Values live in
 `GridDelegate::edits`; there is no durable store, no formula and no
@@ -146,46 +146,75 @@ revision behind them.
 ## Case table
 
 `pass` keeps its G1 meaning: the case ran through a real headless window and
-its assertion held. The 10k and 100k steps run the same cases.
+its assertion held. The 10k and 100k steps run the same cases. Every OS ran
+19 passed, 2 failed.
 
 | Case | macOS | Windows | Linux | Notes |
 | --- | --- | --- | --- | --- |
 | G3a typing + Enter (10k, 100k) | pass | pass | pass | cell `xyz`, selection `R3C1`, no editor mounted |
-| G3b typing + Tab | fail | fail | fail | cell still `R2C1`; the commit never ran |
-| G3c Escape cancels | fail | fail | fail | an editor is still mounted over R2C1 |
+| G3b typing + Tab | pass | pass | pass | cell `xyz`, selection `R2C2` |
+| G3c Escape cancels | pass | pass | pass | cell kept `R2C1`, editor gone, selection `R2C1` |
 | G3d composing text blocks Enter | pass | pass | pass | Enter during the mark changed nothing; after the mark cleared the cell was `日本` |
 | G3e edit after scrolling to row 5,000 | pass | pass | pass | `R5002C1` holds the value, `R5003C1` selected |
+| G3f Escape during composition | fail | fail | fail | the mark was `ni`, yet the edit was cancelled |
 | G4a copy a 2x2 range | pass | pass | pass | clipboard exactly `R2C1\tR2C2\nR3C1\tR3C2` |
 | G4b paste 2x2 from `R7C1` | pass | pass | pass | four cells written, label `R7C1:R8C2` |
-| G4c paste 2x2 at the last cell | fail | fail | fail | corner cell kept `R9999C29` |
+| G4c paste 2x2 at the last cell | fail | fail | fail | the click at the corner cell selected nothing |
+| G4d the same corner cell, clicked a quarter of its height from the top | pass | pass | pass | selection and paste both work |
 
-The three failures are the same on every OS. The log lines:
+The two failures are the same on every OS. The log lines (macOS; identical on
+the other two):
 
 ```
-thread 'g3b_tab_commits_and_moves_right' panicked at tests/grid.rs:410:5:
-  left: "R2C1"   right: "xyz"
-thread 'g3c_escape_cancels_without_writing' panicked at tests/grid.rs:433:9:
-  left: Some((2, 1))   right: None
-thread 'g4c_paste_at_the_corner_clips_without_panic' panicked at tests/grid.rs:563:9:
-  left: "R9999C29"   right: "1"
+thread 'g3f_composition_keeps_escape_from_cancelling' panicked at tests/grid.rs:517:9:
+  left: None   right: Some((2, 1))
+thread 'g4c_paste_at_the_corner_clips_without_panic' panicked at tests/grid.rs:548:5:
+  assertion `left == right` failed: click at table-cell-9999:29 did not select it:
+  label None, cell bounds Some(Bounds { origin: Point { x: 929px, y: 669px }, size: Size { 90px x 26px } }),
+  table bounds Some(Bounds { origin: Point { x: 4px, y: 28px }, size: Size { 1016px x 668px } })
+  left: None   right: Some("R9999C29:R9999C29")
 ```
 
 ## Which key route worked
 
-Everything goes through `on_key_down` on the app root; the editor is mounted
-inside the editing cell and takes focus.
+GPUI runs keymap actions before key listeners, so Tab and Escape never reach
+`on_key_down`: the focused editor sits inside the table, whose bindings turn
+Tab into `SelectNextColumn` and Escape into `Cancel`. The app root now catches
+both with `capture_action`, which runs root-first:
 
-- Printable start, Enter, secondary-C and secondary-V reached the root on all
-  three OS (G3a, G3d, G3e, G4a, G4b pass through real key events).
-- Tab and Escape did not produce their branch: G3b shows the cell text never
-  changed, G3c shows the editor still mounted. Enter proves the root handler
-  runs for the same focused-editor state, so the two keys were consumed below
-  it. Which component consumed them is not shown by the logs; the input's own
-  events or bindings have not been tried yet. Cause unknown.
-- G4c: the corner cell kept its default text. The test's click at the last cell
-  of the last row is the only step there that can leave the selection unset
-  (paste returns without a selection), but the logs do not show the selection
-  at that moment. Cause unknown.
+- editing, not composing: `SelectNextColumn` commits and moves right, `Cancel`
+  cancels the edit, and both stop propagation;
+- editing and composing: the action is stopped without committing or
+  cancelling;
+- not editing: the action propagates, so the table keeps its own behaviour.
+
+That is the route that made G3b and G3c pass on all three OS. Enter still goes
+through `on_key_down`, which works because the table binds nothing to Enter.
+
+The root's own `Tab` action is declared in a private module in this version
+(`crates/base/src/root.rs`: `actions!(root, [Tab, TabPrev])`, with only
+`Root`/`RootPlugin` re-exported and `mod root;` private), so the app cannot
+name it. Tab is caught through the table's `SelectNextColumn` instead, and
+that binding is what the run matched.
+
+G3f: with `ni` marked, Escape still cancelled the edit. The capture handler saw
+no marked text at that point, although the test had just marked `ni`. Enter on
+the same marked state does see the mark (G3d), so the difference is the Escape
+path, not the composition check itself. What clears the mark before the action
+is dispatched is not shown by the logs; cause unknown.
+
+## The last row's corner cell
+
+The click used by G4c does not select the cell, and the diagnostic prints why
+it cannot: the cell is inside the table, but its centre sits in the strip at
+the table's bottom edge. Cell y runs 669-695, the table ends at y=696, and the
+cell centre is y=682. G4d clicks the same cell a quarter of its height from the
+top (y=675.5) and both selects and pastes correctly.
+
+So part of the last row is covered by whatever the table draws along its
+bottom edge (the horizontal scrollbar in this layout), and a user cannot click
+the middle of that row's cells. The click was left where it was; G4d exists to
+show which part of the cell works.
 
 ## IME
 
@@ -202,12 +231,14 @@ In `src/lib.rs`, with doc comments:
 
 - Editing: `begin_edit`, `commit_and_move`, `cancel_edit` and
   `editor_is_composing` are about 81 lines; the editing branch in `render_td`
-  is about 5; the editing branch of `on_key_down` is about 20. About 105 lines.
+  is about 5; the editing branch of `on_key_down` is about 14. About 100 lines
+  before the action handlers.
+- Keymap actions: `on_action_cancel` and `on_action_select_next_column` are
+  about 34 lines.
 - Copy and paste: `copy_range` and `paste` are about 62 lines; the secondary-key
   branch of `on_key_down` is about 15. About 77 lines.
 
 ## Build
 
-Adding the input widget grew the release binary from 20.4 MB to 24.9 MB on
-macOS, from 19.8 MB to 24.9 MB on Windows and from 53.6 MB to 58.2 MB on
-Linux; warm build seconds were 168, 134 and 115 (macOS, Windows, Linux).
+The release binary is 24.9 MB on macOS, 24.9 MB on Windows and 58.2 MB on
+Linux; warm build seconds were 134, 157 and 168 (macOS, Windows, Linux).
