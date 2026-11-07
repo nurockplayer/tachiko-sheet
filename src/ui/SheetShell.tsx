@@ -1720,6 +1720,7 @@ export function SheetShell(props: SheetShellProps) {
       const cell = clipboardPosition(document.activeElement);
       return cell ? cellKey(cell.entity, cell.field) : null;
     };
+    // Null when the menu's close is still bringing an off-screen cell back: nothing to compare yet.
     const focusAtRead = focusedCell();
     let text: string;
     try { text = await navigator.clipboard.readText(); } catch {
@@ -1734,7 +1735,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
     const live = pasteTargetRef.current;
-    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || focusedCell() !== focusAtRead) {
+    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || (focusAtRead !== null && focusedCell() !== focusAtRead)) {
       announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
       return;
     }
@@ -3353,7 +3354,7 @@ export function SheetShell(props: SheetShellProps) {
       const column = columns.find(candidate => candidate.id === position.field);
       const editable = Boolean(currentEditorSlot(position)) && !controlsLocked;
       if (column?.field_type === "date" && editable && !formulaCellAt(position)) beginEdit(entity, position.field, todayIsoDate());
-      else announceClipboard("Ctrl+; enters today’s date in a Date cell.", false, true);
+      else announceClipboard(`${menuShortcut(";", isMacPlatform())} enters today’s date in a Date cell.`, false, true);
       return;
     }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {

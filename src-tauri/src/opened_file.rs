@@ -36,7 +36,10 @@ pub struct OpenedFiles {
 }
 
 impl OpenedFiles {
+    /// A new request also drops an older file still waiting.
     fn begin(&self) -> u64 {
+        let mut waiting = lock(&self.waiting);
+        *waiting = None;
         self.latest_request.fetch_add(1, Ordering::SeqCst) + 1
     }
 
@@ -180,6 +183,20 @@ mod tests {
         assert!(files.publish(newer, refused("newer")));
         assert!(!files.publish(older, refused("older")));
         assert_eq!(lock(&files.waiting).take(), Some(refused("newer")));
+    }
+
+    #[test]
+    fn a_new_request_drops_an_older_file_still_waiting() {
+        let files = OpenedFiles::default();
+        let older = files.begin();
+        assert!(files.publish(
+            older,
+            Held::Refused {
+                message: "older".into()
+            }
+        ));
+        files.begin();
+        assert_eq!(lock(&files.waiting).take(), None);
     }
 
     #[test]

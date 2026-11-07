@@ -6,6 +6,7 @@
 import { useEffect, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import type { ColumnProjection } from "../../public/core-kit/runtime/protocol.js";
 import type { GroupTotalsOutcome } from "../runtime/session.js";
+import { isMacPlatform, menuShortcut } from "./cell-context-menu.js";
 import { formatNumberFor } from "./field-display.js";
 import {
   canThenBySameDate,
@@ -113,7 +114,7 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
       copied = false;
     }
     document.removeEventListener("copy", onCopy);
-    setCopyStatus(copied ? `Copied ${projection.groups.length} groups.` : "Select the table and press ⌘C to copy.");
+    setCopyStatus(copied ? `Copied ${projection.groups.length} groups.` : `Select the table and press ${menuShortcut("C", isMacPlatform())} to copy.`);
   }
 
   return (
