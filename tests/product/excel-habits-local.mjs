@@ -894,12 +894,117 @@ const cases = [
     const reopened = Number(await page.getByRole("separator", { name: "Resize title", exact: true }).getAttribute("aria-valuenow"));
     assert.equal(reopened, fitted, `the column width reset on reopen (${reopened} instead of ${fitted}); widths are view state only`);
   } },
-  { id: "44", name: "Context menus", tier: "B", run: async (page) => {
+  { id: "44", name: "Context menus", tier: "B", waitMs: 10_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
+    const id = (row, column) => cellIdFor(table, row, column);
+    const menu = page.getByRole("menu", { name: "Cell actions", exact: true });
+    const item = (name) => page.getByRole("menuitem", { name, exact: true });
+    const focused = (locator) => locator.evaluate((node) => node === document.activeElement);
+    const rowOrder = () => page.locator("tbody tr.ts-row").evaluateAll((rows) => rows.map((row) => row.querySelector("td")?.textContent?.trim() ?? ""));
     await page.getByTestId(cellIdFor(table, 0, 0)).click({ button: "right" });
     await settle(page);
     assert.ok(await page.getByRole("menu").count() > 0, "right-click on a cell opened no context menu; Shift+F10 has none either");
+
+    // Excel's cell menu, focused on its first command; Escape gives the cell back.
+    for (const label of ["Cut", "Copy", "Paste", "Clear contents", "Fill down", "Delete row", "Sort A → Z", "Sort Z → A", "Filter…"]) {
+      assert.equal(await item(label).count(), 1, `the cell menu has no ${label} item`);
+    }
+    assert.ok(await focused(item("Cut")), "the cell menu did not focus Cut on open");
+    await page.keyboard.press("Escape");
+    assert.equal(await menu.count(), 0, "Escape did not close the cell menu");
+    assert.equal(await activeId(page), id(0, 0), "Escape did not return focus to the cell the menu was for");
+
+    // Shift+F10 opens at the focused cell; arrows skip separators and disabled rows.
+    await page.getByTestId(id(0, 1)).click();
+    await page.keyboard.press("Shift+F10");
+    assert.equal(await menu.count(), 1, "Shift+F10 on a focused cell opened no cell menu");
+    assert.ok(await focused(item("Cut")), "Shift+F10's menu did not focus Cut");
+    await page.keyboard.press("ArrowDown");
+    assert.ok(await focused(item("Copy")), "ArrowDown did not move the menu focus to Copy");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    assert.ok(await focused(item("Clear contents")), "ArrowDown did not skip the separator above Clear contents");
+    await page.keyboard.press("ArrowDown");
+    assert.ok(await focused(item("Delete row")), "ArrowDown did not skip the disabled Fill down row");
+    await page.keyboard.press("ArrowUp");
+    assert.ok(await focused(item("Clear contents")), "ArrowUp did not skip the disabled Fill down row");
+    await page.keyboard.press("Escape");
+
+    // A press inside a range keeps it; one outside moves the menu's cell.
+    await dragCells(page, id(0, 1), id(1, 2));
+    assert.equal(await selectedCount(page), 4, "the 2x2 drag did not select four cells");
+    await page.getByTestId(id(1, 2)).click({ button: "right" });
+    assert.equal(await selectedCount(page), 4, "right-clicking inside the selection cleared it");
+    await page.keyboard.press("Escape");
+    await page.getByTestId(id(0, 5)).click({ button: "right" });
+    assert.equal(await selectedCount(page), 0, "right-clicking outside the selection did not move it to that cell");
+    await page.keyboard.press("Escape");
+    assert.equal(await activeId(page), id(0, 5), "closing the menu did not leave focus on the cell it opened on");
+
+    // Copy and Paste run the grid's own clipboard work.
+    const areas = [await cellText(page, table, 0, 1), await cellText(page, table, 1, 1)];
+    await dragCells(page, id(0, 1), id(1, 1));
+    await page.getByTestId(id(0, 1)).click({ button: "right" });
+    await item("Copy").click();
+    await settle(page);
+    assert.equal((await clipboard(page)).trim(), areas.join("\n"), "Copy from the cell menu did not put the selected cells on the clipboard");
+    const source = await cellText(page, await projection(page), 0, 6);
+    await page.getByTestId(id(0, 6)).click({ button: "right" });
+    await item("Paste").click();
+    await waitForCellText(page, id(0, 6), areas[0]);
+    assert.equal(await cellText(page, await projection(page), 1, 6), areas[1], "Paste from the cell menu did not write the second row");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id(0, 6), source);
+
+    // Cut clears the cell it copies; one Undo restores it.
+    await page.getByTestId(id(0, 6)).click({ button: "right" });
+    await item("Cut").click();
+    await waitForCellText(page, id(0, 6), "");
+    assert.equal((await clipboard(page)).trim(), source, "Cut from the cell menu did not put the cell on the clipboard");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id(0, 6), source);
+
+    // Clear contents, and one Undo restores it.
+    const original = await cellText(page, await projection(page), 0, 0);
+    await page.getByTestId(id(0, 0)).click({ button: "right" });
+    await item("Clear contents").click();
+    await waitForCellText(page, id(0, 0), "");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id(0, 0), original);
+
+    // A two-row selection deletes both rows; Undo restores them.
+    await dragCells(page, id(0, 1), id(1, 1));
+    await page.getByTestId(id(0, 1)).click({ button: "right" });
+    assert.equal(await item("Delete 2 rows").count(), 1, "the menu did not name the two-row delete");
+    await item("Delete 2 rows").click();
+    await page.waitForFunction(() => document.querySelectorAll("tbody tr.ts-row").length === 1);
+    await page.keyboard.press("Control+z");
+    await page.waitForFunction(() => document.querySelectorAll("tbody tr.ts-row").length === 3);
+
+    // The cell editor keeps the browser's own menu.
+    await page.locator("tbody tr.ts-row td").first().dblclick();
+    const editor = page.getByTestId("cell-editor");
+    await editor.waitFor();
+    await editor.click({ button: "right" });
+    assert.equal(await menu.count(), 0, "a right-click in the cell editor opened the cell menu");
+    await page.keyboard.press("Escape");
+    await settle(page);
+
+    // Sort both ways; the two orders must be each other's reverse.
+    await page.locator("tbody tr.ts-row td").first().click({ button: "right" });
+    await item("Sort A → Z").click();
+    await settle(page);
+    const ascending = await rowOrder();
+    await page.locator("tbody tr.ts-row td").first().click({ button: "right" });
+    await item("Sort Z → A").click();
+    await settle(page);
+    assert.deepEqual(await rowOrder(), [...ascending].reverse(), "the two menu sorts did not reverse the visible order");
+
+    // Filter… opens that column's filter editor.
+    await page.locator("tbody tr.ts-row td").first().click({ button: "right" });
+    await item("Filter…").click();
+    await page.getByLabel("Filter type for title").waitFor();
   } },
   { id: "45", name: "Multiline editing", tier: "B", run: async (page) => {
     await example(page);

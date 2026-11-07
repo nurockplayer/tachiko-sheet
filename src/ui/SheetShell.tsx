@@ -89,6 +89,8 @@ import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { fillSelectionPlan, FillSelectionRefusal } from "./fill-selection.js";
 import { FormulaBar } from "./FormulaBar.js";
+import { CellContextMenu } from "./CellContextMenu.js";
+import { isMacPlatform, menuShortcut, type CellMenuItem } from "./cell-context-menu.js";
 import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarSource, formulaBarState, formulaColumnNameHint, formulaHandoffSettlement, formulaReferenceInsertion, hiddenRowTargetLabel, inCellFormulaSource, insertFormulaReference, isFormulaCell, rowLabel, tableAdmitsFormulas, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
 import { canRenameColumns } from "./column-rename-availability.js";
@@ -706,6 +708,7 @@ export function SheetShell(props: SheetShellProps) {
   const [closeOpen, setCloseOpen] = useState(false);
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
   // after the user moved to another cell must not touch the editor it left.
@@ -1415,6 +1418,12 @@ export function SheetShell(props: SheetShellProps) {
       }
       decoded = decodeTsv(event.clipboardData.getData("text/plain"));
     } catch (error) { announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
+    pasteDecoded(position, decoded);
+  }
+
+  /** The decoded block a paste writes: the same work whether the event or the cell menu started it. */
+  function pasteDecoded(position: GridPosition, decoded: string[][]): void {
+    if (!view || !witness || !table) return;
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
@@ -1543,6 +1552,77 @@ export function SheetShell(props: SheetShellProps) {
       if (error instanceof FillDownRefusal) announceClipboard(error.message, true, true);
       else announceClipboard(explain(error, "These cells cannot be filled here."), true, true);
     }
+  }
+
+  function closeCellMenu(): void {
+    const open = cellMenu;
+    setCellMenu(null);
+    if (open) focusCell(open.position.entity, open.position.field);
+  }
+
+  /**
+   * Excel's cell menu: a press inside the selection keeps it and the active
+   * cell; anywhere else the pressed cell becomes the one the menu acts on.
+   */
+  function openCellMenu(x: number, y: number, position: GridPosition): void {
+    const at = address(position);
+    const inside = Boolean(selectionRectangle
+      && at.row >= selectionRectangle.top && at.row <= selectionRectangle.bottom
+      && at.column >= selectionRectangle.left && at.column <= selectionRectangle.right);
+    if (!inside) {
+      setCellSelection(null);
+      setSelectedEntity(position.entity);
+      focusCell(position.entity, position.field);
+    }
+    setCellMenu({ x, y, position });
+  }
+
+  /** The filter editor lives in the column heading's disclosure, so open that one first. */
+  function openCellFilter(field: string): void {
+    const column = columns.find((candidate) => candidate.id === field);
+    if (!column) return;
+    const summary = gridScrollRef.current?.querySelector<HTMLElement>(`summary[aria-label="Column actions for ${CSS.escape(column.display_name)}"]`);
+    const disclosure = summary?.closest("details");
+    if (!disclosure) return;
+    disclosure.open = true;
+    positionColumnToolbar(disclosure);
+    startGridFilter(column);
+  }
+
+  /** The menu's commands; each one closes the menu and returns focus to its cell before it runs. */
+  function cellMenuItems(position: GridPosition): CellMenuItem[] {
+    const mac = isMacPlatform();
+    const blocked = controlsLocked;
+    const viewBlocked = columnChangesBlocked || editor !== null;
+    const command = (action: () => void) => () => { closeCellMenu(); action(); };
+    const rows = selectionRectangle ? selectionRectangle.bottom - selectionRectangle.top + 1 : 0;
+    const paste = async (): Promise<void> => {
+      let text: string;
+      try { text = await navigator.clipboard.readText(); } catch {
+        announceClipboard(`The clipboard can't be read from this menu. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
+        return;
+      }
+      let decoded: string[][];
+      try { decoded = decodeTsv(text); } catch (error) {
+        announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true);
+        return;
+      }
+      pasteDecoded(position, decoded);
+    };
+    return [
+      { label: "Cut", shortcut: menuShortcut("X", mac), disabled: blocked, run: command(() => { document.execCommand("cut"); }) },
+      { label: "Copy", shortcut: menuShortcut("C", mac), run: command(() => { document.execCommand("copy"); }) },
+      { label: "Paste", shortcut: menuShortcut("V", mac), disabled: blocked, run: command(() => { void paste(); }) },
+      "separator",
+      { label: "Clear contents", shortcut: "Delete", disabled: blocked, run: command(() => clearGrid(position)) },
+      { label: "Fill down", shortcut: menuShortcut("D", mac), disabled: blocked || rows < 2, run: command(() => fillDown()) },
+      "separator",
+      ...(rowDeleteAvailable ? [{ label: rows > 1 ? `Delete ${rows} rows` : "Delete row", disabled: rowDeleteBlocked, run: command(() => { void deleteRow(); }) }] : []),
+      "separator",
+      { label: "Sort A → Z", disabled: viewBlocked, run: command(() => setGridSort(position.field, "asc")) },
+      { label: "Sort Z → A", disabled: viewBlocked, run: command(() => setGridSort(position.field, "desc")) },
+      { label: "Filter…", disabled: viewBlocked, run: command(() => openCellFilter(position.field)) },
+    ];
   }
 
   /** Ctrl+Enter fills the selection with the entry the editor holds. */
@@ -2979,6 +3059,13 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    // Excel's keyboard menu key: open at the focused cell's lower-left corner.
+    if (!draft && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
+      event.preventDefault();
+      const corner = event.currentTarget.getBoundingClientRect();
+      openCellMenu(corner.left, corner.bottom, position);
+      return;
+    }
     if ((event.key === "Delete" || event.key === "Backspace") && clipboardPosition(event.target)) {
       event.preventDefault();
       if (!draft && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) clearGrid(position);
@@ -3881,6 +3968,9 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
+  const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
+  const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
   const columnChangeReason = "Finish the current input before changing columns.";
   useEffect(() => { setColumnDialog(null); setRuleDialog(null); setFormatDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
   useEffect(() => {
@@ -4610,13 +4700,14 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
+        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenuItems(cellMenu.position)} onClose={closeCellMenu} /> : null}
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
         <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && (!clipboardMessage.refused || clipboardMessage.polite) ? clipboardMessage.text : null}</p>
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
-          {table.native_table_profile && onInsertRow && onRemoveRows ? <button type="button" className="ts-button" disabled={controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>{selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? `Delete ${selectionRectangle.bottom - selectionRectangle.top + 1} rows` : "Delete row"}</button> : null}
+          {rowDeleteAvailable ? <button type="button" className="ts-button" disabled={rowDeleteBlocked} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>{selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? `Delete ${selectionRectangle.bottom - selectionRectangle.top + 1} rows` : "Delete row"}</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
             if (columnChangesBlocked) { closeColumnToolbar(event.currentTarget); return; }
@@ -4853,6 +4944,12 @@ export function SheetShell(props: SheetShellProps) {
             setDragSelecting(true);
             extendSelection(dragSelectRef.current.anchor, { entity, field: column.id });
           }
+        }}
+        onContextMenu={(event) => {
+          // The editor and the new row keep the browser's own menu.
+          if (draft || cellEditorOwnsPointer(event.target as Element | null)) return;
+          event.preventDefault();
+          openCellMenu(event.clientX, event.clientY, { entity, field: column.id });
         }}
         onClick={(event) => {
           if (cellEditorOwnsPointer(event.target as Element | null)) return;
