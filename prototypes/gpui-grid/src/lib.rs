@@ -362,9 +362,16 @@ impl GridApp {
 
     /// Whether the focused input has marked (composing) text. Enter, Tab and
     /// Escape belong to the composition until the mark clears.
+    ///
+    /// The state entity routes the IME calls through the same public handler
+    /// the element installs; only the bounds are needed for point queries, and
+    /// a missing element has no composition.
     fn editor_is_composing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let mut editor = self.editor.clone();
-        editor.marked_text_range(window, cx).is_some()
+        let Some(bounds) = self.editor.read(cx).input_bounds() else {
+            return false;
+        };
+        let mut handler = ElementInputHandler::new(bounds, self.editor.clone());
+        handler.marked_text_range(window, cx).is_some()
     }
 
     /// Writes the selected range as TSV. Rows end with `\n`, cells with `\t`.
@@ -476,7 +483,7 @@ impl GridApp {
             return;
         }
 
-        if keystroke.modifiers.secondary() {
+        if keystroke.modifiers.secondary(cx) {
             match keystroke.key.as_str() {
                 "c" => {
                     self.copy_range(cx);
