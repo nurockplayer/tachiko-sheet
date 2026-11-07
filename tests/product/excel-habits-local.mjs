@@ -472,6 +472,23 @@ const cases = [
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.querySelector(".ts-cell--formula-ref"), null, { timeout: 10_000 });
     assert.deepEqual(await outlined(), [], "Escape did not clear the formula's outlines");
+
+    // Text that looks like a formula where no formula can live outlines nothing:
+    // a text column, and the new row's draft.
+    await newTable(page, "Not formulas", [{ name: "Label", type: "text" }, { name: "Amount", type: "number" }]);
+    await addRow(page, ["one", "1"], 1);
+    const plain = await projection(page);
+    await page.getByTestId(cellIdFor(plain, 0, 0)).press("F2");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.type("=B2");
+    assert.deepEqual(await outlined(), [], "=B2 in a text column outlined a cell reference");
+    await page.keyboard.press("Escape");
+    const draftCells = page.locator(".ts-entry-row td[data-entry-field]");
+    await draftCells.nth(1).dblclick();
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.type("=B2");
+    assert.deepEqual(await outlined(), [], "=B2 in the new row's number cell outlined a cell reference");
+    await page.keyboard.press("Escape");
   } },
   { id: "20", name: "Recalculation", tier: "A", run: async (page) => {
     await newTable(page, "Recalc", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
@@ -1122,7 +1139,7 @@ const cases = [
     await page.keyboard.press("F4");
     assert.equal(await editor.inputValue(), "=$A$2", "F4 did not cycle A2 to $A$2");
   } },
-  { id: "42", name: "Formula bar and address", tier: "B", run: async (page) => {
+  { id: "42", name: "Formula bar and address", tier: "B", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
     const id = cellIdFor(table, 0, 4);
@@ -1137,8 +1154,41 @@ const cases = [
     await waitForCellText(page, id, "6");
     await page.getByTestId(id).click();
     await settle(page);
-    const label = (await page.getByTestId("formula-bar-cell").textContent()).trim();
-    assert.match(label, /^[A-Z]{1,3}\d+$/, `the selected cell's address shows ${JSON.stringify(label)}, not an A1 address`);
+
+    // The Name Box shows the focused cell's address; the old label stays as its tooltip.
+    const nameBox = page.getByTestId("name-box");
+    assert.equal(await nameBox.inputValue(), "E2",
+      `the Name Box shows ${JSON.stringify(await nameBox.inputValue())}, not the selected cell's address`);
+    assert.match(await nameBox.getAttribute("title"), /priority/i, "the Name Box lost the column and row names on hover");
+
+    // Typing an address and pressing Enter goes there and drops any selection.
+    const goTo = async (text) => {
+      await nameBox.click();
+      await page.keyboard.type(text);
+      await page.keyboard.press("Enter");
+      await settle(page);
+    };
+    await goTo("C3");
+    assert.equal(await activeId(page), cellIdFor(table, 1, 2), "C3 and Enter did not land on C3");
+    await goTo("B2:C3");
+    assert.equal(await selectedCount(page), 4, "B2:C3 and Enter did not select four cells");
+    assert.equal(await activeId(page), cellIdFor(table, 0, 1), "the range's active cell is not its first address");
+    await goTo("C3");
+    assert.equal(await activeId(page), cellIdFor(table, 1, 2), "C3 and Enter did not land on C3 after a range");
+    assert.equal(await selectedCount(page), 0, "going to one cell left the previous range selected");
+
+    // Anything else is announced, and the typed text stays in the focused box.
+    await goTo("Z99");
+    await page.waitForFunction(() => document.querySelector("p.ts-clipboard-status")?.textContent?.includes("isn't a cell in this table"));
+    assert.equal((await page.locator("p.ts-clipboard-status").textContent()).trim(), "“Z99” isn't a cell in this table.",
+      "an address outside the grid was not announced with the typed text");
+    assert.ok(await nameBox.evaluate((node) => node === document.activeElement), "a refused address moved focus off the Name Box");
+    assert.equal(await nameBox.inputValue(), "Z99", "a refused address lost the typed text");
+
+    // Escape drops the typed text and gives the cell its focus back.
+    await page.keyboard.press("Escape");
+    await settle(page);
+    assert.equal(await activeId(page), cellIdFor(table, 1, 2), "Escape did not return focus to the cell");
   } },
   { id: "43", name: "Resize and AutoFit", tier: "B", run: async (page) => {
     await example(page);

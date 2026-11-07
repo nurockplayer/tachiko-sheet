@@ -1,6 +1,6 @@
 import type { Currentness, FieldTarget, WorkbookView } from "../contracts.js";
 import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
-import { a1RowNumber } from "./a1-geometry.js";
+import { a1ColumnLetter, a1RowNumber } from "./a1-geometry.js";
 import { DRAFT_ROW } from "./row-entry-model.js";
 import { rowSource } from "./row-source.js";
 
@@ -9,6 +9,8 @@ export interface FormulaBarState {
   /** Bind identity: one view revision plus one cell. A newer owner never inherits a draft. */
   identity: string;
   label: string;
+  /** The focused cell's A1 address, or empty for the new row or a hidden row. */
+  address: string;
   target: FieldTarget | null;
   /** Work's projected `formula.source`, or empty for an ordinary cell. */
   source: string;
@@ -44,6 +46,7 @@ export function formulaBarState(input: {
   const empty: FormulaBarState = {
     identity: `${input.viewIdentity}\u0000${input.focus?.entity ?? ""}\u0000${input.focus?.field ?? ""}`,
     label: "",
+    address: "",
     target: null,
     source: "",
     editable: false,
@@ -73,6 +76,9 @@ export function formulaBarState(input: {
   return {
     identity: empty.identity,
     label: `${column.display_name} · ${rowName}`,
+    address: displayed
+      ? `${a1ColumnLetter(input.columns.findIndex((candidate) => candidate.id === column.id))}${a1RowNumber(index)}`
+      : "",
     target,
     source: field?.formula?.source ?? "",
     editable: reason === null,

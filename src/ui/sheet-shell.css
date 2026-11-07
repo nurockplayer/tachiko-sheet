@@ -1222,19 +1222,25 @@ body { margin: 0; }
   font: italic 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   user-select: none;
 }
-.ts-formula-cell {
-  flex: 0 1 34%;
-  min-width: 96px;
-  max-width: 260px;
+.ts-name-box {
+  flex: 0 0 88px;
+  width: 88px;
+  min-width: 0;
+  max-width: none;
+  box-sizing: border-box;
   padding: 4px 8px;
+  background: transparent;
+  border: 0;
   border-right: 1px solid var(--ts-line);
-  color: var(--ts-ink-soft);
+  color: inherit;
+  font-family: inherit;
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ts-name-box:focus { outline: 2px solid var(--ts-focus); outline-offset: -2px; }
 .ts-formula-input {
   flex: 1 1 auto;
   min-width: 0;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 
 describe("isTachikoFormulaSource", () => {
   it("treats a bracketed reference as Tachiko source and anything else as Excel text", () => {
@@ -79,6 +79,58 @@ describe("a1ReferencedRanges", () => {
     expect(a1ReferencedRanges("=SUM(B:B)")).toEqual([]);
     expect(a1ReferencedRanges("=A0")).toEqual([]);
     expect(a1ReferencedRanges("=1.5E3")).toEqual([]);
+  });
+});
+
+describe("a1GoToTarget", () => {
+  // A 5-row, 5-column grid: displayed rows 0–4 are A1 rows 2–6, columns A–E.
+  const grid = (text: string) => a1GoToTarget(text, 5, 5);
+  const single = (row: number, column: number) => ({
+    top: row, bottom: row, left: column, right: column,
+    anchor: { row, column }, end: { row, column },
+  });
+
+  it("reads one address as its displayed cell", () => {
+    expect(grid("C3")).toEqual(single(1, 2));
+    expect(grid("$C$3")).toEqual(single(1, 2));
+    expect(grid("c3")).toEqual(single(1, 2));
+    expect(grid("  C3  ")).toEqual(single(1, 2));
+    expect(grid("A2")).toEqual(single(0, 0));
+    expect(grid("E6")).toEqual(single(4, 4));
+  });
+
+  it("reads a range as its rectangle, with the first address as the anchor", () => {
+    expect(grid("B2:C3")).toEqual({
+      top: 0, bottom: 1, left: 1, right: 2,
+      anchor: { row: 0, column: 1 }, end: { row: 1, column: 2 },
+    });
+    expect(grid("$B$2:$C$3")).toEqual({
+      top: 0, bottom: 1, left: 1, right: 2,
+      anchor: { row: 0, column: 1 }, end: { row: 1, column: 2 },
+    });
+  });
+
+  it("puts a reversed range in order but keeps its first address focused", () => {
+    expect(grid("C3:B2")).toEqual({
+      top: 0, bottom: 1, left: 1, right: 2,
+      anchor: { row: 1, column: 2 }, end: { row: 0, column: 1 },
+    });
+  });
+
+  it("refuses the name row and any cell outside the grid", () => {
+    for (const text of ["A1", "B1", "A0", "A7", "F2", "Z99", "B: B3"]) {
+      expect(grid(text), text).toBeNull();
+    }
+    expect(a1GoToTarget("A2", 0, 5)).toBeNull();
+    expect(a1GoToTarget("A2", 5, 0)).toBeNull();
+    expect(grid("B2:C9")).toBeNull();
+  });
+
+  it("accepts only one whole address or range", () => {
+    for (const text of ["", "B", "2", "B2:C", "B2:C3:D4", "B2*2", "A 1", "Sheet2!B2", "AAAA1", "=B2"]) {
+      expect(grid(text), text).toBeNull();
+    }
+    expect(grid("B2 ")).toEqual(single(0, 1));
   });
 });
 

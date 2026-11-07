@@ -60,7 +60,7 @@ import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./
 import { NewTableDialog } from "./NewTableDialog.js";
 import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
-import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
@@ -1147,7 +1147,13 @@ export function SheetShell(props: SheetShellProps) {
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
   // The cells the open formula draft names, outlined as Excel does while typing.
-  const referencedRanges = useMemo(() => a1ReferencedRanges(editor?.value ?? formulaDraft?.value ?? ""), [editor?.value, formulaDraft?.value]);
+  // Only a number cell's editor can hold a formula, and the new row's draft is
+  // an ordinary row entry: text there is never a formula, whatever it looks like.
+  const referencedRanges = useMemo(() => a1ReferencedRanges(
+    editor
+      ? editor.entity !== DRAFT_ROW && editor.kind === "number" ? editor.value : ""
+      : formulaDraft?.value ?? "",
+  ), [editor, formulaDraft?.value]);
   useEffect(() => { setCellSelection(null); setClipboardMessage(null); setFilterDraft(null); }, [collectionIdentity]);
 
   useEffect(() => {
@@ -2816,6 +2822,27 @@ export function SheetShell(props: SheetShellProps) {
     if (!gridWindowed || tab !== "table" || rowIndex === null) return;
     pendingCellFocusRef.current = { entity, field, generation: focusIntentRef.current };
     revealGridRow(rowIndex);
+  }
+
+  /**
+   * The Name Box: a typed A1 address or range moves focus there, clearing any
+   * selection. Anything else keeps the box and says why.
+   */
+  function goToAddress(text: string): boolean {
+    const target = a1GoToTarget(text, displayRows.length, columns.length);
+    if (!target) {
+      announceClipboard(`“${text.trim()}” isn't a cell in this table.`, true, true);
+      return false;
+    }
+    const anchor = { entity: rowEntity(displayRows[target.anchor.row]), field: columns[target.anchor.column].id };
+    focusCell(anchor.entity, anchor.field, target.anchor.row);
+    if (target.top === target.bottom && target.left === target.right) {
+      setCellSelection(null);
+    } else {
+      // A range keeps its first address as the active cell, even when reversed.
+      extendSelection(anchor, { entity: rowEntity(displayRows[target.end.row]), field: columns[target.end.column].id });
+    }
+    return true;
   }
 
   function goToFindMatch(direction: 1 | -1): void {
@@ -4779,6 +4806,9 @@ export function SheetShell(props: SheetShellProps) {
               pending={commitPending}
               error={formulaError}
               translationNote={a1Note}
+              goToLocked={Boolean(editor) || formulaDraftActive || commitPending}
+              onGoTo={goToAddress}
+              onGoToCancel={() => { if (focusedPosition) focusCell(focusedPosition.entity, focusedPosition.field); }}
               inputRef={bindFormulaInput}
               onChange={changeFormulaDraft}
               onKeyDown={onFormulaKeyDown}
