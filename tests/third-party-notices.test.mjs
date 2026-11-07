@@ -1,7 +1,7 @@
 // The SPDX allow-list decision the notices generator applies to every crate
 // and JavaScript package.
 import { describe, expect, it } from "vitest";
-import { isAllowedLicenseExpression } from "../scripts/generate-third-party-licenses.mjs";
+import { MPL_EXCEPTIONS, isAllowedLicenseExpression, isAllowedPackage } from "../scripts/generate-third-party-licenses.mjs";
 
 describe("isAllowedLicenseExpression", () => {
   it("accepts a single allow-listed license", () => {
@@ -38,5 +38,23 @@ describe("isAllowedLicenseExpression", () => {
     expect(isAllowedLicenseExpression("GPL-3.0-only")).toBe(false);
     expect(isAllowedLicenseExpression("LicenseRef-Custom")).toBe(false);
     expect(isAllowedLicenseExpression("")).toBe(false);
+  });
+});
+
+describe("isAllowedPackage", () => {
+  it("allows a reviewed MPL-2.0 crate only at its exact version", () => {
+    expect(MPL_EXCEPTIONS.get("cssparser@0.37.0")).toBe("https://github.com/servo/rust-cssparser");
+    expect(isAllowedPackage("cssparser", "0.37.0", "MPL-2.0")).toBe(true);
+    expect(isAllowedPackage("cssparser", "0.38.0", "MPL-2.0")).toBe(false);
+  });
+
+  it("refuses an MPL-2.0 crate that was not reviewed", () => {
+    expect(isAllowedPackage("some-new-crate", "1.0.0", "MPL-2.0")).toBe(false);
+    expect(isAllowedPackage("selectors", "0.38.0", "MPL-2.0 OR MIT")).toBe(true);
+  });
+
+  it("keeps the ordinary allow-list working", () => {
+    expect(isAllowedPackage("react", "19.0.0", "MIT")).toBe(true);
+    expect(isAllowedPackage("example", "1.0.0", "GPL-3.0-only")).toBe(false);
   });
 });

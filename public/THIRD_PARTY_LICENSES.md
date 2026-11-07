@@ -13,8 +13,6 @@ Tachiko Work's kit notices (`public/core-kit/notices/`) sit beside this file.
 
 Regenerate with `node scripts/generate-third-party-licenses.mjs`.
 
-> Pending review: 5 package license(s) are outside the allow-list. CI fails until a lead decides.
-
 ## First-party packages
 
 | Package | Version | Declared license | Source |
@@ -461,6 +459,7 @@ Each vendored or on-disk file maps to the exact text identified by its SHA-256 h
 | `block-buffer 0.12.1` | `LICENSE-APACHE` | `a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5` |
 | `block-buffer 0.12.1` | `LICENSE-MIT` | `98181e7249d0c01737645ec982499ce99a0f07eb8f7d625b8840d799d10dbc01` |
 | `block2 0.6.2` | `scripts/third-party-overrides/block2-0.6.2/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `block2 0.6.2` | `scripts/third-party-overrides/block2-0.6.2/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `blocking 1.7.0` | `LICENSE-APACHE` | `a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2` |
 | `blocking 1.7.0` | `LICENSE-MIT` | `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3` |
 | `brotli 9.0.0` | `LICENSE.BSD-3-Clause` | `c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae` |
@@ -533,6 +532,7 @@ Each vendored or on-disk file maps to the exact text identified by its SHA-256 h
 | `dirs-sys 0.5.0` | `LICENSE-APACHE` | `d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9` |
 | `dirs-sys 0.5.0` | `LICENSE-MIT` | `6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9` |
 | `dispatch2 0.3.1` | `scripts/third-party-overrides/dispatch2-0.3.1/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `dispatch2 0.3.1` | `scripts/third-party-overrides/dispatch2-0.3.1/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `displaydoc 0.2.7` | `LICENSE-APACHE` | `a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2` |
 | `displaydoc 0.2.7` | `LICENSE-MIT` | `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3` |
 | `dlib 0.5.3` | `LICENSE.txt` | `10e5daea68c3ab7da6468ea51860e9d4ac87ea6a9a2d34127beff17b7193b618` |
@@ -716,14 +716,21 @@ Each vendored or on-disk file maps to the exact text identified by its SHA-256 h
 | `num-conv 0.1.0` | `LICENSE-Apache` | `c0fd5f9df8d17e13587f8fe403d2326b835e60d532817d0b42ae4aea44209251` |
 | `num-conv 0.1.0` | `LICENSE-MIT` | `af85fff507d80e6c7ff242acfc4b0a7f5de9a72286bb3c883c782772ca4b4402` |
 | `objc2 0.6.5` | `scripts/third-party-overrides/objc2-0.6.5/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2 0.6.5` | `scripts/third-party-overrides/objc2-0.6.5/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `objc2-app-kit 0.3.2` | `scripts/third-party-overrides/objc2-app-kit-0.3.2/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2-app-kit 0.3.2` | `scripts/third-party-overrides/objc2-app-kit-0.3.2/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `objc2-core-foundation 0.3.2` | `scripts/third-party-overrides/objc2-core-foundation-0.3.2/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2-core-foundation 0.3.2` | `scripts/third-party-overrides/objc2-core-foundation-0.3.2/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `objc2-encode 4.1.0` | `scripts/third-party-overrides/objc2-encode-4.1.0/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2-encode 4.1.0` | `scripts/third-party-overrides/objc2-encode-4.1.0/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `objc2-exception-helper 0.1.1` | `scripts/third-party-overrides/objc2-exception-helper-0.1.1/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2-exception-helper 0.1.1` | `scripts/third-party-overrides/objc2-exception-helper-0.1.1/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `objc2-foundation 0.3.2` | `src/copying.rs` | `259b22f571b54fed25f68ec5abd8eda223e7b0547a806f13ba797a0eabecd64f` |
 | `objc2-foundation 0.3.2` | `src/tests/copying.rs` | `23d608079a47693a26dfc8a5cb01894ad0136a50714d46221d9380aa4a4b4423` |
 | `objc2-quartz-core 0.3.2` | `scripts/third-party-overrides/objc2-quartz-core-0.3.2/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2-quartz-core 0.3.2` | `scripts/third-party-overrides/objc2-quartz-core-0.3.2/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `objc2-web-kit 0.3.2` | `scripts/third-party-overrides/objc2-web-kit-0.3.2/LICENSE` | `7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54` |
+| `objc2-web-kit 0.3.2` | `scripts/third-party-overrides/objc2-web-kit-0.3.2/LICENSE-MIT` | `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070` |
 | `once_cell 1.21.4` | `LICENSE-APACHE` | `a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2` |
 | `once_cell 1.21.4` | `LICENSE-MIT` | `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3` |
 | `option-ext 0.2.0` | `LICENSE.txt` | `66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172` |
@@ -1080,15 +1087,29 @@ These packages ship no license file. The text was fetched from upstream, never w
 | `webview2-com-macros` | `0.8.1` | https://raw.githubusercontent.com/wravery/webview2-rs/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE | `commit edc2caf886175ccaebe86078c9cfe1ae2a187328 (workspace declares webview2-com 0.39.1, webview2-com-sys 0.39.1, webview2-com-macros 0.8.1)` |
 | `webview2-com-sys` | `0.39.1` | https://raw.githubusercontent.com/wravery/webview2-rs/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE | `commit edc2caf886175ccaebe86078c9cfe1ae2a187328 (workspace declares webview2-com 0.39.1, webview2-com-sys 0.39.1, webview2-com-macros 0.8.1)` |
 
-## Needs a decision
+For these crates the upstream license above only links to the MIT text, so the file itself is carried here from the same upstream repository:
 
-| Package | Version | Declared license |
-| --- | --- | --- |
-| `cssparser` | `0.37.0` | MPL-2.0 |
-| `cssparser-macros` | `0.7.1` | MPL-2.0 |
-| `dtoa-short` | `0.3.5` | MPL-2.0 |
-| `option-ext` | `0.2.0` | MPL-2.0 |
-| `selectors` | `0.38.0` | MPL-2.0 |
+- `block2 0.6.2`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: Mads Marquart <mads@marquart.dk>`
+- `dispatch2 0.3.1`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: Mads Marquart <mads@marquart.dk>, Mary <mary@mary.zone>`
+- `objc2 0.6.5`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: Mads Marquart <mads@marquart.dk>`
+- `objc2-app-kit 0.3.2`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: none listed`
+- `objc2-core-foundation 0.3.2`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: none listed`
+- `objc2-encode 4.1.0`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: Mads Marquart <mads@marquart.dk>`
+- `objc2-exception-helper 0.1.1`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: Mads Marquart <mads@marquart.dk>`
+- `objc2-quartz-core 0.3.2`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: none listed`
+- `objc2-web-kit 0.3.2`: `mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt`; `attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: none listed`
+
+## MPL-2.0 components
+
+These crates are used unmodified. Their source for the exact version shipped is available at the download URL below, under the Mozilla Public License 2.0, whose text is in this file.
+
+| Package | Version | Source download | Repository |
+| --- | --- | --- | --- |
+| `cssparser` | `0.37.0` | https://static.crates.io/crates/cssparser/cssparser-0.37.0.crate | https://github.com/servo/rust-cssparser |
+| `cssparser-macros` | `0.7.1` | https://static.crates.io/crates/cssparser-macros/cssparser-macros-0.7.1.crate | https://github.com/servo/rust-cssparser |
+| `dtoa-short` | `0.3.5` | https://static.crates.io/crates/dtoa-short/dtoa-short-0.3.5.crate | https://github.com/upsuper/dtoa-short |
+| `option-ext` | `0.2.0` | https://static.crates.io/crates/option-ext/option-ext-0.2.0.crate | https://github.com/soc/option-ext |
+| `selectors` | `0.38.0` | https://static.crates.io/crates/selectors/selectors-0.38.0.crate | https://github.com/servo/stylo |
 
 ## Exact license and notice texts
 
@@ -17246,6 +17267,48 @@ Used by:
 
 ````text
 Copyright (c) 2023 The Rust Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+````
+
+### `f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070`
+
+Used by:
+
+- `block2 0.6.2 — scripts/third-party-overrides/block2-0.6.2/LICENSE-MIT`
+- `dispatch2 0.3.1 — scripts/third-party-overrides/dispatch2-0.3.1/LICENSE-MIT`
+- `objc2 0.6.5 — scripts/third-party-overrides/objc2-0.6.5/LICENSE-MIT`
+- `objc2-app-kit 0.3.2 — scripts/third-party-overrides/objc2-app-kit-0.3.2/LICENSE-MIT`
+- `objc2-core-foundation 0.3.2 — scripts/third-party-overrides/objc2-core-foundation-0.3.2/LICENSE-MIT`
+- `objc2-encode 4.1.0 — scripts/third-party-overrides/objc2-encode-4.1.0/LICENSE-MIT`
+- `objc2-exception-helper 0.1.1 — scripts/third-party-overrides/objc2-exception-helper-0.1.1/LICENSE-MIT`
+- `objc2-quartz-core 0.3.2 — scripts/third-party-overrides/objc2-quartz-core-0.3.2/LICENSE-MIT`
+- `objc2-web-kit 0.3.2 — scripts/third-party-overrides/objc2-web-kit-0.3.2/LICENSE-MIT`
+
+````text
+Copyright 2026 Mads Marquart
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated

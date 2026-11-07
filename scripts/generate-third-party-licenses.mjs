@@ -6,14 +6,11 @@
 // Usage:
 //   node scripts/generate-third-party-licenses.mjs            # write both copies
 //   node scripts/generate-third-party-licenses.mjs --check    # fail on any difference
-//   node scripts/generate-third-party-licenses.mjs --allow-pending
-//       # include packages outside the allow-list, mark the file and list them.
-//       # Never used in CI; a lead decides whether to allow-list each one.
 //
 // Text for a package that ships no LICENSE, COPYING or NOTICE file comes from
-// scripts/third-party-overrides/<name>-<version>/: a LICENSE file fetched from
-// upstream, next to a SOURCE file naming the URL and the exact tag or commit.
-// The generator fails rather than omit anything.
+// scripts/third-party-overrides/<name>-<version>/: files fetched from upstream,
+// next to a SOURCE file naming the URL and the exact tag or commit. The
+// generator fails rather than omit anything.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -51,6 +48,16 @@ export const ALLOWED_LICENSES = new Set([
   'CC0-1.0',
   'Unlicense',
   'BSL-1.0',
+]);
+
+// Reviewed one by one: sheet-lead decision on PR #321. A version bump fails CI until reviewed.
+// These are unmodified. If one is ever patched here, the patched files stay MPL-2.0 and their source must be published.
+export const MPL_EXCEPTIONS = new Map([
+  ['cssparser@0.37.0', 'https://github.com/servo/rust-cssparser'],
+  ['cssparser-macros@0.7.1', 'https://github.com/servo/rust-cssparser'],
+  ['dtoa-short@0.3.5', 'https://github.com/upsuper/dtoa-short'],
+  ['option-ext@0.2.0', 'https://github.com/soc/option-ext'],
+  ['selectors@0.38.0', 'https://github.com/servo/stylo'],
 ]);
 
 // Both repositories are dual-licensed; the git dependency keeps its own
@@ -127,6 +134,19 @@ export function isAllowedLicenseExpression(expression) {
   const allowed = parseExpression(tokens, state);
   if (state.index !== tokens.length) throw new Error(`unexpected "${tokens[state.index]}" in "${expression}"`);
   return allowed;
+}
+
+/**
+ * True when the package may ship: its expression is allow-listed, or it is a
+ * reviewed MPL-2.0 crates.io package at exactly the recorded name@version.
+ */
+export function isAllowedPackage(name, version, license) {
+  try {
+    if (isAllowedLicenseExpression(license)) return true;
+  } catch (error) {
+    fail(`${name} ${version} has an unparseable license expression "${license}": ${error.message}`);
+  }
+  return license === 'MPL-2.0' && MPL_EXCEPTIONS.has(`${name}@${version}`);
 }
 
 function targetTrees() {
@@ -211,11 +231,27 @@ async function overrideText(name, version) {
   }
   const fields = {};
   for (const line of (await readFile(sourceFile, 'utf8')).split('\n')) {
-    const match = line.match(/^(url|revision):\s*(.+)$/);
+    const match = line.match(/^(url|revision|mit-text|attribution):\s*(.+)$/);
     if (match) fields[match[1]] = match[2].trim();
   }
   if (!fields.url || !fields.revision) fail(`override SOURCE for ${name} ${version} needs url: and revision: lines`);
-  return { text: await readFile(licenseFile, 'utf8'), url: fields.url, revision: fields.revision };
+  const names = (await readdir(directory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name !== 'SOURCE')
+    .map((entry) => entry.name)
+    .sort(compare);
+  const files = await Promise.all(
+    names.map(async (file) => ({
+      label: `scripts/third-party-overrides/${name}-${version}/${file}`,
+      text: await readFile(path.join(directory, file), 'utf8'),
+    })),
+  );
+  return {
+    files,
+    url: fields.url,
+    revision: fields.revision,
+    mitText: fields['mit-text'],
+    attribution: fields.attribution,
+  };
 }
 
 async function rustInventory(vendorDir) {
@@ -256,8 +292,15 @@ async function rustInventory(vendorDir) {
       if (!override) {
         fail(`${entry.name} ${entry.version} ships no LICENSE, COPYING or NOTICE file and has no scripts/third-party-overrides/${entry.name}-${entry.version} (declared license: ${row.license})`);
       }
-      overrides.push({ name: entry.name, version: entry.version, url: override.url, revision: override.revision });
-      row.files = [{ label: `scripts/third-party-overrides/${entry.name}-${entry.version}/LICENSE`, text: override.text }];
+      overrides.push({
+        name: entry.name,
+        version: entry.version,
+        url: override.url,
+        revision: override.revision,
+        mitText: override.mitText,
+        attribution: override.attribution,
+      });
+      row.files = override.files;
     }
     rows.push(row);
   }
@@ -303,8 +346,15 @@ async function jsInventory() {
     } else {
       const override = await overrideText(entry.name, entry.version);
       if (!override) fail(`${entry.name} ${entry.version} ships no LICENSE file and has no scripts/third-party-overrides/${entry.name}-${entry.version} (declared license: ${row.license})`);
-      overrides.push({ name: entry.name, version: entry.version, url: override.url, revision: override.revision });
-      row.files = [{ label: `scripts/third-party-overrides/${entry.name}-${entry.version}/LICENSE`, text: override.text }];
+      overrides.push({
+        name: entry.name,
+        version: entry.version,
+        url: override.url,
+        revision: override.revision,
+        mitText: override.mitText,
+        attribution: override.attribution,
+      });
+      row.files = override.files;
     }
     rows.push(row);
   }
@@ -319,7 +369,7 @@ function markdownLink(text) {
   return text.replace(/\|/g, '\\|');
 }
 
-function render({ rust, js, pending }) {
+function render({ rust, js }) {
   const blocks = [];
   const push = (line = '') => blocks.push(line);
   const texts = new Map();
@@ -352,10 +402,6 @@ function render({ rust, js, pending }) {
   push('Tachiko Work\'s kit notices (`public/core-kit/notices/`) sit beside this file.');
   push();
   push('Regenerate with `node scripts/generate-third-party-licenses.mjs`.');
-  if (pending.length > 0) {
-    push();
-    push(`> Pending review: ${pending.length} package license(s) are outside the allow-list. CI fails until a lead decides.`);
-  }
   push();
   push('## First-party packages');
   push();
@@ -397,15 +443,30 @@ function render({ rust, js, pending }) {
     for (const row of overrides) {
       push(`| \`${markdownLink(row.name)}\` | \`${markdownLink(row.version)}\` | ${markdownLink(row.url)} | \`${markdownLink(row.revision)}\` |`);
     }
+    const withMit = overrides.filter((row) => row.mitText && row.attribution);
+    if (withMit.length > 0) {
+      push();
+      push('For these crates the upstream license above only links to the MIT text, so the file itself is carried here from the same upstream repository:');
+      push();
+      for (const row of withMit) {
+        push(`- \`${markdownLink(row.name)} ${markdownLink(row.version)}\`: \`mit-text: ${markdownLink(row.mitText)}\`; \`attribution: ${markdownLink(row.attribution)}\``);
+      }
+    }
   }
-  if (pending.length > 0) {
+  const mplRows = [...rust.rows, ...js.rows]
+    .filter((row) => row.license === 'MPL-2.0' && MPL_EXCEPTIONS.has(`${row.name}@${row.version}`))
+    .sort((a, b) => compare(a.name, b.name) || compare(a.version, b.version));
+  if (mplRows.length > 0) {
     push();
-    push('## Needs a decision');
+    push('## MPL-2.0 components');
     push();
-    push('| Package | Version | Declared license |');
-    push('| --- | --- | --- |');
-    for (const row of pending.slice().sort((a, b) => compare(a.name, b.name) || compare(a.version, b.version))) {
-      push(`| \`${markdownLink(row.name)}\` | \`${markdownLink(row.version)}\` | ${markdownLink(row.license)} |`);
+    push('These crates are used unmodified. Their source for the exact version shipped is available at the download URL below, under the Mozilla Public License 2.0, whose text is in this file.');
+    push();
+    push('| Package | Version | Source download | Repository |');
+    push('| --- | --- | --- | --- |');
+    for (const row of mplRows) {
+      const repository = MPL_EXCEPTIONS.get(`${row.name}@${row.version}`);
+      push(`| \`${markdownLink(row.name)}\` | \`${markdownLink(row.version)}\` | https://static.crates.io/crates/${row.name}/${row.name}-${row.version}.crate | ${markdownLink(repository)} |`);
     }
   }
   push();
@@ -434,26 +495,19 @@ function longestBacktickRun(text) {
   return longest;
 }
 
-function validateAllowed(rows) {
-  const pending = [];
-  for (const row of rows) {
-    let allowed;
-    try {
-      allowed = isAllowedLicenseExpression(row.license);
-    } catch (error) {
-      fail(`${row.name} ${row.version} has an unparseable license expression "${row.license}": ${error.message}`);
-    }
-    if (!allowed) pending.push(row);
+function requireAllowed(rows) {
+  const refused = rows.filter((row) => !isAllowedPackage(row.name, row.version, row.license));
+  if (refused.length > 0) {
+    const listed = refused.map((row) => `${row.name} ${row.version} (${row.license})`).join('; ');
+    fail(`${refused.length} package license(s) are outside the allow-list: ${listed}`);
   }
-  return pending;
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const known = new Set(['--check', '--allow-pending']);
+  const known = new Set(['--check']);
   for (const arg of args) if (!known.has(arg)) fail(`unknown argument: ${arg}`);
   const check = args.includes('--check');
-  const allowPending = args.includes('--allow-pending');
 
   const work = await mkdtemp(path.join(tmpdir(), 'tachiko-sheet-notices-'));
   try {
@@ -468,12 +522,9 @@ async function main() {
     ]);
     const rust = await rustInventory(vendorDir);
     const js = await jsInventory();
-    const pending = validateAllowed([...rust.rows, ...rust.firstParty, ...js.rows]);
-    if (pending.length > 0 && !allowPending) {
-      const listed = pending.map((row) => `${row.name} ${row.version} (${row.license})`).join('; ');
-      fail(`${pending.length} package license(s) are outside the allow-list: ${listed}`);
-    }
-    const output = render({ rust, js, pending });
+    requireAllowed([...rust.rows, ...rust.firstParty, ...js.rows]);
+    const output = render({ rust, js });
+    const mplExceptions = MPL_EXCEPTIONS.size;
 
     if (check) {
       const checked = path.join(work, outputFile);
@@ -484,7 +535,7 @@ async function main() {
         if (current === null) fail(`${relative} is missing; run the generator`);
         if (current !== output) fail(`${relative} differs from a fresh generation; run the generator`);
       }
-      console.log(JSON.stringify({ status: 'PASS', crates: rust.rows.length + rust.firstParty.length, jsPackages: js.rows.length, overrides: rust.overrides.length + js.overrides.length, pendingReview: pending.length }));
+      console.log(JSON.stringify({ status: 'PASS', crates: rust.rows.length + rust.firstParty.length, jsPackages: js.rows.length, overrides: rust.overrides.length + js.overrides.length, mplExceptions }));
       return;
     }
 
@@ -493,7 +544,7 @@ async function main() {
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, output);
     }
-    console.log(JSON.stringify({ status: 'WROTE', crates: rust.rows.length + rust.firstParty.length, jsPackages: js.rows.length, overrides: rust.overrides.length + js.overrides.length, pendingReview: pending.length, pending: pending.map((row) => `${row.name} ${row.version} (${row.license})`) }));
+    console.log(JSON.stringify({ status: 'WROTE', crates: rust.rows.length + rust.firstParty.length, jsPackages: js.rows.length, overrides: rust.overrides.length + js.overrides.length, mplExceptions }));
   } finally {
     await rm(work, { recursive: true, force: true });
   }
