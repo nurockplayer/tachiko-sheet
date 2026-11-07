@@ -900,20 +900,27 @@ export function SheetShell(props: SheetShellProps) {
       setFillPreview(null);
       if (preview && drag) finishFillDragRef.current(preview, drag);
     };
+    const dropFillDrag = () => {
+      fillDragRef.current = null;
+      fillPreviewRef.current = null;
+      setFillPreview(null);
+    };
     // Escape during a fill drag cancels the drag and nothing else.
     const cancelFillDrag = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !fillDragRef.current) return;
       event.preventDefault();
       event.stopPropagation();
-      fillDragRef.current = null;
-      fillPreviewRef.current = null;
-      setFillPreview(null);
+      dropFillDrag();
     };
+    // A button released outside the window sends no mouseup here, so the next
+    // release anywhere would otherwise fill.
     window.addEventListener("mouseup", finish);
     window.addEventListener("keydown", cancelFillDrag, true);
+    window.addEventListener("blur", dropFillDrag);
     return () => {
       window.removeEventListener("mouseup", finish);
       window.removeEventListener("keydown", cancelFillDrag, true);
+      window.removeEventListener("blur", dropFillDrag);
     };
   }, []);
   const resultsHideButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -5070,8 +5077,11 @@ export function SheetShell(props: SheetShellProps) {
           if (textEditor) {
             const start = event.currentTarget.selectionStart ?? event.currentTarget.value.length;
             const end = event.currentTarget.selectionEnd ?? start;
-            event.currentTarget.setRangeText("\n", start, end, "end");
-            applyEditorValue(event.currentTarget.value);
+            // execCommand keeps the break in the editor's own Undo; onChange follows it.
+            if (!event.currentTarget.ownerDocument.execCommand("insertText", false, "\n")) {
+              event.currentTarget.setRangeText("\n", start, end, "end");
+              applyEditorValue(event.currentTarget.value);
+            }
           }
           return;
         }

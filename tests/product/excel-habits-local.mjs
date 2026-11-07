@@ -703,6 +703,17 @@ const cases = [
     await settle(page);
     assert.deepEqual(await values(), ["1", "2", "3", "4"], "releasing after Escape still filled");
 
+    // Losing the window during the drag cancels it: a later release fills nothing.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const blurHandle = await fillHandleBox(page);
+    await page.mouse.move(blurHandle.x + blurHandle.width / 2, blurHandle.y + blurHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lastRow.x + lastRow.width / 2, lastRow.y + lastRow.height / 2, { steps: 8 });
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "releasing after the window lost focus still filled");
+
     // A right-press on the handle opens the cell menu and starts no drag.
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
     const rightHandle = await fillHandleBox(page);
@@ -1386,6 +1397,18 @@ const cases = [
     const value = String(fieldAt(await projection(page), 0, 7)?.stored?.value);
     assert.ok(value.includes("\n"), `Alt+Enter inserted no line break (stored ${JSON.stringify(value)})`);
     assert.equal(value, "Line one\nLine two", `the stored value is not the two typed lines (${JSON.stringify(value)})`);
+
+    // The break is part of the editor's own Undo.
+    await page.getByTestId(cellIdFor(table, 1, 7)).press("F2");
+    await editor.waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("one");
+    await page.keyboard.press("Alt+Enter");
+    assert.ok((await editor.inputValue()).includes("\n"), "Alt+Enter inserted no line break");
+    await page.keyboard.press("Control+z");
+    assert.ok(!(await editor.inputValue()).includes("\n"), "Ctrl+Z in the editor left the line break");
+    await page.keyboard.press("Escape");
+    await settle(page);
 
     // Re-opening and committing a value that did not change publishes nothing.
     await page.getByTestId(target).press("F2");
