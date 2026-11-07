@@ -1545,7 +1545,7 @@ export function SheetShell(props: SheetShellProps) {
 
   /** Ctrl+Enter fills the selection with the entry the editor holds. */
   function fillSelection(area: CellRectangle): void {
-    if (!editor || !table || !view || !witness) return;
+    if (!editor || !table || !view || !witness || commitPending || controlsLocked || rowCommandPendingRef.current) return;
     const position = { entity: editor.entity, field: editor.field };
     try {
       const edits = fillSelectionPlan(displayRows, columns, area, editor.value, Boolean(table.native_table_profile));
