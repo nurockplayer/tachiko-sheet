@@ -29,7 +29,10 @@ try {
 
 function firstLine(cause) {
   const lines = String((cause && cause.message) || cause).split("\n").map((line) => line.trim()).filter(Boolean);
-  return `${lines[0] ?? ""}${lines[1] ? ` (${lines[1]})` : ""}`.slice(0, 300);
+  const waited = lines.find((line) => line.startsWith("- waiting for"));
+  const head = lines[0] ?? "";
+  const text = waited ? `${head}; ${waited.replace(/^-\s*/, "")}` : `${head}${lines[1] ? ` (${lines[1]})` : ""}`;
+  return text.slice(0, 300);
 }
 
 function evidence() {
