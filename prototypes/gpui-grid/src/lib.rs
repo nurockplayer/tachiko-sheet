@@ -543,9 +543,7 @@ impl GridApp {
         }
         let entity = cx.entity();
         window.on_next_frame(move |window, cx| {
-            entity
-                .update(cx, |this, cx| this.sweep_frame(window, cx))
-                .ok();
+            entity.update(cx, |this, cx| this.sweep_frame(window, cx));
         });
     }
 
