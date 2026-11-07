@@ -77,6 +77,8 @@ pub struct Hooks {
     pub quit: fn(&AppHandle),
     /// `NSApp terminate:` — Dock Quit, logout.
     pub terminate: fn(&AppHandle),
+    /// Choosing a File or Edit command; false when the menu doesn't have it.
+    pub menu_command: fn(&AppHandle, &str) -> bool,
 }
 
 static HOOKS: std::sync::OnceLock<Hooks> = std::sync::OnceLock::new();
@@ -86,6 +88,15 @@ static HOOKS: std::sync::OnceLock<Hooks> = std::sync::OnceLock::new();
 pub fn e2e_request_quit(app: AppHandle) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.quit)(&app);
+    }
+}
+
+/// Choose a menu command exactly as a click on it does.
+#[tauri::command]
+pub fn e2e_menu_command(app: AppHandle, id: String) -> Result<(), String> {
+    match HOOKS.get() {
+        Some(hooks) if (hooks.menu_command)(&app, &id) => Ok(()),
+        _ => Err(format!("the menu has no command {id}")),
     }
 }
 

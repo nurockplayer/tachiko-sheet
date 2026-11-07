@@ -3824,6 +3824,51 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", keydown);
   });
 
+  // The desktop File and Edit menus: the same commands as the buttons and keys, with the same refusals.
+  useEffect(() => {
+    const menuCommand = (event: Event) => {
+      const command = (event as CustomEvent<string>).detail;
+      if (document.body.inert) return;
+      const active = document.activeElement;
+      if (command === "undo" || command === "redo") {
+        // A text field keeps its own Undo, which the menu took over from the webview.
+        if (active?.closest('input, textarea, [contenteditable="true"]')) { document.execCommand(command); return; }
+      }
+      if (document.querySelector('[role="dialog"], dialog')) return;
+      if (command === "new-table") {
+        if (view) { setLocalError("Close this work first to start a new table."); return; }
+        // controlsLocked already covers unknown currentness.
+        if (onNewTable && !controlsLocked && props.startupUnavailable !== true) {
+          newTableTriggerRef.current = active instanceof HTMLButtonElement ? active : null;
+          setNewTableOpen(true);
+        }
+        return;
+      }
+      if (!view) return;
+      if (command === "save") void saveWork();
+      if (command === "save-copy") {
+        if (view.openedFromWorkFile && workFileSaveUnavailableReason) setLocalError(workFileSaveUnavailableReason);
+        else if (!controlsLocked && saveStatus !== "saving") openCopyDialog();
+      }
+      if (command === "print") {
+        if (tab !== "table") setLocalError("Open the Table tab to print it.");
+        else if (printBlocked) setLocalError("Apply or cancel the edit first, so the printout matches what you see.");
+        else requestPrint();
+      }
+      if (command === "undo" || command === "redo") {
+        if (formulaDraftActive || rowDraftActive) {
+          setLocalError(formulaDraftActive ? "Apply or cancel the formula you are editing before using Undo or Redo." : "Add or discard the new row first.");
+          return;
+        }
+        if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
+        if (command === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1) return;
+        void requestHistory(command, active instanceof HTMLElement ? active : null);
+      }
+    };
+    window.addEventListener("tachiko-menu", menuCommand);
+    return () => window.removeEventListener("tachiko-menu", menuCommand);
+  });
+
   // Ctrl/Cmd+F opens the view-only find bar on the Table tab; it never changes data.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {

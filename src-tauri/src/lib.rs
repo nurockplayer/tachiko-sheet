@@ -21,7 +21,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use rfd::{AsyncFileDialog, AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
 use saves::{Claim, Published, Saves, WriteError};
-use tauri::menu::{Menu, MenuItem, MenuItemKind};
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
 use tauri::webview::DownloadEvent;
 use tauri::{
     AppHandle, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
@@ -530,10 +530,108 @@ async fn tokio_sleep(duration: std::time::Duration) {
 
 // ---- menu ---------------------------------------------------------------------
 
+/// A menu command the page carries out, as its own buttons and keys do.
+struct PageCommand {
+    id: &'static str,
+    label: &'static str,
+    accelerator: &'static str,
+}
+
+const NEW_TABLE: PageCommand = PageCommand {
+    id: "new-table",
+    label: "New Table…",
+    accelerator: "CmdOrCtrl+N",
+};
+const SAVE: PageCommand = PageCommand {
+    id: "save",
+    label: "Save",
+    accelerator: "CmdOrCtrl+S",
+};
+const SAVE_COPY: PageCommand = PageCommand {
+    id: "save-copy",
+    label: "Save a Copy…",
+    accelerator: "CmdOrCtrl+Shift+S",
+};
+const PRINT: PageCommand = PageCommand {
+    id: "print",
+    label: "Print…",
+    accelerator: "CmdOrCtrl+P",
+};
+const UNDO: PageCommand = PageCommand {
+    id: "undo",
+    label: "Undo",
+    accelerator: "CmdOrCtrl+Z",
+};
+const REDO: PageCommand = PageCommand {
+    id: "redo",
+    label: "Redo",
+    accelerator: if cfg!(target_os = "macos") {
+        "Cmd+Shift+Z"
+    } else {
+        "Ctrl+Y"
+    },
+};
+const FILE_COMMANDS: [&PageCommand; 4] = [&NEW_TABLE, &SAVE, &SAVE_COPY, &PRINT];
+const PAGE_COMMANDS: [&PageCommand; 6] = [&NEW_TABLE, &SAVE, &SAVE_COPY, &PRINT, &UNDO, &REDO];
+
+fn page_item(app: &AppHandle, command: &PageCommand) -> tauri::Result<MenuItem<tauri::Wry>> {
+    MenuItem::with_id(
+        app,
+        command.id,
+        command.label,
+        true,
+        Some(command.accelerator),
+    )
+}
+
+/// Tell the page which menu command was chosen. Ids come only from `PAGE_COMMANDS`.
+fn run_page_command(app: &AppHandle, id: &str) {
+    if PAGE_COMMANDS.iter().any(|command| command.id == id)
+        && let Some(window) = app.get_webview_window(MAIN_WINDOW)
+    {
+        let _ = window.eval(format!(
+            "window.dispatchEvent(new CustomEvent('tachiko-menu', {{ detail: '{id}' }}));"
+        ));
+    }
+}
+
 /// The standard menu, with Quit routed through the unsaved-work check. The
-/// stock Quit terminates the process without asking.
+/// stock Quit terminates the process without asking. File gains the page's
+/// commands. Edit's Undo and Redo reach the page's history: the stock ones only
+/// know the webview's text fields.
 fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::default(app)?;
+    for top in menu.items()? {
+        let MenuItemKind::Submenu(submenu) = top else {
+            continue;
+        };
+        match submenu.text()?.as_str() {
+            "File" => {
+                for (position, command) in FILE_COMMANDS.into_iter().enumerate() {
+                    submenu.insert(&page_item(app, command)?, position)?;
+                }
+                submenu.insert(&PredefinedMenuItem::separator(app)?, FILE_COMMANDS.len())?;
+            }
+            "Edit" => {
+                for (position, item) in submenu.items()?.into_iter().enumerate() {
+                    let MenuItemKind::Predefined(predefined) = &item else {
+                        continue;
+                    };
+                    let text = predefined.text()?.replace('&', "");
+                    let command = if text.starts_with("Undo") {
+                        &UNDO
+                    } else if text.starts_with("Redo") {
+                        &REDO
+                    } else {
+                        continue;
+                    };
+                    submenu.remove(&item)?;
+                    submenu.insert(&page_item(app, command)?, position)?;
+                }
+            }
+            _ => {}
+        }
+    }
     if let Some(MenuItemKind::Submenu(app_submenu)) = menu.items()?.into_iter().next() {
         for (position, item) in app_submenu.items()?.into_iter().enumerate() {
             if let MenuItemKind::Predefined(predefined) = &item
@@ -556,6 +654,25 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Ok(menu)
 }
 
+/// Run a command the menu really has, as choosing it does.
+#[cfg(feature = "e2e")]
+fn menu_command_hook(app: &AppHandle, id: &str) -> bool {
+    let present = app.menu().is_some_and(|menu| {
+        menu.items().is_ok_and(|items| {
+            items.iter().any(|top| match top {
+                MenuItemKind::Submenu(submenu) => submenu
+                    .items()
+                    .is_ok_and(|items| items.iter().any(|item| item.id().as_ref() == id)),
+                _ => false,
+            })
+        })
+    });
+    if present {
+        run_page_command(app, id);
+    }
+    present
+}
+
 // ---- app ----------------------------------------------------------------------
 
 pub fn run() {
@@ -567,6 +684,8 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id() == QUIT_MENU_ITEM {
                 request_quit(app);
+            } else {
+                run_page_command(app, event.id().as_ref());
             }
         });
     #[cfg(not(feature = "e2e"))]
@@ -587,6 +706,7 @@ pub fn run() {
         e2e::e2e_result,
         e2e::e2e_request_close,
         e2e::e2e_request_quit,
+        e2e::e2e_menu_command,
         e2e::e2e_request_terminate
     ]);
     builder
@@ -630,6 +750,7 @@ pub fn run() {
                 e2e::start(
                     app.handle(),
                     e2e::Hooks {
+                        menu_command: menu_command_hook,
                         quit: request_quit,
                         // Only macOS routes `NSApplication terminate:`; elsewhere
                         // the OS's quit already goes through the same leave guard.

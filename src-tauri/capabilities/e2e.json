@@ -9,6 +9,7 @@
     "allow-e2e-result",
     "allow-e2e-request-close",
     "allow-e2e-request-quit",
+    "allow-e2e-menu-command",
     "allow-e2e-request-terminate"
   ]
 }

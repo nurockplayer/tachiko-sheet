@@ -14,6 +14,7 @@ const E2E_COMMANDS: &[&str] = &[
     "e2e_result",
     "e2e_request_close",
     "e2e_request_quit",
+    "e2e_menu_command",
     "e2e_request_terminate",
 ];
 
