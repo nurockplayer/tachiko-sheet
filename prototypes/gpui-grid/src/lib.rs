@@ -152,12 +152,14 @@ impl TableDelegate for GridDelegate {
         let drag_entity = entity.clone();
         let up_entity = entity.clone();
 
-        div()
+        let mut cell = div()
             .id(format!("grid-cell:{row_ix}:{col_ix}"))
             .size_full()
-            .px_1()
-            .when(inside, |this| this.bg(tint))
-            .child(format!("R{row_ix}C{col_ix}"))
+            .px_1();
+        if inside {
+            cell = cell.bg(tint);
+        }
+        cell.child(format!("R{row_ix}C{col_ix}"))
             .on_mouse_down(MouseButton::Left, move |event, _window, cx| {
                 let shift = event.modifiers.shift;
                 entity.update(cx, |table, cx| {
@@ -222,7 +224,7 @@ impl GridApp {
         });
 
         let focus_handle = cx.focus_handle();
-        window.focus(&focus_handle);
+        window.focus(&focus_handle, cx);
 
         Self {
             table,
@@ -277,7 +279,9 @@ impl Render for GridApp {
             .label()
             .unwrap_or_default();
 
-        v_flex()
+        div()
+            .flex()
+            .flex_col()
             .key_context("GpuiGrid")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))

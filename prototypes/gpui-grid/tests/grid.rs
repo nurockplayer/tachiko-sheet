@@ -8,9 +8,9 @@ use gpui_grid::{GridApp, GridSize};
 use gpui_kit::base::Root;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext, Bounds, Entity, Modifiers, MouseButton, MouseDownEvent,
-    MouseUpEvent, Point, Pixels, Render, ScrollDelta, ScrollEvent, Size, TestAppContext, Window,
-    WindowBounds, WindowHandle, WindowOptions, point, px, size,
+    AnyWindowHandle, App, AppContext, Bounds, Entity, InputEvent as _, Modifiers, MouseButton,
+    Point, Pixels, Render, ScrollDelta, ScrollEvent, Size, TestAppContext, Window, WindowBounds,
+    WindowHandle, WindowOptions, point, px, size,
 };
 
 /// The production entry point with deterministic test bounds, as Kit's own
@@ -51,42 +51,29 @@ fn range_label(app: &Entity<GridApp>, cx: &App) -> Option<String> {
     app.read(cx).table().read(cx).delegate().range.label()
 }
 
-fn press_cell(
-    window: &mut Window,
-    cx: &mut App,
-    id: &str,
-    shift: bool,
-    release: bool,
-) {
-    let position = window.find(id).bounds().center();
+/// The center of the first visible element with this id. The table may
+/// register a fixed copy and a scrolling copy of the same cell.
+fn cell_center(window: &Window, id: &str) -> Point<Pixels> {
+    window
+        .find_all(id)
+        .into_iter()
+        .find(|element| element.visible())
+        .unwrap_or_else(|| panic!("no visible table cell {id}"))
+        .bounds()
+        .center()
+}
+
+fn press_cell(window: &mut Window, cx: &mut App, id: &str, shift: bool, release: bool) {
+    let position = cell_center(window, id);
     let modifiers = Modifiers {
         shift,
         ..Default::default()
     };
-    window.dispatch_event(
-        MouseDownEvent {
-            button: MouseButton::Left,
-            position,
-            modifiers,
-            click_count: 1,
-            first_mouse: false,
-        }
-        .to_platform_input(),
-        cx,
-    );
-    window.render_frame(cx);
+    window.change_modifiers(modifiers, cx);
+    window.pointer_down(position, MouseButton::Left, cx);
     if release {
-        window.dispatch_event(
-            MouseUpEvent {
-                button: MouseButton::Left,
-                position,
-                modifiers,
-                click_count: 1,
-            }
-            .to_platform_input(),
-            cx,
-        );
-        window.render_frame(cx);
+        window.pointer_up(position, MouseButton::Left, cx);
+        window.change_modifiers(Modifiers::default(), cx);
     }
 }
 
@@ -157,8 +144,8 @@ fn g1a_b_last_row_and_column_reachable_100k(cx: &mut TestAppContext) {
 fn drag_2_1_to_5_3(cx: &mut TestAppContext, dims: GridSize) -> Option<String> {
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
-        let from = window.find("table-cell:2:1").bounds().center();
-        let to = window.find("table-cell:5:3").bounds().center();
+        let from = cell_center(window, "table-cell:2:1");
+        let to = cell_center(window, "table-cell:5:3");
         window.drag(from, to, cx);
         range_label(&content, cx)
     })
@@ -273,8 +260,8 @@ fn g2d_drag_after_scrolling_has_no_offset_error(cx: &mut TestAppContext) {
         table.update(cx, |table, cx| table.scroll_to_row(5_000, cx));
         window.render_frame(cx);
 
-        let from = window.find("table-cell:5002:1").bounds().center();
-        let to = window.find("table-cell:5005:3").bounds().center();
+        let from = cell_center(window, "table-cell:5002:1");
+        let to = cell_center(window, "table-cell:5005:3");
         window.drag(from, to, cx);
 
         assert_eq!(range_label(&content, cx).as_deref(), Some("R5002C1:R5005C3"));
@@ -292,7 +279,7 @@ fn g1c_scroll_timing_10k(cx: &mut TestAppContext) {
     };
     let (handle, _content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
-        let position = window.find("table-cell:0:0").bounds().center();
+        let position = cell_center(window, "table-cell:0:0");
         let mut samples = Vec::with_capacity(200);
         for _ in 0..200 {
             let start = Instant::now();

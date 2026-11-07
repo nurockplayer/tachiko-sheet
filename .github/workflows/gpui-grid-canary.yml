@@ -33,10 +33,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # gpui-pre 0.3.11 (pulled by gpui-kit 0.9.0) uses `map_or_default`,
+      # stable only from Rust 1.98; NSH's 1.97.1 pin fails on macOS.
       - name: Install Rust
         run: |
-          rustup toolchain install 1.97.1 --profile minimal
-          rustup default 1.97.1
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
+          rustc --version
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'

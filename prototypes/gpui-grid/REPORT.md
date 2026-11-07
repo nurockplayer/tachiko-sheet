@@ -5,6 +5,18 @@ fork or vendoring; `Cargo.lock` is committed.
 
 Run URL: pending CI (first push 2026-11-07 JST).
 
+## Build history
+
+- Round 1 (2026-11-07 11:49 JST, run 42331124547): the app did not compile on
+  any OS. Three errors in `src/lib.rs`: `when` needs `FluentBuilder` in scope,
+  `v_flex` is not exported by `gpui_kit::*`, and `Window::focus` takes the app
+  context. macOS also failed in `gpui-pre-macos` 0.3.11, which uses
+  `map_or_default` (unstable before Rust 1.98; the NSH workflow pins 1.97.1).
+  Fixed by an explicit `if` instead of `when`, a `div().flex().flex_col()`
+  instead of `v_flex`, `window.focus(&handle, cx)`, and Rust 1.99.1 in CI.
+  No test case ran in round 1.
+
+
 ## Case table
 
 `pass` means the case ran through a real headless window and its assertion
