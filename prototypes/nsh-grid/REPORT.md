@@ -122,11 +122,11 @@ Reasons:
   `range R2C1:R5C3`, so the Shift press path itself reaches `on_row_press`.
 - **G2c: the second check fails everywhere.** The Shift sequence itself is
   correct in all twelve runs (`range R2C1:R4C2`). The following plain `right`
-  then gives `range R4C3:R4C3`, not the expected `range R2C3:R2C3`, because the
-  focus cell is R4C2 when it is collapsed. The Linux window run hit the 30 s
-  test cap (three key presses cost ~27 s each there) but its screen dump shows
-  the same `range R4C3:R4C3`. Kept as briefed; see the decision note in the
-  handoff.
+  then gave `range R4C3:R4C3`, because this run's app moved a plain key from
+  the focus cell; the brief's expected `range R2C3:R2C3` was wrong too (this
+  run's own decision note says so). Corrected in `f9f00c1` to follow Excel —
+  a plain arrow moves from the active cell (the anchor) and collapses — and
+  G2c now expects `range R2C2:R2C2`; see [Slice 1b fixes](#slice-1b-fixes).
 - **G1a/G1b at 10k:** the macOS window run reported `jumped to R9999C29` in
   the status line but the cell text never appeared within the 5 s `waitUntil`
   (rows up to R9988 were mounted); the Linux window run reached the 30 s cap
@@ -145,12 +145,14 @@ Reasons:
 | Linux 100k | `range R15C7:R19C9` | not printed (30 s cap) | — |
 | All headless | `range none` | `range none` | — |
 
-The G2d offset error is the scroll itself: 4800 pt / 24 pt = 200 rows, and the
-reported range is 200–205 rows above the brief's estimate (~217) for a drag
-starting at y = 450. On the Linux window runs the cells under the same scroll
-were R120C1–R123C15 when the 30 s cap hit, so the table had scrolled even
-though the drag had not finished; the macOS/Windows ranges after the scroll
-are the same as their G2a ranges.
+The G2d offset is an app bug, not an NSH gap: `on_visible_rows` never wrote
+`first_row`, so `cell_at` always started at row 0 even though the table had
+scrolled 4800 pt / 24 pt = 200 rows. On the Linux window runs the cells under
+the same scroll were R120C1–R123C15 when the 30 s cap hit, so the table had
+scrolled even though the drag had not finished; the macOS/Windows ranges after
+the scroll were the same as their G2a ranges. Fixed in `f9f00c1`; the corrected
+run reports `first R200C1` and ranges at R211–R218 (see
+[Slice 1b fixes](#slice-1b-fixes)).
 
 ### Frame-rate readings (`--fps`, 1440 × 900, last sample)
 
@@ -203,11 +205,12 @@ of the new cases, so they are not a steady-state measurement.
    point.
 2. **No public scroll offset.** The app reconstructs the cell from
    `on_visible_rows_change`/`on_visible_columns_change` plus fixed geometry
-   (24 pt title and rows, 90 pt columns, fixed c0). The 200-row G2d error is
-   what that costs when the table scrolls: the app's window and the pointer
-   position do not line up. `first_col` is taken as the raw
+   (24 pt title and rows, 90 pt columns, fixed c0). The 200-row G2d error in
+   the slice's first run came from the app never writing `first_row` from that
+   range, not from NSH; with that fixed the ranges land on the scrolled rows
+   (Slice 1b fixes). `first_col` is taken as the raw
    `VisibleColumnsChange.start` and was not adjusted, so a fixed c0 counted in
-   it would shift every column by one in `cell_at`; the run cannot tell.
+   it would shift every column by one in `cell_at`; the runs cannot tell.
 3. **The row header is off** (`.row_header(false)`): the app cannot measure the
    row-number column's width, so `cell_at` assumes none and the canary loses
    the row-number press path (`DataTablePress.column` is `Some` for every
@@ -247,3 +250,96 @@ of the new cases, so they are not a steady-state measurement.
 5. **G1a in the Linux real window takes 26–28.6 s**, against 2–3 s on macOS
    and Windows, and stays under the 30 s limit. Same app, same cases; only
    the GTK host under Xvfb differs.
+
+## Slice 1b fixes
+
+Run [42331173871](https://github.com/nurockplayer/tachiko-sheet/actions/runs/42331173871)
+on `f9f00c1`, 2026-11-07 11:50–12:03 JST. It fixes the slice's own bugs and
+adds a scroll-only measurement:
+
+- `on_visible_rows` now writes `first_row` (the slice's G2d offset was the app
+  never storing the table's top row), and a `grid-first` line (`first R<r>C<c>`)
+  exposes it to the tests.
+- A plain arrow now moves from the anchor (Excel's active cell) and collapses;
+  G2c expects `range R2C2:R2C2`.
+- Every test has a 120000 ms limit.
+- `NSH_GRID_PLAIN=1` leaves out `render_cell`, so DataTable draws its own cell
+  text and the range tint is unavailable. The workflow runs four extra window
+  steps per OS — `nsh test --target <t> --filter "G1c" --fps --trace -v` for
+  10k and 100k, each with and without `NSH_GRID_PLAIN=1` — so these samples
+  contain one scroll sweep and no drag or key press.
+
+### Cases (run 42331173871)
+
+| Case | macOS 15 headless | macOS 15 window | Windows 2022 headless | Windows 2022 window | Ubuntu 24.04 headless | Ubuntu 24.04 window |
+| --- | --- | --- | --- | --- | --- | --- |
+| G1a — 10k: jump to last | **pass** 5.4 s | **pass** 7.1 s | **pass** 3.8 s | **pass** 3.2 s | **pass** 3.5 s | **pass** 29.9 s |
+| G1b — 100k: jump to last | **pass** 3.9 s | **pass** 6.7 s | **pass** 4.0 s | **pass** 2.7 s | **pass** 3.6 s | **pass** 29.0 s |
+| G2a — drag selects a range | **not driven by real input** | **pass** 4.8 s | **not driven by real input** | **pass** 1.7 s | **not driven by real input** | **pass** 26.9 s |
+| G2b — Shift press extends | **pass** 1.7 s | **not run** (API) | **pass** 1.4 s | **not run** (API) | **pass** 1.3 s | **pass** 26.5 s |
+| G2c — Shift arrows / plain arrow | **pass** 4.2 s | **pass** 6.2 s | **pass** 4.4 s | **pass** 4.6 s | **pass** 4.1 s | **pass** 29.4 s |
+| G2d — drag after scrolling | **not driven by real input** | **pass** 9.6 s | **not driven by real input** | **pass** 9.9 s | **not driven by real input** | **pass** 32.1 s |
+
+G1a at 10k in the macOS window **did not fail again**: it passed in 7.1 s (the
+slice's first run failed the 5 s `waitUntil` there). All six window runs of
+G2c and G2d pass. The headless G2a/G2d failures are still "not driven by real
+input" (`app.drag` sends no `MouseMove`, so the status line stays `range
+none`), and G2b in a macOS/Windows window is still "not run" — `keyboard.down`
+rejects with "holding keys … runs headless and on Linux for now". The Linux
+window now fits every case inside the 120 s limit (29.0–32.1 s each).
+
+### G2d range and `first_row` (run 42331173871)
+
+| OS / size | G2a, scroll 0 | G2d, after `scroll 4800` | `grid-first` |
+| --- | --- | --- | --- |
+| macOS 10k | `range R14C7:R18C10` | `range R216C8:R218C10` | `first R200C1` |
+| macOS 100k | `range R14C7:R18C10` | `range R193C8:R218C10` | `first R200C1` |
+| Windows 10k | `range R11C5:R15C7` | `range R211C5:R215C7` | `first R200C1` |
+| Windows 100k | `range R11C5:R15C7` | `range R211C5:R215C7` | `first R200C1` |
+| Linux 10k | `range R14C7:R18C9` | `range R214C9:R214C9` | `first R200C1` |
+| Linux 100k | `range R14C7:R18C9` | `range R218C9:R218C9` | `first R200C1` |
+
+4800 pt / 24 pt = 200 rows, and every OS reports `first R200C1`. The G2d
+ranges start at R211–R218, matching the brief's estimate of a row about 217
+for a drag from y = 450. One exception: macOS 100k's anchor is R193C8, seven
+rows above the reported top row — the first move landed while the scroll was
+still settling (the reported window and the pointer's own frame of reference
+do not arrive in the same order).
+
+### Scroll sweeps (one G1c run per log, `--fps --trace`)
+
+Frame rate: median and minimum over all `--fps` samples (the first sample is
+printed before the first frame, so it reads `0/60`; the number in parentheses
+is the minimum without it). Frame time: the largest p95 and the largest max
+across those samples (`frame mean/median/p95/max`, ms). Commits: count, mean
+and max from the `--trace` commit lines. Nodes and memory: the largest of
+those samples.
+
+| OS / size / cells | fps median | fps min | frame p95 | frame max | commits | mean | max | nodes | peak mem |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| macOS 10k, cells | 51 | 0 (13) | 21.57 ms | 687.85 ms | 11 | 1435.6 ms | 2145.8 ms | 3,683 | 107.2 MB |
+| macOS 10k, plain | 58.5 | 0 (53) | 36.30 ms | 51.93 ms | 446 | 6.0 ms | 327.4 ms | 2,323 | 71.5 MB |
+| macOS 100k, cells | 51.5 | 0 (14) | 26.27 ms | 650.28 ms | 10 | 1579.1 ms | 2113.6 ms | 3,683 | 105.9 MB |
+| macOS 100k, plain | 58 | 0 (53) | 35.32 ms | 49.92 ms | 504 | 5.3 ms | 292.0 ms | 2,323 | 72.0 MB |
+| Windows 10k, cells | 35 | 25 | 29.14 ms | 55.09 ms | 34 | 686.2 ms | 1025.8 ms | 2,379 | 108.1 MB |
+| Windows 10k, plain | 41 | 31 | 21.45 ms | 23.81 ms | 681 | 4.7 ms | 198.1 ms | 1,521 | 89.7 MB |
+| Windows 100k, cells | 35 | 26 | 28.94 ms | 52.77 ms | 33 | 697.4 ms | 970.3 ms | 2,379 | 109.7 MB |
+| Windows 100k, plain | 42 | 30 | 18.96 ms | 27.61 ms | 690 | 4.5 ms | 196.3 ms | 1,521 | 90.3 MB |
+| Linux 10k, cells | 54 | 0 (47) | 5.71 ms | 149.81 ms | 12 | 1174.0 ms | 1475.8 ms | 3,269 | 357.9 MB |
+| Linux 10k, plain | 60 | 46 | 29.92 ms | 29.92 ms | 688 | 5.5 ms | 308.4 ms | 2,069 | 316.7 MB |
+| Linux 100k, cells | 54 | 0 (47) | 4.57 ms | 194.88 ms | 11 | 1174.0 ms | 1467.1 ms | 3,269 | 356.3 MB |
+| Linux 100k, plain | 60 | 46 | 22.56 ms | 24.59 ms | 682 | 5.5 ms | 304.5 ms | 2,069 | 317.1 MB |
+
+Plain beside cells: DataTable's own text commits 446–690 times per sweep at
+4.5–6.0 ms each and mounts 1,521–2,323 nodes; the app's per-cell views commit
+10–34 times at 686–1,579 ms each and mount 2,379–3,683 nodes. The per-cell
+view costs about 100–300× per commit, which is where the desktop frame-rate
+samples come from. Frame-rate medians are 51–54 fps with cells against 58–60
+with plain on macOS and Linux, and 35 against 41–42 on Windows. (Windows'
+`plain` frame max and p95 are lower than macOS's, and both are far below the
+cells runs' 650–688 ms maxima.)
+
+These are shared CI runners with no GPU: `gpu 0%` in every sample, and the
+numbers include the sweep's own scrolling rather than a user sitting on the
+grid. They are not real-user readings. The 10k and 100k readings are within
+about 15% of each other.
