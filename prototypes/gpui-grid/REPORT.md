@@ -4,8 +4,8 @@ Throwaway spike. Never merged. App: `gpui-kit = "=0.9.0"` from crates.io, no
 fork or vendoring; `Cargo.lock` is committed.
 
 One run for every number below:
-https://github.com/nurockplayer/tachiko-sheet/actions/runs/42337402786
-(2026-11-07 13:12 JST, commit `d36d2e9`).
+https://github.com/nurockplayer/tachiko-sheet/actions/runs/42338653443
+(2026-11-07 13:29 JST, commit `39e4140`; finished 13:43 JST).
 
 ## Build history
 
@@ -20,9 +20,12 @@ https://github.com/nurockplayer/tachiko-sheet/actions/runs/42337402786
   not be addressed right after opening a window.
 - Round 4 (2026-11-07 12:57 JST, run 42336270797): two rendered frames
   (`settle`) before lookups; the lookup still found no scrollable-column cell.
-- Round 5 (2026-11-07 13:12 JST, run 42337402786): the failure message now
-  reports registered/visible counts for neighbour cells and the table bounds.
-  This is the run quoted throughout.
+- Round 5 (2026-11-07 13:12 JST, run 42337402786): the failure message reported
+  registered/visible counts for neighbour cells and the table bounds. It showed
+  column-0 cells registered and column-1 cells absent.
+- Round 6 (2026-11-07 13:29 JST, run 42338653443): every lookup goes through
+  `cell_id`, which builds each id in the form Kit uses for that kind of column.
+  All 10 cases passed on all three OS. This is the run quoted throughout.
 
 ## Case table
 
@@ -32,40 +35,38 @@ the "not driven by real input" fallback.
 
 | Case | macOS | Windows | Linux | Notes |
 | --- | --- | --- | --- | --- |
-| G1a/b last row and column (10k) | fail | fail | fail | last cell `table-cell:9999:29` is not addressable |
-| G1a/b last row and column (100k) | fail | fail | fail | same, `table-cell:99999:49` |
-| G2a drag select (10k) | fail | fail | fail | `table-cell:2:1` is not addressable |
-| G2a drag select (100k) | fail | fail | fail | same |
-| G2b shift-press select (10k) | fail | fail | fail | same |
-| G2b shift-press select (100k) | fail | fail | fail | same |
-| G2c shift-arrow extend (10k) | fail | fail | fail | `Window::click` needs an addressable id |
-| G2c shift-arrow extend (100k) | fail | fail | fail | same |
-| G2d drag after scrolling to row 5,000 (10k) | fail | fail | fail | `table-cell:5002:1` is not addressable |
+| G1a/b last row and column (10k) | pass | pass | pass | `visible_range().rows()` holds the last row; the last cell element is present |
+| G1a/b last row and column (100k) | pass | pass | pass | same, row 99,999 and column 49 |
+| G2a drag select (10k) | pass | pass | pass | `window.drag` from R2C1 to R5C3; label `R2C1:R5C3` |
+| G2a drag select (100k) | pass | pass | pass | same |
+| G2b shift-press select (10k) | pass | pass | pass | press R2C1, shift-press R5C3; label `R2C1:R5C3` |
+| G2b shift-press select (100k) | pass | pass | pass | same |
+| G2c shift-arrow extend (10k) | pass | pass | pass | click R2C1, then shift-down, shift-down, shift-right; label `R2C1:R4C2` |
+| G2c shift-arrow extend (100k) | pass | pass | pass | same |
+| G2d drag after scrolling to row 5,000 (10k) | pass | pass | pass | drag R5002C1 to R5005C3 after `scroll_to_row`; label `R5002C1:R5005C3` |
 | G1c scroll timing (10k) | pass | pass | pass | logged reading, no threshold |
 
-The row axis does reach the last row: the `visible_range().rows()` assertion
-passes in G1a/b on every OS. Only the cell lookup fails.
+Both test steps run the same 10 cases: each case passes its own
+`GridSize`, and `GPUI_GRID_SIZE` only selects the size of the app binary.
 
-## What the log shows
+One naming note: Kit gives a cell in a fixed column the id
+`table-cell:{row}:{col}` and a cell in a scrollable column
+`table-cell-{row}:{col}` (a dash after `cell`); the tests derive both through
+`cell_id(row, col)`.
 
-The same line on all three OS for every G2 case:
+## What the run confirms
 
-```
-no visible table cell table-cell:2:1: find_all returned 0 element(s), 0 visible;
-probe 0:0 -> 1 registered/1 visible, 1:0 -> 1/1, 0:1 -> 0/0;
-table bounds Bounds { origin: Point { x: 4px, y: 28px }, size: Size { 1016px × 668px } }
-```
+On macOS, Windows and Linux, through a real headless window and normal event
+dispatch:
 
-So after two rendered frames, cells in column 0 (rows 0 and 1) are registered
-and visible, a cell in column 1 is not registered at all, and the table itself
-is laid out at 1016 x 668. Kit's own integration test addresses
-`table-cell:0:0`, a column-0 cell, in the same way.
-
-The `table-cell:*` id is set by Kit's table render path, not by this app or
-its test: the delegate supplies cell content only, and the test renders frames
-and reads Kit's public observation registry. Why a scrollable-column cell has
-no registered id is **cause unknown**; the logs show it is not the row axis,
-not an unrendered frame, and not a zero-sized table.
+- The table reaches its last row and last column at 10k and 100k rows.
+- A pointer drag produces a multi-cell range with the anchor at the press and
+  the focus at the release.
+- Shift-press extends from an existing anchor instead of starting a new one.
+- Shift+arrow reaches the app's `on_key_down`, extends the range and scrolls
+  to the focus.
+- A drag after a programmatic scroll to row 5,000 selects the cells under the
+  pointer, with no offset error.
 
 ## G1c readings
 
@@ -75,12 +76,12 @@ layout cost per frame, not a real frame rate.
 
 | OS | Size | Mean | Max |
 | --- | --- | --- | --- |
-| macOS | 10k | 9.08 ms | 22.08 ms |
-| macOS | 100k | 8.54 ms | 36.62 ms |
-| Windows | 10k | 11.61 ms | 27.55 ms |
-| Windows | 100k | 11.43 ms | 30.80 ms |
-| Linux | 10k | 7.27 ms | 12.18 ms |
-| Linux | 100k | 7.48 ms | 20.35 ms |
+| macOS | 10k | 5.20 ms | 11.49 ms |
+| macOS | 100k | 4.69 ms | 8.30 ms |
+| Windows | 10k | 12.89 ms | 25.32 ms |
+| Windows | 100k | 13.33 ms | 35.21 ms |
+| Linux | 10k | 4.89 ms | 9.23 ms |
+| Linux | 100k | 5.13 ms | 20.15 ms |
 
 ## Build size and time
 
@@ -89,9 +90,9 @@ Warm builds: the two test steps had already compiled the dependencies, so
 
 | OS | Binary bytes | Build seconds |
 | --- | --- | --- |
-| macOS | 20,441,760 | 123 |
+| macOS | 20,441,760 | 92 |
 | Windows | 19,758,592 | 211 |
-| Linux | 53,558,648 | 163 |
+| Linux | 53,558,648 | 102 |
 
 ## Lines of app code for range selection
 
@@ -104,18 +105,18 @@ In `src/lib.rs`, excluding the size/column plumbing:
 
 ## Gaps
 
-- **Cells outside the fixed column are not addressable by id.** See the log
-  line above; this blocked G2a-d and the last-cell assertion in G1a/b on every
-  OS. The root cause is unknown, as stated there.
 - **Row height is not settable.** `DataTable` takes only a `Size` preset
   (`XSmall` = 26 px, `Small` = 30 px); the brief asked 24 px, so 26 px was
   used.
 - **Keyboard.** Shift+arrow is handled by `on_key_down` on the app root
   instead of action bindings, because the `actions!` macro's crate paths could
   not be verified without a local build. Plain arrows stay with the table and
-  are synced from `TableEvent::SelectCell`; that path is unverified by CI.
+  are synced from `TableEvent::SelectCell`; that path is exercised by the G2c
+  click but not asserted on its own.
 - **Toolchain.** `gpui-pre` 0.3.11 needs Rust 1.98 or newer; CI installs
   1.99.1 rather than NSH's 1.97.1 pin.
+- **Empty cells.** Every cell renders `R{row}C{col}`; no case covers empty or
+  mixed-content cells, and no case edits a value.
 
 ## By hand on the Mac
 
@@ -128,10 +129,6 @@ GPUI_GRID_SIZE=100k cargo run --release
 The window is 1440 x 900. Check:
 
 - Scrolling feel: wheel over the grid, then the last row and last column.
-- Drag select: press a cell, drag to another, release; the header label reads
-  `R{r1}C{c1}:R{r2}C{c2}` and the range is tinted. This is the case CI could
-  not drive.
-- Shift-press and shift+arrow extending the same range.
+- Retina sharpness: cell text and column borders.
 - Mixed Chinese and Japanese text rendering: not exercised by this slice (cell
   text is `R{row}C{col}` only).
-- Retina sharpness: cell text and column borders.
