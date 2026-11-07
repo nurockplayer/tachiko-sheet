@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewChoicesAllChecked, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewChoicesAllChecked, rowViewConditionError, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -307,5 +307,19 @@ describe("rowViewChoicesAllChecked", () => {
 
   it("never treats a truncated list as complete", () => {
     expect(rowViewChoicesAllChecked({ values: ["B"], truncated: true }, ["B"])).toBe(false);
+  });
+});
+
+describe("rowViewConditionError", () => {
+  it("asks for a whole date, not text kept from Contains", () => {
+    expect(rowViewConditionError("date", "2026-11-07")).toBe(null);
+    expect(rowViewConditionError("date", "2026")).toBe("Enter a date.");
+    expect(rowViewConditionError("date", "")).toBe("Enter a date.");
+  });
+
+  it("asks for a finite number", () => {
+    expect(rowViewConditionError("number", "1.5")).toBe(null);
+    expect(rowViewConditionError("number", " ")).toBe("Enter a number.");
+    expect(rowViewConditionError("number", "abc")).toBe("Enter a number.");
   });
 });

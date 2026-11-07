@@ -97,7 +97,7 @@ import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } 
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewConditionError, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
 import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
@@ -1281,8 +1281,7 @@ export function SheetShell(props: SheetShellProps) {
       closeColumnToolbar(details);
       details.querySelector<HTMLElement>("summary")?.focus();
     };
-    const error = draft.mode === "condition" && (!draft.text.trim() || (column.field_type === "number" && !Number.isFinite(Number(draft.text))))
-      ? column.field_type === "date" ? "Enter a date." : "Enter a number." : null;
+    const error = draft.mode === "condition" ? rowViewConditionError(column.field_type, draft.text) : null;
     const apply = (element: Element): void => {
       if (error) { setFilterDraft({ ...draft, attempted: true }); return; }
       if (draft.mode === "values" && !draft.checked.length) return;

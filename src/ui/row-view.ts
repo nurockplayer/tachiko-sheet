@@ -226,6 +226,12 @@ export function rowViewValueChoices(rows: readonly TableRow[], column: TableColu
   return { values: values.slice(0, limit), truncated: values.length > limit };
 }
 
+/** What a condition's draft still needs. Text kept from Contains can be a partial date, which the date box shows as empty. */
+export function rowViewConditionError(fieldType: string, text: string): string | null {
+  if (fieldType === "date") return /^\d{4}-\d{2}-\d{2}$/.test(text) ? null : "Enter a date.";
+  return text.trim() && Number.isFinite(Number(text)) ? null : "Enter a number.";
+}
+
 /** Whether every value on offer is checked, so the filter would hide nothing. A checked value an edit has since removed doesn't count. */
 export function rowViewChoicesAllChecked(choices: { values: readonly string[]; truncated: boolean }, checked: readonly string[]): boolean {
   return !choices.truncated && choices.values.every(value => checked.includes(value));
