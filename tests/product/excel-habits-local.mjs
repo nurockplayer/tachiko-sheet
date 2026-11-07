@@ -140,6 +140,12 @@ async function replaceCell(page, id, text) {
   await settle(page);
 }
 
+// The handle's square is a pseudo-element in the corner of the handle's cell.
+async function fillHandleBox(page) {
+  const cell = await page.getByTestId("fill-handle").locator("xpath=ancestor::td").boundingBox();
+  return { x: cell.x + cell.width - 7, y: cell.y + cell.height - 7, width: 7, height: 7 };
+}
+
 async function dragCells(page, from, to) {
   const start = await page.getByTestId(from).boundingBox();
   const end = await page.getByTestId(to).boundingBox();
@@ -511,9 +517,7 @@ const cases = [
     await settle(page);
     assert.deepEqual(await values(), ["1", "2", "3", "4"], "Undo did not restore the values the corner drag replaced");
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
-    const handle = page.getByTestId("fill-handle");
-    await handle.waitFor();
-    const handleBox = await handle.boundingBox();
+    const handleBox = await fillHandleBox(page);
     const thirdRow = await page.getByTestId(cellIdFor(table, 2, 0)).boundingBox();
     await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
     await page.mouse.down();
@@ -528,7 +532,7 @@ const cases = [
 
     // Overshooting past the last row fills to the last row.
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
-    const overshootHandle = await page.getByTestId("fill-handle").boundingBox();
+    const overshootHandle = await fillHandleBox(page);
     const lastRow = await page.getByTestId(cellIdFor(table, 3, 0)).boundingBox();
     await page.mouse.move(overshootHandle.x + overshootHandle.width / 2, overshootHandle.y + overshootHandle.height / 2);
     await page.mouse.down();
@@ -542,7 +546,7 @@ const cases = [
 
     // A right-press on the handle opens the cell menu and starts no drag.
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
-    const rightHandle = await page.getByTestId("fill-handle").boundingBox();
+    const rightHandle = await fillHandleBox(page);
     await page.mouse.click(rightHandle.x + rightHandle.width / 2, rightHandle.y + rightHandle.height / 2, { button: "right" });
     await page.getByRole("menu", { name: "Cell actions" }).waitFor();
     await page.keyboard.press("Escape");
@@ -560,7 +564,7 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, total(0), "6");
     await page.getByTestId(total(0)).click();
-    const formulaHandle = await page.getByTestId("fill-handle").boundingBox();
+    const formulaHandle = await fillHandleBox(page);
     const formulaTarget = await page.getByTestId(total(2)).boundingBox();
     await page.mouse.move(formulaHandle.x + formulaHandle.width / 2, formulaHandle.y + formulaHandle.height / 2);
     await page.mouse.down();
@@ -583,7 +587,7 @@ const cases = [
     };
     // Pressing the handle without moving fills nothing and says nothing.
     await page.getByTestId(cellIdFor(doubleTable, 0, 1)).click();
-    const pressBox = await page.getByTestId("fill-handle").boundingBox();
+    const pressBox = await fillHandleBox(page);
     const beforePress = await snapshot();
     await page.mouse.click(pressBox.x + pressBox.width / 2, pressBox.y + pressBox.height / 2);
     await settle(page);
@@ -591,7 +595,7 @@ const cases = [
     assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "", "pressing the fill handle without moving announced a message");
 
     await page.getByTestId(cellIdFor(doubleTable, 0, 1)).click();
-    const doubleHandle = await page.getByTestId("fill-handle").boundingBox();
+    const doubleHandle = await fillHandleBox(page);
     await page.mouse.dblclick(doubleHandle.x + doubleHandle.width / 2, doubleHandle.y + doubleHandle.height / 2);
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 3, 1), "9", "double-clicking the fill handle did not fill to the adjacent column's last row");
@@ -600,7 +604,7 @@ const cases = [
     await page.getByTestId(cellIdFor(doubleTable, 0, 0)).click();
     await page.getByTestId(cellIdFor(doubleTable, 1, 0)).click({ modifiers: ["Shift"] });
     const beforeRangeDrag = await snapshot();
-    const rangeHandle = await page.getByTestId("fill-handle").boundingBox();
+    const rangeHandle = await fillHandleBox(page);
     const rangeTarget = await page.getByTestId(cellIdFor(doubleTable, 3, 0)).boundingBox();
     await page.mouse.move(rangeHandle.x + rangeHandle.width / 2, rangeHandle.y + rangeHandle.height / 2);
     await page.mouse.down();

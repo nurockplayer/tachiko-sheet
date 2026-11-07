@@ -3052,12 +3052,15 @@ body { margin: 0; }
 /* Clipboard selection follows the existing focus/accent palette. */
 .ts-cell--range-selected { background: color-mix(in srgb, var(--ts-accent, #2563eb) 14%, var(--ts-surface, white)); box-shadow: inset 0 0 0 1px var(--ts-accent, #2563eb); }
 /* Excel's fill handle: a 7px square in the corner, so its hit area reaches the
-   cell's last 2 pixels. */
-.ts-fill-handle { position: absolute; right: 0; bottom: 0; width: 7px; height: 7px; background: var(--ts-accent, #2563eb); cursor: crosshair; }
+   cell's last 2 pixels. The square is a pseudo-element, whose events reach the
+   span: a positioned span would be a block and break the cell's text in innerText. */
+.ts-fill-handle { display: inline-block; width: 0; height: 0; }
+.ts-fill-handle::after { content: ""; position: absolute; right: 0; bottom: 0; width: 7px; height: 7px; background: var(--ts-accent, #2563eb); cursor: crosshair; }
+@media print { .ts-fill-handle { display: none; } }
 .ts-cell--fill-preview { outline: 2px dashed var(--ts-accent, #2563eb); outline-offset: -2px; }
 .ts-clipboard-status:empty { display: none; }
 @media (forced-colors: active) { .ts-cell--range-selected { outline: 1px solid Highlight; background: Highlight; color: HighlightText; } }
-@media (forced-colors: active) { .ts-fill-handle { background: Highlight; } .ts-cell--fill-preview { outline: 2px dashed Highlight; } }
+@media (forced-colors: active) { .ts-fill-handle::after { background: Highlight; } .ts-cell--fill-preview { outline: 2px dashed Highlight; } }
 
 /* Keep label text separate from header actions for export/readback consumers. */
 .ts-grid .ts-column-header {
