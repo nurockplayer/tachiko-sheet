@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1NoteText, a1References, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 
 describe("isTachikoFormulaSource", () => {
   it("treats a bracketed reference as Tachiko source and anything else as Excel text", () => {
@@ -27,6 +27,58 @@ describe("a1References", () => {
   it("marks a range", () => {
     expect(a1References("SUM(B2:B9)")).toEqual({ rows: [2, 9], range: true });
     expect(a1References("SUM(B:B)")).toEqual({ rows: [], range: true });
+  });
+});
+
+describe("a1ReferencedRanges", () => {
+  const at = (row: number, column: number) => ({ top: row, bottom: row, left: column, right: column });
+  const box = (top: number, left: number, bottom: number, right: number) => ({ top, bottom, left, right });
+
+  it("outlines nothing for text that is not a formula", () => {
+    for (const text of ["", "B2", "A2+B2", "1+2"]) expect(a1ReferencedRanges(text), text).toEqual([]);
+  });
+
+  it("outlines one cell per address, in any case and with either $", () => {
+    expect(a1ReferencedRanges("=B2")).toEqual([at(2, 1)]);
+    expect(a1ReferencedRanges("=$B$2")).toEqual([at(2, 1)]);
+    expect(a1ReferencedRanges("=B$2")).toEqual([at(2, 1)]);
+    expect(a1ReferencedRanges("=$B2")).toEqual([at(2, 1)]);
+    expect(a1ReferencedRanges("=b2")).toEqual([at(2, 1)]);
+  });
+
+  it("outlines every cell of a range, also when it is reversed", () => {
+    expect(a1ReferencedRanges("=SUM(B2:D4)")).toEqual([box(2, 1, 4, 3)]);
+    expect(a1ReferencedRanges("=D4:B2")).toEqual([box(2, 1, 4, 3)]);
+    expect(a1ReferencedRanges("=$B$2:$D$4")).toEqual([box(2, 1, 4, 3)]);
+  });
+
+  it("outlines each reference of a formula, not the cells of its range twice", () => {
+    expect(a1ReferencedRanges("=A2+B2")).toEqual([at(2, 0), at(2, 1)]);
+    expect(a1ReferencedRanges("=SUM(B2:B4)+C5")).toEqual([box(2, 1, 4, 1), at(5, 2)]);
+  });
+
+  it("leaves text inside a double-quoted string alone", () => {
+    expect(a1ReferencedRanges('="B2"')).toEqual([]);
+    expect(a1ReferencedRanges('=IF(A2>0,"B2","C3")')).toEqual([at(2, 0)]);
+  });
+
+  it("does not take function names for addresses", () => {
+    expect(a1ReferencedRanges("=SUM(B2, B3)")).toEqual([at(2, 1), at(3, 1)]);
+    expect(a1ReferencedRanges("=LOG10(B2)")).toEqual([at(2, 1)]);
+    expect(a1ReferencedRanges("=LOG10(A2)")).toEqual([at(2, 0)]);
+  });
+
+  it("leaves another sheet's cells alone, quoted or not, alone or in a range", () => {
+    for (const text of ["=Items!B3", "='My items'!B3", "=Items!B3:D4", "=SUM('My items'!B3:D9)"]) {
+      expect(a1ReferencedRanges(text), text).toEqual([]);
+    }
+    expect(a1ReferencedRanges("=Items!B3+A1")).toEqual([at(1, 0)]);
+  });
+
+  it("leaves whole columns and addresses outside the grid alone", () => {
+    expect(a1ReferencedRanges("=SUM(B:B)")).toEqual([]);
+    expect(a1ReferencedRanges("=A0")).toEqual([]);
+    expect(a1ReferencedRanges("=1.5E3")).toEqual([]);
   });
 });
 
