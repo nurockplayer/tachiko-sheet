@@ -140,10 +140,12 @@ fn leave_check_script(check: u64) -> String {
     )
 }
 
-/// The person kept the work open: make the page usable again where it was.
+/// The person kept the work open: make the page usable again where it was, and
+/// let it ask for a file that arrived while it was frozen.
 const UNFREEZE_SCRIPT: &str = "(() => { document.body.inert = false; \
     const focus = window.__tachikoLeaveFocus; window.__tachikoLeaveFocus = null; \
-    if (focus && focus.isConnected && typeof focus.focus === 'function') focus.focus(); })();";
+    if (focus && focus.isConnected && typeof focus.focus === 'function') focus.focus(); \
+    window.dispatchEvent(new CustomEvent('tachiko-menu', { detail: 'file-opened' })); })();";
 
 /// Start deciding whether to leave. New runtime operations are held until the
 /// decision, so nothing can change the work after the page answers.

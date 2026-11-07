@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, State};
@@ -26,9 +27,29 @@ enum Held {
     Refused { message: String },
 }
 
-/// The one file waiting for the page; a newer one replaces it.
+/// The one file waiting for the page. The newest request wins, however long
+/// each file takes to read.
 #[derive(Default)]
-pub struct OpenedFiles(Mutex<Option<Held>>);
+pub struct OpenedFiles {
+    waiting: Mutex<Option<Held>>,
+    latest_request: AtomicU64,
+}
+
+impl OpenedFiles {
+    fn begin(&self) -> u64 {
+        self.latest_request.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// False when a newer request has superseded this one.
+    fn publish(&self, request: u64, held: Held) -> bool {
+        let mut waiting = lock(&self.waiting);
+        if self.latest_request.load(Ordering::SeqCst) != request {
+            return false;
+        }
+        *waiting = Some(held);
+        true
+    }
+}
 
 pub fn supported(path: &Path) -> bool {
     path.extension()
@@ -84,9 +105,12 @@ fn encode(held: Option<Held>) -> Vec<u8> {
 /// Read the file off the main thread, hold it, and tell the page.
 pub fn offer(app: &AppHandle, path: PathBuf) {
     let app = app.clone();
+    let request = app.state::<OpenedFiles>().begin();
     tauri::async_runtime::spawn_blocking(move || {
         let held = read(&path, MAX_BYTES);
-        *lock(&app.state::<OpenedFiles>().0) = Some(held);
+        if !app.state::<OpenedFiles>().publish(request, held) {
+            return;
+        }
         // A page that isn't listening yet asks when it starts.
         if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
             let _ = window.eval(READY_EVENT);
@@ -96,7 +120,7 @@ pub fn offer(app: &AppHandle, path: PathBuf) {
 
 #[tauri::command]
 pub fn take_opened_file(files: State<'_, OpenedFiles>) -> Response {
-    Response::new(encode(lock(&files.0).take()))
+    Response::new(encode(lock(&files.waiting).take()))
 }
 
 #[cfg(test)]
@@ -143,6 +167,19 @@ mod tests {
             panic!("a missing file was read");
         };
         assert!(message.contains("book.csv"));
+    }
+
+    #[test]
+    fn an_older_request_that_finishes_last_does_not_replace_a_newer_one() {
+        let refused = |message: &str| Held::Refused {
+            message: message.into(),
+        };
+        let files = OpenedFiles::default();
+        let older = files.begin();
+        let newer = files.begin();
+        assert!(files.publish(newer, refused("newer")));
+        assert!(!files.publish(older, refused("older")));
+        assert_eq!(lock(&files.waiting).take(), Some(refused("newer")));
     }
 
     #[test]
