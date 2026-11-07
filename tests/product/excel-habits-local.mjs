@@ -1126,7 +1126,7 @@ const cases = [
     const filled = await filledColumn(page, table, 0, 4);
     assert.deepEqual(filled.map(String), ["1", "1", "1", "4"], `Ctrl+D did not fill the selected range from its top cell: ${JSON.stringify(filled)}`);
   } },
-  { id: "40", name: "Paste Special", tier: "B", run: async (page) => {
+  { id: "40", name: "Paste Special", tier: "B", budgetMs: 60_000, waitMs: 10_000, note: "Values and formulas only: no formats exist to paste yet.", run: async (page) => {
     await example(page);
     const table = await projection(page);
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
@@ -1135,6 +1135,67 @@ const cases = [
     await page.keyboard.press("Control+Alt+v");
     await settle(page);
     assert.ok(await page.getByRole("dialog").count() + await page.getByRole("menu").count() > 0, "Ctrl+Alt+V opened no Paste Special choices");
+    await page.keyboard.press("Escape");
+    await settle(page);
+
+    // A copied formula pastes as its value or as itself, as chosen.
+    await newTable(page, "Paste special", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
+    for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
+    const sums = await projection(page);
+    const total = (row) => cellIdFor(sums, row, 2);
+    await page.getByTestId(total(0)).press("F2");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("=A2*B2");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, total(0), "6");
+    await page.getByTestId(total(0)).click();
+    await page.keyboard.press("Control+c");
+    await settle(page);
+    const choice = (name) => page.getByRole("menuitem", { name, exact: true });
+    const isFormula = async (row) => fieldAt(await projection(page), row, 2)?.formula != null;
+
+    await page.getByTestId(total(1)).click();
+    await page.keyboard.press("Control+Alt+v");
+    await choice("Paste values").click();
+    await waitForCellText(page, total(1), "6");
+    assert.equal(await isFormula(1), false, "Paste values pasted the formula");
+
+    await page.getByTestId(total(2)).click();
+    await page.keyboard.press("Control+Alt+v");
+    await choice("Paste").click();
+    await waitForCellText(page, total(2), "12");
+    assert.equal(await isFormula(2), true, "Paste Special's Paste did not paste the formula");
+
+    await page.getByTestId(total(3)).click();
+    await page.keyboard.press("Control+Shift+v");
+    await waitForCellText(page, total(3), "6");
+    assert.equal(await isFormula(3), false, "Ctrl+Shift+V pasted the formula");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, total(3), "");
+
+    await page.getByTestId(total(3)).click({ button: "right" });
+    await choice("Paste values").click();
+    await waitForCellText(page, total(3), "6");
+    assert.equal(await isFormula(3), false, "the cell menu's Paste values pasted the formula");
+    await settle(page);
+
+    // A slow clipboard read pastes nothing if the active cell moved meanwhile, with no range selected.
+    const qty = (row) => cellIdFor(sums, row, 0);
+    await page.evaluate(() => { navigator.clipboard.readText = () => new Promise((resolve) => setTimeout(() => resolve("99"), 1000)); });
+    await page.getByTestId(qty(0)).click();
+    await page.keyboard.press("Control+Shift+v");
+    await page.keyboard.press("ArrowDown");
+    await page.locator(".ts-clipboard-status").filter({ hasText: "Nothing was pasted." }).waitFor();
+    await settle(page);
+    assert.equal(await page.getByTestId(qty(0)).innerText(), "2", "a late paste wrote over the cell the person had left");
+    assert.equal(await page.getByTestId(qty(1)).innerText(), "3", "a late paste wrote to a cell it wasn't asked for");
+
+    // Refused access: Paste values says so, and doesn't send people to Ctrl+V, which would paste the formula.
+    await page.evaluate(() => { navigator.clipboard.readText = () => Promise.reject(new Error("refused")); });
+    await page.keyboard.press("Control+Shift+v");
+    await page.locator(".ts-clipboard-status").filter({ hasText: "Paste values isn't available" }).waitFor();
   } },
   { id: "41", name: "Change reference mode", tier: "B", run: async (page) => {
     await newTable(page, "Cycle", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
@@ -1241,7 +1302,7 @@ const cases = [
     assert.ok(await page.getByRole("menu").count() > 0, "right-click on a cell opened no context menu; Shift+F10 has none either");
 
     // Excel's cell menu, focused on its first command; Escape gives the cell back.
-    for (const label of ["Cut", "Copy", "Paste", "Clear contents", "Fill down", "Delete row", "Sort A → Z", "Sort Z → A", "Filter…"]) {
+    for (const label of ["Cut", "Copy", "Paste", "Paste values", "Clear contents", "Fill down", "Delete row", "Sort A → Z", "Sort Z → A", "Filter…"]) {
       assert.equal(await item(label).count(), 1, `the cell menu has no ${label} item`);
     }
     assert.ok(await focused(item("Cut")), "the cell menu did not focus Cut on open");
@@ -1257,6 +1318,8 @@ const cases = [
     await page.keyboard.press("ArrowDown");
     assert.ok(await focused(item("Copy")), "ArrowDown did not move the menu focus to Copy");
     await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    assert.ok(await focused(item("Paste values")), "ArrowDown did not reach Paste values");
     await page.keyboard.press("ArrowDown");
     assert.ok(await focused(item("Clear contents")), "ArrowDown did not skip the separator above Clear contents");
     await page.keyboard.press("ArrowDown");

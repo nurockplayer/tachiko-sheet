@@ -732,7 +732,7 @@ export function SheetShell(props: SheetShellProps) {
   const [closeOpen, setCloseOpen] = useState(false);
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
-  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell: GridPosition } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell: GridPosition; pasteSpecial?: boolean } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
   // after the user moved to another cell must not touch the editor it left.
@@ -1508,14 +1508,14 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /** The decoded block a paste writes: the same work whether the event or the cell menu started it. */
-  function pasteDecoded(position: GridPosition, decoded: string[][]): void {
+  function pasteDecoded(position: GridPosition, decoded: string[][], valuesOnly = false): void {
     if (!view || !witness || !table) return;
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
     const copied = copiedFormulaRef.current;
-    if (!draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
+    if (!valuesOnly && !draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
       && decoded.length === 1 && decoded[0]?.length === 1 && decoded[0][0] === copied.text) {
       if (pasteBlocked) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
       if (rowDraftActive) { announceClipboard("Add or discard the new row first.", true); return; }
@@ -1683,7 +1683,7 @@ export function SheetShell(props: SheetShellProps) {
    * Excel's cell menu: a press inside the selection keeps it and the active
    * cell; anywhere else the pressed cell becomes the one the menu acts on.
    */
-  function openCellMenu(x: number, y: number, position: GridPosition): void {
+  function openCellMenu(x: number, y: number, position: GridPosition, pasteSpecial = false): void {
     const at = address(position);
     const inside = Boolean(selectionRectangle
       && at.row >= selectionRectangle.top && at.row <= selectionRectangle.bottom
@@ -1693,7 +1693,7 @@ export function SheetShell(props: SheetShellProps) {
       setSelectedEntity(position.entity);
       focusCell(position.entity, position.field);
     }
-    setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position });
+    setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position, pasteSpecial });
   }
 
   /** The filter editor lives in the column's disclosure: its heading's, or the compact toolbar that follows the focused cell. */
@@ -1710,6 +1710,43 @@ export function SheetShell(props: SheetShellProps) {
     startGridFilter(column);
   }
 
+  /** A paste with no paste event to read from: the menu, Paste Special and Ctrl+Shift+V. */
+  async function pasteFromClipboard(position: GridPosition, valuesOnly = false): Promise<void> {
+    const mac = isMacPlatform();
+    const target = pasteTargetRef.current;
+    const focusedCell = (): string | null => {
+      const cell = clipboardPosition(document.activeElement);
+      return cell ? cellKey(cell.entity, cell.field) : null;
+    };
+    const focusAtRead = focusedCell();
+    let text: string;
+    try { text = await navigator.clipboard.readText(); } catch {
+      // Ctrl+V would paste a copied formula, so it can't stand in for Paste values.
+      announceClipboard(valuesOnly ? "The clipboard can't be read here, so Paste values isn't available. Nothing was pasted." : `The clipboard can't be read here. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
+      return;
+    }
+    let decoded: string[][];
+    try { decoded = decodeTsv(text); } catch (error) {
+      announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true);
+      return;
+    }
+    // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
+    const live = pasteTargetRef.current;
+    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || focusedCell() !== focusAtRead) {
+      announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
+      return;
+    }
+    pasteDecodedRef.current(position, decoded, valuesOnly);
+  }
+
+  function pasteSpecialItems(position: GridPosition): CellMenuItem[] {
+    const run = (valuesOnly: boolean) => () => { closeCellMenu(); void pasteFromClipboard(position, valuesOnly); };
+    return [
+      { label: "Paste", disabled: controlsLocked, run: run(false) },
+      { label: "Paste values", disabled: controlsLocked, run: run(true) },
+    ];
+  }
+
   /** The menu's commands; each one closes the menu and returns focus to its cell before it runs. */
   function cellMenuItems(position: GridPosition): CellMenuItem[] {
     const mac = isMacPlatform();
@@ -1717,30 +1754,11 @@ export function SheetShell(props: SheetShellProps) {
     const viewBlocked = columnChangesBlocked || editor !== null;
     const command = (action: () => void) => () => { closeCellMenu(); action(); };
     const rows = selectionRectangle ? selectionRectangle.bottom - selectionRectangle.top + 1 : 0;
-    const paste = async (): Promise<void> => {
-      const target = pasteTargetRef.current;
-      let text: string;
-      try { text = await navigator.clipboard.readText(); } catch {
-        announceClipboard(`The clipboard can't be read from this menu. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
-        return;
-      }
-      let decoded: string[][];
-      try { decoded = decodeTsv(text); } catch (error) {
-        announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true);
-        return;
-      }
-      // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
-      const live = pasteTargetRef.current;
-      if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection) {
-        announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
-        return;
-      }
-      pasteDecodedRef.current(position, decoded);
-    };
     return [
       { label: "Cut", shortcut: menuShortcut("X", mac), disabled: blocked, run: command(() => { document.execCommand("cut"); }) },
       { label: "Copy", shortcut: menuShortcut("C", mac), run: command(() => { document.execCommand("copy"); }) },
-      { label: "Paste", shortcut: menuShortcut("V", mac), disabled: blocked, run: command(() => { void paste(); }) },
+      { label: "Paste", shortcut: menuShortcut("V", mac), disabled: blocked, run: command(() => { void pasteFromClipboard(position); }) },
+      { label: "Paste values", shortcut: mac ? "⇧⌘V" : "Ctrl+Shift+V", disabled: blocked, run: command(() => { void pasteFromClipboard(position, true); }) },
       "separator",
       { label: "Clear contents", shortcut: "Delete", disabled: blocked, run: command(() => clearGrid(position)) },
       { label: "Fill down", shortcut: menuShortcut("D", mac), disabled: blocked || rows < 2, run: command(() => fillDown()) },
@@ -3207,6 +3225,20 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    // Paste Special: its choices at the cell (Ctrl+Alt+V, or Ctrl+⌘V on a Mac), or values straight away (Ctrl+Shift+V, ⌘⇧V).
+    if (!draft && !editor && event.key.toLowerCase() === "v") {
+      if (event.ctrlKey && (event.altKey || event.metaKey) && !event.shiftKey) {
+        event.preventDefault();
+        const corner = event.currentTarget.getBoundingClientRect();
+        openCellMenu(corner.left, corner.bottom, position, true);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        void pasteFromClipboard(position, true);
+        return;
+      }
+    }
     // Excel's keyboard menu key: open at the focused cell's lower-left corner.
     if (!draft && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
       event.preventDefault();
@@ -4851,7 +4883,7 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
-        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenuItems(cellMenu.position)} onClose={closeCellMenu} /> : null}
+        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : cellMenuItems(cellMenu.position)} onClose={closeCellMenu} /> : null}
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
         <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && (!clipboardMessage.refused || clipboardMessage.polite) ? clipboardMessage.text : null}</p>
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
