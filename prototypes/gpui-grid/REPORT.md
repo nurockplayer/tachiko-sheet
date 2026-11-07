@@ -15,6 +15,12 @@ Run URL: pending CI (first push 2026-11-07 JST).
   Fixed by an explicit `if` instead of `when`, a `div().flex().flex_col()`
   instead of `v_flex`, `window.focus(&handle, cx)`, and Rust 1.99.1 in CI.
   No test case ran in round 1.
+- Round 2 (2026-11-07 12:02 JST, run 42332103171, "success" only because
+  the steps use `continue-on-error`): the library and the binary built on all
+  three OS, so the sizes and times below are from this run. The test target
+  did not compile: `tests/grid.rs` passed a `&str` to `find_all`, which needs
+  a `'static` `ElementId` (`E0521`), plus one unused-import warning. Fixed by
+  passing an owned `String`. No test case ran in round 2 either.
 
 
 ## Case table
@@ -44,11 +50,15 @@ these numbers are GPUI's layout cost per simulated frame, not real frame rate.
 
 ## Build size and time
 
-| OS | Binary bytes | Cold build seconds |
+From run 42332103171 (round 2). These are warm builds: the two test steps had
+already compiled the dependencies, so "build seconds" is the remaining
+`cargo build --release` for the binary only.
+
+| OS | Binary bytes | Build seconds |
 | --- | --- | --- |
-| macOS | pending | pending |
-| Windows | pending | pending |
-| Linux | pending | pending |
+| macOS | 20,441,760 | 125 |
+| Windows | 19,758,592 | 159 |
+| Linux | 53,558,648 | 166 |
 
 ## Lines of app code for range selection
 

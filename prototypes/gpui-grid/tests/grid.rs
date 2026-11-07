@@ -8,9 +8,9 @@ use gpui_grid::{GridApp, GridSize};
 use gpui_kit::base::Root;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext, Bounds, Entity, InputEvent as _, Modifiers, MouseButton,
-    Point, Pixels, Render, ScrollDelta, ScrollEvent, Size, TestAppContext, Window, WindowBounds,
-    WindowHandle, WindowOptions, point, px, size,
+    App, AppContext, Bounds, Entity, InputEvent as _, Modifiers, MouseButton, Point, Pixels, Render,
+    ScrollDelta, ScrollEvent, Size, TestAppContext, Window, WindowBounds, WindowHandle,
+    WindowOptions, point, px, size,
 };
 
 /// The production entry point with deterministic test bounds, as Kit's own
@@ -55,7 +55,7 @@ fn range_label(app: &Entity<GridApp>, cx: &App) -> Option<String> {
 /// register a fixed copy and a scrolling copy of the same cell.
 fn cell_center(window: &Window, id: &str) -> Point<Pixels> {
     window
-        .find_all(id)
+        .find_all(id.to_string())
         .into_iter()
         .find(|element| element.visible())
         .unwrap_or_else(|| panic!("no visible table cell {id}"))
