@@ -476,7 +476,7 @@ const cases = [
     await replaceCell(page, cellIdFor(table, 0, 1), "4");
     await waitForCellText(page, total, "8");
   } },
-  { id: "21", name: "Copied formula references", tier: "A", run: async (page) => {
+  { id: "21", name: "Copied formula references", tier: "A", budgetMs: 90_000, waitMs: 10_000, note: "Relative references only. Absolute ones are case 21a.", run: async (page) => {
     await newTable(page, "Copy down", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
     const table = await projection(page);
@@ -493,6 +493,126 @@ const cases = [
     await page.keyboard.press("Control+v");
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 1, 2), "9", "the copied formula pasted as its value, not the row-shifted formula");
+
+    // The formula can be pasted again; one Undo removes one paste.
+    await page.getByTestId(total(2)).click();
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, total(2), "12");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 2, 2), "", "one Undo did not restore the third row's previous text");
+    assert.equal(await cellText(page, await projection(page), 1, 2), "9", "one Undo removed more than the last paste");
+
+    // A drag-selected block of that column gets the formula in every row.
+    await dragCells(page, total(2), total(3));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, total(2), "12");
+    await waitForCellText(page, total(3), "15");
+
+    // Another column pastes the value, as today, and gives the cell no formula.
+    const price = (row) => cellIdFor(table, row, 1);
+    await page.getByTestId(total(0)).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId(price(3)).click();
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, price(3), "6");
+    assert.equal(fieldAt(await projection(page), 3, 1)?.formula ?? null, null, "a value pasted into Price gained a formula");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 3, 1), "3", "one Undo did not restore Price row 4");
+
+    // Copying a value instead forgets the formula: an ordinary paste on a formula cell is refused.
+    await page.getByTestId(total(0)).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId(total(1)).click();
+    await page.keyboard.press("Control+v");
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 1, 2), "9", "a value paste changed the copied formula's result");
+
+    // A changed source formula makes the same clipboard text an ordinary paste.
+    // A formula cell is edited in the formula bar, not in the inline editor.
+    await page.getByTestId(total(0)).click();
+    await page.keyboard.press("Control+c");
+    const bar = page.getByTestId("formula-bar-input");
+    await bar.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("=A2+B2");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, total(0), "5");
+    await page.getByTestId(total(1)).click();
+    await page.keyboard.press("Control+v");
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 1, 2), "9", "a changed source formula still pasted its old shift");
+
+    // The cell menu's Paste shifts the formula too.
+    await page.getByTestId(total(0)).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId(total(2)).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Paste", exact: true }).click();
+    await waitForCellText(page, total(2), "7");
+
+    // The same text copied from elsewhere is that text, not the formula.
+    await newTable(page, "Copy provenance", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
+    for (let row = 0; row < 2; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
+    const plain = await projection(page);
+    const plainTotal = (row) => cellIdFor(plain, row, 2);
+    await page.getByTestId(plainTotal(0)).press("F2");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("=A2*B2");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, plainTotal(0), "6");
+    const pasteTotalTwo = async () => {
+      await page.getByTestId(plainTotal(1)).click();
+      await page.keyboard.press("Control+v");
+      await waitForCellText(page, plainTotal(1), "6");
+      await settle(page);
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, plainTotal(1), "");
+    };
+    await page.getByTestId(plainTotal(0)).click();
+    await page.keyboard.press("Control+c");
+    await settle(page);
+    await page.evaluate(() => {
+      const input = document.createElement("input");
+      input.id = "habit-text-source";
+      input.value = "6";
+      document.body.append(input);
+      input.select();
+    });
+    await page.keyboard.press("Control+c");
+    await page.evaluate(() => document.getElementById("habit-text-source").remove());
+    await pasteTotalTwo();
+    await page.getByTestId(plainTotal(0)).click();
+    await page.keyboard.press("Control+c");
+    await settle(page);
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await pasteTotalTwo();
+  } },
+  { id: "21a", name: "Absolute references copy", tier: "A", waitMs: 10_000, budgetMs: 60_000, run: async (page) => {
+    await newTable(page, "Copy absolute", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
+    for (let row = 0; row < 3; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
+    const table = await projection(page);
+    const total = (row) => cellIdFor(table, row, 2);
+    await page.getByTestId(total(0)).press("F2");
+    await page.getByTestId("cell-editor").waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("=$A$2*B2");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, total(0), "6");
+    await page.getByTestId(total(0)).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId(total(1)).click();
+    await page.keyboard.press("Control+v");
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 1, 2), "6", "the absolute reference moved when copied");
+    // A value pasted by mistake would also show 6; a formula follows its own row's Price.
+    await replaceCell(page, cellIdFor(table, 1, 1), "5");
+    await waitForCellText(page, total(1), "10");
   } },
   { id: "22", name: "Fill handle", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await newTable(page, "Fill", [{ name: "Value", type: "number" }]);
@@ -1311,9 +1431,10 @@ function withTimeout(promise, ms) {
 
 const results = [];
 let harnessBroke = false;
-const expectedIds = cases.map((_, index) => String(index + 1).padStart(2, "0"));
-if (cases.length !== 52 || cases.some((testCase, index) => testCase.id !== expectedIds[index] || !testCase.name)) {
-  console.error(`HARNESS: the case list is not 52 ids 01-52 (got ${cases.length}).`);
+const baseIds = Array.from({ length: 52 }, (_, index) => String(index + 1).padStart(2, "0"));
+const expectedIds = [...baseIds.slice(0, 21), "21a", ...baseIds.slice(21)];
+if (cases.length !== expectedIds.length || cases.some((testCase, index) => testCase.id !== expectedIds[index] || !testCase.name)) {
+  console.error(`HARNESS: the case list is not 52 ids 01-52 plus 21a (got ${cases.length}).`);
   await browser.close();
   process.exit(1);
 }

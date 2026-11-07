@@ -91,6 +91,7 @@ import { adjacentFillBottom, fillDragTarget } from "./fill-handle.js";
 import { fillSelectionPlan, FillSelectionRefusal } from "./fill-selection.js";
 import { FormulaBar } from "./FormulaBar.js";
 import { CellContextMenu } from "./CellContextMenu.js";
+import { formulaPastePlan, FormulaPasteRefusal, type CopiedFormula } from "./formula-paste.js";
 import { isMacPlatform, menuShortcut, type CellMenuItem } from "./cell-context-menu.js";
 import { cellEditorOwnsPointer, FORMULA_BAR_DRAFT_ROW_HINT, FORMULA_BAR_GUIDANCE, formulaBarDraftValue, formulaBarKeyAction, formulaBarSource, formulaBarState, formulaColumnNameHint, formulaHandoffSettlement, formulaReferenceInsertion, hiddenRowTargetLabel, inCellFormulaSource, insertFormulaReference, isFormulaCell, rowLabel, tableAdmitsFormulas, type FormulaBarDraft, type FormulaHandoffGrid, type FormulaSubmitHandoff } from "./formula-bar.js";
 import { canChangeRequiredness, completeBlankCount, requirednessRefusal } from "./column-requiredness.js";
@@ -1128,6 +1129,21 @@ export function SheetShell(props: SheetShellProps) {
   }
   const clipboardIdentityRef = useRef(collectionIdentity);
   clipboardIdentityRef.current = collectionIdentity;
+  const copiedFormulaRef = useRef<CopiedFormula & { identity: string | null } | null>(null);
+  // The clipboard's text can't say who wrote it, so the copy is only trusted until
+  // anything else could have copied: another copy or cut here (this capture runs
+  // before copyGrid sets the ref), or the window losing focus.
+  useEffect(() => {
+    const forget = () => { copiedFormulaRef.current = null; };
+    window.addEventListener("copy", forget, true);
+    window.addEventListener("cut", forget, true);
+    window.addEventListener("blur", forget);
+    return () => {
+      window.removeEventListener("copy", forget, true);
+      window.removeEventListener("cut", forget, true);
+      window.removeEventListener("blur", forget);
+    };
+  }, []);
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
   useEffect(() => { setCellSelection(null); setClipboardMessage(null); setFilterDraft(null); }, [collectionIdentity]);
@@ -1402,6 +1418,12 @@ export function SheetShell(props: SheetShellProps) {
     try {
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", encodeTsv(rows));
+      const rowIndex = rowIndexByEntity.get(position.entity);
+      const row = rowIndex === undefined ? undefined : displayRows[rowIndex];
+      const field = position.entity === DRAFT_ROW || !row ? undefined : fieldForColumn(row, position.field);
+      copiedFormulaRef.current = row && field?.formula && rows.length === 1 && rows[0]?.length === 1
+        ? { entity: position.entity, field: position.field, formula: field.formula.source, text: rows[0][0]!, identity: collectionIdentity }
+        : null;
       announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`);
     } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
   }
@@ -1454,10 +1476,30 @@ export function SheetShell(props: SheetShellProps) {
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
+    const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
+    const copied = copiedFormulaRef.current;
+    if (!draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
+      && decoded.length === 1 && decoded[0]?.length === 1 && decoded[0][0] === copied.text) {
+      if (pasteBlocked) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
+      if (rowDraftActive) { announceClipboard("Add or discard the new row first.", true); return; }
+      const area = selectionRectangle ?? rectangle(at, at);
+      try {
+        const plan = formulaPastePlan(displayRows, columns, area, copied, !gridSettings.sort && !gridSettings.filters?.length);
+        if (plan) {
+          if (plan.kind === "unchanged") { announceClipboard("The selected cells are unchanged.", false, true); return; }
+          keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
+          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste");
+          return;
+        }
+      } catch (error) {
+        if (error instanceof FormulaPasteRefusal) { announceClipboard(error.message, true, true); return; }
+        // The plan is pure; anything else falls back to the ordinary value paste.
+      }
+    }
     const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, displayRows.length);
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
-      blocked: controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen,
+      blocked: pasteBlocked,
       pendingDraft: rowDraftActive, start, rowCount: displayRows.length, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
       editable: (r, c) => {
         const row = displayRows[r], column = columns[c];
@@ -1523,7 +1565,7 @@ export function SheetShell(props: SheetShellProps) {
     }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
   }
 
-  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut", noun: "clear" | "fill" | "cut"): Promise<boolean> {
+  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut" | "Updated", noun: "clear" | "fill" | "cut" | "paste"): Promise<boolean> {
     const intent = completionIntent();
     rowCommandPendingRef.current = true;
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
