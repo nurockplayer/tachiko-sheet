@@ -10,7 +10,15 @@ export type FillDownPlan =
   | { kind: "formula"; request: FormulaCopy; count: number }
   | { kind: "values"; edits: CellEdit[]; count: number };
 
-const NON_EDITABLE = "The fill range includes a calculated or non-editable cell. Nothing was filled.";
+export const NON_EDITABLE = "The fill range includes a calculated or non-editable cell. Nothing was filled.";
+
+/**
+ * How a formula copy moves its references. Shared by fill down and formula
+ * paste so the two can only change together.
+ */
+export const FORMULA_COPY_AXES: Pick<FormulaCopy, "fixed_references" | "relative_rows" | "relative_columns"> = {
+  fixed_references: [], relative_rows: true, relative_columns: false,
+};
 
 /**
  * `stored` is true when the displayed rows are in stored order (no sort or
@@ -48,7 +56,7 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
       if (!target) throw new FillDownRefusal(NON_EDITABLE);
       destinations.push(target);
     }
-    return { kind: "formula", request: { source, destinations, fixed_references: [], relative_rows: true, relative_columns: false }, count };
+    return { kind: "formula", request: { source, destinations, ...FORMULA_COPY_AXES }, count };
   }
 
   const edits: CellEdit[] = [];
