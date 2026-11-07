@@ -65,6 +65,59 @@ export function a1References(text: string): { rows: number[]; range: boolean } {
   return { rows, range: outsideStrings.includes(":") };
 }
 
+/** A1 column letters as a 0-based index: "A" → 0, "Z" → 25, "AA" → 26. */
+function a1ColumnIndex(letters: string): number {
+  let index = 0;
+  for (const letter of letters.toUpperCase()) index = index * 26 + letter.charCodeAt(0) - 64;
+  return index - 1;
+}
+
+// A cell address that is a whole token: not the tail of a longer name (LOG10,
+// Amount*2) and not the name of a function (SUM(), LOG10()).
+const A1_CELL_START = String.raw`(?<![\p{L}\p{N}_.!])\$?([A-Za-z]{1,3})\$?(\d+)`;
+const A1_CELL_END = String.raw`(?![\p{L}\p{N}_(])`;
+const A1_ONE_CELL = new RegExp(`${A1_CELL_START}${A1_CELL_END}`, "gu");
+const A1_CELL_RANGE = new RegExp(`${A1_CELL_START}:\\$?([A-Za-z]{1,3})\\$?(\\d+)${A1_CELL_END}`, "gu");
+// A name followed by `!` refers to another sheet's cell (or range), which this
+// sheet can't outline: `Items!B3`, `'My items'!B3`, `Items!B3:D4`.
+const A1_OTHER_SHEET = /(?:'(?:[^']|'')*'|[\p{L}_][\p{L}\p{N}_.]*)![^\s+\-*/^&<>=,();]*/gu;
+
+/**
+ * The cells a formula drafts refers to, as A1 rectangles: 1-based rows and
+ * 0-based columns, one per address, with a reversed range (D4:B2) put in order.
+ * A quoted "B2" is literal text, another sheet's cells and whole columns (B:B)
+ * are not this grid's, and neither is an address outside it (A0).
+ */
+export function a1ReferencedRanges(text: string): { top: number; bottom: number; left: number; right: number }[] {
+  if (!text.trimStart().startsWith("=")) return [];
+  const blank = (matched: string): string => " ".repeat(matched.length);
+  // Strings first, so their contents never read as addresses, then the cells
+  // of other sheets, wherever they sit in the formula.
+  const source = text.replace(/"(?:[^"]|"")*"?/g, blank).replace(A1_OTHER_SHEET, blank);
+  const ranges: { top: number; bottom: number; left: number; right: number }[] = [];
+  const rectangleOf = (match: RegExpMatchArray): { top: number; bottom: number; left: number; right: number } | null => {
+    const [firstRow, secondRow] = [Number(match[2]), Number(match[4])];
+    if (firstRow < 1 || secondRow < 1) return null;
+    return {
+      top: Math.min(firstRow, secondRow), bottom: Math.max(firstRow, secondRow),
+      left: Math.min(a1ColumnIndex(match[1]), a1ColumnIndex(match[3])),
+      right: Math.max(a1ColumnIndex(match[1]), a1ColumnIndex(match[3])),
+    };
+  };
+  for (const match of source.matchAll(A1_CELL_RANGE)) {
+    const rectangle = rectangleOf(match);
+    if (rectangle) ranges.push(rectangle);
+  }
+  // A range is one reference; its endpoints must not also outline alone.
+  for (const match of source.replace(A1_CELL_RANGE, blank).matchAll(A1_ONE_CELL)) {
+    const row = Number(match[2]);
+    if (row < 1) continue;
+    const column = a1ColumnIndex(match[1]);
+    ranges.push({ top: row, bottom: row, left: column, right: column });
+  }
+  return ranges;
+}
+
 export const A1_TOO_MANY_ROWS = "This formula's cell references span too many rows for a table this large. Use references closer to this row; ranges over a whole column need a smaller table for now.";
 
 /** Work's notes in plain words; the sheet never re-derives their meaning. */

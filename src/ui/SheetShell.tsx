@@ -60,7 +60,7 @@ import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./
 import { NewTableDialog } from "./NewTableDialog.js";
 import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
-import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1NoteText, a1References, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
@@ -1146,6 +1146,8 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
+  // The cells the open formula draft names, outlined as Excel does while typing.
+  const referencedRanges = useMemo(() => a1ReferencedRanges(editor?.value ?? formulaDraft?.value ?? ""), [editor?.value, formulaDraft?.value]);
   useEffect(() => { setCellSelection(null); setClipboardMessage(null); setFilterDraft(null); }, [collectionIdentity]);
 
   useEffect(() => {
@@ -4981,6 +4983,12 @@ export function SheetShell(props: SheetShellProps) {
     if (formulaCell) classes.push("ts-cell--formula");
     const coordinate = address({ entity, field: column.id });
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
+    // The outlined cells of the formula being typed. A1 rows follow the
+    // displayed order, so a sorted view outlines the row the formula uses.
+    const referencedRow = draft ? 0 : a1RowNumber(coordinate.row);
+    const formulaReferenced = !draft && referencedRanges.length > 0
+      && referencedRanges.some((range) => referencedRow >= range.top && referencedRow <= range.bottom
+        && coordinate.column >= range.left && coordinate.column <= range.right);
     // The fill handle sits on the active range's lower-right cell, or on the
     // focused cell when there is no range.
     const fillHandleCorner = !draft && !editor && !controlsLocked && Boolean(table?.native_table_profile)
@@ -4992,6 +5000,7 @@ export function SheetShell(props: SheetShellProps) {
       && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right);
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
+    if (formulaReferenced) classes.push("ts-cell--formula-ref");
     if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");

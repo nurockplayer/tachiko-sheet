@@ -446,11 +446,13 @@ const cases = [
     await waitForCellText(page, total, "6");
     assert.equal(await executeCount(page), before + 1, "Enter did not publish exactly one history transaction");
   } },
-  { id: "19", name: "Point-and-click formula references", tier: "A", run: async (page) => {
+  { id: "19", name: "Point-and-click formula references", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await newTable(page, "Refs", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
     await addRow(page, ["2", "3"], 1);
     const table = await projection(page);
     const id = (column) => cellIdFor(table, 0, column);
+    // The cells the open formula outlines, by test id.
+    const outlined = () => page.locator(".ts-cell--formula-ref").evaluateAll((cells) => cells.map((cell) => cell.dataset.testid));
     await page.getByTestId(id(2)).dblclick();
     const editor = page.getByTestId("cell-editor");
     await editor.waitFor();
@@ -459,8 +461,17 @@ const cases = [
     await page.keyboard.type("+");
     await page.getByTestId(id(1)).click();
     assert.equal(await editor.inputValue(), "=A2+B2", "clicking cells while typing did not insert A1 references");
-    const highlighted = await page.locator(".ts-cell--reference").count();
-    assert.ok(highlighted > 0, "the referenced cells receive no visual highlighting while the formula is edited");
+    assert.deepEqual((await outlined()).sort(), [id(0), id(1)].sort(),
+      "=A2+B2 does not outline exactly A2 and B2 (not the Total cell being edited)");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Backspace");
+    assert.equal(await editor.inputValue(), "=A2+", "Backspace did not remove the B2 reference");
+    assert.deepEqual(await outlined(), [id(0)], "=A2+ does not outline just A2");
+    await page.keyboard.type('"B2"');
+    assert.deepEqual(await outlined(), [id(0)], "a quoted \"B2\" is text, not a reference");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector(".ts-cell--formula-ref"), null, { timeout: 10_000 });
+    assert.deepEqual(await outlined(), [], "Escape did not clear the formula's outlines");
   } },
   { id: "20", name: "Recalculation", tier: "A", run: async (page) => {
     await newTable(page, "Recalc", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);

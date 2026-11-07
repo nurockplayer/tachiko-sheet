@@ -3051,6 +3051,8 @@ body { margin: 0; }
 
 /* Clipboard selection follows the existing focus/accent palette. */
 .ts-cell--range-selected { background: color-mix(in srgb, var(--ts-accent, #2563eb) 14%, var(--ts-surface, white)); box-shadow: inset 0 0 0 1px var(--ts-accent, #2563eb); }
+/* The cells a formula being typed refers to. One colour, like the drafts' accent. */
+.ts-cell--formula-ref { outline: 2px solid var(--ts-accent, #2563eb); outline-offset: -2px; background: color-mix(in srgb, var(--ts-accent, #2563eb) 8%, var(--ts-surface, white)); }
 /* Excel's fill handle: a 7px square in the corner, so its hit area reaches the
    cell's last 2 pixels. The square is a pseudo-element, whose events reach the
    span: a positioned span would be a block and break the cell's text in innerText. */
@@ -3060,6 +3062,7 @@ body { margin: 0; }
 .ts-cell--fill-preview { outline: 2px dashed var(--ts-accent, #2563eb); outline-offset: -2px; }
 .ts-clipboard-status:empty { display: none; }
 @media (forced-colors: active) { .ts-cell--range-selected { outline: 1px solid Highlight; background: Highlight; color: HighlightText; } }
+@media (forced-colors: active) { .ts-cell--formula-ref { outline: 2px solid Highlight; background: Canvas; } }
 @media (forced-colors: active) { .ts-fill-handle::after { background: Highlight; } .ts-cell--fill-preview { outline: 2px dashed Highlight; } }
 
 /* Keep label text separate from header actions for export/readback consumers. */
