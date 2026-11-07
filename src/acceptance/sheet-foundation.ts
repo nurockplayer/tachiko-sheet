@@ -795,6 +795,17 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
         return (...args: unknown[]): Promise<PublicationProjection> =>
           dispatchPublication(target, property, args);
       }
+      // The catalog and large tables read through windows, so the fault covers them too.
+      if (property === "queryTableWindow") {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);
+          if (openProjectionFaultArmed) {
+            openProjectionFaultArmed = false;
+            throw new Error("The replacement projection reply was lost after real open dispatch.");
+          }
+          return result;
+        };
+      }
       if (property === "queryTable") {
         return async (...args: unknown[]): Promise<unknown> => {
           const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args);

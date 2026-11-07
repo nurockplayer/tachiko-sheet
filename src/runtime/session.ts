@@ -463,13 +463,17 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     client: PublicClient,
     expected: number,
     revision: string,
-  ): Promise<{ catalog: KeyedGroupedSumBindingCatalog; tables: Map<string, TableProjection> }> {
+  ): Promise<{ catalog: KeyedGroupedSumBindingCatalog; tables: Map<string, TableWindowProjection> }> {
     const bootstrap = await afterUsable(expected, dispatch(kit, () => client.bootstrap()));
     requireCurrentProjectionRevision(revision, bootstrap.revision, "binding catalog");
-    const tables = new Map<string, TableProjection>();
+    const tables = new Map<string, TableWindowProjection>();
     for (const collection of bootstrap.collections) {
-      const table = await queryWholeTable(kit, client, expected, revision, collection.key);
+      // The catalog needs each table's identity and columns, never its rows, and a window of 0 rows carries just those.
+      const table = await afterUsable(expected, dispatch(kit, () => client.queryTableWindow(revision, collection.key, {}, 0, 0)));
       requireCurrentProjectionRevision(revision, table.revision, `table ${collection.key}`);
+      if (table.collection.key !== collection.key) {
+        throw new SheetSessionError("incoherent-reply", "A core collection was not returned.");
+      }
       tables.set(collection.key, table);
     }
     return {
@@ -495,13 +499,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     };
   }
 
-  function selectedTable(tables: Map<string, TableProjection>, key: string): TableProjection {
+  function selectedTable(tables: Map<string, TableWindowProjection>, key: string): TableWindowProjection {
     const table = tables.get(key);
     if (!table) throw new SheetSessionError("incoherent-reply", `The selected table “${key}” is no longer available.`);
     return table;
   }
 
-  function selectedField(table: TableProjection, key: string): string {
+  function selectedField(table: TableWindowProjection, key: string): string {
     const column = table.columns.find((candidate) => candidate.key === key);
     if (!column) throw new SheetSessionError("incoherent-reply", `The selected field “${key}” is no longer available.`);
     return column.id;
