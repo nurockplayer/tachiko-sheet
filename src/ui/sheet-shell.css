@@ -1594,6 +1594,9 @@ body { margin: 0; }
 .ts-cell--editing {
   position: relative;
   background: var(--ts-selection-active-background);
+  /* The multiline editor draws over the rows below; the sticky header stays above it. */
+  overflow: visible;
+  z-index: 1;
 }
 
 .ts-cell-input {
@@ -1608,6 +1611,23 @@ body { margin: 0; }
   /* The cell paints the active background, focus perimeter and underline beneath the text. */
   background: transparent;
   color: var(--ts-ink);
+}
+
+/* A text cell edits in a textarea so Alt+Enter can hold a line break. */
+.ts-cell-input--text {
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  display: block;
+}
+
+/* Every line stays visible, drawn over the rows below rather than growing them. */
+.ts-cell-input--lines {
+  height: auto;
+  bottom: auto;
+  z-index: 3;
+  background: var(--ts-surface, white);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
 }
 
 .ts-cell-input:disabled {

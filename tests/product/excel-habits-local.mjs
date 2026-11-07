@@ -1368,7 +1368,7 @@ const cases = [
     assert.equal(await cellText(page, await projection(page), 0, 1), before, "Enter on the disabled item ran another command");
     await page.keyboard.press("Escape");
   } },
-  { id: "45", name: "Multiline editing", tier: "B", run: async (page) => {
+  { id: "45", name: "Multiline editing", tier: "B", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
     await page.getByTestId(cellIdFor(table, 0, 7)).press("F2");
@@ -1380,8 +1380,90 @@ const cases = [
     await page.keyboard.type("Line two");
     await page.keyboard.press("Enter");
     await settle(page);
+    const stored = async () => String(fieldAt(await projection(page), 0, 7)?.stored?.value);
+    const target = cellIdFor(table, 0, 7);
     const value = String(fieldAt(await projection(page), 0, 7)?.stored?.value);
     assert.ok(value.includes("\n"), `Alt+Enter inserted no line break (stored ${JSON.stringify(value)})`);
+    assert.equal(value, "Line one\nLine two", `the stored value is not the two typed lines (${JSON.stringify(value)})`);
+
+    // Re-opening and committing a value that did not change publishes nothing.
+    await page.getByTestId(target).press("F2");
+    await editor.waitFor();
+    assert.equal(await editor.inputValue(), "Line one\nLine two", "F2 lost the stored line break");
+    await page.keyboard.press("Enter");
+    await settle(page);
+    assert.equal(await stored(), "Line one\nLine two", "committing an unchanged value changed it");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.equal(await stored(), "Line one", "the unchanged F2 then Enter added a history entry");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.equal(await stored(), "Line one\nLine two", "Redo did not restore the accepted edit");
+
+    await page.getByTestId(target).press("F2");
+    await editor.waitFor();
+    await page.keyboard.press("Escape");
+    await settle(page);
+    assert.equal(await editor.count(), 0, "Escape left the editor open");
+    assert.equal(await stored(), "Line one\nLine two", "Escape published the value");
+
+    // The editor grows over the rows below instead of being clipped by its cell.
+    await page.getByTestId(target).press("F2");
+    await editor.waitFor();
+    const cellBox = await page.getByTestId(target).boundingBox();
+    const editorBox = await editor.boundingBox();
+    assert.ok(editorBox && cellBox && editorBox.height > cellBox.height + 4,
+      `the two-line editor did not grow (cell ${cellBox?.height}, editor ${editorBox?.height})`);
+    const hit = await page.evaluate(({ x, y }) => {
+      const node = document.elementFromPoint(x, y);
+      const area = document.querySelector('[data-testid="cell-editor"]');
+      return Boolean(node && area && (node === area || area.contains(node)));
+    }, { x: editorBox.x + editorBox.width / 2, y: editorBox.y + editorBox.height - 2 });
+    assert.ok(hit, "the grown editor is clipped by its cell");
+    await page.keyboard.press("Escape");
+    await settle(page);
+
+    // A row keeps its height: the cell shows one line, as Excel does without Wrap Text.
+    const editedRow = await page.getByTestId(target).boundingBox();
+    const neighbourRow = await page.getByTestId(cellIdFor(table, 1, 7)).boundingBox();
+    assert.equal(editedRow.height, neighbourRow.height, "the two-line value changed the row height");
+
+    // The line break survives the clipboard.
+    const pasted = cellIdFor(table, 1, 7);
+    const replaced = String(fieldAt(table, 1, 7)?.stored?.value ?? "");
+    await page.getByTestId(target).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId(pasted).click();
+    await page.keyboard.press("Control+v");
+    await settle(page);
+    assert.equal(String(fieldAt(await projection(page), 1, 7)?.stored?.value), "Line one\nLine two", "the pasted value lost its line break");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.equal(String(fieldAt(await projection(page), 1, 7)?.stored?.value ?? ""), replaced, "Undo did not restore the pasted cell");
+
+    // Alt+Enter in an editor that is not the multiline one does nothing at all.
+    const numberCell = cellIdFor(table, 0, 2);
+    const numberValue = String(fieldAt(table, 0, 2)?.stored?.value);
+    await page.getByTestId(numberCell).press("F2");
+    await editor.waitFor();
+    await page.keyboard.press("Alt+Enter");
+    assert.equal(await editor.count(), 1, "Alt+Enter closed the number editor");
+    assert.equal(await editor.inputValue(), numberValue, "Alt+Enter changed the number editor");
+    await page.keyboard.press("Escape");
+    await settle(page);
+    assert.equal(String(fieldAt(await projection(page), 0, 2)?.stored?.value), numberValue, "Alt+Enter committed the number editor");
+
+    // Plain Enter commits and never adds a line break.
+    const lastNotes = cellIdFor(table, 2, 7);
+    await page.getByTestId(lastNotes).press("F2");
+    await editor.waitFor();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("plain text");
+    await page.keyboard.press("Enter");
+    await settle(page);
+    assert.equal(String(fieldAt(await projection(page), 2, 7)?.stored?.value), "plain text", "plain Enter did not commit one line");
   } },
   { id: "46", name: "Sheet navigation", tier: "B", run: async (page) => {
     await example(page);
