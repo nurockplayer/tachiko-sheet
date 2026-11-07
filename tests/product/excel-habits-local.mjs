@@ -1159,7 +1159,7 @@ const cases = [
     const nameBox = page.getByTestId("name-box");
     assert.equal(await nameBox.inputValue(), "E2",
       `the Name Box shows ${JSON.stringify(await nameBox.inputValue())}, not the selected cell's address`);
-    assert.match(await nameBox.getAttribute("title"), /impact|Impact/, "the Name Box lost the column and row names on hover");
+    assert.match(await nameBox.getAttribute("title"), /priority/i, "the Name Box lost the column and row names on hover");
 
     // Typing an address and pressing Enter goes there and drops any selection.
     const goTo = async (text) => {
