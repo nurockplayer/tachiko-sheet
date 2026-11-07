@@ -8,6 +8,8 @@ import type { ColumnProjection } from "../../public/core-kit/runtime/protocol.js
 import type { GroupTotalsOutcome } from "../runtime/session.js";
 import { isMacPlatform, menuShortcut } from "./cell-context-menu.js";
 import { formatNumberFor } from "./field-display.js";
+import { GroupChart } from "./GroupChart.js";
+import { groupChartPoints, groupChartRefusal, type GroupChartType } from "./group-chart.js";
 import {
   canThenBySameDate,
   withDimensionBucket,
@@ -43,6 +45,8 @@ export interface GroupTotalsPaneProps {
 
 export function GroupTotalsPane(props: GroupTotalsPaneProps) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [chartType, setChartType] = useState<GroupChartType | "none">("none");
+  const [chartMeasure, setChartMeasure] = useState<string | null>(null);
   const first = props.columns.find((column) => column.id === props.setup.dimension) ?? null;
   const headingName = first?.display_name ?? props.setup.dimension;
   const groupable = groupableColumns(props.columns);
@@ -60,6 +64,12 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
   const dimensionColumnsOfReply = projection
     ? projection.dimensions.map((dimension) => props.columns.find((column) => column.id === dimension.field) ?? { display_name: dimension.field, field_type: "unknown" })
     : [];
+
+  // One chart has one axis, so it shows one measure, chosen when several are summed.
+  const chartMeasureIndex = projection ? Math.max(0, projection.measures.indexOf(chartMeasure ?? "")) : 0;
+  const chartColumn = measureColumnsOfReply[chartMeasureIndex];
+  const chartPoints = projection && chartType !== "none" ? groupChartPoints(projection, chartMeasureIndex) : null;
+  const chartRefusal = projection && chartType !== "none" ? groupChartRefusal(chartType, chartPoints) : null;
 
   function changeDimension(id: string): void {
     const column = props.columns.find((candidate) => candidate.id === id);
@@ -165,6 +175,21 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
             </label>;
           })}
         </fieldset>
+        <label className="ts-group-totals-field">
+          <span>Chart</span>
+          <select aria-label="Chart" value={chartType} onChange={(event) => setChartType(event.currentTarget.value as GroupChartType | "none")}>
+            <option value="none">None</option>
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="pie">Pie</option>
+          </select>
+        </label>
+        {chartType !== "none" && projection && projection.measures.length > 1 ? <label className="ts-group-totals-field">
+          <span>Chart of</span>
+          <select aria-label="Chart of" value={projection.measures[chartMeasureIndex]} onChange={(event) => setChartMeasure(event.currentTarget.value)}>
+            {projection.measures.map((id, index) => <option key={id} value={id}>{measureColumnsOfReply[index]?.display_name ?? id}</option>)}
+          </select>
+        </label> : null}
         {props.filterHidesRows ? <fieldset className="ts-group-totals-group">
           <legend>Rows</legend>
           {props.shownScopeAvailable ? <label className="ts-group-totals-option">
@@ -180,6 +205,11 @@ export function GroupTotalsPane(props: GroupTotalsPaneProps) {
       </div>
       <div className={props.pending ? "ts-group-totals-results ts-group-totals--pending" : "ts-group-totals-results"} aria-busy={props.pending}>
         {refusal ? <p className="ts-dialog-error ts-row-error" role="alert">{refusal}</p> : null}
+        {!refusal && projection && chartType !== "none" ? <div className="ts-group-chart">
+          {chartRefusal
+            ? <p className="ts-hint" role="status">{chartRefusal}</p>
+            : chartPoints ? <GroupChart type={chartType} points={chartPoints} name={`${chartColumn?.display_name ?? "the total"} by ${headingName}`} format={(value) => formatNumberFor(value, chartColumn?.number_format)} /> : null}
+        </div> : null}
         {!refusal && projection ? <table className="ts-group-totals-table" aria-label={`Totals by ${headingName}`} onCopy={copyTable}>
           <thead>
             <tr>
