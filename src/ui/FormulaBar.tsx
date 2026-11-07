@@ -13,6 +13,11 @@ export interface FormulaBarProps {
   error: { message: string; position?: number } | null;
   /** Work's notes about the last translated formula, shown until the next edit. */
   translationNote?: string | null;
+  /** A cell editor or formula draft owns the text; the Name Box is disabled. */
+  goToLocked?: boolean;
+  /** Returns false for text that names no cell, which keeps it in the box. */
+  onGoTo?(text: string): boolean;
+  onGoToCancel?(): void;
   onChange?(value: string): void;
   onKeyDown?(event: ReactKeyboardEvent<HTMLInputElement>): void;
   inputRef?(node: HTMLInputElement | null): void;
@@ -34,6 +39,8 @@ export function FormulaBar(props: FormulaBarProps) {
   const errorText = props.error ? formulaRefusalText(props.error) : "";
   const [openErrorText, setOpenErrorText] = useState<string | null>(null);
   const [errorTruncated, setErrorTruncated] = useState(false);
+  // Text the user typed into the Name Box; null means it shows the active cell.
+  const [typed, setTyped] = useState<string | null>(null);
   const detailsOpen = props.error !== null && openErrorText === errorText;
 
   useEffect(() => {
@@ -63,7 +70,30 @@ export function FormulaBar(props: FormulaBarProps) {
     <div className={`ts-formula-bar${state.editable ? "" : " ts-formula-bar--readonly"}`} data-testid="formula-bar">
       <div className="ts-formula-bar-row">
         <span className="ts-formula-fx" aria-hidden="true">fx</span>
-        <span className="ts-formula-cell" data-testid="formula-bar-cell">{state.label}</span>
+        <input
+          className="ts-name-box"
+          type="text"
+          aria-label="Name Box"
+          title={state.label}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={props.goToLocked || !state.label}
+          data-testid="name-box"
+          value={typed ?? state.address}
+          onChange={(event) => setTyped(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.stopPropagation();
+              if (props.onGoTo?.(event.currentTarget.value)) setTyped(null);
+            } else if (event.key === "Escape") {
+              setTyped(null);
+              props.onGoToCancel?.();
+            }
+          }}
+          onFocus={(event) => event.currentTarget.select()}
+          onBlur={() => setTyped(null)}
+        />
         <input
           ref={props.inputRef}
           className="ts-formula-input"

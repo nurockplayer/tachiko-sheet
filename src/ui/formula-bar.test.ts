@@ -120,6 +120,7 @@ describe("formulaBarState", () => {
   it("shows only the focused instance's own projected formula source", () => {
     const value = state({ entity: "e1", field: "impact" });
     expect(value.label).toBe("Impact · Reserve");
+    expect(value.address).toBe("B2");
     expect(value.source).toBe("min([task.qty], 4) + 1");
     expect(value.editable).toBe(true);
     expect(value.reason).toBeNull();
@@ -146,6 +147,7 @@ describe("formulaBarState", () => {
     expect(state(null).editable).toBe(false);
     expect(state({ entity: "e1", field: "task" }).editable).toBe(true);
     expect(state({ entity: "sheet:draft-row", field: "impact" }).reason).toBe(FORMULA_BAR_DRAFT_ROW);
+    expect(state({ entity: "sheet:draft-row", field: "impact" }).address).toBe("");
     expect(state({ entity: "e3", field: "impact" }, { native: false, rows: [scalarRow] }).reason).toBe(FORMULA_BAR_NON_NATIVE);
     expect(state({ entity: "e1", field: "impact" }, { currentness: "unknown" }).reason).toBe(FORMULA_BAR_UNKNOWN);
     expect(state({ entity: "e1", field: "impact" }, { locked: true }).reason).toBe(FORMULA_BAR_LOCKED);
@@ -637,6 +639,7 @@ describe("formula bar with a hidden bound row", () => {
     expect(bar.reason).toBeNull();
     expect(bar.note).toBe(FORMULA_BAR_HIDDEN_ROW);
     expect(bar.label).toBe("Impact · Reserve");
+    expect(bar.address).toBe("");
     expect(bar.source).toBe("min([task.qty], 4) + 1");
     expect(bar.target).toEqual({ entity: "e1", field: "impact" });
   });

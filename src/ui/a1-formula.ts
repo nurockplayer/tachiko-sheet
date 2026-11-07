@@ -1,4 +1,5 @@
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
+import { A1_HEADER_ROW } from "./a1-geometry.js";
 
 /**
  * Tachiko references are always bracketed (`[.field]`), so any text without a
@@ -66,7 +67,7 @@ export function a1References(text: string): { rows: number[]; range: boolean } {
 }
 
 /** A1 column letters as a 0-based index: "A" → 0, "Z" → 25, "AA" → 26. */
-function a1ColumnIndex(letters: string): number {
+export function a1ColumnIndex(letters: string): number {
   let index = 0;
   for (const letter of letters.toUpperCase()) index = index * 26 + letter.charCodeAt(0) - 64;
   return index - 1;
@@ -116,6 +117,46 @@ export function a1ReferencedRanges(text: string): { top: number; bottom: number;
     ranges.push({ top: row, bottom: row, left: column, right: column });
   }
   return ranges;
+}
+
+/** A rectangle of displayed cells (0-based rows and columns) and the range's two ends. */
+export interface A1GoToTarget {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  /** The rectangle's first address: the range's active cell. */
+  anchor: { row: number; column: number };
+  end: { row: number; column: number };
+}
+
+const A1_GOTO = /^\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?$/u;
+
+/**
+ * The displayed cells a Name Box entry names: one address (`C3`, `$C$3`, `c3`)
+ * or one `address:address` range, in 0-based display positions. The range keeps
+ * its first address as the anchor even when it is reversed. Null when the text
+ * is not exactly an address or range, or names a cell outside the grid; the
+ * header row (A1) is not a cell.
+ */
+export function a1GoToTarget(text: string, rowCount: number, columnCount: number): A1GoToTarget | null {
+  const match = A1_GOTO.exec(text.trim());
+  if (!match) return null;
+  const first = { column: a1ColumnIndex(match[1]!), row: Number(match[2]) - A1_HEADER_ROW - 1 };
+  const last = match[3] !== undefined
+    ? { column: a1ColumnIndex(match[3]), row: Number(match[4]!) - A1_HEADER_ROW - 1 }
+    : first;
+  const inBounds = (cell: { row: number; column: number }): boolean =>
+    cell.row >= 0 && cell.row < rowCount && cell.column >= 0 && cell.column < columnCount;
+  if (!inBounds(first) || !inBounds(last)) return null;
+  return {
+    top: Math.min(first.row, last.row),
+    bottom: Math.max(first.row, last.row),
+    left: Math.min(first.column, last.column),
+    right: Math.max(first.column, last.column),
+    anchor: first,
+    end: last,
+  };
 }
 
 export const A1_TOO_MANY_ROWS = "This formula's cell references span too many rows for a table this large. Use references closer to this row; ranges over a whole column need a smaller table for now.";
