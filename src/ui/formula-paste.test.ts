@@ -77,7 +77,7 @@ describe("formula paste planning", () => {
   it("refuses a non-editable destination", () => {
     const rows = [row(0, { a: "2" }, ["a"]), { ...row(1, { a: "3" }), fields: row(1, { a: "3" }).fields.map(field => ({ ...field, editable_scalar: undefined })) }];
     expect(() => formulaPastePlan(rows as never, [columns[0]!], cell(1), copied))
-      .toThrow("The fill range includes a calculated or non-editable cell. Nothing was filled.");
+      .toThrow("The paste range includes a calculated or non-editable cell. Nothing was pasted.");
   });
 
   it("refuses a destination range above 1,024 cells", () => {

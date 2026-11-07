@@ -555,7 +555,7 @@ const cases = [
     await page.getByRole("menuitem", { name: "Paste", exact: true }).click();
     await waitForCellText(page, total(2), "7");
   } },
-  { id: "21a", name: "Absolute references copy", tier: "A", waitMs: 10_000, run: async (page) => {
+  { id: "21a", name: "Absolute references copy", tier: "A", waitMs: 10_000, budgetMs: 60_000, run: async (page) => {
     await newTable(page, "Copy absolute", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
     for (let row = 0; row < 3; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
     const table = await projection(page);

@@ -2,7 +2,7 @@ import type { FieldTarget } from "../contracts.js";
 import type { FormulaCopy } from "../../public/core-kit/runtime/protocol.js";
 import { cellEditSlot } from "./cell-edit-slot.js";
 import { EDIT_CELLS_MAX, type CellRectangle } from "./clipboard.js";
-import { FORMULA_COPY_AXES, NON_EDITABLE } from "./fill-down.js";
+import { FORMULA_COPY_AXES } from "./fill-down.js";
 import { fieldForColumn, rowEntity, type TableColumn, type TableRow } from "./projection-access.js";
 
 /** A deliberately copied formula cell: its source formula and the text the clipboard holds. */
@@ -51,7 +51,7 @@ export function formulaPastePlan(
     const slot = row ? cellEditSlot(row, column) : null;
     const formulaField = row ? fieldForColumn(row, column.id) : undefined;
     const target = slot?.target ?? (formulaField?.formula != null ? formulaField.target : undefined);
-    if (!target) throw new FormulaPasteRefusal(NON_EDITABLE);
+    if (!target) throw new FormulaPasteRefusal("The paste range includes a calculated or non-editable cell. Nothing was pasted.");
     destinations.push(target);
   }
   if (!destinations.length) return { kind: "unchanged" };

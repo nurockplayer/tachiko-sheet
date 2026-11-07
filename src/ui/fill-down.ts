@@ -10,7 +10,7 @@ export type FillDownPlan =
   | { kind: "formula"; request: FormulaCopy; count: number }
   | { kind: "values"; edits: CellEdit[]; count: number };
 
-export const NON_EDITABLE = "The fill range includes a calculated or non-editable cell. Nothing was filled.";
+const NON_EDITABLE = "The fill range includes a calculated or non-editable cell. Nothing was filled.";
 
 /**
  * How a formula copy moves its references. Shared by fill down and formula
