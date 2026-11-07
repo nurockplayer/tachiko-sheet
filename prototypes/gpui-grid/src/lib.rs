@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use gpui_kit::base::actions::{Cancel, SelectNextColumn};
 use gpui_kit::component::{
     ActiveTheme as _, Sizable as _, Size as ComponentSize,
     input::{Input, InputState},
@@ -455,6 +456,37 @@ impl GridApp {
         cx.notify();
     }
 
+    /// Capture-phase `Cancel` (Escape). The table binds Escape, so the root
+    /// has to see the action before the table does.
+    fn on_action_cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.table.read(cx).delegate().editing().is_none() {
+            cx.propagate();
+            return;
+        }
+        if !self.editor_is_composing(window, cx) {
+            self.cancel_edit(window, cx);
+        }
+        cx.stop_propagation();
+    }
+
+    /// Capture-phase `SelectNextColumn` (Tab). Same reason: the table and the
+    /// root both bind Tab below this node.
+    fn on_action_select_next_column(
+        &mut self,
+        _: &SelectNextColumn,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.table.read(cx).delegate().editing().is_none() {
+            cx.propagate();
+            return;
+        }
+        if !self.editor_is_composing(window, cx) {
+            self.commit_and_move(0, 1, window, cx);
+        }
+        cx.stop_propagation();
+    }
+
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         let editing = self.table.read(cx).delegate().editing().is_some();
@@ -466,14 +498,6 @@ impl GridApp {
             match keystroke.key.as_str() {
                 "enter" => {
                     self.commit_and_move(1, 0, window, cx);
-                    cx.stop_propagation();
-                }
-                "tab" => {
-                    self.commit_and_move(0, 1, window, cx);
-                    cx.stop_propagation();
-                }
-                "escape" => {
-                    self.cancel_edit(window, cx);
                     cx.stop_propagation();
                 }
                 _ => {}
@@ -535,6 +559,8 @@ impl Render for GridApp {
             .key_context("GpuiGrid")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_action(cx.listener(Self::on_action_cancel))
+            .capture_action(cx.listener(Self::on_action_select_next_column))
             .size_full()
             .p_1()
             .gap_1()

@@ -495,6 +495,64 @@ fn g3e_edit_after_scrolling_commits_and_moves(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn g3f_composition_keeps_escape_from_cancelling(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
+        window.click(cell_id(2, 1), cx);
+        settle(window, cx);
+        content.update(cx, |app, cx| app.begin_edit(Some(""), window, cx));
+        settle(window, cx);
+
+        let editor = content.read(cx).editor().clone();
+        let bounds = window.find("cell-editor").bounds();
+        let mut handler = ElementInputHandler::new(bounds, editor);
+        handler.replace_and_mark_text_in_range(None, "ni", Some(2..2), window, cx);
+        window.press("escape", cx);
+        settle(window, cx);
+        assert_eq!(editing_cell(&content, cx), Some((2, 1)));
+        assert_eq!(delegate_cell_text(&content, cx, 2, 1), "R2C1");
+    })
+    .unwrap();
+}
+
+fn corner_bounds(window: &Window, id: &str) -> Bounds<Pixels> {
+    window
+        .find_all(id.to_string())
+        .into_iter()
+        .find(|element| element.visible())
+        .expect("corner cell is registered and visible")
+        .bounds()
+}
+
+/// The click must land on the cell before the paste can mean anything. On
+/// failure this prints what the test saw, instead of a bare label mismatch.
+fn assert_corner_selected(
+    window: &Window,
+    content: &Entity<GridApp>,
+    cx: &App,
+    id: &str,
+    expected: &str,
+) {
+    let label = range_label(content, cx);
+    let cell = window
+        .find_all(id.to_string())
+        .into_iter()
+        .find(|element| element.visible())
+        .map(|element| element.bounds());
+    let table = window.try_find("table").map(|element| element.bounds());
+    assert_eq!(
+        label.as_deref(),
+        Some(expected),
+        "click at {id} did not select it: label {label:?}, cell bounds {cell:?}, table bounds {table:?}"
+    );
+}
+
+#[gpui_kit::test]
 fn g4a_copy_writes_the_range_as_tsv(cx: &mut TestAppContext) {
     let dims = GridSize {
         rows: 10_000,
@@ -554,9 +612,16 @@ fn g4c_paste_at_the_corner_clips_without_panic(cx: &mut TestAppContext) {
         let table = content.read(cx).table().clone();
         scroll_to_end(&table, dims, cx);
         settle(window, cx);
+        let id = cell_id(dims.rows - 1, dims.cols - 1);
         cx.write_to_clipboard(ClipboardItem::new_string("1\t2\n3\t4".to_string()));
-        window.click(cell_id(dims.rows - 1, dims.cols - 1), cx);
+        window.click(id.clone(), cx);
         settle(window, cx);
+        let expected = format!(
+            "R{last}C{last_col}:R{last}C{last_col}",
+            last = dims.rows - 1,
+            last_col = dims.cols - 1
+        );
+        assert_corner_selected(window, &content, cx, &id, &expected);
         let keystroke = chord("v");
         window.press(keystroke.as_str(), cx);
         settle(window, cx);
@@ -569,6 +634,46 @@ fn g4c_paste_at_the_corner_clips_without_panic(cx: &mut TestAppContext) {
             format!("R{}C{}", dims.rows - 1, dims.cols - 2)
         );
         assert_eq!(editing_cell(&content, cx), None);
+    })
+    .unwrap();
+}
+
+/// The same corner cell, clicked a quarter of its height from the top, in
+/// case the centre of the last row sits under the horizontal scrollbar.
+#[gpui_kit::test]
+fn g4d_corner_cell_click_near_its_top(cx: &mut TestAppContext) {
+    let dims = GridSize {
+        rows: 10_000,
+        cols: 30,
+    };
+    let (handle, content) = open_grid(cx, dims);
+    cx.update_window(handle.into(), |_, window, cx| {
+        let table = content.read(cx).table().clone();
+        scroll_to_end(&table, dims, cx);
+        settle(window, cx);
+        let id = cell_id(dims.rows - 1, dims.cols - 1);
+        cx.write_to_clipboard(ClipboardItem::new_string("1\t2\n3\t4".to_string()));
+        let bounds = corner_bounds(window, &id);
+        let position = point(
+            bounds.origin.x + bounds.size.width / 2.0,
+            bounds.origin.y + bounds.size.height * 0.25,
+        );
+        window.pointer_down(position, MouseButton::Left, cx);
+        window.pointer_up(position, MouseButton::Left, cx);
+        settle(window, cx);
+        let expected = format!(
+            "R{last}C{last_col}:R{last}C{last_col}",
+            last = dims.rows - 1,
+            last_col = dims.cols - 1
+        );
+        assert_corner_selected(window, &content, cx, &id, &expected);
+        let keystroke = chord("v");
+        window.press(keystroke.as_str(), cx);
+        settle(window, cx);
+        assert_eq!(
+            delegate_cell_text(&content, cx, dims.rows - 1, dims.cols - 1),
+            "1"
+        );
     })
     .unwrap();
 }
