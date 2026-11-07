@@ -32,6 +32,9 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md"
+    },
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "-"

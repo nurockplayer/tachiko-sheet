@@ -51,6 +51,23 @@ Sheet UI / application (unchanged)
 - Saved copies live in the app's own WebKit storage (`dev.tachiko.sheet`), not
   shared with a browser or with the e2e build (`dev.tachiko.sheet.e2e`).
 
+## Third-party notices
+
+Each installer carries `THIRD_PARTY_LICENSES.md`: the locked normal dependency
+closure of the three desktop targets, plus the page's production JavaScript
+packages. License and notice text comes byte-for-byte from `cargo vendor` and
+each package's LICENSE file. The footer links the app's notices beside Work's
+kit notices. Regenerate after changing `src-tauri/Cargo.lock`,
+`src-tauri/Cargo.toml`, `package.json` or `pnpm-lock.yaml`, with Rust installed:
+
+```bash
+node scripts/generate-third-party-licenses.mjs
+```
+
+The generator fails rather than omit a package or ship a license outside its
+allow-list; `--check` fails on any difference from the checked-in file, and CI
+runs it.
+
 ## Build and test (Apple Silicon)
 
 ```bash

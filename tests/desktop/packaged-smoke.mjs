@@ -292,6 +292,16 @@ async function main() {
   pass(`location.origin is ${expectedOrigin}`);
   pass("Home offers “Choose file…”");
 
+  // 1b. The notices the footer links to ship with the page.
+  const notices = await evaluate(`
+    const response = await fetch("/THIRD_PARTY_LICENSES.md");
+    const text = await response.text();
+    return { ok: response.ok, status: response.status, tauri: text.includes("tauri"), react: text.includes("react") };
+  `);
+  assert.ok(notices.ok, `the packaged page serves /THIRD_PARTY_LICENSES.md (status ${notices.status})`);
+  assert.ok(notices.tauri && notices.react, `the notices cover the desktop crates and the page's React packages: ${JSON.stringify(notices)}`);
+  pass("the packaged page serves complete third-party notices");
+
   // 2. A real import runs through the native runtime.
   await importSmokeCsv();
   const rows = await evaluate(`
