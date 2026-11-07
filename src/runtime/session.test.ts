@@ -102,6 +102,7 @@ class FakeClient {
     observeOccurrence: 0,
     queryTable: [] as string[],
     queryTableWindow: [] as Array<{ revision: string; start: number; count: number }>,
+    queryTableWindowCollections: [] as string[],
     queryCapacity: [] as string[],
     queryFields: [] as Array<{ revision: string; targets: FieldTarget[] }>,
     editNumber: 0,
@@ -328,9 +329,23 @@ class FakeClient {
 
   async queryTableWindow(revision: string, collection: string, _view: unknown, start: number, count: number): Promise<TableWindowProjection> {
     this.calls.queryTableWindow.push({ revision, start, count });
+    this.calls.queryTableWindowCollections.push(collection);
     const hook = this.hooks.queryTableWindow;
-    if (hook === undefined) throw new FakeDesignerRuntimeError("unsupported_operation", this.#revision);
-    return hook(revision, collection, start, count);
+    if (hook !== undefined) return hook(revision, collection, start, count);
+    if (count !== 0) throw new FakeDesignerRuntimeError("unsupported_operation", this.#revision);
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    const table = this.#table();
+    return {
+      revision,
+      collection: table.collection,
+      columns: table.columns,
+      columns_revision: "c1",
+      total_rows: table.rows.length,
+      unfiltered_rows: table.rows.length,
+      start,
+      rows: [],
+    };
   }
 
   async queryColumnTotals(revision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection> {
@@ -576,17 +591,19 @@ function installCatalog(
       collections: definitions.map(({ collection }) => collection),
     };
   };
-  let remainingTables = definitions.length;
-  client.hooks.queryTable = async (key) => {
+  client.hooks.queryTableWindow = async (windowRevision, key, start, count) => {
     const definition = definitions.find(({ collection }) => collection.key === key);
     if (!definition) throw new Error(`missing test table ${key}`);
-    remainingTables -= 1;
-    if (remainingTables === 0) client.hooks.queryTable = undefined;
+    const rows = definition.rows ?? [];
     return {
-      revision,
+      revision: windowRevision,
       collection: definition.collection,
       columns: definition.columns.map(column => ({ ...column, required: true, display_name: column.key })),
-      rows: definition.rows ?? [],
+      columns_revision: "c1",
+      total_rows: rows.length,
+      unfiltered_rows: rows.length,
+      start,
+      rows: rows.slice(start, start + count),
     };
   };
 }
@@ -1276,7 +1293,7 @@ describe("createSheetRuntime", () => {
   ])("refuses Date schemas in the $label before producer Create", async ({ definitions }) => {
     const { client, runtime, view } = await opened();
     const bootstrapBefore = client.calls.bootstrap;
-    const queryTableBefore = client.calls.queryTable.length;
+    const windowsBefore = client.calls.queryTableWindowCollections.length;
     installCatalog(client, definitions);
     const error = await failure(runtime.createKeyedGroupedSum(witnessOf(view), {
       ordersCollection: "tasks",
@@ -1289,14 +1306,40 @@ describe("createSheetRuntime", () => {
     }));
     expect((error as Error).message).toBe(DATE_SUMMARY_UNSUPPORTED_MESSAGE);
     expect(client.calls.bootstrap).toBe(bootstrapBefore + 1);
-    expect(client.calls.queryTable.slice(queryTableBefore)).toEqual(definitions.map(({ collection }) => collection.key));
+    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(definitions.map(({ collection }) => collection.key));
     expect(client.calls.createKeyedGroupedSum).toHaveLength(0);
     expect((await runtime.read()).revision).toBe(view.revision);
   });
 
-  it("preserves reference as a non-Date type and still creates the requested summary", async () => {
+  it("reads no rows to resolve the bindings of a table of any size", async () => {
     const { client, runtime, view } = await opened();
     const queryTableBefore = client.calls.queryTable.length;
+
+    await runtime.listKeyedGroupedSumBindings(witnessOf(view));
+
+    expect(client.calls.queryTable).toHaveLength(queryTableBefore);
+    expect(client.calls.queryTableWindow).toEqual([{ revision: view.revision, start: 0, count: 0 }]);
+  });
+
+  it("refuses a catalog reply that names a different table", async () => {
+    const { client, runtime, view } = await opened();
+    client.hooks.queryTableWindow = async (revision, _collection, start) => ({
+      revision,
+      collection: { ...view.table.collection, key: "other" },
+      columns: view.table.columns,
+      columns_revision: "c1",
+      total_rows: 0,
+      unfiltered_rows: 0,
+      start,
+      rows: [],
+    });
+
+    await expect(runtime.listKeyedGroupedSumBindings(witnessOf(view))).rejects.toMatchObject({ code: "incoherent-reply" });
+  });
+
+  it("preserves reference as a non-Date type and still creates the requested summary", async () => {
+    const { client, runtime, view } = await opened();
+    const windowsBefore = client.calls.queryTableWindowCollections.length;
     installCatalog(client, [catalogTable("tasks", [
       { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
       { id: "f2", key: "notes", display_name: "notes", field_type: "reference", required: true },
@@ -1310,7 +1353,7 @@ describe("createSheetRuntime", () => {
       productCategoryField: "notes",
       productPriceField: "impact",
     });
-    expect(client.calls.queryTable.slice(queryTableBefore, queryTableBefore + 1)).toEqual(["tasks"]);
+    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(["tasks"]);
     expect(client.calls.createKeyedGroupedSum).toHaveLength(1);
   });
 
@@ -1347,8 +1390,8 @@ describe("createSheetRuntime", () => {
           productsCollection: "tasks", productKeyField: "notes", productCategoryField: "notes", productPriceField: "impact",
         }),
       install: (client: FakeClient) => {
-        client.hooks.queryTable = async () => ({
-          revision: "stale", collection: COLLECTION,
+        client.hooks.queryTableWindow = async (_revision, _collection, start) => ({
+          revision: "stale", collection: COLLECTION, columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start,
           columns: [
             { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
             { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
@@ -1370,9 +1413,9 @@ describe("createSheetRuntime", () => {
         client.hooks.bootstrap = async () => ({ title: TITLE, revision: "r1", default_collection: "tasks", collections: [
           COLLECTION, { id: "col-2", key: "inventory", display_name: "inventory", entity_count: 0 },
         ] });
-        client.hooks.queryTable = async (key) => {
+        client.hooks.queryTableWindow = async (_revision, key, start) => {
           if (key === "inventory") throw new Error("unavailable table");
-          return { revision: "r1", collection: COLLECTION, columns: [
+          return { revision: "r1", collection: COLLECTION, columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start, columns: [
             { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
             { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
           ], rows: [] };
@@ -1384,16 +1427,16 @@ describe("createSheetRuntime", () => {
   ])("fails closed on $label before producer Create", async ({ run, install, expectedCatalogCalls, expectedTables }) => {
     const { client, runtime, view } = await opened();
     const bootstrapBefore = client.calls.bootstrap;
-    const queryTableBefore = client.calls.queryTable.length;
+    const windowsBefore = client.calls.queryTableWindowCollections.length;
     install(client);
     const error = await failure(run(runtime, view));
     expect(error).toBeInstanceOf(Error);
     expect(client.calls.bootstrap).toBe(bootstrapBefore + expectedCatalogCalls);
-    expect(client.calls.queryTable.slice(queryTableBefore)).toEqual(expectedTables);
+    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(expectedTables);
     expect(client.calls.createKeyedGroupedSum).toHaveLength(0);
     expect(client.currentRevision).toBe(view.revision);
     client.hooks.bootstrap = undefined;
-    client.hooks.queryTable = undefined;
+    client.hooks.queryTableWindow = undefined;
     const reread = await runtime.read();
     expect(reread.occurrence).toBe(view.occurrence);
     expect(reread.revision).toBe(view.revision);
