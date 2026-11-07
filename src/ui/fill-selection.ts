@@ -1,3 +1,4 @@
+import { isMacPlatform, menuShortcut } from "./cell-context-menu.js";
 import type { CellEdit } from "../contracts.js";
 import { cellEditSlot, cellEditorUnchanged, pastedCellEdit } from "./cell-edit-slot.js";
 import { EDIT_CELLS_MAX, type CellRectangle } from "./clipboard.js";
@@ -17,7 +18,7 @@ export function fillSelectionPlan(
   raw: string,
   native: boolean,
 ): CellEdit[] {
-  if (raw.startsWith("=")) throw new FillSelectionRefusal("Enter the formula in one cell, then fill it with Ctrl+D. Nothing was filled.");
+  if (raw.startsWith("=")) throw new FillSelectionRefusal(`Enter the formula in one cell, then fill it with ${menuShortcut("D", isMacPlatform())}. Nothing was filled.`);
   const width = area.right - area.left + 1;
   const height = area.bottom - area.top + 1;
   if (width * height > EDIT_CELLS_MAX) throw new FillSelectionRefusal("The fill range exceeds the 1,024-cell limit. Nothing was filled.");

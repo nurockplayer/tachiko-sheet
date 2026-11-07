@@ -1716,8 +1716,9 @@ export function SheetShell(props: SheetShellProps) {
   async function pasteFromClipboard(position: GridPosition, valuesOnly = false): Promise<void> {
     const mac = isMacPlatform();
     const target = pasteTargetRef.current;
+    // The focused cell, or the off-screen one that closing the menu is bringing back.
     const focusedCell = (): string | null => {
-      const cell = clipboardPosition(document.activeElement);
+      const cell = clipboardPosition(document.activeElement) ?? pendingCellFocusRef.current;
       return cell ? cellKey(cell.entity, cell.field) : null;
     };
     const focusAtRead = focusedCell();
@@ -3353,7 +3354,7 @@ export function SheetShell(props: SheetShellProps) {
       const column = columns.find(candidate => candidate.id === position.field);
       const editable = Boolean(currentEditorSlot(position)) && !controlsLocked;
       if (column?.field_type === "date" && editable && !formulaCellAt(position)) beginEdit(entity, position.field, todayIsoDate());
-      else announceClipboard("Ctrl+; enters today’s date in a Date cell.", false, true);
+      else announceClipboard(`${menuShortcut(";", isMacPlatform())} enters today’s date in a Date cell.`, false, true);
       return;
     }
     if (!draft && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
