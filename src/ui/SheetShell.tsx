@@ -143,6 +143,28 @@ interface EditorState {
   instance: number;
 }
 
+/** One props object for both cell editor elements, so the two stay identical. */
+interface CellEditorProps {
+  className: string;
+  "aria-label": string;
+  "aria-describedby"?: string;
+  placeholder?: string;
+  "aria-busy": boolean;
+  "data-testid": string;
+  role?: React.AriaRole;
+  "aria-autocomplete"?: "none" | "inline" | "list" | "both";
+  "aria-expanded"?: boolean;
+  "aria-controls"?: string;
+  "aria-activedescendant"?: string;
+  disabled: boolean;
+  value: string;
+  ref(node: HTMLInputElement | HTMLTextAreaElement | null): void;
+  onDoubleClick(event: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+  onBlur(event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+  onChange(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+  onKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+}
+
 interface GridPosition {
   entity: string;
   field: string;
@@ -831,7 +853,7 @@ export function SheetShell(props: SheetShellProps) {
   const historyFocusRequestRef = useRef<HistoryFocusRequest | null>(null);
   const historyOperationIdRef = useRef(0);
   const mountedRef = useRef(false);
-  const editorInputRef = useRef<HTMLInputElement | null>(null);
+  const editorInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const formulaInputRef = useRef<HTMLInputElement | null>(null);
   // One formula commit at a time: a second Apply or Enter while Work is
   // deciding must not publish the same edit twice.
@@ -922,7 +944,7 @@ export function SheetShell(props: SheetShellProps) {
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onDraftChangeRef = useRef(props.onDraftChange);
   const onReportDraftChangeRef = useRef(props.onReportDraftChange);
-  const focusEditorInput = useCallback((node: HTMLInputElement | null) => {
+  const focusEditorInput = useCallback((node: HTMLInputElement | HTMLTextAreaElement | null) => {
     editorInputRef.current = node;
     if (!node || node.ownerDocument.activeElement === node) return;
     node.focus();
@@ -3369,7 +3391,7 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
-  function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
+  function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     // Keep editor input and caret keys from being reinterpreted by the cell grid.
     event.stopPropagation();
@@ -5006,6 +5028,64 @@ export function SheetShell(props: SheetShellProps) {
       setEditor((previous) => (previous ? { ...previous, value } : previous));
       setCellOptionsUi({ key, open: false, index: -1 });
     };
+    // A text cell that offers no list of allowed values edits in a textarea, so
+    // Alt+Enter can hold a line break; every other editor keeps the input.
+    const textEditor = editing && editor?.kind === "text" && allCellOptions.length === 0;
+    const lineCount = editor ? editor.value.split("\n").length : 1;
+    const applyEditorValue = (value: string): void => {
+      setClipboardMessage(null);
+      if (draft) changeRowDraft(column.id, value);
+      setLocalError(null);
+      setEditor((previous) => (previous ? { ...previous, value } : previous));
+      if (allCellOptions.length > 0) setCellOptionsUi({ key, open: true, index: -1 });
+    };
+    const editorProps: CellEditorProps = {
+      className: "ts-cell-input",
+      "aria-label": "Edit cell",
+      "aria-describedby": draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : undefined,
+      // Work's declared rule is shown as a hint; Work still decides what
+      // is admitted, so typing another value reaches its refusal.
+      placeholder: column.constraint?.kind === "number_inclusive_range" ? `${column.constraint.min}–${column.constraint.max}`
+        : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined,
+      "aria-busy": commitPending,
+      "data-testid": "cell-editor",
+      role: allCellOptions.length > 0 ? "combobox" : undefined,
+      "aria-autocomplete": allCellOptions.length > 0 ? "list" : undefined,
+      "aria-expanded": allCellOptions.length > 0 ? optionsOpen : undefined,
+      "aria-controls": optionsOpen ? cellOptionsId : undefined,
+      "aria-activedescendant": optionsOpen && optionsUi.index >= 0 ? `${cellOptionsId}-${optionsUi.index}` : undefined,
+      disabled: controlsLocked,
+      value: editor?.value ?? "",
+      ref: focusEditorInput,
+      onDoubleClick: (event) => event.stopPropagation(),
+      onBlur: () => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); },
+      onChange: (event) => applyEditorValue(event.currentTarget.value),
+      onKeyDown: (event) => {
+        const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
+        // Alt+Enter holds a line break in the multiline editor; elsewhere it
+        // leaves the editor untouched, with no commit and no character.
+        if (event.key === "Enter" && event.altKey && !composing) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (textEditor) {
+            const start = event.currentTarget.selectionStart ?? event.currentTarget.value.length;
+            const end = event.currentTarget.selectionEnd ?? start;
+            event.currentTarget.setRangeText("\n", start, end, "end");
+            applyEditorValue(event.currentTarget.value);
+          }
+          return;
+        }
+        const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+        const action = composing || modified ? null : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
+        if (!action) { onEditorKeyDown(event); return; }
+        // The open list owns this key; Enter picks without committing, so a second Enter commits.
+        event.preventDefault();
+        event.stopPropagation();
+        if (action.kind === "move") setCellOptionsUi({ key, ...action.ui });
+        else if (action.kind === "pick") pickCellOption(cellOptions[action.index]!);
+        else setCellOptionsUi({ key, open: false, index: -1 });
+      },
+    };
     // A formula field instance is read-only in the grid; the bar edits it.
     const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
@@ -5136,47 +5216,9 @@ export function SheetShell(props: SheetShellProps) {
         onKeyDown={(event) => onCellKeyDown(event, entity, { entity, field: column.id })}
       >
         {editing && editor ? (
-          <input
-            className="ts-cell-input"
-            aria-label="Edit cell"
-            aria-describedby={draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : undefined}
-            // Work's declared rule is shown as a hint; Work still decides what
-            // is admitted, so typing another value reaches its refusal.
-            placeholder={column.constraint?.kind === "number_inclusive_range" ? `${column.constraint.min}–${column.constraint.max}`
-              : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined}
-            aria-busy={commitPending}
-            data-testid="cell-editor"
-            role={allCellOptions.length > 0 ? "combobox" : undefined}
-            aria-autocomplete={allCellOptions.length > 0 ? "list" : undefined}
-            aria-expanded={allCellOptions.length > 0 ? optionsOpen : undefined}
-            aria-controls={optionsOpen ? cellOptionsId : undefined}
-            aria-activedescendant={optionsOpen && optionsUi.index >= 0 ? `${cellOptionsId}-${optionsUi.index}` : undefined}
-            disabled={controlsLocked}
-            value={editor.value}
-            ref={focusEditorInput}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onBlur={() => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); }}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              setClipboardMessage(null);
-              if (draft) changeRowDraft(column.id, value);
-              setLocalError(null);
-              setEditor((previous) => (previous ? { ...previous, value } : previous));
-              if (allCellOptions.length > 0) setCellOptionsUi({ key, open: true, index: -1 });
-            }}
-            onKeyDown={(event) => {
-              const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
-              const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
-              const action = composing || modified ? null : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
-              if (!action) { onEditorKeyDown(event); return; }
-              // The open list owns this key; Enter picks without committing, so a second Enter commits.
-              event.preventDefault();
-              event.stopPropagation();
-              if (action.kind === "move") setCellOptionsUi({ key, ...action.ui });
-              else if (action.kind === "pick") pickCellOption(cellOptions[action.index]!);
-              else setCellOptionsUi({ key, open: false, index: -1 });
-            }}
-          />
+          textEditor
+            ? <textarea {...editorProps} rows={lineCount} className={`ts-cell-input ts-cell-input--text${lineCount > 1 ? " ts-cell-input--lines" : ""}`} />
+            : <input {...editorProps} />
         ) : null}
         {editing && editor && optionsOpen ? <CellOptionsPopup
           id={cellOptionsId}

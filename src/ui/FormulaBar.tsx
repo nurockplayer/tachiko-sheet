@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { FORMULA_BAR_PLACEHOLDER, formulaBarDraftValue, formulaRefusalIsTruncated, formulaRefusalText, type FormulaBarDraft, type FormulaBarState } from "./formula-bar.js";
+import { isComposingEvent } from "./composition-event.js";
 
 export interface FormulaBarProps {
   /** Exactly one focused cell instance, or an empty state with its reason. */
@@ -82,6 +83,7 @@ export function FormulaBar(props: FormulaBarProps) {
           value={typed ?? state.address}
           onChange={(event) => setTyped(event.currentTarget.value)}
           onKeyDown={(event) => {
+            if (isComposingEvent(event)) return;
             if (event.key === "Enter") {
               event.preventDefault();
               event.stopPropagation();
