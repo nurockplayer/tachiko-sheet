@@ -1,0 +1,101 @@
+# Throwaway canary for Sheet #327: the GPUI Kit grid app on three operating
+# systems. Push-only on the spike branch; never merged.
+name: gpui-grid-canary
+
+on:
+  push:
+    branches: [spike/gpui-grid]
+
+permissions:
+  contents: read
+
+jobs:
+  grid:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: macos
+          - os: windows-2022
+            target: windows
+          - os: ubuntu-24.04
+            target: linux
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev libvulkan1 \
+            clang libclang-dev pkg-config
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            prototypes/gpui-grid/target
+          key: gpui-grid-${{ runner.os }}-${{ hashFiles('prototypes/gpui-grid/Cargo.lock') }}
+
+      - name: Tests (10k)
+        working-directory: prototypes/gpui-grid
+        continue-on-error: true
+        env:
+          GPUI_GRID_SIZE: 10k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          cargo test --release -- --nocapture 2>&1 | tee logs/test-10k.log
+
+      - name: Tests (100k)
+        working-directory: prototypes/gpui-grid
+        continue-on-error: true
+        env:
+          GPUI_GRID_SIZE: 100k
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          cargo test --release -- --nocapture 2>&1 | tee logs/test-100k.log
+
+      - name: Build and measure
+        working-directory: prototypes/gpui-grid
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          start=$(date +%s)
+          cargo build --release 2>&1 | tee logs/build.log
+          end=$(date +%s)
+          echo "build_seconds=$((end - start))" | tee logs/build-time.txt
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin="target/release/gpui-grid.exe"
+          else
+            bin="target/release/gpui-grid"
+          fi
+          echo "binary_bytes=$(wc -c < "$bin")" | tee logs/binary-size.txt
+
+      - name: Retain the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gpui-grid-${{ matrix.target }}
+          path: prototypes/gpui-grid/logs
+          if-no-files-found: warn
