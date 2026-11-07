@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tachiko Sheet social card</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    position: relative;
+    font-family: Inter, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #1f1b3a;
+    background: #f1effb url(backdrop.png) center / cover no-repeat;
+  }
+  .copy { position: absolute; left: 64px; top: 0; bottom: 0; width: 440px; display: flex; flex-direction: column; justify-content: center; }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand img { width: 62px; height: 62px; }
+  .brand h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.025em; white-space: nowrap; }
+  .tagline { margin-top: 34px; font-size: 39px; line-height: 1.16; font-weight: 650; letter-spacing: -0.025em; }
+  .tagline em { font-style: normal; background: linear-gradient(90deg, #4f7fe0, #6a56e0 55%, #8459db); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .meta { margin-top: 28px; font-size: 20px; line-height: 1.5; color: #4a4568; font-weight: 500; }
+  .pill { align-self: flex-start; margin-top: 24px; padding: 6px 13px; font-size: 15px; font-weight: 600; color: #4b3bb5; background: rgba(255,255,255,.72); border: 1px solid rgba(117,104,232,.35); border-radius: 999px; }
+  .shot { position: absolute; left: 540px; top: 74px; width: 900px; height: 610px; overflow: hidden; border-radius: 16px; background: #fff; border: 1px solid rgba(75,59,181,.18); box-shadow: 0 30px 70px -18px rgba(62,44,160,.38), 0 8px 22px rgba(62,44,160,.12); }
+  .shot img { display: block; width: 900px; }
+</style>
+</head>
+<body>
+  <div class="copy">
+    <div class="brand"><img src="../../../public/tachiko-sheet-mark.svg" alt=""><h1>Tachiko Sheet</h1></div>
+    <p class="tagline">A spreadsheet you can <em>download, use and own.</em></p>
+    <p class="meta">Familiar like Excel. Open source.<br>macOS, Windows and Linux.</p>
+    <span class="pill">Experimental preview</span>
+  </div>
+  <div class="shot"><img src="budget-formula.png" alt=""></div>
+</body>
+</html>

@@ -1,0 +1,9 @@
+Please use your image generation tool and generate one image now. Do not write a plan or discuss it; the deliverable is the image itself.
+
+Image: a wide 3:2 landscape abstract backdrop for an open-source desktop spreadsheet app's hero banner. A real product screenshot and real text are placed on top later, so the image itself must contain NO text, NO letters, NO numbers, NO logos, NO user interface, NO windows, NO people.
+
+Subject: a soft, airy light canvas with a quiet sense of structure: a faint spreadsheet-like grid of fine lines dissolving into space, with a few translucent rounded glass cells floating and catching light, as if a sheet of data were gently lifting off the page. A young leaf-like curve of light may suggest something growing, very subtly.
+
+Palette: near-white and pale lavender base; accents as a restrained gradient of sky blue #6AA8FF to indigo #7568E8 to violet #8459DB. Generous empty calm space in the center and left, with the richest detail towards the right and bottom edges.
+
+Style: refined contemporary product-launch art, high resolution, soft studio light, very fine detail, restrained, no neon, no dark background, no cyberpunk, no stock-photo clichés.
