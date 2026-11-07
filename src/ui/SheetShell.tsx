@@ -1716,11 +1716,11 @@ export function SheetShell(props: SheetShellProps) {
   async function pasteFromClipboard(position: GridPosition, valuesOnly = false): Promise<void> {
     const mac = isMacPlatform();
     const target = pasteTargetRef.current;
+    // The focused cell, or the off-screen one that closing the menu is bringing back.
     const focusedCell = (): string | null => {
-      const cell = clipboardPosition(document.activeElement);
+      const cell = clipboardPosition(document.activeElement) ?? pendingCellFocusRef.current;
       return cell ? cellKey(cell.entity, cell.field) : null;
     };
-    // Null when the menu's close is still bringing an off-screen cell back: nothing to compare yet.
     const focusAtRead = focusedCell();
     let text: string;
     try { text = await navigator.clipboard.readText(); } catch {
@@ -1735,7 +1735,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
     const live = pasteTargetRef.current;
-    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || (focusAtRead !== null && focusedCell() !== focusAtRead)) {
+    if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || focusedCell() !== focusAtRead) {
       announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
       return;
     }
