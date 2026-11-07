@@ -844,13 +844,13 @@ export function SheetShell(props: SheetShellProps) {
   const focusRejectedEditorRef = useRef<{ generation: number; occurrence: string | null } | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
-  const fillDragRef = useRef<{ source: CellRectangle } | null>(null);
+  const fillDragRef = useRef<{ source: CellRectangle; identity: string | null; revision: string | undefined } | null>(null);
   const [fillPreview, setFillPreview] = useState<CellRectangle | null>(null);
   // The window mouseup listener is registered once; it reads the live preview
-  // and the latest fillDown through refs.
+  // and the latest finishFillDrag through refs.
   const fillPreviewRef = useRef<CellRectangle | null>(null);
-  const fillDownRef = useRef(fillDown);
-  fillDownRef.current = fillDown;
+  const finishFillDragRef = useRef(finishFillDrag);
+  finishFillDragRef.current = finishFillDrag;
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
   // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
@@ -871,10 +871,11 @@ export function SheetShell(props: SheetShellProps) {
       dragSelectRef.current = null;
       setDragSelecting(false);
       const preview = fillPreviewRef.current;
+      const drag = fillDragRef.current;
       fillDragRef.current = null;
       fillPreviewRef.current = null;
       setFillPreview(null);
-      if (preview) fillDownRef.current(preview);
+      if (preview && drag) finishFillDragRef.current(preview, drag);
     };
     window.addEventListener("mouseup", finish);
     return () => window.removeEventListener("mouseup", finish);
@@ -1542,6 +1543,15 @@ export function SheetShell(props: SheetShellProps) {
       if (!edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return; }
       void publishCells(() => onEditCells(witness, edits), edits.length, "Cleared", "clear");
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? error.message : explain(error, "These cells cannot be cleared here."), true, true); }
+  }
+
+  /** The drag's rows are positions in the view it started on, so they only mean the same cells on that view. */
+  function finishFillDrag(area: CellRectangle, drag: { identity: string | null; revision: string | undefined }): void {
+    if (drag.identity !== collectionIdentity || drag.revision !== view?.revision) {
+      announceClipboard("The table changed during the drag. Nothing was filled.", true, true);
+      return;
+    }
+    fillDown(area);
   }
 
   function fillDown(area: CellRectangle | null = selectionRectangle): void {
@@ -4973,7 +4983,9 @@ export function SheetShell(props: SheetShellProps) {
         }}
         onMouseEnter={(event) => {
           if (fillDragRef.current) {
-            const target = fillDragTarget(fillDragRef.current.source, coordinate.row);
+            if (event.buttons === 0) { fillDragRef.current = null; fillPreviewRef.current = null; setFillPreview(null); return; }
+            // Overshooting onto the new-row line fills to the last row.
+            const target = fillDragTarget(fillDragRef.current.source, draft ? displayRows.length - 1 : coordinate.row);
             fillPreviewRef.current = target;
             setFillPreview(target);
             return;
@@ -5089,6 +5101,7 @@ export function SheetShell(props: SheetShellProps) {
           aria-hidden="true"
           data-testid="fill-handle"
           onMouseDown={(event) => {
+            if (event.button !== 0) return;
             // The handle owns the press: no selection drag, text drag or focus move.
             event.preventDefault();
             event.stopPropagation();
@@ -5099,7 +5112,7 @@ export function SheetShell(props: SheetShellProps) {
               announceClipboard("Fill from one row. Filling a series isn't available yet. Nothing was filled.", true, true);
               return;
             }
-            fillDragRef.current = { source };
+            fillDragRef.current = { source, identity: collectionIdentity, revision: view?.revision };
             fillPreviewRef.current = null;
             setFillPreview(null);
           }}

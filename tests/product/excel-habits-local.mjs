@@ -526,6 +526,28 @@ const cases = [
     await settle(page);
     assert.deepEqual(await values(), ["1", "2", "3", "4"], "one Undo did not restore 1,2,3,4");
 
+    // Overshooting past the last row fills to the last row.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const overshootHandle = await page.getByTestId("fill-handle").boundingBox();
+    const lastRow = await page.getByTestId(cellIdFor(table, 3, 0)).boundingBox();
+    await page.mouse.move(overshootHandle.x + overshootHandle.width / 2, overshootHandle.y + overshootHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lastRow.x + lastRow.width / 2, lastRow.y + lastRow.height * 1.5, { steps: 8 });
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "1", "1", "1"], "dragging past the last row did not fill to the last row");
+    await settle(page);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+
+    // A right-press on the handle opens the cell menu and starts no drag.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const rightHandle = await page.getByTestId("fill-handle").boundingBox();
+    await page.mouse.click(rightHandle.x + rightHandle.width / 2, rightHandle.y + rightHandle.height / 2, { button: "right" });
+    await page.getByRole("menu", { name: "Cell actions" }).waitFor();
+    await page.keyboard.press("Escape");
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "a right-press on the fill handle changed cells");
+
     // A formula copies with its rows shifted, so each target recalculates.
     await newTable(page, "Fill formula", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 2), "3"], row + 1);
