@@ -183,12 +183,15 @@ fn grid_screen(state: GridState) -> impl IntoElement {
                 )
                 .child(button("grid-commit", "Commit grid cell", move || {
                     state.commit();
-                }))
-                .child(
-                    view()
-                        .test_id("grid-status")
-                        .child(text(move || state.status.get()).text_size(px(13.0))),
-                ),
+                })),
+        )
+        // On its own line: the test surface is phone-sized (390 pt wide), and
+        // in the row above the status is pushed outside the window and so off
+        // screen, where `app.texts()` cannot read it.
+        .child(
+            view()
+                .test_id("grid-status")
+                .child(text(move || state.status.get()).text_size(px(13.0))),
         )
         .child(
             view()
