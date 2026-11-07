@@ -96,7 +96,7 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     page.setDefaultTimeout(10_000);
     await page.goto(LOCAL_ORIGIN);
     await waitForColdHome(page);
-    assert.equal(await page.getByTestId("open-work-file").isDisabled(), true);
+    assert.equal(await page.getByTestId("open-work-file").isDisabled(), false);
     return page;
   }
   const snapshot = page => page.locator('table[aria-label="Table"]').evaluate(table => ({
@@ -137,7 +137,7 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     assert.deepEqual(initial.columns, ["Item Name", "項目", "Amount"]);
     assert.deepEqual(initial.cells.map(cell => cell.value), ["Tea", "飲食", "4.5"]);
     await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-    assert.equal(await page.getByRole("button", { name: "Download work file (.ro)", exact: true }).isDisabled(), true);
+    await page.getByRole("button", { name: "Download work file (.ro)", exact: true, disabled: false }).waitFor();
     await page.getByRole("button", { name: "Save a copy", exact: true }).click();
     const copy = page.getByRole("dialog", { name: "Save a copy", exact: true });
     await copy.getByLabel("Copy name", { exact: true }).fill("Q4");

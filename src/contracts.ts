@@ -377,7 +377,6 @@ export interface SheetShellProps {
   onRetryCopies?(): Promise<void>;
   onOpenFiles(files: FileList): Promise<void>;
   onOpenWorkFile?(file: File): Promise<void>;
-  workFileUnavailableReason?: string | null;
   workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;

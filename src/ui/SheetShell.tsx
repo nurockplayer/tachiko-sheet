@@ -500,7 +500,6 @@ export function SheetShell(props: SheetShellProps) {
     onOpenFiles,
     workFileSaveUnavailableReason = null,
     onOpenWorkFile = async () => { throw new Error("Opening work files is unavailable."); },
-    workFileUnavailableReason = null,
     workFileOmissions = [],
     onNewTable,
     onInsertRow,
@@ -833,7 +832,6 @@ export function SheetShell(props: SheetShellProps) {
   const [reportRenderReadyKey, setReportRenderReadyKey] = useState("unavailable");
   const [reportTextDraft, setReportTextDraft] = useState<ReportTextDraft | null>(null);
 
-  const workFileReasonId = useId();
   const saveUnavailableId = useId();
   const [downloadOmissions, setDownloadOmissions] = useState<string[]>([]);
   const fileInputId = useId();
@@ -2109,7 +2107,7 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
   }, [controlsLocked, currentness, formulaDraftActive, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view]);
   const cellDraftActive = editor !== null && editor.entity !== DRAFT_ROW && editor.value !== editor.original;
-  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || workFileUnavailableReason !== null;
+  const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   // Downloads snapshot the published revision, so unpublished drafts block them.
   const spreadsheetDraftLocked = cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   // Print, like a download, waits for unapplied edits: it prints Work's values.
@@ -3670,10 +3668,9 @@ export function SheetShell(props: SheetShellProps) {
   });
 
   function workFileInput(locked: boolean): ReactNode {
-    const unavailable = workFileUnavailableReason !== null;
-    return <label className={`ts-button ts-home-file-action${locked || unavailable ? " ts-home-file-action--disabled" : ""}`} aria-disabled={locked || unavailable}>
+    return <label className={`ts-button ts-home-file-action${locked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={locked}>
       <span>Open work file…</span>
-      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked || unavailable} aria-describedby={unavailable ? workFileReasonId : undefined} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
     </label>;
   }
 
@@ -4400,7 +4397,6 @@ export function SheetShell(props: SheetShellProps) {
             <span className="ts-home-other-copy"><strong>Open a Tachiko work file</strong><span>Open tables, values, formulas and summaries from a .ro file. The file stays unchanged.</span></span>
             {workFileInput(fileActionsLocked)}
           </div>
-          {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
             <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Up to 32 sheets of 32 columns and 128 rows each (1,024 rows in all). One plain sheet without formulas can hold up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
@@ -5458,13 +5454,12 @@ export function SheetShell(props: SheetShellProps) {
         <h3 className="ts-content-heading">Download</h3>
         <p className="ts-subtle">Prepare a file from your current work. Review what it includes and any changes or warnings before downloading.</p>
         <div className="ts-row-actions">
-          <button type="button" className="ts-button" disabled={workFileDownloadLocked} aria-describedby={workFileUnavailableReason ? workFileReasonId : undefined} onClick={(event) => void prepareDownload("ro", event.currentTarget)}>Download work file (.ro)</button>
+          <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => void prepareDownload("ro", event.currentTarget)}>Download work file (.ro)</button>
           <button type="button" className="ts-button" disabled={spreadsheetDownloadLocked} aria-describedby={spreadsheetDraftLocked ? spreadsheetDraftLockId : !interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
           <button type="button" className="ts-button" disabled={spreadsheetDownloadLocked} aria-describedby={spreadsheetDraftLocked ? spreadsheetDraftLockId : !interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("xlsx", event.currentTarget)}>Prepare XLSX</button>
         </div>
-        {workFileUnavailableReason ? <p className="ts-hint" id={workFileReasonId}>{workFileUnavailableReason}</p> : null}
         {spreadsheetDraftLocked ? <p className="ts-hint" id={spreadsheetDraftLockId}>Finish or cancel unfinished edits before preparing a CSV or XLSX download.</p> : null}
-        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV downloads the active table. XLSX downloads all supported tables. Summaries and charts are not included. {view.openedFromWorkFile && !workFileUnavailableReason ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
+        {!interop?.metadata ? <p className="ts-hint" id={exportUnavailableId}>CSV downloads the active table. XLSX downloads all supported tables. Summaries and charts are not included. {view.openedFromWorkFile ? "Download the work file to keep these changes." : "Save a copy to keep your work on this device."}</p> : null}
         {interop?.downloadStatus === "failed" ? <p className="ts-dialog-error" role="alert">{interop.downloadError ?? "The download failed; the current work is still open and unsaved changes were preserved."}</p> : null}
       </section>
     </div>;
@@ -5551,7 +5546,7 @@ export function SheetShell(props: SheetShellProps) {
             {selector("Product category", "productCategoryField", fields(j4Binding?.productsCollection ?? ""))}
             {selector("Product price", "productPriceField", fields(j4Binding?.productsCollection ?? ""))}
           </div>
-          <p className="ts-hint">{workFileUnavailableReason ?? "Download a work file from Import & export to keep your tables and summaries."}</p>
+          <p className="ts-hint">Download a work file from Import & export to keep your tables and summaries.</p>
           <button type="button" className="ts-button ts-button--primary" onClick={() => void create()} disabled={controlsLocked || j4Pending || !bindingReady}>{j4Pending ? "Creating…" : "Create cross-table summary"}</button>
         </>}
       </section>
