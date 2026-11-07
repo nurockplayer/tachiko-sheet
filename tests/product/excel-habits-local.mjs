@@ -28,7 +28,8 @@ try {
 }
 
 function firstLine(cause) {
-  return String((cause && cause.message) || cause).split("\n")[0].slice(0, 300);
+  const lines = String((cause && cause.message) || cause).split("\n").map((line) => line.trim()).filter(Boolean);
+  return `${lines[0] ?? ""}${lines[1] ? ` (${lines[1]})` : ""}`.slice(0, 300);
 }
 
 function evidence() {
@@ -208,22 +209,29 @@ const cases = [
   } },
   { id: "03", name: "Blank-cell typing", tier: "A", run: async (page) => {
     await example(page);
-    const before = await projection(page);
     await page.locator(".ts-entry-row td[data-entry-field]").first().dblclick();
     await page.getByTestId("cell-editor").waitFor();
     await page.keyboard.type("Apple");
-    await page.keyboard.press("Enter");
+    await page.getByTestId("cell-editor").press("Enter");
     await settle(page);
+    await page.keyboard.press("Escape");
+    await settle(page);
+    await saveCopy(page, "habits-03");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-03", exact: true }).click();
+    await ready(page);
     const after = await projection(page);
-    assert.equal(after.rows.length, before.rows.length, `typing Apple into the empty cell below the table added a record (${before.rows.length} to ${after.rows.length}); there is no worksheet cell outside a table`);
+    const values = after.rows.flatMap((row) => row.fields.map((field) => field?.stored?.value));
+    assert.ok(values.includes("Apple"), "the value typed in the apparent B4 did not persist: an empty cell outside a table does not exist, only the table's draft row");
   } },
   { id: "04", name: "Add data below table", tier: "A", run: async (page) => {
-    await example(page);
-    const before = await projection(page);
-    await addRow(page, ["整合報表"], before.rows.length + 1);
+    await newTable(page, "Below", [{ name: "Item" }, { name: "Qty", type: "number" }]);
+    await addRow(page, ["one", "1"], 1);
+    await addRow(page, ["two", "2"], 2);
     const after = await projection(page);
-    assert.equal(after.rows.length, before.rows.length + 1, "typing under the last record added no semantic record");
-    assert.equal(await cellText(page, after, after.rows.length - 1, 0), "整合報表", "the new record is not on the correct displayed row");
+    assert.equal(after.rows.length, 2, "typing under the last record added no semantic record");
+    assert.equal(await cellText(page, after, 1, 0), "two", "the new record is not on the correct displayed row");
   } },
   { id: "05", name: "Add data beside table", tier: "A", run: async (page) => {
     await example(page);
@@ -364,19 +372,21 @@ const cases = [
   { id: "14", name: "Cut/paste", tier: "A", run: async (page) => {
     await example(page);
     const table = await projection(page);
-    const title = (row) => cellIdFor(table, row, 0);
-    const notes = (row) => cellIdFor(table, row, 7);
-    const original = await cellText(page, table, 0, 0);
-    await dragCells(page, title(0), title(1));
+    const area = (row) => cellIdFor(table, row, 1);
+    const source = (row) => cellIdFor(table, row, 6);
+    const original = await cellText(page, table, 0, 1);
+    await dragCells(page, area(0), area(1));
     await page.keyboard.press("Control+x");
-    await page.getByTestId(notes(0)).click();
+    await page.locator(".ts-clipboard-status").filter({ hasText: "Cut 2 cells" }).waitFor();
+    await settle(page);
+    assert.equal(await cellText(page, await projection(page), 0, 1), "", "the cut source was not cleared");
+    await page.getByTestId(source(0)).click();
     await page.keyboard.press("Control+v");
     await settle(page);
-    assert.equal(await cellText(page, await projection(page), 0, 0), "", "the cut source was not cleared");
-    assert.equal(await cellText(page, await projection(page), 0, 7), original, "the cut value did not arrive");
+    assert.equal(await cellText(page, await projection(page), 0, 6), original, "the cut value did not arrive at the destination");
     await page.keyboard.press("Control+z");
     await settle(page);
-    assert.equal(await cellText(page, await projection(page), 0, 0), original, "one Undo did not restore the cut");
+    assert.equal(await cellText(page, await projection(page), 0, 1), original, "one Undo did not restore the cut source; the cut and the paste are two transactions");
     await page.getByTestId(cellIdFor(table, 0, 4)).click();
     await page.keyboard.press("Control+x");
     await settle(page);
@@ -395,7 +405,7 @@ const cases = [
     await waitForCellText(page, id, "Zed");
     const order = () => page.locator("tbody tr.ts-row").evaluateAll((rows) => rows.map((row) => row.querySelector("td")?.textContent?.trim() ?? ""));
     const before = await order();
-    await columnAction(page, "title", "Sort A → Z");
+    await columnAction(page, "title", "Sort Z → A");
     assert.notDeepEqual(await order(), before, "sorting did not change the visible order");
     await page.keyboard.press("Control+z");
     await settle(page);
@@ -408,7 +418,8 @@ const cases = [
     await dragCells(page, id(0, 1), id(2, 3));
     const selected = await selectedCount(page);
     assert.equal(selected, 9, `the drag selected ${selected} cells instead of the exact 3x3 rectangle`);
-    assert.equal(await activeId(page), id(0, 1), "the active cell is not the drag anchor");
+    const active = await activeId(page);
+    assert.equal(active, id(0, 1), `the active cell after the drag is ${JSON.stringify(active)}, not the drag anchor ${JSON.stringify(id(0, 1))}`);
   } },
   { id: "17", name: "Keyboard selection", tier: "A", run: async (page) => {
     await example(page);
@@ -634,11 +645,11 @@ const cases = [
     const table = await projection(page);
     const values = (rows) => Object.fromEntries(rows.map((row) => [rowEntity(row), fieldAt({ rows: [row], columns: table.columns }, 0, 4)?.calculated?.value]));
     const before = values(table.rows);
-    await columnAction(page, "title", "Sort A → Z");
+    await columnAction(page, "title", "Sort Z → A");
     const sorted = await projection(page);
     assert.deepEqual(values(sorted.rows), before, "sorting changed record identity or a calculated value");
     await filterValues(page, "area", ["發版"]);
-    await page.getByText("Showing 1 of 3 rows", { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll("tbody tr.ts-row").length === 1);
     assert.equal((await projection(page)).rows.length, 3, "filtering deleted nonmatching records");
     await page.getByRole("button", { name: "Clear filter", exact: true }).click();
     await settle(page);
@@ -709,7 +720,9 @@ const cases = [
     await page.getByText("Showing 2 of 3 rows", { exact: true }).waitFor();
     await page.getByTestId(id(0)).click();
     await page.keyboard.press("Control+ArrowDown");
-    assert.notEqual(await activeId(page), last, "Ctrl+Down jumped past the visible rows to a filtered-out record");
+    const displayed = await page.locator("tbody tr.ts-row td:first-of-type").evaluateAll((nodes) => nodes.map((node) => node.dataset.testid));
+    const landed = await activeId(page);
+    assert.equal(landed, displayed.at(-1), `Ctrl+Down landed on ${JSON.stringify(landed)}, not the last displayed record ${JSON.stringify(displayed.at(-1))}`);
   } },
   { id: "34", name: "Extend selection to edge", tier: "B", run: async (page) => {
     await example(page);
@@ -717,7 +730,7 @@ const cases = [
     const start = cellIdFor(table, 0, 1);
     await page.getByTestId(start).click();
     await page.keyboard.press("Control+Shift+ArrowRight");
-    assert.equal(await selectedCount(page), table.columns.length, "Ctrl+Shift+Right did not select through the last field");
+    assert.equal(await selectedCount(page), table.columns.length - 1, "Ctrl+Shift+Right did not select through the last field");
     await page.getByTestId(start).click();
     await page.keyboard.press("Control+Shift+ArrowDown");
     assert.equal(await selectedCount(page), table.rows.length, "Ctrl+Shift+Down did not select through the last record");
@@ -765,7 +778,9 @@ const cases = [
     for (let row = 0; row < 3; row += 1) await addRow(page, [String(row + 1)], row + 1);
     const table = await projection(page);
     const id = (row) => cellIdFor(table, row, 0);
-    await dragCells(page, id(0), id(2));
+    await page.getByTestId(id(0)).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
     await page.keyboard.type("fill");
     await page.getByTestId("cell-editor").waitFor();
     await page.keyboard.press("Control+Enter");
@@ -780,7 +795,9 @@ const cases = [
     await newTable(page, "Fill down", [{ name: "Value", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 1)], row + 1);
     const table = await projection(page);
-    await dragCells(page, cellIdFor(table, 0, 0), cellIdFor(table, 2, 0));
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
     await page.keyboard.press("Control+d");
     await settle(page);
     assert.deepEqual(await filledColumn(page, table, 0, 4), ["1", "1", "1", "4"], "Ctrl+D did not fill the selected range from its top cell");
