@@ -734,6 +734,8 @@ export function SheetShell(props: SheetShellProps) {
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
+  // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
+  const [showFormulas, setShowFormulas] = useState(false);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell: GridPosition; pasteSpecial?: boolean } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -3348,6 +3350,15 @@ export function SheetShell(props: SheetShellProps) {
       }
       return;
     }
+    // Ctrl+` shows each formula cell's source instead of its result, and back.
+    // Excel uses Control on every platform for this one.
+    if (!draft && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key === "`" || event.code === "Backquote")) {
+      event.preventDefault();
+      const next = !showFormulas;
+      setShowFormulas(next);
+      announceClipboard(next ? "Showing formulas. Press Ctrl+` to show results." : "Showing results.", false, true);
+      return;
+    }
     // Ctrl/Cmd+; seeds today's date in an editable Date cell, as Excel does.
     if (!draft && mod && !event.shiftKey && event.key === ";") {
       event.preventDefault();
@@ -5112,7 +5123,10 @@ export function SheetShell(props: SheetShellProps) {
     const draft = entity === DRAFT_ROW;
     const raw = boundRowDraft?.values[column.id] ?? "";
     const draftBoolean = column.field_type === "boolean" ? parseBooleanDraft(raw) : null;
-    const display: FieldDisplay = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null } : cellDisplay(row!, column);
+    const shownFormula = !draft && showFormulas ? fieldForColumn(row!, column.id)?.formula?.source ?? null : null;
+    const display: FieldDisplay = draft ? { text: draftBoolean !== null ? booleanText(draftBoolean) : raw, tone: "plain", title: null }
+      : shownFormula !== null ? { text: `=${shownFormula}`, tone: "plain", title: null }
+      : cellDisplay(row!, column);
     const key = cellKey(entity, column.id);
     const cellIdentity = `${viewKey ?? ""}\u0000${key}`;
     const focusedEntity = focusedKey?.split("\u0000")[0];
