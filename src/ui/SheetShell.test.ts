@@ -1043,11 +1043,11 @@ describe("SheetShell static rendering", () => {
     expect(rowViewStatusText(columns, {}, 2, 2)).toBe(null);
     expect(rowViewStatusText(columns, { sort: { field: "c-impact", direction: "desc" } }, 2, 2))
       .toBe("Sorted by impact ↓");
-    expect(rowViewStatusText(columns, { filter: { field: "c-title", text: "alpha" } }, 12, 40))
+    expect(rowViewStatusText(columns, { filters: [{ field: "c-title", kind: "contains", text: "alpha" }] }, 12, 40))
       .toBe("Showing 12 of 40 rows");
     expect(rowViewStatusText(columns, {
       sort: { field: "c-title", direction: "asc" },
-      filter: { field: "c-title", text: "alpha" },
+      filters: [{ field: "c-title", kind: "contains", text: "alpha" }],
     }, 12, 40)).toBe("Sorted by title ↑ · Showing 12 of 40 rows");
   });
 

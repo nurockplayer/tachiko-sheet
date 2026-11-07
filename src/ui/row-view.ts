@@ -7,14 +7,16 @@ export interface RowViewSort {
   direction: "asc" | "desc";
 }
 
-export interface RowViewFilter {
-  field: string;
-  text: string;
-}
+export type RowViewComparison = "=" | "<>" | "<" | "<=" | ">" | ">=";
+export type RowViewFilter =
+  | { field: string; kind: "contains"; text: string }
+  | { field: string; kind: "values"; values: readonly string[] }
+  | { field: string; kind: "number"; op: RowViewComparison; value: number }
+  | { field: string; kind: "date"; op: RowViewComparison; value: string };
 
 export interface RowViewSettings {
   sort?: RowViewSort;
-  filter?: RowViewFilter;
+  filters?: readonly RowViewFilter[];
   /** Rows just added or edited while a filter is active; visible until it changes. */
   kept?: ReadonlySet<string>;
   /** Column id → CSS px. A view width, never part of the work file. */
@@ -78,14 +80,14 @@ export function pastePastVisibleRows(startRow: number, pastedRows: number, visib
  * unsorted, unfiltered paste exactly as it was.
  */
 export function rowViewPasteRefusal(
-  settings: Pick<RowViewSettings, "sort" | "filter">,
+  settings: Pick<RowViewSettings, "sort" | "filters">,
   startRow: number,
   pastedRows: number,
   visibleRows: number,
 ): string | null {
   if (!pastePastVisibleRows(startRow, pastedRows, visibleRows)) return null;
   const sorted = settings.sort !== undefined;
-  const filtered = (settings.filter?.text.trim() ?? "") !== "";
+  const filtered = Boolean(settings.filters?.length);
   if (sorted && filtered) return "Clear the sort and filter to paste past the visible rows.";
   if (sorted) return "Clear the sort to paste past the last row.";
   if (filtered) return "Clear the filter to paste past the visible rows.";
@@ -108,7 +110,8 @@ export function rowViewRecordForOccurrence(current: RowViewRecord, occurrence: s
  */
 export function rowViewSettingsForColumns(settings: RowViewSettings, columnIds: ReadonlySet<string>): RowViewSettings {
   const dropSort = settings.sort !== undefined && !columnIds.has(settings.sort.field);
-  const dropFilter = settings.filter !== undefined && !columnIds.has(settings.filter.field);
+  const filters = settings.filters?.filter(filter => columnIds.has(filter.field));
+  const dropFilter = filters?.length !== settings.filters?.length;
   const keptWidths = settings.widths
     ? Object.fromEntries(Object.entries(settings.widths).filter(([field]) => columnIds.has(field)))
     : undefined;
@@ -117,21 +120,20 @@ export function rowViewSettingsForColumns(settings: RowViewSettings, columnIds: 
   return {
     ...settings,
     sort: dropSort ? undefined : settings.sort,
-    filter: dropFilter ? undefined : settings.filter,
+    filters: dropFilter ? (filters?.length ? filters : undefined) : settings.filters,
     kept: dropFilter ? undefined : settings.kept,
     widths: dropWidths ? (Object.keys(keptWidths!).length > 0 ? keptWidths : undefined) : settings.widths,
   };
 }
 
 /** Apply a filter; changing or clearing it discards kept rows. */
-export function rowViewSettingsForFilter(settings: RowViewSettings, field: string, text: string): RowViewSettings {
-  const trimmed = text.trim();
-  const unchanged = settings.filter?.field === field && settings.filter?.text === trimmed;
-  return {
-    ...settings,
-    filter: trimmed ? { field, text: trimmed } : undefined,
-    kept: unchanged ? settings.kept : undefined,
-  };
+export function rowViewSettingsForFilter(settings: RowViewSettings, field: string, next: RowViewFilter | null): RowViewSettings {
+  if (next?.kind === "contains") next = next.text.trim() ? { ...next, text: next.text.trim() } : null;
+  const previous = settings.filters?.find(filter => filter.field === field);
+  const canonical = (filter: RowViewFilter | null | undefined) => JSON.stringify(filter?.kind === "values" ? { ...filter, values: [...filter.values].sort() } : filter ?? null);
+  if (canonical(previous) === canonical(next)) return settings;
+  const filters = [...(settings.filters ?? []).filter(filter => filter.field !== field), ...(next ? [next] : [])];
+  return { ...settings, filters: filters.length ? filters : undefined, kept: undefined };
 }
 
 /**
@@ -139,9 +141,9 @@ export function rowViewSettingsForFilter(settings: RowViewSettings, field: strin
  * direction, or a different filter, remaps display addresses, so anything
  * anchored to them (a rectangular selection) is invalid once this changes.
  */
-export function rowViewDisplaySignature(settings: Pick<RowViewSettings, "sort" | "filter">): string {
+export function rowViewDisplaySignature(settings: Pick<RowViewSettings, "sort" | "filters">): string {
   const sort = settings.sort ? `${settings.sort.field}\u0000${settings.sort.direction}` : "";
-  const filter = settings.filter ? `${settings.filter.field}\u0000${settings.filter.text}` : "";
+  const filter = JSON.stringify([...(settings.filters ?? [])].sort((a, b) => a.field < b.field ? -1 : a.field > b.field ? 1 : 0).map(item => item.kind === "values" ? { ...item, values: [...item.values].sort() } : item));
   return `${sort}\u0001${filter}`;
 }
 
@@ -150,7 +152,7 @@ export function rowViewDisplaySignature(settings: Pick<RowViewSettings, "sort" |
  * row. Without a filter the row is visible anyway, so nothing is kept.
  */
 export function rowViewKeepingRows(settings: RowViewSettings, entities: readonly string[]): RowViewSettings {
-  if (!settings.filter || entities.length === 0) return settings;
+  if (!settings.filters?.length || entities.length === 0) return settings;
   const kept = new Set(settings.kept);
   for (const entity of entities) kept.add(entity);
   return { ...settings, kept };
@@ -189,15 +191,17 @@ export function rowViewOrder(
   columns: readonly TableColumn[],
   settings: RowViewSettings = {},
 ): TableRow[] {
-  const filterText = settings.filter?.text.trim().toLowerCase() ?? "";
-  const filterColumn = filterText ? columns.find((column) => column.id === settings.filter!.field) : undefined;
+  const filters = (settings.filters ?? []).flatMap(filter => {
+    const column = columns.find(item => item.id === filter.field);
+    return column ? [{ filter, column }] : [];
+  });
   const sort = settings.sort;
   const sortColumn = sort ? columns.find((column) => column.id === sort.field) : undefined;
   const kept = settings.kept ?? NO_KEPT;
 
   const entries: SortableRow[] = [];
   rows.forEach((row, index) => {
-    if (filterColumn && !kept.has(rowEntity(row)) && !matchesFilter(row, filterColumn, filterText)) return;
+    if (!kept.has(rowEntity(row)) && !filters.every(({ filter, column }) => matchesFilter(row, column, filter))) return;
     entries.push(sortColumn ? sortableRow(row, index, sortColumn) : { row, index, blank: false, number: null, text: "" });
   });
 
@@ -217,8 +221,41 @@ export function rowViewOrder(
   return entries.map((entry) => entry.row);
 }
 
-function matchesFilter(row: TableRow, column: TableColumn, text: string): boolean {
-  return cellDisplay(row, column).text.trim().toLowerCase().includes(text);
+export function rowViewValueChoices(rows: readonly TableRow[], column: TableColumn, limit = 200): { values: string[]; truncated: boolean } {
+  const values = [...new Set(rows.map(row => cellDisplay(row, column).text))].sort((a, b) => a === "" ? (b === "" ? 0 : -1) : b === "" ? 1 : COLLATOR.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0));
+  return { values: values.slice(0, limit), truncated: values.length > limit };
+}
+
+/** What a condition's draft still needs. Text kept from Contains can be a partial date, which the date box shows as empty. */
+export function rowViewConditionError(fieldType: string, text: string): string | null {
+  if (fieldType === "date") return /^\d{4}-\d{2}-\d{2}$/.test(text) ? null : "Enter a date.";
+  return text.trim() && Number.isFinite(Number(text)) ? null : "Enter a number.";
+}
+
+/** Whether every value on offer is checked, so the filter would hide nothing. A checked value an edit has since removed doesn't count. */
+export function rowViewChoicesAllChecked(choices: { values: readonly string[]; truncated: boolean }, checked: readonly string[]): boolean {
+  return !choices.truncated && choices.values.every(value => checked.includes(value));
+}
+
+function matchesFilter(row: TableRow, column: TableColumn, filter: RowViewFilter): boolean {
+  const display = cellDisplay(row, column).text;
+  if (filter.kind === "contains") return display.trim().toLowerCase().includes(filter.text.trim().toLowerCase());
+  if (filter.kind === "values") return filter.values.includes(display);
+  const field = fieldForColumn(row, column.id);
+  if (isBlank(row, column, field === null)) return false;
+  const value = field?.calculated ? (field.calculated.status === "value" ? field.calculated.value : null)
+    : field?.stored?.kind === filter.kind ? field.stored.value : null;
+  if (filter.kind === "number" && (typeof value !== "number" || !Number.isFinite(value))) return false;
+  if (filter.kind === "date" && typeof value !== "string") return false;
+  if (value === null) return false;
+  switch (filter.op) {
+    case "=": return value === filter.value;
+    case "<>": return value !== filter.value;
+    case "<": return value < filter.value;
+    case "<=": return value <= filter.value;
+    case ">": return value > filter.value;
+    case ">=": return value >= filter.value;
+  }
 }
 
 function sortableRow(row: TableRow, index: number, column: TableColumn): SortableRow {
