@@ -78,6 +78,7 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     await installDistRoutes(context, "dist-desktop");
     await context.exposeBinding("nativeInvoke", async (_, command, bytes) => {
       if (command === "page_identity") return 1;
+      if (command === "take_opened_file") return [];
       if (command === "runtime_attach") return Number((await call(0, Buffer.alloc(0))).readBigUInt64LE());
       assert.equal(command, "runtime_dispatch", "local persistence adds no native file command");
       const frame = Buffer.from(bytes);
@@ -88,7 +89,7 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
       window.__TAURI_INTERNALS__ = {
         invoke: async (command, args) => {
           const result = await window.nativeInvoke(command, args instanceof Uint8Array ? [...args] : null);
-          return command === "runtime_dispatch" ? new Uint8Array(result).buffer : result;
+          return command === "runtime_dispatch" || command === "take_opened_file" ? new Uint8Array(result).buffer : result;
         },
       };
     });

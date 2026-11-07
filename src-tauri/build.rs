@@ -4,6 +4,7 @@ const COMMANDS: &[&str] = &[
     "window_close_check",
     "page_identity",
     "save_export",
+    "take_opened_file",
 ];
 const E2E_COMMANDS: &[&str] = &[
     "runtime_attach",
@@ -11,6 +12,7 @@ const E2E_COMMANDS: &[&str] = &[
     "window_close_check",
     "page_identity",
     "save_export",
+    "take_opened_file",
     "e2e_result",
     "e2e_request_close",
     "e2e_request_quit",

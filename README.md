@@ -53,7 +53,6 @@ Each release's notes list its limits. The main ones right now:
 
 - Windows and Linux are the least tested, and nobody has tried their installers by hand yet.
 - Tables of 65 rows or more with text columns can't hold formulas yet.
-- The desktop apps have no File > Open or double-click to open.
 - Printing is not verified by hand, so check a printout or PDF before relying on it.
 - Some CSV and XLSX features and data shapes are unsupported.
 

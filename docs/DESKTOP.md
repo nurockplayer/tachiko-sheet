@@ -150,10 +150,14 @@ tools show an unknown-publisher warning, and there is no code signing.
   unknown publisher.
 - Logging out or shutting down while Tachiko Sheet is open is cancelled once
   so the app can ask about unsaved work; afterwards, log out or shut down again.
-- No file associations or Finder "Open With".
-- Opening a project folder and importing files use the system Open panel via the
-  existing file inputs; there is no native menu "Open…" yet.
-- File has New Table, Save, Save a Copy and Print; Edit's Undo and Redo reach the
+- File > Open, double-click and Open With take .ro, .xlsx and .csv files (File > Open
+  also .tsv and .txt). The host reads the file; the page never names a path. While
+  work is open, the page asks to close it first and drops the file. Installers
+  register .xlsx and .csv as well as .ro; on Windows that may make the app their
+  default unless the person has already chosen one. Windows and Linux start a new
+  process per double-click, each with its own window.
+- Opening a project folder uses the system Open panel via the existing file input.
+- File has New Table, Open, Save, Save a Copy and Print; Edit's Undo and Redo reach the
   table's history, and a text field's own Undo while one has focus. They are always
   enabled: a command that can't run does nothing or says why on the page.
 

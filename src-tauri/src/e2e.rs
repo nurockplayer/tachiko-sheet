@@ -34,6 +34,11 @@ pub fn download_folder() -> Option<PathBuf> {
     std::env::var_os("TACHIKO_SHEET_E2E_DOWNLOADS").map(PathBuf::from)
 }
 
+/// The file the "person" picks in File > Open's panel (`TACHIKO_SHEET_E2E_OPEN_ANSWER`).
+pub fn open_answer() -> Option<PathBuf> {
+    std::env::var_os("TACHIKO_SHEET_E2E_OPEN_ANSWER").map(PathBuf::from)
+}
+
 /// How long the "person" takes in the Save panel (`TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS`).
 pub fn download_delay() -> Option<Duration> {
     std::env::var("TACHIKO_SHEET_E2E_DOWNLOAD_DELAY_MS")
