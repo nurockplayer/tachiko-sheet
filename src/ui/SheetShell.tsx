@@ -1554,6 +1554,9 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
+  const pasteDecodedRef = useRef(pasteDecoded);
+  pasteDecodedRef.current = pasteDecoded;
+
   function closeCellMenu(): void {
     const open = cellMenu;
     setCellMenu(null);
@@ -1609,7 +1612,8 @@ export function SheetShell(props: SheetShellProps) {
         announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true);
         return;
       }
-      pasteDecoded(position, decoded);
+      // The read can take a while: this render's draft and busy checks may be out of date by now.
+      pasteDecodedRef.current(position, decoded);
     };
     return [
       { label: "Cut", shortcut: menuShortcut("X", mac), disabled: blocked, run: command(() => { document.execCommand("cut"); }) },
