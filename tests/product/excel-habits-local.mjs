@@ -544,6 +544,17 @@ const cases = [
     await page.keyboard.press("Control+z");
     await settle(page);
 
+    // Escape during the drag cancels it: the release fills nothing.
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const escapeHandle = await fillHandleBox(page);
+    await page.mouse.move(escapeHandle.x + escapeHandle.width / 2, escapeHandle.y + escapeHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lastRow.x + lastRow.width / 2, lastRow.y + lastRow.height / 2, { steps: 8 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "releasing after Escape still filled");
+
     // A right-press on the handle opens the cell menu and starts no drag.
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
     const rightHandle = await fillHandleBox(page);

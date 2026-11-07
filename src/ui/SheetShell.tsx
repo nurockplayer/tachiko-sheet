@@ -877,8 +877,21 @@ export function SheetShell(props: SheetShellProps) {
       setFillPreview(null);
       if (preview && drag) finishFillDragRef.current(preview, drag);
     };
+    // Escape during a fill drag cancels the drag and nothing else.
+    const cancelFillDrag = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !fillDragRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      fillDragRef.current = null;
+      fillPreviewRef.current = null;
+      setFillPreview(null);
+    };
     window.addEventListener("mouseup", finish);
-    return () => window.removeEventListener("mouseup", finish);
+    window.addEventListener("keydown", cancelFillDrag, true);
+    return () => {
+      window.removeEventListener("mouseup", finish);
+      window.removeEventListener("keydown", cancelFillDrag, true);
+    };
   }, []);
   const resultsHideButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultsShowButtonRef = useRef<HTMLButtonElement | null>(null);
