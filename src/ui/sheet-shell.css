@@ -1594,7 +1594,10 @@ body { margin: 0; }
 .ts-cell--editing {
   position: relative;
   background: var(--ts-selection-active-background);
-  /* The multiline editor draws over the rows below; the sticky header stays above it. */
+}
+
+/* The multiline editor draws over the rows below; the sticky header stays above it. */
+.ts-grid td.ts-cell--editing {
   overflow: visible;
   z-index: 1;
 }

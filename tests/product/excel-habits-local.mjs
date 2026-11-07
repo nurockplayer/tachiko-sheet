@@ -1371,6 +1371,7 @@ const cases = [
   { id: "45", name: "Multiline editing", tier: "B", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
+    const before = String(fieldAt(table, 0, 7)?.stored?.value);
     await page.getByTestId(cellIdFor(table, 0, 7)).press("F2");
     const editor = page.getByTestId("cell-editor");
     await editor.waitFor();
@@ -1396,7 +1397,7 @@ const cases = [
     await settle(page);
     await page.keyboard.press("Control+z");
     await settle(page);
-    assert.equal(await stored(), "Line one", "the unchanged F2 then Enter added a history entry");
+    assert.equal(await stored(), before, "the unchanged F2 then Enter added a history entry");
     await page.keyboard.press("Control+y");
     await settle(page);
     assert.equal(await stored(), "Line one\nLine two", "Redo did not restore the accepted edit");
