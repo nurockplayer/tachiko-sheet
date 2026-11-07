@@ -51,14 +51,27 @@ fn range_label(app: &Entity<GridApp>, cx: &App) -> Option<String> {
     app.read(cx).table().read(cx).delegate().range.label()
 }
 
+/// Two frames: the first applies deferred scrolls, the second registers the
+/// elements they brought into view. Only rendered frames register elements.
+fn settle(window: &mut Window, cx: &mut App) {
+    window.render_frame(cx);
+    window.render_frame(cx);
+}
+
 /// The center of the first visible element with this id. The table may
 /// register a fixed copy and a scrolling copy of the same cell.
 fn cell_center(window: &Window, id: &str) -> Point<Pixels> {
-    window
-        .find_all(id.to_string())
+    let elements = window.find_all(id.to_string());
+    let visible = elements.iter().filter(|element| element.visible()).count();
+    assert!(
+        visible > 0,
+        "no visible table cell {id}: find_all returned {} element(s), {visible} visible",
+        elements.len()
+    );
+    elements
         .into_iter()
         .find(|element| element.visible())
-        .unwrap_or_else(|| panic!("no visible table cell {id}"))
+        .expect("checked visible above")
         .bounds()
         .center()
 }
@@ -89,11 +102,11 @@ fn assert_g1(cx: &mut TestAppContext, dims: GridSize) {
     cx.update_window(handle.into(), |_, window, cx| {
         let table = content.read(cx).table().clone();
         scroll_to_end(&table, dims, cx);
-        window.render_frame(cx);
+        settle(window, cx);
 
-        let (rows, cols) = {
+        let rows = {
             let visible = table.read(cx).visible_range();
-            (visible.rows().clone(), visible.cols().clone())
+            visible.rows().clone()
         };
         assert!(
             rows.contains(&(dims.rows - 1)),
@@ -101,11 +114,12 @@ fn assert_g1(cx: &mut TestAppContext, dims: GridSize) {
             dims.rows - 1,
             rows
         );
-        assert!(
-            cols.contains(&(dims.cols - 1)),
-            "last column {} missing from visible cols {:?}",
-            dims.cols - 1,
-            cols
+
+        // The column range is relative to the scrollable columns, so assert
+        // the last cell's element instead.
+        cell_center(
+            window,
+            &format!("table-cell:{}:{}", dims.rows - 1, dims.cols - 1),
         );
 
         let first_row = rows.start;
@@ -144,6 +158,7 @@ fn g1a_b_last_row_and_column_reachable_100k(cx: &mut TestAppContext) {
 fn drag_2_1_to_5_3(cx: &mut TestAppContext, dims: GridSize) -> Option<String> {
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
         let from = cell_center(window, "table-cell:2:1");
         let to = cell_center(window, "table-cell:5:3");
         window.drag(from, to, cx);
@@ -179,10 +194,14 @@ fn g2a_drag_selects_range_100k(cx: &mut TestAppContext) {
 fn shift_press_selects_range(cx: &mut TestAppContext, dims: GridSize) -> Option<String> {
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
         press_cell(window, cx, "table-cell:2:1", false, false);
+        settle(window, cx);
         press_cell(window, cx, "table-cell:5:3", true, false);
+        settle(window, cx);
         let label = range_label(&content, cx);
         press_cell(window, cx, "table-cell:5:3", true, true);
+        settle(window, cx);
         label
     })
     .unwrap()
@@ -215,7 +234,9 @@ fn g2b_shift_press_extends_range_100k(cx: &mut TestAppContext) {
 fn shift_arrows_select_range(cx: &mut TestAppContext, dims: GridSize) -> Option<String> {
     let (handle, content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
         window.click("table-cell:2:1", cx);
+        settle(window, cx);
         window.press("shift-down", cx);
         window.press("shift-down", cx);
         window.press("shift-right", cx);
@@ -258,11 +279,12 @@ fn g2d_drag_after_scrolling_has_no_offset_error(cx: &mut TestAppContext) {
     cx.update_window(handle.into(), |_, window, cx| {
         let table = content.read(cx).table().clone();
         table.update(cx, |table, cx| table.scroll_to_row(5_000, cx));
-        window.render_frame(cx);
+        settle(window, cx);
 
         let from = cell_center(window, "table-cell:5002:1");
         let to = cell_center(window, "table-cell:5005:3");
         window.drag(from, to, cx);
+        settle(window, cx);
 
         assert_eq!(range_label(&content, cx).as_deref(), Some("R5002C1:R5005C3"));
     })
@@ -279,6 +301,7 @@ fn g1c_scroll_timing_10k(cx: &mut TestAppContext) {
     };
     let (handle, _content) = open_grid(cx, dims);
     cx.update_window(handle.into(), |_, window, cx| {
+        settle(window, cx);
         let position = cell_center(window, "table-cell:0:0");
         let mut samples = Vec::with_capacity(200);
         for _ in 0..200 {
