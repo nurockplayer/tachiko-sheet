@@ -31,3 +31,5 @@ jobs:
         run: >-
           git diff --check HEAD^ HEAD -- .
           ':(exclude)public/core-kit/notices/THIRD_PARTY_LICENSES.md'
+          ':(exclude)THIRD_PARTY_LICENSES.md'
+          ':(exclude)public/THIRD_PARTY_LICENSES.md'

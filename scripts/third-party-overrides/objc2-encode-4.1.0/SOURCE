@@ -1,0 +1,4 @@
+url: https://raw.githubusercontent.com/madsmtm/objc2/objc2-encode-4.1.0/LICENSE.md
+revision: tag objc2-encode-4.1.0
+mit-text: https://raw.githubusercontent.com/madsmtm/objc2/8a5abacd90d5403fc0463459a35826f892b9142e/LICENSE-MIT.txt
+attribution: the release tag states no copyright line; LICENSE-MIT is upstream's own file at the commit above; Cargo.toml authors at this version: Mads Marquart <mads@marquart.dk>
