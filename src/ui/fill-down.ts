@@ -13,17 +13,18 @@ export type FillDownPlan =
 const NON_EDITABLE = "The fill range includes a calculated or non-editable cell. Nothing was filled.";
 
 /**
- * How a formula copy moves its references. Shared by fill down and formula
- * paste so the two can only change together.
+ * A reference to the formula's own row follows the row; a reference to
+ * another row stays on that row. Shared by fill down and formula paste.
  */
 export const FORMULA_COPY_AXES: Pick<FormulaCopy, "fixed_references" | "relative_rows" | "relative_columns"> = {
-  fixed_references: [], relative_rows: true, relative_columns: false,
+  fixed_references: [], relative_rows: false, relative_columns: false,
 };
 
 /**
  * `stored` is true when the displayed rows are in stored order (no sort or
- * filter). Work shifts relative formula references by stored position, so a
- * formula fill is only offered when display order and stored order agree.
+ * filter). A reference to the formula's own row follows the row; a reference
+ * to another row stays on that row. Formula fill is only offered when display
+ * order and stored order agree.
  */
 export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle | null, native: boolean, stored = true): FillDownPlan {
   if (!area || area.bottom <= area.top) throw new FillDownRefusal("Select at least two rows to fill down.");
