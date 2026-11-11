@@ -227,6 +227,7 @@ describe("a1RefusalText", () => {
   it("says what each code means without a span, with no stray leading space", () => {
     expect(a1RefusalText({ ...base, code: "unsupported_range" }))
       .toBe("That range isn't supported: SUM, AVERAGE and COUNT work only over a whole column (for example B2:B4) while no filter hides rows.");
+    expect(a1RefusalText({ ...base, code: "unsupported_criterion" })).toContain("Use a written number, a blank condition, or a cell reference");
     expect(a1RefusalText({ ...base, code: "unsupported_function" })).toContain("That function isn't available.");
     expect(a1RefusalText({ ...base, code: "unsupported_function" })).toContain("IF, AND, OR, NOT, ROUND, ISBLANK, MIN, MAX");
     expect(a1RefusalText({ ...base, code: "unsupported_operator" })).toBe("That operator isn't supported in formulas.");

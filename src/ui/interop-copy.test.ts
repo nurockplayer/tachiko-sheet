@@ -164,6 +164,9 @@ describe("native table download disclosures", () => {
     const kept = "Kept Excel's last calculated value of =SUM(D4:D8); it will not recalculate in Tachiko, and export writes the value. Tachiko calculates numeric arithmetic, comparisons, binary MIN/MAX, IF, AND, OR, NOT, ROUND, ISBLANK and SUM, AVERAGE or COUNT over one whole column.";
     expect(findingMessage(kept, "unsupported_formula_kept_value")).toBe("Tachiko kept the value Excel last calculated for =SUM(D4:D8). It is a plain value now: it will not recalculate, and downloads write the value, not the formula.");
     expect(findingMessage(kept.replace("SUM, AVERAGE", "SUM or AVERAGE"), "unsupported_formula_kept_value")).toBe(kept.replace("SUM, AVERAGE", "SUM or AVERAGE"));
+    const conditional = kept.replace("ISBLANK and SUM", "ISBLANK, SUM").replace("over one whole column.", "over one whole column, and SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS over whole columns with written number or blank criteria or a cell reference.");
+    expect(findingMessage(conditional, "unsupported_formula_kept_value")).toBe(findingMessage(kept, "unsupported_formula_kept_value"));
+    expect(findingMessage(conditional.replace("value. Tachiko", "value. text criteria can't be written in a Tachiko formula yet. Tachiko"), "unsupported_formula_kept_value")).toBe(findingMessage(kept, "unsupported_formula_kept_value"));
     expect(findingMessage('Worksheet name "Q3: \\"plan\\"" mapped to "Q3 plan".', "native_tables_worksheet_name"))
       .toBe("The table “Q3: \"plan\"” downloads as the sheet “Q3 plan”, because spreadsheet sheet names are limited.");
     expect(findingMessage("Worksheet name changed.", "native_tables_worksheet_name")).toBe("Worksheet name changed.");

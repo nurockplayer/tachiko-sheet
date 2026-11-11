@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "71032325756b2b448cbef58f7ead47d29683565c",
+  "sourceCommit": "5f2b0718f5e62eb29ddd0aa1db9634a74df14404",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "ffb76ab60b09cc617db5caf271532235cc552c0d108fbfa19877173ee69beb7c",
+  "artifactManifestSha256": "e49f0fd20d45316b8945a937d34a72aab86e84edabd16cc9a348de58cfd68d9e",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6692018212",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/pull/363",
   "qualificationArtifactReview": {
-    "sourceCommit": "71032325756b2b448cbef58f7ead47d29683565c",
-    "artifactManifestSha256": "ffb76ab60b09cc617db5caf271532235cc552c0d108fbfa19877173ee69beb7c",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6692018212"
+    "sourceCommit": "5f2b0718f5e62eb29ddd0aa1db9634a74df14404",
+    "artifactManifestSha256": "e49f0fd20d45316b8945a937d34a72aab86e84edabd16cc9a348de58cfd68d9e",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/pull/363"
   },
-  "notes": "Re-pin to Work main 71032325 (Work #662: formula limit 256; #663: new rows in a calculated column calculate by themselves; #674: change_column_type; #677: typed import capacity limit). Two clean detached exports match byte for byte; receipt with inventory on #246."
+  "notes": "Re-pin to Work 5f2b0718: working-size kit (not adopted), presentation store, conditional aggregates. Two clean detached exports match byte for byte; inventory and qualification tracked in PR #363. Product acceptance remains separate."
 }

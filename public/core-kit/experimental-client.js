@@ -3,7 +3,7 @@ import { DesignerRuntimeError } from "./runtime/client.js";
 import { WorkerDesignerClient } from "./runtime/worker-client.js";
 import { isCapacityFailure, isFormulaFailure } from "./runtime/protocol.js";
 export const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
-const MAX_CANONICAL_PROJECT_FILE_COUNT = 19;
+const MAX_CANONICAL_PROJECT_FILE_COUNT = 20;
 const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
 /**
  * Check the public canonical-tree shape before any bytes are dispatched to a
@@ -12,7 +12,7 @@ const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
  */
 export function preflightCanonicalProjectEntries(entries) {
     if (entries.length > MAX_CANONICAL_PROJECT_FILE_COUNT) {
-        throw new Error("A canonical .roproj directory cannot contain more than 19 files.");
+        throw new Error("A canonical .roproj directory cannot contain more than 20 files.");
     }
     const paths = new Set();
     let total = 8 + 4;
@@ -47,6 +47,10 @@ export async function openCanonicalTreeFromEntries(client, entries) {
 class PublicExperimentalDesignerClient extends WorkerDesignerClient {
     async openCanonicalTree(files) {
         return openCanonicalTreeFromEntries(this, files);
+    }
+    async openCanonicalTreeWorkingSize(files) {
+        preflightCanonicalProjectEntries(files);
+        return this.openProjectWorkingSize(projectTransferFromEntries(files));
     }
 }
 export function createExperimentalDesignerClient() {

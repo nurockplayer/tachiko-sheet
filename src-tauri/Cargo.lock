@@ -3418,6 +3418,7 @@ version = "0.1.0"
 source = "git+https://github.com/nurockplayer/tachiko-work?rev=5f2b0718f5e62eb29ddd0aa1db9634a74df14404#5f2b0718f5e62eb29ddd0aa1db9634a74df14404"
 dependencies = [
  "quick-xml 0.37.5",
+ "ryu-js",
  "serde",
  "serde_json",
  "tachiko-formula-engine",

@@ -127,7 +127,7 @@ export function findingMessage(message: string, code?: string, location?: string
     return "This row totals the column above it (SUM, AVERAGE or COUNT), so it is not imported as a row. Tachiko shows column totals instead, and downloads leave this row out. To import it as an ordinary row, choose “Keep the Total row as data”.";
   }
   if (code === "unsupported_formula_kept_value") {
-    const kept = /^Kept Excel's last calculated value of (=.+); it will not recalculate in Tachiko, and export writes the value\. Tachiko calculates numeric arithmetic, comparisons, binary MIN\/MAX, IF, AND, OR, NOT, ROUND, ISBLANK and SUM, AVERAGE or COUNT over one whole column\.$/.exec(message);
+    const kept = /^Kept Excel's last calculated value of (=.+); it will not recalculate in Tachiko, and export writes the value\.(?: [^.]+\.)? Tachiko calculates numeric arithmetic, comparisons, binary MIN\/MAX, IF, AND, OR, NOT, ROUND, ISBLANK(?: and SUM, AVERAGE or COUNT over one whole column|, SUM, AVERAGE or COUNT over one whole column, and SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS over whole columns with written number or blank criteria or a cell reference)\.$/.exec(message);
     if (kept) return `Tachiko kept the value Excel last calculated for ${kept[1]}. It is a plain value now: it will not recalculate, and downloads write the value, not the formula.`;
   }
   if (code === "native_tables_formula_value_only") {

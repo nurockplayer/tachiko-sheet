@@ -8,6 +8,7 @@ const CAPACITY_LIMIT_NAMES = [
     "formula_ast_nodes",
     "dependency_edges",
     "projection_bytes",
+    "saved_bytes",
 ];
 /** Validate the detailed wire payload for a capacity refusal. */
 export function isCapacityFailure(failure) {

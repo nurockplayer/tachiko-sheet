@@ -1,6 +1,6 @@
 const PROJECT_BUNDLE_MAGIC = new TextEncoder().encode("TWDPROJ1");
 const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
-const CANONICAL_PROJECT_FILE_COUNTS = [18, 19];
+const CANONICAL_PROJECT_FILE_COUNTS = [18, 19, 20];
 const MAX_PROJECT_TRANSFER_FILES = 1_024;
 // BEGIN generated Rust storage paths
 // Run: node packages/browser-client/scripts/generate-project-paths.mjs
@@ -8,6 +8,11 @@ const CANONICAL_PROJECT_PATHS = {
     1: ["manifest.json", "schemas.json", "entities/0.jsonl", "entities/1.jsonl", "entities/2.jsonl", "entities/3.jsonl", "entities/4.jsonl", "entities/5.jsonl", "entities/6.jsonl", "entities/7.jsonl", "entities/8.jsonl", "entities/9.jsonl", "entities/a.jsonl", "entities/b.jsonl", "entities/c.jsonl", "entities/d.jsonl", "entities/e.jsonl", "entities/f.jsonl"],
     2: ["manifest.json", "schemas.json", "entities/0.jsonl", "entities/1.jsonl", "entities/2.jsonl", "entities/3.jsonl", "entities/4.jsonl", "entities/5.jsonl", "entities/6.jsonl", "entities/7.jsonl", "entities/8.jsonl", "entities/9.jsonl", "entities/a.jsonl", "entities/b.jsonl", "entities/c.jsonl", "entities/d.jsonl", "entities/e.jsonl", "entities/f.jsonl", "definitions.json"],
     3: ["manifest.json", "schemas.json", "definitions.json", "entities/0.jsonl", "entities/1.jsonl", "entities/2.jsonl", "entities/3.jsonl", "entities/4.jsonl", "entities/5.jsonl", "entities/6.jsonl", "entities/7.jsonl", "entities/8.jsonl", "entities/9.jsonl", "entities/a.jsonl", "entities/b.jsonl", "entities/c.jsonl", "entities/d.jsonl", "entities/e.jsonl", "entities/f.jsonl"],
+};
+const CANONICAL_PROJECT_OPTIONAL_PATHS = {
+    1: [],
+    2: [],
+    3: ["presentation.jsonl"],
 };
 /// Pack user-selected directory entries into the app-private host/WASM arena.
 /// Validate exact directory membership and package it in Rust storage's order.
@@ -17,7 +22,7 @@ export async function projectTransferFromFiles(files) {
     if (files.length === 0)
         throw new Error("No project directory was selected.");
     if (!CANONICAL_PROJECT_FILE_COUNTS.includes(files.length)) {
-        throw new Error("A canonical .roproj directory must contain exactly 18 or 19 files.");
+        throw new Error("A canonical .roproj directory must contain exactly 18, 19 or 20 files.");
     }
     const first = files.item(0);
     if (first === null)
@@ -43,9 +48,11 @@ export async function projectTransferFromFiles(files) {
         filesByPath.set(relativePath, file);
     }
     // Check membership before reading payloads, then dispatch from the manifest.
-    // v2 and v3 have the same set but different storage ordering.
+    // v2 and v3 have the same set but different storage ordering; a twenty-first
+    // entry is the optional presentation member, accepted last.
     const possiblePaths = CANONICAL_PROJECT_PATHS[files.length === 18 ? 1 : 3];
-    assertExactPaths(filesByPath, possiblePaths);
+    const possibleOptional = files.length === 20 ? CANONICAL_PROJECT_OPTIONAL_PATHS[3] : [];
+    assertExactPaths(filesByPath, possiblePaths, possibleOptional);
     const manifestBytes = new Uint8Array(await filesByPath.get("manifest.json").arrayBuffer());
     let version;
     try {
@@ -58,20 +65,21 @@ export async function projectTransferFromFiles(files) {
         throw new Error("The selected project manifest is not valid UTF-8 JSON.");
     }
     const paths = typeof version === "number" ? CANONICAL_PROJECT_PATHS[version] : undefined;
-    if (paths === undefined)
+    const optional = typeof version === "number" ? CANONICAL_PROJECT_OPTIONAL_PATHS[version] : undefined;
+    if (paths === undefined || optional === undefined)
         throw new Error("The selected project manifest has no supported format version (1, 2 or 3).");
-    assertExactPaths(filesByPath, paths);
+    assertExactPaths(filesByPath, paths, optional);
     const transferred = [];
-    for (const path of paths) {
+    for (const path of [...paths, ...optional.filter(path => filesByPath.has(path))]) {
         const bytes = path === "manifest.json" ? manifestBytes
             : new Uint8Array(await filesByPath.get(path).arrayBuffer());
         transferred.push({ path: encoder.encode(path), bytes });
     }
     return encodeTransfer(transferred, total);
 }
-function assertExactPaths(files, paths) {
+function assertExactPaths(files, paths, optional = []) {
     for (const path of files.keys()) {
-        if (!paths.includes(path))
+        if (!paths.includes(path) && !optional.includes(path))
             throw new Error(`The selected project contains unexpected path '${path}'.`);
     }
     for (const path of paths) {
@@ -120,7 +128,7 @@ export function projectTransferToEntries(input) {
     const view = new DataView(input);
     const count = view.getUint32(PROJECT_BUNDLE_MAGIC.byteLength, true);
     if (!CANONICAL_PROJECT_FILE_COUNTS.includes(count)) {
-        throw new Error("The canonical project transfer must contain exactly 18 or 19 files.");
+        throw new Error("The canonical project transfer must contain exactly 18, 19 or 20 files.");
     }
     const decoder = new TextDecoder("utf-8", { fatal: true });
     const entries = [];
@@ -146,6 +154,10 @@ export function projectTransferToEntries(input) {
     }
     if (offset !== bytes.byteLength)
         throw new Error("The canonical project transfer has trailing bytes.");
+    const presentation = CANONICAL_PROJECT_OPTIONAL_PATHS[3]?.[0];
+    if (count === 20 && entries[19]?.path !== presentation) {
+        throw new Error(`A twenty-file canonical project transfer must end with '${presentation}'.`);
+    }
     return entries;
 }
 function encodeTransfer(transferred, total) {

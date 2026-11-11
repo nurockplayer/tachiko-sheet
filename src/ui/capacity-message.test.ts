@@ -7,6 +7,7 @@ const base = { code: "capacity_exceeded", current_revision: "r1", message: "capa
 
 describe("capacityMessage", () => {
   it.each([
+    ["saved_bytes", "This workbook holds more data than this beta can save; nothing was changed."],
     ["table_rows", "This table can hold up to 1,000 rows; this change would make 1,200. Nothing was changed."],
     ["table_fields", "This table can hold up to 1,000 columns; this change would make 1,200. Nothing was changed."],
     ["populated_cells", "This workbook can hold up to 1,000 filled cells; this change would make 1,200. Nothing was changed."],

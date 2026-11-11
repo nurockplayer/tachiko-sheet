@@ -7,8 +7,11 @@ export type DesignerWasmBridge = {
     };
     request(request: DesignerRequest): DesignerWireReply;
     inspectProject(bytes: Uint8Array): DesignerWireReply;
+    inspectProjectWorkingSize(bytes: Uint8Array): DesignerWireReply;
     openProject(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
+    openProjectWorkingSize(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
     openLocalDocument(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
+    openLocalDocumentWorkingSize(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
     exportProject(expectedRevision: string): {
         status: "ok";
         export: ProjectExport;
@@ -35,6 +38,7 @@ export type DesignerWasmBridge = {
     }>;
     verifyPortableRo(bytes: Uint8Array): DesignerWireReply;
     openPortableRo(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
+    openPortableRoWorkingSize(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
     observeOccurrence(): DesignerWireReply;
     closeProject(): void;
 };
