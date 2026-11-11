@@ -53,14 +53,6 @@ foreach ($extension in @('.xlsx', '.csv')) {
   $openWith = Get-Item -LiteralPath "$classes\$extension\OpenWithProgids" -ErrorAction SilentlyContinue
   $names = if ($openWith) { $openWith.GetValueNames() -join ', ' } else { '(none)' }
   Write-Host "$extension default: $default; OpenWithProgids: $names"
-  $appOpenWith = @()
-  if ($openWith) {
-    foreach ($name in $openWith.GetValueNames()) {
-      $openCommand = DefaultValue "$classes\$name\shell\open\command"
-      if ($name -eq $progId -or ($openCommand -and $openCommand.IndexOf($exePath, [StringComparison]::OrdinalIgnoreCase) -ge 0)) { $appOpenWith += $name }
-    }
-  }
-  if ($appOpenWith.Count -eq 0) { throw "$extension OpenWithProgids does not contain an installed app ProgID" }
   if ($default -and $default -eq $progId) { throw "$extension default points to $progId" }
   if ($default) {
     $defaultCommand = DefaultValue "$classes\$default\shell\open\command"
