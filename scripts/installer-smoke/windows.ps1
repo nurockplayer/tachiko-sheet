@@ -8,11 +8,16 @@ $entry = @(Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object {
 if ($entry.Count -ne 1) { throw "expected one uninstall entry, found $($entry.Count)" }
 $uninstall = $entry[0].UninstallString
 if ($uninstall -notmatch '^\s*"([^"]+\.exe)"|^\s*([^"].*?\.exe)') { throw "cannot find uninstaller in: $uninstall" }
-$uninstaller = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
-$installDir = if ($entry[0].InstallLocation) { $entry[0].InstallLocation } else { Split-Path $uninstaller }
+$uninstaller = $(if ($Matches[1]) { $Matches[1] } else { $Matches[2] }).Trim().Trim('"').Trim()
+$rawInstallDir = $entry[0].InstallLocation
+$installDir = if ($rawInstallDir) { $rawInstallDir.Trim().Trim('"').Trim() } else { Split-Path $uninstaller }
+if (-not (Test-Path -LiteralPath $installDir -PathType Container)) { throw "install directory is not a folder: $installDir (raw InstallLocation: $rawInstallDir)" }
+$installDir = (Resolve-Path -LiteralPath $installDir).Path
+Write-Host "Install directory: $installDir"
 $exe = @(Get-ChildItem -LiteralPath $installDir -Filter '*.exe' -File | Where-Object { $_.FullName -ne $uninstaller })
 if ($exe.Count -ne 1) { throw "expected one installed executable in $installDir, found $($exe.Count)" }
 $exePath = $exe[0].FullName
+Write-Host "Installed executable: $exePath"
 $process = Start-Process -FilePath $exePath -PassThru
 try {
   $window = $false
@@ -48,6 +53,14 @@ foreach ($extension in @('.xlsx', '.csv')) {
   $openWith = Get-Item -LiteralPath "$classes\$extension\OpenWithProgids" -ErrorAction SilentlyContinue
   $names = if ($openWith) { $openWith.GetValueNames() -join ', ' } else { '(none)' }
   Write-Host "$extension default: $default; OpenWithProgids: $names"
+  $appOpenWith = @()
+  if ($openWith) {
+    foreach ($name in $openWith.GetValueNames()) {
+      $openCommand = DefaultValue "$classes\$name\shell\open\command"
+      if ($name -eq $progId -or ($openCommand -and $openCommand.IndexOf($exePath, [StringComparison]::OrdinalIgnoreCase) -ge 0)) { $appOpenWith += $name }
+    }
+  }
+  if ($appOpenWith.Count -eq 0) { throw "$extension OpenWithProgids does not contain an installed app ProgID" }
   if ($default -and $default -eq $progId) { throw "$extension default points to $progId" }
   if ($default) {
     $defaultCommand = DefaultValue "$classes\$default\shell\open\command"
