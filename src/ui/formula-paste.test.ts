@@ -34,7 +34,7 @@ describe("formula paste planning", () => {
       request: {
         source: { entity: "entity-0", field: "a" },
         destinations: [{ entity: "entity-1", field: "a" }],
-        fixed_references: [], relative_rows: true, relative_columns: false,
+        fixed_references: [], relative_rows: false, relative_columns: false,
       },
       count: 1,
     });

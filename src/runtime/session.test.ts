@@ -2091,7 +2091,7 @@ describe("copyFormula", () => {
     const request: FormulaCopy = {
       source: IMPACT,
       destinations: [{ entity: "e2", field: "impact" }, { entity: "e3", field: "impact" }],
-      fixed_references: [], relative_rows: true, relative_columns: false,
+      fixed_references: [], relative_rows: false, relative_columns: false,
     };
 
     const confirmed = await runtime.copyFormula(witnessOf(view), request);
