@@ -23,7 +23,7 @@ export type FormulaPastePlan =
 /**
  * Plans a paste of the last copied formula into its own column. `null` means an
  * ordinary value paste; `stored` is false while a sort or filter is active
- * because Work shifts references by stored position.
+ * to preserve the existing stored-order restriction.
  */
 export function formulaPastePlan(
   rows: readonly TableRow[],
