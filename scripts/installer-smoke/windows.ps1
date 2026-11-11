@@ -1,6 +1,18 @@
 param([Parameter(Mandatory=$true)][string]$Installer)
 $ErrorActionPreference = 'Stop'
 trap { Write-Error "installer-smoke windows: $_"; exit 1 }
+function DefaultValue($path) {
+  $key = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
+  if ($key) { return $key.GetValue('') }
+  return $null
+}
+$classes = 'Registry::HKEY_CLASSES_ROOT'
+$userClasses = 'Registry::HKEY_CURRENT_USER\Software\Classes'
+$before = @{}
+foreach ($extension in @('.xlsx', '.csv')) {
+  $before[$extension] = DefaultValue "$classes\$extension"
+  Write-Host "$extension before install default: $($before[$extension])"
+}
 $setup = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList '/S' -Wait -PassThru
 if ($setup.ExitCode -ne 0) { throw "installer exited with code $($setup.ExitCode)" }
 $keys = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
@@ -37,12 +49,6 @@ try {
   $process.Refresh()
   if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
 }
-function DefaultValue($path) {
-  $key = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
-  if ($key) { return $key.GetValue('') }
-  return $null
-}
-$classes = 'Registry::HKEY_CLASSES_ROOT'
 $progId = DefaultValue "$classes\.ro"
 if (-not $progId) { throw '.ro has no registered ProgID' }
 $command = DefaultValue "$classes\$progId\shell\open\command"
@@ -50,16 +56,26 @@ if (-not $command -or $command.IndexOf($exePath, [StringComparison]::OrdinalIgno
 Write-Host ".ro default: $progId; command: $command"
 foreach ($extension in @('.xlsx', '.csv')) {
   $default = DefaultValue "$classes\$extension"
-  $openWith = Get-Item -LiteralPath "$classes\$extension\OpenWithProgids" -ErrorAction SilentlyContinue
-  $names = if ($openWith) { $openWith.GetValueNames() -join ', ' } else { '(none)' }
-  Write-Host "$extension default: $default; OpenWithProgids: $names"
-  if ($default -and $default -eq $progId) { throw "$extension default points to $progId" }
-  if ($default) {
-    $defaultCommand = DefaultValue "$classes\$default\shell\open\command"
-    if ($defaultCommand -and $defaultCommand.IndexOf($exePath, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "$extension default points to the installed app via $default" }
-  }
+  $appProgId = "TachikoSheet$extension"
+  $openWith = Get-Item -LiteralPath "$userClasses\$extension\OpenWithProgids" -ErrorAction SilentlyContinue
+  $names = if ($openWith) { $openWith.GetValueNames() } else { @() }
+  $command = DefaultValue "$userClasses\$appProgId\shell\open\command"
+  Write-Host "$extension after install default: $default; OpenWithProgids: $($names -join ', '); command: $command"
+  if ($default -cne $before[$extension]) { throw "$extension default changed after install" }
+  if ($appProgId -notin $names) { throw "$extension OpenWithProgids missing $appProgId" }
+  if (-not $command -or $command.IndexOf($exePath, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "$appProgId does not open the installed executable: $command" }
 }
 $removed = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
 if ($removed.ExitCode -ne 0) { throw "uninstaller exited with code $($removed.ExitCode)" }
 if (Test-Path -LiteralPath $exePath) { throw "executable remains after uninstall: $exePath" }
+foreach ($extension in @('.xlsx', '.csv')) {
+  $default = DefaultValue "$classes\$extension"
+  $appProgId = "TachikoSheet$extension"
+  $openWith = Get-Item -LiteralPath "$userClasses\$extension\OpenWithProgids" -ErrorAction SilentlyContinue
+  $names = if ($openWith) { $openWith.GetValueNames() } else { @() }
+  $progIdRemains = Test-Path -LiteralPath "$userClasses\$appProgId"
+  Write-Host "$extension after uninstall default: $default; OpenWithProgids: $($names -join ', '); ProgID remains: $progIdRemains"
+  if ($default -cne $before[$extension]) { throw "$extension default changed after uninstall" }
+  if ($appProgId -in $names -or $progIdRemains) { throw "$appProgId registration remains after uninstall" }
+}
 Write-Host 'installer-smoke windows: PASS'
