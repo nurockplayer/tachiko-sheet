@@ -9,9 +9,11 @@ function DefaultValue($path) {
 $classes = 'Registry::HKEY_CLASSES_ROOT'
 $userClasses = 'Registry::HKEY_CURRENT_USER\Software\Classes'
 $before = @{}
+$userKeyBefore = @{}
 foreach ($extension in @('.xlsx', '.csv')) {
   $before[$extension] = DefaultValue "$classes\$extension"
   Write-Host "$extension before install default: $($before[$extension])"
+  $userKeyBefore[$extension] = Test-Path -LiteralPath "$userClasses\$extension"
 }
 $setup = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList '/S' -Wait -PassThru
 if ($setup.ExitCode -ne 0) { throw "installer exited with code $($setup.ExitCode)" }
@@ -77,5 +79,6 @@ foreach ($extension in @('.xlsx', '.csv')) {
   Write-Host "$extension after uninstall default: $default; OpenWithProgids: $($names -join ', '); ProgID remains: $progIdRemains"
   if ($default -cne $before[$extension]) { throw "$extension default changed after uninstall" }
   if ($appProgId -in $names -or $progIdRemains) { throw "$appProgId registration remains after uninstall" }
+  if (-not $userKeyBefore[$extension] -and (Test-Path -LiteralPath "$userClasses\$extension")) { throw "$extension per-user key left behind after uninstall" }
 }
 Write-Host 'installer-smoke windows: PASS'
