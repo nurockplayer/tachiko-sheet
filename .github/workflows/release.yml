@@ -11,6 +11,7 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - "scripts/release-names.sh"
+      - "scripts/installer-smoke/**"
 
 permissions:
   contents: read
@@ -210,6 +211,21 @@ jobs:
               check_one "the Windows setup" "$(find "$work/nsis" -name THIRD_PARTY_LICENSES.md -print -quit)"
               ;;
           esac
+
+      - name: Install the installer and start the app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/installer-smoke/macos.sh release-assets/*.dmg
+
+      - name: Install the installer and start the app (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/installer-smoke/linux.sh release-assets/*.deb release-assets/*.AppImage
+
+      - name: Install the installer and start the app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/installer-smoke/windows.ps1 (Get-Item release-assets/*.exe).FullName
 
       - name: Upload the installers (7 days)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
