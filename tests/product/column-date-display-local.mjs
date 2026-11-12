@@ -27,7 +27,7 @@ try {
   const headers = [...formats.map((_, i) => `Date${i+1}`), "Note"];
   const header = headers.map((h, i) => `<c r="${String.fromCharCode(65+i)}1" t="inlineStr"><is><t>${h}</t></is></c>`).join("");
   const row = (n, date, note) => `<row r="${n}">${formats.map((_, i) => `<c r="${String.fromCharCode(65+i)}${n}" s="${i+1}" t="d"><v>${date}</v></c>`).join("")}<c r="H${n}" t="inlineStr"><is><t>${note}</t></is></c></row>`;
-  await writeFile(path.join(expanded, "xl/worksheets/sheet1.xml"), `<worksheet xmlns="${main}"><sheetData><row r="1">${header}</row>${row(2, "2026-11-07", "later")}${row(3, "2026-01-02", "earlier")}</sheetData></worksheet>`);
+  await writeFile(path.join(expanded, "xl/worksheets/sheet1.xml"), `<worksheet xmlns="${main}"><sheetData><row r="1">${header}</row>${row(2, "2026-11-07", "later")}${row(3, "2025-12-31", "earlier")}</sheetData></worksheet>`);
   await writeFile(path.join(expanded, "xl/worksheets/sheet2.xml"), `<worksheet xmlns="${main}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Other</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>value</t></is></c></row></sheetData></worksheet>`);
   execFileSync("python3", ["-c", "import os,sys,zipfile; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); [(z.write(os.path.join(root,f),os.path.relpath(os.path.join(root,f),sys.argv[2]))) for root,dirs,files in os.walk(sys.argv[2]) for f in files]; z.close()", fixture, expanded]);
   context = await chromium.launchPersistentContext(path.join(work, "profile"), { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
@@ -77,21 +77,36 @@ try {
   for (const name of ["Undo", "Redo"]) { await page.getByRole("button", { name, exact: true }).click(); await ready(); await check(); }
   await rows().first().locator(".ts-cell").nth(1).dblclick(); assert.equal(await editor.inputValue(), "2026-11-07");
   await editor.fill("2026-11-07"); await editor.press("Enter"); await ready(); await check();
-  await grid.getByRole("columnheader", { name: "Date2", exact: true }).hover();
-  await page.getByRole("button", { name: "Column actions for Date2", exact: true }).click();
-  await page.getByRole("button", { name: "Sort A → Z", exact: true }).click(); await ready();
-  assert.equal((await values())[7].trim(), "earlier");
-  // Record what Find and the filter picker expose for Work's display text.
+  const dateActions = async name => {
+    await grid.getByRole("columnheader", { name, exact: true }).hover();
+    await page.getByRole("button", { name: `Column actions for ${name}`, exact: true }).click();
+  };
+  for (const [action, order] of [["Sort A → Z", ["earlier", "changed"]], ["Sort Z → A", ["changed", "earlier"]]]) {
+    await dateActions("Date2");
+    await page.getByRole("button", { name: action, exact: true }).click(); await ready();
+    assert.deepEqual((await rows().locator(".ts-cell:nth-child(8)").allTextContents()).map(s => s.trim()), order);
+  }
   await page.keyboard.press("ControlOrMeta+F");
-  await page.getByLabel("Find in table").fill("2026/11/7");
-  console.log("Date Find:", await page.locator(".ts-find-status").textContent());
+  const find = page.getByLabel("Find in table");
+  await find.fill("Nov 7, 2026");
+  console.log("Formatted Find:", await page.locator(".ts-find-status").textContent());
+  await page.getByRole("button", { name: "Next match" }).click();
+  console.log("Formatted focus:", await grid.locator(".ts-cell--focused").textContent());
+  await find.fill("2026-11-07");
+  console.log("ISO Find:", await page.locator(".ts-find-status").textContent());
+  await page.getByRole("button", { name: "Next match" }).click();
+  console.log("ISO focus:", await grid.locator(".ts-cell--focused").textContent());
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await grid.getByRole("columnheader", { name: "Date1", exact: true }).hover();
-  await page.getByRole("button", { name: "Column actions for Date1", exact: true }).click();
+  await dateActions("Date1");
   await page.getByRole("button", { name: "Filter…", exact: true }).click();
   await page.getByLabel("Filter type for Date1").selectOption("values");
-  console.log("Date filter values:", (await page.locator(".ts-filter-values").textContent()).trim());
-  await page.keyboard.press("Escape");
+  assert.deepEqual((await page.locator(".ts-filter-values label").allTextContents()).map(s => s.trim()), ["2025/12/31", "2026/11/7"]);
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await page.getByLabel("2026/11/7", { exact: true }).check();
+  await page.getByRole("button", { name: "Apply", exact: true }).click(); await ready();
+  assert.equal(await rows().count(), 1);
+  assert.equal((await values())[7].trim(), "changed");
+  await page.getByRole("button", { name: "Clear filter", exact: true }).click(); await ready();
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Date formats");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
