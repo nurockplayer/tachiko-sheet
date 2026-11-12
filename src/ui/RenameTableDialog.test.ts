@@ -7,7 +7,7 @@ describe("rename table dialog", () => {
   it("offers the current name and rename and cancel actions", () => {
     const markup = renderToStaticMarkup(createElement(RenameTableDialog, {
       initialName: "Expenses", composing: () => false,
-      onRename: async () => ({ kind: "confirmed" }), onClose: () => {},
+      onRename: async () => ({ kind: "confirmed" as const }), onClose: () => {},
     }));
     expect(markup).toContain('aria-label="Rename table"');
     expect(markup).toContain('value="Expenses"');
