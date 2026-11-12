@@ -2432,11 +2432,13 @@ describe("#189 scalar/history completion evidence", () => {
 });
 
 describe("confirmed changed-cell patches", () => {
-  async function patchSession(windowed = true) {
+  async function patchSession(windowed = true, initiallyBlank = false) {
     const { client, runtime, view: openedView } = await opened();
-    let fields = openedView.table.rows[0]!.fields;
+    const initialFields = openedView.table.rows[0]!.fields;
+    let fields = initiallyBlank ? initialFields.slice(1) : initialFields;
     const fullTable = (): TableProjection => ({ ...openedView.table, revision: client.currentRevision,
-      rows: [{ ...openedView.table.rows[0]!, fields }], column_totals: { impact: 12 } });
+      columns: openedView.table.columns.map(column => ({ ...column, id: column.key })),
+      rows: [{ ...openedView.table.rows[0]!, fields, ...(fields.some(field => field.target.field === "impact") ? {} : { blank_fields: ["impact"] }) }], column_totals: { impact: 12 } });
     client.hooks.queryTable = async () => {
       if (windowed) throw new FakeDesignerRuntimeError("use_window_query", client.currentRevision);
       return fullTable();
@@ -2450,8 +2452,8 @@ describe("confirmed changed-cell patches", () => {
     const view = await runtime.read();
     client.hooks.editNumber = async () => {
       const publication = await client.editNumber(view.revision, IMPACT, "12");
-      fields = [{ ...fields[0]!, stored: { kind: "number", value: 12 }, display: "12.00" }, ...fields.slice(1)];
-      return { ...publication, changed: [fields[0]!] };
+      fields = [{ ...initialFields[0]!, stored: { kind: "number", value: 12 } }, initialFields[1]!];
+      return { ...publication, changed: [{ ...fields[0]!, display: "12.00" }] };
     };
     client.calls.queryTable.length = 0;
     client.calls.queryTableWindow.length = 0;
@@ -2497,6 +2499,18 @@ describe("confirmed changed-cell patches", () => {
       expect(result.view).toEqual({ ...view, revision: client.currentRevision, table: fullTable() });
       expect(await runtime.read()).toEqual(result.view);
     });
+
+  it("filling an already blank cell uses one zero-row window and equals a full read", async () => {
+    const { runtime, client, view, fullTable } = await patchSession(true, true);
+    expect(view.table.rows[0]!.blank_fields).toEqual(["impact"]);
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+    expect(client.calls.queryTable).toEqual([]);
+    expect(client.calls.queryTableWindow).toEqual([{ revision: result.view.revision, start: 0, count: 0 }]);
+    expect(result.view.table).toEqual(fullTable());
+    expect(result.view.table.rows[0]).not.toHaveProperty("blank_fields");
+    expect(result.view.table.rows[0]!.fields[0]).not.toHaveProperty("display");
+    expect(await runtime.read()).toEqual(result.view);
+  });
 
   it("uses the next totals window rather than keeping the old totals", async () => {
     const { runtime, client, view, windowOf } = await patchSession();
