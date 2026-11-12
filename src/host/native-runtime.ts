@@ -78,7 +78,7 @@ function receiptOf(reply: WireReply): { type: string; receipt: ExportReceipt } {
 /** Bytes snapshotted when the client posts, plus how to finish the reply. */
 type Prepared =
   | { local: Record<string, unknown> }
-  | { request: Uint8Array; payload: Uint8Array; finish: (reply: WireReply, payload: Uint8Array) => Record<string, unknown> };
+  | { kind?: string; request: Uint8Array; payload: Uint8Array; finish: (reply: WireReply, payload: Uint8Array) => Record<string, unknown> };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -145,7 +145,7 @@ export function prepareMessage(message: ClientMessage, toEntries: ProjectTransfe
     }
     case "command": {
       const request = encoder.encode(JSON.stringify(message.request));
-      if (request.byteLength > MAX_WIRE_REQUEST_BYTES) {
+      if (request.byteLength > MAX_PROJECT_TRANSFER_BYTES) {
         return { local: tooLargeReply("The Designer request exceeds the private bridge byte limit.") };
       }
       return { request, payload: new Uint8Array(0), finish: passThrough };
@@ -156,7 +156,7 @@ export function prepareMessage(message: ClientMessage, toEntries: ProjectTransfe
       if (bytes.byteLength > MAX_PROJECT_TRANSFER_BYTES) {
         return { local: tooLargeReply("The project exceeds the private 64 MiB host transfer boundary.") };
       }
-      return { request: new Uint8Array(0), payload: bytes, finish: passThrough };
+      return { kind: message.kind === "inspect_project" && message.profile === "working_size" ? `${message.kind}_working_size` : undefined, request: new Uint8Array(0), payload: bytes, finish: passThrough };
     }
     case "open_project":
     case "open_local_document":
@@ -169,7 +169,7 @@ export function prepareMessage(message: ClientMessage, toEntries: ProjectTransfe
       if (occurrence.byteLength > MAX_WIRE_REQUEST_BYTES) {
         return { local: tooLargeReply("The host occurrence identity exceeds the bridge limit.") };
       }
-      return { request: occurrence, payload: bytes, finish: passThrough };
+      return { kind: message.profile === "working_size" ? `${message.kind}_working_size` : undefined, request: occurrence, payload: bytes, finish: passThrough };
     }
     case "export_project":
     case "export_project_v3":
@@ -288,7 +288,7 @@ export class NativeRuntimeChannel extends EventTarget {
         this.dispatchEvent(errorEvent(this.#failure));
         return;
       }
-      const frame = encodeFrame(kind, generation, prepared.request, prepared.payload);
+      const frame = encodeFrame(prepared.kind ?? kind, generation, prepared.request, prepared.payload);
       decoded = decodeFrame(await this.#transport.dispatch(frame));
       // Terminated while the host ran it: the client already rejected the call.
       if (this.#failure !== null) return;

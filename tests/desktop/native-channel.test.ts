@@ -68,7 +68,7 @@ describe("native runtime channel", () => {
     let dispatched = 0;
     const channel = new NativeRuntimeChannel({ attach: async () => 1, dispatch: async () => { dispatched++; return replyFrame(ok); } }, () => []);
     const { messages } = collect(channel);
-    channel.postMessage({ id: 1, kind: "command", request: { type: "query_table", collection: "x".repeat(70_000) } });
+    channel.postMessage({ id: 1, kind: "command", request: { type: "query_table", collection: "x".repeat(64 * 1024 * 1024) } });
     channel.postMessage({ id: 2, kind: "export_project", expected_revision: "r".repeat(70_000) });
     await settle();
     await settle();
@@ -77,6 +77,22 @@ describe("native runtime channel", () => {
       { id: 1, status: "error", error: { code: "request_too_large", message: "The Designer request exceeds the private bridge byte limit.", current_revision: "unavailable", diagnostics: [] } },
       { id: 2, status: "error", error: { code: "request_too_large", message: "The expected revision exceeds the bridge limit.", current_revision: "unavailable", diagnostics: [] } },
     ]);
+  });
+
+  it("frames working-size opens and forwards commands within the transfer limit", async () => {
+    const frames: ReturnType<typeof parseRequest>[] = [];
+    const channel = new NativeRuntimeChannel({ attach: async () => 1, dispatch: async (frame) => { frames.push(parseRequest(frame)); return replyFrame(ok); } }, () => []);
+    const { messages } = collect(channel);
+    const kinds = ["inspect_project", "open_project", "open_local_document", "open_portable_ro"];
+    for (const kind of kinds) {
+      channel.postMessage({ id: frames.length, kind, profile: "working_size", bytes: new ArrayBuffer(0), occurrence_id: "id" });
+      channel.postMessage({ id: frames.length, kind, bytes: new ArrayBuffer(0), occurrence_id: "id" });
+      channel.postMessage({ id: frames.length, kind, profile: "other", bytes: new ArrayBuffer(0), occurrence_id: "id" });
+    }
+    channel.postMessage({ id: 99, kind: "command", request: { type: "query_table", collection: "x".repeat(70_000) } });
+    await vi.waitFor(() => expect(messages).toHaveLength(13));
+    expect(frames.map(({ header }) => header.kind)).toEqual(kinds.flatMap((kind) => [`${kind}_working_size`, kind, kind]).concat("command"));
+    expect(frames[12]!.request.length).toBeGreaterThan(70_000);
   });
 
   it("makes a transport failure terminal: no fabricated reply, later posts fail too", async () => {
