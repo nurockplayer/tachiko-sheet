@@ -55,13 +55,19 @@ async function run(name, action) {
             const data = event.data, req = e.requests.find(r => r.id === data.id);
             e.replies.push(structuredClone(data));
             if (data.response?.type === 'table') e.tables.push(structuredClone(data.response.payload));
-            if (e.arm?.type === req?.request?.type && ['published', 'opened', 'keyed_grouped_sum_published'].includes(data.response?.type)) {
+            if (data.response?.type === 'table_window') {
+              const w = structuredClone(data.response.payload);
+              if (w.start === 0 || !this.windowTable || this.windowTable.revision !== w.revision) this.windowTable = { ...w, rows: [] };
+              this.windowTable.rows.push(...w.rows);
+              if (this.windowTable.rows.length >= w.total_rows) { e.tables.push(this.windowTable); this.windowTable = null; }
+            }
+            if (e.arm?.type === req?.request?.type && ['published', 'opened_window', 'keyed_grouped_sum_published'].includes(data.response?.type)) {
               const mode = e.arm.mode; e.arm = null;
               if (mode === 'hold') { event.stopImmediatePropagation(); e.held = data; return; }
               if (mode === 'unknown') {
                 event.stopImmediatePropagation(); this.dispatchEvent(new ErrorEvent('error', { message: 'Characterization: lost real acknowledgement' }));
               } else e.loseTable = true;
-            } else if (e.loseTable && req?.request?.type === 'query_table') {
+            } else if (e.loseTable && ['query_table', 'query_table_window'].includes(req?.request?.type)) {
               e.loseTable = false; event.stopImmediatePropagation();
               this.dispatchEvent(new ErrorEvent('error', { message: 'Characterization: lost real projection' }));
             }

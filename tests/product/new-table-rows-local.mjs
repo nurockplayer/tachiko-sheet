@@ -90,7 +90,7 @@ async function start() {
             if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
           }
           const request = this.record.requests.find(request => request.id === event.data.id);
-          if (window.__rowEvidence.loseNextCreateReply && request?.request?.type === "new_table" && (event.data.response?.type === "opened" || event.data.status === "error")) {
+          if (window.__rowEvidence.loseNextCreateReply && request?.request?.type === "new_table" && (event.data.response?.type === "opened_window" || event.data.status === "error")) {
             window.__rowEvidence.loseNextCreateReply = false;
             this.dispatchEvent(new ErrorEvent("error", { message: "Controlled lost creation acknowledgement" }));
           }
@@ -104,7 +104,7 @@ async function start() {
           const afterCreate = this.record.requests.slice(createIndex + 1);
           const fault = window.__rowEvidence.failCreationObservation;
           if (createIndex >= 0 && event.data.status === "ok" &&
-            ((fault === "table" && request?.request?.type === "query_table") ||
+            ((fault === "table" && ["query_table", "query_table_window"].includes(request?.request?.type)) ||
              (fault === "discovery" && request?.request?.type === "bootstrap" && afterCreate.filter(request => request.request?.type === "bootstrap").length === 2))) {
             window.__rowEvidence.failCreationObservation = null;
             // Creation really succeeded. Lose only the subsequent observation
@@ -237,6 +237,7 @@ async function pendingCreateFocus(page) {
     const held = await page.evaluate(() => window.__rowEvidence.heldReplies);
     assert.equal(held.length, 1);
     assert.equal(held[0].status, "ok");
+    assert.equal(await page.evaluate(id => window.__rowEvidence.workers.flatMap(worker => worker.requests).find(request => request.id === id)?.request.profile, held[0].id), "working_size", "creation requests the working-size profile");
     assert.equal(held[0].response.type, "opened_window", "withheld acknowledgement is the actual successful core creation");
     assert.equal(await count(), before + 1, "pending keys never dispatch a second creation");
   } finally {

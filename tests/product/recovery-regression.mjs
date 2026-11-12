@@ -41,6 +41,7 @@ try {
   await page.goto(url);
   await openReleasePlanExample(page);
   const before = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
+  const workingBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProjectWorkingSize ?? 0);
 
   await page.evaluate(() => window.__tachikoAcceptance.loseNextExecuteReply());
   await page.getByTestId(`cell:${expected.entity}:${expected.impact}`).dblclick();
@@ -79,6 +80,7 @@ try {
   );
   const afterDispatch = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
   assert.equal(afterDispatch - before, 1, "replacement Open must dispatch exactly once");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProjectWorkingSize) - workingBefore, 1, "replacement Open requests the working-size profile");
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   const b = await page.evaluate(() => window.__tachikoAcceptance.observe());

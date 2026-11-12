@@ -44,11 +44,13 @@ async function assertSalesWorkbookTitle(page, seam) {
 
 async function enterSalesFromHome(page, { addAnotherSummary = false } = {}) {
   const openBefore = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
+  const workingBefore = await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProjectWorkingSize ?? 0);
   await page.getByRole("button", { name: "Open sales example", exact: true }).click();
   await page.getByTestId("project-ready").waitFor();
   await assertSalesWorkbookTitle(page, "Home open");
   const openAfter = await page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount());
   assert.equal(openAfter - openBefore, 1, "healthy readiness is followed by exactly one canonical Open");
+  assert.equal(await page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProjectWorkingSize) - workingBefore, 1, "canonical Open requests the working-size profile");
   await page.waitForFunction(() => document.querySelector("#ts-active-table")?.value === "catalog");
   assert.equal(await page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true }).inputValue(), "catalog", "confirmed entry selects Catalog");
   const resultsPane = page.getByTestId("results-pane");

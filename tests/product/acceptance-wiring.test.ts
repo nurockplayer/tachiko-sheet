@@ -62,6 +62,8 @@ function fakeKit(
   let client: ReturnType<CoreKit["createExperimentalDesignerClient"]> | null = null;
   const createClient = (): ReturnType<CoreKit["createExperimentalDesignerClient"]> => client ??= ({
     openProject: async () => ({}) as never,
+    openProjectWorkingSize: async () => ({}) as never,
+    openPortableRoWorkingSize: async () => ({}) as never,
     closeProject: async () => { state.closeCalls += 1; },
     importSpreadsheet: async () => {
       state.importCalls += 1;
@@ -397,11 +399,11 @@ describe("acceptance kit instrumentation", () => {
     await expect(instrumented.queryTable("items")).resolves.toMatchObject({ collection: "items" });
   });
 
-  it("counts only an actually dispatched public openProject call", async () => {
+  it.each(["openProject", "openProjectWorkingSize", "openPortableRoWorkingSize"] as const)("counts only an actually dispatched public %s call", async (method) => {
     const { kit } = fakeKit(async () => projection());
     const instrumented = (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
     const before = openProjectRequestCount();
-    await instrumented.openProject(new ArrayBuffer(0));
+    await instrumented[method](new ArrayBuffer(0));
     expect(openProjectRequestCount() - before).toBe(1);
   });
 
