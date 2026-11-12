@@ -75,7 +75,7 @@ try {
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Date formats");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
-  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  try { await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor(); } catch (error) { console.log("Save diagnostics:", await page.locator("[role=alert]").allTextContents(), await page.getByTestId("save-status").allTextContents()); throw error; }
   await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
   await page.getByRole("button", { name: "Open saved Date formats", exact: true }).click(); await ready();
   const all = await rows().locator(".ts-cell").allTextContents();
