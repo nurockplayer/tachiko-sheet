@@ -16,6 +16,7 @@ async function setup() {
     openProjectWorkingSize: async () => ({}), closeProject: async () => undefined,
     bootstrap: async () => ({ title: "Native", revision: "r1", default_collection: "one", collections }),
     queryTable: async (key: string) => ({ revision: "r1", collection: collections.find(c => c.key === key)!, columns: [], rows: [] }),
+    queryTableWindow: async (revision: string, key: string, _view: unknown, start: number) => ({ revision, collection: collections.find(c => c.key === key)!, columns: [], columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start, rows: [] }),
     exportNativeTablesSpreadsheet: async (...args: unknown[]) => {
       calls.push(args);
       return { revision: "r1", bytes: new Uint8Array([1, 2]).buffer, ledger: [] };
