@@ -30,6 +30,7 @@ async function setup() {
     closeProject: async () => undefined,
     bootstrap: async () => ({ title: "Two sheets", revision, default_collection: "first", collections: listed }),
     queryTable: async (key: string) => ({ revision, collection: sheets.find((sheet) => sheet.key === key)!, columns: [], rows: [] }),
+    queryTableWindow: async (revision: string, key: string, _view: unknown, start: number) => ({ revision, collection: sheets.find((sheet) => sheet.key === key)!, columns: [], columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start, rows: [] }),
     exportSpreadsheet: async (expected: string, incoming: InteropMetadata, format: string, schema: string) => {
       calls.push({ revision: expected, metadata: incoming, format, schema });
       return { revision: exportedRevision ?? expected, bytes: new Uint8Array([1, 2]).buffer, ledger: [] };

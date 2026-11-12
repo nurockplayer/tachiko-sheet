@@ -131,7 +131,7 @@ function storedDisplay(field: FieldProjection, format?: NumberFormat): FieldDisp
         title: formulaTitle(field),
       };
     case "date":
-      return { text: stored.value, tone: field.formula ? "computed" : "plain", title: formulaTitle(field) };
+      return { text: field.display ?? stored.value, tone: field.formula ? "computed" : "plain", title: formulaTitle(field) };
     case "reference":
       return {
         text: REFERENCE_TEXT,
