@@ -391,9 +391,9 @@ try {
   await dialog("Remove column").waitFor(); await cancel("Remove column"); await dialog("Remove column").waitFor({ state: "detached" });
   await assertFocused(actions, "Remove dialog cancel returns to the closed disclosure");
   // Rename, Remove, Move left (Move right is off for the last column), Require a
-  // value, Rule…, Number format… (price is a number column), Sort A → Z,
+  // value, Rule…, Number format… (price is a number column), Alignment…, Sort A → Z,
   // Sort Z → A, Filter…, then out.
-  await actions.press("Enter"); for (let stop = 0; stop < 10; stop++) await page.keyboard.press("Tab");
+  await actions.press("Enter"); for (let stop = 0; stop < 11; stop++) await page.keyboard.press("Tab");
   assert.equal(await page.getByRole("button", { name: "+ column", exact: true }).evaluate(n => n === document.activeElement), true, "Tab exits the disclosure without a trap");
   assert.equal(await disclosure.getAttribute("open"), null, "leaving the disclosure closes it");
   assert.deepEqual(await page.locator('table[aria-label="Table"] th[scope="col"]').allTextContents(), ["Row", ...labels]);
