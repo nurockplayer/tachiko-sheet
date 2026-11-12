@@ -179,6 +179,15 @@ try {
   assert.equal(await tabs().count(), 2);
   await tabs().first().click({ button: "right" });
   await page.getByRole("menu", { name: "Table actions" }).waitFor();
+  await page.locator("body").click({ position: { x: 2, y: 2 } });
+  assert.equal(await page.getByRole("menu", { name: "Table actions" }).count(), 0, "outside press closes menu");
+  await tabs().first().click({ button: "right" });
+  await tabs().nth(1).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete…" }).click();
+  const deletion = page.getByRole("dialog", { name: "Delete table" });
+  assert.ok((await deletion.textContent()).includes(await tabs().nth(1).textContent()));
+  await deletion.getByRole("button", { name: "Cancel" }).click();
+  assert.equal(await tabs().count(), 2, "cancel preserves tables");
   await close();
   await button("Open sales example").click(); await ready();
   assert.equal(await page.getByRole("menu", { name: "Table actions" }).count(), 0, "old table menu does not survive opening another workbook with the same keys");
