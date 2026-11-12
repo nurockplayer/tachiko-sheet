@@ -258,13 +258,11 @@ export async function runClearCellsCases(page, { close, checks }) {
   checks.push("#229 imported optional Date/Yes-No (native since Work #606) clear in place with one request; one Undo restores");
   await close(page);
 
-  // Use the admitted 8,406-row Text capacity profile, as clipboard-local does.
-  // Smaller native-created fixtures hit the ordinary projection envelope
-  // before they can supply a >1,024-cell rectangle.
-  const csv = "Row,Note,Extra\r\n" + Array.from({ length: 8406 }, (_, i) => `row_${i},note,extra`).join("\r\n") + "\r\n";
+  // Sparse cells keep the import small while the selection exceeds 100,000 cells.
+  const csv = Array.from({ length: 12 }, (_, i) => `Column${i}`).join(",") + "\r\n" + Array.from({ length: 8406 }, (_, i) => `row_${i}${",".repeat(11)}`).join("\r\n") + "\r\n";
   await (await homeImportInput(page)).setInputFiles({ name: "clear-limit.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  for (let c = 0; c < 3; c++) await preview.locator(".ts-import-column select").nth(c).selectOption("text");
+  for (let c = 0; c < 12; c++) await preview.locator(".ts-import-column select").nth(c).selectOption("text");
   await preview.getByRole("button", { name: "Import file", exact: true }).click();
   await preview.waitFor({ state: "detached" }); await ready();
   const largeBefore = await projection(), largeCount = (await commands()).length;
@@ -272,10 +270,9 @@ export async function runClearCellsCases(page, { close, checks }) {
   assert.equal(largeBefore.rows.length, 8406);
   const first = page.getByTestId(`cell:${largeBefore.rows[0].id}:${largeBefore.columns[0].id}`);
   await first.click();
-  for (let i = 1; i < 350; i++) await page.keyboard.press("Shift+ArrowDown");
-  for (let i = 1; i < 3; i++) await page.keyboard.press("Shift+ArrowRight");
-  await page.keyboard.press("Backspace"); await status("The selected range exceeds the 1,024-cell limit.").waitFor();
+  await page.keyboard.press("Control+Shift+End");
+  await page.keyboard.press("Backspace"); await status("The selected range exceeds the 100,000-cell limit.").waitFor();
   assert.equal((await commands()).length, largeCount); assert.deepEqual(await projection(), largeBefore); await noUndo();
-  checks.push("#229 350x3 range exceeds 1,024: local refusal, no chunks/requests/publication/history");
+  checks.push("#229 8406x12 range exceeds 100,000: local refusal, no chunks/requests/publication/history");
   await close(page);
 }

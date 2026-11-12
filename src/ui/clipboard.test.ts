@@ -75,6 +75,7 @@ describe("paste routing", () => {
     expect(routePaste(rows, ctx).kind).toBe("refused");
     rows.forEach(row => { if (row.length === 10) row.push("a"); });
     expect(routePaste(rows, ctx)).toMatchObject({ kind: "refused", message: expect.stringContaining("100,000-cell") });
+    expect(routePaste(rows.slice(0, 9_091), ctx)).toMatchObject({ kind: "refused", message: expect.stringContaining("100,000-cell") }); // 9,091 × 11 = 100,001
     expect(routePaste(rows, { ...ctx, native: true, rowCount: 9_999 }).kind).toBe("publish");
   });
   it.each([false, true])("accepts only exact Boolean tokens for typed edits (native=%s)", native => {

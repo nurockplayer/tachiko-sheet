@@ -14,6 +14,7 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 import { collectWindowedRows } from "./windowed-table-collector.mjs";
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -74,10 +75,8 @@ const current = (page) => page.waitForFunction(() =>
 async function rowCount(page) {
   const projection = await observedTable(page);
   assert.equal(projection.native_table_profile, true, "Text/Number fixture is structurally native");
-  assert.equal(await grid(page).locator(".ts-entry-row").count(), 0, "no draft at or above the insertion gate");
-  await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
   // The column totals row is a grid row but not a record.
-  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1 - await grid(page).locator(".ts-totals-row").count();
+  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 2 - await grid(page).locator(".ts-totals-row").count();
   assert.equal(declared, projection.rows.length, "ARIA data rows match stored records, excluding drafts");
   const rendered = await grid(page).locator("tbody tr.ts-row").count();
   assert.ok(rendered < 400, `large table renders a window, not ${rendered} rows`);
@@ -196,6 +195,19 @@ try {
       const name = `mixed-${rows}x${cols}-${format}`;
       let page = await start(profile);
       await importSource(page, path.join(fixtures, `source-${rows}x${cols}.${format}`));
+      const beforeInsert = await observedTable(page);
+      const draft = grid(page).locator(".ts-entry-row");
+      for (const column of beforeInsert.columns) {
+        await fillDraftCell(page, draft.locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? "1" : "new");
+      }
+      await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
+      const insertionRefusal = page.getByRole("alert").filter({ hasText: /Nothing was changed/ });
+      await insertionRefusal.waitFor();
+      const insertionSentence = await insertionRefusal.textContent();
+      assert.match(insertionSentence, /^This table can hold up to [\d,]+ rows; this change would make [\d,]+\. Nothing was changed\.$/);
+      assert.deepEqual((await observedTable(page)).rows, beforeInsert.rows, "Work refusal adds nothing");
+      console.log(`PASS: imported row refusal: ${insertionSentence}`);
+      await draftActions(page).getByRole("button", { name: "Discard", exact: true }).click();
       const identities = await allCells(page, false);
       await edit(page, rows >> 1, 1, "424242");
       assert.deepEqual(await allCells(page, true), identities, "Edit retains every cell identity");

@@ -82,6 +82,7 @@ describe("formula paste planning", () => {
 
   it("refuses a destination range above 100,000 cells", () => {
     const rows = Array.from({ length: 100_002 }, (_, index) => row(index, { a: String(index) }, index === 0 ? ["a"] : []));
+    expect(formulaPastePlan(rows, [columns[0]!], rectangle({ row: 0, column: 0 }, { row: 100_000, column: 0 }), copied)).toMatchObject({ kind: "formula", count: 100_000 });
     expect(() => formulaPastePlan(rows, [columns[0]!], rectangle({ row: 0, column: 0 }, { row: 100_001, column: 0 }), copied))
       .toThrow("The paste range exceeds the 100,000-cell limit. Nothing was pasted.");
   });

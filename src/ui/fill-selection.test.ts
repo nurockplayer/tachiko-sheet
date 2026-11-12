@@ -70,6 +70,8 @@ describe("fill selection request planning", () => {
   });
 
   it("refuses a range above 100,000 cells", () => {
+    const rows = Array.from({ length: 100_000 }, (_, index) => row(index, { a: "old" }));
+    expect(fillSelectionPlan(rows, [columns[0]!], { top: 0, left: 0, bottom: 99_999, right: 0 }, "fill", true)).toHaveLength(100_000);
     expect(() => fillSelectionPlan([], columns, { top: 0, left: 0, bottom: 100_000, right: 0 }, "fill", true))
       .toThrow("The fill range exceeds the 100,000-cell limit. Nothing was filled.");
   });
