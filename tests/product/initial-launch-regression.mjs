@@ -142,7 +142,7 @@ try {
     assert.equal(await attempt.page.getByTestId("initial-launch").count(), 0, "cold Home has no booting state");
     assert.equal(attempt.getManifestRequests(), 0, "mount does not request the release-plan fixture");
     await attempt.page.waitForFunction(() => window.__tachikoAcceptance.workMethodCounts().observeOccurrence === 1);
-    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProject ?? 0), 0, "background preparation observes without opening work");
+    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount()), 0, "background preparation observes without opening work");
     assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().createKeyedGroupedSum ?? 0), 0, "background preparation creates no summaries");
     assert.equal(await attempt.page.getByRole("button", { name: "Open release plan example", exact: true }).isEnabled(), true);
     await attempt.page.getByRole("button", { name: "Open release plan example", exact: true }).click();
@@ -152,7 +152,7 @@ try {
     attempt.releaseManifest();
     await attempt.page.getByTestId("project-ready").waitFor();
     assert.ok(await attempt.page.locator('[data-testid^="cell:"]').count() > 0, "the real example workbook appears after the explicit action");
-    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProject), 1, "healthy explicit release-plan action dispatches one Open");
+    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProjectWorkingSize), 1, "healthy explicit release-plan action dispatches one Open");
     assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().createKeyedGroupedSum ?? 0), 0, "ordinary release-plan action does not create a summary");
     await attempt.page.getByRole("button", { name: "Close project", exact: true }).click();
     await attempt.page.getByTestId("open-project").waitFor();
@@ -197,7 +197,7 @@ try {
       await attempt.page.getByText("No saved copies yet", { exact: true }).waitFor();
       assert.equal(await attempt.page.getByRole("alert").filter({ hasText: "Tachiko couldn’t start in this browser" }).count(), 1, `${mode} keeps the neutral startup guidance after inventory settles`);
     }
-    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProject ?? 0), 0, `${mode} failed before mutating Open`);
+    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount()), 0, `${mode} failed before mutating Open`);
     assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().createKeyedGroupedSum ?? 0), 0, `${mode} failed before summary creation`);
     assert.deepEqual(attempt.startupFaultRequests, [{
       "startup-kit-entry": "/core-kit/experimental-client.js",
@@ -215,7 +215,7 @@ try {
       assert.equal(await attempt.page.evaluate(() => window.__startupCopyReadAttempts), 1, "fresh Reload retries the independent inventory read with the fault disarmed");
     }
     await attempt.page.waitForFunction(() => window.__tachikoAcceptance.workMethodCounts().observeOccurrence === 1);
-    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProject ?? 0), 0, `${mode} Reload freshly warms without Open`);
+    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount()), 0, `${mode} Reload freshly warms without Open`);
     assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().createKeyedGroupedSum ?? 0), 0, `${mode} Reload freshly warms without summary creation`);
     await attempt.close();
   }
@@ -230,7 +230,7 @@ try {
     attempt.releaseStartupFault();
     await attempt.page.getByRole("alert").filter({ hasText: "Tachiko couldn’t start in this browser" }).waitFor();
     assert.equal(await attempt.page.getByTestId("project-ready").count(), 0, `${mode} exposes no workbook`);
-    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProject ?? 0), 0, `${mode} fails before mutating Open`);
+    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount()), 0, `${mode} fails before mutating Open`);
     assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().createKeyedGroupedSum ?? 0), 0, `${mode} fails before summary creation`);
     assert.deepEqual(attempt.startupFaultRequests, [{
       "startup-kit-entry-held": "/core-kit/experimental-client.js",
@@ -248,7 +248,7 @@ try {
     await attempt.page.getByTestId("project-ready").waitFor();
     await waitForConfirmedSalesEntry(attempt.page);
     warmedSalesMethodCounts = await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
-    assert.equal(warmedSalesMethodCounts.openProject, 1, "a click after preparation dispatches one Open");
+    assert.equal(warmedSalesMethodCounts.openProjectWorkingSize, 1, "a click after preparation dispatches one Open");
     assert.equal(warmedSalesMethodCounts.createKeyedGroupedSum, 1, "a click after preparation creates one summary");
     await attempt.close();
   }
@@ -257,7 +257,7 @@ try {
     const attempt = await openHome("startup-success-held");
     await attempt.startupFaultRequested;
     assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().observeOccurrence ?? 0), 0, "held warm-up has not completed its one readiness observation");
-    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().openProject ?? 0), 0);
+    assert.equal(await attempt.page.evaluate(() => window.__tachikoAcceptance.openProjectRequestCount()), 0);
     await attempt.page.getByRole("button", { name: "Open sales example", exact: true }).click();
     await attempt.page.getByRole("button", { name: "Opening…", exact: true }).waitFor();
     attempt.releaseStartupFault();
@@ -266,7 +266,7 @@ try {
     const heldWarmCounts = await attempt.page.evaluate(() => window.__tachikoAcceptance.workMethodCounts());
     assert.equal(heldWarmCounts.observeOccurrence, warmedSalesMethodCounts.observeOccurrence, "held successful warm reuses the same readiness and confirmed-read sequence as an already-warm entry");
     assert.equal(heldWarmCounts.queryKeyedGroupedSum, warmedSalesMethodCounts.queryKeyedGroupedSum, "held successful warm confirms the same real summary query");
-    assert.equal(heldWarmCounts.openProject, 1, "click during successful warm-up dispatches one Open");
+    assert.equal(heldWarmCounts.openProjectWorkingSize, 1, "click during successful warm-up dispatches one Open");
     assert.equal(heldWarmCounts.createKeyedGroupedSum, 1, "one coordinated Sales entry creates one definition");
     assert.deepEqual(attempt.startupFaultRequests, ["/core-kit/experimental-client.js"], "the held successful warm uses one actual kit-entry request");
     await attempt.close();
