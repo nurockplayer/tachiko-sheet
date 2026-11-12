@@ -57,6 +57,15 @@ try {
     assert.equal((await values())[0].trim(), label);
   };
   for (const label of ["2026/11/7", "2026年11月7日", "11/7/2026", "7/11/2026", "Nov 7, 2026", "7 Nov 2026", "2026-11-07"]) await chooseDate(label);
+  for (const label of ["7 Nov 2026", "Nov 7, 2026"]) {
+    await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+    assert.equal((await values())[0].trim(), label);
+  }
+  for (const label of ["7 Nov 2026", "2026-11-07"]) {
+    await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
+    assert.equal((await values())[0].trim(), label);
+  }
+  await chooseDate("2026/11/7"); expected[0] = "2026/11/7";
   await check();
   await rows().first().locator(".ts-cell").nth(7).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
