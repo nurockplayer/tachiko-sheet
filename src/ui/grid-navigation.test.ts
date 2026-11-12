@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate } from "./grid-navigation.js";
+import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate, tabRunAfterMove, tabRunEnterTarget } from "./grid-navigation.js";
 
 const emptyExcept = (filled: readonly string[]) => (row: number, column: number): boolean => !filled.includes(`${row},${column}`);
 
@@ -85,5 +85,22 @@ describe("todayIsoDate", () => {
     expect(todayIsoDate(new Date(2026, 10, 1, 0, 30))).toBe("2026-11-01");
     expect(todayIsoDate(new Date(2026, 10, 1, 23, 30))).toBe("2026-11-01");
     expect(todayIsoDate(new Date(2026, 0, 9, 12, 0))).toBe("2026-01-09");
+  });
+});
+
+
+describe("Tab run navigation", () => {
+  const order = ["r1", "r2"].flatMap(entity => ["a", "b", "c"].map(field => ({ entity, field })));
+  it("keeps the starting column through forward and reverse Tabs", () => {
+    const start = tabRunAfterMove(null, order[1], order[2]);
+    expect(tabRunAfterMove(start, order[2], order[1])).toEqual(order[1]);
+    expect(tabRunEnterTarget(start, order[2], order, 3)).toEqual(order[4]);
+    expect(tabRunEnterTarget(start, order[3], order, 3)).toBeNull();
+  });
+  it("clears on a row wrap or missing destination and falls back at the last row", () => {
+    expect(tabRunAfterMove(order[1], order[2], order[3])).toBeNull();
+    expect(tabRunAfterMove(order[1], order[2], undefined)).toBeNull();
+    expect(tabRunEnterTarget(order[4], order[5], order, 3)).toBeNull();
+    expect(tabRunEnterTarget({ entity: "missing", field: "a" }, { entity: "missing", field: "b" }, order, 3)).toBeNull();
   });
 });
