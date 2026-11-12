@@ -1,3 +1,4 @@
+import { observeCapacity, capacitySnapshot } from "./capacity-diagnostics.mjs";
 // #225: normal UI, production bytes, real Worker/WASM; Python's standard
 // CSV/ZIP/XML readers independently check the downloaded files (no JS codec).
 import assert from "node:assert/strict";
@@ -132,6 +133,7 @@ try {
   pid = (await cdp.send("SystemInfo.getProcessInfo")).processInfo.find(p => p.type === "browser")?.id;
   await cdp.detach(); assert.ok(Number.isInteger(pid), "owned browser PID required");
   await installDistRoutes(context, dist);
+  await observeCapacity(context);
   await context.addInitScript(() => {
     window.__exportEvidence = { requests: [], replies: [], table: null };
     const Original = window.Worker;
@@ -307,6 +309,9 @@ try {
   await runOptionalEditEntryCases(page, { close, checks });
   await runClearCellsCases(page, { close, checks });
   console.log(JSON.stringify({status:"PASS",checks,downloads,output}));
+} catch (error) {
+  if (context?.pages()[0]) await capacitySnapshot(context.pages()[0], "native-export failure");
+  throw error;
 } finally {
   if(context) await context.close();
   if(pid) {

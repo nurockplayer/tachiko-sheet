@@ -1,3 +1,4 @@
+import { observeCapacity, capacitySnapshot } from "./capacity-diagnostics.mjs";
 import { observeTableProjections, observedTable } from "./table-projection-observer.mjs";
 // Sheet #160 consumer acceptance: large mixed Text/Number shapes through the
 // built product's normal UI only (Home file input, cell editor, Undo/Redo,
@@ -40,6 +41,7 @@ async function start(profile) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   await observeTableProjections(context);
+  await observeCapacity(context);
   const page = await context.newPage();
   if (cpuRate > 1) {
     const cdp = await context.newCDPSession(page);
@@ -202,7 +204,8 @@ try {
       }
       await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
       const insertionRefusal = page.getByRole("alert").filter({ hasText: /Nothing was changed/ });
-      await insertionRefusal.waitFor();
+      try { await insertionRefusal.waitFor(); }
+      catch (error) { await capacitySnapshot(page, `imported ${rows}x${cols} entry refusal`); throw error; }
       const insertionSentence = await insertionRefusal.textContent();
       assert.match(insertionSentence, /^This table can hold up to [\d,]+ rows; this change would make [\d,]+\. Nothing was changed\.$/);
       assert.deepEqual((await observedTable(page)).rows, beforeInsert.rows, "Work refusal adds nothing");

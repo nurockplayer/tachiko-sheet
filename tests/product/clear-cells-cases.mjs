@@ -1,3 +1,4 @@
+import { capacitySnapshot } from "./capacity-diagnostics.mjs";
 // #229: real kit fixtures, ordinary UI writers, passive Worker projection observer.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -276,8 +277,11 @@ export async function runClearCellsCases(page, { close, checks }) {
     shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${i}`, schema: schema.id, fields: { [schema.fields[0].id]: { kind: "text", value: `r${i}` } } }) + "\n";
   }
   for (const [shard, text] of Object.entries(shards)) await writeFile(path.join(folder, "entities", `${shard}.jsonl`), text);
+  const started = performance.now();
   await page.getByTestId("open-project").setInputFiles(folder);
-  await ready();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor({ timeout: 120_000 });
+  console.log(`PASS: 9091x11 canonical open ready in ${Math.round(performance.now() - started)} ms`);
+  await capacitySnapshot(page, "9091x11 ready");
   const largeBefore = await projection(), largeCount = (await commands()).length;
   assert.equal(largeBefore.native_table_profile, true);
   assert.equal(largeBefore.rows.length, 9091);
