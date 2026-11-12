@@ -181,7 +181,6 @@ try {
   await page.getByRole("menu", { name: "Table actions" }).waitFor();
   await page.locator("body").click({ position: { x: 2, y: 2 } });
   assert.equal(await page.getByRole("menu", { name: "Table actions" }).count(), 0, "outside press closes menu");
-  await tabs().first().click({ button: "right" });
   await tabs().nth(1).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete…" }).click();
   const deletion = page.getByRole("dialog", { name: "Delete table" });
