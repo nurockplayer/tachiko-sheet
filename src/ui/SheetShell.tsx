@@ -4185,7 +4185,9 @@ export function SheetShell(props: SheetShellProps) {
         // that named no row keeps nothing.
         keepGridRows(result.addedEntities ?? []);
       } else if (result.kind === "refused") {
-        const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
+        const refusal = result.refusalCode === "capacity_exceeded"
+          ? { message: result.message }
+          : draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
         setRowError(refusal);
         if (refusal.fields?.[0]) focusDraftAfterRender(refusal.fields[0], intent);
       } else {

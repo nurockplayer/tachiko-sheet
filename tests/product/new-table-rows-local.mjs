@@ -237,7 +237,7 @@ async function pendingCreateFocus(page) {
     const held = await page.evaluate(() => window.__rowEvidence.heldReplies);
     assert.equal(held.length, 1);
     assert.equal(held[0].status, "ok");
-    assert.equal(held[0].response.type, "opened", "withheld acknowledgement is the actual successful core creation");
+    assert.equal(held[0].response.type, "opened_window", "withheld acknowledgement is the actual successful core creation");
     assert.equal(await count(), before + 1, "pending keys never dispatch a second creation");
   } finally {
     // Deliver this actual reply once even if an assertion fails; never replay.

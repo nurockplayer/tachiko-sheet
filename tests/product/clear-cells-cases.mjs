@@ -1,6 +1,10 @@
 // #229: real kit fixtures, ordinary UI writers, passive Worker projection observer.
 import assert from "node:assert/strict";
-import { homeImportInput } from "./home-entry.mjs";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { j4CanaryText } from "../fixtures/j4-catalog-sales.mjs";
 
 async function fixture(page, derived = false) {
   return page.evaluate(async derived => {
@@ -258,21 +262,31 @@ export async function runClearCellsCases(page, { close, checks }) {
   checks.push("#229 imported optional Date/Yes-No (native since Work #606) clear in place with one request; one Undo restores");
   await close(page);
 
-  // Sparse cells keep the import small while the selection exceeds 100,000 cells.
-  const csv = Array.from({ length: 12 }, (_, i) => `Column${i}`).join(",") + "\r\n" + Array.from({ length: 8406 }, (_, i) => `row_${i}${",".repeat(11)}`).join("\r\n") + "\r\n";
-  await (await homeImportInput(page)).setInputFiles({ name: "clear-limit.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
-  const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  for (let c = 0; c < 12; c++) await preview.locator(".ts-import-column select").nth(c).selectOption("text");
-  await preview.getByRole("button", { name: "Import file", exact: true }).click();
-  await preview.waitFor({ state: "detached" }); await ready();
+  // Open a sparse canonical work file through the real working-size path.
+  const folder = await mkdtemp(path.join(tmpdir(), "sheet-clear-limit-"));
+  try {
+  const schema = JSON.parse(j4CanaryText["schemas.json"])[0];
+  schema.fields = Array.from({ length: 11 }, (_, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type: "text" }, required: false }));
+  await mkdir(path.join(folder, "entities"));
+  await writeFile(path.join(folder, "manifest.json"), j4CanaryText["manifest.json"]);
+  await writeFile(path.join(folder, "schemas.json"), JSON.stringify([schema]));
+  const shards = Object.fromEntries([..."0123456789abcdef"].map(key => [key, ""]));
+  for (let i = 0; i < 9091; i++) {
+    const id = `40000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+    shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${i}`, schema: schema.id, fields: { [schema.fields[0].id]: { kind: "text", value: `r${i}` } } }) + "\n";
+  }
+  for (const [shard, text] of Object.entries(shards)) await writeFile(path.join(folder, "entities", `${shard}.jsonl`), text);
+  await page.getByTestId("open-project").setInputFiles(folder);
+  await ready();
   const largeBefore = await projection(), largeCount = (await commands()).length;
   assert.equal(largeBefore.native_table_profile, true);
-  assert.equal(largeBefore.rows.length, 8406);
+  assert.equal(largeBefore.rows.length, 9091);
   const first = page.getByTestId(`cell:${largeBefore.rows[0].id}:${largeBefore.columns[0].id}`);
   await first.click();
   await page.keyboard.press("Control+Shift+End");
   await page.keyboard.press("Backspace"); await status("The selected range exceeds the 100,000-cell limit.").waitFor();
   assert.equal((await commands()).length, largeCount); assert.deepEqual(await projection(), largeBefore); await noUndo();
-  checks.push("#229 8406x12 range exceeds 100,000: local refusal, no chunks/requests/publication/history");
+  checks.push("#229 9091x11 range exceeds 100,000: local refusal, no chunks/requests/publication/history");
   await close(page);
+  } finally { await rm(folder, { recursive: true, force: true }); }
 }

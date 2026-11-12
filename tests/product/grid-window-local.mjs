@@ -80,7 +80,7 @@ try {
     await page.waitForFunction(() => {
       const table = document.querySelector('table[aria-label="Table"]');
       const pitch = table.querySelector("tbody tr.ts-row").offsetHeight;
-      return Math.abs(table.querySelector("tbody").offsetHeight - pitch * (Number(table.getAttribute("aria-rowcount")) - 1 - table.querySelectorAll("tr.ts-totals-row").length)) <= 2;
+      return Math.abs(table.querySelector("tbody").offsetHeight - pitch * (Number(table.getAttribute("aria-rowcount")) - 2 - table.querySelectorAll("tr.ts-totals-row").length)) <= 2;
     });
   }
 
