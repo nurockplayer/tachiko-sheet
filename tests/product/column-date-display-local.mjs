@@ -45,6 +45,19 @@ try {
   const values = () => rows().first().locator(".ts-cell").allTextContents();
   const check = async () => assert.deepEqual((await values()).slice(0, 7).map(s => s.trim()), expected);
   await ready(); await check();
+  // Change an imported Date column through every choice, then clear it.
+  const chooseDate = async label => {
+    await grid.getByRole("columnheader", { name: "Date1", exact: true }).hover();
+    await page.getByRole("button", { name: "Column actions for Date1", exact: true }).click();
+    await page.getByRole("button", { name: "Date format…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Date format", exact: true });
+    await dialog.getByRole("radio", { name: label, exact: true }).check();
+    await dialog.getByRole("button", { name: "Save format", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" }); await ready();
+    assert.equal((await values())[0].trim(), label);
+  };
+  for (const label of ["2026/11/7", "2026年11月7日", "11/7/2026", "7/11/2026", "Nov 7, 2026", "7 Nov 2026", "2026-11-07"]) await chooseDate(label);
+  await check();
   await rows().first().locator(".ts-cell").nth(7).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill("changed"); await editor.press("Enter"); await ready(); await check();

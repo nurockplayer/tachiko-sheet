@@ -1,18 +1,20 @@
 import { useId, useRef, useState } from "react";
-import type { NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { DateFormat, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import type { RowCommandOutcome } from "../contracts.js";
 import { formatNumberFor } from "./field-display.js";
 import { columnFormatDraft, columnFormatInput, columnFormatSettlement } from "./column-format.js";
 import type { ColumnFormatDraft } from "./column-format.js";
 import { Modal } from "./Modal.js";
 
-export function ColumnFormatDialog({ columnName, format, composing, onSubmit, onCancel, onSuccess }: {
-  columnName: string; format?: NumberFormat; composing(): boolean;
+export function ColumnFormatDialog({ columnName, format, dateFormat, composing, onSubmit, onSubmitDate, onCancel, onSuccess }: {
+  columnName: string; format?: NumberFormat; dateFormat?: DateFormat; composing(): boolean;
+  onSubmitDate?(format: DateFormat | null): Promise<RowCommandOutcome>;
   onSubmit(format: NumberFormat | null): Promise<RowCommandOutcome>;
   onCancel(): void; onSuccess(confirmed: boolean): void;
 }) {
   const id = useId();
   const [draft, setDraft] = useState(() => columnFormatDraft(format));
+  const [dateDraft, setDateDraft] = useState<DateFormat>(dateFormat ?? "iso");
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const decimalsRef = useRef<HTMLInputElement | null>(null);
@@ -42,6 +44,27 @@ export function ColumnFormatDialog({ columnName, format, composing, onSubmit, on
     const parsed = columnFormatInput(draft);
     if ("error" in parsed) { setError(parsed.error); return; }
     void submit(parsed.input);
+  }
+  if (dateFormat !== undefined) {
+    const choices: Array<[DateFormat, string]> = [["iso", "2026-11-07"], ["ymd_slash", "2026/11/7"], ["ymd_cjk", "2026年11月7日"], ["mdy", "11/7/2026"], ["dmy", "7/11/2026"], ["month_day_year", "Nov 7, 2026"], ["day_month_year", "7 Nov 2026"]];
+    const saveDate = async () => {
+      if (pendingRef.current || composing()) return;
+      if (dateDraft === dateFormat) { onSuccess(false); return; }
+      pendingRef.current = true; setPending(true); setError(null);
+      try {
+        const result = await onSubmitDate!(dateDraft === "iso" ? null : dateDraft);
+        if (result.kind === "refused" && result.refusalCode === "no_change") onSuccess(false);
+        else if (result.kind === "refused") setError(result.refusalCode === "invalid_number_format" ? "Date formats are available for Date columns. Nothing was changed." : result.message);
+        else onSuccess(result.kind === "confirmed");
+      } catch { setError("The format could not be sent. Your entry is kept; try again."); }
+      finally { pendingRef.current = false; setPending(false); }
+    };
+    return <Modal label="Date format" variant="save" onCancel={onCancel} dismissDisabled={pending}>
+      <div className="ts-dialog-intro"><h2 className="ts-h2">Format for “{columnName}”</h2></div>
+      <fieldset className="ts-dialog-field"><legend>Format</legend>{choices.map(([value, label]) => <label key={value} style={{display: "block"}}><input type="radio" name={id} value={value} checked={dateDraft === value} disabled={pending} onChange={() => { setDateDraft(value); setError(null); }} /> {label}</label>)}</fieldset>
+      {error !== null ? <p className="ts-dialog-error" role="alert">{error}</p> : null}
+      <div className="ts-dialog-actions"><button type="button" className="ts-button" disabled={pending} onClick={onCancel}>Cancel</button><button type="button" className="ts-button ts-button--primary" disabled={pending} onClick={() => void saveDate()}>Save format</button></div>
+    </Modal>;
   }
   return <Modal label="Number format" variant="save" onCancel={onCancel} dismissDisabled={pending}>
     <div>

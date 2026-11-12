@@ -508,7 +508,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat,
+    onSetColumnNumberFormat, onSetColumnDateFormat,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -4784,7 +4784,7 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       setRuleDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
                     }} /> : null}
-                    {table.native_table_profile && onSetColumnNumberFormat && column.field_type === "number" ? <button type="button" className="ts-button" aria-label="Number format…" data-column-action="Number format…" disabled={columnChangesBlocked} onClick={event => {
+                    {((table.native_table_profile && onSetColumnNumberFormat && column.field_type === "number") || (onSetColumnDateFormat && column.field_type === "date")) ? <button type="button" className="ts-button" aria-label={column.field_type === "date" ? "Date format…" : "Number format…"} data-column-action={column.field_type === "date" ? "Date format…" : "Number format…"} disabled={columnChangesBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                       disclosure.open = false;
@@ -5020,12 +5020,12 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 setRuleDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
               }}>{`Rule for “${focusedColumnName}”…`}</button> : null}
-              {table.native_table_profile && onSetColumnNumberFormat && focusedColumn.field_type === "number" ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+              {((table.native_table_profile && onSetColumnNumberFormat && focusedColumn.field_type === "number") || (onSetColumnDateFormat && focusedColumn.field_type === "date")) ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 const trigger = disclosure.querySelector<HTMLElement>("summary")!;
                 closeColumnToolbar(disclosure);
                 setFormatDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
-              }}>{`Number format for “${focusedColumnName}”…`}</button> : null}
+              }}>{`${focusedColumn.field_type === "date" ? "Date" : "Number"} format for “${focusedColumnName}”…`}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 closeColumnToolbar(disclosure);
@@ -6095,17 +6095,19 @@ export function SheetShell(props: SheetShellProps) {
           onCancel={() => { setRuleDialog(null); restore(); }}
         />;
       })() : null}
-      {formatDialog && onSetColumnNumberFormat && view && witness && table
+      {formatDialog && view && witness && table
         && formatDialog.collection === table.collection.id && formatDialog.occurrence === view.occurrence ? (() => {
         const column = columns.find(item => item.id === formatDialog.field);
-        if (!column || column.field_type !== "number") return null;
+        if (!column || (column.field_type !== "number" && column.field_type !== "date")) return null;
         const trigger = formatDialog.trigger;
         const restore = () => requestAnimationFrame(() => { if (trigger.isConnected) withAppFocus(() => trigger.focus()); });
         return <ColumnFormatDialog
           columnName={column.display_name}
           format={column.number_format}
+          dateFormat={column.field_type === "date" ? (column.date_format ?? "iso") : undefined}
           composing={() => props.appearancePreference.getSnapshot().composing}
-          onSubmit={format => onSetColumnNumberFormat(witness, table.collection.key, column.id, format)}
+          onSubmit={format => onSetColumnNumberFormat!(witness, table.collection.key, column.id, format)}
+          onSubmitDate={format => onSetColumnDateFormat!(witness, table.collection.key, column.id, format)}
           onSuccess={confirmed => { setFormatDialog(null); if (confirmed) setColumnAnnouncement(`Format updated for ${column.display_name}. Undo restores it.`); restore(); }}
           onCancel={() => { setFormatDialog(null); restore(); }}
         />;

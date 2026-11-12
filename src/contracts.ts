@@ -9,7 +9,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { A1Geometry, CapacityProjection, ColumnTotalsProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, NumberFormat } from "../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, CapacityProjection, ColumnTotalsProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat } from "../public/core-kit/runtime/protocol.js";
 import type { A1TranslationOutcome, GroupTotalsOutcome } from "./runtime/session.js";
 import type {
   CleanupOperation,
@@ -114,6 +114,7 @@ export interface SheetRuntime {
   setColumnConstraint(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<ConfirmedPublication>;
   /** Read Work's capacity accounting for a revision; null when the kit lacks the capability. */
   queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
+  setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<ConfirmedPublication>;
   setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;
   copyFormula(witness: ViewWitness, request: FormulaCopy): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
@@ -390,6 +391,7 @@ export interface SheetShellProps {
   onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<RowCommandOutcome>;
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;
+  onSetColumnDateFormat?(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<RowCommandOutcome>;
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
