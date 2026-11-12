@@ -932,6 +932,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     witness: ViewWitness,
     command: (client: PublicClient, revision: string) => Promise<PublicationProjection>,
     authoredSchema = false,
+    refreshRows = false,
   ) {
     return enqueue(async () => {
       const live = requireWitness(witness);
@@ -968,7 +969,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       let result: CoherentRead;
       try {
         let patchedRead: CoherentRead | null = null;
-        if (!authoredSchema && Array.isArray(publication.changed) && !publication.many &&
+        if (!authoredSchema && !refreshRows && Array.isArray(publication.changed) && !publication.many &&
           columnsRevision !== null && liveRead?.view.revision === live.revision &&
           liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
           const patched = patchTable(liveRead.view.table, publication.changed, true);
@@ -1071,7 +1072,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.setColumnDateFormat, "column date format");
       return command.call(client, revision, collection, field, format);
-    }, true);
+    }, false, true);
   }
 
   function setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null) {

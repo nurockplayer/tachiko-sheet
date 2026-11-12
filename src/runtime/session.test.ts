@@ -1923,6 +1923,7 @@ describe("setColumnDateFormat", () => {
     const confirmed = await runtime.setColumnDateFormat(witnessOf(view), COLLECTION.key, "f1", "ymd_cjk");
     expect(client.calls.setColumnDateFormat).toEqual([{ revision: view.revision, collection: COLLECTION.key, field: "f1", format: "ymd_cjk" }]);
     expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+    expect(confirmed.view.requiresPortableSave).toBeUndefined();
   });
 });
 
