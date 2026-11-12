@@ -73,7 +73,10 @@ try {
     const index = Math.round(i * lastRow / 29), value = 20001 + i; edits.push([index, value]);
     await reveal(index); await cell(index, 1).dblclick(); const editor = page.getByTestId("cell-editor"); await editor.fill(String(value)); before = await requests();
     await timed("edit", async () => { await editor.press("Enter"); await textIs(index, 1, value); await textIs(index, 7, value * 2); await textIs(index, 8, value + 2); }, { row: index, cells: [[1, value], [7, value * 2], [8, value + 2]] });
-    const after = await requests(); assert.equal(after.query_table ?? 0, before.query_table ?? 0, `full reload during edit ${i + 1}`);
+    const after = await requests();
+    // At <=1,000 rows queryWholeTable succeeds, so no columnsRevision is
+    // retained and confirmedMutation deliberately reloads the whole table.
+    assert.equal((after.query_table ?? 0) - (before.query_table ?? 0), rowCount <= 1000 ? 1 : 0, `unexpected full-table read count during edit ${i + 1}`);
     console.log(`PASS edit ${i + 1} query_table_window requests ${(after.query_table_window ?? 0) - (before.query_table_window ?? 0)}`);
   }
   const sorted = [...timings.edit].sort((a, b) => a - b);

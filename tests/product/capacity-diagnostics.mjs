@@ -90,8 +90,8 @@ export async function observeCapacity(context, { timing = false } = {}) {
         });
       }
       postMessage(data, ...args) {
-        const request = data.request ?? data;
-        const type = request.type ?? "unknown";
+        const request = data.request ?? data.operation ?? data;
+        const type = request.type ?? data.kind ?? "unknown";
         evidence.requests[type] = (evidence.requests[type] ?? 0) + 1;
         evidence.tail.push({ ms: Math.round(performance.now() - evidence.started), direction: "request", id: data.id,
           type, collection: request.collection, start: request.start, count: request.count,
@@ -134,8 +134,20 @@ export async function finishCapacityStep(page, label) {
   await page.waitForFunction(() => window.__capacityEvidence.step.frame !== null && window.__capacityEvidence.pending.size === 0);
   const split = await page.evaluate(() => {
     const evidence = window.__capacityEvidence, step = evidence.step;
-    const bytes = value => value == null ? 0 : value instanceof ArrayBuffer ? value.byteLength
-      : new TextEncoder().encode(JSON.stringify(value)).length;
+    // JSON envelope plus transferred binary bytes; structured-clone heap size
+    // is browser-specific and is not inferred from this transport-size estimate.
+    const bytes = value => {
+      if (value == null) return 0;
+      let binary = 0;
+      const json = JSON.stringify(value, (_key, item) => {
+        if (item instanceof ArrayBuffer || ArrayBuffer.isView(item)) {
+          binary += item.byteLength;
+          return { binaryBytes: item.byteLength };
+        }
+        return item;
+      });
+      return binary + new TextEncoder().encode(json).length;
+    };
     const round = n => Math.round(n * 10) / 10;
     const union = intervals => {
       let end = step.start, total = 0;
@@ -178,8 +190,9 @@ export async function finishCapacityStep(page, label) {
       worker, reads, workerUnionBeforeVisibleMs: round(workerMs), readUnionBeforeVisibleMs: round(readMs),
       workerReadOverlapMs: round(workerMs + readMs - busyMs),
       otherElapsedBeforeVisibleMs: round(step.visible - step.start - busyMs),
-      sheetAfterLastReplyToVisibleMs: step.requests.some(r => r.end <= step.visible) ? round(step.visible - lastReply) : null,
-      sheetAfterLastReplyToFrameMs: step.requests.some(r => r.end <= step.visible) ? round(step.frame - lastReply) : null,
+      sheetAfterLastPreVisibleReplyToVisibleMs: step.requests.some(r => r.end <= step.visible) ? round(step.visible - lastReply) : null,
+      sheetAfterLastPreVisibleReplyToFrameMs: step.requests.some(r => r.end <= step.visible) ? round(step.frame - lastReply) : null,
+      lastReplyToVisibleMs: step.requests.length ? round(step.visible - Math.max(...step.requests.map(r => r.end))) : null,
       largeReplies: largeReplies.map(({ signature, ...reply }) => reply) };
     step.disconnect(); evidence.step = null;
     return result;
