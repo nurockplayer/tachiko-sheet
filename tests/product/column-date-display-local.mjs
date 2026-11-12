@@ -113,7 +113,9 @@ try {
   await reimport.getByRole("button", { name: "Import file", exact: true }).click(); await ready();
   assert.ok((await rows().locator(".ts-cell").allTextContents()).some(text => text.trim() === "2026/11/7"));
   // A newly created Date column follows the same display path as an import.
-  await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
+  await page.getByRole("button", { name: "Close project", exact: true }).click();
+  await page.getByRole("dialog", { name: "Unsaved work", exact: true }).getByRole("button", { name: "Close without saving", exact: true }).click();
+  await waitForColdHome(page);
   await page.getByRole("button", { name: "New table", exact: true }).click();
   const newTable = page.getByRole("dialog", { name: "New table", exact: true });
   await newTable.getByLabel("Table name", { exact: true }).fill("New dates");
