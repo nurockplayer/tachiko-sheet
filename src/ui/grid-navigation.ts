@@ -77,3 +77,17 @@ export function todayIsoDate(now: Date = new Date()): string {
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
 }
+
+export interface GridNavigationPosition { entity: string; field: string }
+
+/** Track a Tab run only while its destination stays in the same row. */
+export function tabRunAfterMove(start: GridNavigationPosition | null, at: GridNavigationPosition, destination: GridNavigationPosition | undefined): GridNavigationPosition | null {
+  if (!destination || destination.entity !== at.entity) return null;
+  return start?.entity === at.entity ? start : at;
+}
+
+export function tabRunEnterTarget(start: GridNavigationPosition | null, at: GridNavigationPosition, order: readonly GridNavigationPosition[], columns: number): GridNavigationPosition | null {
+  if (!start || start.entity !== at.entity) return null;
+  const index = order.findIndex(item => item.entity === start.entity && item.field === start.field);
+  return index < 0 ? null : order[index + columns] ?? null;
+}

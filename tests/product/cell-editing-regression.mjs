@@ -220,6 +220,29 @@ const cases = [
     assert.ok(selected.length > 0 && selected.every((value) => value === "true"), "Select All still covers every table cell after a resize");
     assert.equal(await focused(firstTitle), true, "Select All still keeps focus where it was");
   }],
+  ["Tab run returns to its starting column and ArrowDown cancels it", async (page) => {
+    const start = cell(page, "title");
+    const nextRow = await start.evaluate(node => node.parentElement.nextElementSibling.querySelector(`td[data-work-field="${node.dataset.workField}"]`).dataset.testid);
+    let input = await entry(page, "title", "F2"); await replace(input, "Run title");
+    await published(page, input, "title", "Run title", "Tab");
+    input = await entry(page, "area", "F2"); await replace(input, "Run area");
+    await published(page, input, "area", "Run area", "Tab");
+    input = await entry(page, "impact", "F2"); await replace(input, "42");
+    await published(page, input, "impact", "42");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id, nextRow);
+    await start.focus(); await page.keyboard.press("Tab");
+    await page.keyboard.press("F2"); await editor(page).fill("Caret correction");
+    await editor(page).press("ArrowLeft"); await editor(page).press("Enter");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id, nextRow);
+    assert.equal((await cell(page, "area").textContent()).trim(), "Caret correction");
+    await start.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("ArrowDown");
+    const areaDestination = await page.evaluate(() => {
+      const node = document.activeElement;
+      return node.parentElement.nextElementSibling?.querySelector(`td[data-work-field="${node.dataset.workField}"]`)?.dataset.testid ?? node.dataset.testid;
+    });
+    await page.keyboard.press("F2"); await editor(page).fill("Arrow reset"); await editor(page).press("Enter");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id, areaDestination);
+  }],
   ["Tab and Shift+Tab publish complete scalars once before moving grid focus", async (page) => {
     let input = await entry(page, "impact", "F2"); await replace(input, "12345");
     await published(page, input, "impact", "12345", "Tab");
