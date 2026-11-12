@@ -661,9 +661,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
       const transfer = await kit.projectTransferFromFiles(files);
-      return openSession(kit, client, requestedAt, async () => {
-        return capability(client.openProjectWorkingSize, "working-size project open").call(client, transfer);
-      });
+      const open = capability(client.openProjectWorkingSize, "working-size project open");
+      return openSession(kit, client, requestedAt, () => open.call(client, transfer));
     });
   }
 
@@ -677,7 +676,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       // refusal is pre-dispatch and must preserve the resident occurrence.
       kit.preflightCanonicalProjectEntries(files);
       const transfer = kit.projectTransferFromEntries(files);
-      return openSession(kit, client, requestedAt, () => capability(client.openProjectWorkingSize, "working-size project open").call(client, transfer));
+      const open = capability(client.openProjectWorkingSize, "working-size project open");
+      return openSession(kit, client, requestedAt, () => open.call(client, transfer));
     });
   }
 
@@ -691,7 +691,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       // Verify is read-only. Refused packages cannot replace the current work.
       await afterNotReplaced(requestedAt, dispatch(kit, () => client.verifyPortableRo(transfer.slice(0))));
-      return openSession(kit, client, requestedAt, () => capability(client.openPortableRoWorkingSize, "working-size work-file open").call(client, transfer), true);
+      const open = capability(client.openPortableRoWorkingSize, "working-size work-file open");
+      return openSession(kit, client, requestedAt, () => open.call(client, transfer), true);
     });
   }
 
@@ -711,9 +712,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
-      return openSession(kit, client, requestedAt, () => importedMetadata
-        ? client.openProject(bytes.slice(0))
-        : capability(client.openProjectWorkingSize, "working-size project open").call(client, bytes.slice(0)));
+      const open = importedMetadata ? client.openProject
+        : capability(client.openProjectWorkingSize, "working-size project open");
+      return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0)));
     });
   }
 

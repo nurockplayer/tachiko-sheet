@@ -2571,7 +2571,7 @@ describe("working-size entry selection", () => {
       : entry === "canonical" ? runtime.openCanonical(CANONICAL_FILES)
       : entry === "opaque" ? runtime.openOpaque(new ArrayBuffer(4))
       : runtime.openWorkFile(new ArrayBuffer(4));
-    await expect(request).rejects.toMatchObject({ code: "capability-missing" });
+    await expect(request).rejects.toThrow(/installed public core kit does not provide/);
     expect(await runtime.read()).toEqual(view);
   });
 
@@ -2580,7 +2580,7 @@ describe("working-size entry selection", () => {
     Object.assign(client, { newTableWorkingSize: undefined });
     const runtime = createSheetRuntime(async () => makeKit(client).kit);
     await expect(runtime.newTable("Working", [{ name: "A", field_type: "text" }]))
-      .rejects.toMatchObject({ code: "capability-missing" });
+      .rejects.toThrow(/installed public core kit does not provide/);
     expect(client.calls.newTable).toEqual([]);
   });
 });
