@@ -63,6 +63,7 @@ import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
 import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
+import { DeleteTableDialog } from "./DeleteTableDialog.js";
 import { RenameTableDialog } from "./RenameTableDialog.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
@@ -519,6 +520,7 @@ export function SheetShell(props: SheetShellProps) {
     onCopyFormula,
     onRemoveRows,
     onRenameTable,
+    onDeleteTable,
     onDuplicateTable,
     onQueryShownTotals,
     onQueryGroupTotals,
@@ -701,6 +703,9 @@ export function SheetShell(props: SheetShellProps) {
   const [openedFileSignal, setOpenedFileSignal] = useState(0);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
   const [tableMenu, setTableMenu] = useState<{ key: string; id: string; name: string; x: number; y: number; witness: ViewWitness } | null>(null);
+  const [renameTableDraftActive, setRenameTableDraftActive] = useState(false);
+  const [deleteTable, setDeleteTable] = useState<{ key: string; name: string; witness: ViewWitness } | null>(null);
+  const tableMenuRef = useRef<HTMLDivElement>(null);
   const [renameTable, setRenameTable] = useState<{ key: string; name: string; witness: ViewWitness } | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
@@ -2000,7 +2005,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -2126,9 +2131,15 @@ export function SheetShell(props: SheetShellProps) {
   // Print, like a download, waits for unapplied edits: it prints Work's values.
   const printBlocked = controlsLocked || spreadsheetDraftLocked || displayRows.length === 0;
   const spreadsheetDownloadLocked = controlsLocked || currentness !== "current" || spreadsheetDraftLocked;
+  useEffect(() => {
+    if (!tableMenu) return;
+    const outside = (event: PointerEvent) => { if (!tableMenuRef.current?.contains(event.target as Node)) setTableMenu(null); };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [tableMenu]);
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
-    (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null;
+    (renameTable !== null && renameTableDraftActive) || (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -5890,7 +5901,7 @@ export function SheetShell(props: SheetShellProps) {
               return <button key={collection.key} type="button" role="tab" id={tableTabId(collection.key)}
                 aria-label={tableTabName(name, index, view.collections.length)} aria-selected={active} aria-controls="ts-table-workspace"
                 tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-table-tab ts-tab--active" : "ts-tab ts-table-tab"} title={name}
-                onContextMenu={event => { event.preventDefault(); if (!onRenameTable || !witness || columnChangesBlocked) return; setTableMenu({ key: collection.key, id: collection.id, name, x: event.clientX, y: event.clientY, witness }); }}
+                onContextMenu={event => { event.preventDefault(); if ((!onRenameTable && !onDeleteTable) || !witness || columnChangesBlocked) return; setTableMenu({ key: collection.key, id: collection.id, name, x: event.clientX, y: event.clientY, witness }); }}
                 onDoubleClick={() => { if (onRenameTable && witness && !columnChangesBlocked && !names.table(collection.id)) setRenameTable({ key: collection.key, name, witness }); }}
                 onKeyDown={event => {
                   if (!onRenameTable || !witness || columnChangesBlocked || isComposingEvent(event)) return;
@@ -6082,11 +6093,14 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div role="menu" aria-label="Table actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
+      {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Table actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
         <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!names.table(tableMenu.id)} disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename…</button>
+        {onDeleteTable ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={(view?.collections.length ?? 0) <= 1} title={(view?.collections.length ?? 0) <= 1 ? "Keep at least one table in this work." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setDeleteTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Delete…</button> : null}
+        {(view?.collections.length ?? 0) <= 1 ? <span className="ts-hint">Keep at least one table in this work.</span> : null}
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
-      {renameTable && onRenameTable ? <RenameTableDialog initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
+      {renameTable && onRenameTable ? <RenameTableDialog onDraftChange={setRenameTableDraftActive} initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); setRenameTableDraftActive(false); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
+      {deleteTable && onDeleteTable ? <DeleteTableDialog name={deleteTable.name} onDelete={() => onDeleteTable(deleteTable.witness, deleteTable.key)} onClose={() => { const key = deleteTable.key; setDeleteTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
       {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={(confirmed, focusInside) => finishColumnDialog(confirmed, confirmed, focusInside)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
       {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {
         const generation = focusIntentRef.current;

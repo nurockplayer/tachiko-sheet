@@ -3,11 +3,12 @@ import type { RowCommandOutcome } from "../contracts.js";
 import { duplicateOutcomeSettlement } from "./duplicate-table.js";
 import { Modal } from "./Modal.js";
 
-export function RenameTableDialog({ initialName, composing, onRename, onClose }: {
+export function RenameTableDialog({ initialName, composing, onRename, onClose, onDraftChange }: {
   initialName: string;
   composing(): boolean;
   onRename(name: string): Promise<RowCommandOutcome>;
   onClose(): void;
+  onDraftChange(active: boolean): void;
 }) {
   const [name, setName] = useState(initialName);
   const [pending, setPending] = useState(false);
@@ -35,7 +36,7 @@ export function RenameTableDialog({ initialName, composing, onRename, onClose }:
         <label className="ts-field-label" htmlFor={id}>Table name</label>
         <input ref={input} id={id} data-autofocus="true" className="ts-text-input" value={name} readOnly={pending}
           aria-invalid={error !== null || undefined} aria-describedby={error ? `${id}-error` : undefined}
-          onChange={event => { setName(event.currentTarget.value); setError(null); }} />
+          onChange={event => { setName(event.currentTarget.value); onDraftChange(event.currentTarget.value !== initialName); setError(null); }} />
       </div>
       {error ? <p id={`${id}-error`} className="ts-dialog-error" role="alert">{error}</p> : null}
       <div className="ts-dialog-actions">
