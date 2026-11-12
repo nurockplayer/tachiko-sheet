@@ -177,6 +177,36 @@ try {
   await start();
   await button("Open sales example").click(); await ready();
   assert.equal(await tabs().count(), 2);
+  await tabs().first().focus(); await page.keyboard.press("F2");
+  let rename = page.getByRole("dialog", { name: "Rename table" });
+  const original = await rename.getByLabel("Table name").inputValue();
+  const otherName = await tabs().nth(1).textContent();
+  const beforeRequests = await page.evaluate(() => window.__tabsEvidence.requests.filter(r => r.request?.type === "rename_table").length);
+  await rename.getByRole("button", { name: "Rename", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__tabsEvidence.requests.filter(r => r.request?.type === "rename_table").length), beforeRequests);
+  await tabs().first().dblclick();
+  for (const invalid of ["", otherName, "x".repeat(4097), "bad\u0001name"]) {
+    await rename.getByLabel("Table name").fill(invalid);
+    await rename.getByRole("button", { name: "Rename", exact: true }).click();
+    await rename.getByRole("alert").waitFor();
+    assert.equal(await tabs().first().textContent(), original);
+  }
+  await rename.getByRole("button", { name: "Cancel" }).click();
+  assert.equal(await tabs().first().evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press("Shift+F10");
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  await rename.getByLabel("Table name").fill("Renamed active");
+  await rename.getByRole("button", { name: "Rename", exact: true }).dblclick();
+  await ready();
+  assert.equal(await tabs().first().textContent(), "Renamed active");
+  assert.equal(await picker().locator("option").first().textContent(), "Renamed active");
+  await button("Undo").click(); await ready();
+  assert.equal(await tabs().first().textContent(), original);
+  await button("Redo").click(); await ready();
+  assert.equal(await tabs().first().textContent(), "Renamed active");
+  await button("Undo").click(); await ready();
+  assert.equal(await tabs().first().textContent(), original);
+  checks.push("active rename, name refusals, unchanged name, keyboard, cancel, Undo and Redo");
   await assertPanelReachability();
   const labels = await picker().locator("option").allTextContents();
   assert.deepEqual(await tabs().allTextContents(), labels, "tab order follows workbook/select order");

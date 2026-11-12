@@ -111,6 +111,7 @@ class FakeClient {
     editBoolean: 0,
     editDate: 0,
     trackerCommand: [] as TrackerCommand[],
+    renameTable: [] as Array<{ revision: string; collection: string; name: string }>,
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string; columnNames?: Record<string, string> }>,
     queryColumnTotals: [] as Array<{ revision: string; collection: string; entities: string[] }>,
     queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
@@ -223,6 +224,13 @@ class FakeClient {
     if (request.type === "undo") { this.#undoCount -= 1; this.#redoCount += 1; }
     else { this.#redoCount -= 1; this.#undoCount = Math.min(64, this.#undoCount + 1); }
     return { base_revision: base, resulting_revision: this.#revision, entities: [IMPACT.entity], fields: [IMPACT], affected_calculations: [], schemas: [], schema_fields: [] };
+  }
+
+  async renameTable(revision: string, collection: string, name: string): Promise<PublicationProjection> {
+    this.calls.renameTable.push({ revision, collection, name });
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    return this.#publish(IMPACT);
   }
 
   async duplicateCollection(revision: string, collection: string, name: string, columnNames?: Record<string, string>): Promise<DuplicateCollectionProjection> {
@@ -633,6 +641,14 @@ function catalogTable(
 }
 
 describe("createSheetRuntime", () => {
+  it("sends table rename with the live revision and refreshes the view", async () => {
+    const { client, runtime, view } = await opened();
+    const result = await runtime.renameTable(witnessOf(view), "tasks", "New name");
+    expect(client.calls.renameTable).toEqual([{ revision: view.revision, collection: "tasks", name: "New name" }]);
+    expect(result.view.revision).not.toBe(view.revision);
+    await expect(runtime.renameTable(witnessOf(view), "tasks", "stale")).rejects.toThrow();
+    expect(client.calls.renameTable).toHaveLength(1);
+  });
   it("shares one read-only preparation and client with later explicit work", async () => {
     const client = new FakeClient();
     const kitParts = makeKit(client);

@@ -6065,8 +6065,8 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {tableMenu && witness ? <div role="menu" aria-label="Table actions" className="ts-command-menu" style={{ position: "fixed", left: tableMenu.x, top: tableMenu.y, zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
-        <button type="button" role="menuitem" className="ts-button" autoFocus disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness }); setTableMenu(null); }}>Rename…</button>
+      {tableMenu && witness ? <div role="menu" aria-label="Table actions" tabIndex={-1} autoFocus className="ts-command-menu" style={{ position: "fixed", left: tableMenu.x, top: tableMenu.y, zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
+        <button type="button" role="menuitem" className="ts-button" disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness }); setTableMenu(null); }}>Rename…</button>
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
