@@ -13,6 +13,7 @@ export async function observeCapacity(context) {
           evidence.replies[type] = (evidence.replies[type] ?? 0) + 1;
           evidence.tail.push({ ms: Math.round(performance.now() - evidence.started), direction: "reply", id: data.id,
             type, error: data.error ?? response?.error,
+            capacity: type === "capacity" ? response.payload : undefined,
             start: response?.payload?.start, rows: response?.payload?.rows?.length,
             total: response?.payload?.total_rows });
           evidence.tail = evidence.tail.slice(-16);

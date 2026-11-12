@@ -270,17 +270,19 @@ export async function runClearCellsCases(page, { close, checks }) {
   schema.fields = Array.from({ length: 11 }, (_, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type: "text" }, required: false }));
   await mkdir(path.join(folder, "entities"));
   await writeFile(path.join(folder, "manifest.json"), j4CanaryText["manifest.json"]);
-  await writeFile(path.join(folder, "schemas.json"), JSON.stringify([schema]));
+  await writeFile(path.join(folder, "schemas.json"), JSON.stringify([schema], null, 2) + "\n");
   const shards = Object.fromEntries([..."0123456789abcdef"].map(key => [key, ""]));
   for (let i = 0; i < 9091; i++) {
     const id = `40000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
     shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${i}`, schema: schema.id, fields: { [schema.fields[0].id]: { kind: "text", value: `r${i}` } } }) + "\n";
   }
   for (const [shard, text] of Object.entries(shards)) await writeFile(path.join(folder, "entities", `${shard}.jsonl`), text);
+  const windowsBefore = await page.evaluate(() => window.__capacityEvidence.requests.query_table_window ?? 0);
   const started = performance.now();
   await page.getByTestId("open-project").setInputFiles(folder);
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor({ timeout: 120_000 });
-  console.log(`PASS: 9091x11 canonical open ready in ${Math.round(performance.now() - started)} ms`);
+  const windowRequests = await page.evaluate(() => window.__capacityEvidence.requests.query_table_window ?? 0) - windowsBefore;
+  console.log(`PASS: 9091x11 canonical open ready in ${Math.round(performance.now() - started)} ms; ${windowRequests} window requests`);
   await capacitySnapshot(page, "9091x11 ready");
   const largeBefore = await projection(), largeCount = (await commands()).length;
   assert.equal(largeBefore.native_table_profile, true);

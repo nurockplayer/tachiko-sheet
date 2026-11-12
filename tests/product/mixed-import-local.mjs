@@ -190,6 +190,35 @@ async function refusedImport(page, file, label) {
 }
 
 try {
+  // Ordinary imports admit 8,406 rows; the smaller lifecycle fixtures do not
+  // cross that boundary. Exercise both UI writers at the actual edge.
+  COLS = 1;
+  const edgeProfile = await mkdtemp(path.join(work, "profile-edge-"));
+  const edgePage = await start(edgeProfile);
+  await importSource(edgePage, path.join(fixtures, "source-8406x1.csv"));
+  const beforeInsert = await observedTable(edgePage);
+  assert.equal(beforeInsert.rows.length, 8406);
+  const draft = grid(edgePage).locator(".ts-entry-row");
+  const entry = draft.locator("[data-entry-field]").first();
+  await fillDraftCell(edgePage, entry, "new");
+  await draftActions(edgePage).getByRole("button", { name: "Add row", exact: true }).click();
+  const sentence = "This table can hold up to 8,406 rows; this change would make 8,407. Nothing was changed.";
+  try {
+    await edgePage.getByRole("alert").filter({ hasText: sentence }).waitFor();
+    assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "entry refusal adds nothing");
+    await capacitySnapshot(edgePage, "8406-row imported entry refusal");
+    console.log(`PASS: imported entry refusal: ${sentence}`);
+    await draftActions(edgePage).getByRole("button", { name: "Discard", exact: true }).click();
+    await entry.evaluate(node => {
+      const data = new DataTransfer(); data.setData("text/plain", "new");
+      node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await edgePage.locator('.ts-clipboard-status[role="status"]').filter({ hasText: sentence }).waitFor();
+    assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "paste refusal adds nothing");
+    await capacitySnapshot(edgePage, "8406-row imported paste refusal");
+    console.log(`PASS: imported paste refusal: ${sentence}`);
+  } catch (error) { await capacitySnapshot(edgePage, "8406-row imported refusal failure"); throw error; }
+  await context.close(); context = undefined;
   for (const [rows, cols] of [[320, 2], [1000, 16]]) {
     ROWS = rows; COLS = cols;
     for (const format of ["csv", "xlsx"]) {
@@ -197,20 +226,6 @@ try {
       const name = `mixed-${rows}x${cols}-${format}`;
       let page = await start(profile);
       await importSource(page, path.join(fixtures, `source-${rows}x${cols}.${format}`));
-      const beforeInsert = await observedTable(page);
-      const draft = grid(page).locator(".ts-entry-row");
-      for (const column of beforeInsert.columns) {
-        await fillDraftCell(page, draft.locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? "1" : "new");
-      }
-      await draftActions(page).getByRole("button", { name: "Add row", exact: true }).click();
-      const insertionRefusal = page.getByRole("alert").filter({ hasText: /Nothing was changed/ });
-      try { await insertionRefusal.waitFor(); }
-      catch (error) { await capacitySnapshot(page, `imported ${rows}x${cols} entry refusal`); throw error; }
-      const insertionSentence = await insertionRefusal.textContent();
-      assert.match(insertionSentence, /^This table can hold up to [\d,]+ rows; this change would make [\d,]+\. Nothing was changed\.$/);
-      assert.deepEqual((await observedTable(page)).rows, beforeInsert.rows, "Work refusal adds nothing");
-      console.log(`PASS: imported row refusal: ${insertionSentence}`);
-      await draftActions(page).getByRole("button", { name: "Discard", exact: true }).click();
       const identities = await allCells(page, false);
       await edit(page, rows >> 1, 1, "424242");
       assert.deepEqual(await allCells(page, true), identities, "Edit retains every cell identity");
