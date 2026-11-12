@@ -49,7 +49,7 @@ import type { InterfaceProfileV1 } from "../application/interface-profile-contra
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
-import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate } from "./grid-navigation.js";
+import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate, tabRunAfterMove, tabRunEnterTarget } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
 import { nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { isTableSwitchShortcut, tableTabIndex, tableTabName } from "./workbook-tabs.js";
@@ -723,6 +723,7 @@ export function SheetShell(props: SheetShellProps) {
     revision: string;
     previousEntities: string[];
     field: string;
+    draftFocusField?: string;
   } | null>(null);
   const newTableTriggerRef = useRef<HTMLButtonElement>(null);
   const duplicateTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -881,6 +882,7 @@ export function SheetShell(props: SheetShellProps) {
   // editor; rechecked when the refocus is finally applied.
   const focusRejectedEditorRef = useRef<{ generation: number; occurrence: string | null } | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  const tabRunStartRef = useRef<GridPosition | null>(null);
   const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
   const fillDragRef = useRef<{ source: CellRectangle; identity: string | null; revision: string | undefined } | null>(null);
   const [fillPreview, setFillPreview] = useState<CellRectangle | null>(null);
@@ -1128,6 +1130,10 @@ export function SheetShell(props: SheetShellProps) {
     if (hasDraftRow) order.push(...columns.map(column => ({ entity: DRAFT_ROW, field: column.id })));
     return order;
   }, [displayRows, columns, table, hasDraftRow]);
+  useLayoutEffect(() => {
+    if (tabRunStartRef.current && !gridOrder.some(item => item.entity === tabRunStartRef.current?.entity)) tabRunStartRef.current = null;
+  }, [gridOrder]);
+  useLayoutEffect(() => { tabRunStartRef.current = null; }, [collectionIdentity]);
   const gridWindowed = displayRows.length > GRID_WINDOW_THRESHOLD;
   const rowIndexByEntity = useMemo(() => {
     const indices = new Map<string, number>();
@@ -2900,6 +2906,7 @@ export function SheetShell(props: SheetShellProps) {
    * selection. Anything else keeps the box and says why.
    */
   function goToAddress(text: string): boolean {
+    tabRunStartRef.current = null;
     const target = a1GoToTarget(text, displayRows.length, columns.length);
     if (!target) {
       announceClipboard(`“${text.trim()}” isn't a cell in this table.`, true, true);
@@ -3249,6 +3256,7 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Escape"].includes(event.key) || (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey))) tabRunStartRef.current = null;
     // Paste Special: its choices at the cell (Ctrl+Alt+V, or Ctrl+⌘V on a Mac), or values straight away (Ctrl+Shift+V, ⌘⇧V).
     if (!draft && !editor && event.key.toLowerCase() === "v") {
       if (event.ctrlKey && (event.altKey || event.metaKey) && !event.shiftKey) {
@@ -3418,7 +3426,11 @@ export function SheetShell(props: SheetShellProps) {
       event.preventDefault();
       if (action === "previous") moveFocus(event, position, -columns.length);
       else if (action === "edit") beginDraftEdit(columns.find(column => column.id === position.field)!);
-      else void addRow(event.key === "Enter");
+      else {
+        const startField = event.key === "Enter" && tabRunStartRef.current?.entity === DRAFT_ROW ? tabRunStartRef.current.field : undefined;
+        tabRunStartRef.current = null;
+        void addRow(event.key === "Enter", startField);
+      }
       return;
     }
     if (event.key === "Enter" || event.key === "F2") {
@@ -3434,6 +3446,8 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     if (event.key === "Tab") {
+      const index = gridOrder.findIndex(item => item.entity === position.entity && item.field === position.field);
+      tabRunStartRef.current = tabRunAfterMove(tabRunStartRef.current, position, index < 0 ? undefined : gridOrder[index + (event.shiftKey ? -1 : 1)]);
       moveFocus(event, position, event.shiftKey ? -1 : 1);
       return;
     }
@@ -3465,9 +3479,11 @@ export function SheetShell(props: SheetShellProps) {
 
   function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
+    if (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) tabRunStartRef.current = null;
     // Keep editor input and caret keys from being reinterpreted by the cell grid.
     event.stopPropagation();
     if (event.key === "Escape") {
+      tabRunStartRef.current = null;
       event.preventDefault();
       cancelEdit();
       return;
@@ -3494,13 +3510,16 @@ export function SheetShell(props: SheetShellProps) {
         }
         if (action === "publish") {
           setEditor(null);
-          void addRow(event.key === "Enter");
+          const startField = event.key === "Enter" && tabRunStartRef.current?.entity === DRAFT_ROW ? tabRunStartRef.current.field : undefined;
+          tabRunStartRef.current = null;
+          void addRow(event.key === "Enter", startField);
           return;
         }
       }
       // Ctrl/Cmd+Enter fills the whole selection with this entry; without one it
       // behaves like Enter, keeping focus on the cell.
       if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && !event.repeat && editor.entity !== DRAFT_ROW) {
+        tabRunStartRef.current = null;
         const area = selectionRectangle;
         if (area) void fillSelection(area);
         else {
@@ -3513,10 +3532,15 @@ export function SheetShell(props: SheetShellProps) {
       }
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const step = (event.shiftKey ? -1 : 1) * (event.key === "Enter" ? columns.length : 1);
+      const returnTarget = event.key === "Enter" && !event.shiftKey ? tabRunEnterTarget(tabRunStartRef.current, position, gridOrder, columns.length) : null;
+      const index = gridOrder.findIndex(item => item.entity === position.entity && item.field === position.field);
+      const nextRun = event.key === "Tab" ? tabRunAfterMove(tabRunStartRef.current, position, index < 0 ? undefined : gridOrder[index + step]) : null;
       const intent = completionIntent();
       void commitEditor().then((accepted) => {
         if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => {
-          if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
+          tabRunStartRef.current = nextRun;
+          if (returnTarget) { setSelectedEntity(returnTarget.entity); focusCell(returnTarget.entity, returnTarget.field); }
+          else if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
         });
       });
     }
@@ -4160,7 +4184,7 @@ export function SheetShell(props: SheetShellProps) {
     // the pre-insert render's draft/row inventory in an animation callback.
     if (!view || view.revision === request.revision || commitPending || props.busy || currentness !== "current") return;
     setRowInsertFocus(null);
-    const target = rowInsertFocusTarget(table, hasDraftRow, request.previousEntities, request.field);
+    const target = rowInsertFocusTarget(table, hasDraftRow, request.previousEntities, request.field, request.draftFocusField);
     requestAnimationFrame(() => {
       if (target && completionMayUpdateUi(request.intent)) withAppFocus(() => focusCell(target.entity, target.field));
     });
@@ -4171,7 +4195,7 @@ export function SheetShell(props: SheetShellProps) {
     return controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraft?.needsReview === true || props.appearancePreference.getSnapshot().composing;
   }
 
-  async function addRow(redirectMissing = false): Promise<void> {
+  async function addRow(redirectMissing = false, draftFocusField?: string): Promise<void> {
     if (!view || !witness || !onInsertRow || rowInsertBlocked()) return;
     const draft = rowDraft?.occurrence === view.occurrence && rowDraft.collection === table?.collection.id
       ? rowDraft : { occurrence: view.occurrence, collection: view.table.collection.id, values: {} };
@@ -4198,7 +4222,7 @@ export function SheetShell(props: SheetShellProps) {
         // Inputs are locked during dispatch. Clear only this submitted draft.
         setRowDraft((current) => current === rowDraft ? null : current);
         setRowInsertFocus({ intent, collection: view.table.collection.id, revision: view.revision,
-          previousEntities: rowSource(view.table).allRowsForNow().map(rowEntity), field: submittedField ?? columns[0]?.id ?? "" });
+          previousEntities: rowSource(view.table).allRowsForNow().map(rowEntity), field: submittedField ?? columns[0]?.id ?? "", draftFocusField });
         // The new row is already in the installed projection. Keep it visible
         // under the active filter, in this table's own settings. A publication
         // that named no row keeps nothing.
@@ -5297,6 +5321,7 @@ export function SheetShell(props: SheetShellProps) {
           // A press inside the cell's own editor belongs to that editor: its
           // native caret placement must survive, and it inserts no reference.
           if (cellEditorOwnsPointer(event.target as Element | null)) return;
+          tabRunStartRef.current = null;
           // The bar owns the caret and the cell has an address: this click
           // inserts its reference and never moves focus or commits. Cells
           // without one (the entry row, stubs) keep their normal behaviour.

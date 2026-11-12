@@ -27,6 +27,9 @@ describe("row insertion completion focus", () => {
     expect(rowInsertFocusTarget(table(["inserted"]), true, [], "second"))
       .toEqual({ entity: DRAFT_ROW, field: "first" });
   });
+  it("returns to the Tab run start in the new draft", () => {
+    expect(rowInsertFocusTarget(table(["inserted"]), true, [], "first", "second")).toEqual({ entity: DRAFT_ROW, field: "second" });
+  });
   it("does not invent a cell when no row or column survives", () => {
     expect(rowInsertFocusTarget(table([]), false, [], "second")).toBeNull();
     expect(rowInsertFocusTarget(table(["inserted"], []), false, [], "second")).toBeNull();

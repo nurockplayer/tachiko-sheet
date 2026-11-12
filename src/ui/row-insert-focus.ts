@@ -10,12 +10,13 @@ export function rowInsertFocusTarget(
   hasDraftRow: boolean,
   previousEntities: readonly string[],
   field: string,
+  draftFocusField?: string,
 ): { entity: string; field: string } | null {
   const columns = tableColumns(table);
   const first = columns[0];
   if (!first) return null;
   // Preserve the existing below-limit behavior: return to the first draft cell.
-  if (hasDraftRow) return { entity: DRAFT_ROW, field: first.id };
+  if (hasDraftRow) return { entity: DRAFT_ROW, field: columns.some(column => column.id === draftFocusField) ? draftFocusField! : first.id };
   const source = rowSource(table);
   const inserted = source.allRowsForNow().find(row => !previousEntities.includes(rowEntity(row)));
   if (inserted && columns.some(column => column.id === field)) return { entity: rowEntity(inserted), field };

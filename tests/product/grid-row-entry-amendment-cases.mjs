@@ -61,6 +61,16 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   checks.push("amendment-untouched-all-text-enter-edit-tab-exit-add-no-dispatch");
   await close();
 
+  await create("Tab run draft", [["One", "text"], ["Two", "text"], ["Three", "text"]]);
+  await entry().first().press("F2"); await editor().fill("a"); await editor().press("Tab");
+  await page.keyboard.press("F2"); await editor().fill("b"); await editor().press("Tab");
+  await page.keyboard.press("F2"); await editor().fill("c"); await editor().press("Enter");
+  await ready(page);
+  await page.waitForFunction(() => document.activeElement === document.querySelector(".ts-entry-row [data-entry-field]"));
+  assert.equal((await projection(page)).rows.length, 1, "Tab run publishes the draft row");
+  checks.push("draft-tab-tab-enter-start-column");
+  await close();
+
   await create("Draft navigation", [["Item", "text"], ["Amount", "number"], ["Paid", "boolean"]]);
   await capture("empty-draft");
   const empty = await projection(page), noInserts = await requests();
