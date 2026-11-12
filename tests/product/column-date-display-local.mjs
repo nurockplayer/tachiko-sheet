@@ -81,6 +81,17 @@ try {
   await page.getByRole("button", { name: "Column actions for Date2", exact: true }).click();
   await page.getByRole("button", { name: "Sort A → Z", exact: true }).click(); await ready();
   assert.equal((await values())[7].trim(), "earlier");
+  // Record what Find and the filter picker expose for Work's display text.
+  await page.keyboard.press("ControlOrMeta+F");
+  await page.getByLabel("Find in table").fill("2026/11/7");
+  console.log("Date Find:", await page.locator(".ts-find-status").textContent());
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await grid.getByRole("columnheader", { name: "Date1", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for Date1", exact: true }).click();
+  await page.getByRole("button", { name: "Filter…", exact: true }).click();
+  await page.getByLabel("Filter type for Date1").selectOption("values");
+  console.log("Date filter values:", (await page.locator(".ts-filter-values").textContent()).trim());
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save a copy", exact: true }).click();
   await page.getByRole("textbox", { name: "Copy name", exact: true }).fill("Date formats");
   await page.getByRole("button", { name: "Create copy", exact: true }).click();
@@ -89,5 +100,17 @@ try {
   await page.getByRole("button", { name: "Open saved Date formats", exact: true }).click(); await ready();
   const all = await rows().locator(".ts-cell").allTextContents();
   assert.ok(expected.every(value => all.some(text => text.trim() === value)));
+  // Download and import the saved workbook to check the format survives XLSX.
+  await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+  const downloadDialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
+  const downloaded = page.waitForEvent("download");
+  await downloadDialog.getByRole("button", { name: "Download", exact: true }).click();
+  const exported = path.join(work, "exported.xlsx"); await (await downloaded).saveAs(exported);
+  await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
+  await (await homeImportInput(page)).setInputFiles(exported);
+  const reimport = page.getByRole("dialog", { name: "Review import preview", exact: true }); await reimport.waitFor();
+  await reimport.getByRole("button", { name: "Import file", exact: true }).click(); await ready();
+  assert.ok((await rows().locator(".ts-cell").allTextContents()).some(text => text.trim() === "2026/11/7"));
   console.log("PASS: XLSX date display, editing, tabs, history, sorting and save/reopen");
 } finally { if (context) await context.close(); await rm(work, { recursive: true, force: true }); }
