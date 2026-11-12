@@ -19,7 +19,7 @@ export function BriefFacts({ entity, occurrence, revision, currentness, row, col
   return (
     <table className="ts-fact-list" aria-label="Linked facts">
       <thead>
-        <tr><th scope="col">Field</th><th scope="col">Value</th></tr>
+        <tr><th scope="col">Column</th><th scope="col">Value</th></tr>
       </thead>
       <tbody>
         {columns.map((column) => {

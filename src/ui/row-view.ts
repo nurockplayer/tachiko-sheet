@@ -268,7 +268,8 @@ function sortableRow(row: TableRow, index: number, column: TableColumn): Sortabl
       : field?.stored?.kind === "number" ? field.stored.value : null;
     return { row, index, blank: blank || number === null || !Number.isFinite(number), number, text: display.text };
   }
-  return { row, index, blank: blank || display.text === "", number: null, text: display.text };
+  const text = column.field_type === "date" && field?.stored?.kind === "date" ? field.stored.value : display.text;
+  return { row, index, blank: blank || display.text === "", number: null, text };
 }
 
 function isBlank(row: TableRow, column: TableColumn, missing: boolean): boolean {
