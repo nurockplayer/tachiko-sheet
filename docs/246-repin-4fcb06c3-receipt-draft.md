@@ -87,5 +87,21 @@ import/export calls receive the producer's updated presentation handling.
 Formula additions (ABS/ROUNDUP/ROUNDDOWN, IFERROR, Date functions and LOOKUP)
 are available in the producer; this re-pin adds no Sheet UI for them.
 
-Validation: pending prescribed container test. Product acceptance and native
-platform checks remain CI gates on PR #374; no merge or acceptance PASS claimed.
+Validation (2026-11-12 17:52 JST, source candidate
+`f607b05028ed39e62426d40a8d4fff93cf5a2f36`):
+
+```sh
+ORB_TEST_LOCAL_REASON='dot-run returns no verifiable result (exit 70) since 2026-11-12 10:24 JST' orb-test --local -- sh -c 'pnpm install --frozen-lockfile && pnpm typecheck && pnpm verify:core-kit && pnpm vitest run src/app src/runtime src/ui --exclude src/ui/interface-profile/profile.test.ts'
+```
+
+All stages passed; core-kit artifact integrity PASS (24 assets), 73 test files
+and 1,133 tests passed. Job result: `Prescribed validation exit: 0`.
+Verbose output was redirected inside the container to `.qa/`; only its result
+tail was printed. The earlier typecheck failure was confined to test fixture
+typing and was corrected; no product scenario changed.
+
+CI snapshot on that candidate: preparation and notices passed; product
+acceptance and macOS/Windows/Linux desktop checks were still running.
+The final follow-up changes this receipt only. Product acceptance and native
+platform checks remain CI gates on PR #374; no merge or product acceptance
+PASS claimed. cx-exec runs the independent review after worker handoff.
