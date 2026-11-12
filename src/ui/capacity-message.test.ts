@@ -58,7 +58,7 @@ describe("importCapacityMessage", () => {
     ["xml_nodes", "the file has at least 1,200 parts; Tachiko can import up to 1,000."],
     ["output_bytes", "the workbook holds more data than this beta can download."],
   ] as const)("explains the %s file bound", (limit, expected) => {
-    expect(importCapacityMessage({ ...base, limit } as CapacityFailureProjection)).toBe(
+    expect(importCapacityMessage({ ...base, diagnostics: [], limit })).toBe(
       `This file is outside what this beta can open: ${expected} The workbook was not imported.`,
     );
   });

@@ -58,6 +58,9 @@ Kit inventory (24 payload files plus the manifest):
 
 Sheet adaptations and their producer causes:
 
+- `src/runtime/session.test.ts`: retain literal metadata version 1 in the
+  existing reopen fixture after Work #788 made metadata a version 1/2 union.
+
 - `core-kit.lock.json`, `public/core-kit/**`, `scripts/verify-core-kit.mjs`,
   `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `docs/DESKTOP.md`,
   `tests/qualification/j4-public-composition.mjs`,
