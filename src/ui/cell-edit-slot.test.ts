@@ -45,7 +45,7 @@ describe("authoritative sparse edit slots", () => {
   it("routes a rectangle of blank slots atomically and keeps the original 100,000-cell cap", () => {
     const context = { native: true, draft: false, blocked: false, pendingDraft: false, rowCount: 10_000, start: { row: 0, column: 0 }, columnTypes: Array(11).fill("text"), columnRequired: Array(11).fill(false), editable: () => Boolean(cellEditSlot(blank, column())) };
     expect(routePaste(Array.from({ length: 10_000 }, () => Array(10).fill("")), context).kind).toBe("edit");
-    expect(routePaste(Array.from({ length: 128 }, () => Array(11).fill("")), context)).toMatchObject({ kind: "refused", message: expect.stringContaining("100,000-cell") });
+    expect(routePaste(Array.from({ length: 10_000 }, () => Array(11).fill("")), context)).toMatchObject({ kind: "refused", message: expect.stringContaining("100,000-cell") });
   });
 });
 

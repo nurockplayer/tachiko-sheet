@@ -680,7 +680,7 @@ describe("SheetShell static rendering", () => {
     const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
     expect(markup.includes('aria-label="New row"')).toBe(count < 10_000);
     expect(markup.includes("This table has reached the 10,000-row limit for adding rows here. Nothing was changed.")).toBe(count >= 10_000);
-    if (count > 200) expect(markup).toContain(`aria-rowcount="${count + 1}"`);
+    if (count > 200) expect(markup).toContain(`aria-rowcount="${count + 1 + Number(count < 10_000)}"`);
     expect(view.table.rows).toHaveLength(count);
   });
 
