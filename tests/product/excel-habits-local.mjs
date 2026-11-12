@@ -1064,11 +1064,6 @@ const cases = [
     assert.notEqual(await activeId(page), id(0, 0), "PageDown left the active cell unchanged");
   } },
   { id: "36", name: "Whole row/column selection", tier: "B", budgetMs: 45_000, run: async (page) => {
-    // Headless Chromium reports no hover; exercise the desktop header controls.
-    await page.addInitScript(() => {
-      const matchMedia = window.matchMedia.bind(window);
-      window.matchMedia = query => matchMedia(query === "(pointer: coarse), (hover: none), (max-width: 700px)" ? "(max-width: 700px)" : query);
-    });
     await newTable(page, "Header selection", [{ name: "First" }, { name: "Second" }, { name: "Third" }]);
     for (let row = 0; row < 3; row += 1) await addRow(page, [`a${row}`, `b${row}`, `c${row}`], row + 1);
     const table = await projection(page);
@@ -1094,9 +1089,11 @@ const cases = [
     assert.equal(await activeId(page), id(1, 0), "row selection did not focus its first cell");
     await rowHeads.nth(2).click({ modifiers: ["Shift"] });
     assert.equal(await selectedCount(page), 2 * table.columns.length, "Shift+click did not extend the row selection");
+    await headers.nth(1).hover();
     await headers.nth(1).locator("summary").click();
     assert.equal(await selectedCount(page), 2 * table.columns.length, "column menu changed selection");
     await headers.nth(1).locator("summary").click();
+    await headers.nth(1).hover();
     const resize = headers.nth(1).locator(".ts-col-resize");
     const box = await resize.boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
