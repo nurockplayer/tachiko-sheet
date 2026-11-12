@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FieldProjection, TableProjection } from "../../public/core-kit/experimental-client.js";
-import { patchTable } from "./table-patch.js";
+import { patchTable } from "./session";
 
 function field(entity: string, value: number): FieldProjection {
   return { target: { entity, field: "amount" }, address: `${entity}.amount`, stored: { kind: "number", value },
