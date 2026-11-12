@@ -15,7 +15,7 @@ if (!dist) throw new Error("WORK_DIST must name a built product");
 const work = await mkdtemp(path.join(tmpdir(), "sheet-working-size-"));
 const folder = path.join(work, "fixture");
 const schema = JSON.parse(j4CanaryText["schemas.json"])[0];
-const types = ["text", "number", "number", "date", "boolean", "text", "number", "number", "number", "number"];
+const types = ["number", "number", "number", "date", "boolean", "number", "number", "number", "number", "number"];
 schema.fields = types.map((type, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type }, required: false, constraint: { type: "none" } }));
 await mkdir(path.join(folder, "entities"), { recursive: true });
 const manifest = JSON.parse(j4CanaryText["manifest.json"]); manifest.format_version = 3;
@@ -27,9 +27,9 @@ for (let i = 0; i < 10000; i++) {
   const id = `40000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
   const ref = index => ({ op: "reference", args: { entity: id, field: schema.fields[index].id } });
   const add = (left, right) => ({ kind: "formula", value: { op: "add", args: { left, right } } });
-  const values = [{ kind: "text", value: `Row ${i + 1}` }, { kind: "number", value: i + 1 },
+  const values = [{ kind: "number", value: i + 1 }, { kind: "number", value: i + 1 },
     { kind: "number", value: 2 }, { kind: "date", value: "2026-10-20" }, { kind: "boolean", value: true },
-    { kind: "text", value: "Filled" }, { kind: "number", value: 3 },
+    { kind: "number", value: 4 }, { kind: "number", value: 3 },
     add(ref(1), ref(1)), add(ref(1), ref(2)), add(ref(2), ref(6))];
   const fields = Object.fromEntries(values.map((value, index) => [schema.fields[index].id, value]));
   shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${String(i).padStart(5, "0")}`, schema: schema.id, fields }) + "\n";
@@ -74,12 +74,12 @@ try {
   await reveal(0); await cell(0, 0).click(); await reveal(9999); await cell(9999, 0).click({ modifiers: ["Shift"] });
   await timed("clear_10000", async () => { await page.keyboard.press("Delete"); await page.locator('.ts-clipboard-status').filter({ hasText: "Cleared 10000 cells" }).waitFor(); await ready(); }); measure("clear_10000", timings.clear_10000[0], null);
   await textIs(9999, 0, ""); await reveal(0); await textIs(0, 0, "");
-  await timed("undo_10000", async () => { await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(); await textIs(0, 0, "Row 1"); }); measure("undo_10000", timings.undo_10000[0], null); await reveal(9999); await textIs(9999, 0, "Row 10000");
+  await timed("undo_10000", async () => { await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(); await textIs(0, 0, "1"); }); measure("undo_10000", timings.undo_10000[0], null); await reveal(9999); await textIs(9999, 0, "10000");
   await reveal(0); await cell(0, 0).click(); await reveal(9999); await cell(9999, 6).click({ modifiers: ["Shift"] });
   await timed("clear_70000", async () => { await page.keyboard.press("Delete"); await page.locator('.ts-clipboard-status').filter({ hasText: "Cleared 70000 cells" }).waitFor(); await ready(); }); measure("clear_70000", timings.clear_70000[0], null);
   await textIs(9999, 0, ""); await reveal(0); await textIs(0, 0, "");
-  await timed("undo_70000", async () => { await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(); await textIs(0, 0, "Row 1"); }); measure("undo_70000", timings.undo_70000[0], null);
-  await reveal(9999); await textIs(9999, 0, "Row 10000"); console.log("PASS: 70000 stored cells cleared in one operation and restored with Undo");
+  await timed("undo_70000", async () => { await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(); await textIs(0, 0, "1"); }); measure("undo_70000", timings.undo_70000[0], null);
+  await reveal(9999); await textIs(9999, 0, "10000"); console.log("PASS: 70000 stored cells cleared in one operation and restored with Undo");
 } catch (error) {
   if (page) await capacitySnapshot(page, "failure").catch(() => {});
   console.error(`Error: ${error.stack ?? error}`);
