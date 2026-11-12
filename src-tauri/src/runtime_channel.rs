@@ -14,7 +14,7 @@ use std::sync::{Condvar, Mutex, MutexGuard};
 
 use serde::Deserialize;
 use tachiko_designer_runtime::host_bridge::{
-    DesignerHost, HostReply, MAX_HOST_PROJECT_TRANSFER_BYTES, MAX_HOST_SPREADSHEET_REQUEST_BYTES,
+    DesignerHost, HostReply, MAX_HOST_PROJECT_TRANSFER_BYTES, MAX_HOST_WORKING_WIRE_REQUEST_BYTES,
 };
 
 /// The header carries only a kind and a generation number.
@@ -246,9 +246,13 @@ fn route(host: &mut DesignerHost, kind: &str, request: &[u8], payload: &[u8]) ->
         "command" => reply(host.request(request)),
         "spreadsheet" => host.spreadsheet(request, payload),
         "inspect_project" => reply(host.inspect_project(payload)),
+        "inspect_project_working_size" => reply(host.inspect_project_working_size(payload)),
         "open_project" => reply(host.open_project(payload, request)),
+        "open_project_working_size" => reply(host.open_project_working_size(payload, request)),
         "open_local_document" => reply(host.open_local_document(payload, request)),
+        "open_local_document_working_size" => reply(host.open_local_document_working_size(payload, request)),
         "open_portable_ro" => reply(host.open_portable_ro(payload, request)),
+        "open_portable_ro_working_size" => reply(host.open_portable_ro_working_size(payload, request)),
         "verify_portable_ro" => reply(host.verify_portable_ro(payload)),
         "export_project" => host.export_project(request),
         "export_project_v3" => host.export_project_v3(request),
@@ -293,7 +297,7 @@ fn parse_frame(frame: &[u8]) -> Result<(FrameHeader, &[u8], &[u8]), ChannelError
     let header = read_section(frame, &mut offset, MAX_HEADER_BYTES)?;
     let header: FrameHeader =
         serde_json::from_slice(header).map_err(|_| ChannelError::Frame("invalid header"))?;
-    let request = read_section(frame, &mut offset, MAX_HOST_SPREADSHEET_REQUEST_BYTES)?;
+    let request = read_section(frame, &mut offset, MAX_HOST_WORKING_WIRE_REQUEST_BYTES)?;
     let payload = &frame[offset..];
     if payload.len() > MAX_HOST_PROJECT_TRANSFER_BYTES {
         return Err(ChannelError::Frame("payload exceeds the transfer limit"));
@@ -337,6 +341,29 @@ mod tests {
     }
 
     const OCCURRENCE: &[u8] = b"00000000-0000-4000-8000-000000000701";
+
+    #[test]
+    fn working_size_open_and_session_request_limits() {
+        let channel = RuntimeChannel::default();
+        let generation = channel.attach();
+        let tracker = br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
+        let (opened, _) = reply(&channel.dispatch(&frame("command", generation, tracker, &[])).unwrap());
+        let revision = opened["response"]["payload"]["bootstrap"]["revision"].as_str().unwrap();
+        let (_, project) = reply(&channel.dispatch(&frame("export_project", generation, revision.as_bytes(), &[])).unwrap());
+        let (ordinary, _) = reply(&channel.dispatch(&frame("open_project", generation, OCCURRENCE, &project)).unwrap());
+        assert_eq!(ordinary["response"]["type"], "opened");
+        let (before, _) = reply(&channel.dispatch(&frame("observe_occurrence", generation, &[], &[])).unwrap());
+        let mut large = tracker.to_vec();
+        large.resize(70_000, b' ');
+        let (refused, _) = reply(&channel.dispatch(&frame("command", generation, &large, &[])).unwrap());
+        assert_eq!(refused["error"]["code"], "request_too_large");
+        let (after, _) = reply(&channel.dispatch(&frame("observe_occurrence", generation, &[], &[])).unwrap());
+        assert_eq!(before, after);
+        let (working, _) = reply(&channel.dispatch(&frame("open_project_working_size", generation, OCCURRENCE, &project)).unwrap());
+        assert_eq!(working["response"]["type"], "opened_window");
+        let (accepted, _) = reply(&channel.dispatch(&frame("command", generation, &large, &[])).unwrap());
+        assert_eq!(accepted["status"], "ok", "{accepted}");
+    }
 
     #[test]
     fn a_new_generation_fences_older_frames_and_destroys_resident_work() {
