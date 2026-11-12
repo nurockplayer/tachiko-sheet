@@ -16,7 +16,7 @@ const expected = ["2026-11-07", "11/7/2026", "7/11/2026", "2026/11/7", "2026年1
 let context;
 try {
   await mkdir(expanded);
-  execFileSync("unzip", ["-q", "acceptance/j3-interop/fixtures/messy.xlsx", "-d", expanded]);
+  execFileSync("python3", ["-c", "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", "acceptance/j3-interop/fixtures/messy.xlsx", expanded]);
   const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
   const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
   await writeFile(path.join(expanded, "xl/workbook.xml"), `<workbook xmlns="${main}" xmlns:r="${rel}"><sheets><sheet name="Dates" sheetId="1" r:id="r1"/><sheet name="Other" sheetId="2" r:id="r2"/></sheets></workbook>`);
@@ -29,7 +29,7 @@ try {
   const row = (n, date, note) => `<row r="${n}">${formats.map((_, i) => `<c r="${String.fromCharCode(65+i)}${n}" s="${i+1}" t="d"><v>${date}</v></c>`).join("")}<c r="H${n}" t="inlineStr"><is><t>${note}</t></is></c></row>`;
   await writeFile(path.join(expanded, "xl/worksheets/sheet1.xml"), `<worksheet xmlns="${main}"><sheetData><row r="1">${header}</row>${row(2, "2026-11-07", "later")}${row(3, "2026-01-02", "earlier")}</sheetData></worksheet>`);
   await writeFile(path.join(expanded, "xl/worksheets/sheet2.xml"), `<worksheet xmlns="${main}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Other</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>value</t></is></c></row></sheetData></worksheet>`);
-  execFileSync("zip", ["-Xqr", fixture, "."], { cwd: expanded });
+  execFileSync("python3", ["-c", "import os,sys,zipfile; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); [(z.write(os.path.join(root,f),os.path.relpath(os.path.join(root,f),sys.argv[2]))) for root,dirs,files in os.walk(sys.argv[2]) for f in files]; z.close()", fixture, expanded]);
   context = await chromium.launchPersistentContext(path.join(work, "profile"), { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
   await installDistRoutes(context, process.env.WORK_DIST ?? "dist-acceptance");
   const page = await context.newPage(); page.setDefaultTimeout(30000);
