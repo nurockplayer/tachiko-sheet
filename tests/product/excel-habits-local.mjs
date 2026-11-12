@@ -1063,8 +1063,14 @@ const cases = [
     await page.keyboard.press("PageDown");
     assert.notEqual(await activeId(page), id(0, 0), "PageDown left the active cell unchanged");
   } },
-  { id: "36", name: "Whole row/column selection", tier: "B", run: async (page) => {
-    await example(page);
+  { id: "36", name: "Whole row/column selection", tier: "B", budgetMs: 45_000, run: async (page) => {
+    // Headless Chromium reports no hover; exercise the desktop header controls.
+    await page.addInitScript(() => {
+      const matchMedia = window.matchMedia.bind(window);
+      window.matchMedia = query => matchMedia(query === "(pointer: coarse), (hover: none), (max-width: 700px)" ? "(max-width: 700px)" : query);
+    });
+    await newTable(page, "Header selection", [{ name: "First" }, { name: "Second" }, { name: "Third" }]);
+    for (let row = 0; row < 3; row += 1) await addRow(page, [`a${row}`, `b${row}`, `c${row}`], row + 1);
     const table = await projection(page);
     const id = (row, column) => cellIdFor(table, row, column);
     await page.getByTestId(id(1, 1)).click();
