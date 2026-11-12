@@ -112,5 +112,17 @@ try {
   const reimport = page.getByRole("dialog", { name: "Review import preview", exact: true }); await reimport.waitFor();
   await reimport.getByRole("button", { name: "Import file", exact: true }).click(); await ready();
   assert.ok((await rows().locator(".ts-cell").allTextContents()).some(text => text.trim() === "2026/11/7"));
+  // A newly created Date column follows the same display path as an import.
+  await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
+  await page.getByRole("button", { name: "New table", exact: true }).click();
+  const newTable = page.getByRole("dialog", { name: "New table", exact: true });
+  await newTable.getByLabel("Table name", { exact: true }).fill("New dates");
+  await newTable.getByLabel("Column 1 name", { exact: true }).fill("Date1");
+  await newTable.getByLabel("Column 1 type", { exact: true }).selectOption("date");
+  await newTable.getByRole("button", { name: "Create table", exact: true }).click(); await ready();
+  const draft = page.locator('.ts-entry-row [data-entry-field]').first();
+  await draft.fill("2026-11-07"); await draft.press("Enter"); await ready();
+  for (const label of ["2026/11/7", "2026年11月7日", "11/7/2026", "7/11/2026", "Nov 7, 2026", "7 Nov 2026", "2026-11-07"]) await chooseDate(label);
+  console.log("PASS: new Date column displays all seven formats");
   console.log("PASS: XLSX date display, editing, tabs, history, sorting and save/reopen");
 } finally { if (context) await context.close(); await rm(work, { recursive: true, force: true }); }
