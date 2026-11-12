@@ -84,8 +84,9 @@ export function createMutationCompletion(port: MutationCompletionPort) {
   /** Names the refused table, unless it is the table on screen ("This table"). */
   function capacityTableName(collection: string | undefined): string | undefined {
     const view = port.state().view;
-    if (!collection || !view || view.table.collection.id === collection) return undefined;
-    const name = view.collections.find((summary) => summary.id === collection)?.display_name;
+    // Work names the table by its key; older replies and tests use its id.
+    if (!collection || !view || view.table.collection.id === collection || view.table.collection.key === collection) return undefined;
+    const name = view.collections.find((summary) => summary.id === collection || summary.key === collection)?.display_name;
     return name ? `The table “${name}”` : "Another table";
   }
 

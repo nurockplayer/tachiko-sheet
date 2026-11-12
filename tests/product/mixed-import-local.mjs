@@ -149,7 +149,7 @@ async function allCells(page, edited) {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   assert.equal(await rowCount(page), ROWS);
   assert.deepEqual((await grid(page).locator("thead th").allTextContents()).slice(1), expected[`${ROWS}x${COLS}`][0]);
-  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS }));
+  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS, draftRows: 1 }));
   assert.equal(records.size, ROWS, "all rows independently read");
   const ids = [];
   for (let r = 0; r < ROWS; r++) {
@@ -210,13 +210,14 @@ try {
     console.log(`PASS: imported entry refusal: ${sentence}`);
     await draftActions(edgePage).getByRole("button", { name: "Discard", exact: true }).click();
     await entry.evaluate(node => {
-      const data = new DataTransfer(); data.setData("text/plain", "new");
+      // Two lines: one line only fills the draft row; two ask Work to add rows.
+      const data = new DataTransfer(); data.setData("text/plain", "new\nnewer");
       node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
     });
-    await edgePage.locator('.ts-clipboard-status[role="status"]').filter({ hasText: sentence }).waitFor();
+    await edgePage.locator('.ts-clipboard-status[role="alert"]').filter({ hasText: /^This table can hold up to 8,406 rows; this change would make 8,408\. Nothing was changed\.$/ }).waitFor();
     assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "paste refusal adds nothing");
     await capacitySnapshot(edgePage, "8406-row imported paste refusal");
-    console.log(`PASS: imported paste refusal: ${sentence}`);
+    console.log(`PASS: imported paste refusal: ${await edgePage.locator('.ts-clipboard-status[role="alert"]').textContent()}`);
   } catch (error) { await capacitySnapshot(edgePage, "8406-row imported refusal failure"); throw error; }
   await context.close(); context = undefined;
   for (const [rows, cols] of [[320, 2], [1000, 16]]) {

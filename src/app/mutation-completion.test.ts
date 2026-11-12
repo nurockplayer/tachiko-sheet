@@ -144,6 +144,18 @@ describe("mutation completion capacity refusal", () => {
     });
   });
 
+  it("recognises the table on screen when Work names it by key", async () => {
+    const { port } = harness();
+    const result = await createMutationCompletion(port).run({
+      kind: "rows",
+      witness,
+      dispatch: async () => {
+        throw refusal({ code: "capacity_exceeded", message: "capacity_exceeded", limit: "table_rows", maximum: 8406, attempted: 8407, collection: view.table.collection.key });
+      },
+    });
+    expect(result).toMatchObject({ kind: "refused", message: "This table can hold up to 8,406 rows; this change would make 8,407. Nothing was changed." });
+  });
+
   it("names the refused table when it is not the one on screen", async () => {
     const { port } = harness();
     const result = await createMutationCompletion(port).run({

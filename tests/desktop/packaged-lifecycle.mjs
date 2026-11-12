@@ -410,7 +410,7 @@ async function history(direction, row, column, value) {
 async function mixedCells(edited) {
   const actual = await evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
-    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS} });
+    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS}, draftRows: 1 });
     return { headers: [...grid().querySelectorAll("thead th")].slice(1).map(c => c.textContent), records };
   `, 240_000);
   const data = expectedMixed[`${ROWS}x${COLS}`];

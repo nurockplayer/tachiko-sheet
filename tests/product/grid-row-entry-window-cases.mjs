@@ -39,7 +39,8 @@ export async function runWindowedDraftCases({ page, ready, projection, checks })
     assert.ok(await grid.locator("tbody .ts-row").count() < 205, "rows are actually windowed");
     // Traverse window boundaries and stay on the final stored row.
     await grid.locator("tbody .ts-row td").first().focus();
-    for (let index = 0; index < 205; index++) await page.keyboard.press("ArrowDown");
+    // 204 moves from the first stored row reach the last one; one more would enter the draft row, which is open below the 10,000-row bound.
+    for (let index = 0; index < 204; index++) await page.keyboard.press("ArrowDown");
     const lastCell = grid.locator('tbody tr[aria-rowindex="206"] td[data-work-field]');
     assert.equal(await lastCell.evaluate(node => node === document.activeElement), true);
     assert.equal(await lastCell.locator(".ts-cell-value").textContent(), "204");
