@@ -2900,7 +2900,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function selectHeader(kind: "column" | "row", index: number, shift: boolean): void {
-    if (historyInteractionLocked || !selectionIdentity || !displayRows.length || !columns.length) return;
+    if (historyInteractionLocked || !view || !collectionIdentity || !displayRows.length || !columns.length) return;
     const previous = boundSelection?.anchor ?? focusedPosition;
     const anchor = kind === "column"
       ? { entity: rowEntity(displayRows[0]!), field: shift && previous && columns.some(column => column.id === previous.field) ? previous.field : columns[index]!.id }
