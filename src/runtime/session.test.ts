@@ -1226,7 +1226,7 @@ describe("createSheetRuntime", () => {
   it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
     const { client, runtime, view } = await opened();
     const bytes = new Uint8Array([7, 8, 9]).buffer;
-    const metadata = { version: 1, sheets: [] };
+    const metadata = { version: 1 as const, sheets: [] };
 
     const reopened = await runtime.openOpaque(bytes, metadata);
     expect(reopened.occurrence).toBe("scope-2");

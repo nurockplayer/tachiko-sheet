@@ -27,6 +27,14 @@ export function capacityMessage(failure: CapacityFailureProjection, subject = "T
       return `The formulas in this workbook can hold up to ${maximum} references in all; ${tail}`;
     case "saved_bytes":
       return `This workbook holds more data than this beta can save; nothing was changed.`;
+    case "source_bytes":
+    case "expanded_bytes":
+    case "serialized_source_bytes":
+      return `This workbook holds more data than this beta can open; nothing was changed.`;
+    case "xml_nodes":
+      return `This workbook has more file details than this beta can open; nothing was changed.`;
+    case "output_bytes":
+      return `This workbook holds more data than this beta can download; nothing was changed.`;
     case "projection_bytes":
       return `${subject} holds more data than this beta can show; nothing was changed.`;
   }
@@ -63,6 +71,16 @@ export function importCapacityMessage(failure: CapacityFailureProjection): strin
       return `${outside} the workbook's formulas have at least ${attempted} references in all; Tachiko can import up to ${maximum}. ${notImported}`;
     case "saved_bytes":
       return `${outside} the workbook holds more data than this beta can save. ${notImported}`;
+    case "source_bytes":
+      return `${outside} the file has at least ${attempted} bytes; Tachiko can import up to ${maximum} bytes. ${notImported}`;
+    case "expanded_bytes":
+      return `${outside} the unpacked file has at least ${attempted} bytes; Tachiko can import up to ${maximum} bytes. ${notImported}`;
+    case "serialized_source_bytes":
+      return `${outside} the workbook's cell data takes at least ${attempted} bytes; Tachiko can import up to ${maximum} bytes. ${notImported}`;
+    case "xml_nodes":
+      return `${outside} the file has at least ${attempted} parts; Tachiko can import up to ${maximum}. ${notImported}`;
+    case "output_bytes":
+      return `${outside} the workbook holds more data than this beta can download. ${notImported}`;
     case "projection_bytes":
       return `${outside} the workbook has at least ${attempted} bytes of data where Tachiko can import up to ${maximum} bytes. ${notImported}`;
   }

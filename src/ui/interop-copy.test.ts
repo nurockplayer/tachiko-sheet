@@ -119,6 +119,7 @@ describe("native table download disclosures", () => {
     for (const message of [
       "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The general incoming profile remains separate (4 sheets, 16 columns, 64 rows); its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.",
       "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The shared incoming geometry is 32 sheets, 32 columns, 128 rows per sheet and 1,024 total rows, with separate 2 MiB source/8 MiB expanded bounds; its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.",
+      "Native scalar output uses the working-size geometry, with 8 MiB encoded and 24 MiB expanded XLSX bounds.",
       "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.",
       "Session Undo/Redo history is excluded.",
       "Sheet presentation, view sorting/filtering and per-cell formatting are excluded; Dates use yyyy-mm-dd.",
@@ -188,5 +189,23 @@ describe("native table download disclosures", () => {
     expect(findingLocation("native_table_schema_0002_x/f27", table, column, "native_tables_header_name")).toBe("Invoices, column “Item”");
     expect(findingLocation("expenses", table, column, "native_tables_saved_grouped_sum_excluded")).toBeNull();
     expect(findingLocation("expenses", table, column, "imported_sheet_note")).toBe("expenses");
+  });
+});
+
+
+describe("producer presentation disclosures", () => {
+  it("states which stored column presentation downloads", () => {
+    expect(findingMessage("Stored date formats, alignment, wrap and column widths are exported; other presentation and view sorting/filtering are excluded.")).toBe(
+      "Date formats, text alignment, wrapping and column widths are included. Other formatting, sorting and filters are not included.",
+    );
+  });
+  it("explains date fallback and bounded cell presentation without changing the finding", () => {
+    expect(findingMessage("Date format dd-mmm is not supported; ISO is used.", "date_format_not_supported")).toBe(
+      "The date format dd-mmm is not supported. Dates use YYYY-MM-DD instead.",
+    );
+    expect(findingMessage("Some cell presentation exceeded the import bound; values were retained.", "presentation_bound_dropped")).toBe(
+      "Some cell formatting was too large to import. The cell values were kept.",
+    );
+    expect(findingMessage("Changed condition", "date_format_not_supported")).toBe("Changed condition");
   });
 });

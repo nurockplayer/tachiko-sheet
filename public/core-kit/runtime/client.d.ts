@@ -1,8 +1,8 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
 export interface DesignerClient {
-    inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions): Promise<SourceWorkbook>;
+    inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, profile?: "working_size"): Promise<SourceWorkbook>;
     importSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
     /** Import with the working-size profile: the reply carries one bounded window, not the whole table. */
     importSpreadsheetWorkingSize?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedWindowProjection) => void): Promise<ImportedWindowProjection>;
@@ -20,11 +20,16 @@ export interface DesignerClient {
     commitCleanup?(expectedRevision: string, previewId: string): Promise<PublicationProjection>;
     copyFormula?(expectedRevision: string, request: FormulaCopy): Promise<PublicationProjection>;
     newTracker?(): Promise<OpenedProjection>;
+    newTrackerWorkingSize?(): Promise<OpenedWindowProjection>;
     newBudget?(): Promise<OpenedProjection>;
+    newBudgetWorkingSize?(): Promise<OpenedWindowProjection>;
     newTable?(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
     /** Create a table whose session profile is the working-size one. */
     newTableWorkingSize?(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;
     duplicateCollection?(expectedRevision: string, collection: string, name: string, columnNames?: Record<string, string>): Promise<DuplicateCollectionProjection>;
+    deleteTable?(expectedRevision: string, collection: string): Promise<PublicationProjection>;
+    addTable?(expectedRevision: string, name: string, columns: NewTableColumnInput[]): Promise<DuplicateCollectionProjection>;
+    renameTable?(expectedRevision: string, collection: string, name: string): Promise<PublicationProjection>;
     trackerCommand?(request: TrackerCommand): Promise<PublicationProjection>;
     clearField?(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     /** Convert every value of one scalar column to another scalar type as one undoable edit. */
@@ -34,6 +39,11 @@ export interface DesignerClient {
     setColumnConstraint?(expectedRevision: string, collection: string, field: string, constraint: FieldConstraintInput): Promise<PublicationProjection>;
     /** Replace or clear one Number column's durable display format. */
     setColumnNumberFormat?(expectedRevision: string, collection: string, field: string, numberFormat: NumberFormat | null): Promise<PublicationProjection>;
+    /** Replace or clear one Date column's durable display format. */
+    setColumnDateFormat?(expectedRevision: string, collection: string, field: string, dateFormat: DateFormat | null): Promise<PublicationProjection>;
+    setColumnAlignment?(expectedRevision: string, collection: string, field: string, alignment: "left" | "center" | "right" | null): Promise<PublicationProjection>;
+    setColumnWrap?(expectedRevision: string, collection: string, field: string, wrap: boolean | null): Promise<PublicationProjection>;
+    setColumnWidth?(expectedRevision: string, collection: string, field: string, width: number | null): Promise<PublicationProjection>;
     /** Move one column to a zero-based index; the order is durable document state. */
     moveColumn?(expected: string, collection: string, field: string, toIndex: number): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
