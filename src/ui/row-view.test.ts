@@ -47,6 +47,18 @@ describe("rowViewOrder", () => {
       .toEqual(["alpha", "beta", "gamma", "blank-price"]);
   });
 
+  it.each([
+    ["mdy", "12/31/2025", "1/2/2026"],
+    ["dmy", "31/12/2025", "2/1/2026"],
+    ["month_day_year", "Dec 31, 2025", "Jan 2, 2026"],
+  ])("sorts %s dates by stored ISO value with blanks last", (_format, earlierDisplay, laterDisplay) => {
+    const dateColumn: TableColumn = { id: "due", key: "due", display_name: "Due", field_type: "date", required: false };
+    const dated = (id: string, value: string, display: string): TableRow => ({ id, key: id, fields: [{ ...field(id, "due", { kind: "date", value }), display }] });
+    const rows = [dated("later", "2026-01-02", laterDisplay), { id: "blank", key: "blank", fields: [], blank_fields: ["due"] }, dated("earlier", "2025-12-31", earlierDisplay)];
+    expect(rowViewOrder(rows, [dateColumn], { sort: { field: "due", direction: "asc" } }).map(row => row.id)).toEqual(["earlier", "later", "blank"]);
+    expect(rowViewOrder(rows, [dateColumn], { sort: { field: "due", direction: "desc" } }).map(row => row.id)).toEqual(["later", "earlier", "blank"]);
+  });
+
   it("sorts Text like a spreadsheet and keeps blank or empty text last both ways", () => {
     const decimal = row("decimal", { name: "item 10", price: 10 });
     const single = row("single", { name: "item 2", price: 20 });

@@ -67,6 +67,7 @@ interface Hooks {
   duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
   setColumnConstraint?: () => Promise<PublicationProjection>;
   setColumnNumberFormat?: () => Promise<PublicationProjection>;
+  setColumnDateFormat?: () => Promise<PublicationProjection>;
   copyFormula?: () => Promise<PublicationProjection>;
   exportCanonicalTree?: (revision: string) => Promise<CanonicalTreeExport>;
   queryTable?: (collection: string) => Promise<TableProjection>;
@@ -117,6 +118,7 @@ class FakeClient {
     queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
     translateA1Formula: [] as TranslateA1FormulaInput[],
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
+    setColumnDateFormat: [] as Array<{ revision: string; collection: string; field: string; format: string | null }>,
     setColumnNumberFormat: [] as Array<{ revision: string; collection: string; field: string; format: NumberFormat | null }>,
     copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
     exportCanonicalTree: [] as string[],
@@ -257,6 +259,15 @@ class FakeClient {
     this.#requireOpen();
     const hook = this.hooks.setColumnConstraint;
     if (hook !== undefined) { this.hooks.setColumnConstraint = undefined; return hook(); }
+    this.#requireRevision(revision);
+    return this.#publish(IMPACT);
+  }
+
+  async setColumnDateFormat(revision: string, collection: string, field: string, format: import("../../public/core-kit/runtime/protocol.js").DateFormat | null): Promise<PublicationProjection> {
+    this.calls.setColumnDateFormat.push({ revision, collection, field, format });
+    this.#requireOpen();
+    const hook = this.hooks.setColumnDateFormat;
+    if (hook !== undefined) { this.hooks.setColumnDateFormat = undefined; return hook(); }
     this.#requireRevision(revision);
     return this.#publish(IMPACT);
   }
@@ -1919,6 +1930,16 @@ describe("setColumnConstraint", () => {
     await expect(runtime.setColumnConstraint({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", { kind: "none" }))
       .rejects.toMatchObject({ code: "stale-witness" });
     expect(client.calls.setColumnConstraint).toEqual([]);
+  });
+});
+
+describe("setColumnDateFormat", () => {
+  it("forwards the format and refreshes the published view", async () => {
+    const { runtime, client, view } = await opened();
+    const confirmed = await runtime.setColumnDateFormat(witnessOf(view), COLLECTION.key, "f1", "ymd_cjk");
+    expect(client.calls.setColumnDateFormat).toEqual([{ revision: view.revision, collection: COLLECTION.key, field: "f1", format: "ymd_cjk" }]);
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+    expect(confirmed.view.requiresPortableSave).toBeUndefined();
   });
 });
 

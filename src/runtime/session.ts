@@ -14,7 +14,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -932,6 +932,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     witness: ViewWitness,
     command: (client: PublicClient, revision: string) => Promise<PublicationProjection>,
     authoredSchema = false,
+    refreshRows = false,
   ) {
     return enqueue(async () => {
       const live = requireWitness(witness);
@@ -968,7 +969,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       let result: CoherentRead;
       try {
         let patchedRead: CoherentRead | null = null;
-        if (!authoredSchema && Array.isArray(publication.changed) && !publication.many &&
+        if (!authoredSchema && !refreshRows && Array.isArray(publication.changed) && !publication.many &&
           columnsRevision !== null && liveRead?.view.revision === live.revision &&
           liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
           const patched = patchTable(liveRead.view.table, publication.changed, true);
@@ -1065,6 +1066,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const command = capability(client.setColumnConstraint, "column constraint");
       return command.call(client, revision, collection, field, constraint);
     }, true);
+  }
+
+  function setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.setColumnDateFormat, "column date format");
+      return command.call(client, revision, collection, field, format);
+    }, false, true);
   }
 
   function setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null) {
@@ -1580,7 +1588,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
