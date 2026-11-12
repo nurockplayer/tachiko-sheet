@@ -177,6 +177,12 @@ try {
   await start();
   await button("Open sales example").click(); await ready();
   assert.equal(await tabs().count(), 2);
+  await tabs().first().click({ button: "right" });
+  await page.getByRole("menu", { name: "Table actions" }).waitFor();
+  await close();
+  await button("Open sales example").click(); await ready();
+  assert.equal(await page.getByRole("menu", { name: "Table actions" }).count(), 0, "old table menu does not survive opening another workbook with the same keys");
+  checks.push("table context menu is dismissed across workbook close and reopen");
   await tabs().first().focus(); await page.keyboard.press("F2");
   let rename = page.getByRole("dialog", { name: "Rename table" });
   const original = await rename.getByLabel("Table name").inputValue();

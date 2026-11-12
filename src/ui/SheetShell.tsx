@@ -699,7 +699,7 @@ export function SheetShell(props: SheetShellProps) {
   const openedFilePendingRef = useRef(true);
   const [openedFileSignal, setOpenedFileSignal] = useState(0);
   const [newTableDraftActive, setNewTableDraftActive] = useState(false);
-  const [tableMenu, setTableMenu] = useState<{ key: string; id: string; name: string; x: number; y: number } | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ key: string; id: string; name: string; x: number; y: number; witness: ViewWitness } | null>(null);
   const [renameTable, setRenameTable] = useState<{ key: string; name: string; witness: ViewWitness } | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
@@ -2269,6 +2269,8 @@ export function SheetShell(props: SheetShellProps) {
     () => (view ? { occurrence: view.occurrence, revision: view.revision } : null),
     [view?.occurrence, view?.revision],
   );
+
+  useEffect(() => { setTableMenu(null); }, [view?.occurrence]);
 
   // While a filter hides rows, the footer totals the rows shown. Work adds
   // them up; until it answers (or if it cannot), the footer keeps Work's
@@ -5873,12 +5875,12 @@ export function SheetShell(props: SheetShellProps) {
               return <button key={collection.key} type="button" role="tab" id={tableTabId(collection.key)}
                 aria-label={tableTabName(name, index, view.collections.length)} aria-selected={active} aria-controls="ts-table-workspace"
                 tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-table-tab ts-tab--active" : "ts-tab ts-table-tab"} title={name}
-                onContextMenu={event => { event.preventDefault(); if (!onRenameTable || columnChangesBlocked) return; setTableMenu({ key: collection.key, id: collection.id, name, x: event.clientX, y: event.clientY }); }}
+                onContextMenu={event => { event.preventDefault(); if (!onRenameTable || !witness || columnChangesBlocked) return; setTableMenu({ key: collection.key, id: collection.id, name, x: event.clientX, y: event.clientY, witness }); }}
                 onDoubleClick={() => { if (onRenameTable && witness && !columnChangesBlocked && !names.table(collection.id)) setRenameTable({ key: collection.key, name, witness }); }}
                 onKeyDown={event => {
                   if (!onRenameTable || !witness || columnChangesBlocked || isComposingEvent(event)) return;
                   if (event.key === "F2" && !names.table(collection.id)) { event.preventDefault(); setRenameTable({ key: collection.key, name, witness }); }
-                  else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setTableMenu({ key: collection.key, id: collection.id, name, x: rect.left, y: rect.top }); }
+                  else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setTableMenu({ key: collection.key, id: collection.id, name, x: rect.left, y: rect.top, witness }); }
                 }}
                 onClick={() => void selectCollection(collection.key)}>{name}</button>;
             })}
@@ -6065,8 +6067,8 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {tableMenu && witness ? <div role="menu" aria-label="Table actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
-        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!names.table(tableMenu.id)} disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness }); setTableMenu(null); }}>Rename…</button>
+      {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div role="menu" aria-label="Table actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
+        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!names.table(tableMenu.id)} disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); setTableMenu(null); }}>Rename…</button>
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
