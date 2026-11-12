@@ -8,6 +8,7 @@
  */
 import type {
   CanonicalProjectFile,
+  FieldProjection,
   OpenedProjection,
   PublicationProjection,
   TableProjection,
@@ -45,6 +46,64 @@ import {
   type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
+
+/**
+ * Kept here because the save-closure adapter serves only contracts and session.
+ * Patch disposable rows so the patched view deep-equals a reloaded view.
+ * Preserve untouched row identities; omit display text as current reloads do.
+ */
+export function patchTable(table: TableProjection, changed: FieldProjection[]): TableProjection | null {
+  const columnIds = table.columns.map(column => column.id);
+  const order = new Map(columnIds.map((id, index) => [id, index]));
+  if (order.size !== columnIds.length) return null;
+  const updates = new Map<string, Map<string, FieldProjection>>();
+  for (const field of changed) {
+    if (!order.has(field.target.field)) return null;
+    let row = updates.get(field.target.entity);
+    if (!row) updates.set(field.target.entity, row = new Map());
+    const previous = row.get(field.target.field);
+    if (previous && !sameValue(previous, field)) return null;
+    row.set(field.target.field, field);
+  }
+  const rows: TableProjection["rows"] = [];
+  for (const row of table.rows) {
+    const present = new Map(row.fields.map(field => [field.target.field, field]));
+    const blanks = row.blank_fields ?? [];
+    const ids = [...present.keys(), ...blanks];
+    const inOrder = (list: string[]) => list.every((id, index) => order.has(id) &&
+      (index === 0 || order.get(list[index - 1]!)! < order.get(id)!));
+    if (row.fields.some(field => Object.hasOwn(field, "display") || field.blank === true || field.target.entity !== row.id) ||
+      !inOrder(row.fields.map(field => field.target.field)) || !inOrder(blanks) ||
+      ids.length !== columnIds.length || new Set(ids).size !== columnIds.length) return null;
+    const changes = updates.get(row.id);
+    if (!changes) {
+      rows.push(row);
+      continue;
+    }
+    for (const [id, field] of changes) {
+      if (field.blank === true) present.delete(id);
+      else {
+        const { display: _display, ...replacement } = field;
+        present.set(id, replacement);
+      }
+    }
+    const fields = columnIds.flatMap(id => present.has(id) ? [present.get(id)!] : []);
+    const blank_fields = columnIds.filter(id => !present.has(id));
+    const { blank_fields: _oldBlanks, ...rest } = row;
+    rows.push({ ...rest, fields, ...(blank_fields.length ? { blank_fields } : {}) });
+    updates.delete(row.id);
+  }
+  return updates.size === 0 ? { ...table, rows } : null;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  return Array.isArray(a) === Array.isArray(b) && Object.keys(left).length === Object.keys(right).length &&
+    Object.keys(left).every(key => Object.hasOwn(right, key) && sameValue(left[key], right[key]));
+}
 
 export type SheetSessionErrorCode =
   | "not-open"
@@ -163,6 +222,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let ready: Promise<ReadyKit> | null = null;
   let tail: Promise<unknown> = Promise.resolve();
   let active: ActiveWork | null = null;
+  let liveRead: CoherentRead | null = null;
+  let columnsRevision: string | null = null;
   let residentCollection: string | null = null;
   let residentAvailable = false;
   // Host session evidence from an acknowledged Work admission; never document state.
@@ -323,9 +384,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     expected: number,
     revision: string,
     key: string,
-  ): Promise<TableProjection> {
+  ): Promise<{ table: TableProjection; columnsRevision: string | null }> {
     try {
-      return await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
+      const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
+      return { table, columnsRevision: null };
     } catch (error) {
       if (!hasFailureCode(kit, error, "use_window_query")) throw error;
     }
@@ -360,12 +422,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw new SheetSessionError("incoherent-reply", "Core returned an empty window inside the table.");
       }
     }
-    return {
+    return { columnsRevision: first.columns_revision, table: {
       ...(first.tracker_profile ? { tracker_profile: true } : {}),
       ...(first.native_table_profile ? { native_table_profile: true } : {}),
       revision: first.revision, collection: first.collection, columns: first.columns, rows,
       ...(first.column_totals ? { column_totals: first.column_totals } : {}),
-    };
+    } };
   }
 
   /** Work's window totals are whole-table, so every window at one revision carries the same ones (Work #591). */
@@ -391,14 +453,16 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         continue;
       }
       const key = collection ?? bootstrap.default_collection;
-      const table = await queryWholeTable(kit, client, expected, occurrence.revision, key);
+      const loaded = await queryWholeTable(kit, client, expected, occurrence.revision, key);
+      const table = loaded.table;
       if (table.revision !== occurrence.revision) {
         if (attempt >= COHERENT_READ_ATTEMPTS) {
           throw new SheetSessionError("incoherent-reply", "Core did not return one coherent revision.");
         }
         continue;
       }
-      return {
+      columnsRevision = loaded.columnsRevision;
+      liveRead = {
         collection: key,
         view: {
           title: bootstrap.title,
@@ -410,6 +474,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
           table,
         },
       };
+      return liveRead;
     }
   }
 
@@ -893,7 +958,30 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       let result: CoherentRead;
       try {
-        result = await loadCoherentView(kit, client, expected, live.collection);
+        let patchedRead: CoherentRead | null = null;
+        if (!authoredSchema && Array.isArray(publication.changed) && !publication.many &&
+          columnsRevision !== null && liveRead?.view.revision === live.revision &&
+          liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
+          const patched = patchTable(liveRead.view.table, publication.changed);
+          if (patched !== null) {
+            const window = await afterUsable(expected, dispatch(kit, () =>
+              client.queryTableWindow(publication.resulting_revision, live.collection, {}, 0, 0)));
+            if (window.revision === publication.resulting_revision &&
+              window.collection.id === liveRead.view.table.collection.id &&
+              window.columns_revision === columnsRevision &&
+              window.total_rows === window.unfiltered_rows && window.total_rows === patched.rows.length) {
+              const { column_totals: _oldTotals, ...table } = patched;
+              patchedRead = {
+                collection: live.collection,
+                view: { ...liveRead.view, revision: publication.resulting_revision, table: {
+                  ...table, revision: publication.resulting_revision,
+                  ...(window.column_totals ? { column_totals: window.column_totals } : {}),
+                } },
+              };
+            }
+          }
+        }
+        result = patchedRead ?? await loadCoherentView(kit, client, expected, live.collection);
       } catch (error) {
         active = null;
         residentCollection = live.collection;
@@ -915,6 +1003,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         collection: result.collection,
       };
       residentCollection = result.collection;
+      liveRead = result;
       return { view: result.view, publication };
     });
   }
