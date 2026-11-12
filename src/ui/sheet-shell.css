@@ -1632,6 +1632,7 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 }
 
 .ts-cell-input {
+  text-align: inherit;
   position: absolute;
   inset: 0;
   font: inherit;
