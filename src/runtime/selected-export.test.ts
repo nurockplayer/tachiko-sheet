@@ -26,7 +26,7 @@ async function setup() {
   const calls: Array<{ revision: string; metadata: InteropMetadata; format: string; schema: string }> = [];
   const client = {
     observeOccurrence: async () => ({ scope, revision }),
-    openProject: async () => ({}),
+    openProjectWorkingSize: async () => ({}),
     closeProject: async () => undefined,
     bootstrap: async () => ({ title: "Two sheets", revision, default_collection: "first", collections: listed }),
     queryTable: async (key: string) => ({ revision, collection: sheets.find((sheet) => sheet.key === key)!, columns: [], rows: [] }),

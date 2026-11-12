@@ -13,7 +13,7 @@ async function setup() {
   const calls: unknown[][] = [];
   const client = {
     observeOccurrence: async () => ({ scope: "scope", revision: "r1" }),
-    openProject: async () => ({}), closeProject: async () => undefined,
+    openProjectWorkingSize: async () => ({}), closeProject: async () => undefined,
     bootstrap: async () => ({ title: "Native", revision: "r1", default_collection: "one", collections }),
     queryTable: async (key: string) => ({ revision: "r1", collection: collections.find(c => c.key === key)!, columns: [], rows: [] }),
     exportNativeTablesSpreadsheet: async (...args: unknown[]) => {

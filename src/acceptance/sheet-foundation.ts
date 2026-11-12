@@ -1195,7 +1195,8 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           return result;
         };
       }
-      if (property === "openProject") {
+      if (property === "openProject" || property === "openProjectWorkingSize" ||
+        property === "openPortableRoWorkingSize") {
         return async (...args: unknown[]): Promise<unknown> => {
           clearTargetedQueryReplyFaultForClient(evidence, "workbook-replaced");
           const origin = runtimeInvocationOrigin(evidence.identity, "publication");

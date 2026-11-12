@@ -115,8 +115,8 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     await page.getByRole("button", { name: `Open saved ${name}`, exact: true }).click(); await ready(page);
     const opened = kinds.slice(before);
     assert.ok(opened.includes("verify_portable_ro"));
-    assert.ok(opened.includes("open_portable_ro"));
-    assert.ok(opened.indexOf("verify_portable_ro") < opened.indexOf("open_portable_ro"));
+    assert.ok(opened.includes("open_portable_ro_working_size"));
+    assert.ok(opened.indexOf("verify_portable_ro") < opened.indexOf("open_portable_ro_working_size"));
   }
   try {
     let page = await start();
@@ -181,6 +181,6 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     await closeCopy.getByRole("button", { name: "Create copy", exact: true }).click();
     await waitForColdHome(page); await reopen(page, "Close saved new");
     assert.deepEqual(await snapshot(page), { name: "Close saved new", columns: ["A"], cells: [] });
-    console.log(JSON.stringify({ nativePortableReopens: kinds.filter(kind => kind === "open_portable_ro").length, status: "PASS" }));
+    console.log(JSON.stringify({ nativePortableReopens: kinds.filter(kind => kind === "open_portable_ro_working_size").length, status: "PASS" }));
   } finally { await stop(); await rm(work, { recursive: true, force: true }); }
 });

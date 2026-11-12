@@ -61,6 +61,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       });
       const dispatched = (await requests("new_table")).slice(before);
       assert.equal(dispatched.length, 1, "Create dispatches exactly once");
+      assert.equal(dispatched[0].request.profile, "working_size", "Create requests the working-size session");
       assert.equal(dispatched[0].request.name, " Expenses ", "table name reaches Work exactly as typed");
       assert.deepEqual(dispatched[0].request.columns, [{ name: " Item ", field_type: "text", required: false }], "column names reach Work exactly as typed");
       assert.equal(await dialog().count(), 0, "padded valid names create successfully in the real core");
