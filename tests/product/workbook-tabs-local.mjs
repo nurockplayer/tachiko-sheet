@@ -242,6 +242,27 @@ try {
   await openFolder(page, notesFolder); await ready();
   const salesIndex = (await picker().locator("option").evaluateAll(options => options.map(o => o.value))).indexOf("sales");
   await tabs().nth(salesIndex).click(); await selected(salesIndex);
+  const inactive = 1 - salesIndex;
+  const originalName = await tabs().nth(inactive).textContent();
+  await tabs().nth(inactive).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  let renameDialog = page.getByRole("dialog", { name: "Rename table" });
+  await renameDialog.getByLabel("Table name").fill("Renamed table");
+  await renameDialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await ready();
+  assert.equal(await tabs().nth(inactive).textContent(), "Renamed table");
+  await selected(salesIndex);
+  assert.equal(await picker().locator("option").nth(inactive).textContent(), "Renamed table");
+  await tabs().nth(inactive).click(); await selected(inactive);
+  await tabs().nth(inactive).focus(); await page.keyboard.press("F2");
+  renameDialog = page.getByRole("dialog", { name: "Rename table" });
+  await renameDialog.getByLabel("Table name").fill("");
+  await renameDialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await renameDialog.getByRole("alert").waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await tabs().nth(inactive).evaluate(el => el === document.activeElement), true);
+  await tabs().nth(salesIndex).click(); await selected(salesIndex);
+  checks.push(`inactive table rename and invalid name refusal (was ${originalName})`);
   await mode("Brief").click();
   const notes = page.getByTestId("notes-input"); await notes.fill("retained notes draft");
   await tabs().nth(1 - salesIndex).click(); await selected(salesIndex);
@@ -263,6 +284,10 @@ try {
   }
   await tabs().nth(1).click(); await selected(1);
   assert.equal(await cells().first().textContent(), "record-2");
+  await tabs().first().click({ button: "right" });
+  assert.equal(await page.getByRole("menuitem", { name: "Rename…" }).isDisabled(), true);
+  await page.getByText("Renaming imported sheets is not available yet.").waitFor();
+  await page.keyboard.press("Escape");
   await close();
   await (await homeImportInput(page)).setInputFiles(fixture);
   preview = page.getByRole("dialog", { name: "Review import preview", exact: true });

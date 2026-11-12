@@ -116,6 +116,7 @@ export interface SheetRuntime {
   queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
   setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;
   copyFormula(witness: ViewWitness, request: FormulaCopy): Promise<ConfirmedPublication>;
+  renameTable(witness: ViewWitness, collection: string, name: string): Promise<ConfirmedPublication>;
   renameColumn(witness: ViewWitness, collection: string, field: string, name: string): Promise<ConfirmedPublication>;
   removeColumn(witness: ViewWitness, collection: string, field: string): Promise<ConfirmedPublication>;
   /** Move a column to a zero-based position in Work's projected column order. */
@@ -391,6 +392,7 @@ export interface SheetShellProps {
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
+  onRenameTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onMoveColumn?(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<RowCommandOutcome>;
