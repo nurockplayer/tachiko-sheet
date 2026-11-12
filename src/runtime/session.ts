@@ -10,6 +10,7 @@ import type {
   CanonicalProjectFile,
   FieldProjection,
   OpenedProjection,
+  OpenedWindowProjection,
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
@@ -586,7 +587,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     kit: CoreKit,
     client: PublicClient,
     expected: number,
-    dispatchOpen: () => Promise<OpenedProjection>,
+    dispatchOpen: () => Promise<OpenedProjection | OpenedWindowProjection>,
     fromWorkFile = false,
     fromNewTable = false,
   ): Promise<WorkbookView> {
@@ -648,7 +649,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         noResident = true;
       }
       if (!noResident) throw new Error("A table is still open. Reload before creating a new table.");
-      const create = capability(client.newTable, "new table");
+      const create = capability(client.newTableWorkingSize, "new table");
       return openSession(kit, client, requestedAt, () => create.call(client, name, inputs), false, true);
     });
   }
@@ -661,7 +662,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       const transfer = await kit.projectTransferFromFiles(files);
       return openSession(kit, client, requestedAt, async () => {
-        return client.openProject(transfer);
+        return capability(client.openProjectWorkingSize, "working-size project open").call(client, transfer);
       });
     });
   }
@@ -676,7 +677,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       // refusal is pre-dispatch and must preserve the resident occurrence.
       kit.preflightCanonicalProjectEntries(files);
       const transfer = kit.projectTransferFromEntries(files);
-      return openSession(kit, client, requestedAt, () => client.openProject(transfer));
+      return openSession(kit, client, requestedAt, () => capability(client.openProjectWorkingSize, "working-size project open").call(client, transfer));
     });
   }
 
@@ -690,7 +691,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       // Verify is read-only. Refused packages cannot replace the current work.
       await afterNotReplaced(requestedAt, dispatch(kit, () => client.verifyPortableRo(transfer.slice(0))));
-      return openSession(kit, client, requestedAt, () => client.openPortableRo(transfer), true);
+      return openSession(kit, client, requestedAt, () => capability(client.openPortableRoWorkingSize, "working-size work-file open").call(client, transfer), true);
     });
   }
 
@@ -710,7 +711,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
-      return openSession(kit, client, requestedAt, () => client.openProject(bytes.slice(0)));
+      return openSession(kit, client, requestedAt, () => importedMetadata
+        ? client.openProject(bytes.slice(0))
+        : capability(client.openProjectWorkingSize, "working-size project open").call(client, bytes.slice(0)));
     });
   }
 

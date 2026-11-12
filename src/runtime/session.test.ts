@@ -271,6 +271,18 @@ class FakeClient {
     return this.#publish(request.source);
   }
 
+  async newTableWorkingSize(name: string, columns: NewTableColumnInput[]) {
+    return this.newTable(name, columns);
+  }
+
+  async openProjectWorkingSize(bytes: ArrayBuffer) {
+    return this.openProject(bytes);
+  }
+
+  async openPortableRoWorkingSize(bytes: ArrayBuffer) {
+    return (this as unknown as { openPortableRo(bytes: ArrayBuffer): Promise<OpenedProjection> }).openPortableRo(bytes);
+  }
+
   async newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection> {
     this.calls.newTable.push({ name, columns });
     if (this.hooks.newTable) return this.hooks.newTable();
@@ -2520,5 +2532,55 @@ describe("confirmed changed-cell patches", () => {
     const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
     expect(view.table.column_totals).toEqual({ impact: 12 });
     expect(result.view.table.column_totals).toEqual({ impact: 99 });
+  });
+});
+
+
+describe("working-size entry selection", () => {
+  it.each(["files", "canonical", "opaque", "work-file", "new"])("requests working size for %s without an ordinary open", async entry => {
+    const client = new FakeClient();
+    const runtime = createSheetRuntime(async () => makeKit(client).kit);
+    const reply = await client.openProject(new ArrayBuffer(4));
+    await client.closeProject();
+    const working = vi.fn(async () => reply);
+    Object.assign(client, { newTableWorkingSize: working, openProjectWorkingSize: working,
+      openPortableRoWorkingSize: working, verifyPortableRo: async () => {} });
+    const ordinary = vi.spyOn(client, "openProject").mockRejectedValue(new Error("ordinary open"));
+    const ordinaryNew = vi.spyOn(client, "newTable").mockRejectedValue(new Error("ordinary new"));
+    const ordinaryPortable = vi.fn(async () => { throw new Error("ordinary portable"); });
+    Object.assign(client, { openPortableRo: ordinaryPortable });
+    // The reply is intentionally ignored: install a resident occurrence for
+    // the subsequent authoritative reads, using the fake's existing helper.
+    working.mockImplementation(async () => client.openThenLoseReply(new Error("fake open")).catch(() => reply));
+    if (entry === "files") await runtime.openFiles(FILES);
+    else if (entry === "canonical") await runtime.openCanonical(CANONICAL_FILES);
+    else if (entry === "opaque") await runtime.openOpaque(new ArrayBuffer(4));
+    else if (entry === "work-file") await runtime.openWorkFile(new ArrayBuffer(4));
+    else await runtime.newTable("Working", [{ name: "A", field_type: "text" }]);
+    expect(working).toHaveBeenCalledOnce();
+    expect(ordinary).not.toHaveBeenCalled();
+    expect(ordinaryNew).not.toHaveBeenCalled();
+    expect(ordinaryPortable).not.toHaveBeenCalled();
+  });
+
+  it.each(["files", "canonical", "opaque", "work-file"])("preserves resident work when %s lacks the working-size capability", async entry => {
+    const { runtime, client, view } = await opened();
+    Object.assign(client, { openProjectWorkingSize: undefined, openPortableRoWorkingSize: undefined,
+      verifyPortableRo: async () => {} });
+    const request = entry === "files" ? runtime.openFiles(FILES)
+      : entry === "canonical" ? runtime.openCanonical(CANONICAL_FILES)
+      : entry === "opaque" ? runtime.openOpaque(new ArrayBuffer(4))
+      : runtime.openWorkFile(new ArrayBuffer(4));
+    await expect(request).rejects.toMatchObject({ code: "capability-missing" });
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("requires the working-size New capability", async () => {
+    const client = new FakeClient();
+    Object.assign(client, { newTableWorkingSize: undefined });
+    const runtime = createSheetRuntime(async () => makeKit(client).kit);
+    await expect(runtime.newTable("Working", [{ name: "A", field_type: "text" }]))
+      .rejects.toMatchObject({ code: "capability-missing" });
+    expect(client.calls.newTable).toEqual([]);
   });
 });
