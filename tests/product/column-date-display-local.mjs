@@ -48,8 +48,10 @@ try {
   await rows().first().locator(".ts-cell").nth(7).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill("changed"); await editor.press("Enter"); await ready(); await check();
-  await page.getByRole("tab", { name: "Other", exact: true }).click(); await ready();
-  await page.getByRole("tab", { name: "Dates", exact: true }).click(); await ready(); await check();
+  const tabs = page.getByRole("tablist", { name: "Tables", exact: true }).getByRole("tab");
+  assert.equal(await tabs.count(), 2);
+  await tabs.nth(1).click(); await ready();
+  await tabs.nth(0).click(); await ready(); await check();
   for (const name of ["Undo", "Redo"]) { await page.getByRole("button", { name, exact: true }).click(); await ready(); await check(); }
   await rows().first().locator(".ts-cell").nth(1).dblclick(); assert.equal(await editor.inputValue(), "2026-11-07");
   await editor.fill("2026-11-07"); await editor.press("Enter"); await ready(); await check();
