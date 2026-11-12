@@ -1076,12 +1076,12 @@ const cases = [
     assert.equal(await selectedCount(page), table.rows.length, "Ctrl+Space did not select the displayed column");
     const headers = page.locator("th.ts-column-header");
     const rowHeads = page.locator("tbody tr.ts-row > th.ts-row-head");
-    await headers.nth(1).click();
+    await headers.nth(1).locator(".ts-col-head").click();
     assert.equal(await selectedCount(page), table.rows.length, "header click did not select the column");
     assert.equal(await activeId(page), id(0, 1), "column selection did not focus its first cell");
     await page.keyboard.press("Control+c");
     assert.equal((await clipboard(page)).trimEnd().split("\n").length, table.rows.length, "copy did not include the whole column");
-    await headers.nth(2).click({ modifiers: ["Shift"] });
+    await headers.nth(2).locator(".ts-col-head").click({ modifiers: ["Shift"] });
     assert.equal(await selectedCount(page), 2 * table.rows.length, "Shift+click did not extend the column selection");
     await rowHeads.nth(1).click();
     assert.equal(await selectedCount(page), table.columns.length, "row number did not select the row");
@@ -1102,7 +1102,7 @@ const cases = [
     const editor = page.getByTestId("cell-editor");
     await editor.fill("uncommitted draft");
     const before = await selectedCount(page);
-    await headers.nth(1).click();
+    await headers.nth(1).locator(".ts-col-head").click();
     assert.equal(await editor.inputValue(), "uncommitted draft", "header click changed the draft");
     assert.equal(await selectedCount(page), before, "header click changed selection during editing");
     await page.keyboard.press("Escape");
