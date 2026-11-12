@@ -16,7 +16,7 @@ const work = await mkdtemp(path.join(tmpdir(), "sheet-working-size-"));
 const folder = path.join(work, "fixture");
 const schema = JSON.parse(j4CanaryText["schemas.json"])[0];
 const types = ["text", "number", "number", "date", "boolean", "text", "number", "number", "number", "number"];
-schema.fields = types.map((type, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type }, required: false }));
+schema.fields = types.map((type, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type }, required: false, constraint: null }));
 await mkdir(path.join(folder, "entities"), { recursive: true });
 const manifest = JSON.parse(j4CanaryText["manifest.json"]); manifest.format_version = 3;
 await writeFile(path.join(folder, "manifest.json"), JSON.stringify(manifest));
