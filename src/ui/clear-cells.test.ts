@@ -91,5 +91,7 @@ describe("native empty intent and atomic clear request shaping", () => {
     const rows = Array.from({ length: 10_001 }, () => ({ id: "e", key: "e", fields: [], blank_fields: cols.map(c => c.id) }));
     expect(clearCellEdits(rows, cols, { top: 0, left: 0, bottom: 9_999, right: 9 }, true)).toEqual([]);
     expect(() => clearCellEdits(rows, cols, { top: 0, left: 0, bottom: 10_000, right: 9 }, true)).toThrow(/100,000-cell/);
+    const singleColumnRows = Array.from({ length: 100_001 }, () => ({ id: "e", key: "e", fields: [], blank_fields: [cols[0]!.id] }));
+    expect(() => clearCellEdits(singleColumnRows, [cols[0]!], { top: 0, left: 0, bottom: 100_000, right: 0 }, true)).toThrow(/100,000-cell/);
   });
 });
