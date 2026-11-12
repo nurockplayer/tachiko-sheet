@@ -80,5 +80,6 @@ try {
   await reveal(9999); await textIs(9999, 0, "Row 10000"); console.log("PASS: 70000 stored cells cleared in one operation and restored with Undo");
 } catch (error) {
   if (page) await capacitySnapshot(page, "failure").catch(() => {});
+  console.error(`Error: ${error.stack ?? error}`);
   throw error;
 } finally { await context?.close(); await rm(work, { recursive: true, force: true }); }
