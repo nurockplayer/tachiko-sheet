@@ -2909,8 +2909,17 @@ export function SheetShell(props: SheetShellProps) {
       ? { entity: rowEntity(displayRows.at(-1)!), field: columns[index]!.id }
       : { entity: rowEntity(displayRows[index]!), field: columns.at(-1)!.id };
     tabRunStartRef.current = null;
-    focusCell(anchor.entity, anchor.field);
-    extendSelection(anchor, end);
+    const scroller = gridScrollRef.current;
+    const viewport = scroller?.getBoundingClientRect();
+    const visibleCell = kind === "column" && viewport
+      ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), anchor.field))).find(cell => {
+        if (!cell) return false;
+        const bounds = cell.getBoundingClientRect();
+        return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+      })
+      : undefined;
+    (cellRefs.current.get(cellKey(anchor.entity, anchor.field)) ?? visibleCell)?.focus({ preventScroll: true });
+    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
   }
 
   /**
