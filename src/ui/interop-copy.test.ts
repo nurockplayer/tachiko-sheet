@@ -190,3 +190,21 @@ describe("native table download disclosures", () => {
     expect(findingLocation("expenses", table, column, "imported_sheet_note")).toBe("expenses");
   });
 });
+
+
+describe("producer presentation disclosures", () => {
+  it("states which stored column presentation downloads", () => {
+    expect(findingMessage("Stored date formats, alignment, wrap and column widths are exported; other presentation and view sorting/filtering are excluded.")).toBe(
+      "Date formats, text alignment, wrapping and column widths are included. Other formatting, sorting and filters are not included.",
+    );
+  });
+  it("explains date fallback and bounded cell presentation without changing the finding", () => {
+    expect(findingMessage("Date format dd-mmm is not supported; ISO is used.", "date_format_not_supported")).toBe(
+      "The date format dd-mmm is not supported. Dates use YYYY-MM-DD instead.",
+    );
+    expect(findingMessage("Some cell presentation exceeded the import bound; values were retained.", "presentation_bound_dropped")).toBe(
+      "Some cell formatting was too large to import. The cell values were kept.",
+    );
+    expect(findingMessage("Changed condition", "date_format_not_supported")).toBe("Changed condition");
+  });
+});

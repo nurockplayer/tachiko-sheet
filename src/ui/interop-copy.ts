@@ -3,6 +3,10 @@ import type { FidelityFinding } from "../../public/core-kit/runtime/interop-prot
 /** Display copy only. The original finding, category and blocking flag stay
  * unchanged for import/export decisions, saved copies and diagnostic evidence. */
 const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
+  "Stored date formats, alignment, wrap and column widths are exported; other presentation and view sorting/filtering are excluded.":
+    "Date formats, text alignment, wrapping and column widths are included. Other formatting, sorting and filters are not included.",
+  "Some cell presentation exceeded the import bound; values were retained.":
+    "Some cell formatting was too large to import. The cell values were kept.",
   "CSV cannot distinguish an absent optional Text value from present empty Text; both export as an empty field. Retain the Tachiko source to preserve presence.":
     "CSV cannot preserve the difference between blank cells and empty text; both export as empty cells.",
   "CSV exports scalar lexical values only: typing and formatting are lost. Formula-leading Text or headers are refused; use typed XLSX.":
@@ -97,6 +101,10 @@ export function findingMessage(message: string, code?: string, location?: string
   // Exact producer wording is required for a translation. A new/changed
   // warning remains verbatim rather than inheriting an inaccurate promise.
   if (isEscapeSequenceRefusal(code, message, location)) return escapeSequenceMessage(message, location);
+  if (code === "date_format_not_supported") {
+    const format = /^Date format (.+) is not supported; ISO is used\.$/.exec(message);
+    if (format) return `The date format ${format[1]} is not supported. Dates use YYYY-MM-DD instead.`;
+  }
   if (code === "imported_spreadsheet_unrepresentable") {
     return `The original workbook layout cannot represent this table. ${message}`;
   }

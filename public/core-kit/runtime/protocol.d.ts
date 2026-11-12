@@ -17,7 +17,7 @@ export type BootstrapProjection = {
     keyed_grouped_sum_definition_ids?: string[];
 };
 /** `projection_bytes` refuses an import and `saved_bytes` a whole-session save; neither is a counted resource. */
-export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes" | "saved_bytes">, number>;
+export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes" | "saved_bytes" | "source_bytes" | "expanded_bytes" | "xml_nodes" | "serialized_source_bytes" | "output_bytes">, number>;
 export type CapacityUsage = {
     collections: number;
     total_entities: number;
@@ -102,7 +102,7 @@ export type FieldProjection = {
     calculated: CalculationProjection | null;
     diagnostics: DiagnosticProjection[];
     editable_scalar: "number" | "text" | "boolean" | "date" | null;
-    /** Sheet's display text for a Number cell, present only when the window asked for it. */
+    /** Sheet's display text for a Number or Date cell, present only when the window asked for it. */
     display?: string;
 };
 /** One durable field constraint; absence of the projection means unconstrained. */
@@ -118,6 +118,7 @@ export type FieldConstraint = {
 export type FieldConstraintInput = FieldConstraint | {
     kind: "none";
 };
+export type DateFormat = "iso" | "mdy" | "dmy" | "ymd_slash" | "ymd_cjk" | "month_day_year" | "day_month_year";
 /** Display-only number formatting stored on a Number field. */
 export type NumberFormat = {
     decimals: number;
@@ -140,6 +141,7 @@ export type ConstraintFailureProjection = {
     constraint: FieldConstraint;
     offending_rows: number;
 };
+export type CellAlignment = "left" | "center" | "right";
 export type ColumnProjection = {
     id: string;
     key: string;
@@ -153,6 +155,12 @@ export type ColumnProjection = {
     constraint?: FieldConstraint;
     /** Declared display-only number format; omission means default formatting. */
     number_format?: NumberFormat;
+    date_format?: DateFormat;
+    style?: {
+        alignment?: CellAlignment;
+        wrap?: boolean;
+    };
+    width?: number;
 };
 export type TableRowProjection = {
     id: string;
@@ -516,7 +524,7 @@ export type FailureProjection = {
     row_count?: number;
 };
 /** Runtime accounting limit named by a capacity refusal. */
-export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges" | "projection_bytes" | "saved_bytes";
+export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges" | "projection_bytes" | "source_bytes" | "expanded_bytes" | "xml_nodes" | "serialized_source_bytes" | "output_bytes" | "saved_bytes";
 export type CapacityFailureProjection = FailureProjection & {
     code: "capacity_exceeded";
     limit: CapacityLimitName;
@@ -532,7 +540,7 @@ export type CapacityFailureProjection = FailureProjection & {
 /** Validate the detailed wire payload for a capacity refusal. */
 export declare function isCapacityFailure(failure: FailureProjection): failure is CapacityFailureProjection;
 /** Known runtime failure codes, while allowing forward-compatible additions. */
-export type FailureCode = "required_values_missing" | "capacity_exceeded" | (string & {});
+export type FailureCode = "invalid_column_width" | "last_table" | "table_referenced" | "required_values_missing" | "capacity_exceeded" | (string & {});
 /**
  * Stable refusal codes for `updateFormula`. Each failure carries a human
  * message in `FailureProjection.message`. Syntax and reference failures add
@@ -616,11 +624,40 @@ export type TrackerCommand = {
     field: string;
     number_format: NumberFormat | null;
 } | {
+    type: "set_column_date_format";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    date_format: DateFormat | null;
+} | {
+    type: "set_column_alignment";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    alignment: CellAlignment | null;
+} | {
+    type: "set_column_wrap";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    wrap: boolean | null;
+} | {
+    type: "set_column_width";
+    expected_revision: string;
+    collection: string;
+    field: string;
+    width: number | null;
+} | {
     type: "move_column";
     expected_revision: string;
     collection: string;
     field: string;
     to_index: number;
+} | {
+    type: "rename_table";
+    expected_revision: string;
+    collection: string;
+    name: string;
 } | {
     type: "rename_column";
     expected_revision: string;
@@ -723,9 +760,11 @@ export type DesignerRequest = {
 }) | {
     type: "new_tracker";
     occurrence_id: string;
+    profile?: "working_size";
 } | {
     type: "new_budget";
     occurrence_id: string;
+    profile?: "working_size";
 } | {
     type: "new_table";
     occurrence_id: string;
@@ -738,6 +777,15 @@ export type DesignerRequest = {
     collection: string;
     name: string;
     column_names?: Record<string, string>;
+} | {
+    type: "delete_table";
+    expected_revision: string;
+    collection: string;
+} | {
+    type: "add_table";
+    expected_revision: string;
+    name: string;
+    columns: NewTableColumnInput[];
 } | {
     type: "bootstrap";
     occurrence_id: string;
@@ -754,7 +802,7 @@ export type DesignerRequest = {
     view: TableView;
     start: number;
     count: number;
-    /** Ask each Number cell to carry its display text. */
+    /** Ask each Number or Date cell to carry its display text. */
     display?: boolean;
 } | {
     type: "locate_in_view";

@@ -7,6 +7,11 @@ const base = { code: "capacity_exceeded", current_revision: "r1", message: "capa
 
 describe("capacityMessage", () => {
   it.each([
+    ["source_bytes", "This workbook holds more data than this beta can open; nothing was changed."],
+    ["expanded_bytes", "This workbook holds more data than this beta can open; nothing was changed."],
+    ["serialized_source_bytes", "This workbook holds more data than this beta can open; nothing was changed."],
+    ["xml_nodes", "This workbook has more file details than this beta can open; nothing was changed."],
+    ["output_bytes", "This workbook holds more data than this beta can download; nothing was changed."],
     ["saved_bytes", "This workbook holds more data than this beta can save; nothing was changed."],
     ["table_rows", "This table can hold up to 1,000 rows; this change would make 1,200. Nothing was changed."],
     ["table_fields", "This table can hold up to 1,000 columns; this change would make 1,200. Nothing was changed."],
@@ -44,6 +49,18 @@ describe("importCapacityMessage", () => {
       ...(limit === "table_rows" || limit === "table_fields" ? { collection: "Orders" } : {}),
     } as unknown as CapacityFailureProjection;
     expect(importCapacityMessage(failure)).toBe(expected);
+  });
+
+  it.each([
+    ["source_bytes", "the file has at least 1,200 bytes; Tachiko can import up to 1,000 bytes."],
+    ["expanded_bytes", "the unpacked file has at least 1,200 bytes; Tachiko can import up to 1,000 bytes."],
+    ["serialized_source_bytes", "the workbook's cell data takes at least 1,200 bytes; Tachiko can import up to 1,000 bytes."],
+    ["xml_nodes", "the file has at least 1,200 parts; Tachiko can import up to 1,000."],
+    ["output_bytes", "the workbook holds more data than this beta can download."],
+  ] as const)("explains the %s file bound", (limit, expected) => {
+    expect(importCapacityMessage({ ...base, limit } as CapacityFailureProjection)).toBe(
+      `This file is outside what this beta can open: ${expected} The workbook was not imported.`,
+    );
   });
 
   it("never names a sheet for a workbook-wide limit", () => {
