@@ -6,6 +6,7 @@
  * WorkbookView is a disposable projection rebuilt from actual core calls.
  * Rust/core stays the sole authority for meaning, validation and publication.
  */
+import { patchTable } from "./table-patch.js";
 import type {
   CanonicalProjectFile,
   OpenedProjection,
@@ -163,6 +164,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let ready: Promise<ReadyKit> | null = null;
   let tail: Promise<unknown> = Promise.resolve();
   let active: ActiveWork | null = null;
+  let liveRead: CoherentRead | null = null;
+  let columnsRevision: string | null = null;
   let residentCollection: string | null = null;
   let residentAvailable = false;
   // Host session evidence from an acknowledged Work admission; never document state.
@@ -323,9 +326,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     expected: number,
     revision: string,
     key: string,
-  ): Promise<TableProjection> {
+  ): Promise<{ table: TableProjection; columnsRevision: string | null }> {
     try {
-      return await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
+      const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
+      return { table, columnsRevision: null };
     } catch (error) {
       if (!hasFailureCode(kit, error, "use_window_query")) throw error;
     }
@@ -360,12 +364,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw new SheetSessionError("incoherent-reply", "Core returned an empty window inside the table.");
       }
     }
-    return {
+    return { columnsRevision: first.columns_revision, table: {
       ...(first.tracker_profile ? { tracker_profile: true } : {}),
       ...(first.native_table_profile ? { native_table_profile: true } : {}),
       revision: first.revision, collection: first.collection, columns: first.columns, rows,
       ...(first.column_totals ? { column_totals: first.column_totals } : {}),
-    };
+    } };
   }
 
   /** Work's window totals are whole-table, so every window at one revision carries the same ones (Work #591). */
@@ -391,14 +395,16 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         continue;
       }
       const key = collection ?? bootstrap.default_collection;
-      const table = await queryWholeTable(kit, client, expected, occurrence.revision, key);
+      const loaded = await queryWholeTable(kit, client, expected, occurrence.revision, key);
+      const table = loaded.table;
       if (table.revision !== occurrence.revision) {
         if (attempt >= COHERENT_READ_ATTEMPTS) {
           throw new SheetSessionError("incoherent-reply", "Core did not return one coherent revision.");
         }
         continue;
       }
-      return {
+      columnsRevision = loaded.columnsRevision;
+      liveRead = {
         collection: key,
         view: {
           title: bootstrap.title,
@@ -410,6 +416,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
           table,
         },
       };
+      return liveRead;
     }
   }
 
@@ -893,7 +900,30 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       let result: CoherentRead;
       try {
-        result = await loadCoherentView(kit, client, expected, live.collection);
+        let patchedRead: CoherentRead | null = null;
+        if (!authoredSchema && Array.isArray(publication.changed) && !publication.many &&
+          columnsRevision !== null && liveRead?.view.revision === live.revision &&
+          liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
+          const patched = patchTable(liveRead.view.table, publication.changed);
+          if (patched !== null) {
+            const window = await afterUsable(expected, dispatch(kit, () =>
+              client.queryTableWindow(publication.resulting_revision, live.collection, {}, 0, 0)));
+            if (window.revision === publication.resulting_revision &&
+              window.collection.id === liveRead.view.table.collection.id &&
+              window.columns_revision === columnsRevision &&
+              window.total_rows === window.unfiltered_rows && window.total_rows === patched.rows.length) {
+              const { column_totals: _oldTotals, ...table } = patched;
+              patchedRead = {
+                collection: live.collection,
+                view: { ...liveRead.view, revision: publication.resulting_revision, table: {
+                  ...table, revision: publication.resulting_revision,
+                  ...(window.column_totals ? { column_totals: window.column_totals } : {}),
+                } },
+              };
+            }
+          }
+        }
+        result = patchedRead ?? await loadCoherentView(kit, client, expected, live.collection);
       } catch (error) {
         active = null;
         residentCollection = live.collection;
@@ -915,6 +945,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         collection: result.collection,
       };
       residentCollection = result.collection;
+      liveRead = result;
       return { view: result.view, publication };
     });
   }

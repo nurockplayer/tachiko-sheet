@@ -2430,3 +2430,81 @@ describe("#189 scalar/history completion evidence", () => {
     });
   }
 });
+
+describe("confirmed changed-cell patches", () => {
+  async function patchSession(windowed = true) {
+    const { client, runtime, view: openedView } = await opened();
+    let fields = openedView.table.rows[0]!.fields;
+    const fullTable = (): TableProjection => ({ ...openedView.table, revision: client.currentRevision,
+      rows: [{ ...openedView.table.rows[0]!, fields }], column_totals: { impact: 12 } });
+    client.hooks.queryTable = async () => {
+      if (windowed) throw new FakeDesignerRuntimeError("use_window_query", client.currentRevision);
+      return fullTable();
+    };
+    const windowOf = (revision: string, start: number, count: number): TableWindowProjection => {
+      const table = fullTable();
+      return { ...table, revision, columns_revision: "c1", total_rows: table.rows.length,
+        unfiltered_rows: table.rows.length, start, rows: table.rows.slice(start, start + count) };
+    };
+    client.hooks.queryTableWindow = async (revision, _key, start, count) => windowOf(revision, start, count);
+    const view = await runtime.read();
+    client.hooks.editNumber = async () => {
+      const publication = await client.editNumber(view.revision, IMPACT, "12");
+      fields = [{ ...fields[0]!, stored: { kind: "number", value: 12 }, display: "12.00" }, ...fields.slice(1)];
+      return { ...publication, changed: [fields[0]!] };
+    };
+    client.calls.queryTable.length = 0;
+    client.calls.queryTableWindow.length = 0;
+    return { client, runtime, view, windowOf, fullTable };
+  }
+
+  it("uses just one zero-row totals window and equals the fake's full read", async () => {
+    const { runtime, client, view, fullTable } = await patchSession();
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+    expect(client.calls.queryTable).toEqual([]);
+    expect(client.calls.queryTableWindow).toEqual([{ revision: result.view.revision, start: 0, count: 0 }]);
+    expect(result.view).toEqual({ ...view, revision: client.currentRevision, table: fullTable() });
+    expect(result.view.table.column_totals).toEqual({ impact: 12 });
+    expect(result.view.table.rows[0]!.fields[1]).toBe(view.table.rows[0]!.fields[1]);
+    expect(await runtime.read()).toEqual(result.view);
+  });
+
+  it.each(["absent", "many", "total_rows", "unfiltered_rows", "columns_revision", "collection", "revision", "unknown", "non-window"])(
+    "%s falls back to the existing full read", async reason => {
+      const { runtime, client, view, windowOf, fullTable } = await patchSession(reason !== "non-window");
+      const edit = client.hooks.editNumber!;
+      client.hooks.editNumber = async () => {
+        const publication = await edit();
+        if (reason === "absent") delete publication.changed;
+        if (reason === "many") publication.many = true;
+        if (reason === "unknown") publication.changed = [{ ...publication.changed![0]!, target: { entity: "unknown", field: "impact" } }];
+        return publication;
+      };
+      client.hooks.queryTableWindow = async (revision, _key, start, count) => {
+        const window = windowOf(revision, start, count);
+        if (count !== 0) return window;
+        switch (reason) {
+          case "total_rows": return { ...window, total_rows: 2 };
+          case "unfiltered_rows": return { ...window, unfiltered_rows: 2 };
+          case "columns_revision": return { ...window, columns_revision: "c2" };
+          case "collection": return { ...window, collection: { ...window.collection, id: "different" } };
+          case "revision": return { ...window, revision: "wrong" };
+          default: return window;
+        }
+      };
+      const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+      expect(client.calls.queryTable).toEqual([COLLECTION.key]);
+      expect(result.view).toEqual({ ...view, revision: client.currentRevision, table: fullTable() });
+      expect(await runtime.read()).toEqual(result.view);
+    });
+
+  it("uses the next totals window rather than keeping the old totals", async () => {
+    const { runtime, client, view, windowOf } = await patchSession();
+    client.hooks.queryTableWindow = async (revision, _key, start, count) => ({
+      ...windowOf(revision, start, count), column_totals: { impact: 99 },
+    });
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+    expect(view.table.column_totals).toEqual({ impact: 12 });
+    expect(result.view.table.column_totals).toEqual({ impact: 99 });
+  });
+});
