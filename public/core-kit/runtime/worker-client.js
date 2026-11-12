@@ -56,6 +56,19 @@ export class WorkerDesignerClient {
             throw new Error("Expected spreadsheet import.");
         return expectResponse("imported", reply.response);
     }
+    async importSpreadsheetWorkingSize(bytes, format, csvOptions, selection, validate) {
+        const occurrence_id = freshOccurrenceId();
+        const operation = { type: "import", format, csv_options: csvOptions, selection, occurrence_id, install: false, profile: "working_size" };
+        const preview = await this.#spreadsheet(operation, bytes);
+        if (preview.status !== "ok")
+            throw new Error("Expected spreadsheet import preview.");
+        const candidate = expectResponse("imported_window", preview.response);
+        validate?.(candidate);
+        const reply = await this.#spreadsheet({ ...operation, install: true }, bytes);
+        if (reply.status !== "ok")
+            throw new Error("Expected spreadsheet import.");
+        return expectResponse("imported_window", reply.response);
+    }
     async inspectImportedProject(bytes, metadata) {
         const reply = await this.#spreadsheet({ type: "inspect_project", metadata }, bytes);
         if (reply.status !== "ok")
@@ -67,6 +80,18 @@ export class WorkerDesignerClient {
         if (reply.status !== "ok")
             throw new Error("Expected imported project open.");
         return expectResponse("opened", reply.response);
+    }
+    async inspectImportedProjectWorkingSize(bytes, metadata) {
+        const reply = await this.#spreadsheet({ type: "inspect_project", metadata, profile: "working_size" }, bytes);
+        if (reply.status !== "ok")
+            throw new Error("Expected imported project inspection.");
+        return expectResponse("opened_window", reply.response);
+    }
+    async openImportedProjectWorkingSize(bytes, metadata) {
+        const reply = await this.#spreadsheet({ type: "open_project", occurrence_id: freshOccurrenceId(), metadata, profile: "working_size" }, bytes);
+        if (reply.status !== "ok")
+            throw new Error("Expected imported project open.");
+        return expectResponse("opened_window", reply.response);
     }
     async exportSpreadsheet(expectedRevision, metadata, format, collection) {
         const reply = await this.#spreadsheet({ type: "export", expected_revision: expectedRevision, metadata, format, collection });
@@ -112,6 +137,10 @@ export class WorkerDesignerClient {
     }
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
+    }
+    /** Create a table whose session profile is the working-size one. */
+    async newTableWorkingSize(name, columns) {
+        return expectResponse("opened_window", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns, profile: "working_size" }));
     }
     async duplicateCollection(expectedRevision, collection, name, columnNames) {
         const columns = columnNames === undefined ? {} : { column_names: columnNames };
@@ -159,6 +188,15 @@ export class WorkerDesignerClient {
         }
         return expectResponse("opened", reply.response);
     }
+    async inspectProjectWorkingSize(bytes) {
+        // Inspection preserves the caller's bytes for the subsequent accepted open.
+        const candidateBytes = bytes.slice(0);
+        const reply = await this.#send({ id: this.#claimId(), kind: "inspect_project", profile: "working_size", bytes: candidateBytes }, [candidateBytes]);
+        if (reply.status !== "ok") {
+            throw new Error(`Expected project inspection response, received '${reply.status}'.`);
+        }
+        return expectResponse("opened_window", reply.response);
+    }
     async openProject(bytes) {
         const reply = await this.#send({
             id: this.#claimId(),
@@ -171,8 +209,24 @@ export class WorkerDesignerClient {
         }
         return expectResponse("opened", reply.response);
     }
+    async openProjectWorkingSize(bytes) {
+        const reply = await this.#send({
+            id: this.#claimId(),
+            kind: "open_project",
+            occurrence_id: freshOccurrenceId(),
+            profile: "working_size",
+            bytes,
+        }, [bytes]);
+        if (reply.status !== "ok") {
+            throw new Error(`Expected project open response, received '${reply.status}'.`);
+        }
+        return expectResponse("opened_window", reply.response);
+    }
     async openCanonicalTree(files) {
         return this.openProject(projectTransferFromEntries(files));
+    }
+    async openCanonicalTreeWorkingSize(files) {
+        return this.openProjectWorkingSize(projectTransferFromEntries(files));
     }
     async openLocalDocument(bytes) {
         const reply = await this.#send({
@@ -185,6 +239,19 @@ export class WorkerDesignerClient {
             throw new Error(`Expected local document open response, received '${reply.status}'.`);
         }
         return expectResponse("opened", reply.response);
+    }
+    async openLocalDocumentWorkingSize(bytes) {
+        const reply = await this.#send({
+            id: this.#claimId(),
+            kind: "open_local_document",
+            occurrence_id: freshOccurrenceId(),
+            profile: "working_size",
+            bytes,
+        }, [bytes]);
+        if (reply.status !== "ok") {
+            throw new Error(`Expected local document open response, received '${reply.status}'.`);
+        }
+        return expectResponse("opened_window", reply.response);
     }
     async exportProject(expectedRevision) {
         const reply = await this.#send({
@@ -249,6 +316,19 @@ export class WorkerDesignerClient {
         }
         return expectResponse("opened", reply.response);
     }
+    async openPortableRoWorkingSize(bytes) {
+        const reply = await this.#send({
+            id: this.#claimId(),
+            kind: "open_portable_ro",
+            occurrence_id: freshOccurrenceId(),
+            profile: "working_size",
+            bytes,
+        }, [bytes]);
+        if (reply.status !== "ok") {
+            throw new Error(`Expected portable .ro open response, received '${reply.status}'.`);
+        }
+        return expectResponse("opened_window", reply.response);
+    }
     async observeOccurrence() {
         const reply = await this.#send({ id: this.#claimId(), kind: "observe_occurrence" });
         if (reply.status !== "ok") {
@@ -265,7 +345,7 @@ export class WorkerDesignerClient {
     async queryTable(collection) {
         return expectResponse("table", await this.#command({ type: "query_table", collection }));
     }
-    async queryTableWindow(expectedRevision, collection, view, start, count) {
+    async queryTableWindow(expectedRevision, collection, view, start, count, options) {
         return expectResponse("table_window", await this.#command({
             type: "query_table_window",
             expected_revision: expectedRevision,
@@ -273,6 +353,7 @@ export class WorkerDesignerClient {
             view,
             start,
             count,
+            ...(options?.display === undefined ? {} : { display: options.display }),
         }));
     }
     async locateInView(expectedRevision, collection, view, entity) {
@@ -284,12 +365,42 @@ export class WorkerDesignerClient {
             entity,
         }));
     }
+    async queryDistinctValues(expectedRevision, collection, view, field, limit) {
+        return expectResponse("distinct_values", await this.#command({
+            type: "query_distinct_values",
+            expected_revision: expectedRevision,
+            collection,
+            view,
+            field,
+            limit,
+        }));
+    }
+    async findInView(expectedRevision, collection, view, query, fields, from, direction) {
+        return expectResponse("found_in_view", await this.#command({
+            type: "find_in_view",
+            expected_revision: expectedRevision,
+            collection,
+            view,
+            query,
+            fields,
+            ...(from === undefined ? {} : { from }),
+            direction,
+        }));
+    }
     async queryColumnTotals(expectedRevision, collection, entities) {
         return expectResponse("column_totals", await this.#command({
             type: "query_column_totals",
             expected_revision: expectedRevision,
             collection,
             entities,
+        }));
+    }
+    async queryViewTotals(expectedRevision, collection, view) {
+        return expectResponse("column_totals", await this.#command({
+            type: "query_view_totals",
+            expected_revision: expectedRevision,
+            collection,
+            view,
         }));
     }
     async queryGroupTotals(expectedRevision, collection, dimensions, measures, scope) {
@@ -420,11 +531,24 @@ function expectResponse(type, response) {
         case "opened":
             validateTablePresence(response.payload.table);
             break;
+        case "opened_window":
+            validateTablePresence(response.payload.window);
+            break;
         case "imported":
             validateTablePresence(response.payload.opened.table);
             break;
+        case "imported_window":
+            validateTablePresence(response.payload.opened.window);
+            break;
         case "fields":
             response.payload.fields.forEach(validateFieldPresence);
+            break;
+        case "published":
+            response.payload.changed?.forEach(validateFieldPresence);
+            break;
+        case "duplicated":
+        case "keyed_grouped_sum_published":
+            response.payload.publication.changed?.forEach(validateFieldPresence);
             break;
         case "field_explanation":
             validateFieldPresence(response.payload.value);

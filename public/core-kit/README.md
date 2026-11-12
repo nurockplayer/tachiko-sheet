@@ -67,6 +67,72 @@ uppercase ISO-4217 letters), or `{ type: "percent" }`. `decimals` is an integer
 from 0 through 10. A column projection includes `number_format` only when a
 format is stored.
 
+A bounded table window can carry the text the grid shows in Number cells, so a
+client renders Work's string instead of formatting again:
+
+```ts
+const window = await client.queryTableWindow(revision, collection, view, 0, 256, {
+  display: true,
+});
+window.rows[0]?.fields[0]?.display; // "1,234.50", or undefined for a non-Number cell
+```
+
+`field.display` is present on stored and calculated Number cells only, formatted
+through the column's `number_format` with en-US grouping, percent and currency
+symbols, or at most 15 significant digits when the column has no format. Text,
+Date, Yes/No and Reference cells carry none, and the text counts against the
+window's reply cap. The option defaults to off, so every other window and
+`queryTable` reply is unchanged.
+
+Two view filters compare that same display text, on every column kind including
+Reference. `display_contains` trims and folds case; `display_in` is exact text
+with no folding, and `""` means blank, so picking `"$1,234.50"` finds every row
+that shows it, including 1234.501. A blank, failed, unavailable or Reference
+cell counts as blank for now.
+
+```ts
+const view = {
+  filters: [{ kind: "display_in", field: "amount", values: ["$1,234.50"] }],
+};
+```
+
+`queryDistinctValues` lists one column's distinct display texts over the rows a
+window would return, in Sheet's list order: `""` first when any shown row is
+blank, then natural order (case-insensitive, digit runs compared as numbers).
+`limit` is 1..=1,000; `truncated` says whether more values exist than the reply
+carries.
+
+```ts
+const { values, truncated } = await client.queryDistinctValues(
+  revision, "tasks", view, "amount", 200,
+);
+```
+
+`queryViewTotals` totals each Number column over the rows a view shows — the
+same rows a window returns, `keep_entities` included — and sums them in
+collection order, so the view's sort never changes a float sum. The request
+names the view rather than every shown entity id, so a filtered footer stays
+small when thousands of rows are still shown. `queryColumnTotals`, which names
+entity ids, stays available for any other set.
+
+```ts
+const { rows, column_totals } = await client.queryViewTotals(
+  revision, "tasks", view,
+);
+```
+
+`findInView` walks the view for cells whose display text contains the query,
+case-insensitively and untrimmed, row by row and then through the shown columns;
+a blank query finds nothing. `from` is a `{row, field}` view position that need
+not match, and `next`/`previous` wrap. The reply gives the total match count and
+the found cell's entity, column, view row and zero-based ordinal.
+
+```ts
+const { total, found } = await client.findInView(
+  revision, "tasks", view, "acme", ["name", "notes"], undefined, "next",
+);
+```
+
 Columns can be reordered with `moveColumn`. `toIndex` is a zero-based position
 after the column is removed from its current place, clamped to the last column.
 The order is durable document state: it is saved, undone, diffed and exported,
@@ -123,6 +189,68 @@ grouped-sum definitions together and reopen through `inspectProject` and
 Ordinary `exportProject` refuses an occurrence successfully opened from v3;
 continue saving it with the explicit method. Retain a compatible v3 reader
 after emitting these artifacts, including during producer rollback.
+
+## Working-size sessions
+
+A host can ask for the working-size session profile when the occurrence is
+created or opened, through `newTableWorkingSize`, `inspectProjectWorkingSize`,
+`openProjectWorkingSize`, `openCanonicalTreeWorkingSize`,
+`openLocalDocumentWorkingSize` and `openPortableRoWorkingSize`, and when it
+imports a workbook or inspects and opens a saved import, through
+`importSpreadsheetWorkingSize`, `inspectImportedProjectWorkingSize` and
+`openImportedProjectWorkingSize`. The profile is fixed when the occurrence is
+created and cannot be switched afterwards. Not asking changes nothing: every
+ordinary method keeps today's request bytes and reply shape.
+
+A working-size import reply (`imported_window`) carries the same metadata and
+fidelity ledger as an ordinary import plus one bounded window instead of the
+whole table. Imports still have today's geometry and do not move to the text
+profile, so a workbook an ordinary import accepts only through that profile may
+be refused until a later change.
+
+A working-size reply carries the bootstrap and one bounded window, never the
+whole table. That window may hold fewer than 100 rows when the text is large,
+so read `window.total_rows` and page with the window query instead of assuming
+a full first page. A window over its byte budget says so with
+`byte_limited: true` and carries fewer rows: continue at
+`start + rows.length`, and use `total_rows` to know where the view ends rather
+than treating a short page as the end. A publication that reaches more targets
+than a reply lists comes back with `many: true` and empty `entities`, `fields`
+and `affected_calculations`: re-query the visible window and totals instead of
+reading the lists. Both keys are absent on ordinary and text-capacity replies.
+
+A working-size publication also carries `changed`, one field per changed cell
+in the same shape a window's `rows[].fields` uses, with `display` text for
+Number cells. Redraw those cells from `changed` with no second call. `fields`
+(and `affected_calculations`) still names the changed cells, so a host can
+decide which sort and filter keys a redraw affects. A removed row's cells are
+never in `changed`: read `entities` for the rows that disappeared. Footer
+totals are still a separate totals query, and a reply that says `many` must be
+re-queried as a window instead of read for `changed`. On ordinary and
+text-capacity replies the `changed` key is absent too.
+
+A working-size session takes a whole column in one request: `edit_cells` and
+`copy_formula` accept up to 100,000 targets, the session's populated-cell
+limit, and a request may be up to 64 MiB. `paste_cells` is the range form for
+pastes and can create rows when `start_entity` is omitted; a paste is still
+admitted by the same row and cell limits. A batch over the listed target count
+replies `many: true`, as above. Ordinary and text-capacity sessions keep
+today's 1,024-target and 64 KiB limits.
+
+A working-size session admits 10,000 rows and entities,
+100,000 populated cells, 100,000 formulas, 1,000,000 formula AST nodes and
+1,000,000 dependency edges, with one column read counting as one edge. These
+are the counts a session admits, not a performance claim, so a host should not
+advertise them until later stages land.
+
+Every state a working-size session accepts can be saved through both
+`exportProjectV3` and `exportPortableRo`. The runtime accounts for the bytes
+those writers produce and refuses an edit that would push the saved size past
+its bound with `capacity_exceeded` and `limit: "saved_bytes"`, before the edit
+publishes: the last accepted revision stays saveable, and the same bound
+refuses an open or import that could never be saved. The 8 MiB local-document
+export and the spreadsheet export's 128 rows per table are bounded exports,
+not session saves, and ordinary sessions are unchanged.
 
 ## Authoring formulas
 

@@ -191,8 +191,10 @@ export function a1RefusalText(input: {
       return `${subject("That reference")}is the row of column names. Refer to a data row (2–${input.lastRow}).`;
     case "unsupported_range":
       return `${subject("That range")}isn't supported: SUM, AVERAGE and COUNT work only over a whole column (for example B2:B${input.lastRow}) while no filter hides rows.`;
+    case "unsupported_criterion":
+      return `${subject("That condition")}isn't supported. Use a written number, a blank condition, or a cell reference in SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS.`;
     case "unsupported_function":
-      return `${subject("That function")}isn't available. Formulas can use IF, AND, OR, NOT, ROUND, ISBLANK, MIN, MAX, and SUM, AVERAGE or COUNT over a whole column.`;
+      return `${subject("That function")}isn't available. Formulas can use IF, AND, OR, NOT, ROUND, ISBLANK, MIN, MAX, SUM, AVERAGE or COUNT over a whole column, and SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS over whole columns.`;
     case "unsupported_operator":
       return `${subject("That operator")}isn't supported in formulas.`;
     case "unknown_sheet":

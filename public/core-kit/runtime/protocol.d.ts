@@ -1,4 +1,4 @@
-import type { CleanupOperation, CleanupPreview, FidelityFinding, ImportedProjection, SourceWorkbook, SpreadsheetExport, SpreadsheetOperation } from "./interop-protocol.ts";
+import type { CleanupOperation, CleanupPreview, FidelityFinding, ImportedProjection, ImportedWindowProjection, SourceWorkbook, SpreadsheetExport, SpreadsheetOperation } from "./interop-protocol.ts";
 export type FieldTarget = {
     entity: string;
     field: string;
@@ -16,8 +16,8 @@ export type BootstrapProjection = {
     collections: CollectionSummary[];
     keyed_grouped_sum_definition_ids?: string[];
 };
-/** `projection_bytes` refuses an import; it is not a counted resource. */
-export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes">, number>;
+/** `projection_bytes` refuses an import and `saved_bytes` a whole-session save; neither is a counted resource. */
+export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes" | "saved_bytes">, number>;
 export type CapacityUsage = {
     collections: number;
     total_entities: number;
@@ -38,6 +38,16 @@ export type CapacityProjection = {
 export type OpenedProjection = {
     bootstrap: BootstrapProjection;
     table: TableProjection;
+};
+/**
+ * The reply a working-size open produces: the bootstrap plus one bounded
+ * window, never the whole table. `window.total_rows` may exceed the rows the
+ * window carries, so page with the window query.
+ */
+export type OpenedWindowProjection = {
+    profile: "working_size";
+    bootstrap: BootstrapProjection;
+    window: TableWindowProjection;
 };
 export type StoredValueProjection = {
     kind: "number";
@@ -92,6 +102,8 @@ export type FieldProjection = {
     calculated: CalculationProjection | null;
     diagnostics: DiagnosticProjection[];
     editable_scalar: "number" | "text" | "boolean" | "date" | null;
+    /** Sheet's display text for a Number cell, present only when the window asked for it. */
+    display?: string;
 };
 /** One durable field constraint; absence of the projection means unconstrained. */
 export type FieldConstraint = {
@@ -145,6 +157,11 @@ export type ColumnProjection = {
 export type TableRowProjection = {
     id: string;
     key: string;
+    /**
+     * One-based stored row position, set only by a window. A host shows this
+     * number and uses it for A1 geometry, never the displayed row index.
+     */
+    position?: number;
     /** fields contains present values only; blank_fields lists absent IDs in column order (omission means []). */
     blank_fields?: string[];
     fields: FieldProjection[];
@@ -168,7 +185,12 @@ export type SortDirection = "asc" | "desc";
 export type ComparisonOperator = "=" | "<>" | "<" | "<=" | ">" | ">=";
 /** One literal member of an `in_set` filter; it must fit the filtered column's type. */
 export type ScalarLiteral = number | string | boolean;
-/** One AND-ed view filter. Comparisons and sets match only same-kind values; blanks match `is_blank`. */
+/**
+ * One AND-ed view filter. Comparisons and sets match only same-kind values;
+ * blanks match `is_blank`. The `display_*` filters compare the text the grid
+ * shows, on every column kind including Reference, where a blank, failed,
+ * unavailable or Reference cell has the text `""`.
+ */
 export type ViewFilter = {
     kind: "text_equals";
     field: string;
@@ -197,10 +219,28 @@ export type ViewFilter = {
     kind: "in_set";
     field: string;
     values: ScalarLiteral[];
+}
+/** Trimmed, case-insensitive containment; an empty value matches blank cells. */
+ | {
+    kind: "display_contains";
+    field: string;
+    value: string;
+}
+/** Exact display-text equality with no folding; `""` means blank. */
+ | {
+    kind: "display_in";
+    field: string;
+    values: string[];
 };
+/**
+ * One sort key. `text_order` stays `bytes` (UTF-8) by default; `natural` orders
+ * Text case-insensitively with digit runs compared as numbers, and has no
+ * effect on other column kinds.
+ */
 export type ViewSortKey = {
     field: string;
     direction: SortDirection;
+    text_order?: "bytes" | "natural";
 };
 /**
  * Stateless view state owned by the caller, never by the document: sort keys
@@ -228,17 +268,63 @@ export type TableWindowProjection = {
     start: number;
     rows: TableRowProjection[];
     /**
+     * Set when the reply's bytes ended this window before its count. Continue at
+     * `start + rows.length`; `total_rows` says where the view ends.
+     */
+    byte_limited?: true;
+    /**
      * One total per Number column, keyed by column id and observed at the same
      * revision as rows. Null means a contributing value is unavailable; blank
      * cells are skipped.
      */
     column_totals?: Record<string, number | null>;
 };
-/** Zero-based position in the filtered, sorted view; `index` appears only when found. */
+/**
+ * Zero-based position in the filtered, sorted view; `index` appears only when
+ * found. `position` is the one-based stored row position and appears exactly
+ * with `index`.
+ */
 export type LocatedInViewProjection = {
     revision: string;
     result: "found" | "filtered_out";
     index?: number;
+    position?: number;
+};
+/**
+ * The distinct display texts of one column inside a view, in Sheet's list
+ * order: `""` first when any row has no display text, then natural order
+ * (case-insensitive, digit runs compared as numbers). `truncated` is true when
+ * more values exist than the reply carries or the byte budget admits.
+ */
+export type DistinctValuesProjection = {
+    revision: string;
+    field: string;
+    values: string[];
+    truncated: boolean;
+};
+/** One cell position inside a view: a zero-based view row and a column id. */
+export type FindPosition = {
+    row: number;
+    field: string;
+};
+/** Which way Find walks from `FindPosition`, wrapping at either end. */
+export type FindDirection = "next" | "previous";
+/** One matching cell: its entity, column, zero-based view row, one-based stored row position and match ordinal. */
+export type FoundCell = {
+    entity: string;
+    field: string;
+    row: number;
+    position: number;
+    ordinal: number;
+};
+/**
+ * One Find step over a view: `total` counts every matching cell, and `found`
+ * is absent when nothing matches. A blank query always gives `total` 0.
+ */
+export type FindInViewProjection = {
+    revision: string;
+    total: number;
+    found?: FoundCell;
 };
 /** Number totals over the named entities at one revision; blank cells are skipped, as in `column_totals`. */
 export type ColumnTotalsProjection = {
@@ -328,6 +414,17 @@ export type PublicationProjection = {
     entities: string[];
     fields: FieldTarget[];
     affected_calculations: FieldTarget[];
+    /**
+     * Set when this publication reached more targets than a reply lists.
+     * `entities`, `fields` and `affected_calculations` are then empty: re-query
+     * the visible window and totals.
+     */
+    many?: true;
+    /**
+     * Every changed cell, shaped as a window's field with its display text. Only
+     * a working-size session sets it, and not when `many` is set.
+     */
+    changed?: FieldProjection[];
 };
 export type ProjectExportProjection = {
     revision: string;
@@ -419,7 +516,7 @@ export type FailureProjection = {
     row_count?: number;
 };
 /** Runtime accounting limit named by a capacity refusal. */
-export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges" | "projection_bytes";
+export type CapacityLimitName = "collections" | "table_fields" | "table_rows" | "total_entities" | "populated_cells" | "formulas" | "formula_ast_nodes" | "dependency_edges" | "projection_bytes" | "saved_bytes";
 export type CapacityFailureProjection = FailureProjection & {
     code: "capacity_exceeded";
     limit: CapacityLimitName;
@@ -588,7 +685,7 @@ export type TranslateA1FormulaInput = {
     geometry: A1Geometry;
 };
 export type A1TranslationNote = "relative_copy_semantics_changed" | "range_tracks_collection";
-export type A1RefusalCode = "unknown_sheet" | "out_of_bounds" | "header_reference" | "unsupported_range" | "unsupported_function" | "unsupported_operator" | "formula_syntax" | "formula_type_mismatch" | "formula_cycle" | "invalid_geometry" | "stale_revision";
+export type A1RefusalCode = "unknown_sheet" | "out_of_bounds" | "header_reference" | "unsupported_range" | "unsupported_criterion" | "unsupported_function" | "unsupported_operator" | "formula_syntax" | "formula_type_mismatch" | "formula_cycle" | "invalid_geometry" | "stale_revision";
 export type A1Translation = {
     revision: string;
     source: string;
@@ -634,6 +731,7 @@ export type DesignerRequest = {
     occurrence_id: string;
     name: string;
     columns: NewTableColumnInput[];
+    profile?: "working_size";
 } | {
     type: "duplicate_collection";
     expected_revision: string;
@@ -656,6 +754,8 @@ export type DesignerRequest = {
     view: TableView;
     start: number;
     count: number;
+    /** Ask each Number cell to carry its display text. */
+    display?: boolean;
 } | {
     type: "locate_in_view";
     expected_revision: string;
@@ -663,10 +763,31 @@ export type DesignerRequest = {
     view: TableView;
     entity: string;
 } | {
+    type: "query_distinct_values";
+    expected_revision: string;
+    collection: string;
+    view: TableView;
+    field: string;
+    limit: number;
+} | {
+    type: "find_in_view";
+    expected_revision: string;
+    collection: string;
+    view: TableView;
+    query: string;
+    fields: string[];
+    from?: FindPosition;
+    direction: FindDirection;
+} | {
     type: "query_column_totals";
     expected_revision: string;
     collection: string;
     entities: string[];
+} | {
+    type: "query_view_totals";
+    expected_revision: string;
+    collection: string;
+    view: TableView;
 } | {
     type: "query_group_totals";
     expected_revision: string;
@@ -713,6 +834,9 @@ export type DesignerResponse = {
     type: "imported";
     payload: ImportedProjection;
 } | {
+    type: "imported_window";
+    payload: ImportedWindowProjection;
+} | {
     type: "spreadsheet_exported";
     payload: {
         revision: string;
@@ -729,6 +853,9 @@ export type DesignerResponse = {
     type: "opened";
     payload: OpenedProjection;
 } | {
+    type: "opened_window";
+    payload: OpenedWindowProjection;
+} | {
     type: "table";
     payload: TableProjection;
 } | {
@@ -737,6 +864,12 @@ export type DesignerResponse = {
 } | {
     type: "located_in_view";
     payload: LocatedInViewProjection;
+} | {
+    type: "distinct_values";
+    payload: DistinctValuesProjection;
+} | {
+    type: "found_in_view";
+    payload: FindInViewProjection;
 } | {
     type: "column_totals";
     payload: ColumnTotalsProjection;
@@ -800,15 +933,18 @@ export type WorkerRequest = {
     kind: "open_project";
     occurrence_id: string;
     bytes: ArrayBuffer;
+    profile?: "working_size";
 } | {
     id: number;
     kind: "open_local_document";
     occurrence_id: string;
     bytes: ArrayBuffer;
+    profile?: "working_size";
 } | {
     id: number;
     kind: "inspect_project";
     bytes: ArrayBuffer;
+    profile?: "working_size";
 } | {
     id: number;
     kind: "export_project";
@@ -834,6 +970,7 @@ export type WorkerRequest = {
     kind: "open_portable_ro";
     occurrence_id: string;
     bytes: ArrayBuffer;
+    profile?: "working_size";
 } | {
     id: number;
     kind: "observe_occurrence";

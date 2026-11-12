@@ -1,7 +1,7 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
-import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
+import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, FieldTarget, OpenedProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -9,8 +9,11 @@ export declare class WorkerDesignerClient implements DesignerClient {
     newTracker(): Promise<OpenedProjection>;
     inspectSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions): Promise<SourceWorkbook>;
     importSpreadsheet(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
+    importSpreadsheetWorkingSize(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedWindowProjection) => void): Promise<ImportedWindowProjection>;
     inspectImportedProject(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
     openImportedProject(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
+    inspectImportedProjectWorkingSize(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedWindowProjection>;
+    openImportedProjectWorkingSize(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedWindowProjection>;
     exportSpreadsheet(expectedRevision: string, metadata: InteropMetadata, format: SpreadsheetFormat, collection: string): Promise<SpreadsheetExport>;
     exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
     exportNativeTrackerSpreadsheet(expectedRevision: string, presentation: NativeTrackerExportPresentation, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
@@ -20,6 +23,8 @@ export declare class WorkerDesignerClient implements DesignerClient {
     commitCleanup(expectedRevision: string, previewId: string): Promise<PublicationProjection>;
     newBudget(): Promise<OpenedProjection>;
     newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
+    /** Create a table whose session profile is the working-size one. */
+    newTableWorkingSize(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;
     duplicateCollection(expectedRevision: string, collection: string, name: string, columnNames?: Record<string, string>): Promise<DuplicateCollectionProjection>;
     /** Return complete entity and schema presentation invalidation from Rust. */
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
@@ -32,21 +37,31 @@ export declare class WorkerDesignerClient implements DesignerClient {
     bootstrap(): Promise<BootstrapProjection>;
     queryCapacity(expectedRevision?: string): Promise<CapacityProjection>;
     inspectProject(bytes: ArrayBuffer): Promise<OpenedProjection>;
+    inspectProjectWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
     openProject(bytes: ArrayBuffer): Promise<OpenedProjection>;
+    openProjectWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
     openCanonicalTree(files: readonly CanonicalProjectFile[]): Promise<OpenedProjection>;
+    openCanonicalTreeWorkingSize(files: readonly CanonicalProjectFile[]): Promise<OpenedWindowProjection>;
     openLocalDocument(bytes: ArrayBuffer): Promise<OpenedProjection>;
+    openLocalDocumentWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
     exportProject(expectedRevision: string): Promise<ProjectExport>;
     exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
     exportCanonicalTree(expectedRevision: string): Promise<CanonicalTreeExport>;
     exportPortableRo(expectedRevision: string): Promise<ProjectExport>;
     verifyPortableRo(bytes: ArrayBuffer): Promise<void>;
     openPortableRo(bytes: ArrayBuffer): Promise<OpenedProjection>;
+    openPortableRoWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
     observeOccurrence(): Promise<OccurrenceProjection>;
     closeProject(): Promise<void>;
     queryTable(collection: string): Promise<TableProjection>;
-    queryTableWindow(expectedRevision: string, collection: string, view: TableView, start: number, count: number): Promise<TableWindowProjection>;
+    queryTableWindow(expectedRevision: string, collection: string, view: TableView, start: number, count: number, options?: {
+        display?: boolean;
+    }): Promise<TableWindowProjection>;
     locateInView(expectedRevision: string, collection: string, view: TableView, entity: string): Promise<LocatedInViewProjection>;
+    queryDistinctValues(expectedRevision: string, collection: string, view: TableView, field: string, limit: number): Promise<DistinctValuesProjection>;
+    findInView(expectedRevision: string, collection: string, view: TableView, query: string, fields: string[], from: FindPosition | undefined, direction: FindDirection): Promise<FindInViewProjection>;
     queryColumnTotals(expectedRevision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection>;
+    queryViewTotals(expectedRevision: string, collection: string, view: TableView): Promise<ColumnTotalsProjection>;
     queryGroupTotals(expectedRevision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsProjection>;
     queryFields(expectedRevision: string, fields: FieldTarget[]): Promise<FieldBatchProjection>;
     explainField(expectedRevision: string, target: FieldTarget): Promise<FieldExplanationProjection>;
