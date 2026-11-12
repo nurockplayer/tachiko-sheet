@@ -339,7 +339,7 @@ try {
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   await definitionHistoryStep("undo", 0);
   await page.getByRole("tab", { name: "Cross-table summary", exact: true }).click();
-  await page.getByText("No current cross-table result is available. Create a summary after choosing its fields.", { exact: true }).waitFor();
+  await page.getByText("No current cross-table result is available. Create a summary after choosing its columns.", { exact: true }).waitFor();
   assert.equal(await undo.isDisabled(), false, "earlier scalar history survives definition removals");
   await definitionHistoryStep("redo", 1);
   await definitionHistoryStep("redo", 2);
