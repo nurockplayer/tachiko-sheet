@@ -17,7 +17,8 @@ describe("patchTable", () => {
     expect(patchTable(table(), [changed])!.rows[0]!.fields[0]).toEqual(changed);
   });
   it("patches a formula result in another row", () => {
-    const result = { ...field("e2", 18), formula: { source: "9 * 2" } };
+    const result: FieldProjection = { ...field("e2", 18), stored: null, formula: { source: "9 * 2" },
+      calculated: { status: "value", value: 18 } };
     expect(patchTable(table(), [field("e1", 9), result])!.rows[1]!.fields[0]).toEqual(result);
   });
   it("refuses an unknown entity", () => expect(patchTable(table(), [field("missing", 9)])).toBeNull());
@@ -41,6 +42,6 @@ describe("patchTable", () => {
   });
   it("accepts identical duplicate targets regardless of property order", () => {
     const cell = field("e1", 9);
-    expect(patchTable(table(), [cell, { display: cell.display, ...cell }])).not.toBeNull();
+    expect(patchTable(table(), [cell, { ...cell, target: { field: "amount", entity: "e1" } }])).not.toBeNull();
   });
 });
