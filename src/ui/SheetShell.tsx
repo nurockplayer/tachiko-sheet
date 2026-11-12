@@ -47,7 +47,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
+import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
@@ -4185,7 +4185,9 @@ export function SheetShell(props: SheetShellProps) {
         // that named no row keeps nothing.
         keepGridRows(result.addedEntities ?? []);
       } else if (result.kind === "refused") {
-        const refusal = draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
+        const refusal = result.refusalCode === "capacity_exceeded"
+          ? { message: result.message }
+          : draftRefusal(columns, draft.values, result.fieldType, result.message, column => column.display_name);
         setRowError(refusal);
         if (refusal.fields?.[0]) focusDraftAfterRender(refusal.fields[0], intent);
       } else {
@@ -4909,7 +4911,7 @@ export function SheetShell(props: SheetShellProps) {
                     cancelReplacePreview();
                     const targets = replaceTargets(displayRows, columns, find.query);
                     if (!targets.length) { setReplaceMessage(`No Text cells contain exactly “${find.query}”. Replace matches upper and lower case exactly, and only in Text cells.`); return; }
-                    if (targets.length > 1024) { setReplaceMessage("Replace covers up to 1,024 cells at a time. Filter the table to fewer rows."); return; }
+                    if (targets.length > EDIT_CELLS_MAX) { setReplaceMessage(`Replace covers up to ${EDIT_CELLS_MAX.toLocaleString("en-US")} cells at a time. Nothing was changed.`); return; }
                     const request = replaceRequestRef.current;
                     void onPreviewReplace(witness, targets, find.query, replaceDraft).then(result => {
                       if (request !== replaceRequestRef.current) { if (result) onCancelCleanup(); return; }

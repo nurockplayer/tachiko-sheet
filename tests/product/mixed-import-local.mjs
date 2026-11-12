@@ -1,3 +1,4 @@
+import { observeCapacity, capacitySnapshot } from "./capacity-diagnostics.mjs";
 import { observeTableProjections, observedTable } from "./table-projection-observer.mjs";
 // Sheet #160 consumer acceptance: large mixed Text/Number shapes through the
 // built product's normal UI only (Home file input, cell editor, Undo/Redo,
@@ -14,6 +15,7 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 import { collectWindowedRows } from "./windowed-table-collector.mjs";
+import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -39,6 +41,7 @@ async function start(profile) {
   context = await chromium.launchPersistentContext(profile, launchOptions);
   await installDistRoutes(context, dist);
   await observeTableProjections(context);
+  await observeCapacity(context);
   const page = await context.newPage();
   if (cpuRate > 1) {
     const cdp = await context.newCDPSession(page);
@@ -74,10 +77,8 @@ const current = (page) => page.waitForFunction(() =>
 async function rowCount(page) {
   const projection = await observedTable(page);
   assert.equal(projection.native_table_profile, true, "Text/Number fixture is structurally native");
-  assert.equal(await grid(page).locator(".ts-entry-row").count(), 0, "no draft at or above the insertion gate");
-  await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
   // The column totals row is a grid row but not a record.
-  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 1 - await grid(page).locator(".ts-totals-row").count();
+  const declared = Number(await grid(page).getAttribute("aria-rowcount")) - 2 - await grid(page).locator(".ts-totals-row").count();
   assert.equal(declared, projection.rows.length, "ARIA data rows match stored records, excluding drafts");
   const rendered = await grid(page).locator("tbody tr.ts-row").count();
   assert.ok(rendered < 400, `large table renders a window, not ${rendered} rows`);
@@ -148,7 +149,7 @@ async function allCells(page, edited) {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   assert.equal(await rowCount(page), ROWS);
   assert.deepEqual((await grid(page).locator("thead th").allTextContents()).slice(1), expected[`${ROWS}x${COLS}`][0]);
-  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS }));
+  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS, draftRows: 1 }));
   assert.equal(records.size, ROWS, "all rows independently read");
   const ids = [];
   for (let r = 0; r < ROWS; r++) {
@@ -189,6 +190,36 @@ async function refusedImport(page, file, label) {
 }
 
 try {
+  // Ordinary imports admit 8,406 rows; the smaller lifecycle fixtures do not
+  // cross that boundary. Exercise both UI writers at the actual edge.
+  COLS = 1;
+  const edgeProfile = await mkdtemp(path.join(work, "profile-edge-"));
+  const edgePage = await start(edgeProfile);
+  await importSource(edgePage, path.join(fixtures, "source-8406x1.csv"));
+  const beforeInsert = await observedTable(edgePage);
+  assert.equal(beforeInsert.rows.length, 8406);
+  const draft = grid(edgePage).locator(".ts-entry-row");
+  const entry = draft.locator("[data-entry-field]").first();
+  await fillDraftCell(edgePage, entry, "new");
+  await draftActions(edgePage).getByRole("button", { name: "Add row", exact: true }).click();
+  const sentence = "This table can hold up to 8,406 rows; this change would make 8,407. Nothing was changed.";
+  try {
+    await edgePage.getByRole("alert").filter({ hasText: sentence }).waitFor();
+    assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "entry refusal adds nothing");
+    await capacitySnapshot(edgePage, "8406-row imported entry refusal");
+    console.log(`PASS: imported entry refusal: ${sentence}`);
+    await draftActions(edgePage).getByRole("button", { name: "Discard", exact: true }).click();
+    await entry.evaluate(node => {
+      // Two lines: one line only fills the draft row; two ask Work to add rows.
+      const data = new DataTransfer(); data.setData("text/plain", "new\nnewer");
+      node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await edgePage.locator('.ts-clipboard-status[role="alert"]').filter({ hasText: /^This table can hold up to 8,406 rows; this change would make 8,408\. Nothing was changed\.$/ }).waitFor();
+    assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "paste refusal adds nothing");
+    await capacitySnapshot(edgePage, "8406-row imported paste refusal");
+    console.log(`PASS: imported paste refusal: ${await edgePage.locator('.ts-clipboard-status[role="alert"]').textContent()}`);
+  } catch (error) { await capacitySnapshot(edgePage, "8406-row imported refusal failure"); throw error; }
+  await context.close(); context = undefined;
   for (const [rows, cols] of [[320, 2], [1000, 16]]) {
     ROWS = rows; COLS = cols;
     for (const format of ["csv", "xlsx"]) {

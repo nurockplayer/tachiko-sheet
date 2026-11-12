@@ -1,6 +1,7 @@
 // Runs entirely in the page: Playwright and the packaged WebKit harness use
 // the same DOM-only reader. No runtime calls or product windowing internals.
-export async function collectWindowedRows({ rowCount, columnCount, timeoutMs = 60_000 }) {
+// `draftRows` is 1 when the table shows its new-row line, which the grid counts in aria-rowcount.
+export async function collectWindowedRows({ rowCount, columnCount, draftRows = 0, timeoutMs = 60_000 }) {
   const records = new Map();
   const pause = () => new Promise(resolve => setTimeout(resolve, 25));
   const missing = () => Array.from({ length: rowCount }, (_, index) => index).filter(index => !records.has(index));
@@ -56,7 +57,7 @@ export async function collectWindowedRows({ rowCount, columnCount, timeoutMs = 6
       const covered = Array.from({ length: last - first + 1 }, (_, offset) => rows.get(first + offset));
       const ready = grid.getAttribute("aria-busy") === "false" &&
         document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false" &&
-        Number(grid.getAttribute("aria-rowcount")) === rowCount + 1 + grid.querySelectorAll("tr.ts-totals-row").length &&
+        Number(grid.getAttribute("aria-rowcount")) === rowCount + 1 + draftRows + grid.querySelectorAll("tr.ts-totals-row").length &&
         centreBox && centreBox.top >= portTop + header - 1 && centreBox.bottom <= portTop + scroller.clientHeight + 1 &&
         covered.every(row => row?.querySelectorAll("td").length === columnCount);
       if (!ready) {

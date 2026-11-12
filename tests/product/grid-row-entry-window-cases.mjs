@@ -35,25 +35,21 @@ export async function runWindowedDraftCases({ page, ready, projection, checks })
     assert.equal(table.native_table_profile, true, "core admits the real native fixture");
     assert.equal(table.rows.length, 205);
     const grid = page.getByRole("grid", { name: "Table", exact: true });
-    assert.equal(Number(await grid.getAttribute("aria-rowcount")) - await grid.locator(".ts-totals-row").count(), 206, "header plus 205 stored records (besides any totals row); no draft");
-    assert.equal(await grid.locator(".ts-entry-row").count(), 0, "no insertion draft beyond Work's published gate");
-    const limit = page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true });
-    await limit.waitFor();
+    assert.equal(Number(await grid.getAttribute("aria-rowcount")) - await grid.locator(".ts-totals-row").count(), 207, "header, 205 stored records and draft");
     assert.ok(await grid.locator("tbody .ts-row").count() < 205, "rows are actually windowed");
-    // Traverse window boundaries and stay on the final stored row. The former
-    // capacity-refused draft is now suppressed; small-table cases retain draft
-    // input/focus/refusal coverage through ordinary supported insertion.
+    // Traverse window boundaries and stay on the final stored row.
     await grid.locator("tbody .ts-row td").first().focus();
-    for (let index = 0; index < 205; index++) await page.keyboard.press("ArrowDown");
+    // 204 moves from the first stored row reach the last one; one more would enter the draft row, which is open below the 10,000-row bound.
+    for (let index = 0; index < 204; index++) await page.keyboard.press("ArrowDown");
     const lastCell = grid.locator('tbody tr[aria-rowindex="206"] td[data-work-field]');
     assert.equal(await lastCell.evaluate(node => node === document.activeElement), true);
     assert.equal(await lastCell.locator(".ts-cell-value").textContent(), "204");
     const before = await page.evaluate(() => window.__rowEvidence.workers.flatMap(worker => worker.requests).filter(message => ["insert_row", "paste_cells", "edit_cells"].includes(message.request?.type)).length);
     await lastCell.evaluate(node => {
-      const data = new DataTransfer(); data.setData("text/plain", "999\n1000");
+      const data = new DataTransfer(); data.setData("text/plain", Array(9797).fill("999").join("\n"));
       node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
     });
-    await page.locator('.ts-clipboard-status[role="alert"]').filter({ hasText: "128-row limit" }).waitFor();
+    await page.locator('.ts-clipboard-status[role="alert"]').filter({ hasText: "10,000-row limit" }).waitFor();
     assert.equal(await page.evaluate(() => window.__rowEvidence.workers.flatMap(worker => worker.requests).filter(message => ["insert_row", "paste_cells", "edit_cells"].includes(message.request?.type)).length), before, "overflow never dispatches or chunks");
     assert.deepEqual((await projection(page)).rows, table.rows, "every stored identity and value is preserved");
     assert.equal(await lastCell.evaluate(node => node === document.activeElement), true, "refusal retains the ordinary grid focus");
@@ -61,6 +57,6 @@ export async function runWindowedDraftCases({ page, ready, projection, checks })
       await mkdir("/tmp/sheet207-checks/screens", { recursive: true });
       await page.screenshot({ path: "/tmp/sheet207-checks/screens/windowed-insertion-limit-desktop.png" });
     }
-    checks.push("presentation-windowed-205-native-records-keyboard-last-row-no-draft-insertion-limit-atomic-refusal");
+    checks.push("presentation-windowed-205-native-records-keyboard-last-row-insertion-limit-atomic-refusal");
   } finally { await rm(folder, { recursive: true, force: true }); }
 }

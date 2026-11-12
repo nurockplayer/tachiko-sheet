@@ -21,7 +21,7 @@ export function fillSelectionPlan(
   if (raw.startsWith("=")) throw new FillSelectionRefusal(`Enter the formula in one cell, then fill it with ${menuShortcut("D", isMacPlatform())}. Nothing was filled.`);
   const width = area.right - area.left + 1;
   const height = area.bottom - area.top + 1;
-  if (width * height > EDIT_CELLS_MAX) throw new FillSelectionRefusal("The fill range exceeds the 1,024-cell limit. Nothing was filled.");
+  if (width * height > EDIT_CELLS_MAX) throw new FillSelectionRefusal(`The fill range exceeds the ${EDIT_CELLS_MAX.toLocaleString("en-US")}-cell limit. Nothing was filled.`);
   if (!native) throw new FillSelectionRefusal("This table cannot be filled here. Nothing was filled.");
 
   const edits: CellEdit[] = [];

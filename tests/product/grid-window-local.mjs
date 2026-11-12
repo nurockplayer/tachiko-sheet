@@ -35,7 +35,7 @@ const geometry = (page) => page.evaluate(() => {
   const pitch = table.querySelector("tbody tr.ts-row").offsetHeight;
   const body = table.querySelector("tbody").offsetHeight;
   // The column totals row (tfoot) is counted by aria-rowcount but is not a body row.
-  return { pitch, body, rows: Number(table.getAttribute("aria-rowcount")) - 1 - table.querySelectorAll("tr.ts-totals-row").length };
+  return { pitch, body, rows: Number(table.getAttribute("aria-rowcount")) - 2 - table.querySelectorAll("tr.ts-totals-row").length };
 });
 const pageErrors = [];
 
@@ -59,8 +59,6 @@ try {
   const imported = await observedTable(page);
   assert.equal(imported.native_table_profile, true, "imported all-Text fixture is structurally native");
   assert.equal(imported.rows.length, UNIQUE + DUPLICATES);
-  assert.equal(await grid(page).locator(".ts-entry-row").count(), 0);
-  await page.getByText("This table has reached the 128-row limit for adding rows here.", { exact: true }).waitFor();
   assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
   // A live draft survives scrolling far away and back.
@@ -82,7 +80,7 @@ try {
     await page.waitForFunction(() => {
       const table = document.querySelector('table[aria-label="Table"]');
       const pitch = table.querySelector("tbody tr.ts-row").offsetHeight;
-      return Math.abs(table.querySelector("tbody").offsetHeight - pitch * (Number(table.getAttribute("aria-rowcount")) - 1 - table.querySelectorAll("tr.ts-totals-row").length)) <= 2;
+      return Math.abs(table.querySelector("tbody").offsetHeight - pitch * (Number(table.getAttribute("aria-rowcount")) - 2 - table.querySelectorAll("tr.ts-totals-row").length)) <= 2;
     });
   }
 

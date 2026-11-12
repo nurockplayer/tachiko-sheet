@@ -245,7 +245,7 @@ try {
   for (const text of ["bad\t1,30\ttrue", "bad\t€12,50\ttrue"]) await unchangedPaste(text, /needs a number/);
   assert.equal(await unchangedPaste("bad\t\ttrue", /This Number column needs a value in every row/, true), 0);
   checks.push("3 invalid Number, locale and currency refused by Work; blank required Number refused locally; no revision/history change");
-  for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/], ['"unclosed', /unfinished quote/], ['"x"tail', /malformed quotes/], [Array(129).fill("a\t1\ttrue").join("\n"), /128-row/]]) {
+  for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/], ['"unclosed', /unfinished quote/], ['"x"tail', /malformed quotes/], [Array(10001).fill("a\t1\ttrue").join("\n"), /10,000-row/]]) {
     assert.equal(await unchangedPaste(text, message), 0, "structural refusal never dispatches");
   }
   // Refusals must not add even an invisible history entry.

@@ -55,6 +55,6 @@ export function formulaPastePlan(
     destinations.push(target);
   }
   if (!destinations.length) return { kind: "unchanged" };
-  if (destinations.length > EDIT_CELLS_MAX) throw new FormulaPasteRefusal("The paste range exceeds the 1,024-cell limit. Nothing was pasted.");
+  if (destinations.length > EDIT_CELLS_MAX) throw new FormulaPasteRefusal(`The paste range exceeds the ${EDIT_CELLS_MAX.toLocaleString("en-US")}-cell limit. Nothing was pasted.`);
   return { kind: "formula", request: { source: sourceField.target, destinations, ...FORMULA_COPY_AXES }, count: destinations.length };
 }

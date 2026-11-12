@@ -251,7 +251,7 @@ async function reveal(row) {
   const scroller = document.querySelector(".ts-grid-scroll");
   // Fully rendered grids omit aria-rowcount; count their data rows instead.
   const rowCount = grid().getAttribute("aria-rowcount");
-  const rows = rowCount === null ? grid().querySelectorAll("tbody tr.ts-row").length : Number(rowCount) - 1 - grid().querySelectorAll("tr.ts-totals-row").length;
+  const rows = rowCount === null ? grid().querySelectorAll("tbody tr.ts-row").length : Number(rowCount) - 1 - grid().querySelectorAll("tr.ts-entry-row").length - grid().querySelectorAll("tr.ts-totals-row").length;
   const visible = () => {
     const target = rowAt(row);
     if (!target) return null;
@@ -374,8 +374,8 @@ async function importSource(file) {
 }
 
 const rowCount = () => evaluate(`
-  // The column totals row is a grid row but not a record.
-  const declared = Number(grid().getAttribute("aria-rowcount")) - 1 - grid().querySelectorAll("tr.ts-totals-row").length;
+  // The new-row line and the column totals row are grid rows but not records.
+  const declared = Number(grid().getAttribute("aria-rowcount")) - 1 - grid().querySelectorAll("tr.ts-entry-row").length - grid().querySelectorAll("tr.ts-totals-row").length;
   const rendered = grid().querySelectorAll("tbody tr.ts-row").length;
   if (rendered >= 400) throw new Error("large table renders " + rendered + " rows, not a window");
   return declared;
@@ -410,7 +410,7 @@ async function history(direction, row, column, value) {
 async function mixedCells(edited) {
   const actual = await evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
-    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS} });
+    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS}, draftRows: 1 });
     return { headers: [...grid().querySelectorAll("thead th")].slice(1).map(c => c.textContent), records };
   `, 240_000);
   const data = expectedMixed[`${ROWS}x${COLS}`];
