@@ -11,6 +11,7 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - "scripts/release-names.sh"
+      - "scripts/installer-smoke/**"
 
 permissions:
   contents: read
@@ -66,14 +67,17 @@ jobs:
           - name: macos-universal
             os: macos-15
             rust_targets: aarch64-apple-darwin x86_64-apple-darwin
+            cache_target: aarch64-apple-darwin
             build: pnpm desktop:build:macos
           - name: windows-x64
             os: windows-2025
             rust_targets: x86_64-pc-windows-msvc
+            cache_target: x86_64-pc-windows-msvc
             build: pnpm desktop:build:windows
           - name: linux-x64
             os: ubuntu-24.04
             rust_targets: x86_64-unknown-linux-gnu
+            cache_target: x86_64-unknown-linux-gnu
             build: pnpm desktop:build:linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -115,6 +119,13 @@ jobs:
             rustup toolchain install 1.97.1 --profile minimal --target "$target"
           done
           rustup default 1.97.1
+
+      - name: Cache Cargo builds
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: ${{ runner.os }}-${{ matrix.cache_target }}
+          save-if: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -200,6 +211,21 @@ jobs:
               check_one "the Windows setup" "$(find "$work/nsis" -name THIRD_PARTY_LICENSES.md -print -quit)"
               ;;
           esac
+
+      - name: Install the installer and start the app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/installer-smoke/macos.sh release-assets/*.dmg
+
+      - name: Install the installer and start the app (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/installer-smoke/linux.sh release-assets/*.deb release-assets/*.AppImage
+
+      - name: Install the installer and start the app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/installer-smoke/windows.ps1 (Get-Item release-assets/*.exe).FullName
 
       - name: Upload the installers (7 days)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

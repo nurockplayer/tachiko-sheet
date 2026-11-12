@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "fileAssociations": [
+      { "ext": ["ro"], "name": "Tachiko Work File", "description": "Tachiko work file", "role": "Editor", "rank": "Owner", "mimeType": "application/x-tachiko-work" }
+    ],
+    "windows": {
+      "nsis": { "installerHooks": "windows/hooks.nsh" }
+    }
+  }
+}
