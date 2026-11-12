@@ -1769,6 +1769,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.copyFormula(witness, request));
   }
 
+  function renameTable(witness: ViewWitness, collection: string, name: string) {
+    return changeRows(witness, () => runtime.renameTable(witness, collection, name), "column", name);
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), "column");
   }
@@ -2310,6 +2314,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnConstraint={copies.createWorkFile ? setColumnConstraint : undefined}
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
+          onRenameTable={copies.createWorkFile ? renameTable : undefined}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onMoveColumn={copies.createWorkFile ? moveColumn : undefined}

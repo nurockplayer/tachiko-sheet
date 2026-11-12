@@ -1089,6 +1089,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function renameTable(witness: ViewWitness, collection: string, name: string) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.renameTable, "table rename");
+      return command.call(client, revision, collection, name);
+    }, true);
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.trackerCommand, "column rename");
@@ -1581,7 +1588,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
