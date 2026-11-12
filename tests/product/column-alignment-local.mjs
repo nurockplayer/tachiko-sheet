@@ -11,6 +11,25 @@ let context;
 try {
   context = await chromium.launchPersistentContext(path.join(dir, "profile"), { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
   await installDistRoutes(context, process.env.WORK_DIST ?? "dist-acceptance");
+  await context.addInitScript(() => {
+    window.alignmentEvidence = { requests: [], hold: false, held: null, worker: null };
+    const Original = window.Worker;
+    window.Worker = class extends Original {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", event => {
+          const evidence = window.alignmentEvidence;
+          if (evidence.hold && evidence.requests.some(request => request.id === event.data.id) && event.data.response?.type === "published") {
+            evidence.hold = false; evidence.held = event.data; evidence.worker = this; event.stopImmediatePropagation();
+          }
+        });
+      }
+      postMessage(message, ...args) {
+        if (message.request?.type === "set_column_alignment") window.alignmentEvidence.requests.push(structuredClone(message));
+        return super.postMessage(message, ...args);
+      }
+    };
+  });
   const page = await context.newPage(); page.setDefaultTimeout(30000);
   await page.setViewportSize({ width: 1600, height: 900 }); await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
   const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
@@ -36,6 +55,23 @@ try {
     await dialog.getByRole("radio", { name: value, exact: true }).check();
     await dialog.getByRole("button", { name: "Save alignment", exact: true }).click(); await dialog.waitFor({ state: "hidden" }); await ready();
   };
+  await page.getByRole("columnheader", { name: "Text", exact: true }).hover();
+  await page.getByRole("button", { name: "Column actions for Text", exact: true }).click();
+  await page.getByRole("button", { name: "Alignment…", exact: true }).click();
+  const pendingDialog = page.getByRole("dialog", { name: "Column alignment", exact: true });
+  await pendingDialog.getByRole("radio", { name: "Right", exact: true }).check();
+  await page.evaluate(() => { window.alignmentEvidence.hold = true; });
+  await pendingDialog.getByRole("button", { name: "Save alignment", exact: true }).evaluate(button => { button.click(); button.click(); });
+  await page.waitForFunction(() => window.alignmentEvidence.held !== null);
+  assert.equal(await page.evaluate(() => window.alignmentEvidence.requests.length), 1);
+  for (const key of ["Tab", "Shift+Tab", "Tab"]) {
+    await page.keyboard.press(key);
+    assert.equal(await pendingDialog.evaluate(node => node.contains(document.activeElement)), true);
+  }
+  await page.evaluate(() => { const evidence = window.alignmentEvidence; evidence.worker.dispatchEvent(new MessageEvent("message", { data: evidence.held })); });
+  await pendingDialog.waitFor({ state: "hidden" }); await ready();
+  await check(["right", "right", "right", "center"]);
+  await choose("Text", "Default (by type)");
   await check(["left", "right", "right", "center"]);
   await choose("Text", "Right"); await choose("Number", "Left"); await choose("Date", "Center");
   await check(["right", "left", "center", "center"]);
@@ -53,6 +89,7 @@ try {
   const file = path.join(dir, "alignment.xlsx"); await (await download).saveAs(file);
   await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page); await (await homeImportInput(page)).setInputFiles(file);
   await page.getByRole("dialog", { name: "Review import preview", exact: true }).getByRole("button", { name: "Import file", exact: true }).click(); await ready();
-  console.log("XLSX imported alignment:", await cells().evaluateAll(nodes => nodes.map(node => getComputedStyle(node).textAlign)));
+  const importedAlignment = await cells().evaluateAll(nodes => nodes.map(node => getComputedStyle(node).textAlign));
+  console.log("XLSX imported alignment:", importedAlignment.join(", "));
   console.log("PASS: column alignment defaults, overrides, history, editor and save/reopen");
 } finally { if (context) await context.close(); await rm(dir, { recursive: true, force: true }); }
