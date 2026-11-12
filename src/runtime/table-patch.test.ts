@@ -87,11 +87,15 @@ describe("canonical sparse rows", () => {
     const changed = { ...cell("b", 2), display: "2.00" };
     const fresh = sparseTable();
     fresh.rows[0] = { id: "e1", key: "e1", fields: [{ ...cell("a"), display: "1.00" }, changed, cell("c")] };
-    expect(patchTable(before, [changed])).toEqual(fresh);
+    expect(patchTable(before, [changed], true)).toEqual(fresh);
+  });
+  it("drops display on the queryTable path", () => {
+    const changed = { ...cell("b", 2), display: "2.00" };
+    expect(patchTable(sparseTable(), [changed])!.rows[0]!.fields[1]).toEqual(cell("b", 2));
   });
   it("keeps display from changed cells without mutating them", () => {
     const changed = { ...cell("b", 2), display: "2.00" };
-    expect(patchTable(sparseTable(), [changed])!.rows[0]!.fields[1]).toEqual(changed);
+    expect(patchTable(sparseTable(), [changed], true)!.rows[0]!.fields[1]).toEqual(changed);
     expect(changed.display).toBe("2.00");
   });
   it.each(["field order", "blank order", "missing", "overlap", "duplicate", "unknown"])(

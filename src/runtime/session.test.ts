@@ -1364,7 +1364,7 @@ describe("createSheetRuntime", () => {
       productCategoryField: "notes",
       productPriceField: "impact",
     });
-    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(["tasks", "tasks"]);
+    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(["tasks"]);
     expect(client.calls.createKeyedGroupedSum).toHaveLength(1);
   });
 
@@ -2112,6 +2112,18 @@ describe("copyFormula", () => {
   });
 });
 
+describe("whole-table display routing", () => {
+  it.each([undefined, "iso", "mdy"] as const)("uses display windows only for non-default date format %s", async (format) => {
+    const { runtime, client, view } = await opened();
+    const table = { ...view.table, columns: [{ ...view.table.columns[0]!, field_type: "date", ...(format ? { date_format: format } : {}) }] };
+    client.hooks.queryTable = async () => table;
+    client.calls.queryTableWindow.length = 0;
+    client.hooks.queryTableWindow = async (revision, _key, start, count) => ({ ...table, revision, columns_revision: "c1", total_rows: table.rows.length, unfiltered_rows: table.rows.length, start, rows: table.rows.slice(start, start + count) });
+    await runtime.read();
+    expect(client.calls.queryTableWindow.length).toBe(format === "mdy" ? 1 : 0);
+  });
+});
+
 describe("whole-table reads above Work's 1,000-row query", () => {
   async function largeTable(rowCount: number) {
     const { runtime, client, view } = await opened();
@@ -2119,6 +2131,7 @@ describe("whole-table reads above Work's 1,000-row query", () => {
     const template = base.rows[0]!;
     const all = Array.from({ length: rowCount }, (_, i) => ({ ...template, key: `r${i}` }));
     client.calls.queryTableWindow.length = 0;
+    client.hooks.queryTable = async () => { throw new FakeDesignerRuntimeError("use_window_query", client.currentRevision); };
     const windowOf = (revision: string, start: number, count: number): TableWindowProjection => ({
       revision,
       collection: base.collection,
