@@ -81,12 +81,24 @@ describe("canonical sparse rows", () => {
       id: "e1", key: "e1", fields: [], blank_fields: ["a", "b", "c"],
     });
   });
-  it("drops display from changed cells without mutating them", () => {
+  it("preserves display on unchanged cells and matches a fresh projection", () => {
+    const before = sparseTable();
+    before.rows[0]!.fields[0] = { ...cell("a"), display: "1.00" };
+    const changed = { ...cell("b", 2), display: "2.00" };
+    const fresh = sparseTable();
+    fresh.rows[0] = { id: "e1", key: "e1", fields: [{ ...cell("a"), display: "1.00" }, changed, cell("c")] };
+    expect(patchTable(before, [changed], true)).toEqual(fresh);
+  });
+  it("drops display on the queryTable path", () => {
     const changed = { ...cell("b", 2), display: "2.00" };
     expect(patchTable(sparseTable(), [changed])!.rows[0]!.fields[1]).toEqual(cell("b", 2));
+  });
+  it("keeps display from changed cells without mutating them", () => {
+    const changed = { ...cell("b", 2), display: "2.00" };
+    expect(patchTable(sparseTable(), [changed], true)!.rows[0]!.fields[1]).toEqual(changed);
     expect(changed.display).toBe("2.00");
   });
-  it.each(["field order", "blank order", "missing", "overlap", "duplicate", "display", "unknown"])(
+  it.each(["field order", "blank order", "missing", "overlap", "duplicate", "unknown"])(
     "refuses existing rows with %s", reason => {
       const before = sparseTable();
       const row = before.rows[0]!;
@@ -96,7 +108,6 @@ describe("canonical sparse rows", () => {
         case "missing": row.blank_fields = []; break;
         case "overlap": row.blank_fields = ["a"]; break;
         case "duplicate": row.fields = [cell("a"), cell("a")]; break;
-        case "display": row.fields[0] = { ...cell("a"), display: "1.00" }; break;
         case "unknown": row.blank_fields = ["unknown"]; break;
       }
       expect(patchTable(before, [cell("b", 2)])).toBeNull();

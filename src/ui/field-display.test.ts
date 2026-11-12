@@ -31,11 +31,25 @@ describe("field display", () => {
     expect(seedTextOf(stored)).toBe("1455.7999999999997");
   });
 
+  it("shows Work date text while editing and copying the ISO value", () => {
+    const field: FieldProjection = {
+      target: { entity: "e1", field: "date" }, address: "e1.date",
+      stored: { kind: "date", value: "2026-11-07" }, display: "Nov 7, 2026",
+      formula: null, calculated: null, diagnostics: [], editable_scalar: "date",
+    };
+    const row: TableRow = { id: "e1", key: "e1", fields: [field] };
+    const column: TableColumn = { id: "date", key: "date", display_name: "Date", field_type: "date", required: true };
+    expect(cellDisplay(row, column).text).toBe("Nov 7, 2026");
+    expect(fieldClipboardText(field)).toBe("2026-11-07");
+    expect(seedTextOf(field)).toBe("2026-11-07");
+    expect(cellDisplay({ ...row, fields: [{ ...field, display: undefined }] }, column).text).toBe("2026-11-07");
+  });
+
   it("uses the column number format for cell display", () => {
     const field: FieldProjection = {
       target: { entity: "e1", field: "amount" }, address: "e1.amount",
       stored: { kind: "number", value: 1234.5 }, formula: null, calculated: null,
-      diagnostics: [], editable_scalar: "number",
+      diagnostics: [], editable_scalar: "number", display: "different",
     };
     const row: TableRow = { id: "e1", key: "e1", fields: [field] };
     const column: TableColumn = {

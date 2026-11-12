@@ -344,10 +344,9 @@ class FakeClient {
     this.calls.queryTableWindowCollections.push(collection);
     const hook = this.hooks.queryTableWindow;
     if (hook !== undefined) return hook(revision, collection, start, count);
-    if (count !== 0) throw new FakeDesignerRuntimeError("unsupported_operation", this.#revision);
     this.#requireOpen();
     this.#requireRevision(revision);
-    const table = this.#table();
+    const table = count === 0 ? this.#table() : await this.queryTable(collection);
     return {
       revision,
       collection: table.collection,
@@ -356,7 +355,7 @@ class FakeClient {
       total_rows: table.rows.length,
       unfiltered_rows: table.rows.length,
       start,
-      rows: [],
+      rows: table.rows.slice(start, start + count),
     };
   }
 
@@ -1330,7 +1329,7 @@ describe("createSheetRuntime", () => {
     await runtime.listKeyedGroupedSumBindings(witnessOf(view));
 
     expect(client.calls.queryTable).toHaveLength(queryTableBefore);
-    expect(client.calls.queryTableWindow).toEqual([{ revision: view.revision, start: 0, count: 0 }]);
+    expect(client.calls.queryTableWindow.at(-1)).toEqual({ revision: view.revision, start: 0, count: 0 });
   });
 
   it("refuses a catalog reply that names a different table", async () => {
@@ -2113,12 +2112,25 @@ describe("copyFormula", () => {
   });
 });
 
+describe("whole-table display routing", () => {
+  it.each([undefined, "iso", "mdy"] as const)("uses display windows only for non-default date format %s", async (format) => {
+    const { runtime, client, view } = await opened();
+    const table = { ...view.table, columns: [{ ...view.table.columns[0]!, field_type: "date", ...(format ? { date_format: format } : {}) }] };
+    client.hooks.queryTable = async () => table;
+    client.calls.queryTableWindow.length = 0;
+    client.hooks.queryTableWindow = async (revision, _key, start, count) => ({ ...table, revision, columns_revision: "c1", total_rows: table.rows.length, unfiltered_rows: table.rows.length, start, rows: table.rows.slice(start, start + count) });
+    await runtime.read();
+    expect(client.calls.queryTableWindow.length).toBe(format === "mdy" ? 1 : 0);
+  });
+});
+
 describe("whole-table reads above Work's 1,000-row query", () => {
   async function largeTable(rowCount: number) {
     const { runtime, client, view } = await opened();
     const base = view.table;
     const template = base.rows[0]!;
     const all = Array.from({ length: rowCount }, (_, i) => ({ ...template, key: `r${i}` }));
+    client.calls.queryTableWindow.length = 0;
     client.hooks.queryTable = async () => { throw new FakeDesignerRuntimeError("use_window_query", client.currentRevision); };
     const windowOf = (revision: string, start: number, count: number): TableWindowProjection => ({
       revision,
@@ -2464,7 +2476,7 @@ describe("confirmed changed-cell patches", () => {
     const view = await runtime.read();
     client.hooks.editNumber = async () => {
       const publication = await client.editNumber(view.revision, IMPACT, "12");
-      fields = [{ ...initialFields[0]!, stored: { kind: "number", value: 12 } }, initialFields[1]!];
+      fields = [{ ...initialFields[0]!, stored: { kind: "number", value: 12 }, display: "12.00" }, initialFields[1]!];
       return { ...publication, changed: [{ ...fields[0]!, display: "12.00" }] };
     };
     client.calls.queryTable.length = 0;
@@ -2483,9 +2495,9 @@ describe("confirmed changed-cell patches", () => {
     expect(await runtime.read()).toEqual(result.view);
   });
 
-  it.each(["absent", "many", "total_rows", "unfiltered_rows", "columns_revision", "collection", "revision", "unknown", "non-window"])(
+  it.each(["absent", "many", "total_rows", "unfiltered_rows", "columns_revision", "collection", "revision", "unknown"])(
     "%s falls back to the existing full read", async reason => {
-      const { runtime, client, view, windowOf, fullTable } = await patchSession(reason !== "non-window");
+      const { runtime, client, view, windowOf, fullTable } = await patchSession();
       const edit = client.hooks.editNumber!;
       client.hooks.editNumber = async () => {
         const publication = await edit();
@@ -2507,7 +2519,7 @@ describe("confirmed changed-cell patches", () => {
         }
       };
       const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
-      expect(client.calls.queryTable).toEqual([COLLECTION.key]);
+      expect(client.calls.queryTableWindow.at(-1)).toEqual({ revision: result.view.revision, start: 0, count: 256 });
       expect(result.view).toEqual({ ...view, revision: client.currentRevision, table: fullTable() });
       expect(await runtime.read()).toEqual(result.view);
     });
@@ -2520,7 +2532,7 @@ describe("confirmed changed-cell patches", () => {
     expect(client.calls.queryTableWindow).toEqual([{ revision: result.view.revision, start: 0, count: 0 }]);
     expect(result.view.table).toEqual(fullTable());
     expect(result.view.table.rows[0]).not.toHaveProperty("blank_fields");
-    expect(result.view.table.rows[0]!.fields[0]).not.toHaveProperty("display");
+    expect(result.view.table.rows[0]!.fields[0]!.display).toBe("12.00");
     expect(await runtime.read()).toEqual(result.view);
   });
 

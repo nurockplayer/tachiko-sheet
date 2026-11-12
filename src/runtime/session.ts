@@ -51,9 +51,9 @@ import {
 /**
  * Kept here because the save-closure adapter serves only contracts and session.
  * Patch disposable rows so the patched view deep-equals a reloaded view.
- * Preserve untouched row identities; omit display text as current reloads do.
+ * Preserve untouched row identities and match the selected read path's display text.
  */
-export function patchTable(table: TableProjection, changed: FieldProjection[]): TableProjection | null {
+export function patchTable(table: TableProjection, changed: FieldProjection[], display = false): TableProjection | null {
   const columnIds = table.columns.map(column => column.id);
   const order = new Map(columnIds.map((id, index) => [id, index]));
   if (order.size !== columnIds.length) return null;
@@ -73,7 +73,7 @@ export function patchTable(table: TableProjection, changed: FieldProjection[]): 
     const ids = [...present.keys(), ...blanks];
     const inOrder = (list: string[]) => list.every((id, index) => order.has(id) &&
       (index === 0 || order.get(list[index - 1]!)! < order.get(id)!));
-    if (row.fields.some(field => Object.hasOwn(field, "display") || field.blank === true || field.target.entity !== row.id) ||
+    if (row.fields.some(field => (!display && Object.hasOwn(field, "display")) || field.blank === true || field.target.entity !== row.id) ||
       !inOrder(row.fields.map(field => field.target.field)) || !inOrder(blanks) ||
       ids.length !== columnIds.length || new Set(ids).size !== columnIds.length) return null;
     const changes = updates.get(row.id);
@@ -84,8 +84,11 @@ export function patchTable(table: TableProjection, changed: FieldProjection[]): 
     for (const [id, field] of changes) {
       if (field.blank === true) present.delete(id);
       else {
-        const { display: _display, ...replacement } = field;
-        present.set(id, replacement);
+        if (display) present.set(id, field);
+        else {
+          const { display: _display, ...replacement } = field;
+          present.set(id, replacement);
+        }
       }
     }
     const fields = columnIds.flatMap(id => present.has(id) ? [present.get(id)!] : []);
@@ -371,9 +374,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   /**
    * The complete table at `revision`. Work refuses a whole-table read above
-   * 1,000 rows (`use_window_query`), so until the grid reads windows itself
-   * (capacity A-04, #246) a larger table is assembled from Work's unfiltered,
-   * unsorted windows, which keep the same row order as `queryTable`. Every
+   * 1,000 rows (`use_window_query`), and display text is available on windows.
+   * Until the grid reads windows itself (capacity A-04, #246), assemble Work's
+   * unfiltered, unsorted windows in the same order as `queryTable`. Every
    * window is pinned to `revision` (a stale one is refused by Work), and a
    * window over Work's byte cap (`query_too_large`) is re-requested smaller.
    * Window replies carry the same profile flags as `queryTable` (Work #585)
@@ -388,7 +391,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   ): Promise<{ table: TableProjection; columnsRevision: string | null }> {
     try {
       const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
-      return { table, columnsRevision: null };
+      if (!table.columns.some(column => column.field_type === "date" && column.date_format && column.date_format !== "iso")) {
+        return { table, columnsRevision: null };
+      }
     } catch (error) {
       if (!hasFailureCode(kit, error, "use_window_query")) throw error;
     }
@@ -398,7 +403,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     for (;;) {
       let window: TableWindowProjection;
       try {
-        window = await afterUsable(expected, dispatch(kit, () => client.queryTableWindow(revision, key, {}, rows.length, count)));
+        window = await afterUsable(expected, dispatch(kit, () => client.queryTableWindow(revision, key, {}, rows.length, count, { display: true })));
       } catch (error) {
         if (count > 1 && hasFailureCode(kit, error, "query_too_large")) {
           count = Math.max(1, Math.floor(count / 2));
@@ -966,7 +971,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         if (!authoredSchema && Array.isArray(publication.changed) && !publication.many &&
           columnsRevision !== null && liveRead?.view.revision === live.revision &&
           liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
-          const patched = patchTable(liveRead.view.table, publication.changed);
+          const patched = patchTable(liveRead.view.table, publication.changed, true);
           if (patched !== null) {
             const window = await afterUsable(expected, dispatch(kit, () =>
               client.queryTableWindow(publication.resulting_revision, live.collection, {}, 0, 0)));
