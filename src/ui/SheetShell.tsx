@@ -3466,7 +3466,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function onEditorKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key) || (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey))) tabRunStartRef.current = null;
+    if (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) tabRunStartRef.current = null;
     // Keep editor input and caret keys from being reinterpreted by the cell grid.
     event.stopPropagation();
     if (event.key === "Escape") {

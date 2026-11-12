@@ -230,6 +230,11 @@ const cases = [
     input = await entry(page, "impact", "F2"); await replace(input, "42");
     await published(page, input, "impact", "42");
     await page.waitForFunction(id => document.activeElement?.dataset.testid === id, nextRow);
+    await start.focus(); await page.keyboard.press("Tab");
+    await page.keyboard.press("F2"); await editor(page).fill("Caret correction");
+    await editor(page).press("ArrowLeft"); await editor(page).press("Enter");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id, nextRow);
+    assert.equal((await cell(page, "area").textContent()).trim(), "Caret correction");
     await start.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("ArrowDown");
     const areaDestination = await page.evaluate(() => {
       const node = document.activeElement;
