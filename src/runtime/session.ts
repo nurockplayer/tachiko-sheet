@@ -712,7 +712,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
-      const open = importedMetadata ? client.openProject
+      const open: (bytes: ArrayBuffer) => Promise<OpenedProjection | OpenedWindowProjection> = importedMetadata ? client.openProject
         : capability(client.openProjectWorkingSize, "working-size project open");
       return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0)));
     });
