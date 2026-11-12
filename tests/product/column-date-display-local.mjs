@@ -84,7 +84,7 @@ try {
   for (const [action, order] of [["Sort A → Z", ["earlier", "changed"]], ["Sort Z → A", ["changed", "earlier"]]]) {
     await dateActions("Date2");
     await page.getByRole("button", { name: action, exact: true }).click(); await ready();
-    assert.deepEqual((await rows().locator(".ts-cell:nth-child(8)").allTextContents()).map(s => s.trim()), order);
+    assert.deepEqual(await Promise.all((await rows().all()).map(async row => (await row.locator(".ts-cell").nth(7).textContent()).trim())), order);
   }
   await page.keyboard.press("ControlOrMeta+F");
   const find = page.getByLabel("Find in table");
