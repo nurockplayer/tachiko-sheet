@@ -673,13 +673,13 @@ describe("SheetShell static rendering", () => {
     expect(render({ view })).not.toContain("ts-totals-row");
   });
 
-  it.each([127, 128, 205, 8406])("offers drafts only below the insertion gate (%i stored rows)", count => {
+  it.each([127, 128, 8406, 10_000])("offers drafts only below the insertion gate (%i stored rows)", count => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.rows = Array.from({ length: count }, (_, i) => ({ ...view.table.rows[0]!, id: `row-${i}`, key: `row-${i}` }));
     const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed", view }) });
-    expect(markup.includes('aria-label="New row"')).toBe(count < 128);
-    expect(markup.includes("This table has reached the 128-row limit for adding rows here.")).toBe(count >= 128);
+    expect(markup.includes('aria-label="New row"')).toBe(count < 10_000);
+    expect(markup.includes("This table has reached the 10,000-row limit for adding rows here. Nothing was changed.")).toBe(count >= 10_000);
     if (count > 200) expect(markup).toContain(`aria-rowcount="${count + 1}"`);
     expect(view.table.rows).toHaveLength(count);
   });
@@ -1353,12 +1353,12 @@ describe("formula bar presentation", () => {
 });
 
 describe("native insertion limit presentation", () => {
-  it("removes the draft and Add row at 128 stored records and exposes the limit as a status", () => {
+  it("removes the draft and Add row at 10,000 stored records and exposes the limit as a status", () => {
     const view = makeView();
     view.table.native_table_profile = true;
     const row = view.table.rows[0]!;
     const record = (id: string) => ({ ...row, id, fields: row.fields.map(field => ({ ...field, target: { ...field.target, entity: id } })) });
-    view.table.rows = Array.from({ length: 127 }, (_, index) => record(`row-${index}`));
+    view.table.rows = Array.from({ length: 9_999 }, (_, index) => record(`row-${index}`));
     const before = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
     expect(before).toContain('class="ts-entry-row"');
     expect(before).toContain('>Add row</button>');
@@ -1367,6 +1367,6 @@ describe("native insertion limit presentation", () => {
     const after = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
     expect(after).not.toContain('class="ts-entry-row"');
     expect(after).not.toContain('>Add row</button>');
-    expect(after).toContain('class="ts-hint ts-native-insertion-limit" role="status">This table has reached the 128-row limit for adding rows here.</p>');
+    expect(after).toContain('class="ts-hint ts-native-insertion-limit" role="status">This table has reached the 10,000-row limit for adding rows here. Nothing was changed.</p>');
   });
 });

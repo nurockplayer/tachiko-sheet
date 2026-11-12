@@ -342,7 +342,7 @@ export function describeExportRefusal(error: unknown): string {
   if (failure?.code === "native_tables_export_refused") {
     const details = failure.diagnostics?.map((diagnostic) =>
       `${diagnostic.path ? `${diagnostic.path}: ` : ""}${diagnostic.message}`).join(" ");
-    return `This file cannot be prepared.${details ? ` ${details}` : " The current tables are not supported by this format."}`;
+    return `This file cannot be prepared.${details ? ` ${details}` : " The current tables are not supported by this format."} Use Save a copy to save the whole work as a Tachiko work file (.ro).`;
   }
   return describe(error, "The export could not be prepared for review.");
 }

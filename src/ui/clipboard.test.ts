@@ -38,13 +38,13 @@ describe("paste routing", () => {
     [context({ pendingDraft: true }), block, /discard/],
     [context(), [["a"], ["b", "c"]], /different widths/],
     [context(), [["a", "b", "c", "d"]], /too wide/],
-    [context({ start: { row: 127, column: 0 }, rowCount: 128 }), [["a"], ["b"]], /128-row/],
+    [context({ start: { row: 9_999, column: 0 }, rowCount: 10_000 }), [["a"], ["b"]], /10,000-row/],
     [context({ editable: () => false }), [["a"]], /calculated or non-editable/],
     [context({ start: { row: 1, column: 1 } }), [["1", "true"], ["2", "false"]], /every column/],
     [context(), [["a"], ["b"], ["c"]], /every column/],
     [context({ draft: true, start: { row: 2, column: 1 } }), [["1", "true"], ["2", "false"]], /add several rows, paste from the first column/],
     [context({ draft: true, pendingDraft: true, start: { row: 2, column: 0 } }), block, /Add or discard the new row first/],
-    [context({ draft: true, rowCount: 1, storedRowCount: 127, start: { row: 1, column: 0 } }), block, /exceed the 128-row limit/],
+    [context({ draft: true, rowCount: 1, storedRowCount: 9_999, start: { row: 1, column: 0 } }), block, /exceed the 10,000-row limit/],
     [context({ start: { row: -1, column: 0 } }), [["a"]], /current cell/],
   ] as const)("refuses whole blocks", (ctx, values, message) => {
     expect(routePaste(values as string[][], ctx)).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
@@ -67,15 +67,15 @@ describe("paste routing", () => {
       [{ editable: (r: number, c: number) => !(r === 1 && c === 2) }, block.slice(0, 2), /non-editable/],
     ] as const) expect(routePaste(rows as string[][], context({ native: false, ...overrides }))).toMatchObject({ kind: "refused", message: expect.stringMatching(message) });
   });
-  it.each([false, true])("bounds every existing-row edit at 1,024 cells (native=%s)", native => {
-    const rows = Array.from({ length: 128 }, () => Array(8).fill("a"));
-    const ctx = context({ native, rowCount: 128, columnTypes: Array(9).fill("text") });
+  it.each([false, true])("bounds every existing-row edit at 100,000 cells (native=%s)", native => {
+    const rows = Array.from({ length: 10_000 }, () => Array(10).fill("a"));
+    const ctx = context({ native, rowCount: 10_000, columnTypes: Array(11).fill("text") });
     expect(routePaste(rows, ctx).kind).toBe("edit");
     rows[0]!.push("a"); // ragged refusal still wins
     expect(routePaste(rows, ctx).kind).toBe("refused");
-    rows.forEach(row => { if (row.length === 8) row.push("a"); });
-    expect(routePaste(rows, ctx)).toMatchObject({ kind: "refused", message: expect.stringContaining("1,024-cell") });
-    expect(routePaste(rows, { ...ctx, native: true, rowCount: 127 }).kind).toBe("publish");
+    rows.forEach(row => { if (row.length === 10) row.push("a"); });
+    expect(routePaste(rows, ctx)).toMatchObject({ kind: "refused", message: expect.stringContaining("100,000-cell") });
+    expect(routePaste(rows, { ...ctx, native: true, rowCount: 9_999 }).kind).toBe("publish");
   });
   it.each([false, true])("accepts only exact Boolean tokens for typed edits (native=%s)", native => {
     for (const value of ["yes", " TRUE ", "0", ...(!native ? [""] : [])]) expect(routePaste([[value]], context({ native, columnTypes: ["boolean"] })))
@@ -104,12 +104,12 @@ describe("paste routing", () => {
     expect(routePaste([["a", "1", "true"]], context({ rowCount: 127, start: { row: 127, column: 0 } })).kind).toBe("publish");
     expect(routePaste([["2"]], context({ start: { row: 1, column: 1 } }))).toEqual({ kind: "edit", rows: [["2"]] });
   });
-  it.each([128, 205, 8406])("refuses append and draft paste at %i stored rows while preserving existing-row edits", rowCount => {
+  it.each([10_000, 10_001])("refuses append and draft paste at %i stored rows while preserving existing-row edits", rowCount => {
     for (const draft of [false, true]) {
       expect(routePaste([["a", "1", "true"]], context({ rowCount, draft, start: { row: draft ? rowCount : rowCount - 1, column: 0 } })).kind).toBe(draft ? "refused" : "edit");
     }
     expect(routePaste([["a", "1", "true"], ["b", "2", "false"]], context({ rowCount, start: { row: rowCount - 1, column: 0 } })))
-      .toMatchObject({ kind: "refused", message: expect.stringContaining("128-row limit") });
+      .toMatchObject({ kind: "refused", message: expect.stringContaining("10,000-row limit") });
   });
   it("passes raw Number and Date input to Work", () => {
     expect(routePaste([["", "10/19/2026"]], context({ columnTypes: ["number", "date"] }))).toEqual({ kind: "edit", rows: [["", "10/19/2026"]] });
@@ -138,8 +138,8 @@ describe("bounded clipboard decoding", () => {
   });
   it("refuses one row past the bound before materializing the rest", () => {
     const huge = Array.from({ length: 50_000 }, (_, i) => `r${i}`).join("\n");
-    expect(() => decodeTsv(huge)).toThrow(/128-row limit/);
-    expect(() => decodeTsv(Array.from({ length: PASTE_MAX_ROWS + 1 }, () => "a").join("\n"))).toThrow(/128-row limit/);
+    expect(() => decodeTsv(huge)).toThrow(/10,000-row limit/);
+    expect(() => decodeTsv(Array.from({ length: PASTE_MAX_ROWS + 1 }, () => "a").join("\n"))).toThrow(/10,000-row limit/);
   });
   it("refuses oversized text before scanning it", () => {
     expect(() => decodeTsv("a".repeat(11), PASTE_MAX_ROWS, 10)).toThrow(/too large/);

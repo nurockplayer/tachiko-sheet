@@ -69,9 +69,9 @@ describe("fill selection request planning", () => {
     expect(() => fillSelectionPlan(rows, columns, area(0, 0, 0, 0), "=1+1", true)).toThrow(FillSelectionRefusal);
   });
 
-  it("refuses a range above 1,024 cells", () => {
-    expect(() => fillSelectionPlan([], columns, { top: 0, left: 0, bottom: 513, right: 1 }, "fill", true))
-      .toThrow("The fill range exceeds the 1,024-cell limit. Nothing was filled.");
+  it("refuses a range above 100,000 cells", () => {
+    expect(() => fillSelectionPlan([], columns, { top: 0, left: 0, bottom: 50_001, right: 1 }, "fill", true))
+      .toThrow("The fill range exceeds the 100,000-cell limit. Nothing was filled.");
   });
 
   it("refuses a non-native table", () => {

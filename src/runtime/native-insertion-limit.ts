@@ -1,6 +1,5 @@
-// Work's published native insertion gate for pin 375da29f (ADR-0045).
-// Replace this pin-bound adapter with a Work capability when one exists.
-export const NATIVE_INSERTION_ROW_LIMIT = 128;
+// Sheet's early insertion bound for Work's working-size profile.
+export const NATIVE_INSERTION_ROW_LIMIT = 10_000;
 
 export function nativeInsertionLimitReached(storedRows: number): boolean {
   return storedRows >= NATIVE_INSERTION_ROW_LIMIT;

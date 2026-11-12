@@ -86,8 +86,8 @@ describe("fill down request planning", () => {
       .toThrow("This table cannot be filled here. Nothing was filled.");
   });
 
-  it("refuses a destination range above 1,024 cells", () => {
-    expect(() => fillDownPlan([], columns, { top: 0, left: 0, bottom: 513, right: 1 }, true))
-      .toThrow("The fill range exceeds the 1,024-cell limit. Nothing was filled.");
+  it("refuses a destination range above 100,000 cells", () => {
+    expect(() => fillDownPlan([], columns, { top: 0, left: 0, bottom: 50_001, right: 1 }, true))
+      .toThrow("The fill range exceeds the 100,000-cell limit. Nothing was filled.");
   });
 });

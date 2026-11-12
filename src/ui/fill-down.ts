@@ -31,7 +31,7 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
   const width = area.right - area.left + 1;
   const height = area.bottom - area.top + 1;
   const count = width * (height - 1);
-  if (count > EDIT_CELLS_MAX) throw new FillDownRefusal("The fill range exceeds the 1,024-cell limit. Nothing was filled.");
+  if (count > EDIT_CELLS_MAX) throw new FillDownRefusal(`The fill range exceeds the ${EDIT_CELLS_MAX.toLocaleString("en-US")}-cell limit. Nothing was filled.`);
   if (!native) throw new FillDownRefusal("This table cannot be filled here. Nothing was filled.");
 
   const topRow = rows[area.top];

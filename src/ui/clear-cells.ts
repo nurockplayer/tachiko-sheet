@@ -7,7 +7,7 @@ import { fieldForColumn, type TableColumn, type TableRow } from "./projection-ac
 export function clearCellEdits(rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle, native: boolean, verb: "cleared" | "cut" = "cleared"): CellEdit[] {
   if (!native) throw new CellClearRefusal(`This table cannot be cleared here. Nothing was ${verb}.`);
   if ((area.bottom - area.top + 1) * (area.right - area.left + 1) > EDIT_CELLS_MAX) {
-    throw new CellClearRefusal(`The selected range exceeds the 1,024-cell limit. Nothing was ${verb}.`);
+    throw new CellClearRefusal(`The selected range exceeds the ${EDIT_CELLS_MAX.toLocaleString("en-US")}-cell limit. Nothing was ${verb}.`);
   }
   const edits: CellEdit[] = [];
   for (let r = area.top; r <= area.bottom; r++) {

@@ -86,10 +86,10 @@ describe("native empty intent and atomic clear request shaping", () => {
     expect(() => clearCellEdits([formulaRow], [col], one, true)).toThrow("Edit the formula in the formula bar.");
     expect(() => emptyCellEdit(cellEditSlot(formulaRow, col)!)).toThrow("Edit the formula in the formula bar.");
   });
-  it("counts the whole rectangle before omitting blanks and never chunks past 1,024", () => {
-    const cols = Array.from({ length: 9 }, (_, i) => column("text", false, String(i)));
-    const rows = Array.from({ length: 128 }, () => ({ id: "e", key: "e", fields: [], blank_fields: cols.map(c => c.id) }));
-    expect(clearCellEdits(rows, cols, { top: 0, left: 0, bottom: 127, right: 7 }, true)).toEqual([]);
-    expect(() => clearCellEdits(rows, cols, { top: 0, left: 0, bottom: 127, right: 8 }, true)).toThrow(/1,024-cell/);
+  it("counts the whole rectangle before omitting blanks and never chunks past 100,000", () => {
+    const cols = Array.from({ length: 10 }, (_, i) => column("text", false, String(i)));
+    const rows = Array.from({ length: 10_001 }, () => ({ id: "e", key: "e", fields: [], blank_fields: cols.map(c => c.id) }));
+    expect(clearCellEdits(rows, cols, { top: 0, left: 0, bottom: 9_999, right: 9 }, true)).toEqual([]);
+    expect(() => clearCellEdits(rows, cols, { top: 0, left: 0, bottom: 10_000, right: 9 }, true)).toThrow(/100,000-cell/);
   });
 });

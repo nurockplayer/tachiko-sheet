@@ -1,9 +1,9 @@
 /** Clipboard transport and grid geometry only; Work owns value validation. */
 import type { PasteCellInput } from "../contracts.js";
-import { nativeInsertionFits, nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
+import { NATIVE_INSERTION_ROW_LIMIT, nativeInsertionFits, nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { supportsOptional } from "./column-requiredness.js";
 
-export const NATIVE_INSERTION_LIMIT_MESSAGE = "This table has reached the 128-row limit for adding rows here.";
+export const NATIVE_INSERTION_LIMIT_MESSAGE = `This table has reached the ${NATIVE_INSERTION_ROW_LIMIT.toLocaleString("en-US")}-row limit for adding rows here. Nothing was changed.`;
 export interface CellAddress { row: number; column: number }
 export interface CellRectangle { top: number; left: number; bottom: number; right: number }
 export function rectangle(anchor: CellAddress, end: CellAddress): CellRectangle {
@@ -17,16 +17,16 @@ export function encodeTsv(rows: readonly (readonly string[])[]): string {
   return rows.map((row, index) => row.map(value => (/[\t\r\n"]/.test(value) || (index === rows.length - 1 && rows.length > 1 && row.length === 1 && value === "")) ? `"${value.replaceAll('"', '""')}"` : value).join("\t")).join("\n");
 }
 /** Work's native paste bound; larger blocks are refused before they are materialized. */
-export const PASTE_MAX_ROWS = 128;
-export const EDIT_CELLS_MAX = 1_024;
-export const PASTE_MAX_CHARS = 1_048_576;
-const TOO_MANY_ROWS = `The pasted block exceeds the ${PASTE_MAX_ROWS}-row limit. Nothing was pasted.`;
+export const PASTE_MAX_ROWS = 10_000;
+export const EDIT_CELLS_MAX = 100_000;
+export const PASTE_MAX_CHARS = 16_777_216;
+const TOO_MANY_ROWS = `The pasted block exceeds the ${PASTE_MAX_ROWS.toLocaleString("en-US")}-row limit. Nothing was pasted.`;
 /** A plain-language refusal of the clipboard text itself; shown as written. */
 export class ClipboardRefusal extends Error {}
 /** Why a block must not be cut: its source would be cleared but it could not be pasted back. */
 export function cutBlockRefusal(rowCount: number, text: string): string | null {
   return rowCount > PASTE_MAX_ROWS || text.length > PASTE_MAX_CHARS
-    ? `This selection is too large to paste back (up to ${PASTE_MAX_ROWS} rows). Nothing was cut.`
+    ? `This selection is too large to paste back (up to ${PASTE_MAX_ROWS.toLocaleString("en-US")} rows). Nothing was cut.`
     : null;
 }
 
@@ -91,10 +91,10 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if (column + width > context.columnTypes.length) return refuse("The pasted block is too wide for this table. Nothing was pasted.");
   if (!context.native && (context.draft || row + rows.length > context.rowCount)) return refuse("Imported tables can't gain rows by paste. Nothing was pasted.");
   const insideExistingRows = !context.draft && row + rows.length <= context.rowCount;
-  if (insideExistingRows && rows.length * width > EDIT_CELLS_MAX) return refuse("The pasted block exceeds the 1,024-cell limit. Nothing was pasted.");
+  if (insideExistingRows && rows.length * width > EDIT_CELLS_MAX) return refuse(`The pasted block exceeds the ${EDIT_CELLS_MAX.toLocaleString("en-US")}-cell limit. Nothing was pasted.`);
   const stored = context.storedRowCount ?? context.rowCount;
   if (!insideExistingRows && !nativeInsertionFits(stored, Math.max(1, row + rows.length - context.rowCount))) {
-    return refuse(nativeInsertionLimitReached(stored) ? `${NATIVE_INSERTION_LIMIT_MESSAGE} Nothing was pasted.` : "Pasting would exceed the 128-row limit. Nothing was pasted.");
+    return refuse(nativeInsertionLimitReached(stored) ? NATIVE_INSERTION_LIMIT_MESSAGE : `Pasting would exceed the ${NATIVE_INSERTION_ROW_LIMIT.toLocaleString("en-US")}-row limit. Nothing was pasted.`);
   }
   if (context.draft) {
     // Several rows pasted into the new row append to the table, as in other
