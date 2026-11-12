@@ -1,5 +1,6 @@
-// Real Work kit: paste a table beyond 128 rows, save and reopen it.
+// Real Work kit: paste 300 rows, save and reopen, then download CSV and XLSX.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -52,10 +53,33 @@ try {
   await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
   await page.getByRole("button", { name: "Open saved Bounds copy", exact: true }).click(); await ready(); await assertRows();
   await page.getByRole("tab", { name: "Import & export", exact: true }).click();
-  await page.getByRole("button", { name: "Prepare CSV", exact: true }).click();
-  const refusal = page.getByRole("region", { name: "Download spreadsheet", exact: true }).getByRole("alert");
-  await refusal.waitFor(); assert.match(await refusal.textContent(), /Tachiko work file \(\.ro\)/);
-  console.log("PASS: 300 pasted rows and total survive Save a copy and reopen; CSV refusal offers a work file");
+  for (const format of ["csv", "xlsx"]) {
+    await page.getByRole("button", { name: `Prepare ${format.toUpperCase()}`, exact: true }).click();
+    const confirm = dialog("Confirm download");
+    await confirm.waitFor();
+    const downloaded = page.waitForEvent("download");
+    await confirm.getByRole("button", { name: "Download", exact: true }).click();
+    const file = path.join(work, `bounds.${format}`);
+    await (await downloaded).saveAs(file);
+    await confirm.waitFor({ state: "detached" });
+    const rows = JSON.parse(execFileSync("python3", ["-I", "-c", String.raw`
+import csv, json, sys, zipfile, xml.etree.ElementTree as E
+p = sys.argv[1]
+if p.endswith('.csv'):
+ with open(p, encoding='utf-8-sig', newline='') as f: rows = list(csv.reader(f))
+else:
+ n = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+ with zipfile.ZipFile(p) as z:
+  rows = E.fromstring(z.read('xl/worksheets/sheet1.xml')).findall('s:sheetData/s:row', n)
+  rows = [r.get('r') for r in rows]
+print(json.dumps(rows))
+`, file], { encoding: "utf8" }));
+    assert.equal(rows.length, 301, `${format} includes a header and 300 rows`);
+    if (format === "csv") {
+      for (const index of [1, 150, 300]) assert.deepEqual(rows[index], [`Item ${index}`, "1", "Note"]);
+    }
+  }
+  console.log("PASS: 300 pasted rows survive Save a copy and reopen and download as CSV and XLSX");
 } finally {
   await context?.close();
   await rm(work, { recursive: true, force: true });
