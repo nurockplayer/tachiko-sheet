@@ -179,6 +179,7 @@ async function scenario(client: Client, inputs: Inputs): Promise<Log> {
   await step(log, "open portable ro", () => client.openPortableRo(portable!.bytes.slice(0)));
   await step(log, "inspect project", () => client.inspectProject(project!.bytes.slice(0)));
   await step(log, "open project", () => client.openProject(project!.bytes.slice(0)));
+  await step(log, "open project working size", () => client.openProjectWorkingSize(project!.bytes.slice(0)));
   await step(log, "reopen exported tree", () => openCanonicalTreeFromEntries(client, tree!.files));
   await step(log, "open garbage refused", () => client.openProject(new TextEncoder().encode("not a project").buffer));
   await step(log, "observe after refusal", () => client.observeOccurrence());
@@ -350,10 +351,16 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
       native.close();
     }
     expect(attaches).toBe(1);
-    // Every step but the locally refused oversized command reached the native host.
-    expect(dispatches).toBeGreaterThanOrEqual(web.length - 1);
+    expect(dispatches).toBeGreaterThanOrEqual(web.length);
     expect(web.map(([label]) => label)).toEqual(desktop.map(([label]) => label));
     for (let index = 0; index < web.length; index++) {
+      if (web[index]![0] === "oversized command refused") {
+        const webFailure = web[index]![1] as { failure: { code: string } };
+        const nativeFailure = desktop[index]![1] as { failure: { code: string } };
+        expect(webFailure.failure.code).toBe("request_too_large");
+        expect(nativeFailure.failure.code).toBe(webFailure.failure.code);
+        continue;
+      }
       expect(desktop[index], `step ${web[index]![0]}`).toEqual(web[index]);
     }
     // The scenario must really exercise success paths, not only matching failures.
