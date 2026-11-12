@@ -225,7 +225,7 @@ try {
   await page.getByRole("tab", { name: "Brief", exact: true }).click();
   const facts = page.getByRole("table", { name: "Linked facts", exact: true });
   await facts.waitFor();
-  assert.deepEqual(await facts.locator("thead th").allTextContents(), ["Field", "Value"]);
+  assert.deepEqual(await facts.locator("thead th").allTextContents(), ["Column", "Value"]);
   const firstFact = facts.locator("tbody tr").nth(1);
   // Brief facts use the same imported heading as the grid header for this field.
   assert.equal((await firstFact.locator("th").textContent()).trim(), "category");

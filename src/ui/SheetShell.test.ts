@@ -836,7 +836,7 @@ describe("SheetShell static rendering", () => {
     expect(impact).toContain("ts-fact-value--numeric");
     expect(markup).not.toContain(">entity-a<");
     expect(markup).not.toContain(">entity-b<");
-    expect(markup).toContain("<th scope=\"col\">Field</th><th scope=\"col\">Value</th>");
+    expect(markup).toContain("<th scope=\"col\">Column</th><th scope=\"col\">Value</th>");
     expect(textOf(cellMarkup(markup, `brief:${entityA}:c-notes`, "</td>") as string)).toBe("first note");
     expect(cellMarkup(markup, `brief:${entityA}:c-title`, "</td>")).not.toContain("ts-fact-value--numeric");
     expect(cellMarkup(markup, `brief:${entityA}:c-priority`, "</td>")).toContain("ts-fact-value--numeric");

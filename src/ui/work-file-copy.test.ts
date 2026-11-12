@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { workFileOpenRefusal } from "./work-file-copy.js";
 
 it.each([
-  ["Designer v3 admission supports only unconstrained fields.", "field restrictions"],
+  ["Designer v3 admission supports only unconstrained fields.", "column rules"],
   ["portable_package.unsupported_payload_representation: requires v3", "file version"],
   ["portable_package.resource_limit: limit is 67108864", "supported size or content limits"],
   ["portable_package.invalid_container: CRC mismatch", "damaged"],

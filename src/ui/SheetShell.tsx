@@ -5055,7 +5055,7 @@ export function SheetShell(props: SheetShellProps) {
             </div>
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it, or select cells across several rows to delete those rows. Undo restores deleted rows.</span>
-            : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Adding and deleting rows is available only in native tables. This table does not support it.</span> : null}
+            : onInsertRow && onRemoveRows && !table.native_table_profile ? <span className="ts-hint ts-table-row-note">Rows can't be added or deleted in this table.</span> : null}
           <button type="button" className="ts-button" data-testid="print-table" disabled={printBlocked} title={spreadsheetDraftLocked ? "Apply or cancel the edit first, so the printout matches what you see." : undefined} onClick={requestPrint}>Print…</button>
         </div>
         {!hasDraftRow && rowError ? <p className="ts-dialog-error ts-row-error" id="ts-row-error" role="alert">{rowError.message}</p> : null}
@@ -5647,7 +5647,7 @@ export function SheetShell(props: SheetShellProps) {
           ? currentness === "pending" ? "Previous grouped result" : resultsNeedAttention ? "Grouped results need attention" : "Current grouped result"
           : "Calculated result"}</h2>
         {resultsNeedAttention && currentness === "current" ? <p className="ts-notice" role="status">Some results need attention. Check the affected summaries.</p> : null}
-        {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its fields.</p> : null}
+        {j4Results.length === 0 && j4DefinitionIds.length === 0 ? <p className="ts-empty">No current cross-table result is available. Create a summary after choosing its columns.</p> : null}
         {j4Results.map((result, index) => <div key={result.definitionId} className="ts-preview" data-testid={`j4-result-${index}`}>
           {result.diagnostics.length > 0 ? <><p role="status">{currentness === "pending" ? "This previous result has source issues. Its values are hidden while results update." : "The source data has problems. Group values are hidden until those problems are corrected."}</p><ul className="ts-ledger" aria-label="Summary problems">{result.diagnostics.map((diagnostic, diagnosticIndex) => <li key={`${diagnostic.code}-${diagnosticIndex}`}>{diagnostic.code}: {diagnostic.lookup_key ?? "(no lookup key)"}</li>)}</ul></> : <>
             <p className="ts-content-meta">{currentness === "pending" ? "Previous result" : resultsNeedAttention ? "Current result" : "Complete result"} · {result.groups.length} groups{resultsNeedAttention || currentness === "pending" ? "" : ` · ${currentness === "current" && result.revision === view.revision ? "up to date" : freshnessNotice(currentness)}`}</p>
