@@ -207,7 +207,8 @@ try {
     assert.equal(await tabs().first().textContent(), original);
   }
   await rename.getByRole("button", { name: "Cancel" }).click();
-  assert.equal(await tabs().first().evaluate(el => el === document.activeElement), true);
+  // Focus returns on the next animation frame; wait for it instead of sampling once.
+  await page.waitForFunction(() => document.querySelector('[aria-label="Tables"] [role="tab"]') === document.activeElement);
   await page.keyboard.press("Shift+F10");
   await page.getByRole("menuitem", { name: "Rename…" }).click();
   await rename.getByLabel("Table name").fill("Renamed active");
@@ -305,7 +306,7 @@ try {
   await renameDialog.getByRole("button", { name: "Rename", exact: true }).click();
   await renameDialog.getByRole("alert").waitFor();
   await page.keyboard.press("Escape");
-  assert.equal(await tabs().nth(inactive).evaluate(el => el === document.activeElement), true);
+  await page.waitForFunction(index => document.querySelectorAll('[aria-label="Tables"] [role="tab"]')[index] === document.activeElement, inactive);
   await tabs().nth(salesIndex).click(); await selected(salesIndex);
   checks.push(`inactive table rename and invalid name refusal (was ${originalName})`);
   await mode("Brief").click();
