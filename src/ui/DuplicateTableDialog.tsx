@@ -30,7 +30,7 @@ export function DuplicateTableDialogView({ name, pending, error, composing, onNa
     }}>
       <div className="ts-dialog-intro">
         <h2 className="ts-h2">Duplicate table</h2>
-        <p className="ts-subtle">Work copies this table and its values into a new table. Nothing is saved until you choose Save a copy.</p>
+        <p className="ts-subtle">This makes a new table with the same columns and values. Nothing is saved until you choose Save a copy.</p>
       </div>
       <div className="ts-dialog-field">
         <label className="ts-field-label" htmlFor={`${id}-name`}>Table name</label>
