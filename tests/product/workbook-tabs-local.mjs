@@ -196,7 +196,7 @@ try {
   await page.keyboard.press("Shift+F10");
   await page.getByRole("menuitem", { name: "Rename…" }).click();
   await rename.getByLabel("Table name").fill("Renamed active");
-  await rename.getByRole("button", { name: "Rename", exact: true }).dblclick();
+  await rename.getByRole("button", { name: "Rename", exact: true }).evaluate(button => { button.click(); button.click(); });
   await ready();
   assert.equal(await tabs().first().textContent(), "Renamed active");
   assert.equal(await picker().locator("option").first().textContent(), "Renamed active");
