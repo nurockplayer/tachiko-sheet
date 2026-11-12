@@ -73,7 +73,7 @@ export type ImportSelection = {
     }>>;
 };
 export type InteropMetadata = {
-    version: number;
+    version: 1;
     sheets: Array<{
         schema_id: string;
         name: string;
@@ -86,6 +86,17 @@ export type InteropMetadata = {
         rows: Array<{
             entity_id: string;
             styles: SourceStyle[];
+        }>;
+    }>;
+} | {
+    version: 2;
+    sheets: Array<{
+        schema_id: string;
+        name: string;
+        has_header: boolean;
+        columns: Array<{
+            field_id: string;
+            name: string;
         }>;
     }>;
 };
@@ -134,6 +145,7 @@ export type SpreadsheetOperation = {
     type: "inspect";
     format: SpreadsheetFormat;
     csv_options: ImportOptions;
+    profile?: "working_size";
 } | {
     type: "import";
     format: SpreadsheetFormat;

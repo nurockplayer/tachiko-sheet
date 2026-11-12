@@ -33,12 +33,16 @@ export class WorkerDesignerClient {
     async newTracker() {
         return expectResponse("opened", await this.#command({ type: "new_tracker", occurrence_id: freshOccurrenceId() }));
     }
+    /** Create a Tracker whose session profile is the working-size one. */
+    async newTrackerWorkingSize() {
+        return expectResponse("opened_window", await this.#command({ type: "new_tracker", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
+    }
     async #spreadsheet(operation, bytes = new ArrayBuffer(0)) {
         const copy = bytes.slice(0);
         return this.#send({ id: this.#claimId(), kind: "spreadsheet", operation, bytes: copy }, [copy]);
     }
-    async inspectSpreadsheet(bytes, format, csvOptions) {
-        const reply = await this.#spreadsheet({ type: "inspect", format, csv_options: csvOptions }, bytes);
+    async inspectSpreadsheet(bytes, format, csvOptions, profile) {
+        const reply = await this.#spreadsheet({ type: "inspect", format, csv_options: csvOptions, ...(profile === undefined ? {} : { profile }) }, bytes);
         if (reply.status !== "ok")
             throw new Error("Expected spreadsheet inspection.");
         return expectResponse("import_preview", reply.response);
@@ -135,6 +139,10 @@ export class WorkerDesignerClient {
     async newBudget() {
         return expectResponse("opened", await this.#command({ type: "new_budget", occurrence_id: freshOccurrenceId() }));
     }
+    /** Create a Budget whose session profile is the working-size one. */
+    async newBudgetWorkingSize() {
+        return expectResponse("opened_window", await this.#command({ type: "new_budget", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
+    }
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
     }
@@ -145,6 +153,15 @@ export class WorkerDesignerClient {
     async duplicateCollection(expectedRevision, collection, name, columnNames) {
         const columns = columnNames === undefined ? {} : { column_names: columnNames };
         return expectResponse("duplicated", await this.#command({ type: "duplicate_collection", expected_revision: expectedRevision, collection, name, ...columns }));
+    }
+    async deleteTable(expectedRevision, collection) {
+        return expectResponse("published", await this.#command({ type: "delete_table", expected_revision: expectedRevision, collection }));
+    }
+    async addTable(expectedRevision, name, columns) {
+        return expectResponse("duplicated", await this.#command({ type: "add_table", expected_revision: expectedRevision, name, columns }));
+    }
+    async renameTable(expectedRevision, collection, name) {
+        return this.trackerCommand({ type: "rename_table", expected_revision: expectedRevision, collection, name });
     }
     /** Return complete entity and schema presentation invalidation from Rust. */
     async trackerCommand(request) {
@@ -164,6 +181,18 @@ export class WorkerDesignerClient {
     }
     async setColumnNumberFormat(expectedRevision, collection, field, numberFormat) {
         return this.trackerCommand({ type: "set_column_number_format", expected_revision: expectedRevision, collection, field, number_format: numberFormat });
+    }
+    async setColumnDateFormat(expectedRevision, collection, field, dateFormat) {
+        return this.trackerCommand({ type: "set_column_date_format", expected_revision: expectedRevision, collection, field, date_format: dateFormat });
+    }
+    async setColumnAlignment(expectedRevision, collection, field, alignment) {
+        return this.trackerCommand({ type: "set_column_alignment", expected_revision: expectedRevision, collection, field, alignment });
+    }
+    async setColumnWrap(expectedRevision, collection, field, wrap) {
+        return this.trackerCommand({ type: "set_column_wrap", expected_revision: expectedRevision, collection, field, wrap });
+    }
+    async setColumnWidth(expectedRevision, collection, field, width) {
+        return this.trackerCommand({ type: "set_column_width", expected_revision: expectedRevision, collection, field, width });
     }
     async moveColumn(expected, collection, field, toIndex) {
         return this.trackerCommand({ type: "move_column", expected_revision: expected, collection, field, to_index: toIndex });
@@ -749,6 +778,9 @@ function validateTablePresence(table) {
         }
         validateColumnConstraint(column);
         validateColumnNumberFormat(column);
+        if (column.date_format !== undefined && (column.field_type !== "date" || !["iso", "mdy", "dmy", "ymd_slash", "ymd_cjk", "month_day_year", "day_month_year"].includes(column.date_format))) {
+            throw new Error("Invalid Worker column date format.");
+        }
         return [column.id, { required: column.required, index }];
     }));
     if (columns.size !== table.columns.length)

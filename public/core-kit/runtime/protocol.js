@@ -8,6 +8,11 @@ const CAPACITY_LIMIT_NAMES = [
     "formula_ast_nodes",
     "dependency_edges",
     "projection_bytes",
+    "source_bytes",
+    "expanded_bytes",
+    "xml_nodes",
+    "serialized_source_bytes",
+    "output_bytes",
     "saved_bytes",
 ];
 /** Validate the detailed wire payload for a capacity refusal. */

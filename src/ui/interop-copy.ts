@@ -3,6 +3,10 @@ import type { FidelityFinding } from "../../public/core-kit/runtime/interop-prot
 /** Display copy only. The original finding, category and blocking flag stay
  * unchanged for import/export decisions, saved copies and diagnostic evidence. */
 const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
+  "Stored date formats, alignment, wrap and column widths are exported; other presentation and view sorting/filtering are excluded.":
+    "Date formats, text alignment, wrapping and column widths are included. Other formatting, sorting and filters are not included.",
+  "Some cell presentation exceeded the import bound; values were retained.":
+    "Some cell formatting was too large to import. The cell values were kept.",
   "CSV cannot distinguish an absent optional Text value from present empty Text; both export as an empty field. Retain the Tachiko source to preserve presence.":
     "CSV cannot preserve the difference between blank cells and empty text; both export as empty cells.",
   "CSV exports scalar lexical values only: typing and formatting are lost. Formula-leading Text or headers are refused; use typed XLSX.":
@@ -45,6 +49,8 @@ const FINDING_WORDING: Readonly<Record<string, string>> = Object.freeze({
     "A download holds up to 32 tables, each with up to 32 columns and 128 rows (1,024 rows in all). Tachiko opens spreadsheets of up to 4 sheets, 16 columns and 64 rows (some larger text-only tables too), so a larger download may not open here again. Use Save a copy to save the whole work as a Tachiko work file (.ro).",
   "Native scalar output: at most 32 collections, 32 columns, 128 rows per collection, 1,024 total rows, 8 MiB encoded bytes and 24 MiB expanded XLSX. The shared incoming geometry is 32 sheets, 32 columns, 128 rows per sheet and 1,024 total rows, with separate 2 MiB source/8 MiB expanded bounds; its restricted Text-capacity exception is unchanged. Larger output is not promised reimportable.":
     "Downloads hold up to 32 tables, 32 columns and 128 rows per table (1,024 rows in all). A download within these limits opens here again if the file is no larger than 2 MB (8 MB unpacked); a larger file may not open here again. Use Save a copy to save the whole work as a Tachiko work file (.ro).",
+  "Native scalar output uses the working-size geometry, with 8 MiB encoded and 24 MiB expanded XLSX bounds.":
+    "Downloads can contain up to 10,000 rows, with an 8 MB file size limit and a 24 MB unpacked limit for Excel files. A larger download may not open here again. Use Save a copy to save the whole work as a Tachiko work file (.ro).",
   "Formula cells export their current computed Number values; formula definitions are not written to the spreadsheet. Retain the Tachiko source to keep the formulas.":
     "Formula cells download as their current values, not as formulas. Save a copy or download the work file (.ro) to keep the formulas.",
   "Session Undo/Redo history is excluded.":
@@ -97,6 +103,10 @@ export function findingMessage(message: string, code?: string, location?: string
   // Exact producer wording is required for a translation. A new/changed
   // warning remains verbatim rather than inheriting an inaccurate promise.
   if (isEscapeSequenceRefusal(code, message, location)) return escapeSequenceMessage(message, location);
+  if (code === "date_format_not_supported") {
+    const format = /^Date format (.+) is not supported; ISO is used\.$/.exec(message);
+    if (format) return `The date format ${format[1]} is not supported. Dates use YYYY-MM-DD instead.`;
+  }
   if (code === "imported_spreadsheet_unrepresentable") {
     return `The original workbook layout cannot represent this table. ${message}`;
   }

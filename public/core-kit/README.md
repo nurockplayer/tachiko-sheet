@@ -67,20 +67,32 @@ uppercase ISO-4217 letters), or `{ type: "percent" }`. `decimals` is an integer
 from 0 through 10. A column projection includes `number_format` only when a
 format is stored.
 
-A bounded table window can carry the text the grid shows in Number cells, so a
+Date columns may similarly use `await client.setColumnDateFormat(revision, "tasks", "due", "ymd_cjk")`; pass `null` to clear. The formats are `iso`, `mdy`, `dmy`, `ymd_slash`, `ymd_cjk`, `month_day_year`, and `day_month_year`. Column projections include `date_format` when stored. Dates remain dates for comparisons and sorting.
+
+Column alignment, wrapping and width are presentation edits on any column:
+
+```ts
+await client.setColumnAlignment(revision, collection, field, "center");
+await client.setColumnWrap(revision, collection, field, false);
+await client.setColumnWidth(revision, collection, field, 2560);
+```
+
+Use the resulting revision for each subsequent call. Width is measured in 1/256 character units (1–65280). Pass `null` to clear any value; for wrap, `false` explicitly disables wrapping and differs from `null`. Each call is one Undo step. Windows expose these values on their columns.
+
+A bounded table window can carry the text the grid shows in Number and Date cells, so a
 client renders Work's string instead of formatting again:
 
 ```ts
 const window = await client.queryTableWindow(revision, collection, view, 0, 256, {
   display: true,
 });
-window.rows[0]?.fields[0]?.display; // "1,234.50", or undefined for a non-Number cell
+window.rows[0]?.fields[0]?.display; // "1,234.50", or undefined for other cell types
 ```
 
-`field.display` is present on stored and calculated Number cells only, formatted
+`field.display` is present on Date cells and stored and calculated Number cells, formatted
 through the column's `number_format` with en-US grouping, percent and currency
-symbols, or at most 15 significant digits when the column has no format. Text,
-Date, Yes/No and Reference cells carry none, and the text counts against the
+symbols, or at most 15 significant digits when the column has no format. Dates use the column format or ISO by default. Text,
+Yes/No and Reference cells carry none, and the text counts against the
 window's reply cap. The option defaults to off, so every other window and
 `queryTable` reply is unchanged.
 
@@ -132,6 +144,12 @@ const { total, found } = await client.findInView(
   revision, "tasks", view, "acme", ["name", "notes"], undefined, "next",
 );
 ```
+
+Rename a table with `renameTable(revision, collection, name)`, or send
+`{type: "rename_table", expected_revision, collection, name}` through
+`trackerCommand` alongside `rename_column`. Names use the same admission rules
+as table creation. Rename is one undoable revision and keeps the table ID and
+formula references stable.
 
 Columns can be reordered with `moveColumn`. `toIndex` is a zero-based position
 after the column is removed from its current place, clamped to the last column.
@@ -193,7 +211,7 @@ after emitting these artifacts, including during producer rollback.
 ## Working-size sessions
 
 A host can ask for the working-size session profile when the occurrence is
-created or opened, through `newTableWorkingSize`, `inspectProjectWorkingSize`,
+created or opened, through `newTableWorkingSize`, `newTrackerWorkingSize`, `newBudgetWorkingSize`, `inspectProjectWorkingSize`,
 `openProjectWorkingSize`, `openCanonicalTreeWorkingSize`,
 `openLocalDocumentWorkingSize` and `openPortableRoWorkingSize`, and when it
 imports a workbook or inspects and opens a saved import, through
@@ -284,6 +302,8 @@ a stable spelling contract. `duplicateCollection` rewrites a reference only
 when both its entity and its field belong to the copied collection, so a
 duplicated plan reads its own rows but keeps reading the original shared
 settings row.
+
+`addTable(revision, name, columns)` appends an empty table and returns its collection and publication. `deleteTable(revision, collection)` removes a table in one undoable edit. Deleting the last table is refused with `last_table`; references from other tables or saved definitions are refused with `table_referenced` and diagnostics identify their owners.
 
 A same-row shorthand names a field on the formula's own row, so one source can
 be copied without per-row rewriting:
