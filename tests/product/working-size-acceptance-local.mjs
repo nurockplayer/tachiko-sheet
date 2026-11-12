@@ -19,9 +19,9 @@ const types = ["text", "number", "number", "date", "boolean", "text", "number", 
 schema.fields = types.map((type, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type }, required: false, constraint: { type: "none" } }));
 await mkdir(path.join(folder, "entities"), { recursive: true });
 const manifest = JSON.parse(j4CanaryText["manifest.json"]); manifest.format_version = 3;
-await writeFile(path.join(folder, "manifest.json"), JSON.stringify(manifest));
+await writeFile(path.join(folder, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 await writeFile(path.join(folder, "definitions.json"), "[]\n");
-await writeFile(path.join(folder, "schemas.json"), JSON.stringify([schema]));
+await writeFile(path.join(folder, "schemas.json"), JSON.stringify([schema], null, 2) + "\n");
 const shards = Object.fromEntries([..."0123456789abcdef"].map(key => [key, ""]));
 for (let i = 0; i < 10000; i++) {
   const id = `40000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
