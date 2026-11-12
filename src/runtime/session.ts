@@ -933,6 +933,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     command: (client: PublicClient, revision: string) => Promise<PublicationProjection>,
     authoredSchema = false,
     refreshRows = false,
+    deletedCollection?: string,
   ) {
     return enqueue(async () => {
       const live = requireWitness(witness);
@@ -969,7 +970,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       let result: CoherentRead;
       try {
         let patchedRead: CoherentRead | null = null;
-        if (!authoredSchema && !refreshRows && Array.isArray(publication.changed) && !publication.many &&
+        if (!authoredSchema && !refreshRows && deletedCollection === undefined && Array.isArray(publication.changed) && !publication.many &&
           columnsRevision !== null && liveRead?.view.revision === live.revision &&
           liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
           const patched = patchTable(liveRead.view.table, publication.changed, true);
@@ -991,7 +992,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
             }
           }
         }
-        result = patchedRead ?? await loadCoherentView(kit, client, expected, live.collection);
+        result = patchedRead ?? await loadCoherentView(kit, client, expected, deletedCollection === live.collection ? null : live.collection);
       } catch (error) {
         active = null;
         residentCollection = live.collection;
@@ -1094,6 +1095,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const command = capability(client.renameTable, "table rename");
       return command.call(client, revision, collection, name);
     }, true);
+  }
+
+  function deleteTable(witness: ViewWitness, collection: string) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.deleteTable, "table delete");
+      return command.call(client, revision, collection);
+    }, false, false, collection);
   }
 
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
@@ -1588,7 +1596,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
