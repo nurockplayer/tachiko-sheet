@@ -89,7 +89,7 @@ try {
   const editor = page.getByTestId("cell-editor");
   await editor.fill("unfinished draft");
   const blockedResize = page.getByRole("separator", { name: "Resize Text", exact: true });
-  await blockedResize.focus(); await page.keyboard.press("ArrowRight");
+  await blockedResize.dispatchEvent("keydown", { key: "ArrowRight" });
   assert.equal(await editor.inputValue(), "unfinished draft");
   await page.keyboard.press("Escape");
   const otherWidthsBefore = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.slice(1).map(node => node.getBoundingClientRect().width));
