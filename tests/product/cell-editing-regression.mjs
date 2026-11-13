@@ -117,9 +117,9 @@ const cases = [
     const copyRequests = (await dispatches(page)) - count;
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("clear prior refusal", page.getByText("There is no cell above to copy.").first().waitFor());
-    await at(first, "priority").focus(); await page.keyboard.press("Shift+ArrowDown");
+    await at(first, "priority").click(); await page.keyboard.press("Shift+ArrowDown");
     count = await dispatches(page); await page.keyboard.press("ControlOrMeta+D");
-    await wait("fill down refusal", page.waitForFunction(message => document.querySelector(".ts-clipboard-status[role=status]")?.textContent === message, copyMessage));
+    await wait("fill down announcement", page.waitForFunction(() => document.querySelector(".ts-clipboard-status[role=status]")?.textContent !== "There is no cell above to copy."));
     assert.equal(await status.textContent(), copyMessage);
     assert.equal((await dispatches(page)) - count, copyRequests);
     assert.equal(copyRequests, 0);
