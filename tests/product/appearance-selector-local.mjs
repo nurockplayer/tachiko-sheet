@@ -270,6 +270,12 @@ try {
   assert.equal(await page.locator(".ts-command-overflow").getAttribute("open"), "", "keyboard opens mobile document command disclosure");
   await page.keyboard.press("Tab");
   assert.equal(
+    await page.locator(".ts-command-overflow").getByRole("button", { name: "Keyboard shortcuts", exact: true }).evaluate((button) => document.activeElement === button),
+    true,
+    "Tab reaches Keyboard shortcuts first inside the open mobile disclosure",
+  );
+  await page.keyboard.press("Tab");
+  assert.equal(
     await page.locator(".ts-command-overflow").getByRole("button", { name: "Close project", exact: true }).evaluate((button) => document.activeElement === button),
     true,
     "Tab reaches Close project inside the open mobile disclosure",
