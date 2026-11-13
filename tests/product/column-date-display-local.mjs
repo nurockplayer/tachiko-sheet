@@ -70,7 +70,7 @@ try {
   await rows().first().locator(".ts-cell").nth(7).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await editor.fill("changed"); await editor.press("Enter"); await ready(); await check();
-  const tabs = page.getByRole("tablist", { name: "Tables", exact: true }).getByRole("tab");
+  const tabs = page.getByRole("tablist", { name: "Sheets", exact: true }).getByRole("tab");
   assert.equal(await tabs.count(), 2);
   await tabs.nth(1).click(); await ready();
   await tabs.nth(0).click(); await ready(); await check();

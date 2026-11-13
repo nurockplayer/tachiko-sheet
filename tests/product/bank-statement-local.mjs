@@ -135,9 +135,9 @@ try {
   checks.push("a filter totals only the shown rows (Σ▽, -8.3); clearing it restores the whole-table total");
 
   // 4. Duplicate keeps the imported column names.
-  await page.getByRole("button", { name: "Duplicate table…", exact: true }).click();
-  const duplicate = page.getByRole("dialog", { name: "Duplicate table", exact: true });
-  await duplicate.getByLabel("Table name", { exact: true }).fill("October copy");
+  await page.getByRole("button", { name: "Duplicate sheet…", exact: true }).click();
+  const duplicate = page.getByRole("dialog", { name: "Duplicate sheet", exact: true });
+  await duplicate.getByLabel("Sheet name", { exact: true }).fill("October copy");
   await duplicate.getByRole("button", { name: "Duplicate", exact: true }).click();
   await duplicate.waitFor({ state: "detached" }); await ready();
   assert.equal(await page.locator("#ts-active-table option:checked").textContent(), "October copy");

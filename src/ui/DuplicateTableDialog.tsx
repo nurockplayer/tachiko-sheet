@@ -15,7 +15,7 @@ export function DuplicateTableDialogView({ name, pending, error, composing, onNa
 }) {
   const id = useId();
   const nameRef = useRef<HTMLInputElement>(null);
-  return <Modal label="Duplicate table" variant="save" onCancel={onCancel} dismissDisabled={pending}>
+  return <Modal label="Duplicate sheet" variant="save" onCancel={onCancel} dismissDisabled={pending}>
     <div onKeyDown={event => {
       if (!(event.target instanceof HTMLInputElement)) return;
       // A composing Enter confirms an IME candidate, not this dialog.
@@ -29,11 +29,11 @@ export function DuplicateTableDialogView({ name, pending, error, composing, onNa
       onDuplicate();
     }}>
       <div className="ts-dialog-intro">
-        <h2 className="ts-h2">Duplicate table</h2>
-        <p className="ts-subtle">This makes a new table with the same columns and values. Nothing is saved until you choose Save a copy.</p>
+        <h2 className="ts-h2">Duplicate sheet</h2>
+        <p className="ts-subtle">This makes a new sheet with the same columns and values. Nothing is saved until you choose Save a copy.</p>
       </div>
       <div className="ts-dialog-field">
-        <label className="ts-field-label" htmlFor={`${id}-name`}>Table name</label>
+        <label className="ts-field-label" htmlFor={`${id}-name`}>Sheet name</label>
         <input ref={nameRef} id={`${id}-name`} className="ts-text-input" data-autofocus="true" value={name} readOnly={pending}
           aria-invalid={error !== null ? true : undefined} aria-describedby={error !== null ? `${id}-error` : undefined}
           onChange={event => onNameChange(event.currentTarget.value)} />

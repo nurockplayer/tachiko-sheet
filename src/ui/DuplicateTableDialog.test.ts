@@ -21,7 +21,7 @@ describe("duplicate table dialog", () => {
     const markup = view();
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('aria-modal="true"');
-    expect(markup).toContain('aria-label="Duplicate table"');
+    expect(markup).toContain('aria-label="Duplicate sheet"');
     expect(markup.match(/<input[^>]*>/)?.[0]).toContain('value="Expenses copy"');
     expect(markup).toContain(">Cancel</button>");
     expect(markup).toContain(">Duplicate</button>");

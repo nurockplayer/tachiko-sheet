@@ -9,7 +9,7 @@ const groups: ShortcutGroup[] = [
     { keys: ["Mod+Home", "Mod+End"], action: "Move to start or end of table" },
     { keys: ["PageUp", "PageDown"], action: "Move one page" },
     { keys: ["Tab", "Shift+Tab"], action: "Move right or left" },
-    { keys: ["Ctrl+PageUp", "Ctrl+PageDown"], action: "Previous or next table" },
+    { keys: ["Ctrl+PageUp", "Ctrl+PageDown"], action: "Previous or next sheet" },
   ] },
   { name: "Select", entries: [
     { keys: ["Shift+Arrow"], action: "Extend selection" },

@@ -182,10 +182,10 @@ async function saveCopy(page, name) {
 }
 
 async function duplicate(page, name) {
-  await page.getByRole("button", { name: "Duplicate table…", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Duplicate table", exact: true });
+  await page.getByRole("button", { name: "Duplicate sheet…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Duplicate sheet", exact: true });
   await dialog.waitFor();
-  await dialog.getByLabel("Table name", { exact: true }).fill(name);
+  await dialog.getByLabel("Sheet name", { exact: true }).fill(name);
   await dialog.getByRole("button", { name: "Duplicate", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
   await ready(page);
@@ -1624,6 +1624,9 @@ const cases = [
     await page.keyboard.press("Control+/");
     const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
     await dialog.waitFor();
+    assert.equal(await dialog.getByRole("button", { name: "Close" }).evaluate(n => n === document.activeElement), true);
+    await page.keyboard.press("Tab");
+    assert.equal(await dialog.getByRole("region", { name: "Shortcuts" }).evaluate(n => n === document.activeElement), true);
     await page.keyboard.press("Escape");
     assert.equal(await activeId(page), await cell.getAttribute("data-testid"), "focus did not return to cell");
     assert.equal(await executeCount(page), before, "help changed data");

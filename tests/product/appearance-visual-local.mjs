@@ -1579,7 +1579,7 @@ async function auditTallGridLayoutOnly(page) {
       const grid = document.querySelector(".ts-grid-scroll");
       const footer = document.querySelector(".ts-workspace-footer");
       const views = document.querySelector('[role="tablist"][aria-label="Workbook views"]');
-      const tabs = document.querySelector('[role="tablist"][aria-label="Tables"]');
+      const tabs = document.querySelector('[role="tablist"][aria-label="Sheets"]');
       const status = document.querySelector(".ts-workbook-status");
       const notices = document.querySelector(".ts-notices");
       const rect = (element) => element?.getBoundingClientRect();
