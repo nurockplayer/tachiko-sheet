@@ -34,6 +34,15 @@ export function clampColumnWidth(px: number): number {
   return Math.min(COLUMN_WIDTH_MAX, Math.max(COLUMN_WIDTH_MIN, rounded));
 }
 
+/** Convert Work's 1/256-character widths using Excel's seven-pixel digit. */
+export function columnWidthToPx(units: number): number {
+  return Math.trunc((units / 256) * 7 + 5);
+}
+
+export function columnWidthToUnits(px: number): number {
+  return Math.min(65280, Math.max(1, Math.ceil(Math.max(0, (px - 5) / 7) * 256)));
+}
+
 /** Set one column's width; an unchanged width returns the same settings object. */
 export function rowViewWithWidth(settings: RowViewSettings, field: string, px: number): RowViewSettings {
   const width = clampColumnWidth(px);
