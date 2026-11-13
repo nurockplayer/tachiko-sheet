@@ -8,7 +8,10 @@ describe("workbook table navigation", () => {
     const tabs = names.map((name, index) => tableTabName(name, index, names.length));
     expect(tabs.some(name => modes.includes(name))).toBe(false);
     expect(new Set(tabs).size).toBe(names.length);
-    expect(tabs[0]).toBe("Table (table 1 of 7)");
+    expect(tabs[0]).toBe("Table (sheet 1 of 7)");
+  });
+  it("labels the first of two sheets", () => {
+    expect(tableTabName("Name", 0, 2)).toBe("Name (sheet 1 of 2)");
   });
   it("maps arrows and page shortcuts in workbook order with wraparound", () => {
     expect(tableTabIndex("ArrowLeft", 0, 3)).toBe(2);

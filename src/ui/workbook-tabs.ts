@@ -1,6 +1,6 @@
 /** Table names remain distinct from every mode, including imported names. */
 export function tableTabName(name: string, index: number, count: number): string {
-  return `${name} (table ${index + 1} of ${count})`;
+  return `${name} (sheet ${index + 1} of ${count})`;
 }
 
 export function tableTabIndex(key: string, index: number, count: number): number | null {

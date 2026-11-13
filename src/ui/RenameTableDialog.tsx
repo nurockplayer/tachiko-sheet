@@ -29,11 +29,11 @@ export function RenameTableDialog({ initialName, composing, onRename, onClose, o
     } catch { onClose(); }
     finally { pendingRef.current = false; setPending(false); }
   }
-  return <Modal label="Rename table" variant="save" onCancel={onClose} dismissDisabled={pending}>
+  return <Modal label="Rename sheet" variant="save" onCancel={onClose} dismissDisabled={pending}>
     <form onSubmit={event => { event.preventDefault(); if (!composing()) void submit(); }}>
-      <div className="ts-dialog-intro"><h2 className="ts-h2">Rename table</h2></div>
+      <div className="ts-dialog-intro"><h2 className="ts-h2">Rename sheet</h2></div>
       <div className="ts-dialog-field">
-        <label className="ts-field-label" htmlFor={id}>Table name</label>
+        <label className="ts-field-label" htmlFor={id}>Sheet name</label>
         <input ref={input} id={id} data-autofocus="true" className="ts-text-input" value={name} readOnly={pending}
           aria-invalid={error !== null || undefined} aria-describedby={error ? `${id}-error` : undefined}
           onChange={event => { setName(event.currentTarget.value); onDraftChange(event.currentTarget.value !== initialName); setError(null); }} />
