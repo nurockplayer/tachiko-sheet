@@ -118,6 +118,7 @@ class FakeClient {
     queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
     translateA1Formula: [] as TranslateA1FormulaInput[],
     setColumnConstraint: [] as Array<{ revision: string; collection: string; field: string; constraint: FieldConstraintInput }>,
+    setColumnAlignment: [] as Array<{ revision: string; collection: string; field: string; alignment: "left" | "center" | "right" | null }>,
     setColumnDateFormat: [] as Array<{ revision: string; collection: string; field: string; format: string | null }>,
     setColumnNumberFormat: [] as Array<{ revision: string; collection: string; field: string; format: NumberFormat | null }>,
     copyFormula: [] as Array<{ revision: string; request: FormulaCopy }>,
@@ -259,6 +260,13 @@ class FakeClient {
     this.#requireOpen();
     const hook = this.hooks.setColumnConstraint;
     if (hook !== undefined) { this.hooks.setColumnConstraint = undefined; return hook(); }
+    this.#requireRevision(revision);
+    return this.#publish(IMPACT);
+  }
+
+  async setColumnAlignment(revision: string, collection: string, field: string, alignment: "left" | "center" | "right" | null): Promise<PublicationProjection> {
+    this.calls.setColumnAlignment.push({ revision, collection, field, alignment });
+    this.#requireOpen();
     this.#requireRevision(revision);
     return this.#publish(IMPACT);
   }
@@ -1930,6 +1938,21 @@ describe("setColumnConstraint", () => {
     await expect(runtime.setColumnConstraint({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", { kind: "none" }))
       .rejects.toMatchObject({ code: "stale-witness" });
     expect(client.calls.setColumnConstraint).toEqual([]);
+  });
+});
+
+describe("setColumnAlignment", () => {
+  it.each(["left", "center", "right", null] as const)("forwards %s and marks portable save", async alignment => {
+    const { runtime, client, view } = await opened();
+    const confirmed = await runtime.setColumnAlignment(witnessOf(view), COLLECTION.key, "f1", alignment);
+    expect(client.calls.setColumnAlignment).toEqual([{ revision: view.revision, collection: COLLECTION.key, field: "f1", alignment }]);
+    expect(confirmed.view.requiresPortableSave).toBe(true);
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+  });
+  it("does not dispatch with a stale witness", async () => {
+    const { runtime, client, view } = await opened();
+    await expect(runtime.setColumnAlignment({ ...witnessOf(view), revision: "old" }, COLLECTION.key, "f1", "right")).rejects.toBeDefined();
+    expect(client.calls.setColumnAlignment).toEqual([]);
   });
 });
 

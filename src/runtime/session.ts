@@ -14,7 +14,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, ColumnTotalsProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -1069,6 +1069,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
+  function setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.setColumnAlignment, "column alignment");
+      return command.call(client, revision, collection, field, alignment);
+    }, true);
+  }
+
   function setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null) {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.setColumnDateFormat, "column date format");
@@ -1596,7 +1603,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   return {
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, queryCapacity, queryColumnTotals, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
