@@ -122,7 +122,13 @@ const cases = [
       document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim() === "Filled 1 cell. Save to keep these changes." &&
       window.__tachikoAcceptance.executeRequestCount() === count + 1 &&
       document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
-      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current", [count, priorRevision, `cell:${second}:${fields.priority}`]));
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current", [count, priorRevision, `cell:${second}:${fields.priority}`]).catch(async error => {
+        const observed = await page.evaluate(id => {
+          const cell = document.querySelector(`[data-testid="${id}"]`);
+          return { message: document.querySelector(".ts-clipboard-status[role=status]")?.textContent, requests: window.__tachikoAcceptance.executeRequestCount(), revision: cell?.getAttribute("data-work-revision"), currentness: cell?.getAttribute("data-work-currentness") };
+        }, `cell:${second}:${fields.priority}`);
+        throw new Error(`${error.message}; before=${JSON.stringify({ count, priorRevision })}; observed=${JSON.stringify(observed)}`);
+      }));
     const copyMessage = await status.textContent();
     const copyRequests = (await dispatches(page)) - count;
     assert.equal(copyRequests, 1, "formula shortcut dispatches once");
