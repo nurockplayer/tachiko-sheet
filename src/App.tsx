@@ -1757,6 +1757,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnConstraint(witness, collection, field, constraint), "column");
   }
 
+  function setColumnWidth(witness: ViewWitness, collection: string, field: string, width: number | null) {
+    return changeRows(witness, () => runtime.setColumnWidth(witness, collection, field, width), "column");
+  }
+
   function setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null) {
     return changeRows(witness, () => runtime.setColumnAlignment(witness, collection, field, alignment), "column");
   }
@@ -2320,6 +2324,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onAddColumn={copies.createWorkFile ? addColumn : undefined}
           onSetColumnRequiredness={copies.createWorkFile ? setColumnRequiredness : undefined}
           onSetColumnConstraint={copies.createWorkFile ? setColumnConstraint : undefined}
+          onSetColumnWidth={copies.createWorkFile ? setColumnWidth : undefined}
           onSetColumnAlignment={copies.createWorkFile ? setColumnAlignment : undefined}
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}

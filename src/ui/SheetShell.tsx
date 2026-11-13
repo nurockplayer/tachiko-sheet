@@ -106,7 +106,7 @@ import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } 
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewConditionError, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, columnWidthToPx, columnWidthToUnits, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewConditionError, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
 import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
@@ -511,7 +511,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment,
+    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetColumnWidth,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -1247,13 +1247,14 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
-  // Column widths are view state, like the sort and filter beside them. A drag
-  // previews on the header cell itself and commits one width on release.
+  const [pendingColumnWidths, setPendingColumnWidths] = useState<Record<string, number>>({});
+  // A drag previews on the header cell itself and commits one width on release.
   const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement; rendered: Record<string, number> } | null>(null);
 
   /** A stored width wins; otherwise the width the table currently gives it. */
   function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
-    const stored = settings.widths?.[field];
+    const projected = columns.find(column => column.id === field)?.width;
+    const stored = pendingColumnWidths[field] ?? (projected != null ? columnWidthToPx(projected) : settings.widths?.[field]);
     if (stored !== undefined) return stored;
     return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
   }
@@ -1276,9 +1277,32 @@ export function SheetShell(props: SheetShellProps) {
     return rowViewWithWidth(base, field, px);
   }
 
+  function commitColumnWidth(field: string, px: number, th: HTMLElement | null, rendered: Record<string, number>, startWidth?: number): void {
+    const width = clampColumnWidth(px);
+    if (!onSetColumnWidth) {
+      updateGridSettings(current => withColumnWidth(current, field, width, rendered));
+      return;
+    }
+    if (!witness || !table) return;
+    const previous = startWidth ?? columnWidthOf(gridSettings, field, th);
+    if (th) th.style.width = `${width}px`;
+    setPendingColumnWidths(current => ({ ...current, [field]: width }));
+    setColumnAnnouncement(null);
+    void onSetColumnWidth(witness, table.collection.key, field, columnWidthToUnits(width)).then(result => {
+      if (result.kind !== "confirmed") {
+        if (th) th.style.width = `${previous}px`;
+        setColumnAnnouncement(result.kind === "refused" ? result.message : "Column width could not be changed.");
+      }
+    }).catch(() => {
+      if (th) th.style.width = `${previous}px`;
+      setColumnAnnouncement("Column width could not be changed.");
+    }).finally(() => setPendingColumnWidths(current => {
+      const next = { ...current }; delete next[field]; return next;
+    }));
+  }
+
   function resizeColumnBy(field: string, delta: number, th: HTMLElement | null): void {
-    const rendered = renderedColumnWidths();
-    updateGridSettings((current) => withColumnWidth(current, field, columnWidthOf(current, field, th) + delta, rendered));
+    commitColumnWidth(field, columnWidthOf(gridSettings, field, th) + delta, th, renderedColumnWidths());
   }
 
   function autoFitColumn(field: string, th: HTMLElement | null): void {
@@ -1298,7 +1322,7 @@ export function SheetShell(props: SheetShellProps) {
     // The text the cell draws: number formats and "Calculation failed" included.
     const texts = [...new Set(displayRows.map((row) => cellDisplay(row, column).text))];
     const rendered = renderedColumnWidths();
-    updateGridSettings((current) => withColumnWidth(current, field, autoFitWidth(texts, displayName, measure), rendered));
+    commitColumnWidth(field, autoFitWidth(texts, displayName, measure), th, rendered);
   }
 
   function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
@@ -1330,7 +1354,7 @@ export function SheetShell(props: SheetShellProps) {
     // A press without a move stores nothing: it must not turn every column of
     // a shared-width grid into a fixed one.
     if (session.width === session.startWidth) return;
-    updateGridSettings((current) => withColumnWidth(current, field, session.width, session.rendered));
+    commitColumnWidth(field, session.width, session.th, session.rendered, session.startWidth);
   }
 
   /** Losing the pointer without releasing it keeps the width it started with. */
@@ -4783,8 +4807,11 @@ export function SheetShell(props: SheetShellProps) {
     const salesCatalog = salesCatalogLayoutEligible(view!, salesCatalogLayout);
     // Widths belong to columns the grid shows; a resize is available wherever
     // the dense header actions are.
-    const columnWidths = gridSettings.widths;
-    const sizedGrid = columnWidths !== undefined && Object.keys(columnWidths).length > 0;
+    const columnWidths = Object.fromEntries(columns.flatMap(column => {
+      const width = pendingColumnWidths[column.id] ?? (column.width != null ? columnWidthToPx(column.width) : gridSettings.widths?.[column.id]);
+      return width === undefined ? [] : [[column.id, width]];
+    }));
+    const sizedGrid = Object.keys(columnWidths).length > 0;
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
       <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>

@@ -84,11 +84,18 @@ try {
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
   await page.getByRole("button", { name: "Open saved Aligned", exact: true }).click(); await ready(); await check(["right", "left", "right", "center"]);
+  const resize = page.getByRole("separator", { name: "Resize Text", exact: true });
+  const box = await resize.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2); await page.mouse.up(); await ready();
+  const widthBeforeExport = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click(); await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
   const download = page.waitForEvent("download"); await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();
   const file = path.join(dir, "alignment.xlsx"); await (await download).saveAs(file);
   await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page); await (await homeImportInput(page)).setInputFiles(file);
   await page.getByRole("dialog", { name: "Review import preview", exact: true }).getByRole("button", { name: "Import file", exact: true }).click(); await ready();
+  const importedWidth = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
+  assert.ok(Math.abs(importedWidth - widthBeforeExport) <= 1, `width: ${widthBeforeExport} → ${importedWidth}`);
   const importedAlignment = await cells().evaluateAll(nodes => nodes.map(node => getComputedStyle(node).textAlign));
   console.log("XLSX imported alignment:", importedAlignment.join(", "));
   console.log("PASS: column alignment defaults, overrides, history, editor and save/reopen");
