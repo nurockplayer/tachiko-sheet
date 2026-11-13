@@ -109,20 +109,27 @@ const cases = [
     await wait("formula projection installed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.priority}`, product]));
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
+    const priorFormulaValue = await text(at(second, "priority"));
     await at(second, "priority").focus(); count = await dispatches(page);
     await page.keyboard.press("ControlOrMeta+'");
     const status = page.locator(".ts-clipboard-status[role=status]");
-    await wait("copy formula refusal", page.waitForFunction(() => Boolean(document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim()) && document.querySelector(".ts-clipboard-status[role=status]")?.textContent !== "There is no cell above to copy."));
+    await wait("copy formula announcement", page.getByText("Filled 1 cell. Save to keep these changes.").first().waitFor());
     const copyMessage = await status.textContent();
     const copyRequests = (await dispatches(page)) - count;
+    assert.equal(copyRequests, 1);
+    const filledRevision = (await state(page)).revision;
+    await page.keyboard.press("ControlOrMeta+Z");
+    await wait("undo formula copy", page.waitForFunction(([id, value, revision]) =>
+      document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value &&
+      window.__tachikoAcceptance.runtimeSnapshot().revision !== revision,
+    [`cell:${second}:${fields.priority}`, priorFormulaValue, filledRevision]));
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
-    await wait("clear prior refusal", page.getByText("There is no cell above to copy.").first().waitFor());
+    await wait("clear prior announcement", page.getByText("There is no cell above to copy.").first().waitFor());
     await at(first, "priority").click(); await page.keyboard.press("Shift+ArrowDown");
     count = await dispatches(page); await page.keyboard.press("ControlOrMeta+D");
     await wait("fill down announcement", page.waitForFunction(() => document.querySelector(".ts-clipboard-status[role=status]")?.textContent !== "There is no cell above to copy."));
     assert.equal(await status.textContent(), copyMessage);
     assert.equal((await dispatches(page)) - count, copyRequests);
-    assert.equal(copyRequests, 0);
 
     count = await dispatches(page); await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("first row refusal", page.getByText("There is no cell above to copy.").first().waitFor());
