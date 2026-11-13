@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewChoicesAllChecked, rowViewConditionError, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, columnWidthToPx, columnWidthToUnits, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, pastePastVisibleRows, rowViewBlockRows, rowViewChoicesAllChecked, rowViewConditionError, rowViewDisplaySignature, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewSettings } from "./row-view.js";
 
 const columns: TableColumn[] = [
   { id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true },
@@ -333,5 +333,14 @@ describe("rowViewConditionError", () => {
     expect(rowViewConditionError("number", "1.5")).toBe(null);
     expect(rowViewConditionError("number", " ")).toBe("Enter a number.");
     expect(rowViewConditionError("number", "abc")).toBe("Enter a number.");
+  });
+});
+
+
+describe("column width units", () => {
+  it("round trips every allowed pixel width", () => {
+    for (let px = COLUMN_WIDTH_MIN; px <= COLUMN_WIDTH_MAX; px++) {
+      expect(columnWidthToPx(columnWidthToUnits(px))).toBe(px);
+    }
   });
 });

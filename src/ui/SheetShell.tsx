@@ -108,7 +108,7 @@ import { closeSaveUnavailableReason, copyFailureReason, savedCloseIsConfirmed } 
 import { dropAppliedNotesDraft, isNotesDraftBound, keepNotesDraft as keptNotesDraft, markNotesConflicts, upsertNotesDraft, type NotesDraft } from "./notes-drafts.js";
 import { chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, largeImport, sourcePreviewText, suggestColumnType, type ImportTypeChoice } from "./import-suggestions.js";
 import { GRID_WINDOW_THRESHOLD, gridPinnedRows, gridWindowAround, gridWindowRange, gridWindowScrollHeight, gridWindowSegments, measuredRowPitch, scrollTopToReveal, type GridWindowRange } from "./grid-window.js";
-import { autoFitWidth, clampColumnWidth, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewConditionError, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
+import { autoFitWidth, clampColumnWidth, columnWidthToPx, columnWidthToUnits, COLUMN_WIDTH_MAX, COLUMN_WIDTH_MIN, rowViewBlockRows, rowViewDisplaySignature, rowViewChoicesAllChecked, rowViewConditionError, rowViewFilterKeyAction, rowViewKeepingRows, rowViewOrder, rowViewPasteRefusal, rowViewRecordForOccurrence, rowViewSettingsForColumns, rowViewSettingsForFilter, rowViewWithWidth, rowViewValueChoices, type RowViewComparison, type RowViewFilter, type RowViewRecord, type RowViewSettings } from "./row-view.js";
 import { ResultsPane, SalesTip } from "./ResultsPane.js";
 import { GroupTotalsPane, type GroupTotalsScopeChoice } from "./GroupTotalsPane.js";
 import { defaultGroupSetup, groupDimensions, groupScopeFor, groupableColumns, measureColumns, type GroupSetup } from "./group-totals.js";
@@ -513,7 +513,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment,
+    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetColumnWidth,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -1268,14 +1268,33 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
-  // Column widths are view state, like the sort and filter beside them. A drag
-  // previews on the header cell itself and commits one width on release.
+  const [pendingColumnWidths, setPendingColumnWidths] = useState<Record<string, number>>({});
+  // Widths other columns had on screen when the first width was set; view-only,
+  // never sent to Work, and gone on reopen.
+  const [drawnColumnWidths, setDrawnColumnWidths] = useState<Record<string, number>>({});
+  const columnWidths = Object.fromEntries(columns.flatMap(column => {
+    const width = pendingColumnWidths[column.id] ?? (column.width != null ? clampColumnWidth(columnWidthToPx(column.width)) : gridSettings.widths?.[column.id]);
+    return width === undefined ? [] : [[column.id, width]];
+  }));
+  const sizedGrid = Object.keys(columnWidths).length > 0;
+  useEffect(() => { if (!sizedGrid) setDrawnColumnWidths({}); }, [sizedGrid]);
+  useEffect(() => { setDrawnColumnWidths({}); }, [collectionIdentity]);
+  // A drag previews on the header cell itself and commits one width on release.
   const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement; rendered: Record<string, number> } | null>(null);
+  const keyboardResizeRef = useRef<{ field: string; width: number; startWidth: number; th: HTMLElement | null; timer: ReturnType<typeof setTimeout> | null; rendered: Record<string, number> } | null>(null);
+
+  const widthPublishingRef = useRef(false);
+  const [widthPublishing, setWidthPublishing] = useState(false);
+  const [deferredWidths, setDeferredWidths] = useState<Array<{ occurrence: string; collection: string; field: string; width: number }>>([]);
+  const widthIdentityRef = useRef(collectionIdentity);
+  widthIdentityRef.current = collectionIdentity;
 
   /** A stored width wins; otherwise the width the table currently gives it. */
   function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
-    const stored = settings.widths?.[field];
+    const projected = columns.find(column => column.id === field)?.width;
+    const stored = pendingColumnWidths[field] ?? (projected != null ? clampColumnWidth(columnWidthToPx(projected)) : settings.widths?.[field]);
     if (stored !== undefined) return stored;
+    if (sizedGrid && drawnColumnWidths[field] !== undefined) return drawnColumnWidths[field];
     return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
   }
 
@@ -1290,16 +1309,49 @@ export function SheetShell(props: SheetShellProps) {
     return widths;
   }
 
-  /** The first sized column keeps every other column as it was drawn, instead
-   *  of handing them a default width the user never chose. */
-  function withColumnWidth(current: RowViewSettings, field: string, px: number, rendered: Record<string, number>): RowViewSettings {
-    const base = current.widths && Object.keys(current.widths).length > 0 ? current : { ...current, widths: rendered };
-    return rowViewWithWidth(base, field, px);
+  function captureDrawnWidths(): void {
+    if (onSetColumnWidth && !sizedGrid) setDrawnColumnWidths(renderedColumnWidths());
+  }
+
+  function commitColumnWidth(field: string, px: number, th: HTMLElement | null, startWidth?: number, rendered: Record<string, number> = renderedColumnWidths()): void {
+    const width = clampColumnWidth(px);
+    if (onSetColumnWidth && resizeChangesBlocked()) {
+      if (th && startWidth !== undefined) th.style.width = `${startWidth}px`;
+      return;
+    }
+    if (!onSetColumnWidth) {
+      updateGridSettings(current => rowViewWithWidth({ ...current, widths: { ...rendered, ...current.widths } }, field, width));
+      setPendingColumnWidths(current => { const next = { ...current }; delete next[field]; return next; });
+      return;
+    }
+    if (!view || !table) return;
+    const item = { occurrence: view.occurrence, collection: table.collection.key, field, width };
+    setDeferredWidths(current => [...current.filter(previous => !(previous.occurrence === item.occurrence && previous.collection === item.collection && previous.field === field)), item]);
+    setPendingColumnWidths(current => ({ ...current, [field]: width }));
+  }
+
+  function finishKeyboardResize(): void {
+    const session = keyboardResizeRef.current;
+    if (!session) return;
+    if (session.timer) clearTimeout(session.timer);
+    keyboardResizeRef.current = null;
+    commitColumnWidth(session.field, session.width, session.th, session.startWidth, session.rendered);
   }
 
   function resizeColumnBy(field: string, delta: number, th: HTMLElement | null): void {
-    const rendered = renderedColumnWidths();
-    updateGridSettings((current) => withColumnWidth(current, field, columnWidthOf(current, field, th) + delta, rendered));
+    if (onSetColumnWidth && resizeChangesBlocked()) return;
+    let session = keyboardResizeRef.current;
+    if (session && session.field !== field) { finishKeyboardResize(); session = null; }
+    if (!session) {
+      captureDrawnWidths();
+      const width = columnWidthOf(gridSettings, field, th);
+      session = { field, width, startWidth: width, th, timer: null, rendered: renderedColumnWidths() };
+      keyboardResizeRef.current = session;
+    }
+    if (session.timer) clearTimeout(session.timer);
+    session.timer = null;
+    session.width = clampColumnWidth(session.width + delta);
+    setPendingColumnWidths(current => ({ ...current, [field]: session!.width }));
   }
 
   function autoFitColumn(field: string, th: HTMLElement | null): void {
@@ -1318,18 +1370,22 @@ export function SheetShell(props: SheetShellProps) {
     // Distinct texts only, so repeated values are measured once.
     // The text the cell draws: number formats and "Calculation failed" included.
     const texts = [...new Set(displayRows.map((row) => cellDisplay(row, column).text))];
-    const rendered = renderedColumnWidths();
-    updateGridSettings((current) => withColumnWidth(current, field, autoFitWidth(texts, displayName, measure), rendered));
+    finishKeyboardResize();
+    captureDrawnWidths();
+    commitColumnWidth(field, autoFitWidth(texts, displayName, measure), th);
   }
 
   function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
     const th = event.currentTarget.closest("th");
+    if (onSetColumnWidth && resizeChangesBlocked()) { event.preventDefault(); event.stopPropagation(); return; }
     if (event.button !== 0 || !th) return;
     // The header owns its own gestures: never let a resize begin a rename or a
     // column-action menu. The press is not cancelled, so the double-click that
     // fits the column still arrives as a compatibility mouse event.
     event.stopPropagation();
+    finishKeyboardResize();
     const startWidth = columnWidthOf(gridSettings, field, th);
+    captureDrawnWidths();
     columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th, rendered: renderedColumnWidths() };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -1351,7 +1407,7 @@ export function SheetShell(props: SheetShellProps) {
     // A press without a move stores nothing: it must not turn every column of
     // a shared-width grid into a fixed one.
     if (session.width === session.startWidth) return;
-    updateGridSettings((current) => withColumnWidth(current, field, session.width, session.rendered));
+    commitColumnWidth(field, session.width, session.th, session.startWidth, session.rendered);
   }
 
   /** Losing the pointer without releasing it keeps the width it started with. */
@@ -4359,6 +4415,62 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  function resizeChangesBlocked(): boolean {
+    const ownSave = widthPublishingRef.current && !commitPending && currentness !== "unknown";
+    return (controlsLocked && !ownSave) || (currentness !== "current" && !ownSave) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
+  }
+  useEffect(() => {
+    setDeferredWidths([]);
+    setPendingColumnWidths({});
+    cancelColumnResize();
+    const keyboard = keyboardResizeRef.current;
+    if (keyboard?.timer) clearTimeout(keyboard.timer);
+    keyboardResizeRef.current = null;
+  }, [collectionIdentity]);
+  useEffect(() => {
+    if (widthPublishing || widthPublishingRef.current || columnChangesBlocked || !witness || !table || !onSetColumnWidth) return;
+    // Confirmed previews stay until the projection catches up. Never clear a
+    // newer keyboard/drag preview when an older publication arrives.
+    setPendingColumnWidths(current => {
+      const next = { ...current };
+      for (const column of columns) {
+        if (column.width != null && next[column.id] === clampColumnWidth(columnWidthToPx(column.width)) &&
+            keyboardResizeRef.current?.field !== column.id && columnResizeRef.current?.field !== column.id &&
+            !deferredWidths.some(item => item.field === column.id)) delete next[column.id];
+      }
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    const next = deferredWidths[0];
+    if (!next) return;
+    setDeferredWidths(current => current.filter(item => item !== next));
+    const stored = columns.find(column => column.id === next.field)?.width;
+    if (next.occurrence !== witness.occurrence || next.collection !== table.collection.key ||
+        (stored != null && next.width === clampColumnWidth(columnWidthToPx(stored)))) {
+      setPendingColumnWidths(current => {
+        if (current[next.field] !== next.width || keyboardResizeRef.current?.field === next.field || columnResizeRef.current?.field === next.field) return current;
+        const widths = { ...current }; delete widths[next.field]; return widths;
+      });
+      return;
+    }
+    const identity = collectionIdentity;
+    widthPublishingRef.current = true;
+    setWidthPublishing(true);
+    setColumnAnnouncement(null);
+    const failed = (message: string) => {
+      if (widthIdentityRef.current !== identity) return;
+      setColumnAnnouncement(message);
+      setPendingColumnWidths(current => {
+        if (current[next.field] !== next.width || keyboardResizeRef.current?.field === next.field || columnResizeRef.current?.field === next.field) return current;
+        const widths = { ...current }; delete widths[next.field]; return widths;
+      });
+    };
+    void onSetColumnWidth(witness, next.collection, next.field, columnWidthToUnits(next.width)).then(result => {
+      if (result.kind !== "confirmed") failed(result.kind === "refused" ? result.message : "Column width could not be changed.");
+    }).catch(() => failed("Column width could not be changed.")).finally(() => {
+      widthPublishingRef.current = false;
+      setWidthPublishing(false);
+    });
+  }, [deferredWidths, widthPublishing, columnChangesBlocked, witness, table, columns, collectionIdentity, onSetColumnWidth]);
   // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
   const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
@@ -4851,8 +4963,6 @@ export function SheetShell(props: SheetShellProps) {
     const salesCatalog = salesCatalogLayoutEligible(view!, salesCatalogLayout);
     // Widths belong to columns the grid shows; a resize is available wherever
     // the dense header actions are.
-    const columnWidths = gridSettings.widths;
-    const sizedGrid = columnWidths !== undefined && Object.keys(columnWidths).length > 0;
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
       <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
@@ -4861,7 +4971,7 @@ export function SheetShell(props: SheetShellProps) {
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
             <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }}>
               <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
@@ -4958,8 +5068,9 @@ export function SheetShell(props: SheetShellProps) {
                 className="ts-col-resize"
                 role="separator"
                 aria-orientation="vertical"
+                aria-disabled={Boolean(onSetColumnWidth && resizeChangesBlocked())}
                 aria-label={`Resize ${column.display_name}`}
-                aria-valuenow={columnWidths?.[column.id] ?? SIZED_COLUMN_DEFAULT_WIDTH}
+                aria-valuenow={columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined) ?? SIZED_COLUMN_DEFAULT_WIDTH}
                 aria-valuemin={COLUMN_WIDTH_MIN}
                 aria-valuemax={COLUMN_WIDTH_MAX}
                 tabIndex={0}
@@ -4969,6 +5080,14 @@ export function SheetShell(props: SheetShellProps) {
                 onPointerCancel={cancelColumnResize}
                 onDoubleClick={event => { event.stopPropagation(); autoFitColumn(column.id, event.currentTarget.closest("th")); }}
                 onKeyDown={event => onColumnResizeKeyDown(event, column.id)}
+                onKeyUp={event => {
+                  const session = keyboardResizeRef.current;
+                  if (session && session.field === column.id && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+                    if (session.timer) clearTimeout(session.timer);
+                    session.timer = setTimeout(finishKeyboardResize, 400);
+                  }
+                }}
+                onBlur={finishKeyboardResize}
               /> : null}
             </th>)}
           </tr>
