@@ -81,6 +81,7 @@ async function published(page, input, key, value, commitKey = "Enter") {
 }
 const cases = [
   ["copy from above and filter shortcuts", async (page) => {
+    const wait = async (label, promise) => { try { return await promise; } catch (error) { throw new Error(`${label}: ${error.message}`, { cause: error }); } };
     const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
     const entityAt = async index => rows.nth(index).locator("td[data-work-field]").first().getAttribute("data-work-entity");
     const [first, second] = [await entityAt(0), await entityAt(1)];
@@ -90,37 +91,47 @@ const cases = [
     const oldValue = await text(target);
     const sourceValue = oldValue === "37" ? "38" : "37";
     await above.dblclick(); await editor(page).fill(sourceValue); await editor(page).press("Enter");
-    await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.impact}`, sourceValue]);
+    await wait("source value committed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.impact}`, sourceValue]));
     let count = await dispatches(page);
     await target.focus(); await page.keyboard.press("ControlOrMeta+'");
-    await editor(page).waitFor(); assert.equal(await editor(page).inputValue(), sourceValue);
+    await wait("after Mod+quote editor opens", editor(page).waitFor()); assert.equal(await editor(page).inputValue(), sourceValue);
     await editor(page).press("Enter");
-    await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, sourceValue]);
+    await wait("copied value committed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, sourceValue]));
     assert.equal(await dispatches(page), count + 1);
     await page.getByRole("button", { name: "Undo", exact: true }).click();
-    await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, oldValue]);
+    await wait("undo restores target", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, oldValue]));
 
     const bar = page.getByTestId("formula-bar-input");
     count = await dispatches(page);
     await at(first, "priority").click(); await bar.fill("=C2*D2"); await bar.press("Enter");
-    await page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count);
+    await wait("formula committed", page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count));
     await at(second, "priority").focus(); count = await dispatches(page);
     await page.keyboard.press("ControlOrMeta+'");
-    await page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count);
-    await at(second, "priority").click();
-    assert.match(await bar.inputValue(), /impact.*friction/);
+    const status = page.locator(".ts-clipboard-status[role=status]");
+    const refusal = "This table cannot be filled here. Nothing was filled.";
+    await wait("copy formula refusal", page.getByText(refusal, { exact: true }).waitFor());
+    const copyMessage = await status.textContent();
+    const copyRequests = (await dispatches(page)) - count;
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("clear prior refusal", page.getByText("There is no cell above to copy.").first().waitFor());
+    await at(first, "priority").focus(); await page.keyboard.press("Shift+ArrowDown");
+    count = await dispatches(page); await page.keyboard.press("ControlOrMeta+D");
+    await wait("fill down refusal", page.getByText(refusal, { exact: true }).waitFor());
+    assert.equal(await status.textContent(), copyMessage);
+    assert.equal((await dispatches(page)) - count, copyRequests);
+    assert.equal(copyRequests, 0);
 
     count = await dispatches(page); await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
-    await page.getByText("There is no cell above to copy.").first().waitFor();
+    await wait("first row refusal", page.getByText("There is no cell above to copy.").first().waitFor());
     assert.equal(await dispatches(page), count);
 
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
     const filter = page.getByRole("textbox", { name: "Filter Impact", exact: true });
-    await filter.waitFor(); assert.equal(await focused(filter), true);
+    await wait("filter editor opens", filter.waitFor()); assert.equal(await focused(filter), true);
     await filter.fill(sourceValue); await filter.press("Enter");
-    await page.getByTestId("row-view-status").waitFor();
+    await wait("filter applied", page.getByTestId("row-view-status").waitFor());
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
-    await page.getByText("Filters cleared.").first().waitFor();
+    await wait("filters cleared", page.getByText("Filters cleared.").first().waitFor());
     assert.equal(await page.getByTestId("row-view-status").count(), 0);
   }],
   ["continuous boolean, numeric and Text typing; exact Enter publication", async (page) => {
