@@ -1248,6 +1248,16 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   const [pendingColumnWidths, setPendingColumnWidths] = useState<Record<string, number>>({});
+  // Widths other columns had on screen when the first width was set; view-only,
+  // never sent to Work, and gone on reopen.
+  const [drawnColumnWidths, setDrawnColumnWidths] = useState<Record<string, number>>({});
+  const columnWidths = Object.fromEntries(columns.flatMap(column => {
+    const width = pendingColumnWidths[column.id] ?? (column.width != null ? clampColumnWidth(columnWidthToPx(column.width)) : gridSettings.widths?.[column.id]);
+    return width === undefined ? [] : [[column.id, width]];
+  }));
+  const sizedGrid = Object.keys(columnWidths).length > 0;
+  useEffect(() => { if (!sizedGrid) setDrawnColumnWidths({}); }, [sizedGrid]);
+  useEffect(() => { setDrawnColumnWidths({}); }, [collectionIdentity]);
   // A drag previews on the header cell itself and commits one width on release.
   const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement } | null>(null);
   const keyboardResizeRef = useRef<{ field: string; width: number; startWidth: number; th: HTMLElement | null; timer: ReturnType<typeof setTimeout> | null } | null>(null);
@@ -1257,7 +1267,23 @@ export function SheetShell(props: SheetShellProps) {
     const projected = columns.find(column => column.id === field)?.width;
     const stored = pendingColumnWidths[field] ?? (projected != null ? clampColumnWidth(columnWidthToPx(projected)) : settings.widths?.[field]);
     if (stored !== undefined) return stored;
+    if (sizedGrid && drawnColumnWidths[field] !== undefined) return drawnColumnWidths[field];
     return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
+  }
+
+  /** Every column's width as drawn now, in column order after the row gutter. */
+  function renderedColumnWidths(): Record<string, number> {
+    const headers = gridScrollRef.current?.querySelectorAll<HTMLElement>("thead th.ts-column-header") ?? [];
+    const widths: Record<string, number> = {};
+    columns.forEach((column, index) => {
+      const th = headers[index];
+      if (th) widths[column.id] = clampColumnWidth(th.getBoundingClientRect().width);
+    });
+    return widths;
+  }
+
+  function captureDrawnWidths(): void {
+    if (onSetColumnWidth && !sizedGrid) setDrawnColumnWidths(renderedColumnWidths());
   }
 
   function commitColumnWidth(field: string, px: number, th: HTMLElement | null, startWidth?: number): void {
@@ -1302,6 +1328,7 @@ export function SheetShell(props: SheetShellProps) {
     let session = keyboardResizeRef.current;
     if (session && session.field !== field) { finishKeyboardResize(); session = null; }
     if (!session) {
+      captureDrawnWidths();
       const width = columnWidthOf(gridSettings, field, th);
       session = { field, width, startWidth: width, th, timer: null };
       keyboardResizeRef.current = session;
@@ -1329,6 +1356,7 @@ export function SheetShell(props: SheetShellProps) {
     // The text the cell draws: number formats and "Calculation failed" included.
     const texts = [...new Set(displayRows.map((row) => cellDisplay(row, column).text))];
     finishKeyboardResize();
+    captureDrawnWidths();
     commitColumnWidth(field, autoFitWidth(texts, displayName, measure), th);
   }
 
@@ -1341,6 +1369,7 @@ export function SheetShell(props: SheetShellProps) {
     // fits the column still arrives as a compatibility mouse event.
     event.stopPropagation();
     const startWidth = columnWidthOf(gridSettings, field, th);
+    captureDrawnWidths();
     columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -4815,11 +4844,6 @@ export function SheetShell(props: SheetShellProps) {
     const salesCatalog = salesCatalogLayoutEligible(view!, salesCatalogLayout);
     // Widths belong to columns the grid shows; a resize is available wherever
     // the dense header actions are.
-    const columnWidths = Object.fromEntries(columns.flatMap(column => {
-      const width = pendingColumnWidths[column.id] ?? (column.width != null ? clampColumnWidth(columnWidthToPx(column.width)) : gridSettings.widths?.[column.id]);
-      return width === undefined ? [] : [[column.id, width]];
-    }));
-    const sizedGrid = Object.keys(columnWidths).length > 0;
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
       <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
@@ -4828,7 +4852,7 @@ export function SheetShell(props: SheetShellProps) {
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
             <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }}>
               <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
@@ -4927,7 +4951,7 @@ export function SheetShell(props: SheetShellProps) {
                 aria-orientation="vertical"
                 aria-disabled={Boolean(onSetColumnWidth && columnChangesBlocked)}
                 aria-label={`Resize ${column.display_name}`}
-                aria-valuenow={columnWidths?.[column.id] ?? SIZED_COLUMN_DEFAULT_WIDTH}
+                aria-valuenow={columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined) ?? SIZED_COLUMN_DEFAULT_WIDTH}
                 aria-valuemin={COLUMN_WIDTH_MIN}
                 aria-valuemax={COLUMN_WIDTH_MAX}
                 tabIndex={0}

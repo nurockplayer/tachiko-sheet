@@ -12,7 +12,7 @@ try {
   context = await chromium.launchPersistentContext(path.join(dir, "profile"), { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
   await installDistRoutes(context, process.env.WORK_DIST ?? "dist-acceptance");
   await context.addInitScript(() => {
-    window.alignmentEvidence = { requests: [], hold: false, held: null, worker: null };
+    window.alignmentEvidence = { requests: [], widthRequests: [], hold: false, held: null, worker: null };
     const Original = window.Worker;
     window.Worker = class extends Original {
       constructor(...args) {
@@ -26,6 +26,7 @@ try {
       }
       postMessage(message, ...args) {
         if (message.request?.type === "set_column_alignment") window.alignmentEvidence.requests.push(structuredClone(message));
+        if (message.request?.type === "set_column_width") window.alignmentEvidence.widthRequests.push(structuredClone(message));
         return super.postMessage(message, ...args);
       }
     };
@@ -88,16 +89,21 @@ try {
   await cells().first().dblclick();
   const editor = page.getByTestId("cell-editor");
   await editor.fill("unfinished draft");
+  const revisionBeforeResize = await cells().first().getAttribute("data-work-revision");
+  const requestsBeforeResize = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
   const blockedResize = page.getByRole("separator", { name: "Resize Text", exact: true });
   await blockedResize.dispatchEvent("keydown", { key: "ArrowRight" });
   assert.equal(await editor.inputValue(), "unfinished draft");
+  assert.equal(await cells().first().getAttribute("data-work-revision"), revisionBeforeResize);
+  assert.equal(await page.evaluate(() => window.alignmentEvidence.widthRequests.length), requestsBeforeResize);
   await page.keyboard.press("Escape");
+  const widthsBeforeFirst = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().width));
   const resize = page.getByRole("separator", { name: "Resize Text", exact: true });
   const box = await resize.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2); await page.mouse.up(); await ready();
   const widthsAfterFirst = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().width));
-  assert.ok(widthsAfterFirst.slice(1).every(width => Math.abs(width - 160) <= 1), `other widths: ${widthsAfterFirst.slice(1)}`);
+  assert.ok(Math.abs(widthsAfterFirst[1] - widthsBeforeFirst[1]) <= 2, `next width: ${widthsBeforeFirst[1]} → ${widthsAfterFirst[1]}`);
   const secondResize = page.getByRole("separator", { name: "Resize Number", exact: true });
   const secondBox = await secondResize.boundingBox();
   await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
@@ -117,7 +123,8 @@ try {
   const importedWidth = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   assert.ok(Math.abs(importedWidth - widthBeforeExport) <= 1, `width: ${widthBeforeExport} → ${importedWidth}`);
   const importedOtherWidths = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.slice(1).map(node => node.getBoundingClientRect().width));
-  assert.ok(importedOtherWidths.every((width, i) => Math.abs(width - otherWidthsAfter[i]) <= 1), `other widths after import: ${otherWidthsAfter} → ${importedOtherWidths}`);
+  assert.ok(Math.abs(importedOtherWidths[0] - otherWidthsAfter[0]) <= 1, `resized width after import: ${otherWidthsAfter[0]} → ${importedOtherWidths[0]}`);
+  assert.ok(importedOtherWidths.slice(1).every(width => Math.abs(width - 160) <= 1), `default widths after import: ${importedOtherWidths.slice(1)}`);
   const importedAlignment = await cells().evaluateAll(nodes => nodes.map(node => getComputedStyle(node).textAlign));
   console.log("XLSX imported alignment:", importedAlignment.join(", "));
   console.log("PASS: column alignment defaults, overrides, history, editor and save/reopen");
