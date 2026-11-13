@@ -982,7 +982,8 @@ body { margin: 0; }
 }
 
 .ts-header-actions {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
@@ -3362,3 +3363,13 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
   --ts-chart-7: #9085e9;
   --ts-chart-8: #e66767;
 }
+
+.ts-shortcut-help-body { overflow-y: auto; min-height: 0; margin-top: 16px; overscroll-behavior: contain; }
+.ts-shortcut-help-body section + section { margin-top: 16px; }
+.ts-shortcut-help-body h3 { font-size: 1rem; margin: 0 0 6px; }
+.ts-shortcut-help-body dl { margin: 0; }
+.ts-shortcut-help-body dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 3px 0; }
+.ts-shortcut-help-body dt, .ts-shortcut-help-body dd { margin: 0; overflow-wrap: anywhere; }
+.ts-shortcut-help-body kbd { font: inherit; border: 1px solid var(--ts-line); border-radius: 3px; padding: 0 3px; }
+@media (max-width: 599px) { .ts-shortcut-help-desktop { display: none; } }
+@media (forced-colors: active) { .ts-shortcut-help-body kbd { border-color: CanvasText; } }
