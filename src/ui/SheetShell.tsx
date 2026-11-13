@@ -1187,8 +1187,11 @@ export function SheetShell(props: SheetShellProps) {
   // anything else could have copied: another copy or cut here (this capture runs
   // before copyGrid sets the ref), or the window losing focus.
   useEffect(() => {
-    const forget = () => { copiedFormulaRef.current = null; };
-    const blur = () => { forget(); setCopiedArea(null); };
+    const forget = (event: Event) => {
+      copiedFormulaRef.current = null;
+      if (!clipboardPosition(event.target)) setCopiedArea(null);
+    };
+    const blur = () => { copiedFormulaRef.current = null; setCopiedArea(null); };
     window.addEventListener("copy", forget, true);
     window.addEventListener("cut", forget, true);
     window.addEventListener("blur", blur);
