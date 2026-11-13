@@ -110,22 +110,24 @@ const cases = [
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
     const priorFormulaValue = await text(at(second, "priority"));
-    const priorRevision = (await state(page)).revision;
+    const priorRevision = await at(second, "priority").getAttribute("data-work-revision");
     await at(second, "priority").focus(); count = await dispatches(page);
     await page.keyboard.press("ControlOrMeta+'");
     const status = page.locator(".ts-clipboard-status[role=status]");
-    await wait("copy formula announcement", page.waitForFunction(async ([count, revision]) =>
+    await wait("copy formula announcement", page.waitForFunction(([count, revision, id]) =>
       document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim() === "Filled 1 cell. Save to keep these changes." &&
       window.__tachikoAcceptance.executeRequestCount() === count + 1 &&
-      (await window.__tachikoAcceptance.runtimeSnapshot()).revision !== revision, [count, priorRevision]));
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current", [count, priorRevision, `cell:${second}:${fields.priority}`]));
     const copyMessage = await status.textContent();
     const copyRequests = (await dispatches(page)) - count;
     assert.equal(copyRequests, 1, "formula shortcut dispatches once");
-    const filledRevision = (await state(page)).revision;
+    const filledRevision = await at(second, "priority").getAttribute("data-work-revision");
     await page.keyboard.press("ControlOrMeta+Z");
-    await wait("undo formula copy", page.waitForFunction(async ([id, value, revision]) =>
+    await wait("undo formula copy", page.waitForFunction(([id, value, revision]) =>
       document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value &&
-      (await window.__tachikoAcceptance.runtimeSnapshot()).revision !== revision,
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
     [`cell:${second}:${fields.priority}`, priorFormulaValue, filledRevision]));
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("clear prior announcement", page.getByText("There is no cell above to copy.").first().waitFor());
