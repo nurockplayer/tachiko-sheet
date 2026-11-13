@@ -115,22 +115,23 @@ const cases = [
     await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
     const priorFormulaValue = await text(at(second, "priority"));
     const priorRevision = await at(second, "priority").getAttribute("data-work-revision");
-    await at(second, "priority").focus(); count = await dispatches(page);
+    const formulaCopies = () => page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0);
+    await at(second, "priority").focus(); count = await formulaCopies();
     await page.keyboard.press("ControlOrMeta+'");
     const status = page.locator(".ts-clipboard-status[role=status]");
     await wait("copy formula announcement", page.waitForFunction(([count, revision, id]) =>
       document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim() === "Filled 1 cell. Save to keep these changes." &&
-      window.__tachikoAcceptance.executeRequestCount() === count + 1 &&
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1 &&
       document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
       document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current", [count, priorRevision, `cell:${second}:${fields.priority}`]).catch(async error => {
         const observed = await page.evaluate(id => {
           const cell = document.querySelector(`[data-testid="${id}"]`);
-          return { message: document.querySelector(".ts-clipboard-status[role=status]")?.textContent, requests: window.__tachikoAcceptance.executeRequestCount(), revision: cell?.getAttribute("data-work-revision"), currentness: cell?.getAttribute("data-work-currentness") };
+          return { message: document.querySelector(".ts-clipboard-status[role=status]")?.textContent, requests: window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0, revision: cell?.getAttribute("data-work-revision"), currentness: cell?.getAttribute("data-work-currentness") };
         }, `cell:${second}:${fields.priority}`);
         throw new Error(`${error.message}; before=${JSON.stringify({ count, priorRevision })}; observed=${JSON.stringify(observed)}`);
       }));
     const copyMessage = await status.textContent();
-    const copyRequests = (await dispatches(page)) - count;
+    const copyRequests = (await formulaCopies()) - count;
     assert.equal(copyRequests, 1, "formula shortcut dispatches once");
     const filledRevision = await at(second, "priority").getAttribute("data-work-revision");
     await page.keyboard.press("ControlOrMeta+Z");
@@ -142,12 +143,12 @@ const cases = [
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("clear prior announcement", page.getByText("There is no cell above to copy.").first().waitFor());
     await at(first, "priority").click(); await page.keyboard.press("Shift+ArrowDown");
-    count = await dispatches(page); await page.keyboard.press("ControlOrMeta+D");
+    count = await formulaCopies(); await page.keyboard.press("ControlOrMeta+D");
     await wait("fill down announcement", page.waitForFunction(([count, message]) =>
       document.querySelector(".ts-clipboard-status[role=status]")?.textContent === message &&
-      window.__tachikoAcceptance.executeRequestCount() === count + 1, [count, copyMessage]));
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1, [count, copyMessage]));
     assert.equal(await status.textContent(), copyMessage);
-    assert.equal((await dispatches(page)) - count, copyRequests, "fill down matches formula shortcut request count");
+    assert.equal((await formulaCopies()) - count, copyRequests, "fill down matches formula shortcut request count");
 
     count = await dispatches(page); await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("first row refusal", page.getByText("There is no cell above to copy.").first().waitFor());
