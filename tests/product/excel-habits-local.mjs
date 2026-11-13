@@ -358,6 +358,7 @@ const cases = [
     await dragCells(page, id(0, 0), id(2, 3));
     await page.keyboard.press("Control+c");
     await settle(page);
+    assert.equal(await page.locator(".ts-cell--copied").count(), 12, "copy did not outline all twelve cells");
     const copied = await clipboard(page);
     assert.deepEqual(copied.split(/\r?\n/).map((line) => line.split("\t").length), [4, 4, 4], "the copied block is not three rows of four columns");
     await page.getByTestId(id(0, 4)).click();
@@ -366,6 +367,14 @@ const cases = [
     const after = await projection(page);
     assert.equal(await cellText(page, after, 0, 4), "a1", "the pasted block did not start at the destination cell");
     assert.equal(await cellText(page, after, 2, 7), "d", "the pasted block did not keep its rectangle");
+    assert.equal(await page.locator(".ts-cell--copied").count(), 12, "paste cleared the copied outline");
+    await dragCells(page, id(0, 4), id(2, 7));
+    assert.equal(await page.locator(".ts-cell--range-selected").count(), 12, "destination range was not selected");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Escape did not clear the copied outline");
+    assert.equal(await page.locator(".ts-cell--range-selected").count(), 12, "first Escape cleared the range selection");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator(".ts-cell--range-selected").count(), 0, "second Escape did not clear the range selection");
   } },
   { id: "14", name: "Cut/paste", tier: "A", run: async (page) => {
     await example(page);

@@ -48,6 +48,7 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
+import { copiedEdges } from "./copied-area.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate, tabRunAfterMove, tabRunEnterTarget } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
@@ -1185,22 +1186,37 @@ export function SheetShell(props: SheetShellProps) {
   const clipboardIdentityRef = useRef(collectionIdentity);
   clipboardIdentityRef.current = collectionIdentity;
   const copiedFormulaRef = useRef<CopiedFormula & { identity: string | null } | null>(null);
+  const [copiedArea, setCopiedArea] = useState<{ identity: string | null; revision: string | undefined; area: CellRectangle } | null>(null);
+  const [pasteRebind, setPasteRebind] = useState<typeof copiedArea>(null);
   // The clipboard's text can't say who wrote it, so the copy is only trusted until
   // anything else could have copied: another copy or cut here (this capture runs
   // before copyGrid sets the ref), or the window losing focus.
   useEffect(() => {
-    const forget = () => { copiedFormulaRef.current = null; };
+    const forget = (event: Event) => {
+      copiedFormulaRef.current = null;
+      if (!clipboardPosition(event.target)) setCopiedArea(null);
+    };
+    const blur = () => { copiedFormulaRef.current = null; setCopiedArea(null); };
     window.addEventListener("copy", forget, true);
     window.addEventListener("cut", forget, true);
-    window.addEventListener("blur", forget);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("copy", forget, true);
       window.removeEventListener("cut", forget, true);
-      window.removeEventListener("blur", forget);
+      window.removeEventListener("blur", blur);
     };
   }, []);
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
+  const boundCopiedArea = copiedArea?.identity === collectionIdentity && copiedArea?.revision === view?.revision ? copiedArea.area : null;
+  useEffect(() => {
+    if (!pasteRebind) return;
+    if (copiedArea !== pasteRebind || collectionIdentity !== pasteRebind.identity) { setPasteRebind(null); return; }
+    if (view?.revision !== pasteRebind.revision) {
+      setCopiedArea({ ...pasteRebind, revision: view?.revision });
+      setPasteRebind(null);
+    }
+  }, [pasteRebind, copiedArea, collectionIdentity, view?.revision]);
   // The cells the open formula draft names, outlined as Excel does while typing.
   // Only a number cell's editor can hold a formula, and the new row's draft is
   // an ordinary row entry: text there is never a formula, whatever it looks like.
@@ -1481,6 +1497,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", encodeTsv(rows));
+      setCopiedArea(position.entity === DRAFT_ROW ? null : { identity: collectionIdentity, revision: view?.revision, area: selectionRectangle ?? rectangle(address(position), address(position)) });
       const rowIndex = rowIndexByEntity.get(position.entity);
       const row = rowIndex === undefined ? undefined : displayRows[rowIndex];
       const field = position.entity === DRAFT_ROW || !row ? undefined : fieldForColumn(row, position.field);
@@ -1510,9 +1527,11 @@ export function SheetShell(props: SheetShellProps) {
       if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", text);
-      if (!edits.length) { announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
+      if (!edits.length) { setCopiedArea(null); announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
+      const cutArea = { identity: collectionIdentity, revision: view?.revision, area };
+      setCopiedArea(cutArea);
       keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-      void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut");
+      void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut").finally(() => setCopiedArea(current => current === cutArea ? null : current));
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? (error.message === FORMULA_BAR_GUIDANCE ? `${error.message} Nothing was cut.` : error.message) : explain(error, "Cut could not access the clipboard."), true, true); }
   }
 
@@ -1536,6 +1555,7 @@ export function SheetShell(props: SheetShellProps) {
   /** The decoded block a paste writes: the same work whether the event or the cell menu started it. */
   function pasteDecoded(position: GridPosition, decoded: string[][], valuesOnly = false): void {
     if (!view || !witness || !table) return;
+    const pasteSource = boundCopiedArea ? copiedArea : null;
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
@@ -1551,7 +1571,7 @@ export function SheetShell(props: SheetShellProps) {
         if (plan) {
           if (plan.kind === "unchanged") { announceClipboard("The selected cells are unchanged.", false, true); return; }
           keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste");
+          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => { if (confirmed && pasteSource) setPasteRebind(pasteSource); });
           return;
         }
       } catch (error) {
@@ -1618,6 +1638,7 @@ export function SheetShell(props: SheetShellProps) {
       : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
+      if (result.kind === "confirmed" && pasteSource) setPasteRebind(pasteSource);
       // Appended rows stay visible under the active filter, as Add row does.
       if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
@@ -2454,6 +2475,7 @@ export function SheetShell(props: SheetShellProps) {
     focusRejectedEditorRef.current = null;
     setLocalError(null);
     setSelectedEntity(entity);
+    setCopiedArea(null);
     setEditor({
       entity,
       field: slot.target.field,
@@ -2483,6 +2505,7 @@ export function SheetShell(props: SheetShellProps) {
     const original = boundRowDraft?.values[column.id] ?? "";
     selectEditorValueOnFocusRef.current = seed === undefined;
     focusRejectedEditorRef.current = null;
+    setCopiedArea(null);
     setEditor({ entity: DRAFT_ROW, field: column.id, kind, original, value: seed ?? original, instance: ++editorInstanceRef.current });
     if (seed !== undefined) changeRowDraft(column.id, seed);
   }
@@ -3316,7 +3339,7 @@ export function SheetShell(props: SheetShellProps) {
       if (!event.repeat) fillDown();
       return;
     }
-    if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
+    if (!draft && event.key === "Escape") { event.preventDefault(); if (boundCopiedArea) setCopiedArea(null); else setCellSelection(null); return; }
     const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
     const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
     const selectionIdentity = view && collectionIdentity && displayRows.length > 0 && columns.length > 0 ? { view, identity: collectionIdentity } : null;
@@ -5331,6 +5354,8 @@ export function SheetShell(props: SheetShellProps) {
       && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right);
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
+    const edges = !draft && boundCopiedArea ? copiedEdges(boundCopiedArea, coordinate.row, coordinate.column) : null;
+    if (edges) classes.push("ts-cell--copied", ...edges.map(edge => `ts-cell--copied-${edge}`));
     if (formulaReferenced) classes.push("ts-cell--formula-ref");
     if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
