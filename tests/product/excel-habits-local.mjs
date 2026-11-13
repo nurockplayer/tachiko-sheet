@@ -358,6 +358,7 @@ const cases = [
     await dragCells(page, id(0, 0), id(2, 3));
     await page.keyboard.press("Control+c");
     await settle(page);
+    assert.equal(await page.locator(".ts-cell--copied").count(), 12, "copy did not outline all twelve cells");
     const copied = await clipboard(page);
     assert.deepEqual(copied.split(/\r?\n/).map((line) => line.split("\t").length), [4, 4, 4], "the copied block is not three rows of four columns");
     await page.getByTestId(id(0, 4)).click();
@@ -366,6 +367,14 @@ const cases = [
     const after = await projection(page);
     assert.equal(await cellText(page, after, 0, 4), "a1", "the pasted block did not start at the destination cell");
     assert.equal(await cellText(page, after, 2, 7), "d", "the pasted block did not keep its rectangle");
+    assert.equal(await page.locator(".ts-cell--copied").count(), 12, "paste cleared the copied outline");
+    await dragCells(page, id(0, 4), id(2, 7));
+    assert.equal(await page.locator(".ts-cell--range-selected").count(), 12, "destination range was not selected");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Escape did not clear the copied outline");
+    assert.equal(await page.locator(".ts-cell--range-selected").count(), 12, "first Escape cleared the range selection");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator(".ts-cell--range-selected").count(), 0, "second Escape did not clear the range selection");
   } },
   { id: "14", name: "Cut/paste", tier: "A", run: async (page) => {
     await example(page);
@@ -1607,6 +1616,34 @@ const cases = [
     await page.keyboard.press("Control+PageUp");
     await settle(page);
     assert.equal(await active(), first, "Ctrl+PageUp did not return to the previous table");
+    // P2: shortcut help keeps the focused cell and the editor draft intact.
+    const cell = page.getByTestId(cellIdFor(table, 0, 0));
+    await cell.click();
+    const before = await executeCount(page);
+    const undo = await page.getByRole("button", { name: "Undo", exact: true }).first().isDisabled();
+    await page.keyboard.press("Control+/");
+    const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
+    assert.equal(await activeId(page), await cell.getAttribute("data-testid"), "focus did not return to cell");
+    assert.equal(await executeCount(page), before, "help changed data");
+    assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).first().isDisabled(), undo, "help changed undo availability");
+    await cell.press("F2");
+    const editor = page.getByTestId("cell-editor");
+    await editor.waitFor();
+    const draft = await editor.inputValue();
+    await page.keyboard.press("Control+/");
+    assert.equal(await dialog.count(), 0, "help opened while editing");
+    assert.equal(await editor.inputValue(), draft, "help changed the draft");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Keyboard shortcuts", exact: true }).filter({ visible: true }).click();
+    await dialog.waitFor();
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.getByLabel("More document commands").click();
+    await page.getByRole("button", { name: "Keyboard shortcuts", exact: true }).filter({ visible: true }).click();
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
   } },
   { id: "47", name: "Format Cells", tier: "B", run: async (page) => {
     await example(page);

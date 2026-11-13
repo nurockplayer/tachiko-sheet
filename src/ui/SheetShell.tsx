@@ -48,6 +48,7 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
+import { copiedEdges } from "./copied-area.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate, tabRunAfterMove, tabRunEnterTarget } from "./grid-navigation.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
@@ -63,6 +64,7 @@ import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
 import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
+import { ShortcutHelpDialog } from "./ShortcutHelpDialog.js";
 import { DeleteTableDialog } from "./DeleteTableDialog.js";
 import { RenameTableDialog } from "./RenameTableDialog.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
@@ -745,6 +747,10 @@ export function SheetShell(props: SheetShellProps) {
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const [shortcutHelp, setShortcutHelp] = useState(false);
+  const shortcutHelpOriginRef = useRef<HTMLElement | null>(null);
+  function openShortcutHelp(origin: HTMLElement | null) { shortcutHelpOriginRef.current = origin; setShortcutHelp(true); }
+  function closeShortcutHelp() { setShortcutHelp(false); requestAnimationFrame(() => shortcutHelpOriginRef.current?.focus()); }
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
@@ -1180,22 +1186,37 @@ export function SheetShell(props: SheetShellProps) {
   const clipboardIdentityRef = useRef(collectionIdentity);
   clipboardIdentityRef.current = collectionIdentity;
   const copiedFormulaRef = useRef<CopiedFormula & { identity: string | null } | null>(null);
+  const [copiedArea, setCopiedArea] = useState<{ identity: string | null; revision: string | undefined; area: CellRectangle } | null>(null);
+  const [pasteRebind, setPasteRebind] = useState<typeof copiedArea>(null);
   // The clipboard's text can't say who wrote it, so the copy is only trusted until
   // anything else could have copied: another copy or cut here (this capture runs
   // before copyGrid sets the ref), or the window losing focus.
   useEffect(() => {
-    const forget = () => { copiedFormulaRef.current = null; };
+    const forget = (event: Event) => {
+      copiedFormulaRef.current = null;
+      if (!clipboardPosition(event.target)) setCopiedArea(null);
+    };
+    const blur = () => { copiedFormulaRef.current = null; setCopiedArea(null); };
     window.addEventListener("copy", forget, true);
     window.addEventListener("cut", forget, true);
-    window.addEventListener("blur", forget);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("copy", forget, true);
       window.removeEventListener("cut", forget, true);
-      window.removeEventListener("blur", forget);
+      window.removeEventListener("blur", blur);
     };
   }, []);
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
+  const boundCopiedArea = copiedArea?.identity === collectionIdentity && copiedArea?.revision === view?.revision ? copiedArea.area : null;
+  useEffect(() => {
+    if (!pasteRebind) return;
+    if (copiedArea !== pasteRebind || collectionIdentity !== pasteRebind.identity) { setPasteRebind(null); return; }
+    if (view?.revision !== pasteRebind.revision) {
+      setCopiedArea({ ...pasteRebind, revision: view?.revision });
+      setPasteRebind(null);
+    }
+  }, [pasteRebind, copiedArea, collectionIdentity, view?.revision]);
   // The cells the open formula draft names, outlined as Excel does while typing.
   // Only a number cell's editor can hold a formula, and the new row's draft is
   // an ordinary row entry: text there is never a formula, whatever it looks like.
@@ -1537,6 +1558,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", encodeTsv(rows));
+      setCopiedArea(position.entity === DRAFT_ROW ? null : { identity: collectionIdentity, revision: view?.revision, area: selectionRectangle ?? rectangle(address(position), address(position)) });
       const rowIndex = rowIndexByEntity.get(position.entity);
       const row = rowIndex === undefined ? undefined : displayRows[rowIndex];
       const field = position.entity === DRAFT_ROW || !row ? undefined : fieldForColumn(row, position.field);
@@ -1566,9 +1588,11 @@ export function SheetShell(props: SheetShellProps) {
       if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
       if (!event.clipboardData) throw new Error("No clipboard data");
       event.clipboardData.setData("text/plain", text);
-      if (!edits.length) { announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
+      if (!edits.length) { setCopiedArea(null); announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
+      const cutArea = { identity: collectionIdentity, revision: view?.revision, area };
+      setCopiedArea(cutArea);
       keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-      void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut");
+      void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut").finally(() => setCopiedArea(current => current === cutArea ? null : current));
     } catch (error) { announceClipboard(error instanceof CellClearRefusal ? (error.message === FORMULA_BAR_GUIDANCE ? `${error.message} Nothing was cut.` : error.message) : explain(error, "Cut could not access the clipboard."), true, true); }
   }
 
@@ -1592,6 +1616,7 @@ export function SheetShell(props: SheetShellProps) {
   /** The decoded block a paste writes: the same work whether the event or the cell menu started it. */
   function pasteDecoded(position: GridPosition, decoded: string[][], valuesOnly = false): void {
     if (!view || !witness || !table) return;
+    const pasteSource = boundCopiedArea ? copiedArea : null;
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
@@ -1607,7 +1632,7 @@ export function SheetShell(props: SheetShellProps) {
         if (plan) {
           if (plan.kind === "unchanged") { announceClipboard("The selected cells are unchanged.", false, true); return; }
           keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste");
+          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => { if (confirmed && pasteSource) setPasteRebind(pasteSource); });
           return;
         }
       } catch (error) {
@@ -1674,6 +1699,7 @@ export function SheetShell(props: SheetShellProps) {
       : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
+      if (result.kind === "confirmed" && pasteSource) setPasteRebind(pasteSource);
       // Appended rows stay visible under the active filter, as Add row does.
       if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
@@ -2072,7 +2098,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = shortcutHelp || deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -2510,6 +2536,7 @@ export function SheetShell(props: SheetShellProps) {
     focusRejectedEditorRef.current = null;
     setLocalError(null);
     setSelectedEntity(entity);
+    setCopiedArea(null);
     setEditor({
       entity,
       field: slot.target.field,
@@ -2539,6 +2566,7 @@ export function SheetShell(props: SheetShellProps) {
     const original = boundRowDraft?.values[column.id] ?? "";
     selectEditorValueOnFocusRef.current = seed === undefined;
     focusRejectedEditorRef.current = null;
+    setCopiedArea(null);
     setEditor({ entity: DRAFT_ROW, field: column.id, kind, original, value: seed ?? original, instance: ++editorInstanceRef.current });
     if (seed !== undefined) changeRowDraft(column.id, seed);
   }
@@ -3372,7 +3400,7 @@ export function SheetShell(props: SheetShellProps) {
       if (!event.repeat) fillDown();
       return;
     }
-    if (!draft && event.key === "Escape") { event.preventDefault(); setCellSelection(null); return; }
+    if (!draft && event.key === "Escape") { event.preventDefault(); if (boundCopiedArea) setCopiedArea(null); else setCellSelection(null); return; }
     const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
     const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
     const selectionIdentity = view && collectionIdentity && displayRows.length > 0 && columns.length > 0 ? { view, identity: collectionIdentity } : null;
@@ -4044,6 +4072,17 @@ export function SheetShell(props: SheetShellProps) {
       }
       setFind((current) => current ?? { query: "", active: null });
       requestAnimationFrame(() => { findInputRef.current?.focus(); findInputRef.current?.select(); });
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || (event.key !== "/" && event.code !== "Slash") || editor || formulaDraft || modalInteractionOpen || document.querySelector('[aria-modal="true"]')) return;
+      event.preventDefault();
+      openShortcutHelp(document.activeElement instanceof HTMLElement ? document.activeElement : null);
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
@@ -4726,6 +4765,7 @@ export function SheetShell(props: SheetShellProps) {
         Close project
       </button>
     );
+    const helpButton = (className: string) => <button type="button" className={className} title={`Keyboard shortcuts (${menuShortcut("/", isMacPlatform())})`} onClick={event => openShortcutHelp(event.currentTarget)}>Keyboard shortcuts</button>;
     return (
       <div className="ts-actions ts-header-actions" role="group" aria-label="Document commands">
         <button
@@ -4777,12 +4817,14 @@ export function SheetShell(props: SheetShellProps) {
           Save a copy
         </button>
         {view?.openedFromWorkFile && workFileSaveUnavailableReason ? <span className="ts-hint" id={saveUnavailableId}>{saveUnavailableReason}</span> : null}
+        {helpButton("ts-button ts-button--ghost ts-shortcut-help-desktop")}
         {closeButton("ts-button ts-close-project-desktop")}
         <details className="ts-command-overflow">
           <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
           <div className="ts-command-menu">
             <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
             <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
+            {helpButton("ts-button ts-button--ghost")}
             {closeButton("ts-button ts-button--ghost")}
           </div>
         </details>
@@ -5380,6 +5422,8 @@ export function SheetShell(props: SheetShellProps) {
       && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right);
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
+    const edges = !draft && boundCopiedArea ? copiedEdges(boundCopiedArea, coordinate.row, coordinate.column) : null;
+    if (edges) classes.push("ts-cell--copied", ...edges.map(edge => `ts-cell--copied-${edge}`));
     if (formulaReferenced) classes.push("ts-cell--formula-ref");
     if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
@@ -6216,6 +6260,7 @@ export function SheetShell(props: SheetShellProps) {
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog onDraftChange={setRenameTableDraftActive} initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); setRenameTableDraftActive(false); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
+      {shortcutHelp ? <ShortcutHelpDialog mac={isMacPlatform()} desktop={import.meta.env.MODE === "desktop"} onClose={closeShortcutHelp} /> : null}
       {deleteTable && onDeleteTable ? <DeleteTableDialog name={deleteTable.name} onDelete={() => onDeleteTable(deleteTable.witness, deleteTable.key)} onClose={() => { const key = deleteTable.key; setDeleteTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
       {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={(confirmed, focusInside) => finishColumnDialog(confirmed, confirmed, focusInside)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
       {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {

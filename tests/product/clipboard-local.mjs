@@ -180,6 +180,8 @@ try {
   assert.equal(await copy(cell(table, 1, 2)), expectedCopy);
   assert.equal(await status().filter({ hasText: "Copied 2 rows." }).getAttribute("role"), "status", "copy remains polite");
   await capture("selection");
+  // Excel: the first Esc only drops the copied outline; the second clears the selection.
+  await page.keyboard.press("Escape"); assert.equal(await page.locator('.ts-cell--copied').count(), 0); assert.equal(await page.locator('.ts-cell--range-selected').count(), 6);
   await page.keyboard.press("Escape"); assert.equal(await page.locator('.ts-cell--range-selected').count(), 0);
   await cell(table, 0, 0).click(); await cell(table, 1, 2).click({ modifiers: ["Shift"] });
   assert.equal(await copy(cell(table, 1, 2)), expectedCopy, "Shift-click creates the same rectangle");

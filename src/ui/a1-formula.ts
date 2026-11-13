@@ -194,7 +194,7 @@ export function a1RefusalText(input: {
     case "unsupported_criterion":
       return `${subject("That condition")}isn't supported. Use a written number, a blank condition, or a cell reference in SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS.`;
     case "unsupported_function":
-      return `${subject("That function")}isn't available. Formulas can use IF, AND, OR, NOT, ROUND, ISBLANK, MIN, MAX, SUM, AVERAGE or COUNT over a whole column, and SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS over whole columns.`;
+      return `${subject("That function")}isn't available. Formulas can use SUM, AVERAGE, COUNT, MIN, MAX, IF, AND, OR, NOT, IFERROR, ROUND, ROUNDUP, ROUNDDOWN, ABS, ISBLANK, YEAR, MONTH, DAY, WEEKDAY, DAYS, VLOOKUP, XLOOKUP, INDEX, MATCH, SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF and COUNTIFS. Aggregates and lookups use whole columns.`;
     case "unsupported_operator":
       return `${subject("That operator")}isn't supported in formulas.`;
     case "unknown_sheet":
