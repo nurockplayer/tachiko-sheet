@@ -346,28 +346,28 @@ describe("recovery presentation", () => {
     expect(context).toContain('id="ts-active-table"');
   });
 
-  it("offers Duplicate table in the existing context row only when the host can save its copy", () => {
+  it("offers Duplicate sheet in the existing context row only when the host can save its copy", () => {
     const contextOf = (markup: string) => markup.match(/<nav class="ts-work-context"[\s\S]*?<\/nav>/)?.[0] ?? "";
     const handler = async () => ({ kind: "confirmed" as const });
 
     const offered = render({ view: makeView(), onDuplicateTable: handler });
-    expect(contextOf(offered)).toContain("Duplicate table…");
+    expect(contextOf(offered)).toContain("Duplicate sheet…");
     expect(contextOf(offered)).toContain("ts-context-commands");
-    expect(offered.match(/<button[^>]*>Duplicate table…<\/button>/)?.[0]).not.toContain("disabled=");
+    expect(offered.match(/<button[^>]*>Duplicate sheet…<\/button>/)?.[0]).not.toContain("disabled=");
 
     const readerOnly = render({ view: makeView() });
-    expect(readerOnly).not.toContain("Duplicate table…");
+    expect(readerOnly).not.toContain("Duplicate sheet…");
   });
 
-  it("keeps Duplicate table disabled while busy or while the work is unconfirmed", () => {
+  it("keeps Duplicate sheet disabled while busy or while the work is unconfirmed", () => {
     const handler = async () => ({ kind: "confirmed" as const });
-    const buttonOf = (markup: string) => markup.match(/<button[^>]*>Duplicate table…<\/button>/)?.[0] ?? "";
+    const buttonOf = (markup: string) => markup.match(/<button[^>]*>Duplicate sheet…<\/button>/)?.[0] ?? "";
     expect(buttonOf(render({ view: makeView(), busy: true, onDuplicateTable: handler }))).toContain("disabled=");
     expect(buttonOf(render({ view: makeView(), currentness: "unknown", outcome: "unknown", onDuplicateTable: handler })))
       .toContain("disabled=");
   });
 
-  it("adds Duplicate table without changing the grid's own markup", () => {
+  it("adds Duplicate sheet without changing the grid's own markup", () => {
     const workspaceOf = (markup: string) => markup.slice(markup.indexOf('id="ts-table-workspace"'));
     const base = render({ view: makeView() });
     const offered = render({ view: makeView(), onDuplicateTable: async () => ({ kind: "confirmed" }) });
@@ -765,7 +765,7 @@ describe("SheetShell static rendering", () => {
     expect(markup.indexOf("ts-workbook-table-slot")).toBeLessThan(footerStart);
     expect(markup.indexOf("ts-workbook-secondary-slot")).toBeLessThan(footerStart);
     expect(markup.indexOf('aria-label="Workbook views"')).toBeLessThan(panelStart);
-    expect(markup.slice(footerStart)).toContain('aria-label="Tables"');
+    expect(markup.slice(footerStart)).toContain('aria-label="Sheets"');
     expect(markup.slice(footerStart)).toContain("Work:");
     expect(markup.slice(footerStart)).toContain("Values:");
     expect(markup.slice(footerStart)).toContain('data-testid="operation-outcome"');

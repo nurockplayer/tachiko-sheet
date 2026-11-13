@@ -58,15 +58,15 @@ let context, page;
 const checks = [], processes = [];
 const button = name => page.getByRole("button", { name, exact: true });
 const mode = name => page.getByRole("tab", { name, exact: true });
-const tabs = () => page.getByRole("tablist", { name: "Tables", exact: true }).getByRole("tab");
+const tabs = () => page.getByRole("tablist", { name: "Sheets", exact: true }).getByRole("tab");
 const picker = () => page.getByRole("navigation", { name: "Workbook actions", exact: true }).getByLabel("Table", { exact: true });
 const cells = () => page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row td");
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 async function selected(index) {
   await ready();
-  await page.waitForFunction(index => document.querySelectorAll('[aria-label="Tables"] [role="tab"]')[index]?.getAttribute("aria-selected") === "true", index);
+  await page.waitForFunction(index => document.querySelectorAll('[aria-label="Sheets"] [role="tab"]')[index]?.getAttribute("aria-selected") === "true", index);
   assert.equal(await picker().inputValue(), await picker().locator("option").nth(index).getAttribute("value"));
-  assert.equal(await page.locator('[aria-label="Tables"] [role="tab"][tabindex="0"]').count(), 1);
+  assert.equal(await page.locator('[aria-label="Sheets"] [role="tab"][tabindex="0"]').count(), 1);
 }
 async function capture(label) {
   for (const [width, height] of [[1440, 900], [390, 844]]) {
@@ -157,7 +157,7 @@ async function assertPanelReachability() {
       const geometry = await panel.evaluate(node => {
         const panel = node.getBoundingClientRect();
         const views = document.querySelector('[aria-label="Workbook views"]').getBoundingClientRect();
-        const tables = document.querySelector('[aria-label="Tables"]').getBoundingClientRect();
+        const tables = document.querySelector('[aria-label="Sheets"]').getBoundingClientRect();
         return { viewsBottom: views.bottom, panelTop: panel.top, panelBottom: panel.bottom, tablesTop: tables.top,
           documentHeight: document.documentElement.scrollHeight, viewportHeight: innerHeight };
       });
@@ -178,39 +178,39 @@ try {
   await button("Open sales example").click(); await ready();
   assert.equal(await tabs().count(), 2);
   await tabs().first().click({ button: "right" });
-  await page.getByRole("menu", { name: "Table actions" }).waitFor();
+  await page.getByRole("menu", { name: "Sheet actions" }).waitFor();
   await page.locator("body").click({ position: { x: 2, y: 2 } });
-  assert.equal(await page.getByRole("menu", { name: "Table actions" }).count(), 0, "outside press closes menu");
+  assert.equal(await page.getByRole("menu", { name: "Sheet actions" }).count(), 0, "outside press closes menu");
   await tabs().nth(1).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete…" }).click();
-  const deletion = page.getByRole("dialog", { name: "Delete table" });
+  await page.getByRole("menuitem", { name: "Delete sheet…" }).click();
+  const deletion = page.getByRole("dialog", { name: "Delete sheet" });
   assert.ok((await deletion.textContent()).includes(await tabs().nth(1).textContent()));
   await deletion.getByRole("button", { name: "Cancel" }).click();
   assert.equal(await tabs().count(), 2, "cancel preserves tables");
   await close();
   await button("Open sales example").click(); await ready();
-  assert.equal(await page.getByRole("menu", { name: "Table actions" }).count(), 0, "old table menu does not survive opening another workbook with the same keys");
+  assert.equal(await page.getByRole("menu", { name: "Sheet actions" }).count(), 0, "old table menu does not survive opening another workbook with the same keys");
   checks.push("table context menu is dismissed across workbook close and reopen");
   await tabs().first().focus(); await page.keyboard.press("F2");
-  let rename = page.getByRole("dialog", { name: "Rename table" });
-  const original = await rename.getByLabel("Table name").inputValue();
+  let rename = page.getByRole("dialog", { name: "Rename sheet" });
+  const original = await rename.getByLabel("Sheet name").inputValue();
   const otherName = await tabs().nth(1).textContent();
   const beforeRequests = await page.evaluate(() => window.__tabsEvidence.requests.filter(r => r.request?.type === "rename_table").length);
   await rename.getByRole("button", { name: "Rename", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__tabsEvidence.requests.filter(r => r.request?.type === "rename_table").length), beforeRequests);
   await tabs().first().dblclick();
   for (const invalid of ["", otherName, "x".repeat(4097), "bad\u0001name"]) {
-    await rename.getByLabel("Table name").fill(invalid);
+    await rename.getByLabel("Sheet name").fill(invalid);
     await rename.getByRole("button", { name: "Rename", exact: true }).click();
     await rename.getByRole("alert").waitFor();
     assert.equal(await tabs().first().textContent(), original);
   }
   await rename.getByRole("button", { name: "Cancel" }).click();
   // Focus returns on the next animation frame; wait for it instead of sampling once.
-  await page.waitForFunction(() => document.querySelector('[aria-label="Tables"] [role="tab"]') === document.activeElement);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Sheets"] [role="tab"]') === document.activeElement);
   await page.keyboard.press("Shift+F10");
-  await page.getByRole("menuitem", { name: "Rename…" }).click();
-  await rename.getByLabel("Table name").fill("Renamed active");
+  await page.getByRole("menuitem", { name: "Rename sheet…" }).click();
+  await rename.getByLabel("Sheet name").fill("Renamed active");
   await rename.getByRole("button", { name: "Rename", exact: true }).evaluate(button => { button.click(); button.click(); });
   await ready();
   assert.equal(await tabs().first().textContent(), "Renamed active");
@@ -228,7 +228,7 @@ try {
   await capture("few-tables");
   await tabs().nth(1).click(); await selected(1);
   await tabs().nth(1).press("ArrowLeft"); await selected(0);
-  await page.waitForFunction(() => document.querySelector('[aria-label="Tables"] [role="tab"]') === document.activeElement);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Sheets"] [role="tab"]') === document.activeElement);
   await tabs().nth(0).press("ArrowLeft"); await selected(1);
   await tabs().nth(1).press("ArrowRight"); await selected(0);
   await picker().selectOption(await picker().locator("option").nth(1).getAttribute("value")); await selected(1);
@@ -290,9 +290,9 @@ try {
   const inactive = 1 - salesIndex;
   const originalName = await tabs().nth(inactive).textContent();
   await tabs().nth(inactive).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Rename…" }).click();
-  let renameDialog = page.getByRole("dialog", { name: "Rename table" });
-  await renameDialog.getByLabel("Table name").fill("Renamed table");
+  await page.getByRole("menuitem", { name: "Rename sheet…" }).click();
+  let renameDialog = page.getByRole("dialog", { name: "Rename sheet" });
+  await renameDialog.getByLabel("Sheet name").fill("Renamed table");
   await renameDialog.getByRole("button", { name: "Rename", exact: true }).click();
   await ready();
   assert.equal(await tabs().nth(inactive).textContent(), "Renamed table");
@@ -300,12 +300,12 @@ try {
   assert.equal(await picker().locator("option").nth(inactive).textContent(), "Renamed table");
   await tabs().nth(inactive).click(); await selected(inactive);
   await tabs().nth(inactive).focus(); await page.keyboard.press("F2");
-  renameDialog = page.getByRole("dialog", { name: "Rename table" });
-  await renameDialog.getByLabel("Table name").fill("");
+  renameDialog = page.getByRole("dialog", { name: "Rename sheet" });
+  await renameDialog.getByLabel("Sheet name").fill("");
   await renameDialog.getByRole("button", { name: "Rename", exact: true }).click();
   await renameDialog.getByRole("alert").waitFor();
   await page.keyboard.press("Escape");
-  await page.waitForFunction(index => document.querySelectorAll('[aria-label="Tables"] [role="tab"]')[index] === document.activeElement, inactive);
+  await page.waitForFunction(index => document.querySelectorAll('[aria-label="Sheets"] [role="tab"]')[index] === document.activeElement, inactive);
   await tabs().nth(salesIndex).click(); await selected(salesIndex);
   checks.push(`inactive table rename and invalid name refusal (was ${originalName})`);
   await mode("Brief").click();
@@ -325,12 +325,12 @@ try {
   assert.deepEqual(await tabs().allTextContents(), ["Table", "Report"]);
   for (const name of ["Table", "Report"]) {
     assert.equal(await mode(name).count(), 1, `frozen driver's exact ${name} query resolves uniquely`);
-    assert.equal(await page.getByRole("tab", { name: `${name} (table ${name === "Table" ? 1 : 2} of 2)`, exact: true }).count(), 1);
+    assert.equal(await page.getByRole("tab", { name: `${name} (sheet ${name === "Table" ? 1 : 2} of 2)`, exact: true }).count(), 1);
   }
   await tabs().nth(1).click(); await selected(1);
   assert.equal(await cells().first().textContent(), "record-2");
   await tabs().first().click({ button: "right" });
-  assert.equal(await page.getByRole("menuitem", { name: "Rename…" }).isDisabled(), true);
+  assert.equal(await page.getByRole("menuitem", { name: "Rename sheet…" }).isDisabled(), true);
   await page.getByText("Renaming imported sheets is not available yet.").waitFor();
   await page.keyboard.press("Escape");
   await close();
@@ -351,7 +351,7 @@ try {
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });
     await page.waitForFunction(width => {
-      const strip = document.querySelector('[aria-label="Tables"]');
+      const strip = document.querySelector('[aria-label="Sheets"]');
       const active = strip.querySelector('[aria-selected="true"]').getBoundingClientRect();
       const port = strip.getBoundingClientRect();
       const overflow = strip.scrollWidth > strip.clientWidth;
@@ -373,7 +373,7 @@ try {
     assert.equal(tab.ellipsis, "ellipsis");
   }
   await tabs().last().focus(); await page.keyboard.press("Home"); await selected(0);
-  await page.waitForFunction(() => document.querySelector('[aria-label="Tables"] [role="tab"]') === document.activeElement);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Sheets"] [role="tab"]') === document.activeElement);
   await page.keyboard.press("End"); await selected(names.length - 1);
   await mode("Brief").click();
   await page.getByRole("heading", { name: "Linked facts", exact: true }).waitFor();

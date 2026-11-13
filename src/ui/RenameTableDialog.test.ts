@@ -9,7 +9,7 @@ describe("rename table dialog", () => {
       initialName: "Expenses", composing: () => false,
       onRename: async () => ({ kind: "confirmed" as const }), onClose: () => {}, onDraftChange: () => {},
     }));
-    expect(markup).toContain('aria-label="Rename table"');
+    expect(markup).toContain('aria-label="Rename sheet"');
     expect(markup).toContain('value="Expenses"');
     expect(markup).toContain('>Cancel</button>');
     expect(markup).toContain('>Rename</button>');

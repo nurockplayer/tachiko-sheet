@@ -4,7 +4,7 @@ import { shortcutHelpGroups } from "./shortcut-help.js";
 export function ShortcutHelpDialogView({ mac, desktop, onClose }: { mac: boolean; desktop: boolean; onClose(): void }) {
   return <Modal label="Keyboard shortcuts" variant="review" onCancel={onClose}>
     <div className="ts-dialog-intro"><h2 className="ts-h2">Keyboard shortcuts</h2></div>
-    <div className="ts-shortcut-help-body">
+    <div className="ts-shortcut-help-body" tabIndex={0} role="region" aria-label="Shortcuts">
       {shortcutHelpGroups({ mac, desktop }).map(group => <section key={group.name}>
         <h3>{group.name}</h3>
         <dl>{group.entries.map(entry => <div key={entry.action}>

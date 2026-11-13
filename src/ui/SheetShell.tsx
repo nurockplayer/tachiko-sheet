@@ -1253,7 +1253,7 @@ export function SheetShell(props: SheetShellProps) {
 
   // A changed sort or filter remaps the displayed rows, so a rectangular
   // selection over them would silently come to address different cells.
-  useEffect(() => { setCellSelection(null); }, [displaySignature]);
+  useEffect(() => { setCellSelection(null); setCopiedArea(null); }, [displaySignature]);
 
   function updateGridSettings(update: (current: RowViewSettings) => RowViewSettings): void {
     const occurrence = view?.occurrence;
@@ -5951,13 +5951,13 @@ export function SheetShell(props: SheetShellProps) {
               className="ts-button"
               disabled={columnChangesBlocked}
               aria-describedby={controlsLocked ? lockNoteId : undefined}
-              title={!controlsLocked && columnChangesBlocked ? "Finish the current input before duplicating a table." : undefined}
+              title={!controlsLocked && columnChangesBlocked ? "Finish the current input before duplicating a sheet." : undefined}
               onClick={(event) => {
                 if (columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
                 duplicateTriggerRef.current = event.currentTarget;
                 setDuplicateOpen(true);
               }}
-            >Duplicate table…</button>
+            >Duplicate sheet…</button>
           </div> : null}
         </nav>
         <div className="ts-tabs" role="tablist" aria-label="Workbook views" onKeyDown={onTabListKeyDown}>
@@ -5986,7 +5986,7 @@ export function SheetShell(props: SheetShellProps) {
           </div>
         </div>
         <footer className="ts-workspace-footer">
-          <div ref={tableTabsRef} className="ts-tabs" role="tablist" aria-label="Tables" onKeyDown={onTableTabsKeyDown}>
+          <div ref={tableTabsRef} className="ts-tabs" role="tablist" aria-label="Sheets" onKeyDown={onTableTabsKeyDown}>
             {view.collections.map((collection, index) => {
               const active = collection.key === view.table.collection.key;
               const name = names.table(collection.id) ?? collection.display_name;
@@ -6185,10 +6185,10 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Table actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
-        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!names.table(tableMenu.id)} disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename…</button>
-        {onDeleteTable ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={(view?.collections.length ?? 0) <= 1} title={(view?.collections.length ?? 0) <= 1 ? "Keep at least one table in this work." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setDeleteTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Delete…</button> : null}
-        {(view?.collections.length ?? 0) <= 1 ? <span className="ts-hint">Keep at least one table in this work.</span> : null}
+      {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Sheet actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
+        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!names.table(tableMenu.id)} disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
+        {onDeleteTable ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={(view?.collections.length ?? 0) <= 1} title={(view?.collections.length ?? 0) <= 1 ? "Keep at least one sheet in this work." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setDeleteTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Delete sheet…</button> : null}
+        {(view?.collections.length ?? 0) <= 1 ? <span className="ts-hint">Keep at least one sheet in this work.</span> : null}
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog onDraftChange={setRenameTableDraftActive} initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); setRenameTableDraftActive(false); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
