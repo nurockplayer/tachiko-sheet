@@ -24,7 +24,7 @@ const profile = {
   },
 };
 const browser = await chromium.launch({ headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
-const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+const context = await browser.newContext({ viewport: { width: 1600, height: 800 } });
 await installDistRoutes(context, dist);
 const page = await context.newPage();
 page.setDefaultTimeout(10000);

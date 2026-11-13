@@ -67,6 +67,7 @@ import { DeleteTableDialog } from "./DeleteTableDialog.js";
 import { RenameTableDialog } from "./RenameTableDialog.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
+import { ColumnAlignmentDialog } from "./ColumnAlignmentDialog.js";
 import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
 import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
@@ -510,7 +511,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat, onSetColumnDateFormat,
+    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -710,6 +711,7 @@ export function SheetShell(props: SheetShellProps) {
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
   // Bound to the table it was opened on; a render for another table or occurrence never shows or submits it.
   const [ruleDialog, setRuleDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
+  const [alignmentDialog, setAlignmentDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
   const [formatDialog, setFormatDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
@@ -2009,7 +2011,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -2143,7 +2145,7 @@ export function SheetShell(props: SheetShellProps) {
   }, [tableMenu]);
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
-    (renameTable !== null && renameTableDraftActive) || (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || formatDialog !== null;
+    (renameTable !== null && renameTableDraftActive) || (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
@@ -4831,6 +4833,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       setFormatDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
                     }} /> : null}
+                    {onSetColumnAlignment ? <button type="button" className="ts-button" aria-label="Alignment…" data-column-action="Alignment…" disabled={columnChangesBlocked} onClick={event => {
+                      const disclosure = event.currentTarget.closest("details")!;
+                      const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                      disclosure.open = false;
+                      setAlignmentDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
+                    }} /> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
@@ -5067,6 +5075,12 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 setFormatDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
               }}>{`${focusedColumn.field_type === "date" ? "Date" : "Number"} format for “${focusedColumnName}”…`}</button> : null}
+              {onSetColumnAlignment ? <button type="button" className="ts-button" disabled={columnChangesBlocked} onClick={event => {
+                const disclosure = event.currentTarget.closest("details")!;
+                const trigger = disclosure.querySelector<HTMLElement>("summary")!;
+                closeColumnToolbar(disclosure);
+                setAlignmentDialog({ field: focusedColumn.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
+              }}>{`Alignment for “${focusedColumnName}”…`}</button> : null}
               <button type="button" className="ts-button" disabled={viewActionsBlocked} onClick={event => {
                 const disclosure = event.currentTarget.closest("details")!;
                 closeColumnToolbar(disclosure);
@@ -5287,6 +5301,7 @@ export function SheetShell(props: SheetShellProps) {
           else cellRefs.current.delete(key);
         }}
         className={classes.join(" ")}
+        style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left") }}
         data-testid={`cell:${entity}:${column.id}`}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
@@ -6151,6 +6166,18 @@ export function SheetShell(props: SheetShellProps) {
           onSuccess={confirmed => { setRuleDialog(null); if (confirmed) setColumnAnnouncement(`Rule updated for ${column.display_name}. Undo restores it.`); restore(); }}
           onCancel={() => { setRuleDialog(null); restore(); }}
         />;
+      })() : null}
+      {alignmentDialog && view && witness && table && onSetColumnAlignment
+        && alignmentDialog.collection === table.collection.id && alignmentDialog.occurrence === view.occurrence ? (() => {
+        const column = columns.find(item => item.id === alignmentDialog.field);
+        if (!column) return null;
+        const trigger = alignmentDialog.trigger;
+        const restore = () => requestAnimationFrame(() => { if (trigger.isConnected) withAppFocus(() => trigger.focus()); });
+        return <ColumnAlignmentDialog columnName={column.display_name} alignment={column.style?.alignment ?? null}
+          composing={() => props.appearancePreference.getSnapshot().composing}
+          onSubmit={alignment => onSetColumnAlignment(witness, table.collection.key, column.id, alignment)}
+          onSuccess={confirmed => { setAlignmentDialog(null); if (confirmed) setColumnAnnouncement(`Alignment updated for ${column.display_name}. Undo restores it.`); restore(); }}
+          onCancel={() => { setAlignmentDialog(null); restore(); }} />;
       })() : null}
       {formatDialog && view && witness && table
         && formatDialog.collection === table.collection.id && formatDialog.occurrence === view.occurrence ? (() => {
