@@ -84,10 +84,21 @@ try {
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
   await page.getByRole("button", { name: "Open saved Aligned", exact: true }).click(); await ready(); await check(["right", "left", "right", "center"]);
+  // An active draft must survive a resize attempt without publishing a revision.
+  await cells().first().dblclick();
+  const editor = page.getByTestId("cell-editor");
+  await editor.fill("unfinished draft");
+  const blockedResize = page.getByRole("separator", { name: "Resize Text", exact: true });
+  await blockedResize.focus(); await page.keyboard.press("ArrowRight");
+  assert.equal(await editor.inputValue(), "unfinished draft");
+  await page.keyboard.press("Escape");
+  const otherWidthsBefore = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.slice(1).map(node => node.getBoundingClientRect().width));
   const resize = page.getByRole("separator", { name: "Resize Text", exact: true });
   const box = await resize.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2); await page.mouse.up(); await ready();
+  const otherWidthsAfter = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.slice(1).map(node => node.getBoundingClientRect().width));
+  assert.ok(otherWidthsAfter.every((width, i) => Math.abs(width - otherWidthsBefore[i]) <= 1), `other widths: ${otherWidthsBefore} → ${otherWidthsAfter}`);
   const widthBeforeExport = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click(); await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
   const download = page.waitForEvent("download"); await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();

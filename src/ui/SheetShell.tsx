@@ -1279,6 +1279,10 @@ export function SheetShell(props: SheetShellProps) {
 
   function commitColumnWidth(field: string, px: number, th: HTMLElement | null, rendered: Record<string, number>, startWidth?: number): void {
     const width = clampColumnWidth(px);
+    if (onSetColumnWidth && (columnChangesBlocked || props.appearancePreference.getSnapshot().composing)) {
+      if (th && startWidth !== undefined) th.style.width = `${startWidth}px`;
+      return;
+    }
     if (!onSetColumnWidth) {
       updateGridSettings(current => withColumnWidth(current, field, width, rendered));
       return;
@@ -1286,10 +1290,15 @@ export function SheetShell(props: SheetShellProps) {
     if (!witness || !table) return;
     const previous = startWidth ?? columnWidthOf(gridSettings, field, th);
     if (th) th.style.width = `${width}px`;
-    setPendingColumnWidths(current => ({ ...current, [field]: width }));
+    const firstSized = !columns.some(column => column.width != null) && !Object.keys(gridSettings.widths ?? {}).length;
+    setPendingColumnWidths(current => ({ ...current, ...(firstSized ? rendered : {}), [field]: width }));
     setColumnAnnouncement(null);
     void onSetColumnWidth(witness, table.collection.key, field, columnWidthToUnits(width)).then(result => {
-      if (result.kind !== "confirmed") {
+      if (result.kind === "confirmed" && firstSized) {
+        const otherWidths = { ...rendered };
+        delete otherWidths[field];
+        updateGridSettings(current => ({ ...current, widths: { ...otherWidths, ...current.widths } }));
+      } else if (result.kind !== "confirmed") {
         if (th) th.style.width = `${previous}px`;
         setColumnAnnouncement(result.kind === "refused" ? result.message : "Column width could not be changed.");
       }
@@ -1297,6 +1306,7 @@ export function SheetShell(props: SheetShellProps) {
       if (th) th.style.width = `${previous}px`;
       setColumnAnnouncement("Column width could not be changed.");
     }).finally(() => setPendingColumnWidths(current => {
+      if (firstSized) return {};
       const next = { ...current }; delete next[field]; return next;
     }));
   }
@@ -1327,6 +1337,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
     const th = event.currentTarget.closest("th");
+    if (onSetColumnWidth && (columnChangesBlocked || props.appearancePreference.getSnapshot().composing)) { event.preventDefault(); event.stopPropagation(); return; }
     if (event.button !== 0 || !th) return;
     // The header owns its own gestures: never let a resize begin a rename or a
     // column-action menu. The press is not cancelled, so the double-click that
@@ -4917,6 +4928,7 @@ export function SheetShell(props: SheetShellProps) {
                 className="ts-col-resize"
                 role="separator"
                 aria-orientation="vertical"
+                aria-disabled={Boolean(onSetColumnWidth && columnChangesBlocked)}
                 aria-label={`Resize ${column.display_name}`}
                 aria-valuenow={columnWidths?.[column.id] ?? SIZED_COLUMN_DEFAULT_WIDTH}
                 aria-valuemin={COLUMN_WIDTH_MIN}
