@@ -97,7 +97,7 @@ const cases = [
     await wait("after Mod+quote editor opens", editor(page).waitFor()); assert.equal(await editor(page).inputValue(), sourceValue);
     await editor(page).press("Enter");
     await wait("copied value committed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, sourceValue]));
-    assert.equal(await dispatches(page), count + 1);
+    assert.equal(await dispatches(page), count + 1, "copied scalar dispatches once");
     await page.getByRole("button", { name: "Undo", exact: true }).click();
     await wait("undo restores target", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, oldValue]));
 
@@ -120,7 +120,7 @@ const cases = [
       (await window.__tachikoAcceptance.runtimeSnapshot()).revision !== revision, [count, priorRevision]));
     const copyMessage = await status.textContent();
     const copyRequests = (await dispatches(page)) - count;
-    assert.equal(copyRequests, 1);
+    assert.equal(copyRequests, 1, "formula shortcut dispatches once");
     const filledRevision = (await state(page)).revision;
     await page.keyboard.press("ControlOrMeta+Z");
     await wait("undo formula copy", page.waitForFunction(async ([id, value, revision]) =>
@@ -135,7 +135,7 @@ const cases = [
       document.querySelector(".ts-clipboard-status[role=status]")?.textContent === message &&
       window.__tachikoAcceptance.executeRequestCount() === count + 1, [count, copyMessage]));
     assert.equal(await status.textContent(), copyMessage);
-    assert.equal((await dispatches(page)) - count, copyRequests);
+    assert.equal((await dispatches(page)) - count, copyRequests, "fill down matches formula shortcut request count");
 
     count = await dispatches(page); await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("first row refusal", page.getByText("There is no cell above to copy.").first().waitFor());
@@ -845,7 +845,7 @@ for (const [name, run] of cases) {
       console.log(JSON.stringify({ case: name, status: "PASS" }));
     } catch (error) {
       if (fixtureReady) failures++; else blocked++;
-      console.error(JSON.stringify({ case: name, status: fixtureReady ? "FAIL" : "BLOCKED", error: error.message }));
+      console.error(JSON.stringify({ case: name, status: fixtureReady ? "FAIL" : "BLOCKED", error: error.stack }));
     } finally { await context.close(); await browser.close(); }
 }
 console.log(JSON.stringify({ suite: "cell-editing-regression", cases: cases.length, failures, blocked }));
