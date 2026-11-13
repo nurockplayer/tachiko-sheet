@@ -128,12 +128,21 @@ try {
   await page.waitForFunction(() => window.alignmentEvidence.heldWidth !== null);
   await resize.focus(); await page.keyboard.press("ArrowRight"); await resize.blur();
   await resize.focus(); await page.keyboard.press("ArrowRight"); await resize.blur();
+  const heldPreview = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
+  assert.ok(Math.abs(heldPreview - combinedWidth - 92) <= 2, `pending burst preview: ${combinedWidth} → ${heldPreview}`);
+  assert.equal(await page.evaluate(() => window.alignmentEvidence.widthRequests.length), requestsBeforeBurst + 1, "the held save keeps both finished keyboard gestures queued");
   await page.evaluate(() => { const evidence = window.alignmentEvidence; evidence.worker.dispatchEvent(new MessageEvent("message", { data: evidence.heldWidth })); });
   await page.waitForFunction(count => window.alignmentEvidence.widthRequests.length >= count + 2, requestsBeforeBurst);
   await ready();
   const burstWidth = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   assert.ok(Math.abs(burstWidth - combinedWidth - 92) <= 2, `burst width: ${combinedWidth} → ${burstWidth}`);
   assert.ok(await page.evaluate(() => window.alignmentEvidence.widthRequests.length) <= requestsBeforeBurst + 2);
+  // A gesture returning to the stored width must not publish another request.
+  const requestsBeforeNoop = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
+  await resize.focus(); await page.keyboard.press("ArrowRight"); await page.keyboard.press("ArrowLeft"); await resize.blur();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => window.alignmentEvidence.widthRequests.length), requestsBeforeNoop);
+
   const secondResize = page.getByRole("separator", { name: "Resize Number", exact: true });
   const secondBox = await secondResize.boundingBox();
   await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);

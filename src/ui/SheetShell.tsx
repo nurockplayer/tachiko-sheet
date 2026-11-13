@@ -1285,8 +1285,9 @@ export function SheetShell(props: SheetShellProps) {
 
   const widthPublishingRef = useRef(false);
   const [widthPublishing, setWidthPublishing] = useState(false);
-  const deferredWidths = useRef<Array<{ occurrence: string; collection: string; field: string; width: number; th: HTMLElement | null; startWidth?: number; rendered: Record<string, number> }>>([]);
-  const widthRevisionRef = useRef<string | null>(null);
+  const [deferredWidths, setDeferredWidths] = useState<Array<{ occurrence: string; collection: string; field: string; width: number }>>([]);
+  const widthIdentityRef = useRef(collectionIdentity);
+  widthIdentityRef.current = collectionIdentity;
 
   /** A stored width wins; otherwise the width the table currently gives it. */
   function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
@@ -1314,19 +1315,8 @@ export function SheetShell(props: SheetShellProps) {
 
   function commitColumnWidth(field: string, px: number, th: HTMLElement | null, startWidth?: number, rendered: Record<string, number> = renderedColumnWidths()): void {
     const width = clampColumnWidth(px);
-    if (onSetColumnWidth && (widthPublishingRef.current || widthPublishing || (widthRevisionRef.current !== null && widthRevisionRef.current === witness?.revision)) && !cellDraftActive && !formulaDraftActive && !rowDraftActive && !anyNotesDraft && !hasInvalidReportDraft && !props.appearancePreference.getSnapshot().composing) {
-      if (!witness || !table) return;
-      const occurrence = witness.occurrence;
-      const collection = table.collection.key;
-      const existing = deferredWidths.current.find(item => item.occurrence === occurrence && item.collection === collection && item.field === field);
-      if (existing) { existing.width = width; existing.th = th; }
-      else deferredWidths.current.push({ occurrence, collection, field, width, th, startWidth, rendered });
-      setPendingColumnWidths(current => ({ ...current, [field]: width }));
-      return;
-    }
-    if (onSetColumnWidth && (columnChangesBlocked || props.appearancePreference.getSnapshot().composing)) {
+    if (onSetColumnWidth && resizeChangesBlocked()) {
       if (th && startWidth !== undefined) th.style.width = `${startWidth}px`;
-      setPendingColumnWidths(current => { const next = { ...current }; delete next[field]; return next; });
       return;
     }
     if (!onSetColumnWidth) {
@@ -1334,31 +1324,10 @@ export function SheetShell(props: SheetShellProps) {
       setPendingColumnWidths(current => { const next = { ...current }; delete next[field]; return next; });
       return;
     }
-    if (!witness || !table) return;
-    const previous = startWidth ?? columnWidthOf(gridSettings, field, th);
+    if (!view || !table) return;
+    const item = { occurrence: view.occurrence, collection: table.collection.key, field, width };
+    setDeferredWidths(current => [...current.filter(previous => !(previous.occurrence === item.occurrence && previous.collection === item.collection && previous.field === field)), item]);
     setPendingColumnWidths(current => ({ ...current, [field]: width }));
-    setColumnAnnouncement(null);
-    widthPublishingRef.current = true;
-    setWidthPublishing(true);
-    widthRevisionRef.current = witness.revision;
-    void onSetColumnWidth(witness, table.collection.key, field, columnWidthToUnits(width)).then(result => {
-      if (result.kind !== "confirmed") widthRevisionRef.current = null;
-      if (result.kind !== "confirmed") {
-        if (th) th.style.width = `${previous}px`;
-        setColumnAnnouncement(result.kind === "refused" ? result.message : "Column width could not be changed.");
-      }
-    }).catch(() => {
-      widthRevisionRef.current = null;
-      if (th) th.style.width = `${previous}px`;
-      setColumnAnnouncement("Column width could not be changed.");
-    }).finally(() => {
-      widthPublishingRef.current = false;
-      setWidthPublishing(false);
-      setPendingColumnWidths(current => {
-        if (current[field] !== width || keyboardResizeRef.current?.field === field || deferredWidths.current.some(item => item.field === field)) return current;
-        const next = { ...current }; delete next[field]; return next;
-      });
-    });
   }
 
   function finishKeyboardResize(): void {
@@ -1414,6 +1383,7 @@ export function SheetShell(props: SheetShellProps) {
     // column-action menu. The press is not cancelled, so the double-click that
     // fits the column still arrives as a compatibility mouse event.
     event.stopPropagation();
+    finishKeyboardResize();
     const startWidth = columnWidthOf(gridSettings, field, th);
     captureDrawnWidths();
     columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th, rendered: renderedColumnWidths() };
@@ -4420,33 +4390,61 @@ export function SheetShell(props: SheetShellProps) {
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   function resizeChangesBlocked(): boolean {
-    return (controlsLocked && !(widthPublishingRef.current && !commitPending && currentness !== "unknown")) || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
+    const ownSave = widthPublishingRef.current && !commitPending && currentness !== "unknown";
+    return (controlsLocked && !ownSave) || (currentness !== "current" && !ownSave) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
   }
   useEffect(() => {
-    const dropped = deferredWidths.current;
-    deferredWidths.current = [];
-    widthRevisionRef.current = null;
-    if (dropped.length) setPendingColumnWidths(current => {
-      const next = { ...current };
-      for (const item of dropped) delete next[item.field];
-      return next;
-    });
-  }, [witness?.occurrence, table?.collection.key]);
+    setDeferredWidths([]);
+    setPendingColumnWidths({});
+    cancelColumnResize();
+    const keyboard = keyboardResizeRef.current;
+    if (keyboard?.timer) clearTimeout(keyboard.timer);
+    keyboardResizeRef.current = null;
+  }, [collectionIdentity]);
   useEffect(() => {
-    if (widthPublishing || columnChangesBlocked || !witness || !table || (widthRevisionRef.current !== null && widthRevisionRef.current === witness.revision)) return;
-    let next = deferredWidths.current.shift();
-    while (next) {
-      const stored = columns.find(column => column.id === next!.field)?.width;
-      if (next.occurrence === witness.occurrence && next.collection === table.collection.key && (stored == null || next.width !== clampColumnWidth(columnWidthToPx(stored)))) break;
-      const dropped = next;
+    if (widthPublishing || widthPublishingRef.current || columnChangesBlocked || !witness || !table || !onSetColumnWidth) return;
+    // Confirmed previews stay until the projection catches up. Never clear a
+    // newer keyboard/drag preview when an older publication arrives.
+    setPendingColumnWidths(current => {
+      const next = { ...current };
+      for (const column of columns) {
+        if (column.width != null && next[column.id] === clampColumnWidth(columnWidthToPx(column.width)) &&
+            keyboardResizeRef.current?.field !== column.id && columnResizeRef.current?.field !== column.id &&
+            !deferredWidths.some(item => item.field === column.id)) delete next[column.id];
+      }
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    const next = deferredWidths[0];
+    if (!next) return;
+    setDeferredWidths(current => current.filter(item => item !== next));
+    const stored = columns.find(column => column.id === next.field)?.width;
+    if (next.occurrence !== witness.occurrence || next.collection !== table.collection.key ||
+        (stored != null && next.width === clampColumnWidth(columnWidthToPx(stored)))) {
       setPendingColumnWidths(current => {
-        if (deferredWidths.current.some(item => item.field === dropped.field)) return current;
-        const widths = { ...current }; delete widths[dropped.field]; return widths;
+        if (current[next.field] !== next.width || keyboardResizeRef.current?.field === next.field || columnResizeRef.current?.field === next.field) return current;
+        const widths = { ...current }; delete widths[next.field]; return widths;
       });
-      next = deferredWidths.current.shift();
+      return;
     }
-    if (next) commitColumnWidth(next.field, next.width, next.th, next.startWidth, next.rendered);
-  }, [widthPublishing, columnChangesBlocked, witness?.revision, witness?.occurrence, table?.collection.key, columns]);
+    const identity = collectionIdentity;
+    widthPublishingRef.current = true;
+    setWidthPublishing(true);
+    setColumnAnnouncement(null);
+    const failed = (message: string) => {
+      if (widthIdentityRef.current !== identity) return;
+      setColumnAnnouncement(message);
+      setPendingColumnWidths(current => {
+        if (current[next.field] !== next.width || keyboardResizeRef.current?.field === next.field || columnResizeRef.current?.field === next.field) return current;
+        const widths = { ...current }; delete widths[next.field]; return widths;
+      });
+    };
+    void onSetColumnWidth(witness, next.collection, next.field, columnWidthToUnits(next.width)).then(result => {
+      if (result.kind !== "confirmed") failed(result.kind === "refused" ? result.message : "Column width could not be changed.");
+    }).catch(() => failed("Column width could not be changed.")).finally(() => {
+      widthPublishingRef.current = false;
+      setWidthPublishing(false);
+    });
+  }, [deferredWidths, widthPublishing, columnChangesBlocked, witness, table, columns, collectionIdentity, onSetColumnWidth]);
   // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
   const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
