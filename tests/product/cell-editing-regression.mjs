@@ -103,10 +103,14 @@ const cases = [
 
     const bar = page.getByTestId("formula-bar-input");
     count = await dispatches(page);
+    const beforeFormulaRevision = await at(first, "priority").getAttribute("data-work-revision");
     await at(first, "priority").click(); await bar.fill("=C2*D2"); await bar.press("Enter");
     await wait("formula committed", page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count));
     const product = String(Number(sourceValue) * Number(await text(at(first, "friction"))));
-    await wait("formula projection installed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.priority}`, product]));
+    await wait("formula projection installed", page.waitForFunction(([id, value, revision]) => {
+      const cell = document.querySelector(`[data-testid="${id}"]`);
+      return cell?.textContent.trim() === value && cell.getAttribute("data-work-revision") !== revision && cell.getAttribute("data-work-currentness") === "current";
+    }, [`cell:${first}:${fields.priority}`, product, beforeFormulaRevision]));
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
     const priorFormulaValue = await text(at(second, "priority"));
