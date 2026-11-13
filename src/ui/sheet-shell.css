@@ -3110,6 +3110,21 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 
 /* Clipboard selection follows the existing focus/accent palette. */
 .ts-cell--range-selected { background: color-mix(in srgb, var(--ts-accent, #2563eb) 14%, var(--ts-surface, white)); box-shadow: inset 0 0 0 1px var(--ts-accent, #2563eb); }
+.ts-cell--copied {
+  --copy-horizontal: repeating-linear-gradient(90deg, var(--ts-accent, #2563eb) 0 4px, transparent 4px 8px);
+  --copy-vertical: repeating-linear-gradient(0deg, var(--ts-accent, #2563eb) 0 4px, transparent 4px 8px);
+  background-image: var(--copy-top, linear-gradient(transparent, transparent)), var(--copy-bottom, linear-gradient(transparent, transparent)), var(--copy-left, linear-gradient(transparent, transparent)), var(--copy-right, linear-gradient(transparent, transparent));
+  background-size: 100% 1.5px, 100% 1.5px, 1.5px 100%, 1.5px 100%;
+  background-repeat: no-repeat;
+  animation: ts-copy-ants 1s linear infinite;
+}
+.ts-cell--copied-top { --copy-top: var(--copy-horizontal); }
+.ts-cell--copied-bottom { --copy-bottom: var(--copy-horizontal); }
+.ts-cell--copied-left { --copy-left: var(--copy-vertical); }
+.ts-cell--copied-right { --copy-right: var(--copy-vertical); }
+@keyframes ts-copy-ants { from { background-position: 0 0, 0 100%, 0 0, 100% 0; } to { background-position: 8px 0, -8px 100%, 0 -8px, 100% 8px; } }
+@media (prefers-reduced-motion: reduce) { .ts-cell--copied { animation: none; background-position: 0 0, 0 100%, 0 0, 100% 0; } }
+@media (forced-colors: active) { .ts-cell--copied-top { border-top: 1px dashed Highlight; } .ts-cell--copied-bottom { border-bottom: 1px dashed Highlight; } .ts-cell--copied-left { border-left: 1px dashed Highlight; } .ts-cell--copied-right { border-right: 1px dashed Highlight; } }
 /* The cells a formula being typed refers to. One colour, like the drafts' accent. */
 .ts-cell--formula-ref { outline: 2px solid var(--ts-accent, #2563eb); outline-offset: -2px; background: color-mix(in srgb, var(--ts-accent, #2563eb) 8%, var(--ts-surface, white)); }
 /* Excel's fill handle: a 7px square in the corner, so its hit area reaches the
