@@ -159,7 +159,7 @@ const cases = [
     assert.equal(await dispatches(page), count);
 
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
-    const filter = page.getByRole("textbox", { name: "Filter Impact", exact: true });
+    const filter = page.getByRole("textbox", { name: "Filter impact", exact: true });
     await wait("filter editor opens", filter.waitFor()); assert.equal(await focused(filter), true);
     await filter.fill(sourceValue); await filter.press("Enter");
     await wait("filter applied", page.getByTestId("row-view-status").waitFor());
