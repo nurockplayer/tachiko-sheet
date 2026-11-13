@@ -12,13 +12,16 @@ try {
   context = await chromium.launchPersistentContext(path.join(dir, "profile"), { headless: true, ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
   await installDistRoutes(context, process.env.WORK_DIST ?? "dist-acceptance");
   await context.addInitScript(() => {
-    window.alignmentEvidence = { requests: [], widthRequests: [], hold: false, held: null, worker: null };
+    window.alignmentEvidence = { requests: [], widthRequests: [], hold: false, held: null, worker: null, holdWidth: false, heldWidth: null };
     const Original = window.Worker;
     window.Worker = class extends Original {
       constructor(...args) {
         super(...args);
         this.addEventListener("message", event => {
           const evidence = window.alignmentEvidence;
+          if (evidence.holdWidth && evidence.widthRequests.some(request => request.id === event.data.id) && event.data.response?.type === "published") {
+            evidence.holdWidth = false; evidence.heldWidth = event.data; evidence.worker = this; event.stopImmediatePropagation();
+          }
           if (evidence.hold && evidence.requests.some(request => request.id === event.data.id) && event.data.response?.type === "published") {
             evidence.hold = false; evidence.held = event.data; evidence.worker = this; event.stopImmediatePropagation();
           }
@@ -117,6 +120,20 @@ try {
   const combinedWidth = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   assert.ok(Math.abs(combinedWidth - beforeCombined - 76) <= 2, `combined width: ${beforeCombined} → ${combinedWidth}`);
   assert.equal(await page.evaluate(() => window.alignmentEvidence.widthRequests.length), requestsBeforeCombined + 2);
+  const requestsBeforeBurst = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
+  await page.evaluate(() => { window.alignmentEvidence.holdWidth = true; });
+  const burstBox = await resize.boundingBox();
+  await page.mouse.move(burstBox.x + burstBox.width / 2, burstBox.y + burstBox.height / 2);
+  await page.mouse.down(); await page.mouse.move(burstBox.x + burstBox.width / 2 + 60, burstBox.y + burstBox.height / 2); await page.mouse.up();
+  await page.waitForFunction(() => window.alignmentEvidence.heldWidth !== null);
+  await resize.focus(); await page.keyboard.press("ArrowRight"); await resize.blur();
+  await resize.focus(); await page.keyboard.press("ArrowRight"); await resize.blur();
+  await page.evaluate(() => { const evidence = window.alignmentEvidence; evidence.worker.dispatchEvent(new MessageEvent("message", { data: evidence.heldWidth })); });
+  await page.waitForFunction(count => window.alignmentEvidence.widthRequests.length >= count + 2, requestsBeforeBurst);
+  await ready();
+  const burstWidth = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
+  assert.ok(Math.abs(burstWidth - combinedWidth - 92) <= 2, `burst width: ${combinedWidth} → ${burstWidth}`);
+  assert.ok(await page.evaluate(() => window.alignmentEvidence.widthRequests.length) <= requestsBeforeBurst + 2);
   const secondResize = page.getByRole("separator", { name: "Resize Number", exact: true });
   const secondBox = await secondResize.boundingBox();
   await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);

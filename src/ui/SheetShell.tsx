@@ -1285,7 +1285,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const widthPublishingRef = useRef(false);
   const [widthPublishing, setWidthPublishing] = useState(false);
-  const deferredWidths = useRef<Array<{ field: string; width: number; th: HTMLElement | null; startWidth?: number; rendered: Record<string, number> }>>([]);
+  const deferredWidths = useRef<Array<{ occurrence: string; collection: string; field: string; width: number; th: HTMLElement | null; startWidth?: number; rendered: Record<string, number> }>>([]);
   const widthRevisionRef = useRef<string | null>(null);
 
   /** A stored width wins; otherwise the width the table currently gives it. */
@@ -1315,7 +1315,12 @@ export function SheetShell(props: SheetShellProps) {
   function commitColumnWidth(field: string, px: number, th: HTMLElement | null, startWidth?: number, rendered: Record<string, number> = renderedColumnWidths()): void {
     const width = clampColumnWidth(px);
     if (onSetColumnWidth && (widthPublishingRef.current || widthPublishing || (widthRevisionRef.current !== null && widthRevisionRef.current === witness?.revision)) && !cellDraftActive && !formulaDraftActive && !rowDraftActive && !anyNotesDraft && !hasInvalidReportDraft && !props.appearancePreference.getSnapshot().composing) {
-      deferredWidths.current.push({ field, width, th, startWidth, rendered });
+      if (!witness || !table) return;
+      const occurrence = witness.occurrence;
+      const collection = table.collection.key;
+      const existing = deferredWidths.current.find(item => item.occurrence === occurrence && item.collection === collection && item.field === field);
+      if (existing) { existing.width = width; existing.th = th; }
+      else deferredWidths.current.push({ occurrence, collection, field, width, th, startWidth, rendered });
       setPendingColumnWidths(current => ({ ...current, [field]: width }));
       return;
     }
@@ -4418,10 +4423,30 @@ export function SheetShell(props: SheetShellProps) {
     return (controlsLocked && !(widthPublishingRef.current && !commitPending && currentness !== "unknown")) || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
   }
   useEffect(() => {
-    if (widthPublishing || columnChangesBlocked || !witness || (widthRevisionRef.current !== null && widthRevisionRef.current === witness.revision)) return;
-    const next = deferredWidths.current.shift();
+    const dropped = deferredWidths.current;
+    deferredWidths.current = [];
+    widthRevisionRef.current = null;
+    if (dropped.length) setPendingColumnWidths(current => {
+      const next = { ...current };
+      for (const item of dropped) delete next[item.field];
+      return next;
+    });
+  }, [witness?.occurrence, table?.collection.key]);
+  useEffect(() => {
+    if (widthPublishing || columnChangesBlocked || !witness || !table || (widthRevisionRef.current !== null && widthRevisionRef.current === witness.revision)) return;
+    let next = deferredWidths.current.shift();
+    while (next) {
+      const stored = columns.find(column => column.id === next!.field)?.width;
+      if (next.occurrence === witness.occurrence && next.collection === table.collection.key && (stored == null || next.width !== clampColumnWidth(columnWidthToPx(stored)))) break;
+      const dropped = next;
+      setPendingColumnWidths(current => {
+        if (deferredWidths.current.some(item => item.field === dropped.field)) return current;
+        const widths = { ...current }; delete widths[dropped.field]; return widths;
+      });
+      next = deferredWidths.current.shift();
+    }
     if (next) commitColumnWidth(next.field, next.width, next.th, next.startWidth, next.rendered);
-  }, [widthPublishing, columnChangesBlocked, witness?.revision]);
+  }, [widthPublishing, columnChangesBlocked, witness?.revision, witness?.occurrence, table?.collection.key, columns]);
   // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
   const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
