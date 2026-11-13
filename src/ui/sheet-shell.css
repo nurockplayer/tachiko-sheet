@@ -982,7 +982,8 @@ body { margin: 0; }
 }
 
 .ts-header-actions {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 

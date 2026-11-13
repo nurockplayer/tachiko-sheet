@@ -4740,8 +4740,8 @@ export function SheetShell(props: SheetShellProps) {
           <div className="ts-command-menu">
             <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
             <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
-            {helpButton("ts-button ts-button--ghost")}
             {closeButton("ts-button ts-button--ghost")}
+            {helpButton("ts-button ts-button--ghost")}
           </div>
         </details>
       </div>
