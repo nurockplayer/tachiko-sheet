@@ -107,10 +107,12 @@ const cases = [
     await wait("formula committed", page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count));
     const product = String(Number(sourceValue) * Number(await text(at(first, "friction"))));
     await wait("formula projection installed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.priority}`, product]));
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
     await at(second, "priority").focus(); count = await dispatches(page);
     await page.keyboard.press("ControlOrMeta+'");
     const status = page.locator(".ts-clipboard-status[role=status]");
-    await wait("copy formula refusal", page.waitForFunction(() => Boolean(document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim())));
+    await wait("copy formula refusal", page.waitForFunction(() => Boolean(document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim()) && document.querySelector(".ts-clipboard-status[role=status]")?.textContent !== "There is no cell above to copy."));
     const copyMessage = await status.textContent();
     const copyRequests = (await dispatches(page)) - count;
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
