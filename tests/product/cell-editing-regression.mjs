@@ -87,7 +87,10 @@ const cases = [
     const at = (entity, key) => page.getByTestId(`cell:${entity}:${fields[key]}`);
     const text = async target => (await target.textContent()).trim();
     const above = at(first, "impact"), target = at(second, "impact");
-    const sourceValue = await text(above), oldValue = await text(target);
+    const oldValue = await text(target);
+    const sourceValue = oldValue === "37" ? "38" : "37";
+    await above.dblclick(); await editor(page).fill(sourceValue); await editor(page).press("Enter");
+    await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.impact}`, sourceValue]);
     let count = await dispatches(page);
     await target.focus(); await page.keyboard.press("ControlOrMeta+'");
     await editor(page).waitFor(); assert.equal(await editor(page).inputValue(), sourceValue);
@@ -98,8 +101,9 @@ const cases = [
     await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, oldValue]);
 
     const bar = page.getByTestId("formula-bar-input");
+    count = await dispatches(page);
     await at(first, "priority").click(); await bar.fill("=C2*D2"); await bar.press("Enter");
-    await page.waitForFunction(() => !document.querySelector('.ts-formula-bar-error'));
+    await page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count);
     await at(second, "priority").focus(); count = await dispatches(page);
     await page.keyboard.press("ControlOrMeta+'");
     await page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count);
