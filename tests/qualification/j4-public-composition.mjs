@@ -20,7 +20,7 @@ const fixture = Object.entries(fixtureText).sort(([a], [b]) => a.localeCompare(b
 const fixtureSha256 = createHash('sha256').update(JSON.stringify(Object.entries(fixtureText).sort())).digest('hex');
 const expectedFixtureSha256 = 'd8ab17b0bc84f89fbc996beb730f0842ec2bf848d1ab4afd315cc34fa1195d2b';
 const expectedCoreSourceCommit = '2da87c09c7f7d4fca3ac89c7459ecceb86ad4c0d';
-const expectedCoreManifestSha256 = 'c96674f9889814cf45196f8f0e78f23c5cb519d5b2587f3f6c4fc11b6aa329c3';
+const expectedCoreManifestSha256 = '69b6ef6e7a243c7226463c9981925ff6757234b6bdece08cc5a38c1d0cba30f0';
 const expectedPersistedDefinition = [{
   id: definitionId,
   orders: {schema: salesSchema, lookup_key_field: fields.salesCode, quantity_field: fields.quantity},
