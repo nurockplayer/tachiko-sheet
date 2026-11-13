@@ -31,6 +31,8 @@ const groups: ShortcutGroup[] = [
     { keys: ["Escape"], action: "Cancel edit" },
     { keys: ["Delete", "Backspace"], action: "Clear cells" },
     { keys: ["Mod+D"], action: "Fill down" },
+    { keys: ["Mod+'"], action: "Copy from cell above" },
+    { keys: ["Mod+Shift+'"], action: "Copy value from cell above" },
     { keys: ["Mod+;"], action: "Enter today's date in a Date cell" },
     { keys: ["Shift+F2"], action: "Go to formula bar" },
   ] },
@@ -43,6 +45,7 @@ const groups: ShortcutGroup[] = [
   { name: "Find and view", entries: [
     { keys: ["Mod+F"], action: "Find" }, { keys: ["Ctrl+`"], action: "Show formulas" },
     { keys: ["Mod+P"], action: "Print table" },
+    { keys: ["Mod+Shift+L"], action: "Filter: open or clear" },
   ] },
   { name: "File and history", entries: [
     { keys: ["Mod+S"], action: "Save" }, { keys: ["Mod+Z"], action: "Undo" },

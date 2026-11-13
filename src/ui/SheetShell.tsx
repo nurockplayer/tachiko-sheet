@@ -3339,6 +3339,32 @@ export function SheetShell(props: SheetShellProps) {
       if (!event.repeat) fillDown();
       return;
     }
+    if (!draft && (event.ctrlKey || event.metaKey) && !event.altKey && clipboardPosition(event.target) && (event.code === "Quote" || (event.shiftKey && event.code === "KeyL"))) {
+      event.preventDefault();
+      if (event.repeat) return;
+      if (event.code === "KeyL") {
+        if (gridSettings.filters?.length) {
+          updateGridSettings(current => ({ ...current, filters: undefined, kept: undefined }));
+          announceClipboard("Filters cleared.", false, true);
+        } else openCellFilter(position);
+        return;
+      }
+      const { row, column } = address(position);
+      const above = displayRows[row - 1];
+      if (row <= 0 || !above || column < 0) {
+        announceClipboard("There is no cell above to copy.", true, true);
+        return;
+      }
+      const abovePosition = { entity: rowEntity(above), field: position.field };
+      if (!event.shiftKey && formulaCellAt(abovePosition)) {
+        fillDown({ top: row - 1, bottom: row, left: column, right: column });
+      } else {
+        const seed = currentEditorSlot(abovePosition)?.original;
+        if (seed === undefined) announceClipboard("The cell above has no value to copy.", true, true);
+        else beginEdit(entity, position.field, seed);
+      }
+      return;
+    }
     if (!draft && event.key === "Escape") { event.preventDefault(); if (boundCopiedArea) setCopiedArea(null); else setCellSelection(null); return; }
     const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
     const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);

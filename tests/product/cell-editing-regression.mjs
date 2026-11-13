@@ -80,6 +80,45 @@ async function published(page, input, key, value, commitKey = "Enter") {
   }
 }
 const cases = [
+  ["copy from above and filter shortcuts", async (page) => {
+    const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
+    const entityAt = async index => rows.nth(index).locator("td[data-work-field]").first().getAttribute("data-work-entity");
+    const [first, second] = [await entityAt(0), await entityAt(1)];
+    const at = (entity, key) => page.getByTestId(`cell:${entity}:${fields[key]}`);
+    const text = async target => (await target.textContent()).trim();
+    const above = at(first, "impact"), target = at(second, "impact");
+    const sourceValue = await text(above), oldValue = await text(target);
+    let count = await dispatches(page);
+    await target.focus(); await page.keyboard.press("ControlOrMeta+'");
+    await editor(page).waitFor(); assert.equal(await editor(page).inputValue(), sourceValue);
+    await editor(page).press("Enter");
+    await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, sourceValue]);
+    assert.equal(await dispatches(page), count + 1);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, oldValue]);
+
+    const bar = page.getByTestId("formula-bar-input");
+    await at(first, "priority").click(); await bar.fill("=C2*D2"); await bar.press("Enter");
+    await page.waitForFunction(() => !document.querySelector('.ts-formula-bar-error'));
+    await at(second, "priority").focus(); count = await dispatches(page);
+    await page.keyboard.press("ControlOrMeta+'");
+    await page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count);
+    await at(second, "priority").click();
+    assert.match(await bar.inputValue(), /impact.*friction/);
+
+    count = await dispatches(page); await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await page.getByText("There is no cell above to copy.").first().waitFor();
+    assert.equal(await dispatches(page), count);
+
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
+    const filter = page.getByRole("textbox", { name: "Filter Impact", exact: true });
+    await filter.waitFor(); assert.equal(await focused(filter), true);
+    await filter.fill(sourceValue); await filter.press("Enter");
+    await page.getByTestId("row-view-status").waitFor();
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
+    await page.getByText("Filters cleared.").first().waitFor();
+    assert.equal(await page.getByTestId("row-view-status").count(), 0);
+  }],
   ["continuous boolean, numeric and Text typing; exact Enter publication", async (page) => {
     for (const [key, value] of [["confirmed", "false"], ["impact", "12345"], ["title", "Release plan"]]) {
       const before = await state(page); const count = await dispatches(page);

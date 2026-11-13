@@ -8,6 +8,9 @@ describe("shortcut help", () => {
     expect(entries(false).find(entry => entry.action === "Save")?.keys).toEqual(["Ctrl+S"]);
     expect(entries(true).find(entry => entry.action === "Show formulas")?.keys).toEqual(["Ctrl+`"]);
     expect(entries(true).find(entry => entry.action === "Paste Special")?.keys).toEqual(["Ctrl+⌘V"]);
+    expect(entries(false).find(entry => entry.action === "Copy from cell above")?.keys).toEqual(["Ctrl+'"]);
+    expect(entries(true).find(entry => entry.action === "Copy value from cell above")?.keys).toEqual(["⌘Shift+'"]);
+    expect(entries(false).find(entry => entry.action === "Filter: open or clear")?.keys).toEqual(["Ctrl+Shift+L"]);
     expect(entries(true).find(entry => entry.action === "Redo")?.keys).toEqual(["⌘Shift+Z"]);
   });
   it("filters desktop commands and does not repeat keys within a group", () => {
