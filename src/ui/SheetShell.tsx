@@ -1280,8 +1280,13 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => { if (!sizedGrid) setDrawnColumnWidths({}); }, [sizedGrid]);
   useEffect(() => { setDrawnColumnWidths({}); }, [collectionIdentity]);
   // A drag previews on the header cell itself and commits one width on release.
-  const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement } | null>(null);
-  const keyboardResizeRef = useRef<{ field: string; width: number; startWidth: number; th: HTMLElement | null; timer: ReturnType<typeof setTimeout> | null } | null>(null);
+  const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement; rendered: Record<string, number> } | null>(null);
+  const keyboardResizeRef = useRef<{ field: string; width: number; startWidth: number; th: HTMLElement | null; timer: ReturnType<typeof setTimeout> | null; rendered: Record<string, number> } | null>(null);
+
+  const widthPublishingRef = useRef(false);
+  const [widthPublishing, setWidthPublishing] = useState(false);
+  const deferredWidths = useRef<Array<{ field: string; width: number; th: HTMLElement | null; startWidth?: number; rendered: Record<string, number> }>>([]);
+  const widthRevisionRef = useRef<string | null>(null);
 
   /** A stored width wins; otherwise the width the table currently gives it. */
   function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
@@ -1307,15 +1312,20 @@ export function SheetShell(props: SheetShellProps) {
     if (onSetColumnWidth && !sizedGrid) setDrawnColumnWidths(renderedColumnWidths());
   }
 
-  function commitColumnWidth(field: string, px: number, th: HTMLElement | null, startWidth?: number): void {
+  function commitColumnWidth(field: string, px: number, th: HTMLElement | null, startWidth?: number, rendered: Record<string, number> = renderedColumnWidths()): void {
     const width = clampColumnWidth(px);
+    if (onSetColumnWidth && (widthPublishingRef.current || widthPublishing || (widthRevisionRef.current !== null && widthRevisionRef.current === witness?.revision)) && !cellDraftActive && !formulaDraftActive && !rowDraftActive && !anyNotesDraft && !hasInvalidReportDraft && !props.appearancePreference.getSnapshot().composing) {
+      deferredWidths.current.push({ field, width, th, startWidth, rendered });
+      setPendingColumnWidths(current => ({ ...current, [field]: width }));
+      return;
+    }
     if (onSetColumnWidth && (columnChangesBlocked || props.appearancePreference.getSnapshot().composing)) {
       if (th && startWidth !== undefined) th.style.width = `${startWidth}px`;
       setPendingColumnWidths(current => { const next = { ...current }; delete next[field]; return next; });
       return;
     }
     if (!onSetColumnWidth) {
-      updateGridSettings(current => rowViewWithWidth(current, field, width));
+      updateGridSettings(current => rowViewWithWidth({ ...current, widths: { ...rendered, ...current.widths } }, field, width));
       setPendingColumnWidths(current => { const next = { ...current }; delete next[field]; return next; });
       return;
     }
@@ -1323,17 +1333,27 @@ export function SheetShell(props: SheetShellProps) {
     const previous = startWidth ?? columnWidthOf(gridSettings, field, th);
     setPendingColumnWidths(current => ({ ...current, [field]: width }));
     setColumnAnnouncement(null);
+    widthPublishingRef.current = true;
+    setWidthPublishing(true);
+    widthRevisionRef.current = witness.revision;
     void onSetColumnWidth(witness, table.collection.key, field, columnWidthToUnits(width)).then(result => {
+      if (result.kind !== "confirmed") widthRevisionRef.current = null;
       if (result.kind !== "confirmed") {
         if (th) th.style.width = `${previous}px`;
         setColumnAnnouncement(result.kind === "refused" ? result.message : "Column width could not be changed.");
       }
     }).catch(() => {
+      widthRevisionRef.current = null;
       if (th) th.style.width = `${previous}px`;
       setColumnAnnouncement("Column width could not be changed.");
-    }).finally(() => setPendingColumnWidths(current => {
-      const next = { ...current }; delete next[field]; return next;
-    }));
+    }).finally(() => {
+      widthPublishingRef.current = false;
+      setWidthPublishing(false);
+      setPendingColumnWidths(current => {
+        if (current[field] !== width || keyboardResizeRef.current?.field === field || deferredWidths.current.some(item => item.field === field)) return current;
+        const next = { ...current }; delete next[field]; return next;
+      });
+    });
   }
 
   function finishKeyboardResize(): void {
@@ -1341,17 +1361,17 @@ export function SheetShell(props: SheetShellProps) {
     if (!session) return;
     if (session.timer) clearTimeout(session.timer);
     keyboardResizeRef.current = null;
-    commitColumnWidth(session.field, session.width, session.th, session.startWidth);
+    commitColumnWidth(session.field, session.width, session.th, session.startWidth, session.rendered);
   }
 
   function resizeColumnBy(field: string, delta: number, th: HTMLElement | null): void {
-    if (onSetColumnWidth && (columnChangesBlocked || props.appearancePreference.getSnapshot().composing)) return;
+    if (onSetColumnWidth && resizeChangesBlocked()) return;
     let session = keyboardResizeRef.current;
     if (session && session.field !== field) { finishKeyboardResize(); session = null; }
     if (!session) {
       captureDrawnWidths();
       const width = columnWidthOf(gridSettings, field, th);
-      session = { field, width, startWidth: width, th, timer: null };
+      session = { field, width, startWidth: width, th, timer: null, rendered: renderedColumnWidths() };
       keyboardResizeRef.current = session;
     }
     if (session.timer) clearTimeout(session.timer);
@@ -1383,7 +1403,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function startColumnResize(event: ReactPointerEvent<HTMLSpanElement>, field: string): void {
     const th = event.currentTarget.closest("th");
-    if (onSetColumnWidth && (columnChangesBlocked || props.appearancePreference.getSnapshot().composing)) { event.preventDefault(); event.stopPropagation(); return; }
+    if (onSetColumnWidth && resizeChangesBlocked()) { event.preventDefault(); event.stopPropagation(); return; }
     if (event.button !== 0 || !th) return;
     // The header owns its own gestures: never let a resize begin a rename or a
     // column-action menu. The press is not cancelled, so the double-click that
@@ -1391,7 +1411,7 @@ export function SheetShell(props: SheetShellProps) {
     event.stopPropagation();
     const startWidth = columnWidthOf(gridSettings, field, th);
     captureDrawnWidths();
-    columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th };
+    columnResizeRef.current = { field, startX: event.clientX, startWidth, width: startWidth, th, rendered: renderedColumnWidths() };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -1412,7 +1432,7 @@ export function SheetShell(props: SheetShellProps) {
     // A press without a move stores nothing: it must not turn every column of
     // a shared-width grid into a fixed one.
     if (session.width === session.startWidth) return;
-    commitColumnWidth(field, session.width, session.th, session.startWidth);
+    commitColumnWidth(field, session.width, session.th, session.startWidth, session.rendered);
   }
 
   /** Losing the pointer without releasing it keeps the width it started with. */
@@ -4394,6 +4414,14 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  function resizeChangesBlocked(): boolean {
+    return (controlsLocked && !(widthPublishingRef.current && !commitPending && currentness !== "unknown")) || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
+  }
+  useEffect(() => {
+    if (widthPublishing || columnChangesBlocked || !witness || (widthRevisionRef.current !== null && widthRevisionRef.current === witness.revision)) return;
+    const next = deferredWidths.current.shift();
+    if (next) commitColumnWidth(next.field, next.width, next.th, next.startWidth, next.rendered);
+  }, [widthPublishing, columnChangesBlocked, witness?.revision]);
   // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
   const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
@@ -4991,7 +5019,7 @@ export function SheetShell(props: SheetShellProps) {
                 className="ts-col-resize"
                 role="separator"
                 aria-orientation="vertical"
-                aria-disabled={Boolean(onSetColumnWidth && columnChangesBlocked)}
+                aria-disabled={Boolean(onSetColumnWidth && resizeChangesBlocked())}
                 aria-label={`Resize ${column.display_name}`}
                 aria-valuenow={columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined) ?? SIZED_COLUMN_DEFAULT_WIDTH}
                 aria-valuemin={COLUMN_WIDTH_MIN}
