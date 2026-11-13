@@ -1570,10 +1570,7 @@ const cases = [
     await page.keyboard.press("Control+PageUp");
     await settle(page);
     assert.equal(await active(), first, "Ctrl+PageUp did not return to the previous table");
-  } },
-  { id: "P2", name: "Keyboard shortcuts help", tier: "B", run: async (page) => {
-    await example(page);
-    const table = await projection(page);
+    // P2: shortcut help keeps the focused cell and the editor draft intact.
     const cell = page.getByTestId(cellIdFor(table, 0, 0));
     await cell.click();
     const before = await executeCount(page);
