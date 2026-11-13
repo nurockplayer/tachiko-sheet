@@ -2906,6 +2906,29 @@ export function SheetShell(props: SheetShellProps) {
     revealGridRow(rowIndex);
   }
 
+  function selectHeader(kind: "column" | "row", index: number, shift: boolean): void {
+    if (historyInteractionLocked || !view || !collectionIdentity || !displayRows.length || !columns.length) return;
+    const previous = boundSelection?.anchor ?? focusedPosition;
+    const anchor = kind === "column"
+      ? { entity: rowEntity(displayRows[0]!), field: shift && previous && columns.some(column => column.id === previous.field) ? previous.field : columns[index]!.id }
+      : { entity: shift && previous && rowIndexByEntity.has(previous.entity) ? previous.entity : rowEntity(displayRows[index]!), field: columns[0]!.id };
+    const end = kind === "column"
+      ? { entity: rowEntity(displayRows.at(-1)!), field: columns[index]!.id }
+      : { entity: rowEntity(displayRows[index]!), field: columns.at(-1)!.id };
+    tabRunStartRef.current = null;
+    const scroller = gridScrollRef.current;
+    const viewport = scroller?.getBoundingClientRect();
+    const visibleCell = kind === "column" && viewport
+      ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), anchor.field))).find(cell => {
+        if (!cell) return false;
+        const bounds = cell.getBoundingClientRect();
+        return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+      })
+      : undefined;
+    (cellRefs.current.get(cellKey(anchor.entity, anchor.field)) ?? visibleCell)?.focus({ preventScroll: true });
+    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
+  }
+
   /**
    * The Name Box: a typed A1 address or range moves focus there, clearing any
    * selection. Anything else keeps the box and says why.
@@ -4789,7 +4812,7 @@ export function SheetShell(props: SheetShellProps) {
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
             <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={columnWidths?.[column.id] !== undefined ? { width: columnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }}>
               <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
                 if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
@@ -5179,7 +5202,7 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(row);
     const isSelectedRow = entity === selectedEntity;
     return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
-      <th scope="row" className="ts-row-head">{a1RowNumber(index)}</th>
+      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)}>{a1RowNumber(index)}</th>
       {columns.map((column) => renderCell(row, entity, column))}
     </tr>;
   }

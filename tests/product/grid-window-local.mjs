@@ -61,6 +61,19 @@ try {
   assert.equal(imported.rows.length, UNIQUE + DUPLICATES);
   assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
+  // Selecting a whole column must not reveal the far end of the range.
+  for (const row of [0, 150]) {
+    await scrollTo(page, row);
+    await rowAt(page, row).waitFor();
+    const scroller = page.locator(".ts-grid-scroll");
+    const before = await scroller.evaluate(node => node.scrollTop);
+    await page.locator("th.ts-column-header .ts-col-head").nth(1).click();
+    assert.equal(await scroller.evaluate(node => node.scrollTop), before, "column selection preserves the viewport");
+    assert.ok(await page.locator(".ts-cell--range-selected").count() > 1, "column selection remains visible");
+  }
+  await scrollTo(page, 0);
+  await rowAt(page, 0).waitFor();
+
   // A live draft survives scrolling far away and back.
   await rowAt(page, 5).locator("td").nth(1).dblclick();
   const editor = page.getByRole("textbox", { name: "Edit cell", exact: true });
