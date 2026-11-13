@@ -1254,7 +1254,7 @@ export function SheetShell(props: SheetShellProps) {
   /** A stored width wins; otherwise the width the table currently gives it. */
   function columnWidthOf(settings: RowViewSettings, field: string, th: HTMLElement | null): number {
     const projected = columns.find(column => column.id === field)?.width;
-    const stored = pendingColumnWidths[field] ?? (projected != null ? columnWidthToPx(projected) : settings.widths?.[field]);
+    const stored = pendingColumnWidths[field] ?? (projected != null ? clampColumnWidth(columnWidthToPx(projected)) : settings.widths?.[field]);
     if (stored !== undefined) return stored;
     return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
   }
@@ -4808,7 +4808,7 @@ export function SheetShell(props: SheetShellProps) {
     // Widths belong to columns the grid shows; a resize is available wherever
     // the dense header actions are.
     const columnWidths = Object.fromEntries(columns.flatMap(column => {
-      const width = pendingColumnWidths[column.id] ?? (column.width != null ? columnWidthToPx(column.width) : gridSettings.widths?.[column.id]);
+      const width = pendingColumnWidths[column.id] ?? (column.width != null ? clampColumnWidth(columnWidthToPx(column.width)) : gridSettings.widths?.[column.id]);
       return width === undefined ? [] : [[column.id, width]];
     }));
     const sizedGrid = Object.keys(columnWidths).length > 0;

@@ -40,7 +40,7 @@ export function columnWidthToPx(units: number): number {
 }
 
 export function columnWidthToUnits(px: number): number {
-  return Math.min(65280, Math.max(1, Math.round(Math.max(0, (px - 5) / 7) * 256)));
+  return Math.min(65280, Math.max(1, Math.ceil(Math.max(0, (px - 5) / 7) * 256)));
 }
 
 /** Set one column's width; an unchanged width returns the same settings object. */
