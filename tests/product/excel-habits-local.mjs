@@ -1607,6 +1607,34 @@ const cases = [
     await page.keyboard.press("Control+PageUp");
     await settle(page);
     assert.equal(await active(), first, "Ctrl+PageUp did not return to the previous table");
+    // P2: shortcut help keeps the focused cell and the editor draft intact.
+    const cell = page.getByTestId(cellIdFor(table, 0, 0));
+    await cell.click();
+    const before = await executeCount(page);
+    const undo = await page.getByRole("button", { name: "Undo", exact: true }).first().isDisabled();
+    await page.keyboard.press("Control+/");
+    const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
+    assert.equal(await activeId(page), await cell.getAttribute("data-testid"), "focus did not return to cell");
+    assert.equal(await executeCount(page), before, "help changed data");
+    assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).first().isDisabled(), undo, "help changed undo availability");
+    await cell.press("F2");
+    const editor = page.getByTestId("cell-editor");
+    await editor.waitFor();
+    const draft = await editor.inputValue();
+    await page.keyboard.press("Control+/");
+    assert.equal(await dialog.count(), 0, "help opened while editing");
+    assert.equal(await editor.inputValue(), draft, "help changed the draft");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Keyboard shortcuts", exact: true }).filter({ visible: true }).click();
+    await dialog.waitFor();
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.getByLabel("More document commands").click();
+    await page.getByRole("button", { name: "Keyboard shortcuts", exact: true }).filter({ visible: true }).click();
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
   } },
   { id: "47", name: "Format Cells", tier: "B", run: async (page) => {
     await example(page);

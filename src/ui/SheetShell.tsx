@@ -63,6 +63,7 @@ import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
 import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
+import { ShortcutHelpDialog } from "./ShortcutHelpDialog.js";
 import { DeleteTableDialog } from "./DeleteTableDialog.js";
 import { RenameTableDialog } from "./RenameTableDialog.js";
 import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
@@ -745,6 +746,10 @@ export function SheetShell(props: SheetShellProps) {
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const [shortcutHelp, setShortcutHelp] = useState(false);
+  const shortcutHelpOriginRef = useRef<HTMLElement | null>(null);
+  function openShortcutHelp(origin: HTMLElement | null) { shortcutHelpOriginRef.current = origin; setShortcutHelp(true); }
+  function closeShortcutHelp() { setShortcutHelp(false); requestAnimationFrame(() => shortcutHelpOriginRef.current?.focus()); }
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
@@ -2011,7 +2016,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = shortcutHelp || deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -3988,6 +3993,17 @@ export function SheetShell(props: SheetShellProps) {
     return () => window.removeEventListener("keydown", keydown);
   });
 
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || (event.key !== "/" && event.code !== "Slash") || editor || formulaDraft || modalInteractionOpen || document.querySelector('[aria-modal="true"]')) return;
+      event.preventDefault();
+      openShortcutHelp(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
+
   // Ctrl/Cmd+P prints the table while focus is inside the grid, as in Excel.
   // Capture phase: the cell editor stops its keys from bubbling. Inside the
   // grid the shortcut never prints the app page; while an edit is unapplied
@@ -4665,6 +4681,7 @@ export function SheetShell(props: SheetShellProps) {
         Close project
       </button>
     );
+    const helpButton = (className: string) => <button type="button" className={className} title={`Keyboard shortcuts (${menuShortcut("/", isMacPlatform())})`} onClick={event => openShortcutHelp(event.currentTarget)}>Keyboard shortcuts</button>;
     return (
       <div className="ts-actions ts-header-actions" role="group" aria-label="Document commands">
         <button
@@ -4716,12 +4733,14 @@ export function SheetShell(props: SheetShellProps) {
           Save a copy
         </button>
         {view?.openedFromWorkFile && workFileSaveUnavailableReason ? <span className="ts-hint" id={saveUnavailableId}>{saveUnavailableReason}</span> : null}
+        {helpButton("ts-button ts-button--ghost ts-shortcut-help-desktop")}
         {closeButton("ts-button ts-close-project-desktop")}
         <details className="ts-command-overflow">
           <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
           <div className="ts-command-menu">
             <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
             <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
+            {helpButton("ts-button ts-button--ghost")}
             {closeButton("ts-button ts-button--ghost")}
           </div>
         </details>
@@ -6148,6 +6167,7 @@ export function SheetShell(props: SheetShellProps) {
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog onDraftChange={setRenameTableDraftActive} initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); setRenameTableDraftActive(false); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
+      {shortcutHelp ? <ShortcutHelpDialog mac={isMacPlatform()} desktop={import.meta.env.MODE === "desktop"} onClose={closeShortcutHelp} /> : null}
       {deleteTable && onDeleteTable ? <DeleteTableDialog name={deleteTable.name} onDelete={() => onDeleteTable(deleteTable.witness, deleteTable.key)} onClose={() => { const key = deleteTable.key; setDeleteTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
       {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={(confirmed, focusInside) => finishColumnDialog(confirmed, confirmed, focusInside)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
       {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {
