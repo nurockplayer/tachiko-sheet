@@ -30,7 +30,13 @@ describe("A1 translation with the vendored kit", () => {
       const collection = opened.table.collection.key;
       let revision = opened.table.revision;
       for (let i = 0; i < 3; i++) {
-        revision = (await client.trackerCommand({ type: "insert_row", expected_revision: revision, collection, initializers: [] })).resulting_revision;
+        const inputs = [
+          { kind: "text" as const, value: "x" }, { kind: "number" as const, input: "2" },
+          { kind: "number" as const, input: "2" }, { kind: "number" as const, input: "2" },
+          { kind: "date" as const, value: "2026-09-05" },
+        ];
+        const initializers = opened.table.columns.map((column, index) => ({ field: column.id, input: inputs[index]! }));
+        revision = (await client.trackerCommand({ type: "insert_row", expected_revision: revision, collection, initializers })).resulting_revision;
       }
       const table = await client.queryTable(collection);
       const columns = table.columns.map(column => column.id);
