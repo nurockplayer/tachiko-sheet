@@ -4820,11 +4820,9 @@ export function SheetShell(props: SheetShellProps) {
       return width === undefined ? [] : [[column.id, width]];
     }));
     const sizedGrid = Object.keys(columnWidths).length > 0;
-    const unsizedCount = columns.length - Object.keys(columnWidths).length;
-    const sizedMinimum = 48 + columns.reduce((sum, column) => sum + (columnWidths[column.id] ?? SIZED_COLUMN_DEFAULT_WIDTH), 0);
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table style={sizedGrid ? { minWidth: sizedMinimum, width: unsizedCount ? "100%" : 0 } : undefined} className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
