@@ -143,10 +143,14 @@ const cases = [
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("clear prior announcement", page.getByText("There is no cell above to copy.").first().waitFor());
     await at(first, "priority").click(); await page.keyboard.press("Shift+ArrowDown");
+    const beforeFillRevision = await at(second, "priority").getAttribute("data-work-revision");
     count = await formulaCopies(); await page.keyboard.press("ControlOrMeta+D");
-    await wait("fill down announcement", page.waitForFunction(([count, message]) =>
+    await wait("fill down announcement", page.waitForFunction(([count, message, id, revision]) =>
       document.querySelector(".ts-clipboard-status[role=status]")?.textContent === message &&
-      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1, [count, copyMessage]));
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1 &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [count, copyMessage, `cell:${second}:${fields.priority}`, beforeFillRevision]));
     assert.equal(await status.textContent(), copyMessage);
     assert.equal((await formulaCopies()) - count, copyRequests, "fill down matches formula shortcut request count");
 
