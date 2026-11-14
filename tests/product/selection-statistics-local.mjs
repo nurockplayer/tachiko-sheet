@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
-import { waitForColdHome } from "./home-entry.mjs";
+import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -48,7 +48,7 @@ await context.addInitScript(() => {
     }
   };
 });
-const page = await context.newPage();
+let page = await context.newPage();
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const projection = () => page.evaluate(() => window.__selectionEvidence.records.flatMap(record => record.tables).at(-1));
 const queryCount = () => page.evaluate(() => window.__selectionEvidence.records.flatMap(record => record.requests).filter(message => message.request?.type === "query_selection_statistics").length);
@@ -161,5 +161,31 @@ try {
   assert.equal(layout.scrolls, true); assert.ok(layout.width <= 390);
   assert.equal(layout.withinViewport, true); assert.equal(layout.unclipped, true); assert.equal(layout.inFlow, true);
   console.log("PASS: 390px status strip scrolls horizontally with no overlay or vertical clipping");
+
+  await page.close(); page = await context.newPage();
+  await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
+  await (await homeImportInput(page)).setInputFiles({
+    name: "selection-8406.csv", mimeType: "text/csv", buffer: Buffer.from("Amount\n" + "2\n".repeat(8406)),
+  });
+  const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
+  await preview.locator(".ts-import-column select").first().selectOption("number");
+  await preview.getByRole("button", { name: "Import file", exact: true }).click();
+  await preview.waitFor({ state: "detached" }); await ready();
+  const largeTable = await projection();
+  assert.equal(largeTable.rows.length, 8406);
+  assert.ok(await page.locator("tbody tr.ts-row").count() < 400, "large selection spans the virtualized grid");
+  const largePublications = await publications();
+  const largeSave = await page.getByTestId("work-state").getAttribute("data-work-state");
+  await page.getByRole("columnheader", { name: "Amount", exact: true }).click();
+  await expectStatistics({ count: 8406, "numerical-count": 8406, sum: 16812, average: 2, min: 2, max: 2 });
+  const largeRequest = await page.evaluate(() => window.__selectionEvidence.records.flatMap(record => record.requests)
+    .filter(message => message.request?.type === "query_selection_statistics").at(-1).request);
+  assert.equal(largeRequest.targets.length, 8406);
+  const largeRequestBytes = Buffer.byteLength(JSON.stringify(largeRequest));
+  assert.ok(largeRequestBytes > 65_536, "real dispatch exceeds the ordinary 64 KiB limit");
+  assert.equal(await publications(), largePublications);
+  assert.equal(await page.getByTestId("work-state").getAttribute("data-work-state"), largeSave);
+  assert.equal((await projection()).revision, largeTable.revision);
+  console.log(`PASS: 8,406-row whole-column selection returns all six real Worker/WASM statistics (${largeRequestBytes}-byte request)`);
   console.log("PASS: selection statistics browser acceptance cases 1, 2, 4–7");
 } finally { await context.close(); await browser.close(); }
