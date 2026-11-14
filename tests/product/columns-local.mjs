@@ -583,6 +583,7 @@ try {
   checks.push("218 root-cause design: real 20-column native table with long first name; focused middle rename, last removal and add at 320/375/390; focus returns to Column; draft guard; labels-only headers across all profiles/densities and forced colors");
 
   // Format strip operates on the focused column and participates in history.
+  await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
   table = await projection();
   const numberIndex = table.columns.findIndex(column => column.field_type === "number");
   await cell(table, 0, numberIndex).focus();
