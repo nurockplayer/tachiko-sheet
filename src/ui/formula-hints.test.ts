@@ -18,6 +18,8 @@ describe("formula hints", () => {
   it("respects boundaries and the character after the caret", () => {
     for (const value of ["SU", "=$A", "=A1:SU", "=A1SU", "=x.SU", "=x_SU", "=SU("]) expect(suggestions(value)).toBeNull();
     expect(suggestions("=SUx", 3)).toBeNull();
+    expect(suggestions("=A1+2", 2)).toBeNull();
+    expect(suggestions("=SU", 3)?.names).toEqual(["SUM", "SUMIF", "SUMIFS"]);
     expect(suggestions("=SU(", 3)).toBeNull();
     for (const value of ["=1+SU", "=(SU", "=IF(1, SU"]) expect(suggestions(value)?.names[0]).toBe("SUM");
   });

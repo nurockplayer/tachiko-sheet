@@ -1,11 +1,11 @@
 export interface FormulaFunction { name: string; args: string; summary: string }
 
 export const FORMULA_FUNCTIONS: readonly FormulaFunction[] = [
-  { name: "SUM", args: "number1, [number2], …", summary: "Adds numbers" },
-  { name: "AVERAGE", args: "number1, [number2], …", summary: "Average of numbers" },
-  { name: "COUNT", args: "value1, [value2], …", summary: "Counts cells that hold numbers" },
-  { name: "MIN", args: "number1, [number2], …", summary: "Smallest number" },
-  { name: "MAX", args: "number1, [number2], …", summary: "Largest number" },
+  { name: "SUM", args: "range", summary: "Adds numbers" },
+  { name: "AVERAGE", args: "range", summary: "Average of numbers" },
+  { name: "COUNT", args: "range", summary: "Counts cells that hold numbers" },
+  { name: "MIN", args: "number1, number2", summary: "Smallest number" },
+  { name: "MAX", args: "number1, number2", summary: "Largest number" },
   { name: "IF", args: "logical_test, value_if_true, value_if_false", summary: "Picks a value by a test" },
   { name: "AND", args: "logical1, [logical2], …", summary: "True when every test is true" },
   { name: "OR", args: "logical1, [logical2], …", summary: "True when any test is true" },
@@ -51,7 +51,7 @@ function scan(value: string, caret: number): { inString: boolean; stack: (string
 }
 
 export function functionSuggestions(value: string, caret: number): { start: number; end: number; names: string[] } | null {
-  if (!value.startsWith("=") || scan(value, caret).inString || /[A-Za-z(]/.test(value[caret] ?? "")) return null;
+  if (!value.startsWith("=") || scan(value, caret).inString || /[A-Za-z0-9(]/.test(value[caret] ?? "")) return null;
   const match = /(?:^|[=+\-*/^&<>,(\s])([A-Za-z]+)$/.exec(value.slice(0, caret));
   if (!match) return null;
   const token = match[1]!.toUpperCase();

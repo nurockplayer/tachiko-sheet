@@ -174,6 +174,18 @@ interface CellEditorProps {
   onSelect(event: React.SyntheticEvent<HTMLInputElement | HTMLTextAreaElement>): void;
 }
 
+export function cellEditorFormulaSource(editor: { entity: string; kind: string; value: string }): string | null {
+  return editor.entity !== DRAFT_ROW && editor.kind === "number" ? inCellFormulaSource(editor.value) : null;
+}
+
+export function formulaOptionsUi(ui: CellOptionsUi & { key: string } | null, key: string): CellOptionsUi {
+  return ui?.key === key ? ui : { open: true, index: 0 };
+}
+
+export function formulaOptionIndex(index: number, count: number): number | null {
+  return count > 0 ? Math.min(Math.max(index, 0), count - 1) : null;
+}
+
 export function cellEditorListAttributes(suggestionCount: number, allowedCount: number, open: boolean): Pick<CellEditorProps, "role" | "aria-autocomplete" | "aria-expanded"> {
   return suggestionCount > 0 || allowedCount > 0
     ? { role: "combobox", "aria-autocomplete": "list", "aria-expanded": open }
@@ -3245,7 +3257,7 @@ export function SheetShell(props: SheetShellProps) {
         return accepted;
       }
     }
-    const formulaSource = editor.kind === "number" ? inCellFormulaSource(editor.value) : null;
+    const formulaSource = cellEditorFormulaSource(editor);
     if (formulaSource !== null) {
       // Same rule as the formula bar: a first formula withdraws the native row
       // profile, which would hide the entry row while its draft blocks Save.
@@ -5469,13 +5481,14 @@ export function SheetShell(props: SheetShellProps) {
       : rowIndexByEntity.has(focusedEntity)));
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
     const allCellOptions = editing ? cellEditorOptions(column) : [];
-    const formulaMode = editing && editor?.value.startsWith("=");
+    const formulaMode = Boolean(editing && editor && cellEditorFormulaSource(editor) !== null);
     const suggestions = formulaMode && editor ? functionSuggestions(editor.value, formulaCaret) : null;
     const hint = formulaMode && editor ? functionHint(editor.value, formulaCaret) : null;
     const cellOptions = formulaMode ? suggestions?.names ?? [] : editing && editor ? cellOptionMatches(allCellOptions, editor.value) : [];
     const cellOptionsId = formulaMode ? `ts-formula-functions-${column.id}` : `ts-cell-options-${column.id}`;
     const hintId = `ts-formula-hint-${column.id}`;
-    const optionsUi: CellOptionsUi = cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
+    const optionsKey = formulaMode ? `${key}\u0000${suggestions?.start ?? ""}\u0000${suggestions?.names.join(",") ?? ""}` : key;
+    const optionsUi: CellOptionsUi = formulaMode ? formulaOptionsUi(cellOptionsUi, optionsKey) : cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
     // A pending commit owns the editor value; a pick then would be silently dropped.
     const optionsOpen = optionsUi.open && cellOptions.length > 0 && !commitPending;
     const pickCellOption = (value: string): void => {
@@ -5491,7 +5504,7 @@ export function SheetShell(props: SheetShellProps) {
         setEditor(previous => previous ? { ...previous, value } : previous);
       }
       setLocalError(null);
-      setCellOptionsUi({ key, open: false, index: -1 });
+      setCellOptionsUi({ key: optionsKey, open: false, index: -1 });
     };
     // A text cell that offers no list of allowed values edits in a textarea, so
     // Alt+Enter can hold a line break; every other editor keeps the input.
@@ -5544,14 +5557,15 @@ export function SheetShell(props: SheetShellProps) {
           return;
         }
         const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
-        const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" ? { kind: "pick" as const, index: Math.max(0, optionsUi.index) } : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
+        const pickIndex = formulaOptionIndex(optionsUi.index, cellOptions.length);
+        const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" && pickIndex !== null ? { kind: "pick" as const, index: pickIndex } : cellOptionsKeyAction(event.key, formulaMode && optionsUi.index >= 0 && pickIndex !== null ? { ...optionsUi, index: pickIndex } : optionsUi, cellOptions.length);
         if (!action) { onEditorKeyDown(event); return; }
         // The open list owns this key; Enter picks without committing, so a second Enter commits.
         event.preventDefault();
         event.stopPropagation();
-        if (action.kind === "move") setCellOptionsUi({ key, ...action.ui });
+        if (action.kind === "move") setCellOptionsUi({ key: optionsKey, ...action.ui });
         else if (action.kind === "pick") pickCellOption(cellOptions[action.index]!);
-        else setCellOptionsUi({ key, open: false, index: -1 });
+        else setCellOptionsUi({ key: optionsKey, open: false, index: -1 });
       },
     };
     // A formula field instance is read-only in the grid; the bar edits it.

@@ -9,6 +9,9 @@ import { BriefFacts } from "./BriefFacts.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
   cellEditorListAttributes,
+  cellEditorFormulaSource,
+  formulaOptionsUi,
+  formulaOptionIndex,
   focusRevealNextScrollTop,
   focusRevealScrollDelta,
   focusRevealStillCurrent,
@@ -24,6 +27,7 @@ import {
 import { cellDisplay, fieldClipboardText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { encodeTsv } from "./clipboard.js";
 import { functionSuggestions } from "./formula-hints.js";
+import { DRAFT_ROW } from "./row-entry-model.js";
 import { FORMULA_BAR_NO_CELL } from "./formula-bar.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
@@ -1383,5 +1387,21 @@ describe("cell editor formula roles", () => {
     expect(editor("=Amount * 2")).not.toContain('role="combobox"');
     expect(editor("=SU")).toContain('role="combobox"');
     expect(editor("=SU")).toContain('aria-expanded="true"');
+  });
+});
+
+
+describe("formula completion boundaries", () => {
+  it("resets selection for a changed list and clamps acceptance", () => {
+    const old = { key: "A-list", open: true, index: 5 };
+    expect(formulaOptionsUi(old, "SU-list")).toEqual({ open: true, index: 0 });
+    expect(formulaOptionIndex(5, 3)).toBe(2);
+    expect(formulaOptionIndex(-1, 3)).toBe(0);
+    expect(formulaOptionIndex(0, 0)).toBeNull();
+  });
+  it("only offers formulas where commit accepts them", () => {
+    expect(cellEditorFormulaSource({ entity: "row", kind: "number", value: "=SU" })).toBe("SU");
+    expect(cellEditorFormulaSource({ entity: "row", kind: "text", value: "=SU" })).toBeNull();
+    expect(cellEditorFormulaSource({ entity: DRAFT_ROW, kind: "number", value: "=SU" })).toBeNull();
   });
 });
