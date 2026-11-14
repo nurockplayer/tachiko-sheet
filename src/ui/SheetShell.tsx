@@ -765,7 +765,7 @@ export function SheetShell(props: SheetShellProps) {
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
-  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell: GridPosition; pasteSpecial?: boolean } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
   // after the user moved to another cell must not touch the editor it left.
@@ -1554,15 +1554,14 @@ export function SheetShell(props: SheetShellProps) {
       : [[boundRowDraft?.values[position.field] ?? ""]];
   }
 
-  function copyGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+  function copyGrid(position: GridPosition | null, clipboardData: DataTransfer | null, preventDefault: () => void): void {
     setClipboardMessage(null);
-    const position = clipboardPosition(event.target);
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
-    event.preventDefault();
+    preventDefault();
     const rows = clipboardRows(position);
     try {
-      if (!event.clipboardData) throw new Error("No clipboard data");
-      event.clipboardData.setData("text/plain", encodeTsv(rows));
+      if (!clipboardData) throw new Error("No clipboard data");
+      clipboardData.setData("text/plain", encodeTsv(rows));
       setCopiedArea(position.entity === DRAFT_ROW ? null : { identity: collectionIdentity, revision: view?.revision, area: selectionRectangle ?? rectangle(address(position), address(position)) });
       const rowIndex = rowIndexByEntity.get(position.entity);
       const row = rowIndex === undefined ? undefined : displayRows[rowIndex];
@@ -1574,11 +1573,10 @@ export function SheetShell(props: SheetShellProps) {
     } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
   }
 
-  function cutGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+  function cutGrid(position: GridPosition | null, clipboardData: DataTransfer | null, preventDefault: () => void): void {
     setClipboardMessage(null);
-    const position = clipboardPosition(event.target);
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
-    event.preventDefault();
+    preventDefault();
     if (position.entity === DRAFT_ROW) { announceClipboard("Cut is not available in the new row.", true); return; }
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before cutting cells.", true, true); return;
@@ -1591,8 +1589,8 @@ export function SheetShell(props: SheetShellProps) {
       const text = encodeTsv(rows);
       const tooLarge = cutBlockRefusal(rows.length, text);
       if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
-      if (!event.clipboardData) throw new Error("No clipboard data");
-      event.clipboardData.setData("text/plain", text);
+      if (!clipboardData) throw new Error("No clipboard data");
+      clipboardData.setData("text/plain", text);
       if (!edits.length) { setCopiedArea(null); announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
       const cutArea = { identity: collectionIdentity, revision: view?.revision, area };
       setCopiedArea(cutArea);
@@ -1789,7 +1787,8 @@ export function SheetShell(props: SheetShellProps) {
   function closeCellMenu(): void {
     const open = cellMenu;
     setCellMenu(null);
-    if (open) focusCell(open.activeCell.entity, open.activeCell.field);
+    if (open?.activeCell) focusCell(open.activeCell.entity, open.activeCell.field);
+    else (open?.trigger?.querySelector<HTMLElement>(".ts-col-head") ?? open?.trigger)?.focus();
   }
 
   /**
@@ -1807,6 +1806,19 @@ export function SheetShell(props: SheetShellProps) {
       focusCell(position.entity, position.field);
     }
     setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position, pasteSpecial });
+  }
+
+  function openColumnMenu(x: number, y: number, index: number, trigger: HTMLElement): void {
+    if (historyInteractionLocked || !view || !collectionIdentity || !columns.length) return;
+    const field = columns[index]!.id;
+    const position = { entity: displayRows.length ? rowEntity(displayRows[0]!) : "", field };
+    const inside = Boolean(selectionRectangle && selectionRectangle.top === 0
+      && selectionRectangle.bottom === displayRows.length - 1
+      && index >= selectionRectangle.left && index <= selectionRectangle.right);
+    if (displayRows.length && !inside) selectHeader("column", index, false);
+    const visible = visibleColumnCell(field);
+    const activeCell = displayRows.length ? (visible ? { entity: visible.dataset.workEntity!, field } : position) : undefined;
+    setCellMenu({ x, y, position, activeCell, column: field, trigger });
   }
 
   /** The filter editor lives in the column's disclosure: its heading's, or the compact toolbar that follows the focused cell. */
@@ -1882,6 +1894,45 @@ export function SheetShell(props: SheetShellProps) {
       { label: "Sort Z → A", disabled: viewBlocked, run: command(() => setGridSort(position.field, "desc")) },
       { label: "Filter…", disabled: viewBlocked, run: command(() => openCellFilter(position)) },
     ];
+  }
+
+  function columnMenuItems(field: string, header: HTMLElement): CellMenuItem[] {
+    const column = columns.find(candidate => candidate.id === field);
+    if (!column || !table || !view) return [];
+    const index = columns.indexOf(column);
+    const position = { entity: displayRows.length ? rowEntity(displayRows[0]!) : "", field };
+    const trigger = header.querySelector<HTMLElement>('summary[data-column-action="…"]') ?? header;
+    const command = (action: () => void) => () => { closeCellMenu(); action(); };
+    const viewActionsBlocked = columnChangesBlocked || editor !== null;
+    const resizable = !compactColumnActions && !salesCatalogLayoutEligible(view, salesCatalogLayout);
+    const cellItems = cellMenuItems(position).filter(item => item !== "separator" && ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"].includes(item.label)).map(item => {
+      if (item === "separator" || (item.label !== "Cut" && item.label !== "Copy")) return item;
+      const action = item.label === "Cut" ? "cut" : "copy";
+      const activeCell = cellMenu?.activeCell ?? null;
+      return { ...item, run: command(() => {
+        const handler = (event: ClipboardEvent) => {
+          event.stopPropagation();
+          (action === "cut" ? cutGrid : copyGrid)(activeCell, event.clipboardData, () => event.preventDefault());
+        };
+        document.addEventListener(action, handler, { capture: true, once: true });
+        try { document.execCommand(action); } finally { document.removeEventListener(action, handler, true); }
+      }) };
+    });
+    const items: CellMenuItem[] = displayRows.length ? [...cellItems.slice(0, 4), "separator", ...cellItems.slice(4)] : cellItems.slice(4);
+    if (resizable) items.push("separator", { label: "AutoFit column width", disabled: columnChangesBlocked, run: command(() => autoFitColumn(field, header)) });
+    const actions: CellMenuItem[] = [];
+    if (table.native_table_profile && renameAvailable) actions.push({ label: "Rename…", disabled: columnChangesBlocked, run: command(() => openColumnDialog("rename", trigger, field)) });
+    if (table.native_table_profile && onRemoveColumn) actions.push({ label: "Remove…", disabled: columnChangesBlocked, run: command(() => openColumnDialog("remove", trigger, field)) });
+    if (table.native_table_profile && onMoveColumn) for (const [offset, label] of [[-1, "Move left"], [1, "Move right"]] as const) {
+      actions.push({ label, disabled: columnChangesBlocked || index + offset < 0 || index + offset >= columns.length, run: command(() => { void moveColumn(field, offset, trigger); }) });
+    }
+    if (table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, field)) actions.push({ label: column.required ? "Allow blanks" : "Require a value", disabled: columnChangesBlocked, run: command(() => { void changeRequiredness(field, trigger); }) });
+    if (table.native_table_profile && onSetColumnConstraint && columnRuleKind(column.field_type) !== null) actions.push({ label: "Rule…", disabled: columnChangesBlocked, run: command(() => setRuleDialog({ field, trigger, collection: table.collection.id, occurrence: view.occurrence })) });
+    if ((table.native_table_profile && onSetColumnNumberFormat && column.field_type === "number") || (onSetColumnDateFormat && column.field_type === "date")) actions.push({ label: column.field_type === "date" ? "Date format…" : "Number format…", disabled: columnChangesBlocked, run: command(() => setFormatDialog({ field, trigger, collection: table.collection.id, occurrence: view.occurrence })) });
+    if (onSetColumnAlignment) actions.push({ label: "Alignment…", disabled: columnChangesBlocked, run: command(() => setAlignmentDialog({ field, trigger, collection: table.collection.id, occurrence: view.occurrence })) });
+    if (onQueryGroupTotals && hasMeasureColumns && groupableColumnIds.has(field)) actions.push({ label: "Totals by this column…", disabled: viewActionsBlocked, run: command(() => openGroupTotals(column, trigger)) });
+    if (actions.length) items.push("separator", ...actions);
+    return items;
   }
 
   /** Ctrl+Enter fills the selection with the entry the editor holds. */
@@ -2995,6 +3046,15 @@ export function SheetShell(props: SheetShellProps) {
     revealGridRow(rowIndex);
   }
 
+  function visibleColumnCell(field: string): HTMLElement | undefined {
+    const viewport = gridScrollRef.current?.getBoundingClientRect();
+    return viewport ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), field))).find(cell => {
+      if (!cell) return false;
+      const bounds = cell.getBoundingClientRect();
+      return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+    }) : undefined;
+  }
+
   function selectHeader(kind: "column" | "row", index: number, shift: boolean): void {
     if (historyInteractionLocked || !view || !collectionIdentity || !displayRows.length || !columns.length) return;
     const previous = boundSelection?.anchor ?? focusedPosition;
@@ -3005,15 +3065,7 @@ export function SheetShell(props: SheetShellProps) {
       ? { entity: rowEntity(displayRows.at(-1)!), field: columns[index]!.id }
       : { entity: rowEntity(displayRows[index]!), field: columns.at(-1)!.id };
     tabRunStartRef.current = null;
-    const scroller = gridScrollRef.current;
-    const viewport = scroller?.getBoundingClientRect();
-    const visibleCell = kind === "column" && viewport
-      ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), anchor.field))).find(cell => {
-        if (!cell) return false;
-        const bounds = cell.getBoundingClientRect();
-        return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
-      })
-      : undefined;
+    const visibleCell = kind === "column" ? visibleColumnCell(anchor.field) : undefined;
     (cellRefs.current.get(cellKey(anchor.entity, anchor.field)) ?? visibleCell)?.focus({ preventScroll: true });
     setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
   }
@@ -4978,15 +5030,17 @@ export function SheetShell(props: SheetShellProps) {
     // the dense header actions are.
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
             <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }}>
-              <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions && renameAvailable ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions && renameAvailable ? event => {
-                if ((event.key === "F2" || event.key === "Enter") && !isComposingEvent(event)) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }} onContextMenu={event => { if ((event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) return; event.preventDefault(); openColumnMenu(event.clientX, event.clientY, index, event.currentTarget); }}>
+              <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions ? event => {
+                if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
+                if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); event.stopPropagation(); const header = event.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); openColumnMenu(rect.left, rect.bottom, index, header); }
+                else if (renameAvailable && (event.key === "F2" || event.key === "Enter")) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
               } : undefined}>{column.display_name}</span>
               {gridSettings.sort?.field === column.id ? <span className="ts-column-view-marker" aria-hidden="true" title={`Sorted ${gridSettings.sort.direction === "asc" ? "A to Z" : "Z to A"}${sortColumnName ? ` by ${sortColumnName}` : ""}`}>{gridSettings.sort.direction === "asc" ? "↑" : "↓"}</span> : null}
               {gridSettings.filters?.filter(filter => filter.field === column.id).map(filter => <span key={filter.field} className="ts-column-view-marker" aria-hidden="true" title={`Filtered: ${filter.kind === "contains" ? `contains "${filter.text}"` : filter.kind === "values" ? `${filter.values.length} values` : `${filter.op} ${filter.value}`}`}>▽</span>)}
@@ -5234,7 +5288,7 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) }}>{gridTable}</div>
                 : gridTable}
             </div>
-        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : cellMenuItems(cellMenu.position)} onClose={closeCellMenu} /> : null}
+        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.column && cellMenu.trigger ? columnMenuItems(cellMenu.column, cellMenu.trigger) : cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : cellMenuItems(cellMenu.position)} label={cellMenu.column ? "Column actions" : undefined} onClose={closeCellMenu} /> : null}
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
         <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && (!clipboardMessage.refused || clipboardMessage.polite) ? clipboardMessage.text : null}</p>
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}

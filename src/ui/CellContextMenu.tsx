@@ -9,11 +9,12 @@ interface CellContextMenuProps {
   x: number;
   y: number;
   items: readonly CellMenuItem[];
+  label?: string;
   onClose(): void;
 }
 
 /** The grid's right-click menu: one open menu at a time, dismissed by any move away from it. */
-export function CellContextMenu({ x, y, items, onClose }: CellContextMenuProps) {
+export function CellContextMenu({ x, y, items, label = "Cell actions", onClose }: CellContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   // The parent rebuilds `items` on its own renders; the menu only reads them
@@ -69,7 +70,7 @@ export function CellContextMenu({ x, y, items, onClose }: CellContextMenuProps) 
   }
 
   return (
-    <div ref={menuRef} role="menu" aria-label="Cell actions" className="ts-cell-menu" style={{ left: box.left, top: box.top }} onKeyDown={onKeyDown}>
+    <div ref={menuRef} role="menu" aria-label={label} className="ts-cell-menu" style={{ left: box.left, top: box.top }} onKeyDown={onKeyDown}>
       {items.map((item, index) => item === "separator"
         ? <div key={`separator-${index}`} role="separator" className="ts-cell-menu-separator" />
         : <button
