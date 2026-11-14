@@ -136,6 +136,10 @@ const SAVE_UNBOUND_DESCRIPTION = "Save your work as a copy you can reopen here. 
 const SAVE_COPY_DESCRIPTION = "Keep this copy and save another one (like Excel's Save As).";
 const PREPARE_XLSX_DESCRIPTION = "Prepare XLSX makes a new Excel file; the file you opened from is not changed, and your work here still needs Save.";
 
+// Work a5348952, packages/browser-client/runtime/src/interop_adapter.rs:11-12,42,280-289,1798-1834,2404-2443.
+// Home uses ordinary import; MB here follows Work's binary byte limits.
+const HOME_IMPORT_LIMITS_DESCRIPTION = "CSV text or Excel files up to 2 MB; an Excel file can unpack to at most 8 MB. Larger plain sheets also have a 1 MB limit on cell text. Some styles and features are not imported.";
+
 /** Rendered width of a sized column without a stored width; matches `.ts-grid--sized`. */
 const SIZED_COLUMN_DEFAULT_WIDTH = 160;
 
@@ -4922,7 +4926,7 @@ export function SheetShell(props: SheetShellProps) {
           </div>
           <div className="ts-home-other-row">
             <span className="ts-home-other-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z" /><path d="M12 2.5v3h3M7.5 10h5M7.5 13h5" /></svg></span>
-            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Up to 32 sheets of 32 columns and 128 rows each (1,024 rows in all). One plain sheet without formulas can hold up to 8,406 rows and 25,218 cells. File-size, style and feature limits also apply.</span></span>
+            <span className="ts-home-other-copy"><strong>Import a CSV or Excel file</strong><span>You check the columns and their types before anything is added. Up to 32 sheets of 32 columns and 128 rows each (1,024 rows in all). One plain sheet without formulas can hold up to 8,406 rows and 25,218 cells. {HOME_IMPORT_LIMITS_DESCRIPTION}</span></span>
             <label className={`ts-button ts-home-file-action${fileActionsLocked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={fileActionsLocked}>
               <span>Choose file…</span>
               <input ref={spreadsheetInputRef} id={spreadsheetInputId} type="file" accept=".csv,.xlsx,.tsv,.txt,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileActionsLocked} onChange={(event) => { const input = event.currentTarget; void inspectSpreadsheet(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
