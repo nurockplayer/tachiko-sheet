@@ -14,7 +14,8 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, ColumnTotalsProjection, DistinctValuesProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, SelectionStatisticsProjection, ColumnTotalsProjection, DistinctValuesProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
+import { MAX_WIRE_REQUEST_BYTES, MAX_PROJECT_TRANSFER_BYTES } from "../host/native-runtime.js";
 import type {
   CleanupOperation,
   ImportOptions,
@@ -230,6 +231,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let columnsRevision: string | null = null;
   let residentCollection: string | null = null;
   let residentAvailable = false;
+  // Work fixes this profile at admission. Ordinary imports (including
+  // TextCapacity) keep the ordinary budget; working-size opens use the arena budget.
+  let requestByteLimit = MAX_WIRE_REQUEST_BYTES;
   // Host session evidence from an acknowledged Work admission; never document state.
   let openedFromWorkFile = false;
   // New-table admission and authored schema keep the portable work-file copy
@@ -597,7 +601,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     fromNewTable = false,
   ): Promise<WorkbookView> {
     try {
-      await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
+      const opened = await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
+      requestByteLimit = "profile" in opened && opened.profile === "working_size"
+        ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
     } catch (error) {
       if (error instanceof UnknownOperationOutcomeError) {
         // The open may have replaced the resident core work; the old
@@ -782,6 +788,29 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
       return afterUsable(expected, dispatch(kit, () => client.queryFields(live.revision, targets)));
+    });
+  }
+
+  function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]): Promise<SelectionStatisticsProjection | "too-large" | null> {
+    return enqueue(async () => {
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const query = client.querySelectionStatistics;
+      if (typeof query !== "function") return null;
+      const live = session();
+      if (witness.occurrence !== live.scope || witness.revision !== live.revision) return null;
+      const request = { type: "query_selection_statistics", expected_revision: witness.revision, targets };
+      if (new TextEncoder().encode(JSON.stringify(request)).byteLength > requestByteLimit) return "too-large";
+      let result;
+      try {
+        result = await afterUsable(expected, dispatch(kit, () => query.call(client, witness.revision, targets)));
+      } catch (error) {
+        if (hasFailureCode(kit, error, "request_too_large")) return "too-large";
+        throw error;
+      }
+      if (result.revision !== witness.revision) throw new SheetSessionError("incoherent-reply", "The selection statistics do not match the requested revision.");
+      return result;
     });
   }
 
@@ -1471,6 +1500,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       residentCollection = null;
       residentAvailable = true;
       closed = false;
+      requestByteLimit = MAX_WIRE_REQUEST_BYTES;
       let read: CoherentRead;
       try {
         read = await loadCoherentView(kit, client, requestedAt, null);
@@ -1623,8 +1653,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   }
 
   return {
+    get requestByteLimit() { return requestByteLimit; },
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setColumnWidth, queryCapacity, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

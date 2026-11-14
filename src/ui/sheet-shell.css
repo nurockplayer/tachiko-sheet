@@ -849,6 +849,16 @@ body { margin: 0; }
   width: 100%;
 }
 
+.ts-selection-statistics {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 16px;
+  user-select: text;
+}
+
+.ts-selection-statistics .ts-status-pair { flex: 0 0 auto; }
+
 .ts-status-pair {
   display: inline-flex;
   align-items: center;

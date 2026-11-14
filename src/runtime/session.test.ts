@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1Translation, CapacityProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat, TranslateA1FormulaInput } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1Translation, CapacityProjection, SelectionStatisticsProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat, TranslateA1FormulaInput } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -73,6 +73,7 @@ interface Hooks {
   queryTable?: (collection: string) => Promise<TableProjection>;
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
   queryCapacity?: (revision: string) => Promise<CapacityProjection>;
+  querySelectionStatistics?: (revision: string, targets: FieldTarget[]) => Promise<SelectionStatisticsProjection>;
   queryGroupTotals?: (revision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope) => Promise<GroupTotalsProjection>;
   translateA1Formula?: (input: TranslateA1FormulaInput) => Promise<A1Translation>;
   bootstrap?: () => Promise<BootstrapProjection>;
@@ -114,6 +115,7 @@ class FakeClient {
     trackerCommand: [] as TrackerCommand[],
     renameTable: [] as Array<{ revision: string; collection: string; name: string }>,
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string; columnNames?: Record<string, string> }>,
+    querySelectionStatistics: [] as Array<{ revision: string; targets: FieldTarget[] }>,
     queryColumnTotals: [] as Array<{ revision: string; collection: string; entities: string[] }>,
     queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
     translateA1Formula: [] as TranslateA1FormulaInput[],
@@ -392,6 +394,14 @@ class FakeClient {
       start,
       rows: table.rows.slice(start, start + count),
     };
+  }
+
+  async querySelectionStatistics(revision: string, targets: FieldTarget[]): Promise<SelectionStatisticsProjection> {
+    this.calls.querySelectionStatistics.push({ revision, targets });
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    if (this.hooks.querySelectionStatistics) return this.hooks.querySelectionStatistics(revision, targets);
+    return { revision, count: 4, numerical_count: 2, sum: 6, average: 3, min: 2, max: 4, error_count: 0 };
   }
 
   async queryColumnTotals(revision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection> {
@@ -2027,6 +2037,100 @@ describe("queryCapacity", () => {
     Object.defineProperty(client, "queryCapacity", { value: undefined });
 
     await expect(runtime.queryCapacity(view.revision)).resolves.toBeNull();
+  });
+});
+
+describe("querySelectionStatistics", () => {
+  const targets = [{ entity: "e1", field: "impact" }, { entity: "e2", field: "impact" }];
+  it("forwards exact targets and revision without publication or a view change", async () => {
+    const { runtime, client, view } = await opened();
+    const result = await runtime.querySelectionStatistics(witnessOf(view), targets);
+    expect(client.calls.querySelectionStatistics).toEqual([{ revision: view.revision, targets }]);
+    expect(result).toEqual({ revision: view.revision, count: 4, numerical_count: 2, sum: 6, average: 3, min: 2, max: 4, error_count: 0 });
+    expect(client.calls.trackerCommand).toEqual([]);
+    expect(await runtime.read()).toEqual(view);
+  });
+  it("forwards Work's formula-error count and unavailable aggregates unchanged", async () => {
+    const { runtime, client, view } = await opened();
+    const statistics: SelectionStatisticsProjection = {
+      revision: view.revision, count: 4, numerical_count: 1,
+      sum: null, average: null, min: null, max: null, error_count: 1,
+    };
+    client.hooks.querySelectionStatistics = async () => statistics;
+    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).resolves.toEqual(statistics);
+    expect(client.calls.trackerCommand).toEqual([]);
+    expect(await runtime.read()).toEqual(view);
+  });
+  it("skips obsolete revisions and occurrences without dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    await expect(runtime.querySelectionStatistics({ ...witnessOf(view), revision: "old" }, targets)).resolves.toBeNull();
+    await expect(runtime.querySelectionStatistics({ ...witnessOf(view), occurrence: "other" }, targets)).resolves.toBeNull();
+    expect(client.calls.querySelectionStatistics).toEqual([]);
+  });
+  it("returns null when the kit does not expose the read", async () => {
+    const { runtime, client, view } = await opened();
+    Object.defineProperty(client, "querySelectionStatistics", { value: undefined });
+    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).resolves.toBeNull();
+  });
+  it("rejects a reply at another revision", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.querySelectionStatistics = async () => ({ revision: "other", count: 0, numerical_count: 0, sum: 0, average: null, min: null, max: null, error_count: 0 });
+    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).rejects.toMatchObject({ code: "incoherent-reply" });
+  });
+  it("leaves a Work request-size refusal to the advisory caller without retrying", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.querySelectionStatistics = async () => { throw new FakeDesignerRuntimeError("request_too_large", view.revision); };
+    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).resolves.toBe("too-large");
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+    expect(await runtime.read()).toEqual(view);
+  });
+  it("checks the entire UTF-8 request against the active limit before dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    const request = { type: "query_selection_statistics", expected_revision: view.revision,
+      targets: [{ entity: "", field: "impact" }] };
+    const overhead = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+    request.targets[0]!.entity = "e".repeat(runtime.requestByteLimit - overhead);
+    await expect(runtime.querySelectionStatistics(witnessOf(view), request.targets)).resolves.toMatchObject({ count: 4 });
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+    request.targets[0]!.entity = "é" + request.targets[0]!.entity.slice(1);
+    expect(new TextEncoder().encode(JSON.stringify(request)).byteLength).toBe(runtime.requestByteLimit + 1);
+    await expect(runtime.querySelectionStatistics(witnessOf(view), request.targets)).resolves.toBe("too-large");
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+    expect(client.calls.trackerCommand).toEqual([]);
+    expect(await runtime.read()).toEqual(view);
+  });
+  it("uses the acknowledged working-size budget instead of the ordinary budget", async () => {
+    const { runtime, client } = await opened();
+    const ordinaryLimit = runtime.requestByteLimit;
+    Object.assign(client, { openProjectWorkingSize: async (bytes: ArrayBuffer) => ({
+      ...await client.openProject(bytes), profile: "working_size",
+    }) });
+    const view = await runtime.openOpaque(new ArrayBuffer(4));
+    expect(runtime.requestByteLimit).toBeGreaterThan(ordinaryLimit);
+    const largeTargets = [{ entity: "e".repeat(ordinaryLimit), field: "impact" }];
+    await expect(runtime.querySelectionStatistics(witnessOf(view), largeTargets)).resolves.toMatchObject({ count: 4 });
+    expect(client.calls.querySelectionStatistics).toEqual([{ revision: view.revision, targets: largeTargets }]);
+    Object.assign(client, { importSpreadsheet: async () => {
+      await client.openProject(new ArrayBuffer(4));
+      return { metadata: {}, ledger: [] };
+    } });
+    const imported = await runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] });
+    expect(runtime.requestByteLimit).toBe(ordinaryLimit);
+    await expect(runtime.querySelectionStatistics(witnessOf(imported.view), largeTargets)).resolves.toBe("too-large");
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+  });
+  it("rejects a late reply after the runtime closes", async () => {
+    const { runtime, client, view } = await opened();
+    const gate = deferred<SelectionStatisticsProjection>();
+    client.hooks.querySelectionStatistics = () => gate.promise;
+    const read = runtime.querySelectionStatistics(witnessOf(view), targets);
+    const rejected = expect(read).rejects.toBeDefined();
+    await tick();
+    const close = runtime.close();
+    gate.resolve({ revision: view.revision, count: 0, numerical_count: 0, sum: 0, average: null, min: null, max: null, error_count: 0 });
+    await rejected;
+    await close;
   });
 });
 

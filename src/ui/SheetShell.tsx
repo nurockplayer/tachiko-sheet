@@ -48,6 +48,9 @@ import type {
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
+import { SelectionStatisticsBar } from "./SelectionStatisticsBar.js";
+import { selectionStatisticsTargets } from "./selection-statistics.js";
+import type { SelectionStatisticsProjection } from "../../public/core-kit/runtime/protocol.js";
 import { copiedEdges } from "./copied-area.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate, tabRunAfterMove, tabRunEnterTarget } from "./grid-navigation.js";
@@ -2499,6 +2502,51 @@ export function SheetShell(props: SheetShellProps) {
   }, [editor?.instance, viewKey]);
 
   useEffect(() => { setTableMenu(null); }, [view?.occurrence]);
+
+  const statisticsSelection = useMemo(() => {
+    if (!boundSelection || !witness || currentness !== "current" || tab !== "table") return null;
+    const area = rectangle(address(boundSelection.anchor), address(boundSelection.end));
+    if (area.top < 0 || area.left < 0 || area.bottom >= displayRows.length || area.right >= columns.length ||
+      (area.bottom - area.top + 1) * (area.right - area.left + 1) < 2) return null;
+    return { witness, area, rows: displayRows, columns };
+  }, [boundSelection, witness, currentness, tab, displayRows, columns]);
+  const [selectionStatistics, setSelectionStatistics] = useState<{
+    selection: NonNullable<typeof statisticsSelection>; statistics: SelectionStatisticsProjection | "too-large";
+  } | null>(null);
+  const statisticsLive = useRef(statisticsSelection);
+  const statisticsInFlight = useRef(false);
+  const statisticsPending = useRef<(() => void) | null>(null);
+  const statisticsQuery = useRef(props.onQuerySelectionStatistics);
+  useLayoutEffect(() => { statisticsQuery.current = props.onQuerySelectionStatistics; });
+  useLayoutEffect(() => {
+    statisticsLive.current = dragSelecting ? null : statisticsSelection;
+    statisticsPending.current = null;
+    return () => { statisticsLive.current = null; statisticsPending.current = null; };
+  }, [statisticsSelection, dragSelecting]);
+  useEffect(() => {
+    if (!statisticsSelection || dragSelecting) return;
+    const selection = statisticsSelection;
+    const send = () => {
+      if (statisticsLive.current !== selection || !statisticsQuery.current) return;
+      if (statisticsInFlight.current) { statisticsPending.current = send; return; }
+      statisticsInFlight.current = true;
+      void (async () => {
+        try {
+          const result = await statisticsQuery.current!(selection.witness,
+            selectionStatisticsTargets(selection.rows, selection.columns, selection.area));
+          if (result && statisticsLive.current === selection) setSelectionStatistics({ selection, statistics: result });
+        } catch { /* An advisory read never interrupts the grid. */ }
+        finally {
+          statisticsInFlight.current = false;
+          const next = statisticsPending.current;
+          statisticsPending.current = null;
+          next?.();
+        }
+      })();
+    };
+    const timer = setTimeout(send, 150);
+    return () => { clearTimeout(timer); };
+  }, [statisticsSelection, dragSelecting]);
 
   // While a filter hides rows, the footer totals the rows shown. Work adds
   // them up; until it answers (or if it cannot), the footer keeps Work's
@@ -5078,6 +5126,10 @@ export function SheetShell(props: SheetShellProps) {
               {outcomeLabel(outcome)}
             </span>
           ) : null}
+          {!dragSelecting && statisticsSelection && selectionStatistics?.selection === statisticsSelection
+            ? <SelectionStatisticsBar statistics={selectionStatistics.statistics}
+                format={statisticsSelection.area.left === statisticsSelection.area.right ? columns[statisticsSelection.area.left]?.number_format : undefined} />
+            : null}
           <span className="ts-workbook-row-count">
             {table ? props.capacity && props.capacity.maximum > 0 && props.capacity.rows >= props.capacity.maximum * 0.8
               ? <><span className="ts-capacity-warn">{props.capacity.rows} of {props.capacity.maximum} rows</span> · {columns.length} columns</>
