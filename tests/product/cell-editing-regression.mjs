@@ -65,7 +65,16 @@ async function published(page, input, key, value, commitKey = "Enter") {
     });
   }
   await input.press(commitKey);
-  await input.waitFor({ state: "hidden" });
+  await input.waitFor({ state: "hidden" }).catch(async error => {
+    const details = await page.evaluate(() => {
+      const input = document.querySelector('[data-testid="cell-editor"]');
+      return { value: input?.value, disabled: input?.disabled, active: document.activeElement?.getAttribute("data-testid"),
+        alerts: [...document.querySelectorAll('[role="alert"], .ts-local-error, .ts-clipboard-status')].map(node => node.textContent),
+        currentness: document.querySelector('[data-testid="currentness"]')?.textContent,
+        dispatches: window.__tachikoAcceptance.executeRequestCount() };
+    });
+    throw new Error(`${key} ${commitKey} publishing ${JSON.stringify(value)}: ${error.message}\nEditor diagnostics: ${JSON.stringify(details)}`);
+  });
   assert.equal((await cell(page, key).textContent()).trim(), String(value));
   assert.equal(await dispatches(page), count + 1, "accepted scalar dispatched exactly once");
   if (commitKey === "Tab" || commitKey === "Shift+Tab") {
@@ -134,6 +143,15 @@ async function shownCompletion(input, value, start, end) {
   assert.deepEqual(await input.evaluate(node => [node.selectionStart, node.selectionEnd]), [start, end]);
 }
 const cases = [
+  ["column completion leaves insertions inside existing text at their caret", async page => {
+    const at = await completionTable(page, ["Ala", "Alpaca", "Beta", "Other"]);
+    const input = await completionEntry(page, at(0));
+    await input.press("End"); await input.press("ArrowLeft");
+    await input.press("p"); await shownCompletion(input, "Alpa", 3, 3);
+    await input.press("h"); await shownCompletion(input, "Alpha", 4, 4);
+    await input.press("Enter"); await input.waitFor({ state: "hidden" });
+    assert.equal((await at(0).textContent()).trim(), "Alpha");
+  }],
   ["delayed column values complete seeded and pending input without reviving rejected drafts", async page => {
     const at = await completionTable(page);
     const count = await dispatches(page);

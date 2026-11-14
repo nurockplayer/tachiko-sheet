@@ -5595,8 +5595,10 @@ export function SheetShell(props: SheetShellProps) {
         completionSuffixRef.current = null;
         completionSelectionRef.current = null;
         const composing = native.isComposing || props.appearancePreference.getSnapshot().composing;
-        if (values) values.completeOnReply = !composing && Boolean(native.inputType?.startsWith("insert"));
-        const candidate = !composing && native.inputType?.startsWith("insert") && !typed.startsWith("=") &&
+        const insertionAtEnd = !composing && Boolean(native.inputType?.startsWith("insert")) &&
+          input.selectionStart === typed.length && input.selectionEnd === typed.length;
+        if (values) values.completeOnReply = insertionAtEnd;
+        const candidate = insertionAtEnd && !typed.startsWith("=") &&
           values && editor && values.instance === editor.instance && values.viewKey === viewKey
           ? completionFor(typed, values.values) : null;
         let value = typed;
