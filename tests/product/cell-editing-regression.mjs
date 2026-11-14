@@ -80,6 +80,119 @@ async function published(page, input, key, value, commitKey = "Enter") {
   }
 }
 const cases = [
+  ["copy from above and filter shortcuts", async (page) => {
+    const wait = async (label, promise) => { try { return await promise; } catch (error) { throw new Error(`${label}: ${error.message}`, { cause: error }); } };
+    const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
+    const entityAt = async index => rows.nth(index).locator("td[data-work-field]").first().getAttribute("data-work-entity");
+    const [first, second] = [await entityAt(0), await entityAt(1)];
+    const at = (entity, key) => page.getByTestId(`cell:${entity}:${fields[key]}`);
+    const text = async target => (await target.textContent()).trim();
+    const above = at(first, "impact"), target = at(second, "impact");
+    const oldValue = await text(target);
+    const sourceValue = oldValue === "37" ? "38" : "37";
+    await above.dblclick(); await editor(page).fill(sourceValue); await editor(page).press("Enter");
+    await wait("source value committed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${first}:${fields.impact}`, sourceValue]));
+    let count = await dispatches(page);
+    await target.focus(); await page.keyboard.press("ControlOrMeta+'");
+    await wait("after Mod+quote editor opens", editor(page).waitFor()); assert.equal(await editor(page).inputValue(), sourceValue);
+    await editor(page).press("Enter");
+    await wait("copied value committed", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, sourceValue]));
+    assert.equal(await dispatches(page), count + 1, "copied scalar dispatches once");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await wait("undo restores target", page.waitForFunction(([id, value]) => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value, [`cell:${second}:${fields.impact}`, oldValue]));
+
+    const bar = page.getByTestId("formula-bar-input");
+    count = await dispatches(page);
+    const beforeFormulaRevision = await at(first, "priority").getAttribute("data-work-revision");
+    await at(first, "priority").click(); await bar.fill("=C2*D2"); await bar.press("Enter");
+    await wait("formula committed", page.waitForFunction(count => window.__tachikoAcceptance.executeRequestCount() === count + 1, count));
+    const product = String(Number(sourceValue) * Number(await text(at(first, "friction"))));
+    await wait("formula projection installed", page.waitForFunction(([id, value, revision]) => {
+      const cell = document.querySelector(`[data-testid="${id}"]`);
+      return cell?.textContent.trim() === value && cell.getAttribute("data-work-revision") !== revision && cell.getAttribute("data-work-currentness") === "current";
+    }, [`cell:${first}:${fields.priority}`, product, beforeFormulaRevision]));
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
+    const impactRevision = await above.getAttribute("data-work-revision");
+    await above.click(); await bar.fill(`=${sourceValue}`); await bar.press("Enter");
+    await wait("impact formula installed", page.waitForFunction(([id, value, revision]) => {
+      const cell = document.querySelector(`[data-testid="${id}"]`);
+      return cell?.textContent.trim() === value && cell.getAttribute("data-work-revision") !== revision && cell.getAttribute("data-work-currentness") === "current";
+    }, [`cell:${first}:${fields.impact}`, sourceValue, impactRevision]));
+    await target.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("formula value editor opens", editor(page).waitFor());
+    assert.equal(await editor(page).inputValue(), await text(above), "value shortcut uses the formula result");
+    await editor(page).press("Escape");
+    const priorFormulaValue = await text(at(second, "priority"));
+    const priorRevision = await at(second, "priority").getAttribute("data-work-revision");
+    const formulaCopies = () => page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0);
+    await at(second, "priority").focus(); count = await formulaCopies();
+    await page.keyboard.press("ControlOrMeta+'");
+    const status = page.locator(".ts-clipboard-status[role=status]");
+    await wait("copy formula announcement", page.waitForFunction(([count, revision, id]) =>
+      document.querySelector(".ts-clipboard-status[role=status]")?.textContent.trim() === "Filled 1 cell. Save to keep these changes." &&
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1 &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current", [count, priorRevision, `cell:${second}:${fields.priority}`]).catch(async error => {
+        const observed = await page.evaluate(id => {
+          const cell = document.querySelector(`[data-testid="${id}"]`);
+          return { message: document.querySelector(".ts-clipboard-status[role=status]")?.textContent, requests: window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0, revision: cell?.getAttribute("data-work-revision"), currentness: cell?.getAttribute("data-work-currentness") };
+        }, `cell:${second}:${fields.priority}`);
+        throw new Error(`${error.message}; before=${JSON.stringify({ count, priorRevision })}; observed=${JSON.stringify(observed)}`);
+      }));
+    const copyMessage = await status.textContent();
+    const copyRequests = (await formulaCopies()) - count;
+    assert.equal(copyRequests, 1, "formula shortcut dispatches once");
+    const filledRevision = await at(second, "priority").getAttribute("data-work-revision");
+    await page.keyboard.press("ControlOrMeta+Z");
+    await wait("undo formula copy", page.waitForFunction(([id, value, revision]) =>
+      document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [`cell:${second}:${fields.priority}`, priorFormulaValue, filledRevision]));
+    const beforeJisRevision = await target.getAttribute("data-work-revision");
+    count = await formulaCopies();
+    await target.focus();
+    await target.dispatchEvent("keydown", { key: "'", code: "Digit7", shiftKey: true, ctrlKey: true, bubbles: true });
+    await wait("JIS formula copy", page.waitForFunction(([count, revision, id]) =>
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1 &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [count, beforeJisRevision, `cell:${second}:${fields.impact}`]));
+    const jisRevision = await target.getAttribute("data-work-revision");
+    await page.keyboard.press("ControlOrMeta+Z");
+    await wait("undo JIS formula copy", page.waitForFunction(([id, value, revision]) =>
+      document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [`cell:${second}:${fields.impact}`, oldValue, jisRevision]));
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("clear prior announcement", page.getByText("There is no cell above to copy.").first().waitFor());
+    await at(first, "priority").click(); await page.keyboard.press("Shift+ArrowDown");
+    const beforeFillRevision = await at(second, "priority").getAttribute("data-work-revision");
+    count = await formulaCopies(); await page.keyboard.press("ControlOrMeta+D");
+    await wait("fill down announcement", page.waitForFunction(([count, message, id, revision]) =>
+      document.querySelector(".ts-clipboard-status[role=status]")?.textContent === message &&
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1 &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [count, copyMessage, `cell:${second}:${fields.priority}`, beforeFillRevision]));
+    assert.equal(await status.textContent(), copyMessage);
+    assert.equal((await formulaCopies()) - count, copyRequests, "fill down matches formula shortcut request count");
+
+    count = await dispatches(page); await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("first row refusal", page.getByText("There is no cell above to copy.").first().waitFor());
+    assert.equal(await dispatches(page), count);
+
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
+    const filter = page.getByRole("textbox", { name: "Filter impact", exact: true });
+    await wait("filter editor opens", filter.waitFor()); assert.equal(await focused(filter), true);
+    await filter.fill(sourceValue); await filter.press("Enter");
+    await wait("filter applied", page.getByTestId("row-view-status").waitFor());
+    await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+L");
+    await wait("filters cleared", page.getByText("Filters cleared.").first().waitFor());
+    assert.equal(await page.getByTestId("row-view-status").count(), 0);
+  }],
   ["continuous boolean, numeric and Text typing; exact Enter publication", async (page) => {
     for (const [key, value] of [["confirmed", "false"], ["impact", "12345"], ["title", "Release plan"]]) {
       const before = await state(page); const count = await dispatches(page);
@@ -827,7 +940,7 @@ for (const [name, run] of cases) {
       console.log(JSON.stringify({ case: name, status: "PASS" }));
     } catch (error) {
       if (fixtureReady) failures++; else blocked++;
-      console.error(JSON.stringify({ case: name, status: fixtureReady ? "FAIL" : "BLOCKED", error: error.message }));
+      console.error(JSON.stringify({ case: name, status: fixtureReady ? "FAIL" : "BLOCKED", error: error.stack }));
     } finally { await context.close(); await browser.close(); }
 }
 console.log(JSON.stringify({ suite: "cell-editing-regression", cases: cases.length, failures, blocked }));
