@@ -662,6 +662,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function beginAppearanceComposition(): void {
+    if (columnCompletionRef.current) columnCompletionRef.current.completeOnReply = false;
     if (compositionEndTimer.current !== null) {
       window.clearTimeout(compositionEndTimer.current);
       compositionEndTimer.current = null;
@@ -899,7 +900,7 @@ export function SheetShell(props: SheetShellProps) {
   const historyOperationIdRef = useRef(0);
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
-  const columnCompletionRef = useRef<{ instance: number; viewKey: string; values: string[] } | null>(null);
+  const columnCompletionRef = useRef<{ instance: number; viewKey: string; values: string[]; completeOnReply: boolean } | null>(null);
   const completionSuffixRef = useRef<{ instance: number; start: number; end: number } | null>(null);
   const completionSelectionRef = useRef<{ instance: number; start: number; end: number } | null>(null);
   useLayoutEffect(() => {
@@ -2463,11 +2464,26 @@ export function SheetShell(props: SheetShellProps) {
     const column = columns.find(column => column.id === editor.field);
     if (column?.field_type !== "text" || column.constraint?.kind === "text_literal_set" ||
       (editor.entity !== DRAFT_ROW && formulaCellAt(editor))) return;
-    const current = { instance: editor.instance, viewKey, values: [] as string[] };
+    const current = { instance: editor.instance, viewKey, values: [] as string[], completeOnReply: !selectEditorValueOnFocusRef.current };
     columnCompletionRef.current = current;
     onQueryColumnValues(witness, table.collection.key, editor.field).then(result => {
-      if (columnCompletionRef.current === current && editorRef.current?.instance === current.instance &&
-        result && result.revision === witness.revision && !result.truncated) current.values = result.values;
+      const live = editorRef.current;
+      if (columnCompletionRef.current !== current || live?.instance !== current.instance ||
+        !result || result.revision !== witness.revision || result.truncated) return;
+      current.values = result.values;
+      const input = editorInputRef.current;
+      if (!current.completeOnReply || !input || input.disabled || input.ownerDocument.activeElement !== input ||
+        props.appearancePreference.getSnapshot().composing || live.value.startsWith("=") || input.value !== live.value ||
+        input.selectionStart !== live.value.length || input.selectionEnd !== live.value.length) return;
+      const candidate = completionFor(live.value, current.values);
+      if (candidate === null) return;
+      const value = live.value + candidate.slice(live.value.length);
+      const selection = { instance: live.instance, start: live.value.length, end: value.length };
+      completionSuffixRef.current = selection;
+      completionSelectionRef.current = selection;
+      if (live.entity === DRAFT_ROW) changeRowDraft(live.field, value);
+      editorRef.current = { ...live, value };
+      setEditor(editorRef.current);
     }, () => { /* Completion is optional; the typed value stays editable. */ });
     return () => { columnCompletionRef.current = null; completionSuffixRef.current = null; };
     // One list per editor instance and revision, independent of draft changes.
@@ -5567,7 +5583,10 @@ export function SheetShell(props: SheetShellProps) {
       value: editor?.value ?? "",
       ref: focusEditorInput,
       onDoubleClick: (event) => event.stopPropagation(),
-      onBlur: () => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); },
+      onBlur: () => {
+        if (columnCompletionRef.current) columnCompletionRef.current.completeOnReply = false;
+        if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current);
+      },
       onChange: (event) => {
         const input = event.currentTarget;
         const native = event.nativeEvent as InputEvent;
@@ -5576,6 +5595,7 @@ export function SheetShell(props: SheetShellProps) {
         completionSuffixRef.current = null;
         completionSelectionRef.current = null;
         const composing = native.isComposing || props.appearancePreference.getSnapshot().composing;
+        if (values) values.completeOnReply = !composing && Boolean(native.inputType?.startsWith("insert"));
         const candidate = !composing && native.inputType?.startsWith("insert") && !typed.startsWith("=") &&
           values && editor && values.instance === editor.instance && values.viewKey === viewKey
           ? completionFor(typed, values.values) : null;
@@ -5593,6 +5613,7 @@ export function SheetShell(props: SheetShellProps) {
       onKeyUp: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
       onKeyDown: (event) => {
         const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
+        if (columnCompletionRef.current && (composing || event.key.length > 1)) columnCompletionRef.current.completeOnReply = false;
         const suffix = completionSuffixRef.current;
         if (!composing && (event.key === "Backspace" || event.key === "Delete") &&
           suffix && editor && suffix.instance === editor.instance && event.currentTarget.selectionStart === suffix.start &&

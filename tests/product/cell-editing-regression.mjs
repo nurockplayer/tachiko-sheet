@@ -82,12 +82,17 @@ async function published(page, input, key, value, commitKey = "Enter") {
 async function completionTable(page, names = ["Alpha", "Alpha", "Beta", "Other"]) {
   await page.addInitScript(() => {
     window.__columnValuesReplies = [];
+    window.__heldColumnValues = [];
     const Original = window.Worker;
     window.Worker = class extends Original {
       constructor(...args) {
         super(...args);
         this.addEventListener("message", event => {
-          if (event.data.response?.type === "distinct_values") window.__columnValuesReplies.push(event.data.response.payload);
+          if (event.data.response?.type !== "distinct_values") return;
+          if (window.__holdColumnValues) {
+            event.stopImmediatePropagation();
+            window.__heldColumnValues.push(() => this.dispatchEvent(new MessageEvent("message", { data: event.data })));
+          } else window.__columnValuesReplies.push(event.data.response.payload);
         });
       }
     };
@@ -129,6 +134,35 @@ async function shownCompletion(input, value, start, end) {
   assert.deepEqual(await input.evaluate(node => [node.selectionStart, node.selectionEnd]), [start, end]);
 }
 const cases = [
+  ["delayed column values complete seeded and pending input without reviving rejected drafts", async page => {
+    const at = await completionTable(page);
+    const count = await dispatches(page);
+    for (const mode of ["seed", "typing", "delete", "cancel", "composition", "blur"]) {
+      await page.evaluate(() => { window.__holdColumnValues = true; });
+      await at(2).focus(); await page.keyboard.press("A");
+      const input = editor(page);
+      await page.waitForFunction(() => window.__heldColumnValues.length === 1);
+      if (mode !== "seed") await input.press("l");
+      if (mode === "delete") await input.press("Backspace");
+      if (mode === "cancel") await input.press("Escape");
+      if (mode === "composition") await input.dispatchEvent("compositionstart", { data: "" });
+      if (mode === "blur") await at(2, 1).click();
+      await page.evaluate(async () => {
+        window.__holdColumnValues = false;
+        window.__heldColumnValues.splice(0).forEach(release => release());
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      if (mode === "cancel") assert.equal(await input.count(), 0);
+      else {
+        if (mode === "seed") await shownCompletion(input, "Alpha", 1, 5);
+        else if (mode === "typing") await shownCompletion(input, "Alpha", 2, 5);
+        else assert.equal(await input.inputValue(), mode === "delete" ? "A" : "Al");
+        if (mode === "composition") await input.dispatchEvent("compositionend", { data: "Al" });
+        await input.focus(); await input.press("Escape");
+      }
+      assert.equal(await dispatches(page), count, "late suggestions never publish by themselves");
+    }
+  }],
   ["column completion accepts once on Enter and Tab with grid navigation", async page => {
     const at = await completionTable(page);
     const input = await completionEntry(page, at(2));
