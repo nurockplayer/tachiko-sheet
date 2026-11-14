@@ -3,7 +3,7 @@
   "status": "PREPARED_NOT_RUNTIME_QUALIFIED",
   "owner": "ChatGPT Steward; tachiko-sheet#5 bounded J3 interop child",
   "sheet_baseline": "fdf4f262f7f097f8452f3336586be8218470781c",
-  "core_source": "2da87c09c7f7d4fca3ac89c7459ecceb86ad4c0d",
+  "core_source": "a5348952d295df3ab4e15ddc4a9f12f17110a84a",
   "core_manifest_sha256": "69b6ef6e7a243c7226463c9981925ff6757234b6bdece08cc5a38c1d0cba30f0",
   "generation": "Synthetic inputs written by ChatGPT Steward; XLSX created independently with artifact_tool, not the Tachiko exporter. No external copyrighted data.",
   "headers": ["item", "quantity", "price"],
