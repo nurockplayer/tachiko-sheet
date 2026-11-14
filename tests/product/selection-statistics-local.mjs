@@ -151,6 +151,11 @@ try {
   await cell(table, 0, 0).click();
   const formula = page.getByTestId("formula-bar-input");
   await formula.fill("=1/0"); await formula.press("Enter"); await ready();
+  await page.waitForFunction(({ entity, field }) => {
+    const table = window.__selectionEvidence.records.flatMap(record => record.tables).at(-1);
+    return table?.rows.find(row => row.id === entity)?.fields
+      .find(value => value.target.field === field)?.calculated?.status === "failure";
+  }, { entity: table.rows[0].id, field: table.columns[0].id });
   table = await projection();
   assert.equal(table.rows[0].fields.find(field => field.target.field === table.columns[0].id).calculated.status, "failure");
   await select(table, 0, 0, 2, 1);
