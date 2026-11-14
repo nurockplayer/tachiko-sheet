@@ -178,7 +178,7 @@ const cases = [
     const header = page.locator("thead th.ts-column-header").nth(1);
     const field = await page.locator("tbody tr.ts-row").first().locator("td[data-work-field]").nth(1).getAttribute("data-work-field");
     const cells = page.locator(`td[data-work-field="${field}"]:not([data-entry-field])`);
-    await header.click({ button: "right" });
+    await header.locator(".ts-col-head").click({ button: "right" });
     const menu = page.getByRole("menu", { name: "Column actions" });
     await menu.waitFor();
     for (const name of ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"]) assert.equal(await menu.getByRole("menuitem", { name, exact: true }).count(), 1);
