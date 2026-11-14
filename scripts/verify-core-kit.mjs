@@ -14,6 +14,14 @@ import { fileURLToPath } from 'node:url';
 const qualifiedArtifacts = [
   {
     // Two clean detached exports match; producer receipt on #246.
+    // querySelectionStatistics is not adopted in the UI.
+    sourceCommit: 'a5348952d295df3ab4e15ddc4a9f12f17110a84a',
+    artifactManifestSha256: '80ec2fd66d7b758d14121090702bad22e681df51a17dd5531983fc0c19698fef',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6881940538',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6881940538',
+  },
+  {
+    // Two clean detached exports match; producer receipt on #246.
     sourceCommit: '2da87c09c7f7d4fca3ac89c7459ecceb86ad4c0d',
     artifactManifestSha256: '69b6ef6e7a243c7226463c9981925ff6757234b6bdece08cc5a38c1d0cba30f0',
     review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6857290776',

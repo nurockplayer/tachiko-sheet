@@ -416,6 +416,13 @@ export class WorkerDesignerClient {
             direction,
         }));
     }
+    async querySelectionStatistics(expectedRevision, targets) {
+        return expectResponse("selection_statistics", await this.#command({
+            type: "query_selection_statistics",
+            expected_revision: expectedRevision,
+            targets,
+        }));
+    }
     async queryColumnTotals(expectedRevision, collection, entities) {
         return expectResponse("column_totals", await this.#command({
             type: "query_column_totals",
@@ -550,6 +557,9 @@ function expectResponse(type, response) {
             break;
         case "located_in_view":
             validateLocatedInView(response.payload);
+            break;
+        case "selection_statistics":
+            validateSelectionStatistics(response.payload);
             break;
         case "column_totals":
             validateColumnTotals(response.payload);
@@ -696,6 +706,18 @@ function validateColumnNumberFormat(column) {
         !Number.isInteger(format.decimals) ||
         format.decimals < 0 || format.decimals > 10 || typeof format.thousands_separator !== "boolean" || !validKind) {
         throw new Error("Invalid Worker column number format.");
+    }
+}
+function validateSelectionStatistics(stats) {
+    for (const count of [stats.count, stats.numerical_count, stats.error_count]) {
+        if (!Number.isInteger(count) || count < 0) {
+            throw new Error("Invalid Worker selection statistics count.");
+        }
+    }
+    for (const value of [stats.sum, stats.average, stats.min, stats.max]) {
+        if (value !== null && !Number.isFinite(value)) {
+            throw new Error("Invalid Worker selection statistic.");
+        }
     }
 }
 function validateColumnTotals(totals) {
