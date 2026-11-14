@@ -71,6 +71,8 @@ import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
 import { ColumnAlignmentDialog } from "./ColumnAlignmentDialog.js";
 import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
+import { columnFormatSettlement, nextStripAlignment, nextStripNumberFormat, type StripNumberAction } from "./column-format.js";
+import type { DateFormat } from "../../public/core-kit/runtime/protocol.js";
 import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
@@ -718,6 +720,8 @@ export function SheetShell(props: SheetShellProps) {
   const [compactColumnActions, setCompactColumnActions] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse), (hover: none), (max-width: 700px)").matches);
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [columnAnnouncement, setColumnAnnouncement] = useState<string | null>(null);
+  const [stripPending, setStripPending] = useState(false);
+  const stripPendingRef = useRef(false);
   const [gridViews, setGridViews] = useState<RowViewRecord>({ occurrence: null, byCollection: {} });
   const [filterDraft, setFilterDraft] = useState<{ field: string; mode: "contains" | "values" | "condition"; text: string; op: RowViewComparison; checked: string[]; attempted?: boolean } | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
@@ -4492,6 +4496,17 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  async function runStripCommand(command: () => Promise<RowCommandOutcome>, name: string, alignment = false) {
+    if (stripPendingRef.current || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    stripPendingRef.current = true; setStripPending(true);
+    try {
+      const result = columnFormatSettlement(await command());
+      if (result.error) setColumnAnnouncement(result.error);
+      else if (result.confirmed) setColumnAnnouncement(`${alignment ? "Alignment" : "Format"} updated for ${name}. Undo restores it.`);
+    } catch { setColumnAnnouncement("The format could not be sent. Try again."); }
+    finally { stripPendingRef.current = false; setStripPending(false); }
+  }
+
   function resizeChangesBlocked(): boolean {
     const ownSave = widthPublishingRef.current && !commitPending && currentness !== "unknown";
     return (controlsLocked && !ownSave) || (currentness !== "current" && !ownSave) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
@@ -5307,6 +5322,25 @@ export function SheetShell(props: SheetShellProps) {
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
+          {focusedColumn ? <div role="toolbar" aria-label="Format" className="ts-format-strip">
+            {onSetColumnAlignment ? ([ ["left", "Align left", "≡←"], ["center", "Align center", "≡"], ["right", "Align right", "→≡"] ] as const).map(([value, label, glyph]) => <button key={value} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={focusedColumn.style?.alignment === value} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness} onClick={() => {
+              if (!witness) return;
+              void runStripCommand(() => onSetColumnAlignment(witness, table.collection.key, focusedColumn.id, nextStripAlignment(focusedColumn.style?.alignment, value)), focusedColumnName, true);
+            }}>{glyph}</button>) : null}
+            {table.native_table_profile && onSetColumnNumberFormat && focusedColumn.field_type === "number" ? ([ ["currency", "Currency", "$"], ["percent", "Percent", "%"], ["separator", "Thousands separator", ","], ["fewer", "Fewer decimals", ".0←"], ["more", "More decimals", "→.0"] ] as const).map(([action, label, glyph]) => {
+              const format = focusedColumn.number_format ?? { decimals: 2, kind: { type: "plain" as const }, thousands_separator: false };
+              const pressed = action === "currency" || action === "percent" ? format.kind.type === action : action === "separator" ? format.thousands_separator : undefined;
+              return <button key={action} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={pressed} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness || (action === "fewer" && format.decimals <= 0) || (action === "more" && format.decimals >= 10)} onClick={() => {
+                if (!witness) return;
+                void runStripCommand(() => onSetColumnNumberFormat(witness, table.collection.key, focusedColumn.id, nextStripNumberFormat(focusedColumn.number_format, action as StripNumberAction)), focusedColumnName);
+              }}>{glyph}</button>;
+            }) : null}
+            {onSetColumnDateFormat && focusedColumn.field_type === "date" ? <select className="ts-button" aria-label="Date format" title="Date format" value={focusedColumn.date_format ?? "iso"} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness} onChange={event => {
+              if (!witness) return;
+              const value = event.currentTarget.value as DateFormat;
+              void runStripCommand(() => onSetColumnDateFormat(witness, table.collection.key, focusedColumn.id, value === "iso" ? null : value), focusedColumnName);
+            }}>{([ ["iso", "2026-01-31"], ["mdy", "1/31/2026"], ["dmy", "31/1/2026"], ["ymd_slash", "2026/1/31"], ["ymd_cjk", "2026年1月31日"], ["month_day_year", "Jan 31, 2026"], ["day_month_year", "31 Jan 2026"] ] as const).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : null}
+          </div> : null}
           {rowDeleteAvailable ? <button type="button" className="ts-button" disabled={rowDeleteBlocked} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>{selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? `Delete ${selectionRectangle.bottom - selectionRectangle.top + 1} rows` : "Delete row"}</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
             if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }

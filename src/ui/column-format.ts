@@ -30,3 +30,18 @@ export function columnFormatSettlement(result: RowCommandOutcome): ColumnFormatS
   if (result.kind === "refused") return { close: false, error: result.message, confirmed: false };
   return { close: true, error: null, confirmed: result.kind === "confirmed" };
 }
+
+export type StripNumberAction = "currency" | "percent" | "separator" | "fewer" | "more";
+export function nextStripNumberFormat(format: NumberFormat | null | undefined, action: StripNumberAction): NumberFormat | null {
+  const current: NumberFormat = format ?? { decimals: 2, kind: { type: "plain" }, thousands_separator: false };
+  if (action === "fewer") return { ...current, decimals: Math.max(0, current.decimals - 1) };
+  if (action === "more") return { ...current, decimals: Math.min(10, current.decimals + 1) };
+  const turningOff = action === "separator" ? current.thousands_separator : current.kind.type === action;
+  const next: NumberFormat = action === "separator"
+    ? { ...current, thousands_separator: !current.thousands_separator }
+    : { ...current, kind: turningOff ? { type: "plain" } : action === "currency" ? { type: "currency", code: "USD" } : { type: "percent" } };
+  return turningOff && next.decimals === 2 && next.kind.type === "plain" && !next.thousands_separator ? null : next;
+}
+export function nextStripAlignment(current: "left" | "center" | "right" | null | undefined, action: "left" | "center" | "right") {
+  return current === action ? null : action;
+}

@@ -1378,6 +1378,28 @@ describe("native insertion limit presentation", () => {
 });
 
 
+describe("format strip", () => {
+  it("shows controls for the focused column type and blocks changes when busy", () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const handlers = { onSetColumnAlignment: async () => ({ kind: "confirmed" as const }), onSetColumnNumberFormat: async () => ({ kind: "confirmed" as const }), onSetColumnDateFormat: async () => ({ kind: "confirmed" as const }) };
+    let markup = render({ view, ...handlers });
+    const strip = () => markup.slice(markup.indexOf('aria-label="Format"'), markup.indexOf('</div>', markup.indexOf('aria-label="Format"')));
+    expect(strip()).toContain('class="ts-format-strip"');
+    expect(strip()).toContain('aria-label="Align center"');
+    expect(strip()).not.toContain('aria-label="Currency"');
+    view.table.columns[0]!.field_type = "number";
+    markup = render({ view, ...handlers, busy: true });
+    expect(strip()).toContain('aria-label="Currency"');
+    expect(strip()).toMatch(/aria-label="Currency"[^>]*disabled/);
+    view.table.columns[0]!.field_type = "date";
+    markup = render({ view, ...handlers });
+    expect(strip()).toContain('aria-label="Date format"');
+    expect(strip()).not.toContain('aria-label="Currency"');
+  });
+});
+
+
 describe("cell editor formula roles", () => {
   it("keeps plain formulas as textboxes and exposes matching suggestions as a combobox", () => {
     const editor = (value: string) => renderToStaticMarkup(createElement("input", {

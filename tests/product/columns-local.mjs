@@ -582,6 +582,60 @@ try {
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));
   checks.push("218 root-cause design: real 20-column native table with long first name; focused middle rename, last removal and add at 320/375/390; focus returns to Column; draft guard; labels-only headers across all profiles/densities and forced colors");
 
+  // Format strip operates on the focused column and participates in history.
+  await stop(); await start(); await page.getByRole("button", { name: "Open saved Capacity after columns", exact: true }).click(); await ready();
+  table = await projection();
+  const numberIndex = table.columns.findIndex(column => column.field_type === "number");
+  await cell(table, 0, numberIndex).focus();
+  await page.getByRole("button", { name: "Currency", exact: true }).click(); await ready();
+  assert.equal((await projection()).columns[numberIndex].number_format.kind.type, "currency");
+  await history("Undo");
+  assert.notEqual((await projection()).columns[numberIndex].number_format?.kind.type, "currency");
+  await cell(table, 0, numberIndex).focus();
+  const moreDecimals = page.getByRole("button", { name: "More decimals", exact: true });
+  const decimals = (await projection()).columns[numberIndex].number_format?.decimals ?? 2;
+  await moreDecimals.focus();
+  await page.keyboard.press("Enter"); await ready();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="More decimals"]');
+    return button instanceof HTMLButtonElement && !button.disabled && button.getAttribute("aria-disabled") !== "true";
+  });
+  assert.equal(await moreDecimals.evaluate(button => document.activeElement === button), true, "format publication retains the keyboard command origin");
+  await page.keyboard.press("Enter"); await ready();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="More decimals"]');
+    return button instanceof HTMLButtonElement && !button.disabled && button.getAttribute("aria-disabled") !== "true";
+  });
+  assert.equal((await projection()).columns[numberIndex].number_format.decimals, decimals + 2);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "More decimals");
+  await history("Undo"); await history("Undo");
+  const previousViewport = page.viewportSize();
+  await page.setViewportSize({ width: 320, height: 640 });
+  await cell(table, 0, numberIndex).focus();
+  const formatToolbar = page.getByRole("toolbar", { name: "Format", exact: true });
+  const toolbarBox = await formatToolbar.boundingBox();
+  const parentBox = await formatToolbar.locator("..").boundingBox();
+  assert.ok(toolbarBox && parentBox && toolbarBox.x + toolbarBox.width <= parentBox.x + parentBox.width + 1, "format toolbar fits its parent at 320px");
+  const buttonTops = await formatToolbar.getByRole("button").evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().top));
+  assert.ok(buttonTops.every(top => Math.abs(top - buttonTops[0]) < 1), "format buttons stay in one scrollable row at 320px");
+  await moreDecimals.focus();
+  const decimalsBox = await moreDecimals.boundingBox();
+  assert.ok(decimalsBox && decimalsBox.x >= 0 && decimalsBox.y >= 0 && decimalsBox.x + decimalsBox.width <= 320 && decimalsBox.y + decimalsBox.height <= 640, "More decimals is visible in the viewport at 320px");
+  await page.setViewportSize(previousViewport);
+  await cell(table, 0, numberIndex).focus();
+  await page.getByRole("button", { name: "Align center", exact: true }).click(); await ready();
+  assert.equal(await page.getByRole("button", { name: "Align center", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal((await projection()).columns[numberIndex].style.alignment, "center");
+  await page.getByRole("button", { name: "Align center", exact: true }).click(); await ready();
+  assert.notEqual((await projection()).columns[numberIndex].style?.alignment, "center");
+  d = await add("Strip date", "date", "2026-01-31"); await submit("Add column");
+  table = await projection(); const dateIndex = table.columns.findIndex(column => column.display_name === "Strip date");
+  await cell(table, 0, dateIndex).focus();
+  await page.getByLabel("Date format", { exact: true }).selectOption("dmy"); await ready();
+  assert.equal((await projection()).columns[dateIndex].date_format, "dmy");
+  assert.match(await cell(table, 0, dateIndex).innerText(), /31\/1\/2026/);
+  checks.push("format strip: currency and Undo, decimal keyboard focus and narrow viewport, alignment toggle, and day-first date display");
+
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };
   await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, evidence }));
