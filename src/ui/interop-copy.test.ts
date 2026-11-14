@@ -211,3 +211,21 @@ describe("producer presentation disclosures", () => {
     expect(findingMessage("Changed condition", "date_format_not_supported")).toBe("Changed condition");
   });
 });
+
+
+describe("capped import ledger compatibility", () => {
+  it("keeps imported cell locations and the producer's cap summary", () => {
+    // Work a5348952: interop_document.rs (explicit_column_type) and
+    // wasm/import_capacity_tests.rs::assert_ledger_summary (100,000 conversions).
+    const code = "explicit_column_type";
+    const message = "Source scalar converted using the explicitly selected column type; original source remains available.";
+    const table = () => null;
+    for (const location of ["Sales1!B12", "Sales1:12:2", "Sales1:columns 1..2"]) {
+      expect(findingLocation(location, table, undefined, code)).toBe(location);
+      expect(findingMessage(message, code, location)).toBe("The cell value was converted using the column type you chose. The original source is still available.");
+    }
+    const summary = "100000 findings of this kind on Sales1; the first 100 are listed";
+    expect(findingLocation("Sales1", table, undefined, code)).toBe("Sales1");
+    expect(findingMessage(summary, code, "Sales1")).toBe(summary);
+  });
+});

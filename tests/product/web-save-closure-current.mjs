@@ -40,12 +40,27 @@ const sourcePins = {
   "acceptance/web-save-closure/adapter.ego.mjs": "061c8a4701355685d442fe658d31491d3a7359de302421cda6446fea5983aa1a",
   "tests/product/home-entry.mjs": "bd6336b4938eb9b023eb70a1441d9e9a4523bb9d84483f6a5f536ea84a04d5e6",
 };
-// Work #644 reworded this producer sentence. A fresh import's ledger carries the
-// new text; the recorded fixtures keep the wording they were pinned with, and
-// every other ledger field still compares exactly.
-const currentLedger = (ledger) => ledger.map((entry) => entry.code === "stable_reference_binding"
-  ? { ...entry, message: "Worksheet coordinates and selected types were accepted as stable semantic identities; same-row references export as relative A1 so a spreadsheet fill-down follows the row, and other references as absolute coordinates to those identities." }
-  : entry);
+// Fresh imports use Work #644's wording and a5348952's A1 diagnostic locations.
+// Keep the historical fixtures/private reader unchanged; compare every ledger
+// field exactly against these current producer expectations.
+const currentTypeLocations = {
+  "Imported table:1:3": "Imported table!C2",
+  "Imported table:1:4": "Imported table!D2",
+  "Imported table:1:5": "Imported table!E2",
+  "Imported table:2:3": "Imported table!C3",
+  "Imported table:2:4": "Imported table!D3",
+  "Imported table:2:5": "Imported table!E3",
+  "sales:1:2": "sales!B2",
+  "sales:2:2": "sales!B3",
+  "catalog:1:3": "catalog!C2",
+  "catalog:2:3": "catalog!C3",
+  "dates:1:1": "dates!A2",
+};
+const currentLedger = (ledger) => ledger.map((entry) => {
+  if (entry.code === "stable_reference_binding") return { ...entry, message: "Worksheet coordinates and selected types were accepted as stable semantic identities; same-row references export as relative A1 so a spreadsheet fill-down follows the row, and other references as absolute coordinates to those identities." };
+  if (entry.code === "explicit_column_type") return { ...entry, location: currentTypeLocations[entry.location] };
+  return entry;
+});
 const fixturePins = {
   "date-only.csv": "7be5f6fad559bc4f70acab457bb34ee82161b47c30767343cc317e96663440e5",
   "unrelated-date.xlsx": "5c48a7fde664b7e230fe4cd773cb08c3c8e18a32c28c0cbfc204aa06953d0cfa",

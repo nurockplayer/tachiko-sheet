@@ -1,6 +1,6 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
 export interface DesignerClient {
     inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, profile?: "working_size"): Promise<SourceWorkbook>;
     importSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, selection: ImportSelection, validate?: (candidate: ImportedProjection) => void): Promise<ImportedProjection>;
@@ -84,6 +84,8 @@ export interface DesignerClient {
      * `fields` are the shown columns in shown order; a blank query finds nothing.
      */
     findInView(expectedRevision: string, collection: string, view: TableView, query: string, fields: string[], from: FindPosition | undefined, direction: FindDirection): Promise<FindInViewProjection>;
+    /** Revision-bound statistics over distinct selected cells; formulas use retained results. */
+    querySelectionStatistics(expectedRevision: string, targets: FieldTarget[]): Promise<SelectionStatisticsProjection>;
     /** Number totals over exactly these entities; unknown, duplicate or foreign ids refuse. */
     queryColumnTotals(expectedRevision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection>;
     /**
