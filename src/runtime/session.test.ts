@@ -2050,6 +2050,17 @@ describe("querySelectionStatistics", () => {
     expect(client.calls.trackerCommand).toEqual([]);
     expect(await runtime.read()).toEqual(view);
   });
+  it("forwards Work's formula-error count and unavailable aggregates unchanged", async () => {
+    const { runtime, client, view } = await opened();
+    const statistics: SelectionStatisticsProjection = {
+      revision: view.revision, count: 4, numerical_count: 1,
+      sum: null, average: null, min: null, max: null, error_count: 1,
+    };
+    client.hooks.querySelectionStatistics = async () => statistics;
+    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).resolves.toEqual(statistics);
+    expect(client.calls.trackerCommand).toEqual([]);
+    expect(await runtime.read()).toEqual(view);
+  });
   it("skips obsolete revisions and occurrences without dispatch", async () => {
     const { runtime, client, view } = await opened();
     await expect(runtime.querySelectionStatistics({ ...witnessOf(view), revision: "old" }, targets)).resolves.toBeNull();

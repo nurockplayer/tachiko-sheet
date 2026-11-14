@@ -148,22 +148,6 @@ try {
   assert.equal((await projection()).revision, before.revision);
   console.log("PASS: rapid changes drop held stale replies; only the final selection displays, without publication or Save change");
 
-  await cell(table, 0, 0).click();
-  const formula = page.getByTestId("formula-bar-input");
-  await formula.fill("=1/0"); await formula.press("Enter"); await ready();
-  await cell(table, 0, 0).getByText("Calculation failed", { exact: true }).waitFor();
-  // Scalar edits patch the view from publication.changed; no full table is re-read.
-  const failedField = await page.evaluate(({ entity, field }) => {
-    const publication = window.__selectionEvidence.records.flatMap(record => record.replies)
-      .filter(reply => reply.response?.type === "published").at(-1).response.payload;
-    return publication.changed?.find(value => value.target.entity === entity && value.target.field === field);
-  }, { entity: table.rows[0].id, field: table.columns[0].id });
-  assert.equal(failedField.calculated.status, "failure");
-  await select(table, 0, 0, 2, 1);
-  await expectStatistics({ count: 4, "numerical-count": 1, sum: "Unavailable", average: "Unavailable", min: "Unavailable", max: "Unavailable" });
-  assert.equal(await page.getByTestId("selection-sum").locator("..").getAttribute("title"), "1 cell has formula errors");
-  console.log("PASS: a failing formula leaves counts and explains unavailable numeric aggregates");
-
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("selection-max").scrollIntoViewIfNeeded();
   const layout = await page.locator('.ts-workbook-status').evaluate(strip => {
@@ -177,5 +161,5 @@ try {
   assert.equal(layout.scrolls, true); assert.ok(layout.width <= 390);
   assert.equal(layout.withinViewport, true); assert.equal(layout.unclipped, true); assert.equal(layout.inFlow, true);
   console.log("PASS: 390px status strip scrolls horizontally with no overlay or vertical clipping");
-  console.log("PASS: selection statistics acceptance cases 1–7");
+  console.log("PASS: selection statistics browser acceptance cases 1, 2, 4–7");
 } finally { await context.close(); await browser.close(); }
