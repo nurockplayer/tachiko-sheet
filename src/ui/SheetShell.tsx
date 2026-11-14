@@ -5322,7 +5322,7 @@ export function SheetShell(props: SheetShellProps) {
         {insertionLimitReached ? <p className="ts-hint ts-native-insertion-limit" role="status">{NATIVE_INSERTION_LIMIT_MESSAGE}</p> : null}
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
-          {focusedColumn ? <div role="toolbar" aria-label="Format" style={{ display: "inline-flex", gap: 2, alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
+          {focusedColumn ? <div role="toolbar" aria-label="Format" className="ts-format-strip">
             {onSetColumnAlignment ? ([ ["left", "Align left", "≡←"], ["center", "Align center", "≡"], ["right", "Align right", "→≡"] ] as const).map(([value, label, glyph]) => <button key={value} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={focusedColumn.style?.alignment === value} aria-disabled={stripPending || undefined} disabled={columnChangesBlocked || !witness} onClick={() => {
               if (!witness) return;
               void runStripCommand(() => onSetColumnAlignment(witness, table.collection.key, focusedColumn.id, nextStripAlignment(focusedColumn.style?.alignment, value)), focusedColumnName, true);

@@ -3068,6 +3068,8 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 .ts-new-column .ts-button { margin-bottom: 0; grid-column: 3; grid-row: 1; }
 .ts-new-column > .ts-column-required { grid-column: 1 / -1; grid-row: 2; }
 .ts-table-row-actions { order: 2; flex: none; align-items: center; margin: 8px 0; }
+.ts-format-strip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; max-width: 100%; overflow-x: auto; }
+.ts-format-strip > .ts-button { flex: none; }
 .ts-table-row-note { order: 3; flex: none; margin: 0; }
 .ts-entry-row .ts-row-head { color: var(--ts-ink-soft); }
 .ts-entry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-block: 6px; }

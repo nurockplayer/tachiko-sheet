@@ -596,7 +596,15 @@ try {
   const decimals = (await projection()).columns[numberIndex].number_format?.decimals ?? 2;
   await moreDecimals.focus();
   await page.keyboard.press("Enter"); await ready();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="More decimals"]');
+    return button instanceof HTMLButtonElement && !button.disabled && button.getAttribute("aria-disabled") !== "true";
+  });
   await page.keyboard.press("Enter"); await ready();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="More decimals"]');
+    return button instanceof HTMLButtonElement && !button.disabled && button.getAttribute("aria-disabled") !== "true";
+  });
   assert.equal((await projection()).columns[numberIndex].number_format.decimals, decimals + 2);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "More decimals");
   await history("Undo"); await history("Undo");
@@ -607,6 +615,9 @@ try {
   const toolbarBox = await formatToolbar.boundingBox();
   const parentBox = await formatToolbar.locator("..").boundingBox();
   assert.ok(toolbarBox && parentBox && toolbarBox.x + toolbarBox.width <= parentBox.x + parentBox.width + 1, "format toolbar fits its parent at 320px");
+  const buttonTops = await formatToolbar.getByRole("button").evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().top));
+  assert.ok(buttonTops.every(top => Math.abs(top - buttonTops[0]) < 1), "format buttons stay in one scrollable row at 320px");
+  await moreDecimals.focus();
   const decimalsBox = await moreDecimals.boundingBox();
   assert.ok(decimalsBox && decimalsBox.x >= 0 && decimalsBox.y >= 0 && decimalsBox.x + decimalsBox.width <= 320 && decimalsBox.y + decimalsBox.height <= 640, "More decimals is visible in the viewport at 320px");
   await page.setViewportSize(previousViewport);
