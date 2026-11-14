@@ -1602,6 +1602,18 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
   text-decoration: underline dotted;
 }
 
+.ts-cell--calc-failed::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid var(--ts-warn);
+  border-right: 6px solid transparent;
+  pointer-events: none;
+}
+
 .ts-cell--muted .ts-cell-value {
   color: var(--ts-ink-soft);
   font-style: italic;
@@ -2576,6 +2588,10 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 }
 
 @media (forced-colors: active) {
+  .ts-cell--calc-failed::before {
+    border-top-color: CanvasText;
+    forced-color-adjust: none;
+  }
   .ts-app { background: Canvas; color: CanvasText; }
   .ts-app-root:has(> .ts-app[data-view="workbook"]) > .ts-notices {
     background: Canvas;

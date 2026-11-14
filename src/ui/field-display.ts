@@ -14,6 +14,7 @@ export interface FieldDisplay {
   title: string | null;
   description?: "Blank" | "Empty text";
   emptyTextMarker?: boolean;
+  calculationFailed?: true;
 }
 
 export const EMPTY_TEXT = "Empty";
@@ -86,6 +87,7 @@ function baseDisplay(field: FieldProjection, format?: NumberFormat): FieldDispla
     if (calculated.status === "failure") {
       return {
         text: CALCULATION_FAILED_TEXT,
+        calculationFailed: true,
         tone: "warning",
         title: `${calculated.code}: ${calculated.message}`,
       };
