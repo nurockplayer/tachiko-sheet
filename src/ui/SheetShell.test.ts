@@ -900,6 +900,7 @@ describe("SheetShell static rendering", () => {
     expect(markup).toContain('class="ts-home-flow-icon" viewBox="0 0 16 16"');
     expect(markup).toContain('class="ts-home-flow-icon ts-home-flow-icon--chart"');
     expect(markup).toContain("Import a CSV or Excel file");
+    expect(markup).toContain("You check the columns and their types before anything is added. Up to 32 sheets of 32 columns and 128 rows each (1,024 rows in all). One plain sheet without formulas can hold up to 8,406 rows and 25,218 cells. CSV text or Excel files up to 2 MB; an Excel file can unpack to at most 8 MB. Larger plain sheets also have a 1 MB limit on cell text. Some styles and features are not imported.");
     expect(markup).toContain("Open a project folder");
     expect(markup).toContain("Release plan example");
     expect(markup).toContain("Choose file…");
