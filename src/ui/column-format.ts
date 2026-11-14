@@ -32,15 +32,15 @@ export function columnFormatSettlement(result: RowCommandOutcome): ColumnFormatS
 }
 
 export type StripNumberAction = "currency" | "percent" | "separator" | "fewer" | "more";
-export function nextStripNumberFormat(format: NumberFormat | undefined, action: StripNumberAction): NumberFormat {
+export function nextStripNumberFormat(format: NumberFormat | null | undefined, action: StripNumberAction): NumberFormat | null {
   const current: NumberFormat = format ?? { decimals: 2, kind: { type: "plain" }, thousands_separator: false };
-  switch (action) {
-    case "currency": return { ...current, kind: current.kind.type === "currency" ? { type: "plain" } : { type: "currency", code: "USD" } };
-    case "percent": return { ...current, kind: { type: current.kind.type === "percent" ? "plain" : "percent" } };
-    case "separator": return { ...current, thousands_separator: !current.thousands_separator };
-    case "fewer": return { ...current, decimals: Math.max(0, current.decimals - 1) };
-    case "more": return { ...current, decimals: Math.min(10, current.decimals + 1) };
-  }
+  if (action === "fewer") return { ...current, decimals: Math.max(0, current.decimals - 1) };
+  if (action === "more") return { ...current, decimals: Math.min(10, current.decimals + 1) };
+  const turningOff = action === "separator" ? current.thousands_separator : current.kind.type === action;
+  const next: NumberFormat = action === "separator"
+    ? { ...current, thousands_separator: !current.thousands_separator }
+    : { ...current, kind: turningOff ? { type: "plain" } : action === "currency" ? { type: "currency", code: "USD" } : { type: "percent" } };
+  return turningOff && next.decimals === 2 && next.kind.type === "plain" && !next.thousands_separator ? null : next;
 }
 export function nextStripAlignment(current: "left" | "center" | "right" | null | undefined, action: "left" | "center" | "right") {
   return current === action ? null : action;
