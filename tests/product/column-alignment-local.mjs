@@ -143,6 +143,57 @@ try {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.evaluate(() => window.alignmentEvidence.widthRequests.length), requestsBeforeNoop);
 
+  // The idle timer must finish against the current save state, even when
+  // keyup happened while the preceding drag publication was held.
+  const requestsBeforeIdle = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
+  const beforeIdle = await resize.getAttribute("aria-valuenow");
+  await page.evaluate(() => { window.alignmentEvidence.holdWidth = true; window.alignmentEvidence.heldWidth = null; });
+  const idleBox = await resize.boundingBox();
+  await page.mouse.move(idleBox.x + idleBox.width / 2, idleBox.y + idleBox.height / 2);
+  await page.mouse.down(); await page.mouse.move(idleBox.x + idleBox.width / 2 + 40, idleBox.y + idleBox.height / 2); await page.mouse.up();
+  await page.waitForFunction(() => window.alignmentEvidence.heldWidth !== null);
+  await page.evaluate(() => {
+    const original = window.setTimeout;
+    window.alignmentEvidence.restoreResizeTimer = () => { window.setTimeout = original; };
+    window.setTimeout = (callback, delay, ...args) => {
+      if (delay === 400) {
+        window.alignmentEvidence.finishIdleResize = () => callback(...args);
+        return original(() => {}, delay);
+      }
+      return original(callback, delay, ...args);
+    };
+  });
+  await resize.focus(); await page.keyboard.press("ArrowRight");
+  await page.evaluate(() => { const evidence = window.alignmentEvidence; evidence.worker.dispatchEvent(new MessageEvent("message", { data: evidence.heldWidth })); });
+  await ready();
+  await page.evaluate(() => { const evidence = window.alignmentEvidence; evidence.restoreResizeTimer(); evidence.finishIdleResize(); });
+  await page.waitForFunction(count => window.alignmentEvidence.widthRequests.length === count + 2, requestsBeforeIdle);
+  await ready();
+  assert.equal(Number(await resize.getAttribute("aria-valuenow")), Number(beforeIdle) + 56);
+  await resize.blur();
+
+  // Enter replaces an arrow preview before its 400 ms session finishes.
+  const requestsBeforeFit = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
+  await resize.focus(); await page.keyboard.press("Enter");
+  await page.waitForFunction(count => window.alignmentEvidence.widthRequests.length === count + 1, requestsBeforeFit);
+  await ready();
+  const fittedWidth = Number(await resize.getAttribute("aria-valuenow"));
+  await resize.focus(); await page.keyboard.press("ArrowRight"); await page.keyboard.press("Enter"); await resize.blur();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await ready();
+  assert.equal(Number(await resize.getAttribute("aria-valuenow")), fittedWidth, "AutoFit replaces the unfinished keyboard width");
+  assert.equal(await page.evaluate(() => window.alignmentEvidence.widthRequests.length), requestsBeforeFit + 1);
+
+  // Starting a drag transfers the arrow preview and cancels its old timer.
+  const requestsBeforeKeyboardDrag = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
+  await resize.focus(); await page.keyboard.press("ArrowRight");
+  const keyboardDragBox = await resize.boundingBox();
+  await page.mouse.move(keyboardDragBox.x + keyboardDragBox.width / 2, keyboardDragBox.y + keyboardDragBox.height / 2);
+  await page.mouse.down(); await page.mouse.move(keyboardDragBox.x + keyboardDragBox.width / 2 + 40, keyboardDragBox.y + keyboardDragBox.height / 2); await page.mouse.up();
+  await page.waitForFunction(({ count, width }) => window.alignmentEvidence.widthRequests.slice(count).some(message => Math.trunc(message.request.width / 256 * 7 + 5) === width), { count: requestsBeforeKeyboardDrag, width: fittedWidth + 56 });
+  await ready();
+  assert.equal(Number(await resize.getAttribute("aria-valuenow")), fittedWidth + 56, "the drag keeps both its movement and the arrow preview");
+
   const secondResize = page.getByRole("separator", { name: "Resize Number", exact: true });
   const secondBox = await secondResize.boundingBox();
   await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
