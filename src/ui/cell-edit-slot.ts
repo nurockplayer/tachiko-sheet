@@ -81,3 +81,19 @@ export function emptyCellEdit(slot: CellEditSlot): CellEdit | null {
   if (!supportsOptional(slot.kind)) throw new CellClearRefusal("This column cannot be cleared here.");
   return { target: slot.target, input: { kind: "clear" } };
 }
+
+export function completionFor(typed: string, values: string[]): string | null {
+  if (!typed) return null;
+  const prefix = typed.toLowerCase();
+  const seen = new Set<string>();
+  let match: string | null = null;
+  for (const value of values) {
+    const folded = value.toLowerCase();
+    if (seen.has(folded)) continue;
+    seen.add(folded);
+    if (value.length <= typed.length || !folded.startsWith(prefix)) continue;
+    if (match !== null) return null;
+    match = value;
+  }
+  return match !== null && match.length > typed.length ? match : null;
+}

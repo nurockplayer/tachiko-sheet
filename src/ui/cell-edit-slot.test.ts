@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, pastedCellEdit } from "./cell-edit-slot.js";
+import { completionFor, cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, pastedCellEdit } from "./cell-edit-slot.js";
 import { routePaste } from "./clipboard.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
@@ -75,5 +75,23 @@ describe("cell editor options", () => {
     expect(cellOptionsKeyAction("Escape", { open: false, index: -1 }, 3)).toBeNull();
     expect(cellOptionsKeyAction("Tab", { open: true, index: 1 }, 3)).toBeNull();
     expect(cellOptionsKeyAction("ArrowDown", open, 0)).toBeNull();
+  });
+});
+
+describe("column text completion", () => {
+  it.each([
+    ["", ["Alpha"], null],
+    ["al", ["Alpha", "Alpha", "Beta"], "Alpha"],
+    ["al", ["Alpha", "alpha"], "Alpha"],
+    ["AL", ["alpha", "Alpha"], "alpha"],
+    ["al", ["Alpha", "Alpine"], null],
+    ["alph", ["Alpha", "Alpine"], "Alpha"],
+    ["lph", ["Alpha"], null],
+    [" al", ["Alpha"], null],
+    ["Alpha", ["Alpha", "alpha"], null],
+    ["Alpha", ["Alpha", "Alphabet"], "Alphabet"],
+    ["z", ["Alpha"], null],
+  ] as const)("completes %j from %j as %j", (typed, values, expected) => {
+    expect(completionFor(typed, [...values])).toBe(expected);
   });
 });
