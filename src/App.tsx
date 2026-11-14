@@ -1806,6 +1806,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name, columnNames), "duplicate", name);
   }
 
+  function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]) {
+    return runtime.querySelectionStatistics(witness, targets);
+  }
+
   function queryShownTotals(witness: ViewWitness, collection: string, entities: string[]) {
     // A read only: it never takes the operation slot, and a failure leaves the whole-table footer.
     return runtime.queryColumnTotals(witness, collection, entities);
@@ -2342,6 +2346,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // A duplicate carries an authored display name and is saved through
           // the portable route, like column authoring.
           onDuplicateTable={copies.createWorkFile ? duplicateTable : undefined}
+          onQuerySelectionStatistics={querySelectionStatistics}
           onQueryShownTotals={queryShownTotals}
           onQueryColumnValues={queryColumnValues}
           onQueryGroupTotals={queryGroupTotals}
