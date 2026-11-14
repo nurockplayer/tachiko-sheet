@@ -5323,19 +5323,19 @@ export function SheetShell(props: SheetShellProps) {
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
           {focusedColumn ? <div role="toolbar" aria-label="Format" className="ts-format-strip">
-            {onSetColumnAlignment ? ([ ["left", "Align left", "≡←"], ["center", "Align center", "≡"], ["right", "Align right", "→≡"] ] as const).map(([value, label, glyph]) => <button key={value} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={focusedColumn.style?.alignment === value} aria-disabled={stripPending || undefined} disabled={columnChangesBlocked || !witness} onClick={() => {
+            {onSetColumnAlignment ? ([ ["left", "Align left", "≡←"], ["center", "Align center", "≡"], ["right", "Align right", "→≡"] ] as const).map(([value, label, glyph]) => <button key={value} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={focusedColumn.style?.alignment === value} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness} onClick={() => {
               if (!witness) return;
               void runStripCommand(() => onSetColumnAlignment(witness, table.collection.key, focusedColumn.id, nextStripAlignment(focusedColumn.style?.alignment, value)), focusedColumnName, true);
             }}>{glyph}</button>) : null}
             {table.native_table_profile && onSetColumnNumberFormat && focusedColumn.field_type === "number" ? ([ ["currency", "Currency", "$"], ["percent", "Percent", "%"], ["separator", "Thousands separator", ","], ["fewer", "Fewer decimals", ".0←"], ["more", "More decimals", "→.0"] ] as const).map(([action, label, glyph]) => {
               const format = focusedColumn.number_format ?? { decimals: 2, kind: { type: "plain" as const }, thousands_separator: false };
               const pressed = action === "currency" || action === "percent" ? format.kind.type === action : action === "separator" ? format.thousands_separator : undefined;
-              return <button key={action} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={pressed} aria-disabled={stripPending || undefined} disabled={columnChangesBlocked || !witness || (action === "fewer" && format.decimals <= 0) || (action === "more" && format.decimals >= 10)} onClick={() => {
+              return <button key={action} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={pressed} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness || (action === "fewer" && format.decimals <= 0) || (action === "more" && format.decimals >= 10)} onClick={() => {
                 if (!witness) return;
                 void runStripCommand(() => onSetColumnNumberFormat(witness, table.collection.key, focusedColumn.id, nextStripNumberFormat(focusedColumn.number_format, action as StripNumberAction)), focusedColumnName);
               }}>{glyph}</button>;
             }) : null}
-            {onSetColumnDateFormat && focusedColumn.field_type === "date" ? <select className="ts-button" aria-label="Date format" title="Date format" value={focusedColumn.date_format ?? "iso"} aria-disabled={stripPending || undefined} disabled={columnChangesBlocked || !witness} onChange={event => {
+            {onSetColumnDateFormat && focusedColumn.field_type === "date" ? <select className="ts-button" aria-label="Date format" title="Date format" value={focusedColumn.date_format ?? "iso"} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness} onChange={event => {
               if (!witness) return;
               const value = event.currentTarget.value as DateFormat;
               void runStripCommand(() => onSetColumnDateFormat(witness, table.collection.key, focusedColumn.id, value === "iso" ? null : value), focusedColumnName);

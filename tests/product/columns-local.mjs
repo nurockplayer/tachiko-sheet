@@ -600,6 +600,7 @@ try {
     const button = document.querySelector('button[aria-label="More decimals"]');
     return button instanceof HTMLButtonElement && !button.disabled && button.getAttribute("aria-disabled") !== "true";
   });
+  assert.equal(await moreDecimals.evaluate(button => document.activeElement === button), true, "format publication retains the keyboard command origin");
   await page.keyboard.press("Enter"); await ready();
   await page.waitForFunction(() => {
     const button = document.querySelector('button[aria-label="More decimals"]');
