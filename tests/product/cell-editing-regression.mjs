@@ -750,10 +750,17 @@ const cases = [
     const scroller = page.locator(".ts-grid-scroll");
     await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
     await page.getByText("Row 2000", { exact: true }).waitFor();
+    await page.evaluate(() => {
+      window.__columnCopyTarget = null;
+      document.addEventListener("copy", event => { window.__columnCopyTarget = event.target?.outerHTML?.slice(0, 500); }, { once: true, capture: true });
+    });
     const header = page.locator("thead th.ts-column-header").first();
     await header.locator(".ts-col-head").click({ button: "right" });
     await page.getByRole("menu", { name: "Column actions" }).getByRole("menuitem", { name: "Copy", exact: true }).click();
-    await page.getByText("Copied 2000 rows.", { exact: true }).waitFor();
+    await page.getByText("Copied 2000 rows.", { exact: true }).waitFor({ timeout: 5000 }).catch(async error => {
+      const details = await page.evaluate(() => ({ target: window.__columnCopyTarget, active: document.activeElement?.outerHTML?.slice(0, 500), status: document.querySelector(".ts-clipboard-status")?.textContent, scrollTop: document.querySelector(".ts-grid-scroll")?.scrollTop }));
+      throw new Error(`${error.message}\nCopy diagnostics: ${JSON.stringify(details)}`);
+    });
     await scroller.evaluate(node => { node.scrollTop = 0; });
     await page.getByText("Row 1", { exact: true }).waitFor();
     const bar = page.getByTestId("formula-bar-input");
