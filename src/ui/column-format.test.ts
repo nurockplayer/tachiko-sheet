@@ -26,3 +26,24 @@ describe("column number format", () => {
     expect(formatNumberFor(4.5, undefined)).toBe("4.5");
   });
 });
+import { nextStripAlignment, nextStripNumberFormat } from "./column-format.js";
+
+describe("format strip actions", () => {
+  it("restores no format when toggling a seed format off", () => {
+    for (const action of ["currency", "percent", "separator"] as const) {
+      expect(nextStripNumberFormat(nextStripNumberFormat(null, action), action)).toBeNull();
+    }
+  });
+  it("preserves explicit non-default formats and decimal changes", () => {
+    const currency = { decimals: 3, kind: { type: "currency" as const, code: "JPY" }, thousands_separator: false };
+    expect(nextStripNumberFormat(currency, "currency")).toEqual({ decimals: 3, kind: { type: "plain" }, thousands_separator: false });
+    expect(nextStripNumberFormat({ decimals: 3, kind: { type: "plain" }, thousands_separator: false }, "fewer"))
+      .toEqual({ decimals: 2, kind: { type: "plain" }, thousands_separator: false });
+    expect(nextStripNumberFormat({ ...currency, decimals: 0 }, "fewer")?.decimals).toBe(0);
+    expect(nextStripNumberFormat({ ...currency, decimals: 10 }, "more")?.decimals).toBe(10);
+  });
+  it("toggles alignment back to default", () => {
+    expect(nextStripAlignment(null, "center")).toBe("center");
+    expect(nextStripAlignment("center", "center")).toBeNull();
+  });
+});
