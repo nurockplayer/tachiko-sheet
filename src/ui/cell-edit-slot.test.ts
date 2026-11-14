@@ -89,7 +89,9 @@ describe("column text completion", () => {
     ["lph", ["Alpha"], null],
     [" al", ["Alpha"], null],
     ["Alpha", ["Alpha", "alpha"], null],
-    ["Alpha", ["Alpha", "Alphabet"], "Alphabet"],
+    ["Alpha", ["Alpha", "Alphabet"], null],
+    ["Ann", ["Anna", "Ann"], null],
+    ["ann", ["Ann"], null],
     ["z", ["Alpha"], null],
   ] as const)("completes %j from %j as %j", (typed, values, expected) => {
     expect(completionFor(typed, [...values])).toBe(expected);
