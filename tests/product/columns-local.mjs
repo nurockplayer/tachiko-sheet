@@ -582,6 +582,28 @@ try {
   await writeFile(path.join(evidence, "many-column-headers.json"), JSON.stringify(manyHeaders, null, 2));
   checks.push("218 root-cause design: real 20-column native table with long first name; focused middle rename, last removal and add at 320/375/390; focus returns to Column; draft guard; labels-only headers across all profiles/densities and forced colors");
 
+  // Format strip operates on the focused column and participates in history.
+  table = await projection();
+  const numberIndex = table.columns.findIndex(column => column.field_type === "number");
+  await cell(table, 0, numberIndex).focus();
+  await page.getByRole("button", { name: "Currency", exact: true }).click(); await ready();
+  assert.equal((await projection()).columns[numberIndex].number_format.kind.type, "currency");
+  await history("Undo");
+  assert.notEqual((await projection()).columns[numberIndex].number_format?.kind.type, "currency");
+  await cell(table, 0, numberIndex).focus();
+  await page.getByRole("button", { name: "Align center", exact: true }).click(); await ready();
+  assert.equal(await page.getByRole("button", { name: "Align center", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal((await projection()).columns[numberIndex].style.alignment, "center");
+  await page.getByRole("button", { name: "Align center", exact: true }).click(); await ready();
+  assert.notEqual((await projection()).columns[numberIndex].style?.alignment, "center");
+  d = await add("Strip date", "date", "2026-01-31"); await submit("Add column");
+  table = await projection(); const dateIndex = table.columns.findIndex(column => column.display_name === "Strip date");
+  await cell(table, 0, dateIndex).focus();
+  await page.getByLabel("Date format", { exact: true }).selectOption("dmy"); await ready();
+  assert.equal((await projection()).columns[dateIndex].date_format, "dmy");
+  assert.match(await cell(table, 0, dateIndex).innerText(), /31\/1\/2026/);
+  checks.push("format strip: currency and Undo, alignment toggle, and day-first date display");
+
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };
   await writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2)); console.log(JSON.stringify({ ...result, evidence }));
