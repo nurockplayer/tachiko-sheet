@@ -174,6 +174,28 @@ const cases = [
     assert.ok(selected.every((value) => value === "true"), "every table cell shows the selected state");
     assert.equal(await focused(firstTitle), true, "Select All keeps focus where it was");
   }],
+  ["Column header context menu selects and sorts the column", async (page) => {
+    const header = page.locator("thead th.ts-column-header").nth(1);
+    const field = await page.locator("tbody tr.ts-row").first().locator("td[data-work-field]").nth(1).getAttribute("data-work-field");
+    const cells = page.locator(`td[data-work-field="${field}"]:not([data-entry-field])`);
+    await header.click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Column actions" });
+    await menu.waitFor();
+    for (const name of ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"]) assert.equal(await menu.getByRole("menuitem", { name, exact: true }).count(), 1);
+    const selected = await cells.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-selected")));
+    assert.ok(selected.length > 0 && selected.every(value => value === "true"));
+    await menu.getByRole("menuitem", { name: "Sort Z → A" }).click();
+    await menu.waitFor({ state: "hidden" });
+    assert.match(await header.textContent(), /↓/);
+    await header.locator(".ts-col-head").focus();
+    await page.keyboard.press("Shift+F10");
+    await menu.waitFor();
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    await page.waitForFunction(field => document.activeElement?.dataset.workField === field, field);
+    await cells.first().click({ button: "right" });
+    await page.getByRole("menu", { name: "Cell actions" }).waitFor();
+  }],
   ["Column borders widen by keyboard and fit the content on double-click", async (page) => {
     // #281: a column width is view state only, so resizing never disturbs the
     // cell focus and selection behaviour the previous case covers.
