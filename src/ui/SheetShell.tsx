@@ -174,6 +174,12 @@ interface CellEditorProps {
   onSelect(event: React.SyntheticEvent<HTMLInputElement | HTMLTextAreaElement>): void;
 }
 
+export function cellEditorListAttributes(suggestionCount: number, allowedCount: number, open: boolean): Pick<CellEditorProps, "role" | "aria-autocomplete" | "aria-expanded"> {
+  return suggestionCount > 0 || allowedCount > 0
+    ? { role: "combobox", "aria-autocomplete": "list", "aria-expanded": open }
+    : {};
+}
+
 interface GridPosition {
   entity: string;
   field: string;
@@ -5454,9 +5460,7 @@ export function SheetShell(props: SheetShellProps) {
         : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined,
       "aria-busy": commitPending,
       "data-testid": "cell-editor",
-      role: (formulaMode || allCellOptions.length > 0) ? "combobox" : undefined,
-      "aria-autocomplete": (formulaMode || allCellOptions.length > 0) ? "list" : undefined,
-      "aria-expanded": (formulaMode || allCellOptions.length > 0) ? optionsOpen : undefined,
+      ...cellEditorListAttributes(suggestions?.names.length ?? 0, allCellOptions.length, optionsOpen),
       "aria-controls": optionsOpen ? cellOptionsId : undefined,
       "aria-activedescendant": optionsOpen && optionsUi.index >= 0 ? `${cellOptionsId}-${optionsUi.index}` : undefined,
       disabled: controlsLocked,

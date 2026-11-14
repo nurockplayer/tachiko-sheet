@@ -8,6 +8,7 @@ import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../co
 import { BriefFacts } from "./BriefFacts.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
+  cellEditorListAttributes,
   focusRevealNextScrollTop,
   focusRevealScrollDelta,
   focusRevealStillCurrent,
@@ -22,6 +23,7 @@ import {
 } from "./SheetShell.js";
 import { cellDisplay, fieldClipboardText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { encodeTsv } from "./clipboard.js";
+import { functionSuggestions } from "./formula-hints.js";
 import { FORMULA_BAR_NO_CELL } from "./formula-bar.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
@@ -1368,5 +1370,18 @@ describe("native insertion limit presentation", () => {
     expect(after).not.toContain('class="ts-entry-row"');
     expect(after).not.toContain('>Add row</button>');
     expect(after).toContain('class="ts-hint ts-native-insertion-limit" role="status">This table has reached the 10,000-row limit for adding rows here. Nothing was changed.</p>');
+  });
+});
+
+
+describe("cell editor formula roles", () => {
+  it("keeps plain formulas as textboxes and exposes matching suggestions as a combobox", () => {
+    const editor = (value: string) => renderToStaticMarkup(createElement("input", {
+      "aria-label": "Edit cell",
+      ...cellEditorListAttributes(functionSuggestions(value, value.length)?.names.length ?? 0, 0, true),
+    }));
+    expect(editor("=Amount * 2")).not.toContain('role="combobox"');
+    expect(editor("=SU")).toContain('role="combobox"');
+    expect(editor("=SU")).toContain('aria-expanded="true"');
   });
 });
