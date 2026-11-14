@@ -1394,7 +1394,9 @@ describe("cell editor formula roles", () => {
 describe("formula completion boundaries", () => {
   it("resets selection for a changed list and clamps acceptance", () => {
     const old = { key: "A-list", open: true, index: 5 };
-    expect(formulaOptionsUi(old, "SU-list")).toEqual({ open: true, index: 0 });
+    expect(formulaOptionsUi(old, "SU-list", "cell")).toEqual({ open: true, index: 0 });
+    expect(formulaOptionsUi(null, "SU-list", "cell").index).toBe(-1);
+    expect(formulaOptionsUi({ key: "cell", open: true, index: -1 }, "SU-list", "cell").index).toBe(-1);
     expect(formulaOptionIndex(5, 3)).toBe(2);
     expect(formulaOptionIndex(-1, 3)).toBe(0);
     expect(formulaOptionIndex(0, 0)).toBeNull();

@@ -178,8 +178,8 @@ export function cellEditorFormulaSource(editor: { entity: string; kind: string; 
   return editor.entity !== DRAFT_ROW && editor.kind === "number" ? inCellFormulaSource(editor.value) : null;
 }
 
-export function formulaOptionsUi(ui: CellOptionsUi & { key: string } | null, key: string): CellOptionsUi {
-  return ui?.key === key ? ui : { open: true, index: 0 };
+export function formulaOptionsUi(ui: CellOptionsUi & { key: string } | null, key: string, cellKey: string): CellOptionsUi {
+  return ui?.key === key ? ui : { open: true, index: !ui || ui.key === cellKey ? -1 : 0 };
 }
 
 export function formulaOptionIndex(index: number, count: number): number | null {
@@ -5488,7 +5488,7 @@ export function SheetShell(props: SheetShellProps) {
     const cellOptionsId = formulaMode ? `ts-formula-functions-${column.id}` : `ts-cell-options-${column.id}`;
     const hintId = `ts-formula-hint-${column.id}`;
     const optionsKey = formulaMode ? `${key}\u0000${suggestions?.start ?? ""}\u0000${suggestions?.names.join(",") ?? ""}` : key;
-    const optionsUi: CellOptionsUi = formulaMode ? formulaOptionsUi(cellOptionsUi, optionsKey) : cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
+    const optionsUi: CellOptionsUi = formulaMode ? formulaOptionsUi(cellOptionsUi, optionsKey, key) : cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
     // A pending commit owns the editor value; a pick then would be silently dropped.
     const optionsOpen = optionsUi.open && cellOptions.length > 0 && !commitPending;
     const pickCellOption = (value: string): void => {

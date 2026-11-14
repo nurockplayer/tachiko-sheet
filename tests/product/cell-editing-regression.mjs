@@ -513,7 +513,7 @@ const cases = [
     await input.press("ArrowDown"); await input.press("Enter");
     assert.equal(await input.inputValue(), "=SUM(");
     await list.waitFor({ state: "hidden" });
-    assert.match(await page.getByRole("note").filter({ hasText: "SUM(number1" }).textContent(), /SUM\(number1, \[number2\], …\)/);
+    assert.match(await page.getByRole("note").filter({ hasText: "SUM(range" }).textContent(), /SUM\(range\)/);
     await input.press("Escape"); await input.waitFor({ state: "hidden" });
     assert.equal((await target.textContent()).trim(), original);
     input = await entry(page, "impact"); await replace(input, "=rou"); await input.press("Tab");
