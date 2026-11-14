@@ -8,6 +8,10 @@ import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../co
 import { BriefFacts } from "./BriefFacts.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
+  cellEditorListAttributes,
+  cellEditorFormulaSource,
+  formulaOptionsUi,
+  formulaOptionIndex,
   focusRevealNextScrollTop,
   focusRevealScrollDelta,
   focusRevealStillCurrent,
@@ -22,6 +26,8 @@ import {
 } from "./SheetShell.js";
 import { cellDisplay, fieldClipboardText, fieldDisplay, parseBooleanDraft, scalarEditOf, seedTextOf } from "./field-display.js";
 import { encodeTsv } from "./clipboard.js";
+import { functionSuggestions } from "./formula-hints.js";
+import { DRAFT_ROW } from "./row-entry-model.js";
 import { FORMULA_BAR_NO_CELL } from "./formula-bar.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
@@ -1390,5 +1396,36 @@ describe("format strip", () => {
     markup = render({ view, ...handlers });
     expect(strip()).toContain('aria-label="Date format"');
     expect(strip()).not.toContain('aria-label="Currency"');
+  });
+});
+
+
+describe("cell editor formula roles", () => {
+  it("keeps plain formulas as textboxes and exposes matching suggestions as a combobox", () => {
+    const editor = (value: string) => renderToStaticMarkup(createElement("input", {
+      "aria-label": "Edit cell",
+      ...cellEditorListAttributes(functionSuggestions(value, value.length)?.names.length ?? 0, 0, true),
+    }));
+    expect(editor("=Amount * 2")).not.toContain('role="combobox"');
+    expect(editor("=SU")).toContain('role="combobox"');
+    expect(editor("=SU")).toContain('aria-expanded="true"');
+  });
+});
+
+
+describe("formula completion boundaries", () => {
+  it("resets selection for a changed list and clamps acceptance", () => {
+    const old = { key: "A-list", open: true, index: 5 };
+    expect(formulaOptionsUi(old, "SU-list", "cell")).toEqual({ open: true, index: 0 });
+    expect(formulaOptionsUi(null, "SU-list", "cell").index).toBe(-1);
+    expect(formulaOptionsUi({ key: "cell", open: true, index: -1 }, "SU-list", "cell").index).toBe(-1);
+    expect(formulaOptionIndex(5, 3)).toBe(2);
+    expect(formulaOptionIndex(-1, 3)).toBe(0);
+    expect(formulaOptionIndex(0, 0)).toBeNull();
+  });
+  it("only offers formulas where commit accepts them", () => {
+    expect(cellEditorFormulaSource({ entity: "row", kind: "number", value: "=SU" })).toBe("SU");
+    expect(cellEditorFormulaSource({ entity: "row", kind: "text", value: "=SU" })).toBeNull();
+    expect(cellEditorFormulaSource({ entity: DRAFT_ROW, kind: "number", value: "=SU" })).toBeNull();
   });
 });
