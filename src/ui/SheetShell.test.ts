@@ -1,4 +1,6 @@
-import { createElement } from "react";
+// @vitest-environment jsdom
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -1373,12 +1375,42 @@ describe("native insertion limit presentation", () => {
 
 
 describe("format strip", () => {
+  it("keeps focus and ignores repeat presses while a format request is pending", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns[0]!.field_type = "number";
+    let resolve!: (value: { kind: "confirmed" }) => void;
+    const onSetColumnNumberFormat = vi.fn(() => new Promise<{ kind: "confirmed" }>(done => { resolve = done; }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    try {
+      await act(async () => { root.render(createElement(SheetShell, makeProps({ view, onSetColumnNumberFormat }))); });
+      const button = container.querySelector<HTMLButtonElement>('[aria-label="More decimals"]')!;
+      button.focus();
+      await act(async () => { button.click(); });
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(document.activeElement).toBe(button);
+      await act(async () => { button.click(); });
+      expect(onSetColumnNumberFormat).toHaveBeenCalledTimes(1);
+      await act(async () => { resolve({ kind: "confirmed" }); });
+      expect(button.hasAttribute("aria-disabled")).toBe(false);
+    } finally {
+      await act(async () => { root.unmount(); });
+      container.remove();
+      delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    }
+  });
+
   it("shows controls for the focused column type and blocks changes when busy", () => {
     const view = makeView();
     view.table.native_table_profile = true;
     const handlers = { onSetColumnAlignment: async () => ({ kind: "confirmed" as const }), onSetColumnNumberFormat: async () => ({ kind: "confirmed" as const }), onSetColumnDateFormat: async () => ({ kind: "confirmed" as const }) };
     let markup = render({ view, ...handlers });
     const strip = () => markup.slice(markup.indexOf('aria-label="Format"'), markup.indexOf('</div>', markup.indexOf('aria-label="Format"')));
+    expect(strip()).toContain("flex-wrap:wrap");
     expect(strip()).toContain('aria-label="Align center"');
     expect(strip()).not.toContain('aria-label="Currency"');
     view.table.columns[0]!.field_type = "number";
