@@ -92,7 +92,7 @@ import { ReportCanvas } from "./ReportCanvas.js";
 import { rowSource } from "./row-source.js";
 import { copyColumnNames, sourceNames } from "./source-names.js";
 import { bindingCatalogNames } from "./binding-catalog-names.js";
-import { cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, type CellOptionsUi, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
+import { completionFor, cellEditSlot, cellEditorOptions, cellEditorUnchanged, cellOptionMatches, cellOptionsKeyAction, type CellOptionsUi, CellClearRefusal, emptyCellEdit, pastedCellEdit, type CellEditSlot } from "./cell-edit-slot.js";
 import { clearCellEdits } from "./clear-cells.js";
 import { fillDownPlan, FillDownRefusal } from "./fill-down.js";
 import { adjacentFillBottom, fillDragTarget } from "./fill-handle.js";
@@ -548,6 +548,7 @@ export function SheetShell(props: SheetShellProps) {
     onDeleteTable,
     onDuplicateTable,
     onQueryShownTotals,
+    onQueryColumnValues,
     onQueryGroupTotals,
     onTranslateA1Formula,
     onOpenExample,
@@ -663,6 +664,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function beginAppearanceComposition(): void {
+    if (columnCompletionRef.current) columnCompletionRef.current.completeOnReply = false;
     if (compositionEndTimer.current !== null) {
       window.clearTimeout(compositionEndTimer.current);
       compositionEndTimer.current = null;
@@ -902,6 +904,17 @@ export function SheetShell(props: SheetShellProps) {
   const historyOperationIdRef = useRef(0);
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const columnCompletionRef = useRef<{ instance: number; viewKey: string; values: string[]; completeOnReply: boolean } | null>(null);
+  const completionSuffixRef = useRef<{ instance: number; start: number; end: number } | null>(null);
+  const completionSelectionRef = useRef<{ instance: number; start: number; end: number } | null>(null);
+  useLayoutEffect(() => {
+    const selection = completionSelectionRef.current;
+    const input = editorInputRef.current;
+    if (selection && selection.instance === editor?.instance && input && input.ownerDocument.activeElement === input) {
+      input.setSelectionRange(selection.start, selection.end);
+    }
+    completionSelectionRef.current = null;
+  }, [editor]);
   const formulaInputRef = useRef<HTMLInputElement | null>(null);
   // One formula commit at a time: a second Apply or Enter while Work is
   // deciding must not publish the same edit twice.
@@ -2448,6 +2461,39 @@ export function SheetShell(props: SheetShellProps) {
     [view?.occurrence, view?.revision],
   );
 
+  useEffect(() => {
+    columnCompletionRef.current = null;
+    completionSuffixRef.current = null;
+    if (!editor || !viewKey || !witness || !table || !onQueryColumnValues) return;
+    const column = columns.find(column => column.id === editor.field);
+    if (column?.field_type !== "text" || column.constraint?.kind === "text_literal_set" ||
+      (editor.entity !== DRAFT_ROW && formulaCellAt(editor))) return;
+    const current = { instance: editor.instance, viewKey, values: [] as string[], completeOnReply: !selectEditorValueOnFocusRef.current };
+    columnCompletionRef.current = current;
+    onQueryColumnValues(witness, table.collection.key, editor.field).then(result => {
+      const live = editorRef.current;
+      if (columnCompletionRef.current !== current || live?.instance !== current.instance ||
+        !result || result.revision !== witness.revision || result.truncated) return;
+      current.values = result.values;
+      const input = editorInputRef.current;
+      if (!current.completeOnReply || !input || input.disabled || input.ownerDocument.activeElement !== input ||
+        props.appearancePreference.getSnapshot().composing || live.value.startsWith("=") || input.value !== live.value ||
+        input.selectionStart !== live.value.length || input.selectionEnd !== live.value.length) return;
+      const candidate = completionFor(live.value, current.values);
+      if (candidate === null) return;
+      const value = live.value + candidate.slice(live.value.length);
+      const selection = { instance: live.instance, start: live.value.length, end: value.length };
+      completionSuffixRef.current = selection;
+      completionSelectionRef.current = selection;
+      if (live.entity === DRAFT_ROW) changeRowDraft(live.field, value);
+      editorRef.current = { ...live, value };
+      setEditor(editorRef.current);
+    }, () => { /* Completion is optional; the typed value stays editable. */ });
+    return () => { columnCompletionRef.current = null; completionSuffixRef.current = null; };
+    // One list per editor instance and revision, independent of draft changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor?.instance, viewKey]);
+
   useEffect(() => { setTableMenu(null); }, [view?.occurrence]);
 
   // While a filter hides rows, the footer totals the rows shown. Work adds
@@ -3221,6 +3267,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function commitEditor(): Promise<boolean> {
+    const editor = editorRef.current;
     if (!editor || commitPending || controlsLocked || rowCommandPendingRef.current) return false;
     if (editor.entity === DRAFT_ROW) {
       setEditor(null);
@@ -5548,7 +5595,9 @@ export function SheetShell(props: SheetShellProps) {
       setClipboardMessage(null);
       if (draft) changeRowDraft(column.id, value);
       setLocalError(null);
-      setEditor((previous) => (previous ? { ...previous, value } : previous));
+      const next = editorRef.current ? { ...editorRef.current, value } : null;
+      editorRef.current = next;
+      setEditor(next);
       if (allCellOptions.length > 0 || value.startsWith("=")) setCellOptionsUi({ key, open: true, index: -1 });
     };
     const editorProps: CellEditorProps = {
@@ -5568,12 +5617,50 @@ export function SheetShell(props: SheetShellProps) {
       value: editor?.value ?? "",
       ref: focusEditorInput,
       onDoubleClick: (event) => event.stopPropagation(),
-      onBlur: () => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); },
-      onChange: (event) => { setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length); applyEditorValue(event.currentTarget.value); },
+      onBlur: () => {
+        if (columnCompletionRef.current) columnCompletionRef.current.completeOnReply = false;
+        if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current);
+      },
+      onChange: (event) => {
+        const input = event.currentTarget;
+        const native = event.nativeEvent as InputEvent;
+        const values = columnCompletionRef.current;
+        const typed = input.value;
+        completionSuffixRef.current = null;
+        completionSelectionRef.current = null;
+        const composing = native.isComposing || props.appearancePreference.getSnapshot().composing;
+        const insertionAtEnd = !composing && Boolean(native.inputType?.startsWith("insert")) &&
+          input.selectionStart === typed.length && input.selectionEnd === typed.length;
+        if (values) values.completeOnReply = insertionAtEnd;
+        const candidate = insertionAtEnd && !typed.startsWith("=") &&
+          values && editor && values.instance === editor.instance && values.viewKey === viewKey
+          ? completionFor(typed, values.values) : null;
+        let value = typed;
+        if (candidate !== null && editor) {
+          value = typed + candidate.slice(typed.length);
+          const selection = { instance: editor.instance, start: typed.length, end: value.length };
+          completionSuffixRef.current = selection;
+          completionSelectionRef.current = selection;
+        }
+        setFormulaCaret(input.selectionStart ?? typed.length);
+        applyEditorValue(value);
+      },
       onSelect: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
       onKeyUp: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
       onKeyDown: (event) => {
         const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
+        if (columnCompletionRef.current && (composing || event.key.length > 1)) columnCompletionRef.current.completeOnReply = false;
+        const suffix = completionSuffixRef.current;
+        if (!composing && (event.key === "Backspace" || event.key === "Delete") &&
+          suffix && editor && suffix.instance === editor.instance && event.currentTarget.selectionStart === suffix.start &&
+          event.currentTarget.selectionEnd === suffix.end) {
+          event.preventDefault();
+          event.stopPropagation();
+          completionSuffixRef.current = null;
+          completionSelectionRef.current = { ...suffix, end: suffix.start };
+          applyEditorValue(event.currentTarget.value.slice(0, suffix.start));
+          return;
+        }
         // Alt+Enter holds a line break in the multiline editor; elsewhere it
         // leaves the editor untouched, with no commit and no character.
         if (event.key === "Enter" && event.altKey && !composing) {

@@ -24,8 +24,11 @@ const state = (page) => page.evaluate(() => window.__tachikoAcceptance.runtimeSn
 const dispatches = (page) => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
 const focused = (target) => target.evaluate((node) => node === document.activeElement);
 async function open(page) {
+  // Cold Worker/WASM setup on the shared host has a separate budget from edits.
+  page.setDefaultTimeout(30000);
   await page.goto(url);
   await openReleasePlanExample(page);
+  page.setDefaultTimeout(5000);
 }
 async function entry(page, key, mode = "double-click") {
   const target = cell(page, key);
@@ -65,7 +68,16 @@ async function published(page, input, key, value, commitKey = "Enter") {
     });
   }
   await input.press(commitKey);
-  await input.waitFor({ state: "hidden" });
+  await input.waitFor({ state: "hidden" }).catch(async error => {
+    const details = await page.evaluate(() => {
+      const input = document.querySelector('[data-testid="cell-editor"]');
+      return { value: input?.value, disabled: input?.disabled, active: document.activeElement?.getAttribute("data-testid"),
+        alerts: [...document.querySelectorAll('[role="alert"], .ts-local-error, .ts-clipboard-status')].map(node => node.textContent),
+        currentness: document.querySelector('[data-testid="currentness"]')?.textContent,
+        dispatches: window.__tachikoAcceptance.executeRequestCount() };
+    });
+    throw new Error(`${key} ${commitKey} publishing ${JSON.stringify(value)}: ${error.message}\nEditor diagnostics: ${JSON.stringify(details)}`);
+  });
   assert.equal((await cell(page, key).textContent()).trim(), String(value));
   assert.equal(await dispatches(page), count + 1, "accepted scalar dispatched exactly once");
   if (commitKey === "Tab" || commitKey === "Shift+Tab") {
@@ -79,7 +91,173 @@ async function published(page, input, key, value, commitKey = "Enter") {
     for (const event of events) assert.deepEqual(event.receipt, receipt, "every grid focus event follows the accepted publication receipt");
   }
 }
+async function completionTable(page, names = ["Alpha", "Alpha", "Beta", "Other"]) {
+  page.setDefaultTimeout(30000);
+  await page.addInitScript(() => {
+    window.__columnValuesReplies = [];
+    window.__heldColumnValues = [];
+    const Original = window.Worker;
+    window.Worker = class extends Original {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", event => {
+          if (event.data.response?.type !== "distinct_values") return;
+          if (window.__holdColumnValues) {
+            event.stopImmediatePropagation();
+            window.__heldColumnValues.push(() => this.dispatchEvent(new MessageEvent("message", { data: event.data })));
+          } else window.__columnValuesReplies.push(event.data.response.payload);
+        });
+      }
+    };
+  });
+  await page.goto(url); await waitForColdHome(page);
+  await page.getByRole("button", { name: "New table", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New table", exact: true });
+  await dialog.getByLabel("Table name", { exact: true }).fill("Completion");
+  const columns = [["Name", "text"], ["Next", "text"], ["Amount", "number"], ["When", "date"], ["State", "text"], ["Confirmed", "boolean"]];
+  for (const [index, [name, type]] of columns.entries()) {
+    if (index) await dialog.getByRole("button", { name: "Add column", exact: true }).click();
+    await dialog.getByLabel(`Column ${index + 1} name`, { exact: true }).fill(name);
+    await dialog.getByLabel(`Column ${index + 1} type`, { exact: true }).selectOption(type);
+  }
+  await dialog.getByRole("button", { name: "Create table", exact: true }).click();
+  const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  await ready();
+  for (const name of names) {
+    const draft = page.locator('.ts-entry-row [data-entry-field]').first();
+    await draft.focus();
+    await draft.evaluate((node, text) => {
+      const data = new DataTransfer(); data.setData("text/plain", text);
+      node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    }, `${name}\tnext\t123\t2026-11-14\tDoing\ttrue`);
+    await draft.press("Enter"); await ready();
+  }
+  page.setDefaultTimeout(5000);
+  return (row, column = 0) => page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row").nth(row).locator("td.ts-cell").nth(column);
+}
+async function completionEntry(page, target) {
+  const count = await page.evaluate(() => window.__columnValuesReplies.length);
+  await target.dblclick();
+  await page.waitForFunction(count => window.__columnValuesReplies.length > count, count);
+  const input = editor(page);
+  await input.press("ControlOrMeta+A");
+  return input;
+}
+async function shownCompletion(input, value, start, end) {
+  assert.equal(await input.inputValue(), value);
+  assert.deepEqual(await input.evaluate(node => [node.selectionStart, node.selectionEnd]), [start, end]);
+}
 const cases = [
+  ["column completion leaves insertions inside existing text at their caret", async page => {
+    const at = await completionTable(page, ["Ala", "Alpaca", "Beta", "Other"]);
+    const input = await completionEntry(page, at(0));
+    await input.press("End"); await input.press("ArrowLeft");
+    await input.press("p"); await shownCompletion(input, "Alpa", 3, 3);
+    await input.press("h"); await shownCompletion(input, "Alpha", 4, 4);
+    await input.press("Enter"); await input.waitFor({ state: "hidden" });
+    assert.equal((await at(0).textContent()).trim(), "Alpha");
+  }],
+  ["delayed column values complete seeded and pending input without reviving rejected drafts", async page => {
+    const at = await completionTable(page);
+    const count = await dispatches(page);
+    for (const mode of ["seed", "typing", "delete", "cancel", "composition", "blur"]) {
+      await page.evaluate(() => { window.__holdColumnValues = true; });
+      await at(2).focus(); await page.keyboard.press("A");
+      const input = editor(page);
+      await page.waitForFunction(() => window.__heldColumnValues.length === 1);
+      if (mode !== "seed") await input.press("l");
+      if (mode === "delete") await input.press("Backspace");
+      if (mode === "cancel") await input.press("Escape");
+      if (mode === "composition") await input.dispatchEvent("compositionstart", { data: "" });
+      if (mode === "blur") await at(2, 1).click();
+      await page.evaluate(async () => {
+        window.__holdColumnValues = false;
+        window.__heldColumnValues.splice(0).forEach(release => release());
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      if (mode === "cancel") assert.equal(await input.count(), 0);
+      else {
+        if (mode === "seed") await shownCompletion(input, "Alpha", 1, 5);
+        else if (mode === "typing") await shownCompletion(input, "Alpha", 2, 5);
+        else assert.equal(await input.inputValue(), mode === "delete" ? "A" : "Al");
+        if (mode === "composition") await input.dispatchEvent("compositionend", { data: "Al" });
+        await input.focus(); await input.press("Escape");
+      }
+      assert.equal(await dispatches(page), count, "late suggestions never publish by themselves");
+    }
+  }],
+  ["column completion accepts once on Enter and Tab with grid navigation", async page => {
+    const at = await completionTable(page);
+    const input = await completionEntry(page, at(2));
+    await input.press("A"); await input.press("l");
+    await shownCompletion(input, "Alpha", 2, 5);
+    const count = await dispatches(page);
+    await input.press("Enter"); await input.waitFor({ state: "hidden" });
+    assert.equal((await at(2).textContent()).trim(), "Alpha");
+    assert.equal(await dispatches(page), count + 1);
+    assert.equal(await focused(at(3)), true);
+    await completionEntry(page, at(2));
+    await input.press("a"); await input.press("l");
+    await shownCompletion(input, "alpha", 2, 5);
+    await input.press("Tab"); await input.waitFor({ state: "hidden" });
+    assert.equal(await dispatches(page), count + 2);
+    assert.equal(await focused(at(2, 1)), true);
+  }],
+  ["column completion requires one whole-entry prefix and deletion removes only its suffix", async page => {
+    const at = await completionTable(page, ["Alpha", "Alpine", "Beta", "Other"]);
+    const input = await completionEntry(page, at(2));
+    const count = await dispatches(page);
+    await input.press("a"); await input.press("l");
+    await shownCompletion(input, "al", 2, 2);
+    await input.press("p"); await input.press("h");
+    await shownCompletion(input, "alpha", 4, 5);
+    await input.press("Escape");
+    await completionEntry(page, at(2)); await input.pressSequentially("lph");
+    assert.equal(await input.inputValue(), "lph"); await input.press("Escape");
+    assert.equal(await dispatches(page), count);
+  }],
+  ["Backspace and Delete reject the column suffix; click-away and Esc publish nothing", async page => {
+    const at = await completionTable(page);
+    const count = await dispatches(page);
+    for (const key of ["Backspace", "Delete"]) {
+      const input = await completionEntry(page, at(2));
+      await input.press("a"); await input.press("l");
+      await shownCompletion(input, "alpha", 2, 5);
+      await input.press(key); await shownCompletion(input, "al", 2, 2);
+      await at(2, 1).click(); assert.equal(await input.inputValue(), "al");
+      await input.focus(); await input.press("Escape");
+    }
+    assert.equal(await dispatches(page), count);
+  }],
+  ["composition, non-Text fields, choices and equals input retain their editing behavior", async page => {
+    const at = await completionTable(page);
+    const count = await dispatches(page);
+    const input = await completionEntry(page, at(2));
+    await input.dispatchEvent("compositionstart", { data: "" });
+    await input.pressSequentially("al"); await shownCompletion(input, "al", 2, 2);
+    for (const key of ["Enter", "Tab", "Escape"]) {
+      await input.dispatchEvent("keydown", { key, keyCode: 229, isComposing: true });
+      assert.equal(await focused(input), true); assert.equal(await dispatches(page), count);
+    }
+    await input.dispatchEvent("compositionend", { data: "al" });
+    await input.press("Escape"); await input.waitFor({ state: "hidden" });
+    await completionEntry(page, at(2)); await input.pressSequentially("=Al");
+    assert.equal(await input.inputValue(), "=Al"); await input.press("Escape");
+    for (const [column, typed] of [[2, "12"], [3, "2026"], [5, "tr"]]) {
+      await at(2, column).dblclick(); await input.press("ControlOrMeta+A"); await input.pressSequentially(typed);
+      assert.equal(await input.inputValue(), typed); await input.press("Escape");
+    }
+    await page.getByRole("columnheader", { name: "State", exact: true }).hover();
+    await page.getByRole("button", { name: "Column actions for State", exact: true }).click();
+    await page.getByRole("button", { name: "Rule…", exact: true }).click();
+    const rule = page.getByRole("dialog");
+    await rule.getByLabel("Allowed values", { exact: true }).fill("Doing\nDone");
+    await rule.getByRole("button", { name: "Save rule", exact: true }).click(); await rule.waitFor({ state: "hidden" });
+    await at(2, 4).dblclick(); await input.press("ControlOrMeta+A"); await input.pressSequentially("Doi");
+    assert.equal(await input.inputValue(), "Doi");
+    await page.getByTestId("cell-editor-options").waitFor();
+    await input.press("Escape"); await input.press("Escape");
+  }],
   ["copy from above and filter shortcuts", async (page) => {
     const wait = async (label, promise) => { try { return await promise; } catch (error) { throw new Error(`${label}: ${error.message}`, { cause: error }); } };
     const rows = page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row");
