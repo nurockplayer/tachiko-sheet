@@ -32,6 +32,11 @@ import { DRAFT_ROW } from "./row-entry-model.js";
 import { FORMULA_BAR_NO_CELL } from "./formula-bar.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return { ...actual, useState: vi.fn(actual.useState) };
+});
+
 const entityA = "entity-a";
 const entityB = "entity-b";
 
@@ -366,10 +371,10 @@ describe("recovery presentation", () => {
     expect(saveCopy).toContain('title="Keep this copy and save another one (like Excel&#x27;s Save As)."');
   });
 
-  it("explains Prepare XLSX alongside the existing download description and labels", () => {
+  it("explains Prepare XLSX alongside the existing download description and labels", async () => {
     // Select the interop tab for this server render; render the actual panel.
-    const useState = React.useState;
-    const tabState = vi.spyOn(React, "useState").mockImplementation(
+    const { useState } = await vi.importActual<typeof import("react")>("react");
+    const tabState = vi.mocked(React.useState).mockImplementation(
       ((initial: unknown) => useState(initial === "table" ? "interop" : initial)) as typeof React.useState,
     );
     try {
@@ -378,7 +383,7 @@ describe("recovery presentation", () => {
       expect(markup).toContain(">Prepare CSV</button>");
       expect(markup).toContain(">Prepare XLSX</button>");
     } finally {
-      tabState.mockRestore();
+      tabState.mockImplementation(useState);
     }
   });
 
