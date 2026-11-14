@@ -3373,3 +3373,19 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 .ts-shortcut-help-body kbd { font: inherit; border: 1px solid var(--ts-line); border-radius: 3px; padding: 0 3px; }
 @media (max-width: 599px) { .ts-shortcut-help-desktop { display: none; } }
 @media (forced-colors: active) { .ts-shortcut-help-body kbd { border-color: CanvasText; } }
+
+.ts-formula-hint {
+  position: fixed;
+  z-index: 40;
+  max-width: min(36rem, 90vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  color: var(--ts-ink-muted);
+  background: var(--ts-surface);
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  box-shadow: var(--ts-shadow);
+  font-size: 0.8rem;
+}
