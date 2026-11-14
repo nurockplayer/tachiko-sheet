@@ -21,13 +21,6 @@ const qualifiedArtifacts = [
     handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6881940538',
   },
   {
-    // Two clean detached exports match; producer receipt on #246.
-    sourceCommit: '2da87c09c7f7d4fca3ac89c7459ecceb86ad4c0d',
-    artifactManifestSha256: '69b6ef6e7a243c7226463c9981925ff6757234b6bdece08cc5a38c1d0cba30f0',
-    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6857290776',
-    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6857290776',
-  },
-  {
     // Re-pin: two clean detached exports match byte for byte. PR #374
     // carries the inventory and independent review; new methods are not adopted.
     sourceCommit: '4fcb06c359d8267f2b611884991da92d7146c630',
