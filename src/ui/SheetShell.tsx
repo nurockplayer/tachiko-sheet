@@ -1322,6 +1322,10 @@ export function SheetShell(props: SheetShellProps) {
   const columnResizeRef = useRef<{ field: string; startX: number; startWidth: number; width: number; th: HTMLElement; rendered: Record<string, number> } | null>(null);
   const keyboardResizeRef = useRef<{ field: string; width: number; startWidth: number; th: HTMLElement | null; timer: ReturnType<typeof setTimeout> | null; rendered: Record<string, number> } | null>(null);
 
+  // A keyup timer can outlive the save state captured by its render.
+  const finishKeyboardResizeRef = useRef(finishKeyboardResize);
+  finishKeyboardResizeRef.current = finishKeyboardResize;
+
   const widthPublishingRef = useRef(false);
   const [widthPublishing, setWidthPublishing] = useState(false);
   const [deferredWidths, setDeferredWidths] = useState<Array<{ occurrence: string; collection: string; field: string; width: number }>>([]);
@@ -4555,7 +4559,8 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function resizeChangesBlocked(): boolean {
-    const ownSave = widthPublishingRef.current && !commitPending && currentness !== "unknown";
+    // The promise can settle before React renders the cleared busy state.
+    const ownSave = (widthPublishing || widthPublishingRef.current) && !commitPending && currentness !== "unknown";
     return (controlsLocked && !ownSave) || (currentness !== "current" && !ownSave) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || props.appearancePreference.getSnapshot().composing;
   }
   useEffect(() => {
@@ -5225,7 +5230,7 @@ export function SheetShell(props: SheetShellProps) {
                   const session = keyboardResizeRef.current;
                   if (session && session.field === column.id && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
                     if (session.timer) clearTimeout(session.timer);
-                    session.timer = setTimeout(finishKeyboardResize, 400);
+                    session.timer = setTimeout(() => finishKeyboardResizeRef.current(), 400);
                   }
                 }}
                 onBlur={finishKeyboardResize}
