@@ -287,6 +287,42 @@ const cases = [
     assert.ok(selected.every((value) => value === "true"), "every table cell shows the selected state");
     assert.equal(await focused(firstTitle), true, "Select All keeps focus where it was");
   }],
+  ["Column header context menu selects and sorts the column", async (page) => {
+    const header = page.locator("thead th.ts-column-header").nth(1);
+    const field = await page.locator("tbody tr.ts-row").first().locator("td[data-work-field]").nth(1).getAttribute("data-work-field");
+    const cells = page.locator(`td[data-work-field="${field}"]:not([data-entry-field])`);
+    await header.locator(".ts-col-head").click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Column actions" });
+    await menu.waitFor();
+    for (const name of ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"]) assert.equal(await menu.getByRole("menuitem", { name, exact: true }).count(), 1);
+    const selected = await cells.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-selected")));
+    assert.ok(selected.length > 0 && selected.every(value => value === "true"));
+    await menu.getByRole("menuitem", { name: "Sort Z → A" }).click();
+    await menu.waitFor({ state: "hidden" });
+    assert.match(await header.textContent(), /↓/);
+    await header.locator(".ts-col-head").focus();
+    await page.keyboard.press("Shift+F10");
+    await menu.waitFor();
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    await page.waitForFunction(field => document.activeElement?.dataset.workField === field, field);
+    await cells.first().click({ button: "right" });
+    await page.getByRole("menu", { name: "Cell actions" }).waitFor();
+    await page.keyboard.press("Escape");
+    await header.locator(".ts-col-head").click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Filter…" }).click();
+    await page.locator(".ts-row-view-filter input[placeholder='Contains…']").fill("no matching row 987654321");
+    await page.locator(".ts-row-view-filter button[type='submit']").click();
+    await cells.first().waitFor({ state: "hidden" });
+    await header.locator(".ts-col-head").click({ button: "right" });
+    await menu.waitFor();
+    assert.equal(await menu.getByRole("menuitem", { name: "Sort A → Z", exact: true }).count(), 1);
+    assert.equal(await menu.getByRole("menuitem", { name: "Filter…", exact: true }).count(), 1);
+    assert.equal(await menu.getByRole("menuitem", { name: "Copy", exact: true }).count(), 0);
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+  }],
   ["Column borders widen by keyboard and fit the content on double-click", async (page) => {
     // #281: a column width is view state only, so resizing never disturbs the
     // cell focus and selection behaviour the previous case covers.
@@ -824,6 +860,22 @@ const cases = [
     await dialog.locator(".ts-import-column select").nth(2).selectOption("number");
     await dialog.getByRole("button", { name: "Import file", exact: true }).click();
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+    const scroller = page.locator(".ts-grid-scroll");
+    await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await page.getByText("Row 2000", { exact: true }).waitFor();
+    await page.evaluate(() => {
+      window.__columnCopyTarget = null;
+      document.addEventListener("copy", event => { window.__columnCopyTarget = event.target?.outerHTML?.slice(0, 500); }, { once: true, capture: true });
+    });
+    const header = page.locator("thead th.ts-column-header").first();
+    await header.locator(".ts-col-head").click({ button: "right" });
+    await page.getByRole("menu", { name: "Column actions" }).getByRole("menuitem", { name: "Copy", exact: true }).click();
+    await page.getByText("Copied 2000 rows.", { exact: true }).waitFor({ timeout: 5000 }).catch(async error => {
+      const details = await page.evaluate(() => ({ target: window.__columnCopyTarget, active: document.activeElement?.outerHTML?.slice(0, 500), status: document.querySelector(".ts-clipboard-status")?.textContent, scrollTop: document.querySelector(".ts-grid-scroll")?.scrollTop }));
+      throw new Error(`${error.message}\nCopy diagnostics: ${JSON.stringify(details)}`);
+    });
+    await scroller.evaluate(node => { node.scrollTop = 0; });
+    await page.getByText("Row 1", { exact: true }).waitFor();
     const bar = page.getByTestId("formula-bar-input");
     const error = page.locator(".ts-formula-bar-error");
     const total = page.locator("tbody tr.ts-row").first().locator("td[data-work-field]").nth(2);

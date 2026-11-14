@@ -510,14 +510,14 @@ describe("SheetShell static rendering", () => {
     expect(withWriter).toContain('data-column-action="+ column"');
     expect(withWriter).toContain("Column actions for ");
     // Reader-only/rollback hosts pass no column handlers: view actions remain,
-    // but no authoring action and no focusable header.
+    // but no authoring action; the header remains focusable for its menu.
     const readerOnly = render({ view });
     expect(readerOnly).toContain('data-column-action="Sort A → Z"');
     expect(readerOnly).toContain('data-column-action="Filter…"');
     expect(readerOnly).not.toContain('data-column-action="+ column"');
     expect(readerOnly).not.toContain('data-column-action="Rename…"');
     expect(readerOnly).not.toContain('data-column-action="Remove…"');
-    expect(readerOnly).not.toContain('class="ts-col-head" tabindex="0"');
+    expect(readerOnly).toContain('class="ts-col-head" tabindex="0"');
   });
 
   it.each([false, true])("requiredness actions follow native scalar declarations (compact=%s)", compact => {
