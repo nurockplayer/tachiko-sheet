@@ -418,14 +418,25 @@ async function verifyPhoneOpenReport(page, width) {
   await hideResults.press("Enter");
   const showResults = page.getByRole("button", { name: "Show results", exact: true });
   await page.waitForFunction(() => document.activeElement?.matches(".ts-results-show") ?? false);
-  const showWitness = await phoneActionWitness(page, showResults, composition);
+  const showWitness = await waitForPhoneActionWitness(page, showResults, composition);
   assert.ok(showWitness.inScrollport && showWitness.unobstructed, `keyboard Hide returns visible focus to Show results at ${width}: ${JSON.stringify(showWitness)}`);
   await showResults.press("Enter");
   await page.waitForFunction(() => document.activeElement?.matches(".ts-results-hide") ?? false);
-  const hideWitness = await phoneActionWitness(page, hideResults, composition);
+  const hideWitness = await waitForPhoneActionWitness(page, hideResults, composition);
   assert.ok(hideWitness.inScrollport && hideWitness.unobstructed, `keyboard Show restores visible focus to Hide results at ${width}: ${JSON.stringify(hideWitness)}`);
   console.log(JSON.stringify({ case: "phone-open-report", width, pointerWitness, keyboardWitness, showWitness, hideWitness, openedTwice: true, tabTrace }));
   await page.getByRole("tab", { name: "Table", exact: true }).click();
+}
+
+async function waitForPhoneActionWitness(page, button, composition) {
+  // Focus arrives before the scheduled scroll reveal; wait for its visible end state.
+  const deadline = performance.now() + 1000;
+  let witness = await phoneActionWitness(page, button, composition);
+  while (!(witness.inScrollport && witness.unobstructed) && performance.now() < deadline) {
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    witness = await phoneActionWitness(page, button, composition);
+  }
+  return witness;
 }
 
 async function phoneActionWitness(page, button, composition) {
