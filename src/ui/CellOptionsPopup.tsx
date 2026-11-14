@@ -70,3 +70,21 @@ export function CellOptionsPopup({ id, label, options, activeIndex, anchor, cont
     container,
   );
 }
+
+/** A single-line formula hint anchored to the editing cell. */
+export function FormulaHint({ id, text, summary, anchor, container }: { id: string; text: string; summary: string; anchor: HTMLElement | null; container: HTMLElement | null }) {
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!anchor) return;
+    const place = () => {
+      const rect = anchor.getBoundingClientRect();
+      setBox({ left: rect.left, top: rect.bottom });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => { window.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
+  }, [anchor]);
+  if (!container || !box) return null;
+  return createPortal(<div id={id} className="ts-formula-hint" role="note" style={box}><code>{text}</code> — {summary}</div>, container);
+}
