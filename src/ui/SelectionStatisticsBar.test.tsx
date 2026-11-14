@@ -40,6 +40,14 @@ describe("SelectionStatisticsBar", () => {
     expect(html).toContain('selection-numerical-count">2<');
     expect(render({ error_count: 1 })).toContain('title="1 cell has formula errors"');
   });
+  it("shows unavailable aggregates when the selection has only formula errors", () => {
+    const html = render({ count: 2, numerical_count: 0, error_count: 1, sum: null, average: null, min: null, max: null });
+    for (const key of ["sum", "average", "min", "max"]) {
+      expect(html).toContain(`data-testid="selection-${key}">Unavailable</span>`);
+    }
+    expect(html.match(/title="1 cell has formula errors"/g)).toHaveLength(4);
+    expect(html).toContain('data-testid="selection-numerical-count">0</span>');
+  });
   it("shows a dash for null without formula errors and preserves numeric zero", () => {
     const html = render({ sum: null, min: 0 });
     expect(html).toContain('selection-sum">—<');
