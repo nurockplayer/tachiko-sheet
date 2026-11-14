@@ -755,7 +755,7 @@ export function SheetShell(props: SheetShellProps) {
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
-  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
   // after the user moved to another cell must not touch the editor it left.
@@ -1779,7 +1779,8 @@ export function SheetShell(props: SheetShellProps) {
   function closeCellMenu(): void {
     const open = cellMenu;
     setCellMenu(null);
-    if (open) focusCell(open.activeCell.entity, open.activeCell.field);
+    if (open?.activeCell) focusCell(open.activeCell.entity, open.activeCell.field);
+    else (open?.trigger?.querySelector<HTMLElement>(".ts-col-head") ?? open?.trigger)?.focus();
   }
 
   /**
@@ -1800,14 +1801,16 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function openColumnMenu(x: number, y: number, index: number, trigger: HTMLElement): void {
-    if (historyInteractionLocked || !view || !collectionIdentity || !displayRows.length || !columns.length) return;
+    if (historyInteractionLocked || !view || !collectionIdentity || !columns.length) return;
     const field = columns[index]!.id;
-    const position = { entity: rowEntity(displayRows[0]!), field };
+    const position = { entity: displayRows.length ? rowEntity(displayRows[0]!) : "", field };
     const inside = Boolean(selectionRectangle && selectionRectangle.top === 0
       && selectionRectangle.bottom === displayRows.length - 1
       && index >= selectionRectangle.left && index <= selectionRectangle.right);
-    if (!inside) selectHeader("column", index, false);
-    setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position, column: field, trigger });
+    if (displayRows.length && !inside) selectHeader("column", index, false);
+    const visible = visibleColumnCell(field);
+    const activeCell = displayRows.length ? (visible ? { entity: visible.dataset.workEntity!, field } : position) : undefined;
+    setCellMenu({ x, y, position, activeCell, column: field, trigger });
   }
 
   /** The filter editor lives in the column's disclosure: its heading's, or the compact toolbar that follows the focused cell. */
@@ -1887,15 +1890,15 @@ export function SheetShell(props: SheetShellProps) {
 
   function columnMenuItems(field: string, header: HTMLElement): CellMenuItem[] {
     const column = columns.find(candidate => candidate.id === field);
-    if (!column || !table || !view || !displayRows.length) return [];
+    if (!column || !table || !view) return [];
     const index = columns.indexOf(column);
-    const position = { entity: rowEntity(displayRows[0]!), field };
+    const position = { entity: displayRows.length ? rowEntity(displayRows[0]!) : "", field };
     const trigger = header.querySelector<HTMLElement>('summary[data-column-action="…"]') ?? header;
     const command = (action: () => void) => () => { closeCellMenu(); action(); };
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
     const resizable = !compactColumnActions && !salesCatalogLayoutEligible(view, salesCatalogLayout);
     const cellItems = cellMenuItems(position).filter(item => item !== "separator" && ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"].includes(item.label));
-    const items: CellMenuItem[] = [...cellItems.slice(0, 4), "separator", ...cellItems.slice(4)];
+    const items: CellMenuItem[] = displayRows.length ? [...cellItems.slice(0, 4), "separator", ...cellItems.slice(4)] : cellItems.slice(4);
     if (resizable) items.push("separator", { label: "AutoFit column width", disabled: columnChangesBlocked, run: command(() => autoFitColumn(field, header)) });
     const actions: CellMenuItem[] = [];
     if (table.native_table_profile && renameAvailable) actions.push({ label: "Rename…", disabled: columnChangesBlocked, run: command(() => openColumnDialog("rename", trigger, field)) });
@@ -3023,6 +3026,15 @@ export function SheetShell(props: SheetShellProps) {
     revealGridRow(rowIndex);
   }
 
+  function visibleColumnCell(field: string): HTMLElement | undefined {
+    const viewport = gridScrollRef.current?.getBoundingClientRect();
+    return viewport ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), field))).find(cell => {
+      if (!cell) return false;
+      const bounds = cell.getBoundingClientRect();
+      return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+    }) : undefined;
+  }
+
   function selectHeader(kind: "column" | "row", index: number, shift: boolean): void {
     if (historyInteractionLocked || !view || !collectionIdentity || !displayRows.length || !columns.length) return;
     const previous = boundSelection?.anchor ?? focusedPosition;
@@ -3033,15 +3045,7 @@ export function SheetShell(props: SheetShellProps) {
       ? { entity: rowEntity(displayRows.at(-1)!), field: columns[index]!.id }
       : { entity: rowEntity(displayRows[index]!), field: columns.at(-1)!.id };
     tabRunStartRef.current = null;
-    const scroller = gridScrollRef.current;
-    const viewport = scroller?.getBoundingClientRect();
-    const visibleCell = kind === "column" && viewport
-      ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), anchor.field))).find(cell => {
-        if (!cell) return false;
-        const bounds = cell.getBoundingClientRect();
-        return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
-      })
-      : undefined;
+    const visibleCell = kind === "column" ? visibleColumnCell(anchor.field) : undefined;
     (cellRefs.current.get(cellKey(anchor.entity, anchor.field)) ?? visibleCell)?.focus({ preventScroll: true });
     setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
   }
