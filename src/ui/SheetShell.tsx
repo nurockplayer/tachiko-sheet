@@ -3395,7 +3395,9 @@ export function SheetShell(props: SheetShellProps) {
       if (!event.repeat) fillDown();
       return;
     }
-    if (!draft && (event.ctrlKey || event.metaKey) && !event.altKey && clipboardPosition(event.target) && (event.code === "Quote" || (event.shiftKey && event.code === "KeyL"))) {
+    const quoteVariant: "copy" | "value" | null = event.code === "Quote" ? (event.shiftKey ? "value" : "copy")
+      : event.key === "'" ? "copy" : event.key === '"' ? "value" : null;
+    if (!draft && (event.ctrlKey || event.metaKey) && !event.altKey && clipboardPosition(event.target) && (quoteVariant || (event.shiftKey && event.code === "KeyL"))) {
       event.preventDefault();
       if (event.repeat) return;
       if (event.code === "KeyL") {
@@ -3412,10 +3414,11 @@ export function SheetShell(props: SheetShellProps) {
         return;
       }
       const abovePosition = { entity: rowEntity(above), field: position.field };
-      if (!event.shiftKey && formulaCellAt(abovePosition)) {
+      if (quoteVariant === "copy" && formulaCellAt(abovePosition)) {
         fillDown({ top: row - 1, bottom: row, left: column, right: column });
       } else {
-        const seed = currentEditorSlot(abovePosition)?.original;
+        const seed = currentEditorSlot(abovePosition)?.original
+          ?? (formulaCellAt(abovePosition) ? fieldClipboardText(fieldForColumn(above, position.field)) : undefined);
         if (seed === undefined) announceClipboard("The cell above has no value to copy.", true, true);
         else beginEdit(entity, position.field, seed);
       }

@@ -113,6 +113,10 @@ const cases = [
     }, [`cell:${first}:${fields.priority}`, product, beforeFormulaRevision]));
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("prepare formula parity", page.getByText("There is no cell above to copy.").first().waitFor());
+    await at(second, "priority").focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
+    await wait("formula value editor opens", editor(page).waitFor());
+    assert.equal(await editor(page).inputValue(), await text(at(first, "priority")), "value shortcut uses the formula result");
+    await editor(page).press("Escape");
     const priorFormulaValue = await text(at(second, "priority"));
     const priorRevision = await at(second, "priority").getAttribute("data-work-revision");
     const formulaCopies = () => page.evaluate(() => window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0);
@@ -140,6 +144,22 @@ const cases = [
       document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
       document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
     [`cell:${second}:${fields.priority}`, priorFormulaValue, filledRevision]));
+    const beforeJisRevision = await at(second, "priority").getAttribute("data-work-revision");
+    count = await formulaCopies();
+    await at(second, "priority").focus();
+    await at(second, "priority").dispatchEvent("keydown", { key: "'", code: "Digit7", shiftKey: true, ctrlKey: true, bubbles: true });
+    await wait("JIS formula copy", page.waitForFunction(([count, revision, id]) =>
+      (window.__tachikoAcceptance.workMethodCounts().copyFormula ?? 0) === count + 1 &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [count, beforeJisRevision, `cell:${second}:${fields.priority}`]));
+    const jisRevision = await at(second, "priority").getAttribute("data-work-revision");
+    await page.keyboard.press("ControlOrMeta+Z");
+    await wait("undo JIS formula copy", page.waitForFunction(([id, value, revision]) =>
+      document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === value &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-revision") !== revision &&
+      document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-work-currentness") === "current",
+    [`cell:${second}:${fields.priority}`, priorFormulaValue, jisRevision]));
     await above.focus(); await page.keyboard.press("ControlOrMeta+Shift+'");
     await wait("clear prior announcement", page.getByText("There is no cell above to copy.").first().waitFor());
     await at(first, "priority").click(); await page.keyboard.press("Shift+ArrowDown");
