@@ -1544,15 +1544,14 @@ export function SheetShell(props: SheetShellProps) {
       : [[boundRowDraft?.values[position.field] ?? ""]];
   }
 
-  function copyGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+  function copyGrid(position: GridPosition | null, clipboardData: DataTransfer | null, preventDefault: () => void): void {
     setClipboardMessage(null);
-    const position = clipboardPosition(event.target);
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
-    event.preventDefault();
+    preventDefault();
     const rows = clipboardRows(position);
     try {
-      if (!event.clipboardData) throw new Error("No clipboard data");
-      event.clipboardData.setData("text/plain", encodeTsv(rows));
+      if (!clipboardData) throw new Error("No clipboard data");
+      clipboardData.setData("text/plain", encodeTsv(rows));
       setCopiedArea(position.entity === DRAFT_ROW ? null : { identity: collectionIdentity, revision: view?.revision, area: selectionRectangle ?? rectangle(address(position), address(position)) });
       const rowIndex = rowIndexByEntity.get(position.entity);
       const row = rowIndex === undefined ? undefined : displayRows[rowIndex];
@@ -1564,11 +1563,10 @@ export function SheetShell(props: SheetShellProps) {
     } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
   }
 
-  function cutGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
+  function cutGrid(position: GridPosition | null, clipboardData: DataTransfer | null, preventDefault: () => void): void {
     setClipboardMessage(null);
-    const position = clipboardPosition(event.target);
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
-    event.preventDefault();
+    preventDefault();
     if (position.entity === DRAFT_ROW) { announceClipboard("Cut is not available in the new row.", true); return; }
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before cutting cells.", true, true); return;
@@ -1581,8 +1579,8 @@ export function SheetShell(props: SheetShellProps) {
       const text = encodeTsv(rows);
       const tooLarge = cutBlockRefusal(rows.length, text);
       if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
-      if (!event.clipboardData) throw new Error("No clipboard data");
-      event.clipboardData.setData("text/plain", text);
+      if (!clipboardData) throw new Error("No clipboard data");
+      clipboardData.setData("text/plain", text);
       if (!edits.length) { setCopiedArea(null); announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
       const cutArea = { identity: collectionIdentity, revision: view?.revision, area };
       setCopiedArea(cutArea);
@@ -1899,8 +1897,16 @@ export function SheetShell(props: SheetShellProps) {
     const resizable = !compactColumnActions && !salesCatalogLayoutEligible(view, salesCatalogLayout);
     const cellItems = cellMenuItems(position).filter(item => item !== "separator" && ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"].includes(item.label)).map(item => {
       if (item === "separator" || (item.label !== "Cut" && item.label !== "Copy")) return item;
-      const action = item.label.toLowerCase();
-      return { ...item, run: command(() => { requestAnimationFrame(() => { document.execCommand(action); }); }) };
+      const action = item.label === "Cut" ? "cut" : "copy";
+      const activeCell = cellMenu?.activeCell ?? null;
+      return { ...item, run: command(() => {
+        const handler = (event: ClipboardEvent) => {
+          event.stopPropagation();
+          (action === "cut" ? cutGrid : copyGrid)(activeCell, event.clipboardData, () => event.preventDefault());
+        };
+        document.addEventListener(action, handler, { capture: true, once: true });
+        try { document.execCommand(action); } finally { document.removeEventListener(action, handler, true); }
+      }) };
     });
     const items: CellMenuItem[] = displayRows.length ? [...cellItems.slice(0, 4), "separator", ...cellItems.slice(4)] : cellItems.slice(4);
     if (resizable) items.push("separator", { label: "AutoFit column width", disabled: columnChangesBlocked, run: command(() => autoFitColumn(field, header)) });
@@ -4985,7 +4991,7 @@ export function SheetShell(props: SheetShellProps) {
     // the dense header actions are.
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={copyGrid} onCut={cutGrid} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
