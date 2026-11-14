@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "2da87c09c7f7d4fca3ac89c7459ecceb86ad4c0d",
+  "sourceCommit": "a5348952d295df3ab4e15ddc4a9f12f17110a84a",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "69b6ef6e7a243c7226463c9981925ff6757234b6bdece08cc5a38c1d0cba30f0",
+  "artifactManifestSha256": "80ec2fd66d7b758d14121090702bad22e681df51a17dd5531983fc0c19698fef",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6857290776",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6881940538",
   "qualificationArtifactReview": {
-    "sourceCommit": "2da87c09c7f7d4fca3ac89c7459ecceb86ad4c0d",
-    "artifactManifestSha256": "69b6ef6e7a243c7226463c9981925ff6757234b6bdece08cc5a38c1d0cba30f0",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6857290776"
+    "sourceCommit": "a5348952d295df3ab4e15ddc4a9f12f17110a84a",
+    "artifactManifestSha256": "80ec2fd66d7b758d14121090702bad22e681df51a17dd5531983fc0c19698fef",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6881940538"
   },
-  "notes": "Re-pin to Work 2da87c09: lookup and date-part A1 entry. Two clean detached exports match byte for byte; receipt on issue #246. Product acceptance remains separate."
+  "notes": "Re-pin to Work a5348952: selection statistics, import ledger caps and calculation improvements. Two clean detached exports match byte for byte; receipt on issue #246. querySelectionStatistics is not adopted in the UI. Product acceptance remains separate."
 }
