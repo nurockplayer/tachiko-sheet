@@ -24,8 +24,11 @@ const state = (page) => page.evaluate(() => window.__tachikoAcceptance.runtimeSn
 const dispatches = (page) => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
 const focused = (target) => target.evaluate((node) => node === document.activeElement);
 async function open(page) {
+  // Cold Worker/WASM setup on the shared host has a separate budget from edits.
+  page.setDefaultTimeout(30000);
   await page.goto(url);
   await openReleasePlanExample(page);
+  page.setDefaultTimeout(5000);
 }
 async function entry(page, key, mode = "double-click") {
   const target = cell(page, key);
@@ -89,6 +92,7 @@ async function published(page, input, key, value, commitKey = "Enter") {
   }
 }
 async function completionTable(page, names = ["Alpha", "Alpha", "Beta", "Other"]) {
+  page.setDefaultTimeout(30000);
   await page.addInitScript(() => {
     window.__columnValuesReplies = [];
     window.__heldColumnValues = [];
@@ -128,6 +132,7 @@ async function completionTable(page, names = ["Alpha", "Alpha", "Beta", "Other"]
     }, `${name}\tnext\t123\t2026-11-14\tDoing\ttrue`);
     await draft.press("Enter"); await ready();
   }
+  page.setDefaultTimeout(5000);
   return (row, column = 0) => page.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row").nth(row).locator("td.ts-cell").nth(column);
 }
 async function completionEntry(page, target) {
