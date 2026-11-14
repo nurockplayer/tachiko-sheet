@@ -151,13 +151,14 @@ try {
   await cell(table, 0, 0).click();
   const formula = page.getByTestId("formula-bar-input");
   await formula.fill("=1/0"); await formula.press("Enter"); await ready();
-  await page.waitForFunction(({ entity, field }) => {
-    const table = window.__selectionEvidence.records.flatMap(record => record.tables).at(-1);
-    return table?.rows.find(row => row.id === entity)?.fields
-      .find(value => value.target.field === field)?.calculated?.status === "failure";
+  await cell(table, 0, 0).getByText("Calculation failed", { exact: true }).waitFor();
+  // Scalar edits patch the view from publication.changed; no full table is re-read.
+  const failedField = await page.evaluate(({ entity, field }) => {
+    const publication = window.__selectionEvidence.records.flatMap(record => record.replies)
+      .filter(reply => reply.response?.type === "published").at(-1).response.payload;
+    return publication.changed?.find(value => value.target.entity === entity && value.target.field === field);
   }, { entity: table.rows[0].id, field: table.columns[0].id });
-  table = await projection();
-  assert.equal(table.rows[0].fields.find(field => field.target.field === table.columns[0].id).calculated.status, "failure");
+  assert.equal(failedField.calculated.status, "failure");
   await select(table, 0, 0, 2, 1);
   await expectStatistics({ count: 4, "numerical-count": 1, sum: "Unavailable", average: "Unavailable", min: "Unavailable", max: "Unavailable" });
   assert.equal(await page.getByTestId("selection-sum").locator("..").getAttribute("title"), "1 cell has formula errors");
