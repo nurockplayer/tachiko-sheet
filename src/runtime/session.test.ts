@@ -2080,9 +2080,45 @@ describe("querySelectionStatistics", () => {
   it("leaves a Work request-size refusal to the advisory caller without retrying", async () => {
     const { runtime, client, view } = await opened();
     client.hooks.querySelectionStatistics = async () => { throw new FakeDesignerRuntimeError("request_too_large", view.revision); };
-    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).rejects.toBeDefined();
+    await expect(runtime.querySelectionStatistics(witnessOf(view), targets)).resolves.toBe("too-large");
     expect(client.calls.querySelectionStatistics).toHaveLength(1);
     expect(await runtime.read()).toEqual(view);
+  });
+  it("checks the entire UTF-8 request against the active limit before dispatch", async () => {
+    const { runtime, client, view } = await opened();
+    const request = { type: "query_selection_statistics", expected_revision: view.revision,
+      targets: [{ entity: "", field: "impact" }] };
+    const overhead = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+    request.targets[0]!.entity = "e".repeat(runtime.requestByteLimit - overhead);
+    await expect(runtime.querySelectionStatistics(witnessOf(view), request.targets)).resolves.toMatchObject({ count: 4 });
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+    request.targets[0]!.entity = "é" + request.targets[0]!.entity.slice(1);
+    expect(new TextEncoder().encode(JSON.stringify(request)).byteLength).toBe(runtime.requestByteLimit + 1);
+    await expect(runtime.querySelectionStatistics(witnessOf(view), request.targets)).resolves.toBe("too-large");
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+    expect(client.calls.trackerCommand).toEqual([]);
+    expect(await runtime.read()).toEqual(view);
+  });
+  it("uses the acknowledged working-size budget instead of the ordinary budget", async () => {
+    const { runtime, client } = await opened();
+    const ordinaryLimit = runtime.requestByteLimit;
+    Object.assign(client, { openProjectWorkingSize: async (bytes: ArrayBuffer) => ({
+      ...await client.openProject(bytes), profile: "working_size",
+    }) });
+    const view = await runtime.openOpaque(new ArrayBuffer(4));
+    expect(runtime.requestByteLimit).toBeGreaterThan(ordinaryLimit);
+    const largeTargets = [{ entity: "e".repeat(ordinaryLimit), field: "impact" }];
+    await expect(runtime.querySelectionStatistics(witnessOf(view), largeTargets)).resolves.toMatchObject({ count: 4 });
+    expect(client.calls.querySelectionStatistics).toEqual([{ revision: view.revision, targets: largeTargets }]);
+    Object.assign(client, { importSpreadsheet: async () => {
+      await client.openProject(new ArrayBuffer(4));
+      return { metadata: {}, ledger: [] };
+    } });
+    const imported = await runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] });
+    expect(runtime.requestByteLimit).toBe(ordinaryLimit);
+    await expect(runtime.querySelectionStatistics(witnessOf(imported.view), largeTargets)).resolves.toBe("too-large");
+    expect(client.calls.querySelectionStatistics).toHaveLength(1);
   });
   it("rejects a late reply after the runtime closes", async () => {
     const { runtime, client, view } = await opened();

@@ -10,6 +10,13 @@ const statistics: SelectionStatisticsProjection = {
 const render = (overrides: Partial<SelectionStatisticsProjection> = {}) => renderToStaticMarkup(<SelectionStatisticsBar statistics={{ ...statistics, ...overrides }} />);
 
 describe("SelectionStatisticsBar", () => {
+  it("shows the size refusal as plain text in the same compact strip", () => {
+    const html = renderToStaticMarkup(<SelectionStatisticsBar statistics="too-large" />);
+    expect(html).toContain('class="ts-selection-statistics"');
+    expect(html).toContain('class="ts-status-pair">Selection too large for statistics</span>');
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain('data-testid="selection-count"');
+  });
   it("presents Work's six statistics as selectable text, keeping Count distinct", () => {
     const html = render();
     for (const [key, value] of [["count", 4], ["numerical-count", 2], ["sum", 6], ["average", 3], ["min", 2], ["max", 4]]) {

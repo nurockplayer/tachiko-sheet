@@ -28,9 +28,9 @@ import type { DesignerWorkerFactory, WorkerDesignerClient } from "../../public/c
 export const PUBLIC_WORKER_CLIENT_ENTRY = "/core-kit/runtime/worker-client.js";
 export const PUBLIC_PROJECT_TRANSFER_ENTRY = "/core-kit/host/project-transfer.js";
 
-const MAX_WIRE_REQUEST_BYTES = 65_536;
+export const MAX_WIRE_REQUEST_BYTES = 65_536;
 const MAX_METADATA_REQUEST_BYTES = 4 * 1024 * 1024;
-const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
+export const MAX_PROJECT_TRANSFER_BYTES = 64 * 1024 * 1024;
 
 /** The desktop host's two private runtime commands. */
 export interface NativeRuntimeTransport {

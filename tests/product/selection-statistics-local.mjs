@@ -176,16 +176,22 @@ try {
   assert.ok(await page.locator("tbody tr.ts-row").count() < 400, "large selection spans the virtualized grid");
   const largePublications = await publications();
   const largeSave = await page.getByTestId("work-state").getAttribute("data-work-state");
-  await page.getByRole("columnheader", { name: "Amount", exact: true }).click();
-  await expectStatistics({ count: 8406, "numerical-count": 8406, sum: 16812, average: 2, min: 2, max: 2 });
-  const largeRequest = await page.evaluate(() => window.__selectionEvidence.records.flatMap(record => record.requests)
-    .filter(message => message.request?.type === "query_selection_statistics").at(-1).request);
-  assert.equal(largeRequest.targets.length, 8406);
+  const largeQueries = await queryCount();
+  const largeRequest = { type: "query_selection_statistics", expected_revision: largeTable.revision,
+    targets: largeTable.rows.map(row => ({ entity: row.id, field: largeTable.columns[0].id })) };
   const largeRequestBytes = Buffer.byteLength(JSON.stringify(largeRequest));
-  assert.ok(largeRequestBytes > 65_536, "real dispatch exceeds the ordinary 64 KiB limit");
+  await page.getByRole("columnheader", { name: "Amount", exact: true }).click();
+  const largeState = page.getByTestId("selection-statistics");
+  await largeState.getByText("Selection too large for statistics", { exact: true }).waitFor();
+  assert.equal(await largeState.evaluate(node => getComputedStyle(node).userSelect), "text");
+  assert.equal(await page.getByTestId("selection-count").count(), 0);
+  assert.equal(await queryCount(), largeQueries, "oversize statistics request is never dispatched");
   assert.equal(await publications(), largePublications);
   assert.equal(await page.getByTestId("work-state").getAttribute("data-work-state"), largeSave);
   assert.equal((await projection()).revision, largeTable.revision);
-  console.log(`PASS: 8,406-row whole-column selection returns all six real Worker/WASM statistics (${largeRequestBytes}-byte request)`);
+  console.log(`PASS: 8,406-row imported selection shows selectable size-limit text without dispatch (${largeRequestBytes}-byte request)`);
+  await select(largeTable, 0, 0, 1, 0);
+  await expectStatistics({ count: 2, "numerical-count": 2, sum: 4, average: 2, min: 2, max: 2 });
+  assert.equal(await queryCount(), largeQueries + 1, "a smaller selection still reads real Work statistics");
   console.log("PASS: selection statistics browser acceptance cases 1, 2, 4–7");
 } finally { await context.close(); await browser.close(); }

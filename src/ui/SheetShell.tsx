@@ -2511,7 +2511,7 @@ export function SheetShell(props: SheetShellProps) {
     return { witness, area, rows: displayRows, columns };
   }, [boundSelection, witness, currentness, tab, displayRows, columns]);
   const [selectionStatistics, setSelectionStatistics] = useState<{
-    selection: NonNullable<typeof statisticsSelection>; statistics: SelectionStatisticsProjection;
+    selection: NonNullable<typeof statisticsSelection>; statistics: SelectionStatisticsProjection | "too-large";
   } | null>(null);
   const statisticsLive = useRef(statisticsSelection);
   const statisticsInFlight = useRef(false);
