@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -350,6 +351,35 @@ describe("recovery presentation", () => {
     expect(markup.indexOf("ts-save-status")).toBeLessThan(markup.indexOf(">Save a copy</button>"));
     expect(context).toContain('aria-label="Workbook actions"');
     expect(context).toContain('id="ts-active-table"');
+  });
+
+  it.each([
+    [null, "Save your work as a copy you can reopen here. The file you opened from is not changed."],
+    ["My workbook", "Save changes to this copy (like Excel's Save). The file you opened from is not changed."],
+  ])("explains Save for bound copy %s without renaming workbook actions", (boundCopyName, title) => {
+    const markup = render({ view: makeView(), boundCopyName });
+    const save = markup.match(/<button[^>]*>Save<\/button>/)?.[0];
+    const saveCopy = markup.match(/<button[^>]*>Save a copy<\/button>/)?.[0];
+    expect(save).toBeDefined();
+    expect(save).toContain(`title="${title.replace(/'/g, "&#x27;")}"`);
+    expect(saveCopy).toBeDefined();
+    expect(saveCopy).toContain('title="Keep this copy and save another one (like Excel&#x27;s Save As)."');
+  });
+
+  it("explains Prepare XLSX alongside the existing download description and labels", () => {
+    // Select the interop tab for this server render; render the actual panel.
+    const useState = React.useState;
+    const tabState = vi.spyOn(React, "useState").mockImplementation(
+      ((initial: unknown) => useState(initial === "table" ? "interop" : initial)) as typeof React.useState,
+    );
+    try {
+      const markup = render({ view: makeView() });
+      expect(markup).toContain("Prepare a file from your current work. Review what it includes and any changes or warnings before downloading. Prepare XLSX makes a new Excel file; the file you opened from is not changed, and your work here still needs Save.");
+      expect(markup).toContain(">Prepare CSV</button>");
+      expect(markup).toContain(">Prepare XLSX</button>");
+    } finally {
+      tabState.mockRestore();
+    }
   });
 
   it("offers Duplicate sheet in the existing context row only when the host can save its copy", () => {

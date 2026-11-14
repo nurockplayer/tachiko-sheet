@@ -131,6 +131,11 @@ import "./sheet-shell.css";
 type EditableKind = "number" | "text" | "boolean" | "date";
 type ActiveTab = "table" | "summary" | "report" | "brief" | "interop";
 
+const SAVE_BOUND_DESCRIPTION = "Save changes to this copy (like Excel's Save). The file you opened from is not changed.";
+const SAVE_UNBOUND_DESCRIPTION = "Save your work as a copy you can reopen here. The file you opened from is not changed.";
+const SAVE_COPY_DESCRIPTION = "Keep this copy and save another one (like Excel's Save As).";
+const PREPARE_XLSX_DESCRIPTION = "Prepare XLSX makes a new Excel file; the file you opened from is not changed, and your work here still needs Save.";
+
 /** Rendered width of a sized column without a stored width; matches `.ts-grid--sized`. */
 const SIZED_COLUMN_DEFAULT_WIDTH = 160;
 
@@ -5075,12 +5080,14 @@ export function SheetShell(props: SheetShellProps) {
           type="button"
           className="ts-button ts-button--primary"
           onClick={() => void saveWork()}
+          title={boundCopyName ? SAVE_BOUND_DESCRIPTION : SAVE_UNBOUND_DESCRIPTION}
           disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile && workFileSaveUnavailableReason)}
           aria-describedby={view?.openedFromWorkFile && workFileSaveUnavailableReason ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
         >
           Save
         </button>
         <button type="button" ref={saveCopyButtonRef} className="ts-button ts-save-copy-secondary" onClick={() => openCopyDialog()}
+          title={SAVE_COPY_DESCRIPTION}
           aria-describedby={view?.openedFromWorkFile && workFileSaveUnavailableReason ? saveUnavailableId : controlsLocked ? lockNoteId : undefined}
           disabled={controlsLocked || saveStatus === "saving" || Boolean(view?.openedFromWorkFile && workFileSaveUnavailableReason)}>
           Save a copy
@@ -6079,7 +6086,7 @@ export function SheetShell(props: SheetShellProps) {
       </section>
       <section className="ts-interop-section" aria-label="Download spreadsheet">
         <h3 className="ts-content-heading">Download</h3>
-        <p className="ts-subtle">Prepare a file from your current work. Review what it includes and any changes or warnings before downloading.</p>
+        <p className="ts-subtle">Prepare a file from your current work. Review what it includes and any changes or warnings before downloading. {PREPARE_XLSX_DESCRIPTION}</p>
         <div className="ts-row-actions">
           <button type="button" className="ts-button" disabled={workFileDownloadLocked} onClick={(event) => void prepareDownload("ro", event.currentTarget)}>Download work file (.ro)</button>
           <button type="button" className="ts-button" disabled={spreadsheetDownloadLocked} aria-describedby={spreadsheetDraftLocked ? spreadsheetDraftLockId : !interop?.metadata ? exportUnavailableId : undefined} onClick={(event) => void prepareDownload("csv", event.currentTarget)}>Prepare CSV</button>
