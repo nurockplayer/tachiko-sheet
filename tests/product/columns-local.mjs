@@ -592,6 +592,25 @@ try {
   await history("Undo");
   assert.notEqual((await projection()).columns[numberIndex].number_format?.kind.type, "currency");
   await cell(table, 0, numberIndex).focus();
+  const moreDecimals = page.getByRole("button", { name: "More decimals", exact: true });
+  const decimals = (await projection()).columns[numberIndex].number_format?.decimals ?? 2;
+  await moreDecimals.focus();
+  await page.keyboard.press("Enter"); await ready();
+  await page.keyboard.press("Enter"); await ready();
+  assert.equal((await projection()).columns[numberIndex].number_format.decimals, decimals + 2);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "More decimals");
+  await history("Undo"); await history("Undo");
+  const previousViewport = page.viewportSize();
+  await page.setViewportSize({ width: 320, height: 640 });
+  await cell(table, 0, numberIndex).focus();
+  const formatToolbar = page.getByRole("toolbar", { name: "Format", exact: true });
+  const toolbarBox = await formatToolbar.boundingBox();
+  const parentBox = await formatToolbar.locator("..").boundingBox();
+  assert.ok(toolbarBox && parentBox && toolbarBox.x + toolbarBox.width <= parentBox.x + parentBox.width + 1, "format toolbar fits its parent at 320px");
+  const decimalsBox = await moreDecimals.boundingBox();
+  assert.ok(decimalsBox && decimalsBox.x >= 0 && decimalsBox.y >= 0 && decimalsBox.x + decimalsBox.width <= 320 && decimalsBox.y + decimalsBox.height <= 640, "More decimals is visible in the viewport at 320px");
+  await page.setViewportSize(previousViewport);
+  await cell(table, 0, numberIndex).focus();
   await page.getByRole("button", { name: "Align center", exact: true }).click(); await ready();
   assert.equal(await page.getByRole("button", { name: "Align center", exact: true }).getAttribute("aria-pressed"), "true");
   assert.equal((await projection()).columns[numberIndex].style.alignment, "center");
@@ -603,7 +622,7 @@ try {
   await page.getByLabel("Date format", { exact: true }).selectOption("dmy"); await ready();
   assert.equal((await projection()).columns[dateIndex].date_format, "dmy");
   assert.match(await cell(table, 0, dateIndex).innerText(), /31\/1\/2026/);
-  checks.push("format strip: currency and Undo, alignment toggle, and day-first date display");
+  checks.push("format strip: currency and Undo, decimal keyboard focus and narrow viewport, alignment toggle, and day-first date display");
 
   await stop();
   const result = { status: "PASS", checks, processes, screenshots, dist: path.resolve(dist) };
