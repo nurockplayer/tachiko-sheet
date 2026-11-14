@@ -749,11 +749,11 @@ const cases = [
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
     const scroller = page.locator(".ts-grid-scroll");
     await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
-    await page.waitForFunction(() => document.querySelector(".ts-grid-scroll")?.scrollTop > 0);
+    await page.getByText("Row 2000", { exact: true }).waitFor();
     const header = page.locator("thead th.ts-column-header").first();
     await header.locator(".ts-col-head").click({ button: "right" });
     await page.getByRole("menu", { name: "Column actions" }).getByRole("menuitem", { name: "Copy", exact: true }).click();
-    await page.locator("td.ts-cell--copied").first().waitFor();
+    await page.getByText("Copied 2000 rows.", { exact: true }).waitFor();
     await scroller.evaluate(node => { node.scrollTop = 0; });
     await page.getByText("Row 1", { exact: true }).waitFor();
     const bar = page.getByTestId("formula-bar-input");
