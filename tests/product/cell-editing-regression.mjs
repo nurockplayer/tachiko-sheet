@@ -19,7 +19,7 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const messyCsv = path.join(root, "acceptance", "j3-interop", "fixtures", "messy.csv");
 const j4CanaryFolder = path.join(process.env.WORK_DIST ?? path.join(root, "dist-acceptance"), "examples", "j4-catalog-sales");
 const cell = (page, key) => page.getByTestId(`cell:${expected.entity}:${fields[key]}`);
-const editor = (page) => page.getByRole("textbox", { name: "Edit cell", exact: true });
+const editor = (page) => page.getByTestId("cell-editor");
 const state = (page) => page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
 const dispatches = (page) => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
 const focused = (target) => target.evaluate((node) => node === document.activeElement);
@@ -466,6 +466,33 @@ const cases = [
     assert.equal(await dispatches(page), count + 1, "the refused formula was sent once");
     assert.deepEqual(await state(page), before, "a refusal leaves the authoritative state unchanged");
     assert.equal((await cell(page, "priority").textContent()).trim(), "0");
+  }],
+  ["function suggestions and argument hints in a Number cell", async (page) => {
+    const target = cell(page, "impact");
+    const original = (await target.textContent()).trim();
+    let input = await entry(page, "impact");
+    await replace(input, "=SU");
+    const list = page.getByRole("listbox", { name: "Functions" });
+    assert.deepEqual(await list.getByRole("option").allTextContents(), ["SUM", "SUMIF", "SUMIFS"]);
+    await input.press("ArrowDown"); await input.press("Enter");
+    assert.equal(await input.inputValue(), "=SUM(");
+    await list.waitFor({ state: "hidden" });
+    assert.match(await page.getByRole("note").filter({ hasText: "SUM(number1" }).textContent(), /SUM\(number1, \[number2\], …\)/);
+    await input.press("Escape"); await input.waitFor({ state: "hidden" });
+    assert.equal((await target.textContent()).trim(), original);
+    input = await entry(page, "impact"); await replace(input, "=rou"); await input.press("Tab");
+    assert.equal(await input.inputValue(), "=ROUND(");
+    await replace(input, "=IF(");
+    assert.match(await page.getByRole("note").filter({ hasText: "IF(logical_test" }).textContent(), /IF\(logical_test, value_if_true, value_if_false\)/);
+    await replace(input, '="SU');
+    assert.equal(await list.count(), 0);
+    await replace(input, "=SU"); await list.waitFor();
+    await input.press("Escape"); await list.waitFor({ state: "hidden" });
+    assert.equal(await input.inputValue(), "=SU");
+    await input.press("Escape"); await input.waitFor({ state: "hidden" });
+    input = await entry(page, "impact"); await replace(input, "=1+2"); await input.press("Enter");
+    await input.waitFor({ state: "hidden" });
+    await page.waitForFunction(id => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "3", `cell:${expected.entity}:${fields.impact}`);
   }],
   ["typing = in a Number cell publishes a formula; Work's refusal keeps the draft", async (page) => {
     // As in other spreadsheets, a leading "=" makes the entry a formula. Sheet

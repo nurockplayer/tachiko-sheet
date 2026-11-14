@@ -116,7 +116,8 @@ import { COLUMN_TOTALS_ENTITY_BYTES, type GroupTotalsOutcome } from "../runtime/
 import { type ResultChartMode } from "./results-model.js";
 import { findingCategoryLabel, findingMessage, findingLocation } from "./interop-copy.js";
 import { useHostCopy } from "./host-copy.js";
-import { CellOptionsPopup } from "./CellOptionsPopup.js";
+import { CellOptionsPopup, FormulaHint } from "./CellOptionsPopup.js";
+import { functionSuggestions, functionHint, insertFunction } from "./formula-hints.js";
 import { findGridMatches, findStatusText, replaceTargets, stepGridMatch } from "./find-in-grid.js";
 import { useHostFiles } from "../host/host-files.js";
 import { PrintTable } from "./PrintTable.js";
@@ -169,6 +170,8 @@ interface CellEditorProps {
   onBlur(event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>): void;
   onChange(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void;
   onKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+  onKeyUp(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+  onSelect(event: React.SyntheticEvent<HTMLInputElement | HTMLTextAreaElement>): void;
 }
 
 interface GridPosition {
@@ -685,6 +688,7 @@ export function SheetShell(props: SheetShellProps) {
   // The editor whose A1 translation is waiting: one request per editor at a time.
   const a1TranslatingRef = useRef<number | null>(null);
   // The allowed-values list under the cell editor; another cell key means a fresh, open list.
+  const [formulaCaret, setFormulaCaret] = useState(0);
   const [cellOptionsUi, setCellOptionsUi] = useState<CellOptionsUi & { key: string } | null>(null);
   // Every edit session, including reopening the same cell, starts with the list open.
   useEffect(() => { setCellOptionsUi(null); }, [editor?.entity, editor?.field]);
@@ -5405,16 +5409,28 @@ export function SheetShell(props: SheetShellProps) {
       : rowIndexByEntity.has(focusedEntity)));
     const editing = editor !== null && editor.entity === entity && editor.field === column.id;
     const allCellOptions = editing ? cellEditorOptions(column) : [];
-    const cellOptions = editing && editor ? cellOptionMatches(allCellOptions, editor.value) : [];
-    const cellOptionsId = `ts-cell-options-${column.id}`;
+    const formulaMode = editing && editor?.value.startsWith("=");
+    const suggestions = formulaMode && editor ? functionSuggestions(editor.value, formulaCaret) : null;
+    const hint = formulaMode && editor ? functionHint(editor.value, formulaCaret) : null;
+    const cellOptions = formulaMode ? suggestions?.names ?? [] : editing && editor ? cellOptionMatches(allCellOptions, editor.value) : [];
+    const cellOptionsId = formulaMode ? `ts-formula-functions-${column.id}` : `ts-cell-options-${column.id}`;
+    const hintId = `ts-formula-hint-${column.id}`;
     const optionsUi: CellOptionsUi = cellOptionsUi?.key === key ? cellOptionsUi : { open: true, index: -1 };
     // A pending commit owns the editor value; a pick then would be silently dropped.
     const optionsOpen = optionsUi.open && cellOptions.length > 0 && !commitPending;
     const pickCellOption = (value: string): void => {
       setClipboardMessage(null);
-      if (draft) changeRowDraft(column.id, value);
+      if (formulaMode && suggestions && editor) {
+        const inserted = insertFunction(editor.value, suggestions, value);
+        if (draft) changeRowDraft(column.id, inserted.value);
+        setEditor(previous => previous ? { ...previous, value: inserted.value } : previous);
+        setFormulaCaret(inserted.caret);
+        requestAnimationFrame(() => editorInputRef.current?.setSelectionRange(inserted.caret, inserted.caret));
+      } else {
+        if (draft) changeRowDraft(column.id, value);
+        setEditor(previous => previous ? { ...previous, value } : previous);
+      }
       setLocalError(null);
-      setEditor((previous) => (previous ? { ...previous, value } : previous));
       setCellOptionsUi({ key, open: false, index: -1 });
     };
     // A text cell that offers no list of allowed values edits in a textarea, so
@@ -5426,21 +5442,21 @@ export function SheetShell(props: SheetShellProps) {
       if (draft) changeRowDraft(column.id, value);
       setLocalError(null);
       setEditor((previous) => (previous ? { ...previous, value } : previous));
-      if (allCellOptions.length > 0) setCellOptionsUi({ key, open: true, index: -1 });
+      if (allCellOptions.length > 0 || value.startsWith("=")) setCellOptionsUi({ key, open: true, index: -1 });
     };
     const editorProps: CellEditorProps = {
       className: "ts-cell-input",
       "aria-label": "Edit cell",
-      "aria-describedby": draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : undefined,
+      "aria-describedby": [draft && rowError?.fields?.includes(column.id) ? "ts-row-error" : null, hint && !optionsOpen ? hintId : null].filter(Boolean).join(" ") || undefined,
       // Work's declared rule is shown as a hint; Work still decides what
       // is admitted, so typing another value reaches its refusal.
       placeholder: column.constraint?.kind === "number_inclusive_range" ? `${column.constraint.min}–${column.constraint.max}`
         : column.constraint?.kind === "text_literal_set" ? column.constraint.values.join(" / ") : draft ? column.field_type === "boolean" ? "true / false" : column.field_type === "date" ? "YYYY-MM-DD" : undefined : undefined,
       "aria-busy": commitPending,
       "data-testid": "cell-editor",
-      role: allCellOptions.length > 0 ? "combobox" : undefined,
-      "aria-autocomplete": allCellOptions.length > 0 ? "list" : undefined,
-      "aria-expanded": allCellOptions.length > 0 ? optionsOpen : undefined,
+      role: (formulaMode || allCellOptions.length > 0) ? "combobox" : undefined,
+      "aria-autocomplete": (formulaMode || allCellOptions.length > 0) ? "list" : undefined,
+      "aria-expanded": (formulaMode || allCellOptions.length > 0) ? optionsOpen : undefined,
       "aria-controls": optionsOpen ? cellOptionsId : undefined,
       "aria-activedescendant": optionsOpen && optionsUi.index >= 0 ? `${cellOptionsId}-${optionsUi.index}` : undefined,
       disabled: controlsLocked,
@@ -5448,7 +5464,9 @@ export function SheetShell(props: SheetShellProps) {
       ref: focusEditorInput,
       onDoubleClick: (event) => event.stopPropagation(),
       onBlur: () => { if (draft && !rowCommandPendingRef.current) setEditor(current => current?.entity === DRAFT_ROW && current.field === column.id ? null : current); },
-      onChange: (event) => applyEditorValue(event.currentTarget.value),
+      onChange: (event) => { setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length); applyEditorValue(event.currentTarget.value); },
+      onSelect: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
+      onKeyUp: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
       onKeyDown: (event) => {
         const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
         // Alt+Enter holds a line break in the multiline editor; elsewhere it
@@ -5468,7 +5486,7 @@ export function SheetShell(props: SheetShellProps) {
           return;
         }
         const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
-        const action = composing || modified ? null : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
+        const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" ? { kind: "pick" as const, index: Math.max(0, optionsUi.index) } : cellOptionsKeyAction(event.key, optionsUi, cellOptions.length);
         if (!action) { onEditorKeyDown(event); return; }
         // The open list owns this key; Enter picks without committing, so a second Enter commits.
         event.preventDefault();
@@ -5618,13 +5636,14 @@ export function SheetShell(props: SheetShellProps) {
         ) : null}
         {editing && editor && optionsOpen ? <CellOptionsPopup
           id={cellOptionsId}
-          label={`${column.display_name} allowed values`}
+          label={formulaMode ? "Functions" : `${column.display_name} allowed values`}
           options={cellOptions}
           activeIndex={optionsUi.index}
           anchor={cellRefs.current.get(key) ?? null}
           container={shellRef.current}
           onPick={pickCellOption}
         /> : null}
+        {editing && hint && !optionsOpen ? <FormulaHint id={hintId} text={`${hint.name}(${hint.args})`} summary={hint.summary} anchor={cellRefs.current.get(key) ?? null} container={shellRef.current} /> : null}
         {editing && editor ? null : (
           <span className="ts-cell-value" aria-hidden={display.emptyTextMarker ? true : undefined}>{display.text}</span>
         )}

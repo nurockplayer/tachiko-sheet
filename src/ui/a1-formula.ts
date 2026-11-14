@@ -1,4 +1,5 @@
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
+import { FORMULA_FUNCTIONS } from "./formula-hints.js";
 import { A1_HEADER_ROW } from "./a1-geometry.js";
 
 /**
@@ -194,7 +195,7 @@ export function a1RefusalText(input: {
     case "unsupported_criterion":
       return `${subject("That condition")}isn't supported. Use a written number, a blank condition, or a cell reference in SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF or COUNTIFS.`;
     case "unsupported_function":
-      return `${subject("That function")}isn't available. Formulas can use SUM, AVERAGE, COUNT, MIN, MAX, IF, AND, OR, NOT, IFERROR, ROUND, ROUNDUP, ROUNDDOWN, ABS, ISBLANK, YEAR, MONTH, DAY, WEEKDAY, DAYS, VLOOKUP, XLOOKUP, INDEX, MATCH, SUMIF, SUMIFS, AVERAGEIF, AVERAGEIFS, COUNTIF and COUNTIFS. Aggregates and lookups use whole columns.`;
+      return `${subject("That function")}isn't available. Formulas can use ${FORMULA_FUNCTIONS.slice(0, -1).map(item => item.name).join(", ")} and ${FORMULA_FUNCTIONS[FORMULA_FUNCTIONS.length - 1]!.name}. Aggregates and lookups use whole columns.`;
     case "unsupported_operator":
       return `${subject("That operator")}isn't supported in formulas.`;
     case "unknown_sheet":
