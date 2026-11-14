@@ -1385,7 +1385,7 @@ describe("format strip", () => {
     const handlers = { onSetColumnAlignment: async () => ({ kind: "confirmed" as const }), onSetColumnNumberFormat: async () => ({ kind: "confirmed" as const }), onSetColumnDateFormat: async () => ({ kind: "confirmed" as const }) };
     let markup = render({ view, ...handlers });
     const strip = () => markup.slice(markup.indexOf('aria-label="Format"'), markup.indexOf('</div>', markup.indexOf('aria-label="Format"')));
-    expect(strip()).toContain("flex-wrap:wrap");
+    expect(strip()).toContain('class="ts-format-strip"');
     expect(strip()).toContain('aria-label="Align center"');
     expect(strip()).not.toContain('aria-label="Currency"');
     view.table.columns[0]!.field_type = "number";
