@@ -9,7 +9,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { A1Geometry, CapacityProjection, ColumnTotalsProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, CapacityProjection, ColumnTotalsProjection, DistinctValuesProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
 import type { A1TranslationOutcome, GroupTotalsOutcome } from "./runtime/session.js";
 import type {
   CleanupOperation,
@@ -130,6 +130,8 @@ export interface SheetRuntime {
   duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<ConfirmedPublication>;
   /** Work's Number totals over exactly these entities; null when the kit lacks it or the revision moved. */
   queryColumnTotals(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
+  /** Work's distinct column texts; null when unavailable or the revision moved. */
+  queryDistinctValues(witness: ViewWitness, collection: string, field: string): Promise<DistinctValuesProjection | null>;
   /** Work's grouped Number totals over one scope; null when the kit lacks it or the revision moved. */
   queryGroupTotals(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsOutcome | null>;
   /** Work's read-only Excel A1 translation; null when the kit lacks it or the revision moved. */
@@ -408,6 +410,8 @@ export interface SheetShellProps {
   onDuplicateTable?(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<RowCommandOutcome>;
   /** Totals of the rows a filter shows; arithmetic stays in Work. */
   onQueryShownTotals?(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
+  /** Existing column texts for in-cell completion; Work owns the values. */
+  onQueryColumnValues?(witness: ViewWitness, collection: string, field: string): Promise<DistinctValuesProjection | null>;
   /** Grouped totals by one or two columns; the sheet only chooses the question. */
   onQueryGroupTotals?(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsOutcome | null>;
   /** Work's read-only Excel A1 translation for the displayed grid geometry. */

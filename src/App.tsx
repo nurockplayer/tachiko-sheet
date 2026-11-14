@@ -1811,6 +1811,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return runtime.queryColumnTotals(witness, collection, entities);
   }
 
+  function queryColumnValues(witness: ViewWitness, collection: string, field: string) {
+    // A read only: completion keeps a disposable list for the current edit.
+    return runtime.queryDistinctValues(witness, collection, field);
+  }
+
   function queryGroupTotals(witness: ViewWitness, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope) {
     // A read only, like the footer totals: Work groups and sums; Sheet shows its reply.
     return runtime.queryGroupTotals(witness, collection, dimensions, measures, scope);
@@ -2338,6 +2343,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // the portable route, like column authoring.
           onDuplicateTable={copies.createWorkFile ? duplicateTable : undefined}
           onQueryShownTotals={queryShownTotals}
+          onQueryColumnValues={queryColumnValues}
           onQueryGroupTotals={queryGroupTotals}
           onTranslateA1Formula={translateA1Formula}
           onOpenExample={openExample}
