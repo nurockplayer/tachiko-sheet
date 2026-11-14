@@ -1897,7 +1897,11 @@ export function SheetShell(props: SheetShellProps) {
     const command = (action: () => void) => () => { closeCellMenu(); action(); };
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
     const resizable = !compactColumnActions && !salesCatalogLayoutEligible(view, salesCatalogLayout);
-    const cellItems = cellMenuItems(position).filter(item => item !== "separator" && ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"].includes(item.label));
+    const cellItems = cellMenuItems(position).filter(item => item !== "separator" && ["Cut", "Copy", "Paste", "Clear contents", "Sort A → Z", "Sort Z → A", "Filter…"].includes(item.label)).map(item => {
+      if (item === "separator" || (item.label !== "Cut" && item.label !== "Copy")) return item;
+      const action = item.label.toLowerCase();
+      return { ...item, run: command(() => { requestAnimationFrame(() => { document.execCommand(action); }); }) };
+    });
     const items: CellMenuItem[] = displayRows.length ? [...cellItems.slice(0, 4), "separator", ...cellItems.slice(4)] : cellItems.slice(4);
     if (resizable) items.push("separator", { label: "AutoFit column width", disabled: columnChangesBlocked, run: command(() => autoFitColumn(field, header)) });
     const actions: CellMenuItem[] = [];
