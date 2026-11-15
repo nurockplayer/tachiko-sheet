@@ -202,10 +202,13 @@ try {
   assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
   // Filtering across the windowing threshold remounts the table in both directions.
-  // This capacity fixture keeps widths locally, without a Work revision change.
+  // Wait for the committed width, not the preview that appears during resizing.
+  const beforeFreezeResize = await observedTable(page);
   const firstColumnResize = page.getByRole("separator", { name: "Resize name", exact: true });
   await firstColumnResize.press("ArrowRight");
   await firstColumnResize.press("Tab");
+  await page.waitForFunction(revision => window.__observedTable?.revision !== revision, beforeFreezeResize.revision);
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
   await grid(page).and(page.locator(".ts-grid--sized")).waitFor();
   await toggleFreeze();
   await headers.first().hover();
