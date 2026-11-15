@@ -30,7 +30,7 @@ for ((i=0; i<60; i++)); do
   if result=$(osascript -e "tell application \"System Events\" to count windows of (first process whose unix id is $pid)" 2>&1); then
     if [[ "$result" =~ ^[0-9]+$ ]] && (( result > 0 )); then found=1; break; fi
   elif [[ "$result" == *'-1743'* || "$result" == *'-25211'* || "$result" == *'not allowed'* || "$result" == *'not authorized'* ]]; then
-    echo "Accessibility denied ($result); falling back to alive after 20 seconds"
+    echo "window check skipped: no Accessibility ($result); falling back to alive after 20 seconds"
     if (( i < 20 )); then sleep $((20-i)); fi
     kill -0 "$pid" 2>/dev/null || fail 'process exited during accessibility fallback'
     found=1; break

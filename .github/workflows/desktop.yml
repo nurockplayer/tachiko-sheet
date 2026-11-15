@@ -97,7 +97,12 @@ jobs:
             desktop-evidence/production/identity.json
             desktop-evidence/production/ENGINEERING-NOTICE.txt
 
+      - name: Install the production DMG and start the app
+        run: bash scripts/installer-smoke/macos.sh desktop-evidence/production/Tachiko-Sheet.dmg
+
       - name: Build the packaged e2e variant
+        # Installer smoke uses only the preserved production DMG.
+        # Runtime round-trips continue to use the separate E2E app below.
         run: pnpm desktop:build:e2e
 
       - name: Capture the separate packaged E2E identity
