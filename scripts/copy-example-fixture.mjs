@@ -11,9 +11,11 @@ import { j4CanaryInventory, j4CanaryText } from '../tests/fixtures/j4-catalog-sa
 import { salesCatalogInventory, salesCatalogText } from './sales-catalog-source.mjs';
 
 const source = fileURLToPath(new URL('../tests/fixtures/release-plan.roproj', import.meta.url));
-const target = fileURLToPath(new URL('../public/examples/release-plan', import.meta.url));
-const j4Target = fileURLToPath(new URL('../public/examples/j4-catalog-sales', import.meta.url));
-const salesTarget = fileURLToPath(new URL('../public/examples/sales-catalog', import.meta.url));
+// Tests supply an isolated destination so they never remove Vite's public files.
+const examples = process.argv[2] ?? fileURLToPath(new URL('../public/examples', import.meta.url));
+const target = path.join(examples, 'release-plan');
+const j4Target = path.join(examples, 'j4-catalog-sales');
+const salesTarget = path.join(examples, 'sales-catalog');
 const shards = Array.from('0123456789abcdef', (shard) => `entities/${shard}.jsonl`);
 const inventory = ['manifest.json', 'schemas.json', ...shards];
 

@@ -713,7 +713,7 @@ body { margin: 0; }
 .ts-command-overflow[open] .ts-command-menu,
 .ts-column-overflow[open] .ts-command-menu {
   position: absolute;
-  z-index: 5;
+  z-index: 8;
   top: calc(100% + 4px);
   right: 0;
   display: flex;
@@ -3196,7 +3196,8 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 .ts-column-header:focus-within .ts-column-overflow > summary,
 .ts-column-header--focused .ts-column-overflow > summary,
 .ts-column-overflow[open] > summary { opacity: 1; pointer-events: auto; }
-.ts-grid .ts-column-header:has(.ts-column-overflow[open]) { z-index: 4; }
+/* Lift the header stacking context with its menu above every frozen cell. */
+.ts-grid .ts-column-header:has(.ts-column-overflow[open]) { z-index: 7; }
 .ts-column-overflow .ts-command-menu { min-width: 128px; }
 .ts-column-overflow .ts-command-menu .ts-button { text-align: left; }
 .ts-column-add { flex: none; min-height: 24px; padding: 1px 5px; font-size: 11px; }
@@ -3432,3 +3433,5 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 .ts-grid:has(.ts-frozen-first-column) .ts-column-header { z-index: 4; }
 .ts-grid .ts-column-header.ts-frozen-first-column { z-index: 5; }
 .ts-grid:has(.ts-frozen-first-column) .ts-gutter-head { z-index: 6; }
+
+.ts-column-freeze-hint { max-width: 240px; white-space: normal; color: var(--ts-ink-soft); }
