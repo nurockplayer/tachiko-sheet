@@ -533,6 +533,48 @@ async fn tokio_sleep(duration: std::time::Duration) {
 
 // ---- menu ---------------------------------------------------------------------
 
+const ZOOM_IN: &str = "zoom-in";
+const ZOOM_OUT: &str = "zoom-out";
+const ZOOM_RESET: &str = "zoom-reset";
+const ZOOM_STEPS: [f64; 11] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+
+#[derive(Clone, Copy)]
+enum ZoomAction {
+    In,
+    Out,
+    Reset,
+}
+
+fn zoom_factor(current: f64, action: ZoomAction) -> f64 {
+    match action {
+        ZoomAction::In => ZOOM_STEPS
+            .into_iter()
+            .find(|step| *step > current)
+            .unwrap_or(2.0),
+        ZoomAction::Out => ZOOM_STEPS
+            .into_iter()
+            .rev()
+            .find(|step| *step < current)
+            .unwrap_or(0.5),
+        ZoomAction::Reset => 1.0,
+    }
+}
+
+/// Whole-window presentation state, discarded when the app exits.
+struct Zoom(Mutex<f64>);
+
+fn run_zoom_command(app: &AppHandle, action: ZoomAction) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let zoom = app.state::<Zoom>();
+        let mut current = lock(&zoom.0);
+        let next = zoom_factor(*current, action);
+        match window.set_zoom(next) {
+            Ok(()) => *current = next,
+            Err(error) => eprintln!("Could not change window zoom: {error}"),
+        }
+    }
+}
+
 /// A menu command the page carries out, as its own buttons and keys do.
 struct PageCommand {
     id: &'static str,
@@ -624,7 +666,13 @@ fn choose_file_to_open(app: &AppHandle) {
 }
 
 fn run_menu_command(app: &AppHandle, id: &str) {
-    if id == OPEN.id {
+    if id == ZOOM_IN {
+        run_zoom_command(app, ZoomAction::In);
+    } else if id == ZOOM_OUT {
+        run_zoom_command(app, ZoomAction::Out);
+    } else if id == ZOOM_RESET {
+        run_zoom_command(app, ZoomAction::Reset);
+    } else if id == OPEN.id {
         choose_file_to_open(app);
     } else {
         run_page_command(app, id);
@@ -652,11 +700,26 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             0,
         )?;
     }
+    // Only macOS has a View submenu in Tauri's default menu.
+    #[cfg(not(target_os = "macos"))]
+    menu.insert(&tauri::menu::Submenu::new(app, "View", true)?, 2)?;
     for top in menu.items()? {
         let MenuItemKind::Submenu(submenu) = top else {
             continue;
         };
         match submenu.text()?.as_str() {
+            "View" => {
+                if !submenu.items()?.is_empty() {
+                    submenu.append(&PredefinedMenuItem::separator(app)?)?;
+                }
+                for (id, label, accelerator) in [
+                    (ZOOM_IN, "Zoom In", "CmdOrCtrl+="),
+                    (ZOOM_OUT, "Zoom Out", "CmdOrCtrl+-"),
+                    (ZOOM_RESET, "Actual Size", "CmdOrCtrl+0"),
+                ] {
+                    submenu.append(&MenuItem::with_id(app, id, label, true, Some(accelerator))?)?;
+                }
+            }
             "File" => {
                 for (position, command) in FILE_COMMANDS.into_iter().enumerate() {
                     submenu.insert(&page_item(app, command)?, position)?;
@@ -732,6 +795,7 @@ pub fn run() {
         .manage(LeaveGuard::default())
         .manage(Saves::default())
         .manage(opened_file::OpenedFiles::default())
+        .manage(Zoom(Mutex::new(1.0)))
         .menu(app_menu)
         .on_menu_event(|app, event| {
             if event.id() == QUIT_MENU_ITEM {
@@ -845,6 +909,29 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zoom_moves_to_the_next_or_previous_step() {
+        assert_eq!(zoom_factor(1.0, ZoomAction::In), 1.1);
+        assert_eq!(zoom_factor(1.0, ZoomAction::Out), 0.9);
+        for steps in ZOOM_STEPS.windows(2) {
+            assert_eq!(zoom_factor(steps[0], ZoomAction::In), steps[1]);
+            assert_eq!(zoom_factor(steps[1], ZoomAction::Out), steps[0]);
+        }
+    }
+
+    #[test]
+    fn zoom_clamps_at_the_smallest_and_largest_steps() {
+        assert_eq!(zoom_factor(0.5, ZoomAction::Out), 0.5);
+        assert_eq!(zoom_factor(2.0, ZoomAction::In), 2.0);
+    }
+
+    #[test]
+    fn actual_size_resets_every_zoom_step() {
+        for current in ZOOM_STEPS {
+            assert_eq!(zoom_factor(current, ZoomAction::Reset), 1.0);
+        }
+    }
 
     fn is_app(url: &str) -> bool {
         is_app_url(&Url::parse(url).unwrap())
