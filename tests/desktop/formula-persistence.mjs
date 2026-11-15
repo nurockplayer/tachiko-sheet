@@ -19,35 +19,52 @@ export async function formulaPersistence({ evaluate, downloads, coldOpen, quit }
     await waitFor(() => current() && cellAt(0, 3), "Invoice ready");
     return true;
   `);
-  const edit = async (column, source) => evaluate(`
+  const select = async (row, column) => evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
-    dblclick(await waitFor(() => cellAt(0, ${column}), "dependency cell"));
-    const input = await waitFor(() => textbox("Edit cell"), "cell editor");
-    fill(input, ${JSON.stringify(source)});
-    press(input, "Enter");
-    await waitFor(() => !textbox("Edit cell") && current(), "published formula edit");
+    const cell = await waitFor(() => {
+      const cell = cellAt(${row}, ${column});
+      return current() && cell?.getAttribute("aria-readonly") === "false" &&
+        cell?.getAttribute("data-work-currentness") === "current" && cell;
+    }, "published editable cell");
+    click(cell);
     return true;
   `);
+  const edit = async (column, source, result) => {
+    await select(0, column);
+    await evaluate(`
+      const input = await waitFor(() => document.querySelector('[data-testid="formula-bar-input"]:not(:disabled)'), "formula bar");
+      fill(input, ${JSON.stringify(source)});
+      return true;
+    `);
+    await evaluate(`
+      press(document.querySelector('[data-testid="formula-bar-input"]'), "Enter");
+      await waitFor(() => current() && cellAt(0, ${column})?.textContent.trim() === ${JSON.stringify(result)}, "published formula edit");
+      return true;
+    `);
+  };
   // Reuse Invoice's plain values, names and formulas; extend its first row
   // with a chain Qty -> Unit price -> Amount, all via the ordinary editor.
-  await edit(2, "=[.{Qty}]*2");
-  await edit(3, "=[.{Unit price}]+1");
-  const snapshot = () => evaluate(`
+  await edit(2, "=[.qty]*2", "$20.00");
+  await edit(3, "=[.column_1]+1", "$21.00");
+  const snapshot = async () => {
+    const table = await evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
     await waitFor(() => current() && cellAt(4, 3), "all Invoice rows");
     const names = [...document.querySelectorAll("#ts-active-table option")].map(el => el.textContent);
     const columns = [...grid().querySelectorAll(".ts-col-head")].map(el => el.textContent);
     const values = [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(el => el.textContent.trim()));
+    return { names, columns, values };
+    `);
     const formulas = [];
     for (const [row, column] of [[0, 2], [0, 3], [1, 3], [2, 3], [3, 3], [4, 3]]) {
-      dblclick(cellAt(row, column));
-      const editor = await waitFor(() => textbox("Edit cell"), "formula source editor");
-      formulas.push(editor.value);
-      press(editor, "Escape");
-      await waitFor(() => !textbox("Edit cell") && current(), "source inspection closed");
+      await select(row, column);
+      formulas.push(await evaluate(`
+        const bar = await waitFor(() => document.querySelector('[data-testid="formula-bar-input"]:not(:disabled)'), "formula source");
+        return bar.value;
+      `));
     }
-    return { names, columns, values, formulas };
-  `);
+    return { ...table, formulas };
+  };
   const expectedValues = (edited) => [
     ["Paper", edited ? "12" : "10", edited ? "$24.00" : "$20.00", edited ? "$25.00" : "$21.00"],
     ["Toner", "2", "$48.00", "$96.00"], ["Pens", "30", "$0.80", "$24.00"],
@@ -103,7 +120,7 @@ export async function formulaPersistence({ evaluate, downloads, coldOpen, quit }
   await coldOpen(external);
   assert.deepEqual(await snapshot(), initial, "first cold external reopen: exact names, columns, values, sources and results");
   pass("cold external .ro reopen: exact names, columns, values, formula sources and results");
-  await edit(1, "12");
+  await edit(1, "12", "12");
   const edited = { ...initial, values: expectedValues(true) };
   assert.deepEqual(await snapshot(), edited, "dependency edit recalculates both links and retains sources");
   pass("dependency edit: both chained formula results recalculate");
