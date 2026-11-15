@@ -1,9 +1,11 @@
 // The Home example must load the unchanged seed fixture as opaque bytes.
-// This checks the generated public copy byte-for-byte; it parses nothing.
-import test from "node:test";
+// Generate into a temporary directory; Vite may be scanning public concurrently.
+// This checks the generated copy byte-for-byte; it parses nothing.
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -12,9 +14,11 @@ import { salesCatalogInventory, salesCatalogText } from "../../scripts/sales-cat
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const seeds = path.join(root, "tests", "fixtures", "release-plan.roproj");
-const generated = path.join(root, "public", "examples", "release-plan");
-const j4Generated = path.join(root, "public", "examples", "j4-catalog-sales");
-const salesGenerated = path.join(root, "public", "examples", "sales-catalog");
+const examples = await mkdtemp(path.join(tmpdir(), "sheet-example-copy-"));
+after(() => rm(examples, { recursive: true, force: true }));
+const generated = path.join(examples, "release-plan");
+const j4Generated = path.join(examples, "j4-catalog-sales");
+const salesGenerated = path.join(examples, "sales-catalog");
 const inventory = [
   "manifest.json",
   "schemas.json",
@@ -22,7 +26,7 @@ const inventory = [
 ];
 
 test("the generated example copy is byte-identical to the unchanged seed fixture", async () => {
-  const copy = spawnSync(process.execPath, [path.join(root, "scripts", "copy-example-fixture.mjs")], {
+  const copy = spawnSync(process.execPath, [path.join(root, "scripts", "copy-example-fixture.mjs"), examples], {
     cwd: root,
     encoding: "utf8",
   });
@@ -35,7 +39,7 @@ test("the generated example copy is byte-identical to the unchanged seed fixture
 });
 
 test("the generated J4 canary is byte-identical to the fixed qualified fixture", async () => {
-  const copy = spawnSync(process.execPath, [path.join(root, "scripts", "copy-example-fixture.mjs")], {
+  const copy = spawnSync(process.execPath, [path.join(root, "scripts", "copy-example-fixture.mjs"), examples], {
     cwd: root,
     encoding: "utf8",
   });
@@ -47,7 +51,7 @@ test("the generated J4 canary is byte-identical to the fixed qualified fixture",
 });
 
 test("the Sales product source changes only the exact J4 document title", async () => {
-  const copy = spawnSync(process.execPath, [path.join(root, "scripts", "copy-example-fixture.mjs")], {
+  const copy = spawnSync(process.execPath, [path.join(root, "scripts", "copy-example-fixture.mjs"), examples], {
     cwd: root,
     encoding: "utf8",
   });
