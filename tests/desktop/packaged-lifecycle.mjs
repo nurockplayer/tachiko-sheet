@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { boundedText } from "../../scripts/desktop-evidence.mjs";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 import { formulaPersistence } from "./formula-persistence.mjs";
+import { pasteRaces } from "./paste-races.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const app = path.resolve(process.argv[2] ?? "");
@@ -72,7 +73,7 @@ function appPids(strict = false) {
   }
 }
 
-async function launch() {
+async function launch(answerDelay = 1200) {
   assert.deepEqual(appPids(), [], "no earlier app process is running");
   execFileSync("open", ["-n", "-a", app,
     "--env", `TACHIKO_SHEET_E2E_DIR=${scripts}`,
@@ -83,7 +84,7 @@ async function launch() {
     // The unsaved-work dialog is answered "Cancel": closing must then not happen.
     "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER=cancel",
     // The answer takes a moment, so the frozen page can be observed meanwhile.
-    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=1200",
+    "--env", `TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=${answerDelay}`,
     ...(process.env.TACHIKO_SHEET_E2E_WINDOW_SIZE ? ["--env", `TACHIKO_SHEET_E2E_WINDOW_SIZE=${process.env.TACHIKO_SHEET_E2E_WINDOW_SIZE}`] : [])]);
   for (let attempt = 0; attempt < 100 && appPids().length === 0; attempt++) await sleep(100);
   const pids = appPids();
@@ -898,6 +899,68 @@ async function namedTableJourney() {
   pid = undefined;
 }
 
+// G6 3a: observe the existing host/file behavior; never consume the pending
+// file through a test-only command in order to call it delivered.
+async function fileDuringUnsavedQuestion() {
+  await edit(0, 0, "unsaved-arrival-edit");
+  const before = await evaluate(`
+    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(cell => [cell.dataset.testid, cell.textContent]));
+  `);
+  await evaluate(`
+    window.__g6Arrival = null;
+    window.__g6ArrivalListener = event => {
+      if (event.detail === "file-opened") window.__g6Arrival = { inert: document.body.inert };
+    };
+    window.addEventListener("tachiko-menu", window.__g6ArrivalListener);
+    return true;
+  `);
+  const count = await dialogs();
+  await requestClose();
+  await evaluate(`await waitFor(() => document.body.inert, "unsaved question is up"); return true;`);
+  assert.ok((await dialogs()) > count, "host asked about unsaved work");
+  execFileSync("open", ["-a", app, openFixture]);
+  await evaluate(`
+    await waitFor(() => window.__g6Arrival, "OS file event reached the frozen page");
+    window.removeEventListener("tachiko-menu", window.__g6ArrivalListener);
+    if (!window.__g6Arrival.inert) throw new Error("OS file arrived after the delayed answer");
+    await waitFor(() => !document.body.inert, "Cancel returned to work"); return true;
+  `);
+  const shown = await evaluate(`return document.body.innerText.includes('Close this work, then open “open-me.csv” again.');`);
+  if (!shown) {
+    // Opening/closing help lets the ordinary pending-file effect run. Seeing
+    // the named refusal afterwards proves it was retained while the page was inert.
+    await evaluate(`
+      click(await waitFor(() => button("Keyboard shortcuts"), "Keyboard shortcuts"));
+      const help = await waitFor(() => dialog("Keyboard shortcuts"), "help dialog");
+      click(button("Close", help));
+      await waitFor(() => !dialog("Keyboard shortcuts"), "help closed");
+      return true;
+    `);
+  }
+  await evaluate(`await waitFor(() => document.body.innerText.includes('Close this work, then open “open-me.csv” again.'), "arriving file retained and named"); return true;`);
+  const after = await evaluate(`
+    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(cell => [cell.dataset.testid, cell.textContent]));
+  `);
+  assert.deepEqual(after, before, "Cancel retains unsaved cells and identities");
+  console.log(`File arrival disposition: ${shown ? "shown after Cancel" : "pending after Cancel; named refusal shown after help interaction"}; edits retained; original fixture retained=${existsSync(openFixture)}`);
+}
+
+async function macShortcutLabels() {
+  const labels = await evaluate(`
+    click(await waitFor(() => button("Keyboard shortcuts"), "Keyboard shortcuts"));
+    const help = await waitFor(() => dialog("Keyboard shortcuts"), "shortcut help");
+    const keys = [...help.querySelectorAll("kbd")].map(el => el.textContent);
+    click(button("Close", help));
+    await waitFor(() => !dialog("Keyboard shortcuts"), "help closed");
+    return keys;
+  `);
+  console.log(`macOS rendered shortcut labels: ${JSON.stringify(labels)}`);
+  assert.ok(labels.some(label => label.includes("⌘")), "macOS Command symbols rendered");
+  assert.ok(labels.some(label => label.includes("⌥")), "macOS Option symbols rendered");
+  assert.ok(labels.some(label => label.includes("⇧")), "macOS Shift symbols rendered");
+  assert.ok(labels.every(label => !label.includes("Ctrl+")), `macOS help must not render Ctrl+: ${JSON.stringify(labels)}`);
+}
+
 // ---- run ---------------------------------------------------------------------
 
 const webkitData = [
@@ -1007,6 +1070,15 @@ try {
     pid = undefined;
     results.push({ name, format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
   }
+  pid = await timed("launch", () => launch(5000));
+  await coldHome();
+  await pasteRaces({ evaluate, work, extraChecks: [
+    ["file arriving during unsaved question retains edits and the file", fileDuringUnsavedQuestion],
+    ["shortcut help renders macOS ⌘/⌥/⇧ labels", macShortcutLabels],
+  ] });
+  await closeToHome();
+  await quit(pid);
+  pid = undefined;
   directResult = {
     case: "desktop packaged lifecycle (native runtime)",
     journeys: { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
