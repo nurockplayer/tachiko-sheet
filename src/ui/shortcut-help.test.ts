@@ -9,7 +9,8 @@ describe("shortcut help", () => {
     expect(entries(true).find(entry => entry.action === "Show formulas")?.keys).toEqual(["Ctrl+`"]);
     expect(entries(true).find(entry => entry.action === "Paste Special")?.keys).toEqual(["Ctrl+⌘V"]);
     expect(entries(false).find(entry => entry.action === "Copy from cell above")?.keys).toEqual(["Ctrl+'"]);
-    expect(entries(true).find(entry => entry.action === "Copy value from cell above")?.keys).toEqual(["⌘Shift+'"]);
+    expect(entries(true).find(entry => entry.action === "Copy value from cell above")?.keys).toEqual(['⌘"']);
+    expect(entries(false).find(entry => entry.action === "Copy value from cell above")?.keys).toEqual(['Ctrl+"']);
     expect(entries(false).find(entry => entry.action === "Filter: open or clear")?.keys).toEqual(["Ctrl+Shift+L"]);
     expect(entries(true).find(entry => entry.action === "Redo")?.keys).toEqual(["⌘Shift+Z"]);
   });

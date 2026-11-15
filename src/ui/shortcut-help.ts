@@ -32,7 +32,7 @@ const groups: ShortcutGroup[] = [
     { keys: ["Delete", "Backspace"], action: "Clear cells" },
     { keys: ["Mod+D"], action: "Fill down" },
     { keys: ["Mod+'"], action: "Copy from cell above" },
-    { keys: ["Mod+Shift+'"], action: "Copy value from cell above" },
+    { keys: ['Mod+"'], action: "Copy value from cell above" },
     { keys: ["Mod+;"], action: "Enter today's date in a Date cell" },
     { keys: ["Shift+F2"], action: "Go to formula bar" },
   ] },
