@@ -122,7 +122,20 @@ export async function formulaPersistence({ evaluate, downloads, coldOpen, quit }
   await coldOpen(external);
   assert.deepEqual(await snapshot(), initial, "first cold external reopen: exact names, columns, values, sources and results");
   pass("cold external .ro reopen: exact names, columns, values, formula sources and results");
-  await edit(1, "12", "12");
+  // The formula bar submits formulas even for a numeric constant. Edit this
+  // dependency through the cell editor so it remains a plain input value.
+  await select(0, 1);
+  await evaluate(`
+    dblclick(cellAt(0, 1));
+    const input = await waitFor(() => textbox("Edit cell"), "plain dependency editor");
+    fill(input, "12");
+    return true;
+  `);
+  await evaluate(`
+    press(await waitFor(() => textbox("Edit cell"), "plain dependency editor"), "Enter");
+    await waitFor(() => !textbox("Edit cell") && current() && cellAt(0, 1)?.textContent.trim() === "12", "published plain dependency edit");
+    return true;
+  `);
   const edited = { ...initial, values: expectedValues(true) };
   assert.deepEqual(await snapshot(), edited, "dependency edit recalculates both links and retains sources");
   pass("dependency edit: both chained formula results recalculate");
