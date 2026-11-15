@@ -202,7 +202,11 @@ try {
   assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
   // Filtering across the windowing threshold remounts the table in both directions.
-  await resizeColumn("name", 0, 400 - (await headers.first().boundingBox()).width);
+  // This capacity fixture keeps widths locally, without a Work revision change.
+  const firstColumnResize = page.getByRole("separator", { name: "Resize name", exact: true });
+  await firstColumnResize.press("ArrowRight");
+  await firstColumnResize.press("Tab");
+  await grid(page).and(page.locator(".ts-grid--sized")).waitFor();
   await toggleFreeze();
   await headers.first().hover();
   await page.getByRole("button", { name: "Column actions for name", exact: true }).click();
