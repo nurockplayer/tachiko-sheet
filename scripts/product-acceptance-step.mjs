@@ -16,6 +16,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   const logs = [];
   let timer;
   let timedOut = false;
+  let cleanupParentListeners = () => {};
   try {
     for (const directory of directories) {
       mkdirSync(directory, { recursive: true });
@@ -28,6 +29,28 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const killGroup = () => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error;
+      }
+    };
+    const signalHandlers = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((signal) => {
+      const handler = () => {
+        killGroup();
+        process.removeListener(signal, handler);
+        process.kill(process.pid, signal);
+      };
+      process.once(signal, handler);
+      return [signal, handler];
+    });
+    process.once('exit', killGroup);
+    cleanupParentListeners = () => {
+      process.removeListener('exit', killGroup);
+      for (const [signal, handler] of signalHandlers) process.removeListener(signal, handler);
+    };
     const collect = (chunk) => {
       for (const descriptor of logs) writeSync(descriptor, chunk);
       (options.quiet ? process.stderr : process.stdout).write(chunk);
@@ -40,9 +63,9 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       timer = setTimeout(() => {
         timedOut = true;
         try {
-          process.kill(-child.pid, 'SIGKILL');
+          killGroup();
         } catch (error) {
-          if (error.code !== 'ESRCH') reject(error);
+          reject(error);
         }
       }, timeoutMs);
     });
@@ -59,6 +82,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     return exitCode;
   } finally {
     clearTimeout(timer);
+    cleanupParentListeners();
     for (const descriptor of logs) closeSync(descriptor);
   }
 }
