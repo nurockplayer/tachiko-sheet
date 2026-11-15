@@ -116,7 +116,7 @@ foreach ($case in @('A', 'B')) {
         try {
           $id = $_.Id
           $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction Stop).CommandLine
-          $id -notin $existingIds -and [String]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) -and $commandLine -and $commandLine.IndexOf($fixture, [StringComparison]::OrdinalIgnoreCase) -ge 0
+          $id -notin $existingIds -and [String]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) -and $commandLine -and $commandLine.IndexOf('"' + $fixture + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0
         } catch { $false }
       } | Select-Object -First 1
     }
