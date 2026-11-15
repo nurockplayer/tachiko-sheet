@@ -5184,6 +5184,7 @@ export function SheetShell(props: SheetShellProps) {
     const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
+    const compactFilterEditorColumn = columns.find(column => column.id === filterDraft?.field) ?? focusedColumn;
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
     const viewStatus = rowViewStatusText(columns, gridSettings, displayRows.length, rowSource(table).total);
@@ -5573,7 +5574,7 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 openGroupTotals(focusedColumn, trigger);
               }}>{`Totals by “${focusedColumnName}”…`}</button> : null}
-              {renderFilterEditor(focusedColumn)}
+              {renderFilterEditor(compactFilterEditorColumn)}
             </div>
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it, or select cells across several rows to delete those rows. Undo restores deleted rows.</span>
