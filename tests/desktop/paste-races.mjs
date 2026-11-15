@@ -12,7 +12,7 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
     try { await run(); console.log(`PASS: ${process.platform} ${name}`); }
     catch (error) { console.error(`FAIL: ${process.platform} ${name}: ${error.stack}`); failures.push(error); }
   };
-  const fixture = await mkdtemp(path.join(work, "paste-fixture-"));
+  const fixture = path.join(await mkdtemp(path.join(work, "paste-fixture-")), "capacity");
   execFileSync(process.platform === "win32" ? "python" : "python3", ["-I",
     fileURLToPath(new URL("../../acceptance/capacity-8406/oracle.py", import.meta.url)), "generate", fixture], { stdio: "inherit" });
   const bytes = (await readFile(path.join(fixture, "source-8406.csv"))).toString("base64");
