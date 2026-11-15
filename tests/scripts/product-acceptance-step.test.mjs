@@ -54,7 +54,7 @@ test('passing step keeps its output, details and zero exit code', async (t) => {
   assert.deepEqual(local.trim().split('\n').sort(), ['stderr', 'stdout']);
 });
 
-test('hanging child times out, kills its process group and keeps partial logs', { timeout: 10000 }, async (t) => {
+test('SIGTERM-resistant step times out, escalates after grace and keeps partial logs', { timeout: 10000 }, async (t) => {
   const fixture = await setup(t, 1500);
   const descendant = `
     const net = require('node:net');
@@ -69,9 +69,12 @@ test('hanging child times out, kills its process group and keeps partial logs', 
     spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: ['ignore', 'inherit', 'inherit'] });
     setInterval(() => {}, 1000);
   `;
-  const pending = runStep('hang', ['-e', source], {}, fixture.options);
+  const killGraceMs = 150;
+  const started = performance.now();
+  const pending = runStep('hang', ['-e', source], {}, { ...fixture.options, killGraceMs });
   assert.equal(fixture.entries[0].status, 'START');
   assert.equal(await pending, 1);
+  assert.ok(performance.now() - started >= 1500 + killGraceMs, 'SIGKILL preceded the grace deadline');
   assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'TIMEOUT']);
   assert.equal(fixture.options.summary[0].status, 'TIMEOUT');
   const [local, upload] = await fixture.logs('hang');
@@ -85,6 +88,38 @@ test('hanging child times out, kills its process group and keeps partial logs', 
       try { assert.equal(error.code, 'ECONNREFUSED'); resolve(); } catch (failure) { reject(failure); }
     });
   });
+});
+
+test('timeout lets the step reap a detached grandchild before closing', { timeout: 10000 }, async (t) => {
+  const fixture = await setup(t, 1500);
+  const source = `
+    const { spawn } = require('node:child_process');
+    const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],
+      { detached: true, stdio: 'ignore' });
+    process.on('SIGTERM', () => {
+      grandchild.once('exit', () => process.exit(1));
+      process.kill(grandchild.pid);
+    });
+    console.log(JSON.stringify({ parent: process.pid, grandchild: grandchild.pid }));
+    setInterval(() => {}, 1000);
+  `;
+  let grandchild;
+  t.after(async () => {
+    if (!grandchild) {
+      const [log] = await fixture.logs('detached');
+      grandchild = JSON.parse(log.trim()).grandchild;
+    }
+    try { process.kill(grandchild, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  });
+  assert.equal(await runStep('detached', ['-e', source], {}, fixture.options), 1);
+  const [local, upload] = await fixture.logs('detached');
+  assert.equal(local, upload);
+  const receipt = JSON.parse(local.trim());
+  grandchild = receipt.grandchild;
+  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'TIMEOUT']);
+  assert.equal(fixture.options.summary[0].status, 'TIMEOUT');
+  assert.throws(() => process.kill(receipt.parent, 0), { code: 'ESRCH' });
+  assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
 
 test('nonzero step remains FAIL and retains its output in the upload directory', async (t) => {
