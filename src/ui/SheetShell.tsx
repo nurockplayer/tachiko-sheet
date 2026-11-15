@@ -2522,7 +2522,7 @@ export function SheetShell(props: SheetShellProps) {
         props.appearancePreference.getSnapshot().composing || live.value.startsWith("=") || input.value !== live.value ||
         input.selectionStart !== live.value.length || input.selectionEnd !== live.value.length) return;
       const candidate = completionFor(live.value, current.values);
-      if (candidate === null) return;
+      if (candidate === null || candidate.slice(0, live.value.length).toLowerCase() !== live.value.toLowerCase()) return;
       const value = live.value + candidate.slice(live.value.length);
       const selection = { instance: live.instance, start: live.value.length, end: value.length };
       completionSuffixRef.current = selection;
