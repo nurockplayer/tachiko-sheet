@@ -1180,6 +1180,14 @@ export function SheetShell(props: SheetShellProps) {
   const freezeRequested = Boolean(gridSettings.freezeFirstColumn && !phoneLayout);
   const freezeFirstColumn = freezeRequested && !firstColumnTooWide;
   const frozenColumnClass = (field: string) => freezeFirstColumn && field === columns[0]?.id ? " ts-frozen-first-column" : "";
+  const displaySignature = rowViewDisplaySignature(gridSettings);
+  // A confirmed insertion is already in the installed projection, so its kept
+  // entry is committed with the confirmation rather than by a later effect.
+  const displayRows = useMemo(
+    () => table ? rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings) : [],
+    [columns, gridSettings, table],
+  );
+  const gridWindowed = displayRows.length > GRID_WINDOW_THRESHOLD;
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
     const gutter = grid?.querySelector<HTMLElement>(".ts-gutter-head");
@@ -1199,14 +1207,7 @@ export function SheetShell(props: SheetShellProps) {
     observer?.observe(firstColumn);
     observer?.observe(grid);
     return () => observer?.disconnect();
-  }, [freezeRequested, table, tab]);
-  const displaySignature = rowViewDisplaySignature(gridSettings);
-  // A confirmed insertion is already in the installed projection, so its kept
-  // entry is committed with the confirmation rather than by a later effect.
-  const displayRows = useMemo(
-    () => table ? rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings) : [],
-    [columns, gridSettings, table],
-  );
+  }, [freezeRequested, table, tab, gridWindowed]);
   // The live row order for async continuations: a translation read against one
   // display order must not be applied after the rows moved under it.
   const displayRowsRef = useRef(displayRows);
@@ -1229,7 +1230,6 @@ export function SheetShell(props: SheetShellProps) {
     if (tabRunStartRef.current && !gridOrder.some(item => item.entity === tabRunStartRef.current?.entity)) tabRunStartRef.current = null;
   }, [gridOrder]);
   useLayoutEffect(() => { tabRunStartRef.current = null; }, [collectionIdentity]);
-  const gridWindowed = displayRows.length > GRID_WINDOW_THRESHOLD;
   const rowIndexByEntity = useMemo(() => {
     const indices = new Map<string, number>();
     displayRows.forEach((row, index) => indices.set(rowEntity(row), index));
