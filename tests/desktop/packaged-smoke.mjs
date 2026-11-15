@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { formulaPersistence } from "./formula-persistence.mjs";
 
 const platform = process.platform;
 assert.ok(
@@ -54,11 +55,12 @@ function describeExit(exit) {
   return `code ${exit.code ?? "null"}/${exit.signal ?? "no signal"}`;
 }
 
-async function launch({ closeAnswer, openArgument = false }) {
-  const { dir, scripts, downloads } = await workspace();
+async function launch({ closeAnswer, openArgument = false, openPath, downloadsPath }) {
+  const { dir, scripts, downloads: sessionDownloads } = await workspace();
+  const downloads = downloadsPath ?? sessionDownloads;
   const openFixture = path.join(dir, "open-me.csv");
   await writeFile(openFixture, "Item,Amount\nTea,4.5\n");
-  const child = spawn(binary, openArgument ? [openFixture] : [], {
+  const child = spawn(binary, openPath ? [openPath] : openArgument ? [openFixture] : [], {
     env: {
       ...process.env,
       TACHIKO_SHEET_E2E_DIR: scripts,
@@ -375,6 +377,18 @@ async function main() {
   await evaluate(`await waitFor(() => dialog("Review import preview"), "import review of the launch argument", 60000); return true;`);
   pass("a .csv named at launch reaches the import review");
   await stop(opened);
+
+  const persistence = await launch({ closeAnswer: "cancel" });
+  await formulaPersistence({
+    evaluate, downloads: persistence.downloads,
+    coldOpen: (openPath) => launch({ closeAnswer: "cancel", openPath, downloadsPath: persistence.downloads }),
+    quit: async () => {
+      await requestLeave("e2e_request_quit");
+      const exit = await Promise.race([appSession.exited, sleep(30_000).then(() => null)]);
+      assert.ok(exit, "persistence: full app process quits");
+      assert.equal(exit.code, 0, "persistence: clean process exit");
+    },
+  });
 }
 
 async function diagnostics(error) {

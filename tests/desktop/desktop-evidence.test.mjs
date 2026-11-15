@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,30 @@ const successfulProcess = { code: 0, signal: null, outcome: 'EXITED' };
 const successfulDirect = { schema: 'sheet-desktop-direct-result-v1', status: 'PASS', cleanup: { status: 'PASS' } };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const writeJson = (file, value) => writeFile(file, JSON.stringify(value));
+
+test('independent XLSX checker rejects formula loss, source changes and stale or missing caches', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'sheet-xlsx-formula-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'formula.xlsx');
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const checker = new URL('./xlsx-formula-check.py', import.meta.url);
+  const expected = JSON.stringify({ Invoice: { A1: { value: 'Qty' }, C2: { formula: '(B2*2)', value: 24 } } });
+  for (const [formula, cache, passes] of [['(B2*2)', '<v>24</v>', true], ['', '<v>24</v>', false], ['(B2*3)', '<v>24</v>', false], ['(B2*2)', '<v>20</v>', false], ['(B2*2)', '', false]]) {
+    execFileSync(python, ['-I', '-c', `
+import sys,zipfile
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
+ z.writestr('xl/workbook.xml', '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Invoice" r:id="r1"/></sheets></workbook>')
+ z.writestr('xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="r1" Target="worksheets/invoice.xml"/></Relationships>')
+ z.writestr('xl/sharedStrings.xml', '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>Qty</t></si></sst>')
+ formula = '<f>' + sys.argv[2] + '</f>' if sys.argv[2] else ''
+ z.writestr('xl/worksheets/invoice.xml', '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="C2">' + formula + sys.argv[3] + '</c></row></sheetData></worksheet>')
+`, file, formula, cache]);
+    const check = () => execFileSync(python, ['-I', checker.pathname, file, expected], { stdio: 'pipe' });
+    if (passes) check();
+    else assert.throws(check, { status: 1 });
+  }
+});
+
 async function fixture(t) {
   const repo = await mkdtemp(path.join(tmpdir(), 'sheet-desktop-evidence-test-'));
   t.after(() => rm(repo, { recursive: true, force: true }));
