@@ -283,8 +283,12 @@ export function rowViewStatusText(
 export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLElement): boolean {
   const before = cell.getBoundingClientRect();
   const port = scrollport.getBoundingClientRect();
-  const visible = (rect: DOMRect) => rect.left >= port.left && rect.right <= port.right && rect.top >= port.top && rect.bottom <= port.bottom;
-  if (before.left < port.left) scrollport.scrollLeft -= port.left - before.left;
+  const frozen = scrollport.querySelector<HTMLElement>("thead .ts-frozen-first-column");
+  const gutter = scrollport.querySelector<HTMLElement>(".ts-gutter-head");
+  const left = cell.classList.contains("ts-frozen-first-column") ? port.left
+    : frozen?.getBoundingClientRect().right ?? (port.left + (gutter?.getBoundingClientRect().width ?? 0));
+  const visible = (rect: DOMRect) => rect.left >= left && rect.right <= port.right && rect.top >= port.top && rect.bottom <= port.bottom;
+  if (before.left < left) scrollport.scrollLeft -= left - before.left;
   else if (before.right > port.right) scrollport.scrollLeft += before.right - port.right;
   if (before.top < port.top) scrollport.scrollTop -= port.top - before.top;
   else if (before.bottom > port.bottom) scrollport.scrollTop += before.bottom - port.bottom;
@@ -1157,11 +1161,32 @@ export function SheetShell(props: SheetShellProps) {
       sort: rawGridSettings?.sort && ids.has(rawGridSettings.sort.field) ? rawGridSettings.sort : undefined,
       filters: rawGridSettings?.filters?.filter(filter => ids.has(filter.field)),
       kept: rawGridSettings?.kept,
+      freezeFirstColumn: rawGridSettings?.freezeFirstColumn,
       widths: keptWidths === undefined ? undefined
         : keptWidths.length === Object.keys(widths!).length ? widths
         : keptWidths.length > 0 ? Object.fromEntries(keptWidths) : undefined,
     };
   }, [columns, rawGridSettings]);
+  const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 599px)").matches);
+  useEffect(() => {
+    const phone = window.matchMedia("(max-width: 599px)");
+    const sync = () => setPhoneLayout(phone.matches);
+    sync();
+    phone.addEventListener("change", sync);
+    return () => phone.removeEventListener("change", sync);
+  }, []);
+  const freezeFirstColumn = Boolean(gridSettings.freezeFirstColumn && !phoneLayout);
+  const frozenColumnClass = (field: string) => freezeFirstColumn && field === columns[0]?.id ? " ts-frozen-first-column" : "";
+  useLayoutEffect(() => {
+    const grid = gridScrollRef.current;
+    const gutter = grid?.querySelector<HTMLElement>(".ts-gutter-head");
+    if (!grid || !gutter || !freezeFirstColumn) return;
+    const measure = () => grid.style.setProperty("--ts-frozen-gutter-width", `${gutter.getBoundingClientRect().width}px`);
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(gutter);
+    return () => observer?.disconnect();
+  }, [freezeFirstColumn, table, tab]);
   const displaySignature = rowViewDisplaySignature(gridSettings);
   // A confirmed insertion is already in the installed projection, so its kept
   // entry is committed with the confirmation rather than by a later effect.
@@ -1578,7 +1603,8 @@ export function SheetShell(props: SheetShellProps) {
     // Excel keeps focus and typing at the anchor; only the far end scrolls into view.
     const rowIndex = rowIndexByEntity.get(end.entity);
     if (gridWindowed && rowIndex !== undefined) revealGridRow(rowIndex);
-    cellRefs.current.get(cellKey(end.entity, end.field))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const cell = cellRefs.current.get(cellKey(end.entity, end.field));
+    if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
   }
 
   /** An extending key starts from the selection's end; focus itself stays on the anchor. */
@@ -3227,7 +3253,10 @@ export function SheetShell(props: SheetShellProps) {
     setFocusedKey(key);
     revealGridRow(match.rowIndex);
     // A windowed row renders after this update; reveal its column once it exists. Focus stays in Find.
-    requestAnimationFrame(() => requestAnimationFrame(() => cellRefs.current.get(key)?.scrollIntoView({ block: "nearest", inline: "nearest" })));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const cell = cellRefs.current.get(key);
+      if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
+    }));
   }
 
   function cancelReplacePreview(): void {
@@ -5178,7 +5207,7 @@ export function SheetShell(props: SheetShellProps) {
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
             <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }} onContextMenu={event => { if ((event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) return; event.preventDefault(); openColumnMenu(event.clientX, event.clientY, index, event.currentTarget); }}>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${frozenColumnClass(column.id)}${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }} onContextMenu={event => { if ((event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) return; event.preventDefault(); openColumnMenu(event.clientX, event.clientY, index, event.currentTarget); }}>
               <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions ? event => {
                 if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
                 if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); event.stopPropagation(); const header = event.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); openColumnMenu(rect.left, rect.bottom, index, header); }
@@ -5249,6 +5278,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       setAlignmentDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
                     }} /> : null}
+                    {index === 0 ? <button type="button" className="ts-button" aria-label="Freeze first column" data-column-action="Freeze first column" aria-pressed={Boolean(gridSettings.freezeFirstColumn)} disabled={phoneLayout} title={phoneLayout ? "Not available on narrow screens" : undefined} onClick={event => {
+                      updateGridSettings(current => ({ ...current, freezeFirstColumn: !current.freezeFirstColumn }));
+                      const disclosure = event.currentTarget.closest("details")!;
+                      disclosure.open = false;
+                      disclosure.querySelector<HTMLElement>("summary")?.focus();
+                    }} /> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
@@ -5316,7 +5351,7 @@ export function SheetShell(props: SheetShellProps) {
             {columns.map(column => {
               const hasTotal = Object.prototype.hasOwnProperty.call(totals, column.id);
               const total = totals[column.id];
-              return <td key={column.id} className={total === null && hasTotal ? "ts-total-cell ts-total-cell--unavailable" : "ts-total-cell"} data-testid={`total:${column.id}`} title={total === null && hasTotal ? "A value in this column has no available result." : undefined}>
+              return <td key={column.id} className={(total === null && hasTotal ? "ts-total-cell ts-total-cell--unavailable" : "ts-total-cell") + frozenColumnClass(column.id)} data-testid={`total:${column.id}`} title={total === null && hasTotal ? "A value in this column has no available result." : undefined}>
                 {hasTotal ? total === null ? "Unavailable" : formatNumberFor(total, column.number_format) : null}
               </td>;
             })}
@@ -5761,6 +5796,7 @@ export function SheetShell(props: SheetShellProps) {
     const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
+    if (frozenColumnClass(column.id)) classes.push("ts-frozen-first-column");
     if (display.calculationFailed) classes.push("ts-cell--calc-failed");
     if (formulaCell) classes.push("ts-cell--formula");
     const coordinate = address({ entity, field: column.id });
@@ -5870,7 +5906,8 @@ export function SheetShell(props: SheetShellProps) {
           } else { setCellSelection(null); focusCell(entity, column.id); }
         }}
         onDoubleClick={() => cellInsertsReference(row, column, draft) ? undefined : draft ? beginDraftEdit(column) : beginEdit(entity, column.id)}
-        onFocus={() => {
+        onFocus={(event) => {
+          if (freezeFirstColumn && gridScrollRef.current) scrollCellIntoGridNearest(event.currentTarget, gridScrollRef.current);
           // The bar only ever shows the focused cell instance, so a draft for
           // another cell would become invisible while still holding the user's
           // text. Keep the caret in the bar until it is applied or cancelled.

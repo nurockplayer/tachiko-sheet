@@ -344,3 +344,16 @@ describe("column width units", () => {
     }
   });
 });
+
+
+describe("freeze view state", () => {
+  it("survives view edits without changing row order, signature or another occurrence", () => {
+    const settings: RowViewSettings = { freezeFirstColumn: true };
+    expect(rowViewOrder([alpha, beta], columns, settings)).toEqual([alpha, beta]);
+    expect(rowViewDisplaySignature(settings)).toBe(rowViewDisplaySignature({}));
+    expect(rowViewWithWidth(settings, "c-name", 240).freezeFirstColumn).toBe(true);
+    expect(rowViewSettingsForColumns(settings, new Set(["c-name"])).freezeFirstColumn).toBe(true);
+    const record = { occurrence: "one", byCollection: { table: settings } };
+    expect(rowViewRecordForOccurrence(record, "two").byCollection).toEqual({});
+  });
+});
