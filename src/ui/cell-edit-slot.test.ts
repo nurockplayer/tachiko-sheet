@@ -93,7 +93,17 @@ describe("column text completion", () => {
     ["Ann", ["Anna", "Ann"], null],
     ["ann", ["Ann"], null],
     ["z", ["Alpha"], null],
+    ["i\u0307", ["İpek"], null],
+    ["i", ["İpek"], null],
+    ["SS", ["ßeta"], null],
+    ["ß", ["SSeta"], null],
+    ["Ap", ["Apple"], "Apple"],
+    ["aP", ["Apple"], "Apple"],
   ] as const)("completes %j from %j as %j", (typed, values, expected) => {
     expect(completionFor(typed, [...values])).toBe(expected);
+  });
+  it("keeps the exact suffix after the typed prefix", () => {
+    const typed = "Ap";
+    expect(completionFor(typed, ["Apple"])?.slice(typed.length)).toBe("ple");
   });
 });

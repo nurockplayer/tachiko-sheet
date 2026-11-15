@@ -1175,18 +1175,31 @@ export function SheetShell(props: SheetShellProps) {
     phone.addEventListener("change", sync);
     return () => phone.removeEventListener("change", sync);
   }, []);
-  const freezeFirstColumn = Boolean(gridSettings.freezeFirstColumn && !phoneLayout);
+  const [frozenColumnGeometry, setFrozenColumnGeometry] = useState({ gutterWidth: 0, columnWidth: 0, scrollportWidth: 0 });
+  const firstColumnTooWide = frozenColumnGeometry.gutterWidth + frozenColumnGeometry.columnWidth > frozenColumnGeometry.scrollportWidth / 2;
+  const freezeRequested = Boolean(gridSettings.freezeFirstColumn && !phoneLayout);
+  const freezeFirstColumn = freezeRequested && !firstColumnTooWide;
   const frozenColumnClass = (field: string) => freezeFirstColumn && field === columns[0]?.id ? " ts-frozen-first-column" : "";
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
     const gutter = grid?.querySelector<HTMLElement>(".ts-gutter-head");
-    if (!grid || !gutter || !freezeFirstColumn) return;
-    const measure = () => grid.style.setProperty("--ts-frozen-gutter-width", `${gutter.getBoundingClientRect().width}px`);
+    const firstColumn = grid?.querySelector<HTMLElement>("thead .ts-column-header");
+    if (!grid || !gutter || !firstColumn || !freezeRequested) return;
+    const measure = () => {
+      const gutterWidth = gutter.getBoundingClientRect().width;
+      const columnWidth = firstColumn.getBoundingClientRect().width;
+      const scrollportWidth = grid.clientWidth;
+      grid.style.setProperty("--ts-frozen-gutter-width", `${gutterWidth}px`);
+      setFrozenColumnGeometry(current => current.gutterWidth === gutterWidth && current.columnWidth === columnWidth && current.scrollportWidth === scrollportWidth
+        ? current : { gutterWidth, columnWidth, scrollportWidth });
+    };
     measure();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(gutter);
+    observer?.observe(firstColumn);
+    observer?.observe(grid);
     return () => observer?.disconnect();
-  }, [freezeFirstColumn, table, tab]);
+  }, [freezeRequested, table, tab]);
   const displaySignature = rowViewDisplaySignature(gridSettings);
   // A confirmed insertion is already in the installed projection, so its kept
   // entry is committed with the confirmation rather than by a later effect.
@@ -2522,7 +2535,7 @@ export function SheetShell(props: SheetShellProps) {
         props.appearancePreference.getSnapshot().composing || live.value.startsWith("=") || input.value !== live.value ||
         input.selectionStart !== live.value.length || input.selectionEnd !== live.value.length) return;
       const candidate = completionFor(live.value, current.values);
-      if (candidate === null) return;
+      if (candidate === null || candidate.slice(0, live.value.length).toLowerCase() !== live.value.toLowerCase()) return;
       const value = live.value + candidate.slice(live.value.length);
       const selection = { instance: live.instance, start: live.value.length, end: value.length };
       completionSuffixRef.current = selection;
@@ -5184,6 +5197,7 @@ export function SheetShell(props: SheetShellProps) {
     const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
+    const compactFilterEditorColumn = columns.find(column => column.id === filterDraft?.field) ?? focusedColumn;
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
     const viewStatus = rowViewStatusText(columns, gridSettings, displayRows.length, rowSource(table).total);
@@ -5278,12 +5292,12 @@ export function SheetShell(props: SheetShellProps) {
                       disclosure.open = false;
                       setAlignmentDialog({ field: column.id, trigger, collection: table.collection.id, occurrence: view!.occurrence });
                     }} /> : null}
-                    {index === 0 ? <button type="button" className="ts-button" aria-label="Freeze first column" data-column-action="Freeze first column" aria-pressed={Boolean(gridSettings.freezeFirstColumn)} disabled={phoneLayout} title={phoneLayout ? "Not available on narrow screens" : undefined} onClick={event => {
+                    {index === 0 ? <><button type="button" className="ts-button" aria-label="Freeze first column" data-column-action="Freeze first column" aria-pressed={Boolean(gridSettings.freezeFirstColumn)} disabled={phoneLayout} title={phoneLayout ? "Not available on narrow screens" : undefined} onClick={event => {
                       updateGridSettings(current => ({ ...current, freezeFirstColumn: !current.freezeFirstColumn }));
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
                       disclosure.querySelector<HTMLElement>("summary")?.focus();
-                    }} /> : null}
+                    }} />{freezeRequested && firstColumnTooWide ? <span className="ts-column-freeze-hint">Column A is too wide to freeze in this window.</span> : null}</> : null}
                     <button type="button" className="ts-button" aria-label="Sort A → Z" data-column-action="Sort A → Z" disabled={viewActionsBlocked} onClick={event => {
                       const disclosure = event.currentTarget.closest("details")!;
                       disclosure.open = false;
@@ -5573,7 +5587,7 @@ export function SheetShell(props: SheetShellProps) {
                 closeColumnToolbar(disclosure);
                 openGroupTotals(focusedColumn, trigger);
               }}>{`Totals by “${focusedColumnName}”…`}</button> : null}
-              {renderFilterEditor(focusedColumn)}
+              {renderFilterEditor(compactFilterEditorColumn)}
             </div>
           </details> : null}
           {table.native_table_profile && onInsertRow && onRemoveRows ? <span className="ts-hint ts-table-row-note">Focus a row to delete it, or select cells across several rows to delete those rows. Undo restores deleted rows.</span>

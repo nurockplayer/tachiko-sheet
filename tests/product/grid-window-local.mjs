@@ -74,9 +74,9 @@ try {
     await page.getByRole("button", { name: "Column actions for name", exact: true }).click();
     await page.getByRole("button", { name: "Freeze first column", exact: true }).click();
   };
-  const resizeC = async delta => {
+  const resizeColumn = async (name, column, delta) => {
     await scroller.evaluate(node => { node.scrollLeft = 0; });
-    const handle = page.getByRole("separator", { name: "Resize code", exact: true });
+    const handle = page.getByRole("separator", { name: `Resize ${name}`, exact: true });
     const box = await handle.boundingBox();
     const before = await observedTable(page);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -85,8 +85,9 @@ try {
     await page.mouse.up();
     await page.waitForFunction(revision => window.__observedTable?.revision !== revision, before.revision);
     await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-    return (await observedTable(page)).columns[2].width;
+    return (await observedTable(page)).columns[column].width;
   };
+  const resizeC = delta => resizeColumn("code", 2, delta);
   // Save exactly the same drag with freeze off and on, starting at the same width.
   // Establish explicit widths first: the initial equal-share layout differs
   // from the fixed-width layout installed by the first saved resize.
@@ -135,8 +136,49 @@ try {
   // Selection extension reveals its end without moving focus off the anchor.
   for (let column = 1; column < 15; column++) await page.keyboard.press("Shift+ArrowRight");
   const selectionEnd = await firstRow.locator("td").last().boundingBox();
-  assert.ok(selectionEnd.x >= (await firstCell.boundingBox()).x + (await firstCell.boundingBox()).width - 1);
+  const frozenA = await firstCell.boundingBox();
+  const scrollport = await scroller.boundingBox();
+  assert.ok(selectionEnd.x >= frozenA.x + frozenA.width, "selection end clears frozen A");
+  assert.ok(selectionEnd.x + selectionEnd.width <= scrollport.x + scrollport.width + 1, "selection end fits inside scrollport");
   await page.keyboard.press("Escape");
+  // Wide A suspends freezing without changing the setting, then restores it.
+  await page.setViewportSize({ width: 900, height: 720 });
+  await scroller.evaluate(node => { node.scrollLeft = 0; });
+  await resizeColumn("name", 0, 600 - (await headers.first().boundingBox()).width);
+  await page.waitForFunction(() => !document.querySelector(".ts-frozen-first-column"));
+  assert.ok(Math.abs((await headers.first().boundingBox()).width - 600) <= 1, "A is 600 px wide");
+  const wideAStart = await firstCell.boundingBox();
+  await scroller.evaluate(node => { node.scrollLeft = 100; });
+  assert.ok(Math.abs((await firstCell.boundingBox()).x - wideAStart.x + 100) <= 1, "wide A scrolls normally");
+  await scroller.evaluate(node => { node.scrollLeft = 0; });
+  await headers.first().hover();
+  const aMenu = headers.first().locator(".ts-column-overflow");
+  await aMenu.getByRole("button", { name: "Column actions for name", exact: true }).click();
+  assert.equal(await aMenu.getByRole("button", { name: "Freeze first column", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await aMenu.getByText("Column A is too wide to freeze in this window.", { exact: true }).isVisible(), true);
+  await page.keyboard.press("Escape");
+  await resizeColumn("name", 0, -440);
+  await page.waitForFunction(() => Boolean(document.querySelector(".ts-frozen-first-column")));
+  assert.equal(await page.getByText("Column A is too wide to freeze in this window.", { exact: true }).count(), 0);
+
+  // Upward-clamped menus must paint above frozen headers and row gutters.
+  await page.setViewportSize({ width: 800, height: 420 });
+  for (const index of [0, 1]) {
+    await scroller.evaluate(node => { node.scrollLeft = 0; });
+    const header = headers.nth(index);
+    await header.hover();
+    const menu = header.locator(".ts-column-overflow");
+    await menu.locator("summary").click();
+    const controls = menu.locator(".ts-command-menu button, .ts-command-menu input, .ts-command-menu select");
+    for (const control of [controls.first(), controls.last()]) {
+      await control.scrollIntoViewIfNeeded();
+      assert.equal(await control.evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === node;
+      }), true, `column ${index} menu control is hit-testable`);
+    }
+    await page.keyboard.press("Escape");
+  }
   await page.setViewportSize({ width: 390, height: 720 });
   await page.waitForFunction(() => !document.querySelector(".ts-frozen-first-column"));
   assert.equal(await page.getByRole("button", { name: "Freeze first column", exact: true }).count(), 0, "phone hides toggle");
