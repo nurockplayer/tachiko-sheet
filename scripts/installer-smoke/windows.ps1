@@ -100,11 +100,36 @@ foreach ($case in @('A', 'B')) {
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../public/templates/budget.ro') -Destination $fixture
   try {
     Write-Host "Case $case shell-dispatched .ro open: $fixture"
+    $existingIds = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exePath)) -ErrorAction SilentlyContinue | Where-Object {
+      try { [String]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) } catch { $false }
+    } | ForEach-Object { $_.Id })
     $opened = Start-Process -FilePath $fixture -PassThru
-    if (-not $opened -or -not [String]::Equals($opened.Path, $exePath, [StringComparison]::OrdinalIgnoreCase)) {
-      throw '.ro shell dispatch did not start the installed executable'
+    $dispatched = $null
+    if ($opened) {
+      try {
+        if ([String]::Equals($opened.Path, $exePath, [StringComparison]::OrdinalIgnoreCase)) { $dispatched = $opened }
+      } catch { }
     }
-    CheckWindow $opened
+    for ($i = 0; -not $dispatched -and $i -le 30; $i++) {
+      if ($i -gt 0) { Start-Sleep -Seconds 1 }
+      $dispatched = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exePath)) -ErrorAction SilentlyContinue | Where-Object {
+        try { $_.Id -notin $existingIds -and [String]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) } catch { $false }
+      } | Select-Object -First 1
+    }
+    if (-not $dispatched) {
+      $openedId = $null; $openedPath = $null; $openedExited = $null
+      if ($opened) {
+        try { $openedId = $opened.Id } catch { $openedId = "unavailable: $_" }
+        try { $openedPath = $opened.Path } catch { $openedPath = "unavailable: $_" }
+        try { $openedExited = $opened.HasExited } catch { $openedExited = "unavailable: $_" }
+      }
+      $processes = @(Get-Process -Name '*tachiko*' -ErrorAction SilentlyContinue | ForEach-Object {
+        $processPath = try { $_.Path } catch { "unavailable: $_" }
+        "Id=$($_.Id) Path=$processPath"
+      }) -join '; '
+      throw ".ro shell dispatch did not start the installed executable; opened null=$($null -eq $opened), Id=$openedId, Path=$openedPath, HasExited=$openedExited; tachiko processes: $processes"
+    }
+    CheckWindow $dispatched
   } finally {
     Remove-Item -LiteralPath $fixture -ErrorAction SilentlyContinue
   }
