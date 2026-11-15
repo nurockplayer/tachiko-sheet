@@ -18,6 +18,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   const logs = [];
   let timer;
   let killTimer;
+  let groupCleanup;
   let timedOut = false;
   let cleanupParentListeners = () => {};
   try {
@@ -40,15 +41,18 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
         if (error.code !== 'ESRCH') throw error;
       }
     };
-    const killGroup = (onError) => {
+    const killGroup = () => {
       signalGroup('SIGTERM');
-      killTimer = setTimeout(() => {
-        try {
-          signalGroup('SIGKILL');
-        } catch (error) {
-          onError(error);
-        }
-      }, options.killGraceMs ?? STEP_KILL_GRACE_MS);
+      return new Promise((resolve, reject) => {
+        killTimer = setTimeout(() => {
+          try {
+            signalGroup('SIGKILL');
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        }, options.killGraceMs ?? STEP_KILL_GRACE_MS);
+      });
     };
     const killGroupImmediately = () => {
       signalGroup('SIGTERM');
@@ -77,18 +81,21 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     const result = await new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', (code, signal) => {
-        clearTimeout(killTimer);
+        clearTimeout(timer);
         resolve({ code, signal });
       });
       timer = setTimeout(() => {
         timedOut = true;
         try {
-          killGroup(reject);
+          groupCleanup = killGroup();
+          groupCleanup.catch(reject);
         } catch (error) {
           reject(error);
         }
       }, timeoutMs);
     });
+    // The direct child can close while descendants in its group are still alive.
+    await groupCleanup;
     const exitCode = timedOut ? 1 : typeof result.code === 'number' ? result.code : 1;
     const entry = {
       step: name,

@@ -122,6 +122,49 @@ test('timeout lets the step reap a detached grandchild before closing', { timeou
   assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
 
+test('timeout escalates for a resistant grandchild after the direct child closes', { timeout: 10000 }, async (t) => {
+  const fixture = await setup(t, 1500);
+  const descendant = `
+    process.on('SIGTERM', () => {});
+    const server = require('node:net').createServer();
+    server.listen(0, '127.0.0.1', () => {
+      require('node:fs').writeFileSync('grandchild.json', JSON.stringify({ port: server.address().port }));
+    });
+  `;
+  const source = `
+    require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' });
+    console.log(JSON.stringify({ parent: process.pid }));
+    setInterval(() => {}, 1000);
+  `;
+  const killGraceMs = 300;
+  const started = performance.now();
+  const code = await runStep('early-close', ['-e', source], {}, { ...fixture.options, killGraceMs });
+  const [local] = await fixture.logs('early-close');
+  const { parent } = JSON.parse(local.trim());
+  t.after(() => {
+    try { process.kill(-parent, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  });
+  assert.equal(code, 1);
+  assert.ok(performance.now() - started >= 1500 + killGraceMs, 'returned before group escalation');
+  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'TIMEOUT']);
+  assert.throws(() => process.kill(parent, 0), { code: 'ESRCH' });
+  const { port } = JSON.parse(await readFile(path.join(fixture.directory, 'grandchild.json'), 'utf8'));
+  const deadline = Date.now() + 3000;
+  while (true) {
+    const closed = await new Promise((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1');
+      socket.once('connect', () => { socket.destroy(); resolve(false); });
+      socket.once('error', (error) => {
+        if (error.code === 'ECONNREFUSED') resolve(true);
+        else reject(error);
+      });
+    });
+    if (closed) break;
+    assert.ok(Date.now() < deadline, 'grandchild survived after the direct child closed');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+});
+
 test('nonzero step remains FAIL and retains its output in the upload directory', async (t) => {
   const fixture = await setup(t, 5000);
   assert.equal(await runStep('fail', ['-e', 'console.log("before failure"); process.exitCode = 7;'], {}, fixture.options), 7);
