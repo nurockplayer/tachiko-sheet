@@ -209,8 +209,8 @@ try {
   await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
   await page.mouse.down(); await page.mouse.move(secondBox.x + secondBox.width / 2 + 40, secondBox.y + secondBox.height / 2); await page.mouse.up(); await ready();
   const widthsAfterSecond = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().width));
-  assert.ok(widthsAfterSecond.every((width, i) => i === 0 || i === 1 || Math.abs(width - widthsAfterFirst[i]) <= 1), `widths after second resize: ${widthsAfterFirst} → ${widthsAfterSecond}`);
-  assert.ok(Math.abs(widthsAfterSecond[1] - widthsAfterFirst[1] - 40) <= 1, `second width: ${widthsAfterFirst[1]} → ${widthsAfterSecond[1]}`);
+  assert.ok(widthsAfterSecond.every((width, i) => i === 0 || i === 1 || Math.abs(width - widthsAfterReopen[i]) <= 1), `widths after second resize: ${widthsAfterReopen} → ${widthsAfterSecond}`);
+  assert.ok(Math.abs(widthsAfterSecond[1] - widthsAfterReopen[1] - 40) <= 1, `second width: ${widthsAfterReopen[1]} → ${widthsAfterSecond[1]}`);
   const otherWidthsAfter = widthsAfterSecond.slice(1);
   const widthBeforeExport = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click(); await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
