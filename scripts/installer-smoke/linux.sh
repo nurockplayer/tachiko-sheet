@@ -3,8 +3,10 @@ set -euo pipefail
 fail() { echo "installer-smoke linux: $*" >&2; exit 1; }
 deb=$(realpath "$1")
 appimage=$(realpath "$2")
-sudo apt-get install -y xdotool xvfb libfuse2t64 desktop-file-utils xdg-utils libglib2.0-bin dbus-x11
+sudo apt-get install -y xdotool xvfb libfuse2t64 desktop-file-utils xdg-utils libglib2.0-bin dbus-x11 shared-mime-info
 sudo apt-get install -y "$deb"
+[[ -f /usr/share/mime/packages/tachiko-sheet.xml ]] || fail 'installed MIME declaration not found'
+sudo update-mime-database /usr/share/mime
 package=$(dpkg-deb -f "$deb" Package)
 binary=$(dpkg -L "$package" | awk '/^\/usr\/bin\/[^/]+$/ {print; exit}')
 [[ -n "$binary" && -x "$binary" ]] || fail 'installed executable not found in deb'
@@ -28,10 +30,11 @@ smoke() {
     export HOME="$home"
     if [[ "$2" == shell ]]; then
       cp "$3" "$home/installer-smoke.ro"
-      filetype=$(xdg-mime query filetype "$home/installer-smoke.ro")
+      gio info -a standard::content-type "$home/installer-smoke.ro"
+      filetype=$(XDG_CURRENT_DESKTOP=GNOME xdg-mime query filetype "$home/installer-smoke.ro")
       echo "xdg-mime query filetype: $filetype"
       [[ "$filetype" == application/x-tachiko-work ]] || { echo "wrong .ro MIME type" >&2; exit 1; }
-      handler=$(xdg-mime query default "$filetype")
+      handler=$(XDG_CURRENT_DESKTOP=GNOME xdg-mime query default "$filetype")
       echo "xdg-mime query default: $handler"
       [[ "$handler" == "$4" ]] || { echo "wrong .ro desktop handler" >&2; exit 1; }
       echo "gio open: $home/installer-smoke.ro"
