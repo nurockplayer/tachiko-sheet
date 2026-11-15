@@ -209,13 +209,14 @@ guardedTest('hung command deadline returns BLOCKED evidence, bounded output, and
   const pidFile = path.join(tempRoot, 'command-timeout-pids.json');
   const sentinel = launchSentinel();
   const result = await captureRunnerCommand(process.execPath, ['--input-type=module', '-e', treeSource(pidFile)], {
-    cwd: tempRoot, timeoutMs: 300, stopGraceMs: 100, maxOutputBytes: 2048, signal,
+    // The deadline includes Node startup and fixture setup on a shared single CPU.
+    cwd: tempRoot, timeoutMs: 3000, stopGraceMs: 100, maxOutputBytes: 2048, signal,
   });
   const pids = await waitForFile(pidFile);
   registerOwned(pids);
   assert.equal(result.outcome, 'TIMEOUT');
-  assert.notEqual(result.code, 0);
-  assert.match(result.error, /deadline/);
+  assert.equal(result.code, 124);
+  assert.equal(result.error, 'command exceeded 3000ms deadline');
   assert.ok(Buffer.byteLength(result.output) <= 2048);
   assert.ok(result.output.includes('TAIL-MARKER'));
   await waitForGone(pids.parent);
