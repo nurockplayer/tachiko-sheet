@@ -1583,6 +1583,8 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
   background: var(--ts-accent);
 }
 
+.ts-frozen-first-column { background: var(--ts-surface); }
+
 .ts-row--selected td {
   background: var(--ts-selected-row);
 }
@@ -3417,3 +3419,16 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
   box-shadow: var(--ts-shadow);
   font-size: 0.8rem;
 }
+
+/* Frozen data column sits beside the measured row-number gutter. */
+.ts-grid .ts-frozen-first-column {
+  position: sticky;
+  left: var(--ts-frozen-gutter-width);
+  z-index: 2;
+  border-right-color: var(--ts-ink-soft);
+}
+.ts-grid td.ts-frozen-first-column.ts-cell--editing { z-index: 3; }
+.ts-grid:has(.ts-frozen-first-column) .ts-row-head { z-index: 3; }
+.ts-grid:has(.ts-frozen-first-column) .ts-column-header { z-index: 4; }
+.ts-grid .ts-column-header.ts-frozen-first-column { z-index: 5; }
+.ts-grid:has(.ts-frozen-first-column) .ts-gutter-head { z-index: 6; }

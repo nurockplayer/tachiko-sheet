@@ -21,6 +21,8 @@ export interface RowViewSettings {
   kept?: ReadonlySet<string>;
   /** Column id → CSS px. A view width, never part of the work file. */
   widths?: Readonly<Record<string, number>>;
+  /** Session-only per collection; never sent to Work or stored in .ro/XLSX. */
+  freezeFirstColumn?: boolean;
 }
 
 /** The narrowest and widest a column may be dragged, in CSS px. */

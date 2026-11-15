@@ -13,6 +13,7 @@ import {
   cellEditorFormulaSource,
   formulaOptionsUi,
   formulaOptionIndex,
+  scrollCellIntoGridNearest,
   focusRevealNextScrollTop,
   focusRevealScrollDelta,
   focusRevealStillCurrent,
@@ -1493,5 +1494,54 @@ describe("formula completion boundaries", () => {
     expect(cellEditorFormulaSource({ entity: "row", kind: "number", value: "=SU" })).toBe("SU");
     expect(cellEditorFormulaSource({ entity: "row", kind: "text", value: "=SU" })).toBeNull();
     expect(cellEditorFormulaSource({ entity: DRAFT_ROW, kind: "number", value: "=SU" })).toBeNull();
+  });
+});
+
+
+describe("session-only frozen first column", () => {
+  it.each([false, true])("renders frozen cells only on wide screens (phone=%s)", async phone => {
+    const { useState } = await vi.importActual<typeof import("react")>("react");
+    vi.stubGlobal("window", { matchMedia: (query: string) => ({ matches: phone && query.includes("max-width") }) });
+    vi.mocked(React.useState).mockImplementation(((initial: unknown) => useState(
+      initial && typeof initial === "object" && "byCollection" in initial
+        ? { occurrence: "occ-1", byCollection: { release_items: { freezeFirstColumn: true } } }
+        : initial,
+    )) as typeof React.useState);
+    try {
+      const view = makeView();
+      view.table.native_table_profile = true;
+      const markup = render({ view, onInsertRow: async () => ({ kind: "confirmed" }) });
+      expect(markup.includes("ts-frozen-first-column")).toBe(!phone);
+      if (!phone) {
+        expect(markup).toContain('aria-label="Freeze first column" data-column-action="Freeze first column" aria-pressed="true"');
+        expect(markup.match(/ts-frozen-first-column/g)).toHaveLength(4); // header, two rows, entry
+      }
+    } finally {
+      vi.mocked(React.useState).mockImplementation(useState);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("starts unfrozen and offers exactly one toggle", () => {
+    const markup = render({ view: makeView() });
+    expect(markup).not.toContain("ts-frozen-first-column");
+    expect(markup.match(/aria-label="Freeze first column"/g)).toHaveLength(1);
+    expect(markup).toContain('aria-pressed="false"');
+  });
+
+  it("reveals a target behind the frozen strip", () => {
+    let scrollLeft = 200;
+    const scrollport = {
+      getBoundingClientRect: () => ({ left: 0, right: 600, top: 0, bottom: 400 }),
+      querySelector: () => ({ getBoundingClientRect: () => ({ right: 208, width: 48 }) }),
+      get scrollLeft() { return scrollLeft; },
+      set scrollLeft(value) { scrollLeft = value; },
+    };
+    const cell = {
+      classList: { contains: () => false },
+      getBoundingClientRect: () => ({ left: 300 - scrollLeft, right: 400 - scrollLeft, top: 50, bottom: 82 }),
+    };
+    expect(scrollCellIntoGridNearest(cell as unknown as HTMLElement, scrollport as unknown as HTMLElement)).toBe(true);
+    expect(scrollLeft).toBe(92);
   });
 });
