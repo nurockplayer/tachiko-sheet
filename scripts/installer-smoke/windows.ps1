@@ -113,7 +113,11 @@ foreach ($case in @('A', 'B')) {
     for ($i = 0; -not $dispatched -and $i -le 30; $i++) {
       if ($i -gt 0) { Start-Sleep -Seconds 1 }
       $dispatched = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exePath)) -ErrorAction SilentlyContinue | Where-Object {
-        try { $_.Id -notin $existingIds -and [String]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) } catch { $false }
+        try {
+          $id = $_.Id
+          $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction Stop).CommandLine
+          $id -notin $existingIds -and [String]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) -and $commandLine -and $commandLine.IndexOf($fixture, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        } catch { $false }
       } | Select-Object -First 1
     }
     if (-not $dispatched) {
@@ -125,7 +129,9 @@ foreach ($case in @('A', 'B')) {
       }
       $processes = @(Get-Process -Name '*tachiko*' -ErrorAction SilentlyContinue | ForEach-Object {
         $processPath = try { $_.Path } catch { "unavailable: $_" }
-        "Id=$($_.Id) Path=$processPath"
+        $id = $_.Id
+        $processCommandLine = try { (Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction Stop).CommandLine } catch { "unavailable: $_" }
+        "Id=$id Path=$processPath CommandLine=$processCommandLine"
       }) -join '; '
       throw ".ro shell dispatch did not start the installed executable; opened null=$($null -eq $opened), Id=$openedId, Path=$openedPath, HasExited=$openedExited; tachiko processes: $processes"
     }
