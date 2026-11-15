@@ -68,6 +68,8 @@ try {
   const firstCell = rowAt(page, 0).locator("td").first();
   const commandCount = () => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
   const toggleFreeze = async () => {
+    await scroller.evaluate(node => { node.scrollLeft = 0; });
+    await headers.first().hover();
     await page.getByRole("button", { name: "Column actions for name", exact: true }).click();
     await page.getByRole("button", { name: "Freeze first column", exact: true }).click();
   };
