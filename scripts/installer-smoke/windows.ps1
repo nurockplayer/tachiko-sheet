@@ -39,31 +39,41 @@ function CheckWindow($process) {
 $classes = 'Registry::HKEY_CLASSES_ROOT'
 $userClasses = 'Registry::HKEY_CURRENT_USER\Software\Classes'
 $fileExts = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts'
-$machineClasses = 'Registry::HKEY_LOCAL_MACHINE\Software\Classes'
-# Both cases are controlled, disposable CI-user baselines. HKCR merges HKCU
-# and HKLM, so clear both default values instead of inheriting runner state.
+$original = @{}
+$fakeIds = @{}
+foreach ($extension in @('.xlsx', '.csv')) {
+  if (Test-Path -LiteralPath "$fileExts\$extension\UserChoice") {
+    throw "$extension has an Explorer UserChoice; run this smoke with a clean test user"
+  }
+  $key = Get-Item -LiteralPath "$userClasses\$extension" -ErrorAction SilentlyContinue
+  $hasDefault = $null -ne $key -and $key.GetValueNames() -contains ''
+  $original[$extension] = @{
+    KeyExisted = $null -ne $key
+    HasDefault = $hasDefault
+    Value = if ($hasDefault) { $key.GetValue('', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } else { $null }
+    Kind = if ($hasDefault) { $key.GetValueKind('') } else { $null }
+  }
+  if ($key) { $key.Close() }
+  $fakeIds[$extension] = "InstallerSmoke$([guid]::NewGuid().ToString('N'))$extension"
+}
+try {
 foreach ($case in @('A', 'B')) {
   Write-Host "Case $case association baseline (A: no default; B: fake existing default)"
   $before = @{}
   $userKeyBefore = @{}
   foreach ($extension in @('.xlsx', '.csv')) {
-    $choice = "$fileExts\$extension\UserChoice"
-    if (Test-Path -LiteralPath $choice) { Remove-Item -LiteralPath $choice -Recurse -Force }
-    foreach ($root in @($userClasses, $machineClasses)) {
-      $key = Get-Item -LiteralPath "$root\$extension" -ErrorAction SilentlyContinue
-      if ($key) { $key.DeleteValue('', $false); $key.Close() }
-    }
-    $fake = "InstallerSmokeExisting$extension"
+    $fake = $fakeIds[$extension]
+    New-Item -Path "$userClasses\$extension" -Force | Out-Null
+    # An empty per-user default masks a machine default without changing it.
+    Set-Item -LiteralPath "$userClasses\$extension" -Value ''
     if ($case -eq 'B') {
       New-Item -Path "$userClasses\$fake\shell\open\command" -Force | Out-Null
       Set-Item -LiteralPath "$userClasses\$fake\shell\open\command" -Value '"C:\Windows\System32\notepad.exe" "%1"'
-      New-Item -Path "$userClasses\$extension" -Force | Out-Null
       Set-Item -LiteralPath "$userClasses\$extension" -Value $fake
     }
     $before[$extension] = DefaultValue "$classes\$extension"
     if ($case -eq 'A' -and $before[$extension]) { throw "$extension case A default is not empty" }
     if ($case -eq 'B' -and $before[$extension] -cne $fake) { throw "$extension case B default is not $fake" }
-    if (Test-Path -LiteralPath $choice) { throw "$extension UserChoice was not cleared" }
     Write-Host "Case $case $extension before install default: $($before[$extension])"
     $userKeyBefore[$extension] = Test-Path -LiteralPath "$userClasses\$extension"
   }
@@ -131,11 +141,31 @@ foreach ($case in @('A', 'B')) {
   }
   if (Test-Path -LiteralPath "$classes\$progId") { throw ".ro ProgID $progId remains after uninstall" }
   Write-Host "Case $case install, visible window, shell open, association preservation and uninstall: PASS"
-  if ($case -eq 'B') {
-    foreach ($extension in @('.xlsx', '.csv')) {
-      (Get-Item -LiteralPath "$userClasses\$extension").DeleteValue('', $false)
-      Remove-Item -LiteralPath "$userClasses\InstallerSmokeExisting$extension" -Recurse
+}
+} finally {
+  foreach ($extension in @('.xlsx', '.csv')) {
+    $key = Get-Item -LiteralPath "$userClasses\$extension" -ErrorAction SilentlyContinue
+    if ($key) {
+      if ($original[$extension].HasDefault) {
+        $key.SetValue('', $original[$extension].Value, $original[$extension].Kind)
+      } else {
+        $key.DeleteValue('', $false)
+      }
+      $empty = $key.GetValueNames().Count -eq 0 -and $key.GetSubKeyNames().Count -eq 0
+      $key.Close()
+      if (-not $original[$extension].KeyExisted -and $empty) {
+        Remove-Item -LiteralPath "$userClasses\$extension"
+      }
+    } elseif ($original[$extension].KeyExisted) {
+      New-Item -Path "$userClasses\$extension" -Force | Out-Null
+      if ($original[$extension].HasDefault) {
+        $key = Get-Item -LiteralPath "$userClasses\$extension"
+        $key.SetValue('', $original[$extension].Value, $original[$extension].Kind)
+        $key.Close()
+      }
     }
+    $fakePath = "$userClasses\$($fakeIds[$extension])"
+    if (Test-Path -LiteralPath $fakePath) { Remove-Item -LiteralPath $fakePath -Recurse -Force }
   }
 }
 Write-Host 'installer-smoke windows: PASS'
