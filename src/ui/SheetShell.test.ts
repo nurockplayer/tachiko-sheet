@@ -1522,6 +1522,25 @@ describe("session-only frozen first column", () => {
     }
   });
 
+  it.each([249.9, 250, 250.1])("suspends freeze only above half the scrollport (A=%s)", async columnWidth => {
+    const { useState } = await vi.importActual<typeof import("react")>("react");
+    vi.mocked(React.useState).mockImplementation(((initial: unknown) => useState(
+      initial && typeof initial === "object" && "byCollection" in initial
+        ? { occurrence: "occ-1", byCollection: { release_items: { freezeFirstColumn: true } } }
+        : initial && typeof initial === "object" && "gutterWidth" in initial
+          ? { gutterWidth: 50, columnWidth, scrollportWidth: 600 }
+          : initial,
+    )) as typeof React.useState);
+    try {
+      const markup = render({ view: makeView() });
+      expect(markup.includes("ts-frozen-first-column")).toBe(columnWidth <= 250);
+      expect(markup.includes("Column A is too wide to freeze in this window.")).toBe(columnWidth > 250);
+      expect(markup).toContain('aria-label="Freeze first column" data-column-action="Freeze first column" aria-pressed="true"');
+    } finally {
+      vi.mocked(React.useState).mockImplementation(useState);
+    }
+  });
+
   it("starts unfrozen and offers exactly one toggle", () => {
     const markup = render({ view: makeView() });
     expect(markup).not.toContain("ts-frozen-first-column");
