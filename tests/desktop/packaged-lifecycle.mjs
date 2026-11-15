@@ -56,8 +56,11 @@ const expectedMixed = JSON.parse(await readFile(path.join(mixedFixtures, "expect
 const timings = {};
 const timed = async (label, action) => {
   const started = performance.now();
+  console.log(`START: ${label}`);
   const result = await action();
-  (timings[label] ??= []).push(Math.round(performance.now() - started));
+  const elapsed = Math.round(performance.now() - started);
+  (timings[label] ??= []).push(elapsed);
+  console.log(`PASS: ${label} (${elapsed}ms)`);
   return result;
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -981,7 +984,7 @@ let pid;
 let directResult;
 let lifecycleError;
 try {
-  await namedTableJourney();
+  await timed("named-table journey", namedTableJourney);
   pid = await timed("launch", launch);
   await coldHome();
   await formulaPersistence({
@@ -993,7 +996,7 @@ try {
     },
     quit: async () => { await quit(pid); pid = undefined; },
   });
-  if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
+  if (process.env.DESKTOP_JOURNEYS !== "capacity") await timed("sales journey", salesJourney);
   const cases = process.env.DESKTOP_JOURNEYS === "sales" ? [] : [
     ...formats.map(format => ({ format, rows: 8406, cols: 3, mixed: false })),
     ...[[320, 2], [1000, 16]].flatMap(([rows, cols]) => formats.map(format => ({ format, rows, cols, mixed: true }))),
@@ -1004,6 +1007,7 @@ try {
     oracle = mixed ? mixedOracle : path.join(root, "acceptance/capacity-8406/oracle.py");
     EDITS = mixed ? [[ROWS >> 1, 1, "424242"]] : [[0, 0, '000-edited-雪,"first"'], [ROWS >> 1, 1, "https://example.invalid/edited-middle?x=0007"], [ROWS - 1, 2, "0001700008405999"]];
     const name = mixed ? `mixed-${ROWS}x${COLS}-${format}` : `capacity-8406-${format}`;
+    console.log(`START: ${name}`);
     pid = await timed("launch", launch);
     const home = await coldHome();
     assert.equal(home.protocol, "tauri:", "the packaged frontend is served by the app");
@@ -1076,6 +1080,7 @@ try {
     await quit(pid, { via: format === "xlsx" ? "terminate" : "quit" });
     pid = undefined;
     results.push({ name, format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
+    console.log(`PASS: ${name}`);
   }
   pid = await timed("launch", () => launch(5000));
   await coldHome();
@@ -1099,6 +1104,7 @@ try {
   console.log(JSON.stringify(directResult, null, 2));
 } catch (error) {
   lifecycleError = error;
+  console.error(`FAIL: desktop lifecycle: ${error.stack ?? error}`);
   throw error;
 } finally {
   const cleanupErrors = [];

@@ -149,6 +149,8 @@ export async function runLifecycle(directory = path.join(evidenceRoot, 'e2e'), c
   try {
     execution = await capture('caffeinate', ['-dimu', process.execPath, 'tests/desktop/packaged-lifecycle.mjs', path.join(bundleRoot, 'macos/Tachiko Sheet E2E.app')], {
       cwd: root, timeoutMs: 45 * 60 * 1000, maxOutputBytes: OUTPUT_LIMIT, signal: cancellation.signal,
+      // Keep the live diagnostic trail even if the CI job cancels before capture returns.
+      onOutput: chunk => process.stdout.write(chunk),
       env: { DESKTOP_DIRECT_RESULT: path.join(directory, 'direct-result.json'), DESKTOP_KEEP_LOG: path.join(directory, 'host.log') },
     });
   } catch (error) {
@@ -169,7 +171,6 @@ export async function runLifecycle(directory = path.join(evidenceRoot, 'e2e'), c
   const { bytes: _bytes, output: _output, ...processOutcome } = execution;
   const result = { schema: 'sheet-desktop-lifecycle-v1', status: lifecycleVerdict(execution, direct), process: processOutcome, directResultStatus: direct?.status ?? 'MISSING', appCleanup: direct?.cleanup ?? { status: 'UNKNOWN' } };
   await writeJson(path.join(directory, 'lifecycle.json'), result);
-  console.log(execution.output ?? '');
   console.log(JSON.stringify(result));
   return result;
 }
