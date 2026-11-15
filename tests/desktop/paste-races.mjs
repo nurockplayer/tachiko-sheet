@@ -13,7 +13,7 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
     catch (error) { console.error(`FAIL: ${process.platform} ${name}: ${error.stack}`); failures.push(error); }
   };
   const fixture = path.join(await mkdtemp(path.join(work, "paste-fixture-")), "capacity");
-  execFileSync(process.platform === "win32" ? "python" : "python3", ["-I",
+  execFileSync(process.platform === "win32" ? "python" : "python3", ["-I", "-X", "utf8",
     fileURLToPath(new URL("../../acceptance/capacity-8406/oracle.py", import.meta.url)), "generate", fixture], { stdio: "inherit" });
   const bytes = (await readFile(path.join(fixture, "source-8406.csv"))).toString("base64");
   await evaluate(`
@@ -104,7 +104,7 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
 
   await check("slow paste retains its starting target when the active cell moves", async () => {
     const before = await snapshot();
-    await evaluate(`${page}
+    const evidence = await evaluate(`${page}
       await show(10); click(cell(10));
       window.__g6ClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
@@ -121,10 +121,17 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
       if (window.__g6ReadDone) throw new Error("clipboard resolved before active-cell move");
       await waitFor(() => window.__g6ReadDone, "delayed clipboard resolved");
       await waitFor(() => current() && (cell(10)?.textContent === "slow-paste" || document.body.innerText.includes("selection changed while reading")), "paste result or refusal");
-      return true;
+      return {
+        readStarted: window.__g6ReadStarted, readDone: window.__g6ReadDone,
+        refusal: document.body.innerText.includes("The table or selection changed while reading the clipboard. Nothing was pasted."),
+        startingTarget: cell(10)?.dataset.testid, startingText: cell(10)?.textContent,
+        movedTarget: cell(11)?.dataset.testid, movedText: cell(11)?.textContent,
+      };
     `);
     try {
       const after = await snapshot();
+      console.log("Slow paste native evidence: " + JSON.stringify({ ...evidence,
+        allCellsUnchanged: JSON.stringify(after) === JSON.stringify(before) }));
       before[10][1][0].text = "slow-paste";
       assert.deepEqual(after, before, "only the target selected when the clipboard read started changes");
     } finally {

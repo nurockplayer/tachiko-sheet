@@ -386,15 +386,25 @@ const rowCount = () => evaluate(`
 const cellText = (row, column) => evaluate(`await reveal(${row}); return cellAt(${row}, ${column}).textContent;`);
 
 async function edit(row, column, value) {
-  await evaluate(`
+  const formula = await evaluate(`
     await reveal(${row});
-    dblclick(cellAt(${row}, ${column}));
-    const input = await waitFor(() => textbox("Edit cell"), "cell editor");
+    const cell = await waitFor(() => {
+      const cell = cellAt(${row}, ${column});
+      return current() && cell?.getAttribute("data-work-currentness") === "current" && cell;
+    }, "published cell for edit");
+    // Formula-backed cells are read-only in the grid, including numeric
+    // constants restored from a work file. Plain inputs keep the cell editor.
+    const formula = cell.getAttribute("aria-readonly") === "true";
+    if (formula) click(cell); else dblclick(cell);
+    const input = await waitFor(() => {
+      const input = formula ? document.querySelector('[data-testid="formula-bar-input"]') : textbox("Edit cell");
+      return input && !input.disabled && !input.readOnly && input;
+    }, formula ? "editable formula bar" : "cell editor");
     fill(input, ${JSON.stringify(value)});
-    return true;
+    return formula;
   `);
   await timed("edit", () => evaluate(`
-    press(textbox("Edit cell"), "Enter");
+    press(${formula ? "document.querySelector('[data-testid=\"formula-bar-input\"]')" : 'textbox("Edit cell")'}, "Enter");
     await waitFor(() => !textbox("Edit cell") && current() && cellAt(${row}, ${column})?.textContent === ${JSON.stringify(value)}, "published edit");
     return true;
   `));
