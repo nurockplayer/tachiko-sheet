@@ -201,6 +201,43 @@ try {
   assert.equal(imported.rows.length, UNIQUE + DUPLICATES);
   assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
+  // Filtering across the windowing threshold remounts the table in both directions.
+  await resizeColumn("name", 0, 400 - (await headers.first().boundingBox()).width);
+  await toggleFreeze();
+  await headers.first().hover();
+  await page.getByRole("button", { name: "Column actions for name", exact: true }).click();
+  await page.getByRole("button", { name: "Filter…", exact: true }).click();
+  await page.getByRole("textbox", { name: "Filter name", exact: true }).fill("item-02");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.locator(".ts-grid-extent").waitFor({ state: "detached" });
+  assert.equal(await grid(page).locator("tbody tr.ts-row").count(), 20);
+  const checkRemountedFreeze = async () => {
+    await page.setViewportSize({ width: 800, height: 720 });
+    await page.waitForFunction(() => !document.querySelector(".ts-frozen-first-column"));
+    await headers.first().hover();
+    await page.getByRole("button", { name: "Column actions for name", exact: true }).click();
+    assert.equal(await page.getByRole("button", { name: "Freeze first column", exact: true }).getAttribute("aria-pressed"), "true");
+    await page.getByText("Column A is too wide to freeze in this window.", { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1100, height: 720 });
+    await page.waitForFunction(() => Boolean(document.querySelector(".ts-frozen-first-column")));
+    assert.equal(await page.getByText("Column A is too wide to freeze in this window.", { exact: true }).count(), 0);
+    await scroller.evaluate(node => { node.scrollLeft = 100; });
+    assert.ok(await scroller.evaluate(node => node.scrollLeft > 0), "alignment is checked while horizontally scrolled");
+    const gutter = await grid(page).locator(".ts-gutter-head").boundingBox();
+    for (const cell of [headers.first(), firstCell]) {
+      assert.ok(Math.abs((await cell.boundingBox()).x - gutter.x - gutter.width) <= 1, "frozen A aligns with the gutter after a remount and resize");
+    }
+    await scroller.evaluate(node => { node.scrollLeft = 0; });
+  };
+  await checkRemountedFreeze();
+  await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+  await page.locator(".ts-grid-extent").waitFor();
+  assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES);
+  await checkRemountedFreeze();
+  await toggleFreeze();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   // Selecting a whole column must not reveal the far end of the range.
   for (const row of [0, 150]) {
     await scrollTo(page, row);
@@ -278,7 +315,7 @@ try {
   assert.equal(await rowAt(page, UNIQUE + DUPLICATES - 1).locator("td").first().textContent(), `item-${String(DUPLICATES - 1).padStart(3, "0")}`);
   assert.deepEqual(pageErrors, [], "no render errors");
   await context.close();
-  console.log(JSON.stringify({ case: "grid window: frozen A, keyboard reveal, width saves, phone, draft scroll, density, hidden-table undo, bottom rows", status: "PASS" }));
+  console.log(JSON.stringify({ case: "grid window: frozen A, filter remount geometry, keyboard reveal, width saves, phone, draft scroll, density, hidden-table undo, bottom rows", status: "PASS" }));
 } finally {
   await browser.close();
   await rm(work, { recursive: true, force: true });
