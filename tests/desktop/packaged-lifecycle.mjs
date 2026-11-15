@@ -913,9 +913,8 @@ async function namedTableJourney() {
 // file through a test-only command in order to call it delivered.
 async function fileDuringUnsavedQuestion() {
   await edit(0, 0, "unsaved-arrival-edit");
-  const before = await evaluate(`
-    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(cell => [cell.dataset.testid, cell.textContent]));
-  `);
+  const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
+  const before = await snapshot();
   await evaluate(`
     window.__g6Arrival = null;
     window.__g6ArrivalListener = event => {
@@ -948,9 +947,7 @@ async function fileDuringUnsavedQuestion() {
     `);
   }
   await evaluate(`await waitFor(() => document.body.innerText.includes('Close this work, then open “open-me.csv” again.'), "arriving file retained and named"); return true;`);
-  const after = await evaluate(`
-    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(cell => [cell.dataset.testid, cell.textContent]));
-  `);
+  const after = await snapshot();
   assert.deepEqual(after, before, "Cancel retains unsaved cells and identities");
   console.log(`File arrival disposition: ${shown ? "shown after Cancel" : "pending after Cancel; named refusal shown after help interaction"}; edits retained; original fixture retained=${existsSync(openFixture)}`);
 }

@@ -101,8 +101,21 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
       await sleep(100);
       if (inView(8000)) throw new Error("target scrolled back before paste");
       const data = new DataTransfer(); data.setData("text/plain", "off-screen-paste");
-      window.__g6PasteTarget.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-      await waitFor(() => current() && cell(8000)?.textContent === "off-screen-paste" && inView(8000), "pasted target revealed");
+      const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+      window.__g6PasteTarget.dispatchEvent(event);
+      try {
+        await waitFor(() => current() && cell(8000)?.textContent === "off-screen-paste" && inView(8000), "pasted target revealed");
+      } catch (error) {
+        throw new Error(String(error) + "; off-screen evidence: " + JSON.stringify({
+          sentTarget: window.__g6PasteTarget.dataset.testid,
+          sentConnected: window.__g6PasteTarget.isConnected,
+          sameLiveNode: window.__g6PasteTarget === cell(8000),
+          liveTarget: cell(8000)?.dataset.testid, liveText: cell(8000)?.textContent,
+          defaultPrevented: event.defaultPrevented, clipboardTypes: Array.from(event.clipboardData?.types ?? []),
+          current: current(), inView: Boolean(inView(8000)), scrollTop: scroller().scrollTop,
+          feedback: [...document.querySelectorAll(".ts-clipboard-status")].map(el => el.innerText),
+        }));
+      }
       return true;
     `);
     expected[8000][1][0].text = "off-screen-paste";
