@@ -5761,6 +5761,7 @@ export function SheetShell(props: SheetShellProps) {
     const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
     const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
+    if (display.calculationFailed) classes.push("ts-cell--calc-failed");
     if (formulaCell) classes.push("ts-cell--formula");
     const coordinate = address({ entity, field: column.id });
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;

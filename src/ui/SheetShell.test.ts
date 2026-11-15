@@ -269,12 +269,14 @@ describe("fieldDisplay", () => {
     );
     expect(calculated.text).toBe("10");
     expect(calculated.tone).toBe("computed");
+    expect(calculated).not.toHaveProperty("calculationFailed");
     expect(calculated.title).toBe("Calculated value");
     expect(calculated.title).not.toContain("impact + friction");
     const pending = fieldDisplay(
       projected(entityA, "c-priority", null, { formula: { source: "[playtest_notes.impact] + 1" } }),
     );
     expect(pending.title).toBe("Calculated value without a current result");
+    expect(pending).not.toHaveProperty("calculationFailed");
     expect(pending.title).not.toContain("playtest_notes");
 
     const failure = fieldDisplay(
@@ -285,10 +287,20 @@ describe("fieldDisplay", () => {
     expect(failure.text).toBe("Calculation failed");
     expect(failure.tone).toBe("warning");
     expect(failure.title).toBe("div0: division by zero");
+    expect(failure.calculationFailed).toBe(true);
+
+    const failureWithDiagnostic = fieldDisplay(projected(entityA, "c-priority", null, {
+      calculated: { status: "failure", code: "div0", message: "division by zero" },
+      diagnostics: [{ code: "stale", message: "revision too old", path: "priority" }],
+    }));
+    expect(failureWithDiagnostic).toEqual({
+      ...failure, title: "stale: revision too old",
+    });
 
     const unavailable = fieldDisplay(projected(entityA, "c-priority", null, { calculated: { status: "unavailable" } }));
     expect(unavailable.text).toBe("Unavailable");
     expect(unavailable.tone).toBe("muted");
+    expect(unavailable).not.toHaveProperty("calculationFailed");
   });
 
   it("marks missing projections, empty values and diagnostics explicitly", () => {
@@ -308,6 +320,24 @@ describe("fieldDisplay", () => {
     expect(withDiagnostic.tone).toBe("warning");
     expect(withDiagnostic.title).toBe("stale: revision too old");
     expect(withDiagnostic.text).toBe("5");
+    expect(withDiagnostic).not.toHaveProperty("calculationFailed");
+  });
+
+  it("marks only failed-calculation cells in the grid", () => {
+    const view = makeView({ titleDiagnostic: true });
+    view.table!.rows[0]!.fields = view.table!.rows[0]!.fields.map((field) =>
+      field.target.field === "c-priority"
+        ? { ...field, calculated: { status: "failure", code: "div0", message: "division by zero" } }
+        : field,
+    );
+    const markup = render({ view });
+    const failure = cellMarkup(markup, `cell:${entityA}:c-priority`);
+    expect(failure).toContain("ts-cell--calc-failed");
+    expect(failure).toContain("Calculation failed");
+    expect(failure).toContain('title="div0: division by zero"');
+    expect(cellMarkup(markup, `cell:${entityB}:c-priority`)).not.toContain("ts-cell--calc-failed");
+    expect(cellMarkup(markup, `cell:${entityA}:c-title`)).not.toContain("ts-cell--calc-failed");
+    expect(cellMarkup(markup, `cell:${entityA}:c-impact`)).not.toContain("ts-cell--calc-failed");
   });
 });
 
