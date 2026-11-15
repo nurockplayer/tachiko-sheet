@@ -19,10 +19,13 @@ const UNIQUE = 260;
 const DUPLICATES = 60;
 const work = await mkdtemp(path.join(tmpdir(), "tachiko-grid-window-"));
 const csv = path.join(work, "dupes.csv");
-// A headered Text rectangle exercises the enlarged import profile.
+// Keep the original tall fixture for virtualization and a small wide one for freezing.
+const rows = Array.from({ length: UNIQUE }, (_, index) => `item-${String(index).padStart(3, "0")},note ${index},code-${index}`);
+await writeFile(csv, ["name,note,code", ...rows, ...rows.slice(0, DUPLICATES)].join("\r\n") + "\r\n");
+const wideCsv = path.join(work, "wide.csv");
 const extraColumns = Array.from({ length: 12 }, (_, index) => `extra${index}`);
-const rows = Array.from({ length: UNIQUE }, (_, index) => `item-${String(index).padStart(3, "0")},note ${index},code-${index},${extraColumns.map(name => `${name}-${index}`).join(",")}`);
-await writeFile(csv, [`name,note,code,${extraColumns.join(",")}`, ...rows, ...rows.slice(0, DUPLICATES)].join("\r\n") + "\r\n");
+const wideRows = rows.slice(0, 3).map((row, index) => `${row},${extraColumns.map(name => `${name}-${index}`).join(",")}`);
+await writeFile(wideCsv, [`name,note,code,${extraColumns.join(",")}`, ...wideRows].join("\r\n") + "\r\n");
 
 const grid = (page) => page.getByRole("grid", { name: "Table", exact: true });
 const rowAt = (page, row) => grid(page).locator(`tbody tr[aria-rowindex="${row + 2}"]`);
@@ -51,21 +54,19 @@ try {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(LOCAL_ORIGIN);
   await waitForColdHome(page);
-  await (await homeImportInput(page)).setInputFiles(csv);
+  await (await homeImportInput(page)).setInputFiles(wideCsv);
   const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
   await dialog.or(page.getByRole("alert")).first().waitFor();
   assert.equal(await dialog.count(), 1, `import review opens: ${(await page.getByRole("alert").allTextContents()).join(" ")}`);
   await dialog.getByRole("button", { name: "Import file", exact: true }).click();
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-  const imported = await observedTable(page);
-  assert.equal(imported.native_table_profile, true, "imported all-Text fixture is structurally native");
-  assert.equal(imported.rows.length, UNIQUE + DUPLICATES);
-  assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
+  assert.equal((await observedTable(page)).columns.length, 15);
 
   // #292 item 7a: real wide-table freeze, keyboard reveal and width saves.
   const scroller = page.locator(".ts-grid-scroll");
   const headers = grid(page).locator("thead th.ts-column-header");
-  const firstCell = rowAt(page, 0).locator("td").first();
+  const firstRow = grid(page).locator("tbody tr.ts-row").first();
+  const firstCell = firstRow.locator("td").first();
   const commandCount = () => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
   const toggleFreeze = async () => {
     await scroller.evaluate(node => { node.scrollLeft = 0; });
@@ -112,9 +113,9 @@ try {
   await scroller.screenshot({ path: path.join(out, "frozen-first-column-light.png") });
   await firstCell.focus();
   const assertActiveVisible = async column => {
-    const cell = rowAt(page, 0).locator("td").nth(column);
+    const cell = firstRow.locator("td").nth(column);
     await page.waitForFunction(index => {
-      const row = document.querySelector('tbody tr[aria-rowindex="2"]');
+      const row = document.querySelector("tbody tr.ts-row");
       return row?.querySelectorAll("td")[index] === document.activeElement;
     }, column);
     const active = await cell.boundingBox();
@@ -133,7 +134,7 @@ try {
   }
   // Selection extension reveals its end without moving focus off the anchor.
   for (let column = 1; column < 15; column++) await page.keyboard.press("Shift+ArrowRight");
-  const selectionEnd = await rowAt(page, 0).locator("td").last().boundingBox();
+  const selectionEnd = await firstRow.locator("td").last().boundingBox();
   assert.ok(selectionEnd.x >= (await firstCell.boundingBox()).x + (await firstCell.boundingBox()).width - 1);
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 390, height: 720 });
@@ -144,6 +145,19 @@ try {
   await toggleFreeze();
   assert.equal(await grid(page).locator(".ts-frozen-first-column").count(), 0);
   await scroller.evaluate(node => { node.scrollLeft = 0; });
+
+  // Run the existing windowing cases against their original 320 × 3 fixture.
+  await page.goto(LOCAL_ORIGIN);
+  await waitForColdHome(page);
+  await (await homeImportInput(page)).setInputFiles(csv);
+  await dialog.or(page.getByRole("alert")).first().waitFor();
+  assert.equal(await dialog.count(), 1, "tall import review opens");
+  await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+  await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
+  const imported = await observedTable(page);
+  assert.equal(imported.native_table_profile, true, "imported all-Text fixture is structurally native");
+  assert.equal(imported.rows.length, UNIQUE + DUPLICATES);
+  assert.equal((await geometry(page)).rows, UNIQUE + DUPLICATES, "only stored records count toward window geometry");
 
   // Selecting a whole column must not reveal the far end of the range.
   for (const row of [0, 150]) {
