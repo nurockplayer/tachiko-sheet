@@ -23,16 +23,18 @@ export async function formulaPersistence({ evaluate, downloads, coldOpen, quit }
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
     const cell = await waitFor(() => {
       const cell = cellAt(${row}, ${column});
-      return current() && cell?.getAttribute("aria-readonly") === "false" &&
-        cell?.getAttribute("data-work-currentness") === "current" && cell;
-    }, "published editable cell");
+      return current() && cell?.getAttribute("data-work-currentness") === "current" && cell;
+    }, "published cell for formula-bar selection");
     click(cell);
     return true;
   `);
   const edit = async (column, source, result) => {
     await select(0, column);
     await evaluate(`
-      const input = await waitFor(() => document.querySelector('[data-testid="formula-bar-input"]:not(:disabled)'), "formula bar");
+      const input = await waitFor(() => {
+        const bar = document.querySelector('[data-testid="formula-bar-input"]');
+        return bar && !bar.disabled && !bar.readOnly && bar;
+      }, "editable formula bar");
       fill(input, ${JSON.stringify(source)});
       return true;
     `);
