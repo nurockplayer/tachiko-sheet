@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boundedText } from "../../scripts/desktop-evidence.mjs";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
+import { formulaPersistence } from "./formula-persistence.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const app = path.resolve(process.argv[2] ?? "");
@@ -911,6 +912,17 @@ let directResult;
 let lifecycleError;
 try {
   await namedTableJourney();
+  pid = await timed("launch", launch);
+  await coldHome();
+  await formulaPersistence({
+    evaluate, downloads,
+    coldOpen: async (file) => {
+      pid = await timed("launch", launch);
+      await coldHome();
+      execFileSync("open", ["-a", app, file]);
+    },
+    quit: async () => { await quit(pid); pid = undefined; },
+  });
   if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
   const cases = process.env.DESKTOP_JOURNEYS === "sales" ? [] : [
     ...formats.map(format => ({ format, rows: 8406, cols: 3, mixed: false })),
