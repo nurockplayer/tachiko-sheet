@@ -56,6 +56,7 @@ foreach ($extension in @('.xlsx', '.csv')) {
   if ($key) { $key.Close() }
   $fakeIds[$extension] = "InstallerSmoke$([guid]::NewGuid().ToString('N'))$extension"
 }
+$mainError = $null
 try {
 foreach ($case in @('A', 'B')) {
   Write-Host "Case $case association baseline (A: no default; B: fake existing default)"
@@ -142,30 +143,40 @@ foreach ($case in @('A', 'B')) {
   if (Test-Path -LiteralPath "$classes\$progId") { throw ".ro ProgID $progId remains after uninstall" }
   Write-Host "Case $case install, visible window, shell open, association preservation and uninstall: PASS"
 }
+} catch {
+  $mainError = $_
+  Write-Host "installer-smoke windows: $_"
+  Write-Host $_.ScriptStackTrace
 } finally {
+  try {
   foreach ($extension in @('.xlsx', '.csv')) {
-    $key = Get-Item -LiteralPath "$userClasses\$extension" -ErrorAction SilentlyContinue
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\$extension", $true)
+    if (-not $key -and $original[$extension].KeyExisted) {
+      $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Classes\$extension")
+    }
     if ($key) {
-      if ($original[$extension].HasDefault) {
-        $key.SetValue('', $original[$extension].Value, $original[$extension].Kind)
-      } else {
-        $key.DeleteValue('', $false)
+      try {
+        if ($original[$extension].HasDefault) {
+          $key.SetValue('', $original[$extension].Value, $original[$extension].Kind)
+        } else {
+          $key.DeleteValue('', $false)
+        }
+        $empty = $key.GetValueNames().Count -eq 0 -and $key.GetSubKeyNames().Count -eq 0
+      } finally {
+        $key.Close()
       }
-      $empty = $key.GetValueNames().Count -eq 0 -and $key.GetSubKeyNames().Count -eq 0
-      $key.Close()
       if (-not $original[$extension].KeyExisted -and $empty) {
         Remove-Item -LiteralPath "$userClasses\$extension"
-      }
-    } elseif ($original[$extension].KeyExisted) {
-      New-Item -Path "$userClasses\$extension" -Force | Out-Null
-      if ($original[$extension].HasDefault) {
-        $key = Get-Item -LiteralPath "$userClasses\$extension"
-        $key.SetValue('', $original[$extension].Value, $original[$extension].Kind)
-        $key.Close()
       }
     }
     $fakePath = "$userClasses\$($fakeIds[$extension])"
     if (Test-Path -LiteralPath $fakePath) { Remove-Item -LiteralPath $fakePath -Recurse -Force }
   }
+  } catch {
+    Write-Host "installer-smoke windows restore: $_"
+    Write-Host $_.ScriptStackTrace
+    if (-not $mainError) { throw }
+  }
 }
+if ($mainError) { throw $mainError }
 Write-Host 'installer-smoke windows: PASS'
