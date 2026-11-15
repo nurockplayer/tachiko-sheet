@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
+const STEP_KILL_GRACE_MS = 5000;
+
 export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   const { cwd, evidenceDir, summary } = options;
   const timeoutMs = Number(process.env.PRODUCT_ACCEPTANCE_STEP_TIMEOUT_MS ?? 600_000);
@@ -15,6 +17,8 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   }
   const logs = [];
   let timer;
+  let killTimer;
+  let groupCleanup;
   let timedOut = false;
   let cleanupParentListeners = () => {};
   try {
@@ -29,26 +33,43 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const killGroup = () => {
+    const signalGroup = (signal) => {
       if (!child.pid) return;
       try {
-        process.kill(-child.pid, 'SIGKILL');
+        process.kill(-child.pid, signal);
       } catch (error) {
         if (error.code !== 'ESRCH') throw error;
       }
     };
+    const killGroup = () => {
+      signalGroup('SIGTERM');
+      return new Promise((resolve, reject) => {
+        killTimer = setTimeout(() => {
+          try {
+            signalGroup('SIGKILL');
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        }, options.killGraceMs ?? STEP_KILL_GRACE_MS);
+      });
+    };
+    const killGroupImmediately = () => {
+      signalGroup('SIGTERM');
+      signalGroup('SIGKILL');
+    };
     const signalHandlers = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((signal) => {
       const handler = () => {
-        killGroup();
+        killGroupImmediately();
         process.removeListener(signal, handler);
         process.kill(process.pid, signal);
       };
       process.once(signal, handler);
       return [signal, handler];
     });
-    process.once('exit', killGroup);
+    process.once('exit', killGroupImmediately);
     cleanupParentListeners = () => {
-      process.removeListener('exit', killGroup);
+      process.removeListener('exit', killGroupImmediately);
       for (const [signal, handler] of signalHandlers) process.removeListener(signal, handler);
     };
     const collect = (chunk) => {
@@ -59,16 +80,22 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     child.stderr.on('data', collect);
     const result = await new Promise((resolve, reject) => {
       child.once('error', reject);
-      child.once('close', (code, signal) => resolve({ code, signal }));
+      child.once('close', (code, signal) => {
+        clearTimeout(timer);
+        resolve({ code, signal });
+      });
       timer = setTimeout(() => {
         timedOut = true;
         try {
-          killGroup();
+          groupCleanup = killGroup();
+          groupCleanup.catch(reject);
         } catch (error) {
           reject(error);
         }
       }, timeoutMs);
     });
+    // The direct child can close while descendants in its group are still alive.
+    await groupCleanup;
     const exitCode = timedOut ? 1 : typeof result.code === 'number' ? result.code : 1;
     const entry = {
       step: name,
@@ -82,6 +109,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     return exitCode;
   } finally {
     clearTimeout(timer);
+    clearTimeout(killTimer);
     cleanupParentListeners();
     for (const descriptor of logs) closeSync(descriptor);
   }
