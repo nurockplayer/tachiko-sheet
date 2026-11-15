@@ -10,6 +10,7 @@ import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { runStep as runAcceptanceStep } from './product-acceptance-step.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const vite = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
@@ -26,35 +27,12 @@ await mkdir(evidenceDir, { recursive: true });
 const summary = [];
 
 async function runStep(name, args, extraEnvironment = {}, options = {}) {
-  const output = [];
-  const child = spawn(process.execPath, args, {
+  return runAcceptanceStep(name, args, extraEnvironment, {
     cwd: root,
-    env: { ...process.env, ...extraEnvironment },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    evidenceDir,
+    summary,
+    ...options,
   });
-  const collect = (chunk) => {
-    output.push(chunk);
-    (options.quiet ? process.stderr : process.stdout).write(chunk);
-  };
-  child.stdout.on('data', collect);
-  child.stderr.on('data', collect);
-  const result = await new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => resolve({ code, signal }));
-  });
-  const exitCode = typeof result.code === 'number' ? result.code : 1;
-  const log = path.join(evidenceDir, `${name}.log`);
-  await writeFile(log, Buffer.concat(output));
-  const entry = {
-    step: name,
-    status: exitCode === 0 ? 'PASS' : 'FAIL',
-    exitCode,
-    log,
-    ...(options.details ?? {}),
-  };
-  summary.push(entry);
-  console.log(JSON.stringify(entry));
-  return exitCode;
 }
 
 async function startServer() {
