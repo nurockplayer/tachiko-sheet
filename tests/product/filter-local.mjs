@@ -102,5 +102,43 @@ try {
   assert.equal(await lastItem.getAttribute("aria-label"), "Filter…");
   await lastItem.click();
   await page.getByLabel("Filter Qty", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+
+  // A header menu must choose its own filter column even when no cell can receive focus.
+  await page.setViewportSize({ width: 650, height: 900 });
+  await page.locator(".ts-column-toolbar").waitFor();
+  await page.getByRole("columnheader", { name: "Item", exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Filter…", exact: true }).click();
+  await page.getByLabel("Filter Item", { exact: true }).fill("no matching item");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByText("Showing 0 of 6 rows", { exact: true }).waitFor();
+  await page.getByRole("columnheader", { name: "Region", exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Filter…", exact: true }).click();
+  await page.getByLabel("Filter Region", { exact: true }).fill("North");
+  assert.equal(await page.getByLabel("Filter Item", { exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("button", { name: "Clear 2 filters", exact: true }).waitFor();
+  await page.getByRole("columnheader", { name: "Item", exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Filter…", exact: true }).click();
+  await page.getByRole("button", { name: "Clear this filter", exact: true }).click();
+  await page.getByText("Showing 1 of 6 rows", { exact: true }).waitFor();
+  assert.equal((await page.locator("tbody tr.ts-row td").first().textContent()).trim(), "E", "the Region filter applied while no rows were shown");
+  await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+
+  // With rows present, the compact toolbar still follows cell focus after the draft closes.
+  await page.getByTestId(`cell:${table.rows[0].id}:${table.columns[2].id}`).click();
+  await page.getByRole("button", { name: "Column", exact: true }).click();
+  await page.getByRole("button", { name: "Filter…", exact: true }).click();
+  await page.getByLabel("Filter Qty", { exact: true }).fill("20");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".ts-row-view-filter").count(), 0, "Escape closes the compact filter draft");
+  await page.getByRole("button", { name: "Column", exact: true }).click();
+  await page.getByRole("button", { name: "Filter…", exact: true }).click();
+  assert.equal(await page.getByLabel("Filter Qty", { exact: true }).inputValue(), "", "cancelling drops the draft");
+  await page.getByLabel("Filter Qty", { exact: true }).fill("20");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByText("Showing 1 of 6 rows", { exact: true }).waitFor();
+  assert.equal((await page.locator("tbody tr.ts-row td").first().textContent()).trim(), "B");
+  assert.equal(await publications(), before + 1, "compact filters do not publish");
   console.log("PASS: local multi-column value and condition filters do not publish");
 } finally { await context.close(); await browser.close(); }
