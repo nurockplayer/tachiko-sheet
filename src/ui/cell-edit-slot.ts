@@ -91,7 +91,7 @@ export function completionFor(typed: string, values: string[]): string | null {
     const folded = value.toLowerCase();
     if (seen.has(folded)) continue;
     seen.add(folded);
-    if (!folded.startsWith(prefix)) continue;
+    if (value.slice(0, typed.length).toLowerCase() !== prefix) continue;
     if (match !== null) return null;
     match = value;
   }

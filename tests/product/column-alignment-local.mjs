@@ -109,6 +109,16 @@ try {
   await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2); await page.mouse.up(); await ready();
   const widthsAfterFirst = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().width));
   assert.ok(Math.abs(widthsAfterFirst[1] - widthsBeforeFirst[1]) <= 2, `next width: ${widthsBeforeFirst[1]} → ${widthsAfterFirst[1]}`);
+  // Native Save must retain the dragged width when the copy is reopened from Home.
+  assert.ok(Math.abs(widthsAfterFirst[0] - widthsBeforeFirst[0] - 70) <= 1, `dragged width: ${widthsBeforeFirst[0]} → ${widthsAfterFirst[0]}`);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+  await page.getByRole("button", { name: "Close project", exact: true }).click(); await waitForColdHome(page);
+  await page.getByRole("button", { name: "Open saved Aligned", exact: true }).click(); await ready();
+  const widthsAfterReopen = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().width));
+  assert.ok(Math.abs(widthsAfterReopen[0] - widthsAfterFirst[0]) <= 1, `native reopened resized width: ${widthsAfterFirst[0]} → ${widthsAfterReopen[0]}`);
+  // Untouched columns fall back to the default width after reopen: #402.
+  console.log(`PASS: native save/reopen resized width: ${widthsAfterFirst[0]} → ${widthsAfterReopen[0]}`);
   const beforeCombined = widthsAfterFirst[0];
   const requestsBeforeCombined = await page.evaluate(() => window.alignmentEvidence.widthRequests.length);
   const combinedBox = await resize.boundingBox();
@@ -199,8 +209,8 @@ try {
   await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
   await page.mouse.down(); await page.mouse.move(secondBox.x + secondBox.width / 2 + 40, secondBox.y + secondBox.height / 2); await page.mouse.up(); await ready();
   const widthsAfterSecond = await page.locator("thead th.ts-column-header").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().width));
-  assert.ok(widthsAfterSecond.every((width, i) => i === 0 || i === 1 || Math.abs(width - widthsAfterFirst[i]) <= 1), `widths after second resize: ${widthsAfterFirst} → ${widthsAfterSecond}`);
-  assert.ok(Math.abs(widthsAfterSecond[1] - widthsAfterFirst[1] - 40) <= 1, `second width: ${widthsAfterFirst[1]} → ${widthsAfterSecond[1]}`);
+  assert.ok(widthsAfterSecond.every((width, i) => i === 0 || i === 1 || Math.abs(width - widthsAfterReopen[i]) <= 1), `widths after second resize: ${widthsAfterReopen} → ${widthsAfterSecond}`);
+  assert.ok(Math.abs(widthsAfterSecond[1] - widthsAfterReopen[1] - 40) <= 1, `second width: ${widthsAfterReopen[1]} → ${widthsAfterSecond[1]}`);
   const otherWidthsAfter = widthsAfterSecond.slice(1);
   const widthBeforeExport = await page.getByRole("columnheader", { name: "Text", exact: true }).evaluate(node => node.getBoundingClientRect().width);
   await page.getByRole("tab", { name: "Import & export", exact: true }).click(); await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
