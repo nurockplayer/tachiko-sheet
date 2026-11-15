@@ -53,9 +53,6 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
     }));
   `;
   const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
-  const baseline = await snapshot();
-  const expected = structuredClone(baseline);
-  const patch = (index, value) => { expected[index][1][0].text = value; };
 
   if (windowsPid) await check("AltGr Right-Alt+V does not open Paste Special", async () => {
     await evaluate(`${page}
@@ -86,8 +83,18 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
   for (const [name, run] of extraChecks) await check(name, run);
 
   await check("paste into an off-screen target changes only that cell and reveals it", async () => {
+    // The macOS extra checks deliberately retain an edit. Compare this paste
+    // with the workbook as it stands after those checks.
+    const expected = await snapshot();
     await evaluate(`${page}
       await show(8000); click(cell(8000));
+      await waitFor(() => current() && document.activeElement === cell(8000) &&
+        cell(8000)?.getAttribute("aria-selected") === "true", "off-screen target selection published");
+      return true;
+    `);
+    // Let the selection/focus render finish before scrolling it away; otherwise
+    // the click's pending focus handoff can scroll it back during setup.
+    await evaluate(`${page}
       window.__g6PasteTarget = cell(8000);
       scroller().scrollTop = 0; scroller().dispatchEvent(new Event("scroll"));
       await waitFor(() => !inView(8000), "selected target scrolled out of view");
@@ -98,11 +105,11 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
       await waitFor(() => current() && cell(8000)?.textContent === "off-screen-paste" && inView(8000), "pasted target revealed");
       return true;
     `);
-    patch(8000, "off-screen-paste");
+    expected[8000][1][0].text = "off-screen-paste";
     assert.deepEqual(await snapshot(), expected, "all 25,218 values and stable targets; exactly one cell changed");
   });
 
-  await check("slow paste retains its starting target when the active cell moves", async () => {
+  await check("slow paste is refused with every cell unchanged when the active cell moves", async () => {
     const before = await snapshot();
     const evidence = await evaluate(`${page}
       await show(10); click(cell(10));
@@ -118,12 +125,17 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
       valuesKey(cell(10));
       await waitFor(() => window.__g6ReadStarted, "delayed clipboard read started");
       click(cell(11));
+      await waitFor(() => document.activeElement === cell(11) &&
+        cell(11)?.getAttribute("aria-selected") === "true", "active-cell move published");
       if (window.__g6ReadDone) throw new Error("clipboard resolved before active-cell move");
       await waitFor(() => window.__g6ReadDone, "delayed clipboard resolved");
-      await waitFor(() => current() && (cell(10)?.textContent === "slow-paste" || document.body.innerText.includes("selection changed while reading")), "paste result or refusal");
+      const refusal = () => [...document.querySelectorAll(".ts-clipboard-status")].find(el =>
+        el.innerText.includes("The table or selection changed while reading the clipboard. Nothing was pasted.") &&
+        el.getClientRects().length > 0 && getComputedStyle(el).visibility === "visible");
+      await waitFor(() => current() && refusal(), "visible selection-change paste refusal");
       return {
         readStarted: window.__g6ReadStarted, readDone: window.__g6ReadDone,
-        refusal: document.body.innerText.includes("The table or selection changed while reading the clipboard. Nothing was pasted."),
+        refusal: Boolean(refusal()),
         startingTarget: cell(10)?.dataset.testid, startingText: cell(10)?.textContent,
         movedTarget: cell(11)?.dataset.testid, movedText: cell(11)?.textContent,
       };
@@ -132,8 +144,8 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
       const after = await snapshot();
       console.log("Slow paste native evidence: " + JSON.stringify({ ...evidence,
         allCellsUnchanged: JSON.stringify(after) === JSON.stringify(before) }));
-      before[10][1][0].text = "slow-paste";
-      assert.deepEqual(after, before, "only the target selected when the clipboard read started changes");
+      assert.equal(evidence.refusal, true, "the existing selection-change refusal is visible");
+      assert.deepEqual(after, before, "all 25,218 values and stable targets, including both active cells, remain unchanged");
     } finally {
       await evaluate(`if (window.__g6ClipboardDescriptor) Object.defineProperty(navigator, "clipboard", window.__g6ClipboardDescriptor);
         else delete navigator.clipboard; return true;`);
