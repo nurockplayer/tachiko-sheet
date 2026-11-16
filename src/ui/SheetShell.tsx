@@ -917,6 +917,8 @@ export function SheetShell(props: SheetShellProps) {
 
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
   const historyFocusRequestRef = useRef<HistoryFocusRequest | null>(null);
+  const historyQueueRef = useRef<{ direction: "undo" | "redo"; initiator: HTMLElement | null }[]>([]);
+  const historyQueueIdentityRef = useRef<string | null>(null);
   const historyOperationIdRef = useRef(0);
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -2242,6 +2244,12 @@ export function SheetShell(props: SheetShellProps) {
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
+    if (historyQueueIdentityRef.current !== collectionIdentity || historyInteractionLocked) {
+      historyQueueRef.current = [];
+      historyQueueIdentityRef.current = collectionIdentity;
+    }
+  }, [collectionIdentity, historyInteractionLocked]);
+  useLayoutEffect(() => {
     const request = historyFocusRequest;
     if (!request || historyFocusRequestRef.current !== request) return;
     if ((view && view.occurrence !== request.occurrence) || (!view && currentness !== "unknown")) {
@@ -2282,6 +2290,14 @@ export function SheetShell(props: SheetShellProps) {
     historyFocusRequestRef.current = null;
     setHistoryFocusRequest(null);
   }, [busy, commitPending, currentness, gridOrder, gridWindowed, historyFocusRequest, rowIndexByEntity, view]);
+
+  useEffect(() => {
+    if (controlsLocked || historyInteractionLocked || historyFocusRequestRef.current) return;
+    while (historyQueueRef.current.length > 0 && !historyFocusRequestRef.current) {
+      const next = historyQueueRef.current.shift()!;
+      void requestHistory(next.direction, next.initiator);
+    }
+  });
 
   useLayoutEffect(() => {
     const occurrence = view?.occurrence ?? null;
@@ -2329,7 +2345,7 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     function onHistoryKeyDown(event: KeyboardEvent): void {
       const shell = shellRef.current;
-      if (!shell || !shell.isConnected || !view || currentness !== "current" || event.defaultPrevented) return;
+      if (!shell || !shell.isConnected || !view || event.defaultPrevented) return;
       const ownerDocument = shell.ownerDocument;
       const focusedElement = ownerDocument.activeElement;
       const target = event.target;
@@ -2338,7 +2354,6 @@ export function SheetShell(props: SheetShellProps) {
       const targetInShell = target instanceof Node && shell.contains(target);
       const focusInShell = focusedElement instanceof Node && shell.contains(focusedElement);
       if (!((targetInShell && (focusInShell || neutralFocus)) || (neutralTarget && neutralFocus))) return;
-      if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
       if ((rowDraftActive || formulaDraftActive) && !modalInteractionOpen && historyCommandForKey(event, target, props.appearancePreference.getSnapshot().composing || controlsLocked, focusedElement)) {
         event.preventDefault();
         setLocalError(formulaDraftActive ? "Apply or cancel the formula you are editing before using Undo or Redo." : "Add or discard the new row first.");
@@ -2347,12 +2362,12 @@ export function SheetShell(props: SheetShellProps) {
       const direction = historyCommandForKey(
         event,
         target,
-        historyInteractionLocked || props.appearancePreference.getSnapshot().composing || controlsLocked,
+        historyInteractionLocked || props.appearancePreference.getSnapshot().composing,
         focusedElement,
       );
-      if (!direction || (direction === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1)) return;
+      if (!direction) return;
       event.preventDefault();
-      void requestHistory(direction, focusedElement instanceof HTMLElement ? focusedElement : null);
+      requestKeyboardHistory(direction, focusedElement instanceof HTMLElement ? focusedElement : null);
     }
     window.addEventListener("keydown", onHistoryKeyDown);
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
@@ -3332,6 +3347,8 @@ export function SheetShell(props: SheetShellProps) {
 
   async function requestHistory(direction: "undo" | "redo", initiator: HTMLElement | null): Promise<void> {
     if (historyInteractionLocked || controlsLocked || historyFocusRequestRef.current) return;
+    if (!view || currentness !== "current" || localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision ||
+        (direction === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1)) return;
     const request: HistoryFocusRequest = {
       operationId: ++historyOperationIdRef.current,
       occurrence: view?.occurrence ?? null,
@@ -3354,6 +3371,15 @@ export function SheetShell(props: SheetShellProps) {
     const settledRequest = { ...currentRequest, publicationTarget, settled: true };
     historyFocusRequestRef.current = settledRequest;
     setHistoryFocusRequest(settledRequest);
+  }
+
+  function requestKeyboardHistory(direction: "undo" | "redo", initiator: HTMLElement | null): void {
+    if (historyInteractionLocked || !view) return;
+    if (controlsLocked || historyFocusRequestRef.current || historyQueueRef.current.length > 0) {
+      if (historyQueueRef.current.length < 20) historyQueueRef.current.push({ direction, initiator });
+      return;
+    }
+    void requestHistory(direction, initiator);
   }
 
   function moveFocus(event: ReactKeyboardEvent<HTMLElement>, position: GridPosition, step: number): boolean {
@@ -4300,9 +4326,7 @@ export function SheetShell(props: SheetShellProps) {
           setLocalError(formulaDraftActive ? "Apply or cancel the formula you are editing before using Undo or Redo." : "Add or discard the new row first.");
           return;
         }
-        if (localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision) return;
-        if (command === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1) return;
-        void requestHistory(command, active instanceof HTMLElement ? active : null);
+        requestKeyboardHistory(command, active instanceof HTMLElement ? active : null);
       }
     };
     window.addEventListener("tachiko-menu", menuCommand);
