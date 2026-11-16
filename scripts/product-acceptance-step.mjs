@@ -1,4 +1,5 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
@@ -29,6 +30,8 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       logs.push(openSync(path.join(directory, `${name}.log`), 'w'));
     }
     console.log(JSON.stringify({ step: name, status: 'START', timeoutMs, log }));
+    const owner = randomUUID();
+    const ownership = `TACHIKO_ACCEPTANCE_STEP_OWNER=${owner}`;
     const processTable = () => {
       if (process.platform === 'linux') {
         // Minimal Linux acceptance images need no external ps dependency.
@@ -41,23 +44,32 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
           }
           // comm is parenthesized and can itself contain spaces or parentheses.
           const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/);
-          table.set(Number(pid), { parent: Number(fields[1]), group: Number(fields[2]), started: fields[19] });
+          let marked = false;
+          try {
+            marked = readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').includes(ownership);
+          } catch (error) {
+            if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+          }
+          table.set(Number(pid), { parent: Number(fields[1]), group: Number(fields[2]), started: fields[19], marked });
         }
         return table;
       }
-      const table = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
-        encoding: 'utf8', timeout: 1000, maxBuffer: 8 * 1024 * 1024,
+      const table = spawnSync('ps', ['-wwEaxo', 'pid=,ppid=,pgid=,lstart=,command='], {
+        encoding: 'utf8', timeout: 1000, maxBuffer: 32 * 1024 * 1024,
       });
-      return new Map(table.trim().split('\n').map(line => {
-        const [, pid, parent, group, started] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
-        return [Number(pid), { parent: Number(parent), group: Number(group), started }];
+      // Never attach raw ps output (which contains environments) to an error.
+      if (table.error || table.status !== 0) throw new Error(`cannot inspect process ownership: ${table.error?.code ?? table.status}`);
+      return new Map(table.stdout.trim().split('\n').map(line => {
+        const [, pid, parent, group, started, command] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+((?:\S+\s+){4}\S+)\s+(.*)$/);
+        return [Number(pid), { parent: Number(parent), group: Number(group), started,
+          marked: command.split(/\s+/).includes(ownership) }];
       }));
     };
     // Fail before launching a step when its process table cannot be inspected.
     processTable();
     const child = spawn(process.execPath, args, {
       cwd,
-      env: { ...process.env, ...extraEnvironment },
+      env: { ...process.env, ...extraEnvironment, TACHIKO_ACCEPTANCE_STEP_OWNER: owner },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -71,7 +83,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       }
       // The original process group remains ours even after its leader exits.
       for (const [pid, info] of current) {
-        if (info.group === child.pid) owned.set(pid, info.started);
+        if (info.group === child.pid || info.marked) owned.set(pid, info.started);
       }
       let added;
       do {
@@ -137,9 +149,11 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
+    const closed = new Promise(resolve => child.once('close', resolve));
     const result = await new Promise((resolve, reject) => {
       child.once('error', reject);
-      child.once('close', (code, signal) => {
+      // A detached descendant may hold these pipes open after the step exits.
+      child.once('exit', (code, signal) => {
         clearTimeout(timer);
         resolve({ code, signal });
       });
@@ -159,6 +173,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     // A successful direct child can also leave detached descendants behind.
     if (!groupCleanup && descendants().length) groupCleanup = killGroup();
     await groupCleanup;
+    await closed;
     const exitCode = timedOut ? 1 : typeof result.code === 'number' ? result.code : 1;
     const entry = {
       step: name,

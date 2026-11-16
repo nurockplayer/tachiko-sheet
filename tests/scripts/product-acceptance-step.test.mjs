@@ -209,6 +209,56 @@ test('successful step cleans a detached grandchild after its parent exits', { ti
   });
 });
 
+for (const [label, stdio, delay] of [
+  ['inherited-pipes', ['ignore', 'inherit', 'inherit'], 300],
+  ['immediate-ignored', 'ignore', 0],
+  ['immediate-inherited', ['ignore', 'inherit', 'inherit'], 0],
+]) {
+  test(`successful step cleans ${label} detached child without waiting for pipe close`, { timeout: 10000 }, async t => {
+    const fixture = await setup(t, 800);
+    const heartbeat = path.join(fixture.directory, 'heartbeat');
+    const descendant = `
+      const fs = require('node:fs');
+      process.on('SIGTERM', () => {});
+      setInterval(() => fs.writeFileSync(${JSON.stringify(heartbeat)}, String(Date.now())), 20);
+    `;
+    const source = `
+      const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}],
+        { detached: true, stdio: ${JSON.stringify(stdio)} });
+      child.unref();
+      console.log(JSON.stringify({ pid: child.pid }));
+      ${delay ? `setTimeout(() => process.exit(0), ${delay});` : 'process.exit(0);'}
+    `;
+    // This process is outside the step's ownership and must survive cleanup.
+    const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    let grandchild;
+    t.after(() => {
+      unrelated.kill('SIGKILL');
+      if (grandchild) {
+        try { process.kill(grandchild, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      }
+    });
+    const code = await runStep(label, ['-e', source], {}, { ...fixture.options, killGraceMs: 100 });
+    const [log] = await fixture.logs(label);
+    grandchild = JSON.parse(log.trim()).pid;
+    assert.equal(code, 0);
+    assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'PASS']);
+    const readHeartbeat = () => readFile(heartbeat, 'utf8').catch(error => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    // A killed orphan can remain a zombie under container PID 1; its heartbeat
+    // distinguishes a dead process from a runnable escaped descendant.
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const stopped = await readHeartbeat();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(await readHeartbeat(), stopped, 'detached descendant remained runnable');
+    assert.equal(unrelated.exitCode, null);
+    assert.equal(unrelated.signalCode, null);
+    assert.doesNotThrow(() => process.kill(unrelated.pid, 0));
+  });
+}
+
 test('nonzero step remains FAIL and retains its output in the upload directory', async (t) => {
   const fixture = await setup(t, 5000);
   assert.equal(await runStep('fail', ['-e', 'console.log("before failure"); process.exitCode = 7;'], {}, fixture.options), 7);
