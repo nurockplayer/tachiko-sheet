@@ -14,15 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  product:
-    name: Web product and M1 acceptance
+  checks:
+    name: Product typecheck and unit tests
     runs-on: ubuntu-24.04
-    # The suites take ~14 min; the runner's Playwright system-package install
-    # alone has taken 4–10 min on slow days, which cancelled green runs at 20.
-    timeout-minutes: 30
-    env:
-      TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: /tmp/tachiko-sheet-146-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-      TACHIKO_MUTATION_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -30,8 +25,58 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Start qualification budget clock
-        run: printf 'TACHIKO_QUALIFICATION_STARTED_AT=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          node-version-file: false
+          version: 12.11.2
+          install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Verify qualified core kit
+        run: pnpm verify:core-kit
+
+      - name: Run J4 public composition qualification
+        run: pnpm qualification:j4-public-composition
+
+      - name: Qualify ExplainField through the real kit Worker
+        run: pnpm qualification:real-kit-explain-field
+
+      - name: Run preserved seed harness
+        run: pnpm test
+
+      - name: Run product unit and host tests
+        run: pnpm test:unit
+
+      - name: Run owned acceptance-runner lifecycle probes
+        run: pnpm test:runner-lifecycle
+
+  acceptance:
+    name: Product acceptance shard ${{ matrix.shard }}/4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
@@ -74,29 +119,77 @@ jobs:
             pnpm exec playwright install chromium
           fi
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Verify qualified core kit
-        run: pnpm verify:core-kit
-
-      - name: Run J4 public composition qualification
-        run: pnpm qualification:j4-public-composition
-
-      - name: Qualify ExplainField through the real kit Worker
-        run: pnpm qualification:real-kit-explain-field
-
-      - name: Run preserved seed harness
-        run: pnpm test
-
-      - name: Run product unit and host tests
-        run: pnpm test:unit
-
-      - name: Run owned acceptance-runner lifecycle probes
-        run: pnpm test:runner-lifecycle
-
       - name: Run unchanged M1 product acceptance
         run: pnpm acceptance:product
+        env:
+          TACHIKO_ACCEPTANCE_SHARD: ${{ matrix.shard }}/4
+
+      - name: Retain product acceptance shard evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: product-acceptance-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/product-acceptance
+          if-no-files-found: error
+          retention-days: 14
+
+  save-closure:
+    name: "Sheet #146 save closure"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR: /tmp/tachiko-sheet-146-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+      TACHIKO_MUTATION_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+    steps:
+      - name: Start qualification budget clock
+        run: printf 'TACHIKO_QUALIFICATION_STARTED_AT=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          node-version-file: false
+          version: 12.11.2
+          install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      # ubuntu-24.04 runners already carry Chromium's system libraries; the
+      # apt step behind --with-deps took 4-12 min and pushed green runs to the
+      # job limit. Only the browser build itself is downloaded here.
+      # Keep the CJK fallback fonts --with-deps used to add: acceptance renders
+      # Chinese and Japanese names and measures their rows.
+      - name: Install Chromium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends fonts-ipafont-gothic fonts-wqy-zenhei
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != 'true' ]; then
+            pnpm exec playwright install chromium
+          fi
 
       - name: "Run Sheet #146 Save closure acceptance"
         run: pnpm acceptance:save-closure
@@ -127,3 +220,33 @@ jobs:
           path: ${{ env.TACHIKO_SAVE_CLOSURE_EVIDENCE_DIR }}
           if-no-files-found: warn
           retention-days: 14
+
+  product:
+    name: Web product and M1 acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [checks, acceptance, save-closure]
+    if: always()
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Download product acceptance shard evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: product-acceptance-shard-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/product-acceptance-shards
+
+      - name: Verify all product acceptance shards
+        if: always()
+        run: node scripts/verify-product-acceptance-shards.mjs evidence/product-acceptance-shards
+        env:
+          TACHIKO_ACCEPTANCE_NEEDS: ${{ toJSON(needs) }}
