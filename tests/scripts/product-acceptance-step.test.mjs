@@ -181,7 +181,7 @@ test('successful step cleans a detached grandchild after its parent exits', { ti
   `;
   const source = `
     const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}],
-      { detached: true, stdio: ['ignore', 'pipe', 'inherit'] });
+      { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
     child.stdout.once('data', data => {
       console.log(data.toString().trim());
       setTimeout(() => process.exit(0), 300);
