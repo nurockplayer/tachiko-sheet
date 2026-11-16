@@ -116,7 +116,11 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   const exported = path.join(dir, "exported.xlsx"); await (await downloaded).saveAs(exported);
   const actual = parse(exported);
   assert.deepEqual(Object.keys(actual.cells).sort(), Object.keys(original.cells).sort(), "every source cell survives");
-  for (const [ref, expected] of Object.entries(original.cells)) {
+  // Work e434dc38 writes month-name formats with an explicit en-US locale tag
+  // (interop_date_format.rs), so they render the same in any Excel locale.
+  const exportedFormat = format => /^(mmm d, yyyy|d mmm yyyy)$/.test(format ?? "") ? `[$-409]${format}` : format;
+  for (const [ref, source] of Object.entries(original.cells)) {
+    const expected = { ...source, format: exportedFormat(source.format) };
     assert.equal(actual.cells[ref].value, expected.value, `${ref} scalar value`);
     if (!ref.endsWith("1")) assert.deepEqual(actual.cells[ref], expected, `${ref} supported format/alignment/wrap`);
   }
