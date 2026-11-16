@@ -32,6 +32,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     console.log(JSON.stringify({ step: name, status: 'START', timeoutMs, log }));
     const owner = randomUUID();
     const ownership = `TACHIKO_ACCEPTANCE_STEP_OWNER=${owner}`;
+    let baseline;
     const processTable = () => {
       if (process.platform === 'linux') {
         // Minimal Linux acceptance images need no external ps dependency.
@@ -54,19 +55,35 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
         }
         return table;
       }
-      const table = spawnSync('ps', ['-wwEaxo', 'pid=,ppid=,pgid=,lstart=,command='], {
-        encoding: 'utf8', timeout: 1000, maxBuffer: 32 * 1024 * 1024,
+      const table = spawnSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
+        encoding: 'utf8', timeout: 1000, maxBuffer: 4 * 1024 * 1024,
       });
-      // Never attach raw ps output (which contains environments) to an error.
       if (table.error || table.status !== 0) throw new Error(`cannot inspect process ownership: ${table.error?.code ?? table.status}`);
-      return new Map(table.stdout.trim().split('\n').map(line => {
-        const [, pid, parent, group, started, command] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+((?:\S+\s+){4}\S+)\s+(.*)$/);
-        return [Number(pid), { parent: Number(parent), group: Number(group), started,
-          marked: command.split(/\s+/).includes(ownership) }];
+      const processes = new Map(table.stdout.trim().split('\n').map(line => {
+        const [, pid, parent, group, started] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+        return [Number(pid), { parent: Number(parent), group: Number(group), started }];
       }));
+      // Only processes created since the step started can have inherited its marker.
+      // This also finds a child reparented before its ancestry could be sampled.
+      const candidates = baseline && [...processes].filter(([pid, info]) => baseline.get(pid)?.started !== info.started).map(([pid]) => pid);
+      if (candidates?.length) {
+        const marked = spawnSync('ps', ['-wwE', '-p', candidates.join(','), '-o', 'pid=,command='], {
+          encoding: 'utf8', timeout: 1000, maxBuffer: 32 * 1024 * 1024,
+        });
+        // A candidate may have exited; ps returns 1 when none remain.
+        if (marked.error || (marked.status !== 0 && marked.status !== 1)) throw new Error(`cannot inspect process ownership: ${marked.error?.code ?? marked.status}`);
+        for (const line of marked.stdout.split('\n')) {
+          const match = line.trim().match(/^(\d+)\s+(.*)$/);
+          if (match && match[2].split(/\s+/).includes(ownership)) {
+            const info = processes.get(Number(match[1]));
+            if (info) info.marked = true;
+          }
+        }
+      }
+      return processes;
     };
     // Fail before launching a step when its process table cannot be inspected.
-    processTable();
+    baseline = processTable();
     const child = spawn(process.execPath, args, {
       cwd,
       env: { ...process.env, ...extraEnvironment, TACHIKO_ACCEPTANCE_STEP_OWNER: owner },
