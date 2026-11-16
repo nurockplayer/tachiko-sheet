@@ -252,10 +252,10 @@ test('workflow preserves gates, timeouts, permissions and exact narrow upload pa
       `production retention must finish before E2E work: ${retentionOrder[index - 1]} precedes ${retentionOrder[index]}`);
   }
   assert.ok(workflow.indexOf('mjs e2e-identity') < workflow.indexOf('mjs lifecycle'));
-  assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 2);
-  assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 2);
-  assert.equal((workflow.match(/if-no-files-found: error/g) ?? []).length, 2);
-  assert.equal((workflow.match(/github.run_attempt/g) ?? []).length, 2);
+  assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 3);
+  assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 3);
+  assert.equal((workflow.match(/if-no-files-found: error/g) ?? []).length, 3);
+  assert.equal((workflow.match(/github.run_attempt/g) ?? []).length, 3);
   const paths = [...workflow.matchAll(/^            (desktop-evidence\/[^\n]+)$/gm)].map(match => match[1]);
   assert.deepEqual(paths, [...productionFiles.map(file => `desktop-evidence/production/${file}`), ...lifecycleFiles.map(file => `desktop-evidence/e2e/${file}`)]);
   assert.doesNotMatch(workflow, /continue-on-error|permissions: write|upload-artifact@main/);

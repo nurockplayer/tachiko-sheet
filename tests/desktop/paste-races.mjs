@@ -6,11 +6,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 
-export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] }) {
+export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [], receipt = async () => {} }) {
   const failures = [];
   const check = async (name, run) => {
+    const start = new Date().toISOString();
+    let outcome = "PASS";
     try { await run(); console.log(`PASS: ${process.platform} ${name}`); }
-    catch (error) { console.error(`FAIL: ${process.platform} ${name}: ${error.stack}`); failures.push(error); }
+    catch (error) { outcome = "FAIL"; console.error(`FAIL: ${process.platform} ${name}: ${error.stack}`); failures.push(error); }
+    finally { await receipt({ name, start, end: new Date().toISOString(), outcome }); }
   };
   const fixture = path.join(await mkdtemp(path.join(work, "paste-fixture-")), "capacity");
   execFileSync(process.platform === "win32" ? "python" : "python3", ["-I", "-X", "utf8",
@@ -75,6 +78,22 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [] 
       assert.ok(result.keys.some(e => e.code === "AltRight" && e.trusted), "native Right Alt reached WebView");
       assert.ok(result.keys.some(e => e.code === "KeyV" && e.trusted && e.ctrl && e.alt), "AltGr produced Ctrl+Alt+V");
       assert.equal(result.menu, false, "AltGr must not open Paste Special");
+      await evaluate(`${page}
+        dblclick(cell(0));
+        const input = await waitFor(() => textbox("Edit cell"), "cell editor for AltGr character");
+        input.focus(); input.select(); return true;
+      `);
+      execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        fileURLToPath(new URL("../../scripts/installer-smoke/altgr.ps1", import.meta.url)), "-AppPid", String(windowsPid), "-Key", "Q"], { stdio: "inherit", timeout: 30_000 });
+      const character = await evaluate(`${page}
+        const input = await waitFor(() => textbox("Edit cell"), "cell editor after native AltGr Q");
+        await waitFor(() => input.value === "@", "native AltGr Q inserted @");
+        press(input, "Enter");
+        await waitFor(() => !textbox("Edit cell") && current() && cell(0)?.textContent === "@", "AltGr character committed to cell");
+        return { value: cell(0).textContent, keys: window.__g6Keys };
+      `);
+      assert.ok(character.keys.some(e => e.code === "KeyQ" && e.trusted && e.ctrl && e.alt), "native AltGr Q reached WebView");
+      assert.equal(character.value, "@", "native AltGr character committed to cell");
     } finally {
       await evaluate(`document.removeEventListener("keydown", window.__g6KeyListener, true);
         const menu = document.querySelector('[role="menu"]'); if (menu) press(menu, "Escape"); return true;`);

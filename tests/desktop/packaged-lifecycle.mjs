@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -915,6 +915,7 @@ async function namedTableJourney() {
 // G6 3a: observe the existing host/file behavior; never consume the pending
 // file through a test-only command in order to call it delivered.
 async function fileDuringUnsavedQuestion() {
+  const originalFile = await readFile(openFixture);
   await edit(0, 0, "unsaved-arrival-edit");
   const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
   const before = await snapshot();
@@ -952,6 +953,7 @@ async function fileDuringUnsavedQuestion() {
   await evaluate(`await waitFor(() => document.body.innerText.includes('Close this work, then open “open-me.csv” again.'), "arriving file retained and named"); return true;`);
   const after = await snapshot();
   assert.deepEqual(after, before, "Cancel retains unsaved cells and identities");
+  assert.deepEqual(await readFile(openFixture), originalFile, "original source file still exists with unchanged bytes");
   console.log(`File arrival disposition: ${shown ? "shown after Cancel" : "pending after Cancel; named refusal shown after help interaction"}; edits retained; original fixture retained=${existsSync(openFixture)}`);
 }
 
@@ -984,6 +986,19 @@ let pid;
 let directResult;
 let lifecycleError;
 try {
+  if (process.env.DESKTOP_NATIVE_ONLY === "1") {
+    pid = await timed("launch", () => launch(5000));
+    await coldHome();
+    await pasteRaces({ evaluate, work, extraChecks: [
+      ["file arriving during unsaved question retains edits and the file", fileDuringUnsavedQuestion],
+      ["shortcut help renders macOS ⌘/⌥/⇧ labels", macShortcutLabels],
+    ], receipt: async record => {
+      if (process.env.DESKTOP_TIMING_RECEIPTS) await appendFile(process.env.DESKTOP_TIMING_RECEIPTS, `${JSON.stringify(record)}\n`);
+    } });
+    await closeToHome();
+    await quit(pid);
+    pid = undefined;
+  } else {
   await timed("named-table journey", namedTableJourney);
   pid = await timed("launch", launch);
   await coldHome();
@@ -1082,18 +1097,10 @@ try {
     results.push({ name, format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
     console.log(`PASS: ${name}`);
   }
-  pid = await timed("launch", () => launch(5000));
-  await coldHome();
-  await pasteRaces({ evaluate, work, extraChecks: [
-    ["file arriving during unsaved question retains edits and the file", fileDuringUnsavedQuestion],
-    ["shortcut help renders macOS ⌘/⌥/⇧ labels", macShortcutLabels],
-  ] });
-  await closeToHome();
-  await quit(pid);
-  pid = undefined;
+  }
   directResult = {
-    case: "desktop packaged lifecycle (native runtime)",
-    journeys: { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    case: process.env.DESKTOP_NATIVE_ONLY === "1" ? "desktop native subcases" : "desktop packaged lifecycle (native runtime)",
+    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),

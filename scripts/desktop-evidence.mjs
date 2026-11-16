@@ -141,7 +141,7 @@ export async function captureE2eIdentity(directory = path.join(evidenceRoot, 'e2
   await writeJson(path.join(directory, 'identity.json'), identity);
 }
 
-export async function runLifecycle(directory = path.join(evidenceRoot, 'e2e'), capture = captureRunnerCommand) {
+export async function runLifecycle(directory = path.join(evidenceRoot, 'e2e'), capture = captureRunnerCommand, nativeOnly = false) {
   const identity = await json(path.join(directory, 'identity.json'));
   assert.equal(identity.app?.bundleId, 'dev.tachiko.sheet.e2e', 'missing E2E identity');
   const cancellation = createRunnerCancellation();
@@ -151,7 +151,8 @@ export async function runLifecycle(directory = path.join(evidenceRoot, 'e2e'), c
       cwd: root, timeoutMs: 45 * 60 * 1000, maxOutputBytes: OUTPUT_LIMIT, signal: cancellation.signal,
       // Keep the live diagnostic trail even if the CI job cancels before capture returns.
       onOutput: chunk => process.stdout.write(chunk),
-      env: { DESKTOP_DIRECT_RESULT: path.join(directory, 'direct-result.json'), DESKTOP_KEEP_LOG: path.join(directory, 'host.log') },
+      env: { DESKTOP_DIRECT_RESULT: path.join(directory, 'direct-result.json'), DESKTOP_KEEP_LOG: path.join(directory, 'host.log'),
+        ...(nativeOnly ? { DESKTOP_NATIVE_ONLY: '1', DESKTOP_TIMING_RECEIPTS: path.join(directory, 'timings.jsonl') } : {}) },
     });
   } catch (error) {
     execution = { code: 125, signal: null, outcome: 'CAPTURE_FAILED', output: '', error: boundedText(error.stack) };
@@ -198,6 +199,7 @@ async function main(mode) {
   if (mode === 'production') return stageProduction();
   if (mode === 'e2e-identity') return captureE2eIdentity();
   if (mode === 'lifecycle') { const result = await runLifecycle(); if (result.status !== 'PASS') process.exitCode = 1; return; }
+  if (mode === 'native') { const result = await runLifecycle(directory, captureRunnerCommand, true); if (result.status !== 'PASS') process.exitCode = 1; return; }
   if (mode === 'verify-production') return verifyProduction(path.join(evidenceRoot, 'production'));
   if (mode === 'verify-e2e') {
     const outcome = await verifyLifecycle(directory);
