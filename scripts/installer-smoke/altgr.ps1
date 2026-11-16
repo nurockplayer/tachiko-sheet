@@ -17,6 +17,8 @@ public static class AltGrInput {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", SetLastError=true)] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left, top, right, bottom; }
     [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
         public int cbSize; public uint flags; public IntPtr active, focus, capture, menu, move, caret; public RECT caretRect;
@@ -67,6 +69,27 @@ $window = $process.MainWindowHandle
 if ($window -eq [IntPtr]::Zero) { throw "PID $AppPid has no main window" }
 [uint32]$owner = 0
 $thread = [AltGrInput]::GetWindowThreadProcessId($window, [ref]$owner)
+Add-Type -AssemblyName System.Windows.Forms
+$loader = New-Object System.Windows.Forms.Form
+$loader.Text = 'AltGr layout setup'
+$loader.ShowInTaskbar = $false
+$loader.Show()
+$layout = [IntPtr]::Zero
+try {
+    # The loader must own keyboard focus when LoadKeyboardLayoutW is called.
+    [uint32]$foregroundOwner = 0
+    $foregroundThread = [AltGrInput]::GetWindowThreadProcessId([AltGrInput]::GetForegroundWindow(), [ref]$foregroundOwner)
+    $helperThread = [AltGrInput]::GetCurrentThreadId()
+    $attached = $false
+    if ($foregroundThread -and $foregroundThread -ne $helperThread) {
+        $attached = [AltGrInput]::AttachThreadInput($helperThread, $foregroundThread, $true)
+        if (-not $attached) { throw "AttachThreadInput failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+    }
+    try { [void][AltGrInput]::SetForegroundWindow($loader.Handle) }
+    finally { if ($attached) { [void][AltGrInput]::AttachThreadInput($helperThread, $foregroundThread, $false) } }
+    if ([AltGrInput]::GetForegroundWindow() -ne $loader.Handle) { throw 'Could not focus AltGr layout loader' }
+    $layout = [AltGrInput]::LoadKeyboardLayoutW('00000407', 0)
+    if ($layout -eq [IntPtr]::Zero -or ($layout.ToInt64() -band 0xFFFF) -ne 0x0407) { throw "German keyboard layout unavailable; install German keyboard layout for this user (returned $($layout.ToInt64().ToString('X')))" }
 [void][AltGrInput]::SetForegroundWindow($window)
 Start-Sleep -Milliseconds 200
 $info = New-Object AltGrInput+GUITHREADINFO
@@ -80,9 +103,6 @@ $layouts = [AltGrInput]::Layouts()
 Write-Host "AltGr diagnostics: focusedHWND=$($focus.ToInt64().ToString('X')) focusedThread=$focusedThread focusedHKL=$($previous.ToInt64().ToString('X')) appSession=$($process.SessionId) helperSession=$((Get-Process -Id $PID).SessionId) inputDesktop=$([AltGrInput]::InputDesktopName()) layouts=$layouts"
 if ([AltGrInput]::GetForegroundWindow() -ne $window) { throw "SetForegroundWindow could not focus app PID $AppPid" }
 if (-not $gotInfo -or -not $focusedThread) { throw "GetGUIThreadInfo could not resolve the focused input window for app thread $thread" }
-$layout = [AltGrInput]::LoadKeyboardLayoutW('00000407', 0)
-if ($layout -eq [IntPtr]::Zero -or ($layout.ToInt64() -band 0xFFFF) -ne 0x0407) { throw "German keyboard layout unavailable; install German keyboard layout for this user (returned $($layout.ToInt64().ToString('X')))" }
-try {
     if (-not [AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $layout)) {
         throw "WM_INPUTLANGCHANGEREQUEST failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
     }
@@ -94,8 +114,9 @@ try {
     Start-Sleep -Milliseconds 300
     Write-Host "AltGr native input sent: PID $AppPid, layout 00000407, Right-Alt+$Key via SendInput"
 } finally {
-    [void][AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $previous)
+    if ($focus -and $previous) { [void][AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $previous) }
     # Give the app thread time to release the test layout before unloading it.
     Start-Sleep -Milliseconds 200
-    [void][AltGrInput]::UnloadKeyboardLayout($layout)
+    if ($layout -ne [IntPtr]::Zero) { [void][AltGrInput]::UnloadKeyboardLayout($layout) }
+    $loader.Dispose()
 }
