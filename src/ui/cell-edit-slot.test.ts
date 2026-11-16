@@ -42,6 +42,15 @@ describe("authoritative sparse edit slots", () => {
     const field = { target: { entity: "entity", field: "f" }, address: "a", stored: null, formula: { source: "1" }, calculated: null, diagnostics: [], editable_scalar: null };
     expect(cellEditSlot({ ...blank, fields: [field] }, column())).toBeNull();
   });
+  it("normalizes explicit empty Text from plain-text copy/cut to Blank on native paste", () => {
+    const field = { target: { entity: "entity", field: "f" }, address: "a", stored: { kind: "text" as const, value: "" }, formula: null, calculated: null, diagnostics: [], editable_scalar: "text" as const };
+    const row = { ...blank, blank_fields: [], fields: [field] };
+    const slot = cellEditSlot(row, column())!;
+    expect(slot).toMatchObject({ original: "", blank: false });
+    expect(pastedCellEdit(slot, field.stored.value, true)).toEqual({ target: slot.target, input: { kind: "clear" } });
+    expect(pastedCellEdit(cellEditSlot(blank, column())!, "", true)).toBeNull();
+    expect(pastedCellEdit(cellEditSlot(row, { ...column(), required: true })!, "", true)).toBeNull();
+  });
   it("routes a rectangle of blank slots atomically and keeps the original 100,000-cell cap", () => {
     const context = { native: true, draft: false, blocked: false, pendingDraft: false, rowCount: 10_000, start: { row: 0, column: 0 }, columnTypes: Array(11).fill("text"), columnRequired: Array(11).fill(false), editable: () => Boolean(cellEditSlot(blank, column())) };
     expect(routePaste(Array.from({ length: 10_000 }, () => Array(10).fill("")), context).kind).toBe("edit");
