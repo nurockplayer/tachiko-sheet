@@ -217,9 +217,12 @@ describe("keyboard history queue", () => {
     expect((await ui.key()).defaultPrevented).toBe(true);
     expect(onHistory).not.toHaveBeenCalled();
     const deleted = { ...ui.view, revision: "rev-2", table: { ...ui.view.table, revision: "rev-2", rows: ui.view.table.rows.slice(1) } };
-    await ui.update({ view: deleted, localHistory: { occurrence: "occ-1", revision: "rev-2", undoCount: 1, redoCount: 0 } });
+    // App keeps its runtime busy while publication precedes the command's settlement.
+    await ui.update({ busy: true, view: deleted, localHistory: { occurrence: "occ-1", revision: "rev-2", undoCount: 1, redoCount: 0 } });
     expect(onHistory).not.toHaveBeenCalled();
     await act(async () => { deletion.resolve({ kind: "confirmed" }); });
+    expect(onHistory).not.toHaveBeenCalled();
+    await ui.update({ busy: false });
     expect(onHistory).toHaveBeenCalledExactlyOnceWith("undo");
     expect(ui.cell()).not.toBeNull();
   });
