@@ -134,7 +134,8 @@ test('timeout lets the step reap a detached grandchild before closing', { timeou
 });
 
 test('timeout escalates for a resistant detached grandchild after the direct child closes', { timeout: 180000 }, async (t) => {
-  const fixture = await setup(t, 1500);
+  const timeoutMs = 30000;
+  const fixture = await setup(t, timeoutMs);
   const descendant = `
     process.on('SIGTERM', () => {});
     const server = require('node:net').createServer();
@@ -163,7 +164,7 @@ test('timeout escalates for a resistant detached grandchild after the direct chi
     try { process.kill(-parent, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   });
   assert.equal(code, 1);
-  assert.ok(performance.now() - started >= 1500 + killGraceMs, 'returned before group escalation');
+  assert.ok(performance.now() - started >= timeoutMs + killGraceMs, 'returned before group escalation');
   assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'TIMEOUT']);
   assert.throws(() => process.kill(parent, 0), { code: 'ESRCH' });
   const deadline = Date.now() + 3000;
