@@ -714,17 +714,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
       if (importedMetadata) {
-        const inspect = capability(client.inspectImportedProject, "imported-project inspection");
+        const inspect = capability(client.inspectImportedProjectWorkingSize, "working-size imported-project inspection");
         // The retained J3 metadata is producer-issued and is validated by the
         // public kit against a cloned opaque transfer before this replacement
         // boundary. Sheet neither decodes nor rewrites the transfer.
         await dispatch(kit, () => inspect.call(client, bytes.slice(0), importedMetadata));
         assertNotReplaced(requestedAt);
+        const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+        return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0), importedMetadata));
       }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
-      const open: (bytes: ArrayBuffer) => Promise<OpenedProjection | OpenedWindowProjection> = importedMetadata ? client.openProject
-        : capability(client.openProjectWorkingSize, "working-size project open");
+      const open = capability(client.openProjectWorkingSize, "working-size project open");
       return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0)));
     });
   }
@@ -1475,7 +1476,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return enqueue(async () => {
       assertNotReplaced(requestedAt);
       const { kit, client } = await loadKitOnce();
-      const importSheet = capability(client.importSpreadsheet, "spreadsheet import");
+      const importSheet = capability(client.importSpreadsheetWorkingSize, "working-size spreadsheet import");
       let imported;
       try {
         imported = await afterNotReplaced(
@@ -1500,7 +1501,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       residentCollection = null;
       residentAvailable = true;
       closed = false;
-      requestByteLimit = MAX_WIRE_REQUEST_BYTES;
+      requestByteLimit = imported.opened.profile === "working_size"
+        ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
       let read: CoherentRead;
       try {
         read = await loadCoherentView(kit, client, requestedAt, null);
