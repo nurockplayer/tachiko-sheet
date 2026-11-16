@@ -210,7 +210,7 @@ describe("keyboard history queue", () => {
       await ui.update({ view: ui.view });
       return null;
     });
-    const ui = await mount({ onRemoveRows, onHistory, localHistory: { occurrence: "occ-1", revision: "rev-1", undoCount: 0, redoCount: 0 } });
+    const ui = await mount({ onInsertRow: async () => ({ kind: "confirmed" }), onRemoveRows, onHistory, localHistory: { occurrence: "occ-1", revision: "rev-1", undoCount: 0, redoCount: 0 } });
     const button = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Delete row")!;
     await act(async () => button.click());
     expect(onRemoveRows).toHaveBeenCalledOnce();
