@@ -59,21 +59,28 @@ try {
   // A real cross-row A1 formula produces Work's copy warning. Hold a real
   // Undo reply to expose the simultaneous operation-in-progress reason.
   await page.setViewportSize({ width: 390, height: 900 });
-  const gridTop = (await rows.first().boundingBox()).y;
-  const geometry = async label => console.log(`GEOMETRY ${label} ${JSON.stringify(await page.evaluate(() => {
+  const geometry = async label => {
+    const measured = await page.evaluate(() => {
     const row = document.querySelector('tbody tr.ts-row');
     const bar = document.querySelector('[data-testid="formula-bar"]');
     const grid = document.querySelector('.ts-grid-scroll');
     return { rowY: row.getBoundingClientRect().top, barY: bar.getBoundingClientRect().top,
       barBottom: bar.getBoundingClientRect().bottom, scrollY: window.scrollY,
       gridScrollTop: grid?.scrollTop, gridScrollLeft: grid?.scrollLeft };
-  }))}`);
-  await geometry("before");
+    });
+    console.log(`GEOMETRY ${label} ${JSON.stringify(measured)}`);
+    return measured;
+  };
+  const before = await geometry("before");
+  const assertGeometry = (after, message) => {
+    assert.ok(Math.abs((after.barBottom - after.barY) - (before.barBottom - before.barY)) < 1, `${message}: formula bar height`);
+    assert.ok(Math.abs((after.rowY - after.barBottom) - (before.rowY - before.barBottom)) < 1, `${message}: row position relative to bar`);
+  };
   await cell(1, "priority").click();
   await bar.fill("=C3*D2");
   await bar.press("Enter");
   await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent.includes("Copying this formula"));
-  await geometry("copy-warning");
+  assertGeometry(await geometry("copy-warning"), "copy warning appearance");
   // Enter leaves the formula bar focused; a grid click would insert a cell
   // reference until Escape returns focus to the committed cell.
   await bar.press("Escape");
@@ -100,15 +107,14 @@ try {
   assert.ok((await bar.getAttribute("aria-describedby")).split(" ").includes(await reason.getAttribute("id")));
   assert.equal((await reason.boundingBox()).height, 18);
   assert.equal(await reason.evaluate(node => node.scrollWidth > node.clientWidth), true, "long combined message is ellipsized");
-  await geometry("combined-warning");
-  assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) < 1, "warning appearance keeps grid geometry");
+  assertGeometry(await geometry("combined-warning"), "combined warning appearance");
   await page.evaluate(() => { const e = window.__r3; e.worker.dispatchEvent(new MessageEvent("message", { data: e.held })); e.held = null; });
   await ready(page);
   await cell(0, "impact").click();
   await bar.fill("=1+2");
   await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent === "");
   assert.equal(await reason.textContent(), "");
-  assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) < 1, "warning clearing keeps grid geometry");
+  assertGeometry(await geometry("warning-cleared"), "warning clearing");
   await bar.press("Escape");
   console.log("PASS: reason and translation warning share an accessible fixed-height line; grid stays still");
 
