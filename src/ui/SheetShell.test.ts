@@ -1,7 +1,9 @@
-import { createElement } from "react";
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
 import * as React from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { AppearancePreferenceController, AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
@@ -166,6 +168,153 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
 function render(props: Partial<SheetShellProps>): string {
   return renderToStaticMarkup(createElement(SheetShell, makeProps(props)));
 }
+
+describe("keyboard history queue", () => {
+  let dispose: (() => Promise<void>) | undefined;
+  afterEach(async () => { await dispose?.(); dispose = undefined; });
+
+  async function mount(overrides: Partial<SheetShellProps> = {}) {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const view = makeView();
+    view.table.native_table_profile = true;
+    let props = makeProps({ view, localHistory: { occurrence: view.occurrence, revision: view.revision, undoCount: 3, redoCount: 0 }, ...overrides });
+    const update = async (next: Partial<SheetShellProps> = {}) => {
+      props = { ...props, ...next };
+      await act(async () => root.render(createElement(SheetShell, props)));
+    };
+    dispose = async () => { await act(async () => root.unmount()); container.remove(); };
+    await update();
+    const cell = () => container.querySelector<HTMLElement>(`[data-testid="cell:${entityA}:c-title"]`)!;
+    await act(async () => cell().focus());
+    const key = async (value = "z", target: HTMLElement = document.activeElement as HTMLElement) => {
+      const event = new KeyboardEvent("keydown", { key: value, ctrlKey: true, bubbles: true, cancelable: true });
+      await act(async () => { target.dispatchEvent(event); });
+      return event;
+    };
+    return { container, update, key, cell, view };
+  }
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>(done => { resolve = done; });
+    return { promise, resolve };
+  }
+
+  it("undoes a row delete requested while its commit is pending", async () => {
+    const deletion = deferred<Awaited<ReturnType<NonNullable<SheetShellProps["onRemoveRows"]>>>>();
+    const onRemoveRows = vi.fn(() => deletion.promise);
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => {
+      await ui.update({ view: ui.view });
+      return null;
+    });
+    const ui = await mount({ onInsertRow: async () => ({ kind: "confirmed" }), onRemoveRows, onHistory, localHistory: { occurrence: "occ-1", revision: "rev-1", undoCount: 0, redoCount: 0 } });
+    const button = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Delete row")!;
+    await act(async () => button.click());
+    expect(onRemoveRows).toHaveBeenCalledOnce();
+    expect((await ui.key()).defaultPrevented).toBe(true);
+    expect(onHistory).not.toHaveBeenCalled();
+    const deleted = { ...ui.view, revision: "rev-2", table: { ...ui.view.table, revision: "rev-2", rows: ui.view.table.rows.slice(1) } };
+    // App keeps its runtime busy while publication precedes the command's settlement.
+    await ui.update({ busy: true, view: deleted, localHistory: { occurrence: "occ-1", revision: "rev-2", undoCount: 1, redoCount: 0 } });
+    expect(onHistory).not.toHaveBeenCalled();
+    await act(async () => { deletion.resolve({ kind: "confirmed" }); });
+    expect(onHistory).not.toHaveBeenCalled();
+    await ui.update({ busy: false });
+    expect(onHistory).toHaveBeenCalledExactlyOnceWith("undo");
+    expect(ui.cell()).not.toBeNull();
+  });
+
+  it("runs rapid Undo presses one step at a time", async () => {
+    const first = deferred<null>();
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>().mockImplementationOnce(() => first.promise).mockResolvedValue(null);
+    const ui = await mount({ onHistory });
+    await ui.key();
+    await ui.key();
+    expect(onHistory).toHaveBeenCalledTimes(1);
+    await act(async () => { first.resolve(null); });
+    expect(onHistory.mock.calls.map(call => call[0])).toEqual(["undo", "undo"]);
+  });
+
+  it("keeps Ctrl+Z local to an open cell editor", async () => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const ui = await mount({ onHistory });
+    await act(async () => { ui.cell().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
+    const input = ui.cell().querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea")!;
+    expect(input).not.toBeNull();
+    expect((await ui.key("z", input)).defaultPrevented).toBe(false);
+    expect(onHistory).not.toHaveBeenCalled();
+  });
+
+  it.each(["Ctrl+Z", "Cmd+Z", "menu"])("does not replay %s entered during unknown currentness after Refresh", async shortcut => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const onRefresh = vi.fn(async () => { await ui.update({ currentness: "current" }); });
+    const ui = await mount({ onHistory, onRefresh, currentness: "unknown" });
+    await act(async () => {
+      if (shortcut === "menu") window.dispatchEvent(new CustomEvent("tachiko-menu", { detail: "undo" }));
+      else ui.cell().dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z", ctrlKey: shortcut === "Ctrl+Z", metaKey: shortcut === "Cmd+Z", bubbles: true, cancelable: true,
+      }));
+    });
+    expect(onHistory).not.toHaveBeenCalled();
+    const refresh = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Refresh")!;
+    await act(async () => refresh.click());
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(onHistory).not.toHaveBeenCalled();
+    // Recovery retained the same occurrence, revision and available history;
+    // a fresh press, rather than Refresh itself, must initiate the next step.
+    await act(async () => ui.cell().focus());
+    await ui.key();
+    expect(onHistory).toHaveBeenCalledExactlyOnceWith("undo");
+  });
+
+  it("clears history queued before a commit leaves currentness unknown", async () => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const ui = await mount({ onHistory, busy: true });
+    await ui.key();
+    await ui.update({ currentness: "unknown", busy: false });
+    await ui.update({ currentness: "pending", busy: true });
+    await ui.update({ currentness: "current", busy: false });
+    expect(onHistory).not.toHaveBeenCalled();
+  });
+
+  it.each(["collection", "occurrence", "close", "draft", "modal"])("clears queued history on %s change", async change => {
+    const first = deferred<null>();
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(() => first.promise);
+    const ui = await mount({ onHistory });
+    await ui.key();
+    await ui.key();
+    if (change === "collection") {
+      await ui.update({ view: { ...ui.view, table: { ...ui.view.table, collection: { ...ui.view.table.collection, key: "other" } } } });
+    } else if (change === "occurrence") {
+      await ui.update({ view: { ...ui.view, occurrence: "other" } });
+    } else if (change === "close") {
+      await ui.update({ view: null });
+    } else if (change === "draft") {
+      await act(async () => { ui.cell().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
+      expect(ui.cell().querySelector("input, textarea")).not.toBeNull();
+      await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    } else {
+      const help = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Keyboard shortcuts")!;
+      await act(async () => help.click());
+      expect(ui.container.querySelector('[role="dialog"]')).not.toBeNull();
+      await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    }
+    await act(async () => { first.resolve(null); });
+    expect(onHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves mixed Undo/Redo order and ignores entries beyond 20", async () => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const ui = await mount({ onHistory, busy: true, localHistory: { occurrence: "occ-1", revision: "rev-1", undoCount: 20, redoCount: 20 } });
+    for (let i = 0; i < 22; i++) await ui.key(i % 2 ? "y" : "z");
+    expect(onHistory).not.toHaveBeenCalled();
+    await ui.update({ busy: false });
+    expect(onHistory.mock.calls.map(call => call[0])).toEqual(Array.from({ length: 20 }, (_, i) => i % 2 ? "redo" : "undo"));
+  });
+});
 
 function cellMarkup(markup: string, testId: string, closeTag = "</td>"): string | null {
   const marker = markup.indexOf(`data-testid="${testId}"`);
