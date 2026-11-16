@@ -505,6 +505,8 @@ const cases = [
     // #281: a column width is view state only, so resizing never disturbs the
     // cell focus and selection behaviour the previous case covers.
     const separator = page.getByRole("separator", { name: /^Resize / }).first();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: url });
+    await page.evaluate(() => navigator.clipboard.writeText("R5 clipboard sentinel"));
     const header = page.locator("thead th.ts-column-header").first();
     const width = () => header.evaluate((node) => node.getBoundingClientRect().width);
     await separator.focus();
@@ -562,11 +564,16 @@ const cases = [
     await editor(page).press("ArrowLeft"); await editor(page).press("Enter");
     await page.waitForFunction(id => document.activeElement?.dataset.testid === id, nextRow);
     assert.equal((await cell(page, "area").textContent()).trim(), "Caret correction");
-    await start.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("ArrowDown");
-    const areaDestination = await page.evaluate(() => {
-      const node = document.activeElement;
-      return node.parentElement.nextElementSibling?.querySelector(`td[data-work-field="${node.dataset.workField}"]`)?.dataset.testid ?? node.dataset.testid;
-    });
+    // Start on the first of three real rows so Enter must move again after
+    // ArrowDown. A boundary fallback cannot accidentally satisfy this oracle.
+    const rows = page.locator("tbody tr.ts-row");
+    assert.ok(await rows.count() >= 3, "origin reset needs three stored rows");
+    const firstTitle = rows.nth(0).locator(`td[data-work-field="${fields.title}"]`);
+    const secondArea = rows.nth(1).locator(`td[data-work-field="${fields.area}"]`);
+    const thirdArea = rows.nth(2).locator(`td[data-work-field="${fields.area}"]`);
+    await firstTitle.click(); await page.keyboard.press("Tab"); await page.keyboard.press("ArrowDown");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id, await secondArea.getAttribute("data-testid"));
+    const areaDestination = await thirdArea.getAttribute("data-testid");
     await page.keyboard.press("F2"); await editor(page).fill("Arrow reset"); await editor(page).press("Enter");
     await page.waitForFunction(id => document.activeElement?.dataset.testid === id, areaDestination);
   }],
@@ -1072,6 +1079,8 @@ const cases = [
       window.__columnCopyTarget = null;
       document.addEventListener("copy", event => { window.__columnCopyTarget = event.target?.outerHTML?.slice(0, 500); }, { once: true, capture: true });
     });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: url });
+    await page.evaluate(() => navigator.clipboard.writeText("R5 clipboard sentinel"));
     const header = page.locator("thead th.ts-column-header").first();
     await header.locator(".ts-col-head").click({ button: "right" });
     await page.getByRole("menu", { name: "Column actions" }).getByRole("menuitem", { name: "Copy", exact: true }).click();
@@ -1079,6 +1088,9 @@ const cases = [
       const details = await page.evaluate(() => ({ target: window.__columnCopyTarget, active: document.activeElement?.outerHTML?.slice(0, 500), status: document.querySelector(".ts-clipboard-status")?.textContent, scrollTop: document.querySelector(".ts-grid-scroll")?.scrollTop }));
       throw new Error(`${error.message}\nCopy diagnostics: ${JSON.stringify(details)}`);
     });
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()),
+      Array.from({ length: 2000 }, (_, i) => `Row ${i + 1}`).join("\n"),
+      "off-screen column Copy writes all 2,000 values in source order, without a header or omissions");
     await scroller.evaluate(node => { node.scrollTop = 0; });
     await page.getByText("Row 1", { exact: true }).waitFor();
     const bar = page.getByTestId("formula-bar-input");
