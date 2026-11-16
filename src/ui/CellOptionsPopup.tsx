@@ -81,8 +81,9 @@ export function FormulaHint({ id, text, summary, anchor, container }: { id: stri
       const rect = anchor.getBoundingClientRect();
       const hint = hintRef.current;
       if (!hint) return;
-      const left = Math.max(0, Math.min(rect.left, window.innerWidth - hint.offsetWidth));
-      const top = Math.max(0, Math.min(rect.bottom + hint.offsetHeight <= window.innerHeight ? rect.bottom : rect.top - hint.offsetHeight, window.innerHeight - hint.offsetHeight));
+      const { width, height } = hint.getBoundingClientRect();
+      const left = Math.max(0, Math.min(rect.left, window.innerWidth - width));
+      const top = Math.max(0, Math.min(rect.bottom + height <= window.innerHeight ? rect.bottom : rect.top - height, window.innerHeight - height));
       setBox(current => current?.left === left && current.top === top ? current : { left, top });
     };
     place();

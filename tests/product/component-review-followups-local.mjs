@@ -132,11 +132,20 @@ try {
       node.style.cssText = "position:fixed;right:0;bottom:0;width:120px;height:30px;z-index:30";
       window.dispatchEvent(new Event("resize"));
     });
-    await page.waitForFunction(field => {
-      const box = document.querySelector(".ts-formula-hint")?.getBoundingClientRect();
-      const anchor = document.querySelector(`td[data-work-field="${field}"]`)?.getBoundingClientRect();
-      return box && anchor && box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && box.bottom <= anchor.top + 1;
-    }, fields.impact);
+    try {
+      await page.waitForFunction(field => {
+        const box = document.querySelector(".ts-formula-hint")?.getBoundingClientRect();
+        const anchor = document.querySelector(`td[data-work-field="${field}"]`)?.getBoundingClientRect();
+        return box && anchor && box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && box.bottom <= anchor.top + 1;
+      }, fields.impact);
+    } catch (error) {
+      console.error("hint placement timeout:", await page.evaluate(field => ({
+        hint: document.querySelector(".ts-formula-hint")?.getBoundingClientRect().toJSON(),
+        anchor: document.querySelector(`td[data-work-field="${field}"]`)?.getBoundingClientRect().toJSON(),
+        innerWidth, innerHeight, devicePixelRatio,
+      }), fields.impact));
+      throw error;
+    }
     const anchor = await cell(0, "impact").boundingBox();
     const placed = await hint.boundingBox();
     assert.ok(placed.y + placed.height <= anchor.y + 1, "bottom-edge hint flips above its cell");
