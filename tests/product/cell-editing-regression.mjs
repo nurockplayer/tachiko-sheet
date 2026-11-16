@@ -545,8 +545,10 @@ const cases = [
     const firstTitle = page.locator(`td[data-work-field="${fields.title}"]:not([data-entry-field])`).first();
     await firstTitle.focus();
     await page.keyboard.press("ControlOrMeta+a");
-    const selected = await page.locator("td[data-work-field]:not([data-entry-field])").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-selected")));
-    assert.ok(selected.length > 0 && selected.every((value) => value === "true"), "Select All still covers every table cell after a resize");
+    await page.waitForFunction(() => {
+      const cells = document.querySelectorAll("td[data-work-field]:not([data-entry-field])");
+      return cells.length > 0 && [...cells].every((cell) => cell.getAttribute("aria-selected") === "true");
+    }, null, { timeout: 10000 });
     assert.equal(await focused(firstTitle), true, "Select All still keeps focus where it was");
   }],
   ["Tab run returns to its starting column and ArrowDown cancels it", async (page) => {

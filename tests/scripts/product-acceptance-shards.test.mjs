@@ -20,8 +20,8 @@ const summaries = () => assignShards(steps, durations, 4).map((selected, i) => (
   summary: selected.map(({ name }) => ({ step: name, status: 'PASS', exitCode: 0 })),
 }));
 
-test('--list exposes all 48 steps in the original runner order without setup', () => {
-  assert.equal(names.length, 48);
+test('--list exposes all 49 steps in the original runner order without setup', () => {
+  assert.equal(names.length, 49);
   assert.deepEqual(names, Object.keys(durations));
   assert.equal(names[0], 'workbook-tabs-local');
   assert.equal(names.at(-1), 'dialog-operation-recovery-local-transport');
