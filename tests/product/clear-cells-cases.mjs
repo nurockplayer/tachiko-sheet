@@ -293,12 +293,13 @@ export async function runClearCellsCases(page, { close, checks }) {
   await first.click();
   await page.keyboard.press("Control+Shift+End");
   if (inBounds) {
+    const largeReady = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor({ timeout: 120000 });
     assert.equal(largeBefore.rows.reduce((n, row) => n + row.fields.length, 0), 100000,
       "all 100,000 selected cells start with values; this cannot be a no-op");
     const publishedBefore = await publications();
     console.log("R5: dispatching one clear for exactly 100,000 populated cells");
     await page.keyboard.press("Backspace");
-    await status("Cleared 100000 cells.").waitFor({ timeout: 120000 }); await ready();
+    await status("Cleared 100000 cells.").waitFor({ timeout: 120000 }); await largeReady();
     assert.equal((await commands()).length, largeCount + 1, "one atomic mutation at the inclusive limit");
     assert.equal((await commands()).at(-1).edits.length, 100000);
     assert.equal(await publications(), publishedBefore + 1, "exactly one publication");
@@ -311,10 +312,10 @@ export async function runClearCellsCases(page, { close, checks }) {
       }
     };
     assertCleared(cleared);
-    await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+    await page.getByRole("button", { name: "Undo", exact: true }).click(); await largeReady();
     assert.deepEqual((await projection()).rows, largeBefore.rows, "one Undo restores all 100,000 original values");
     await noUndo();
-    await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
+    await page.getByRole("button", { name: "Redo", exact: true }).click(); await largeReady();
     assertCleared(await projection());
     assert.equal(await page.getByRole("button", { name: "Redo", exact: true }).isDisabled(), true);
     await page.getByRole("button", { name: "Save a copy", exact: true }).click();
@@ -324,7 +325,7 @@ export async function runClearCellsCases(page, { close, checks }) {
     await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor({ timeout: 120000 });
     await close(page);
     await page.getByRole("button", { name: "Open saved Clear inclusive limit", exact: true }).click();
-    await ready();
+    await largeReady();
     const reopened = await projection();
     assertCleared(reopened);
     assert.deepEqual(reopened.rows, cleared.rows, "Save/reopen preserves the exact cleared values and presence");
