@@ -53,7 +53,7 @@ describe("working-size imported sessions with the vendored kit", () => {
       expect(preview.sheets[0]!.rows).toHaveLength(129);
       expect(preview.sheets[0]!.rows.some(row => row.some(cell => cell.formula !== null))).toBe(true);
       const imported = await runtime.importSpreadsheet(xlsx.bytes, "xlsx", options, selection);
-      expect(imported.metadata.sheets[0]!.rows).toHaveLength(129);
+      expect(imported.metadata.sheets[0]!.schema_id).toBe(imported.view.table.collection.id);
       expect(imported.view.table.collection.entity_count).toBe(129);
     } finally { client.close(); }
   }, 30_000);
