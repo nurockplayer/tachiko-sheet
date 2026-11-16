@@ -34,7 +34,8 @@ try {
         });
       }
       postMessage(message, ...args) {
-        if (message.request?.type === "set_column_date_format" && evidence.arm) {
+        if ((message.request?.type === "set_column_date_format" && evidence.arm === "stale") ||
+            (message.request?.type === "undo" && evidence.arm === "undo")) {
           message = structuredClone(message);
           if (evidence.arm === "stale") message.request.expected_revision = "r3-stale-witness";
           evidence.arm = null;
@@ -55,8 +56,8 @@ try {
   const bar = page.getByTestId("formula-bar-input");
   const reason = page.getByTestId("formula-bar-reason");
 
-  // A real cross-row A1 formula produces Work's copy warning. A Boolean cell
-  // supplies the simultaneous non-editable reason that used to hide it.
+  // A real cross-row A1 formula produces Work's copy warning. Hold a real
+  // Undo reply to expose the simultaneous operation-in-progress reason.
   await page.setViewportSize({ width: 390, height: 900 });
   const gridTop = (await rows.first().boundingBox()).y;
   await cell(1, "priority").click();
@@ -71,10 +72,17 @@ try {
     const active = document.activeElement;
     return active?.matches(`td[data-work-field="${field}"]`);
   }, fields.confirmed);
-  assert.equal(await bar.getAttribute("readonly"), "");
-  await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent.includes("This column cannot hold a formula"));
+  await page.evaluate(() => { window.__r3.arm = "undo"; });
+  await page.keyboard.press("Control+z");
+  await page.waitForFunction(() => Boolean(window.__r3.held));
+  await page.waitForFunction(() => {
+    const input = document.querySelector('[data-testid="formula-bar-input"]');
+    const text = document.querySelector('[data-testid="formula-bar-reason"]')?.textContent ?? "";
+    return input?.readOnly && text.includes("An operation is in progress") && text.includes("Copying this formula");
+  });
+  assert.equal(await bar.evaluate(node => node.readOnly), true);
   const full = await reason.textContent();
-  assert.match(full, /This column cannot hold a formula/);
+  assert.match(full, /An operation is in progress/);
   assert.match(full, /Copying this formula/);
   assert.equal(await reason.getAttribute("title"), full);
   assert.equal(await reason.getAttribute("aria-label"), full);
@@ -82,8 +90,11 @@ try {
   assert.equal((await reason.boundingBox()).height, 18);
   assert.equal(await reason.evaluate(node => node.scrollWidth > node.clientWidth), true, "long combined message is ellipsized");
   assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) < 1, "warning appearance keeps grid geometry");
+  await page.evaluate(() => { const e = window.__r3; e.worker.dispatchEvent(new MessageEvent("message", { data: e.held })); e.held = null; });
+  await ready(page);
   await cell(0, "impact").click();
   await bar.fill("=1+2");
+  await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent === "");
   assert.equal(await reason.textContent(), "");
   assert.ok(Math.abs((await rows.first().boundingBox()).y - gridTop) < 1, "warning clearing keeps grid geometry");
   await bar.press("Escape");

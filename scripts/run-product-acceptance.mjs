@@ -11,6 +11,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { runStep as runAcceptanceStep } from './product-acceptance-step.mjs';
+import { selectSteps } from './product-acceptance-shards.mjs';
+import durations from './product-acceptance-durations.json' with { type: 'json' };
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const vite = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
@@ -22,7 +24,6 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) {
   throw new Error('TACHIKO_PRODUCT_PORT must be 1024..65535');
 }
 const baseUrl = `http://127.0.0.1:${port}`;
-await mkdir(evidenceDir, { recursive: true });
 
 const summary = [];
 
@@ -99,6 +100,248 @@ async function resolveChromium() {
   }
 }
 
+function productSteps({ singleProcessEnv = {}, chromiumSupport = {}, serving = {}, homeVisualOut } = {}) {
+  return [
+    { name: 'workbook-tabs-local',
+      args: [path.join(root, 'tests', 'product', 'workbook-tabs-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'mutation-completion-local',
+      args: [path.join(root, 'tests', 'product', 'mutation-completion-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'new-table-rows-local',
+      args: [path.join(root, 'tests', 'product', 'new-table-rows-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'selection-statistics-local',
+      args: [path.join(root, 'tests', 'product', 'selection-statistics-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'clipboard-local',
+      args: [path.join(root, 'tests', 'product', 'clipboard-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'editing-basics-local',
+      args: [path.join(root, 'tests', 'product', 'editing-basics-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'find-replace-local',
+      args: [path.join(root, 'tests', 'product', 'find-replace-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'filter-local',
+      args: [path.join(root, 'tests', 'product', 'filter-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'columns-local',
+      args: [path.join(root, 'tests', 'product', 'columns-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'calculated-row-local',
+      args: [path.join(root, 'tests', 'product', 'calculated-row-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'working-size-bounds-local',
+      args: [path.join(root, 'tests', 'product', 'working-size-bounds-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'column-alignment-local',
+      args: [path.join(root, 'tests', 'product', 'column-alignment-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'column-date-display-local',
+      args: [path.join(root, 'tests', 'product', 'column-date-display-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'working-size-entries-local',
+      args: [path.join(root, 'tests', 'product', 'working-size-entries-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'j1-tracker-local',
+      args: [path.join(root, 'tests', 'product', 'j1-tracker-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'work-file-local',
+      args: [path.join(root, 'tests', 'product', 'work-file-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'work-file-save-local',
+      args: [path.join(root, 'tests', 'product', 'work-file-save-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'v3-folder-save-local',
+      args: [path.join(root, 'tests', 'product', 'v3-folder-save-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'save-close-local',
+      args: [path.join(root, 'tests', 'product', 'save-close-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'save-update-local',
+      args: [path.join(root, 'tests', 'product', 'save-update-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'j4-normal-ui-local-transport',
+      args: [path.join(root, 'tests', 'product', 'j4-normal-ui-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'native-export-local',
+      args: [path.join(root, 'tests', 'product', 'native-export-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'templates-local',
+      args: [path.join(root, 'tests', 'product', 'templates-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'bank-statement-local',
+      args: [path.join(root, 'tests', 'product', 'bank-statement-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'j4-imported-attachment-local-transport',
+      args: [path.join(root, 'tests', 'product', 'j4-imported-attachment-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'result-composition-local',
+      args: [path.join(root, 'tests', 'product', 'result-composition-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'results-chart-redraw', server: true,
+      args: [path.join(root, 'tests', 'product', 'results-chart-redraw.mjs')],
+      env: { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : {}), WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'j5-report-local-transport',
+      args: [path.join(root, 'tests', 'product', 'j5-report-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'save-read-fault-regression-local-transport',
+      args: [path.join(root, 'tests', 'product', 'save-read-fault-regression.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'interface-profile-local-transport',
+      args: [path.join(root, 'tests', 'product', 'interface-profile-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'appearance-selector-local',
+      args: [path.join(root, 'tests', 'product', 'appearance-selector-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'appearance-visual-local',
+      args: [path.join(root, 'tests', 'product', 'appearance-visual-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'home-visual-local',
+      args: [path.join(root, 'tests', 'product', 'home-visual-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, HOME_VISUAL_OUT: homeVisualOut, ...singleProcessEnv },
+      options: { details: { evidenceDirectory: homeVisualOut } },
+    },
+    { name: 'interface-profile-interchange-local',
+      args: [path.join(root, 'tests', 'product', 'interface-profile-interchange-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'primary-actions-forced-colors-local-transport',
+      args: [path.join(root, 'tests', 'product', 'primary-actions-forced-colors-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'initial-launch-local-transport',
+      args: [path.join(root, 'tests', 'product', 'initial-launch-regression.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'undo-redo-local',
+      args: [path.join(root, 'tests', 'product', 'undo-redo-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'cell-editing-regression', server: true,
+      args: [path.join(root, 'tests', 'product', 'cell-editing-regression.mjs')],
+      env: { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : { WORK_DIST: acceptanceDir }), ...singleProcessEnv,
+      ...(chromiumSupport.executablePath ? { WORK_CHROMIUM: chromiumSupport.executablePath } : {}) },
+    },
+    { name: 'component-review-followups-local',
+      args: [path.join(root, 'tests', 'product', 'component-review-followups-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'j3-normal-ui-local-transport',
+      args: [path.join(root, 'tests', 'product', 'j3-normal-ui-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'grid-window-local',
+      args: [path.join(root, 'tests', 'product', 'grid-window-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'import-recognizable-local',
+      args: [path.join(root, 'tests', 'product', 'import-recognizable-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'capacity-8406-local',
+      args: [path.join(root, 'tests', 'product', 'capacity-8406-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'mixed-import-local',
+      args: [path.join(root, 'tests', 'product', 'mixed-import-local.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+    { name: 'browser-m1', server: true,
+      args: [path.join(root, 'tests', 'browser.mjs')],
+      env: {
+      WORK_CLIENT_URL: baseUrl,
+      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
+      ...(chromiumSupport.executablePath
+        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
+        : {}),
+    },
+      fallback: { name: 'browser-m1-local-transport', args: [path.join(root, 'tests', 'product', 'm1-local.mjs')], env: { WORK_DIST: acceptanceDir, ...singleProcessEnv } },
+    },
+    { name: 'browser-recovery-regression', server: true,
+      args: [path.join(root, 'tests', 'product', 'recovery-regression.mjs')],
+      env: {
+      WORK_CLIENT_URL: baseUrl,
+      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
+      ...(chromiumSupport.executablePath
+        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
+        : {}),
+    },
+    },
+    { name: 'browser-initial-launch-regression', server: true,
+      args: [path.join(root, 'tests', 'product', 'initial-launch-regression.mjs')],
+      env: {
+      WORK_CLIENT_URL: baseUrl,
+      WORK_DIST: acceptanceDir,
+      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
+      ...(chromiumSupport.executablePath
+        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
+        : {}),
+    },
+    },
+    { name: 'product-focus', server: true,
+      args: [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
+      env: {
+      WORK_CLIENT_URL: baseUrl,
+      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
+      ...(chromiumSupport.executablePath
+        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
+        : {}),
+    },
+      fallback: { name: 'product-focus-local-transport', args: [path.join(root, 'tests', 'product', 'focus-regression.mjs')], env: { WORK_DIST: acceptanceDir, ...singleProcessEnv } },
+    },
+    { name: 'dialog-operation-recovery-local-transport',
+      args: [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
+      env: { WORK_DIST: acceptanceDir, ...singleProcessEnv },
+    },
+  ];
+}
+
+if (process.argv.includes('--list')) {
+  console.log(JSON.stringify(productSteps().map(({ name }) => name)));
+  process.exit(0);
+}
+const selection = selectSteps(productSteps(), durations, process.env.TACHIKO_ACCEPTANCE_SHARD);
+const selectedSteps = selection.steps.map(({ name }) => name);
+await mkdir(evidenceDir, { recursive: true });
+const writeSummary = (result) => writeFile(
+  path.join(evidenceDir, 'summary.json'),
+  JSON.stringify({ ...result, shard: selection.shard, selectedSteps }, null, 2),
+);
+
 let exitCode = 0;
 let status = "PASS";
 const copyStep = await runStep('copy-example-fixture', [path.join(root, 'scripts', 'copy-example-fixture.mjs')]);
@@ -109,306 +352,47 @@ const buildStep =
 
 if (buildStep !== 0) {
   console.error('BLOCKED: the acceptance build did not complete; no behavioral result is reported.');
-  await writeFile(path.join(evidenceDir, 'summary.json'), JSON.stringify({ status: 'BLOCKED', summary }, null, 2));
+  await writeSummary({ status: 'BLOCKED', summary });
   process.exit(78);
 }
 
-const serving = await startServer();
+const needsServer = selection.steps.some((step) => step.server);
+const serving = needsServer ? await startServer() : null;
 const chromiumSupport = await resolveChromium();
 console.log(
   JSON.stringify({ step: 'chromium-probe', status: 'PASS', singleProcess: chromiumSupport.singleProcess }),
 );
 const singleProcessEnv = chromiumSupport.singleProcess ? { TACHIKO_TEST_SINGLE_PROCESS: '1' } : {};
 try {
-  const workbookTabs = await runStep(
-    'workbook-tabs-local',
-    [path.join(root, 'tests', 'product', 'workbook-tabs-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const mutationCompletion = await runStep(
-    'mutation-completion-local',
-    [path.join(root, 'tests', 'product', 'mutation-completion-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const tableRows = await runStep(
-    'new-table-rows-local',
-    [path.join(root, 'tests', 'product', 'new-table-rows-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const selectionStatistics = await runStep(
-    'selection-statistics-local',
-    [path.join(root, 'tests', 'product', 'selection-statistics-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const clipboard = await runStep(
-    'clipboard-local',
-    [path.join(root, 'tests', 'product', 'clipboard-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const editingBasics = await runStep(
-    'editing-basics-local',
-    [path.join(root, 'tests', 'product', 'editing-basics-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const findReplace = await runStep(
-    'find-replace-local',
-    [path.join(root, 'tests', 'product', 'find-replace-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const filterLocal = await runStep(
-    'filter-local',
-    [path.join(root, 'tests', 'product', 'filter-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const columns = await runStep(
-    'columns-local',
-    [path.join(root, 'tests', 'product', 'columns-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const calculatedRow = await runStep(
-    'calculated-row-local',
-    [path.join(root, 'tests', 'product', 'calculated-row-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const workingSizeBounds = await runStep(
-    'working-size-bounds-local',
-    [path.join(root, 'tests', 'product', 'working-size-bounds-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const columnAlignment = await runStep(
-    'column-alignment-local',
-    [path.join(root, 'tests', 'product', 'column-alignment-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const columnDateDisplay = await runStep(
-    'column-date-display-local',
-    [path.join(root, 'tests', 'product', 'column-date-display-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const workingSizeEntries = await runStep(
-    'working-size-entries-local',
-    [path.join(root, 'tests', 'product', 'working-size-entries-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const j1 = await runStep('j1-tracker-local', [path.join(root, 'tests', 'product', 'j1-tracker-local.mjs')], { WORK_DIST: acceptanceDir, ...singleProcessEnv });
-  const workFile = await runStep(
-    'work-file-local',
-    [path.join(root, 'tests', 'product', 'work-file-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const workFileSave = await runStep(
-    'work-file-save-local',
-    [path.join(root, 'tests', 'product', 'work-file-save-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const v3FolderSave = await runStep(
-    'v3-folder-save-local',
-    [path.join(root, 'tests', 'product', 'v3-folder-save-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const saveClose = await runStep(
-    'save-close-local',
-    [path.join(root, 'tests', 'product', 'save-close-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const saveUpdate = await runStep(
-    'save-update-local',
-    [path.join(root, 'tests', 'product', 'save-update-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const j4 = await runStep(
-    'j4-normal-ui-local-transport',
-    [path.join(root, 'tests', 'product', 'j4-normal-ui-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const nativeExport = await runStep(
-    'native-export-local',
-    [path.join(root, 'tests', 'product', 'native-export-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const templates = await runStep(
-    'templates-local',
-    [path.join(root, 'tests', 'product', 'templates-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const bankStatement = await runStep(
-    'bank-statement-local',
-    [path.join(root, 'tests', 'product', 'bank-statement-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const j4Imported = await runStep(
-    'j4-imported-attachment-local-transport',
-    [path.join(root, 'tests', 'product', 'j4-imported-attachment-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const resultComposition = await runStep(
-    'result-composition-local',
-    [path.join(root, 'tests', 'product', 'result-composition-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const resultsChartRedraw = await runStep(
-    'results-chart-redraw',
-    [path.join(root, 'tests', 'product', 'results-chart-redraw.mjs')],
-    { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : {}), WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const j5 = await runStep(
-    'j5-report-local-transport',
-    [path.join(root, 'tests', 'product', 'j5-report-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const saveReadFault = await runStep(
-    'save-read-fault-regression-local-transport',
-    [path.join(root, 'tests', 'product', 'save-read-fault-regression.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const interfaceProfile = await runStep(
-    'interface-profile-local-transport',
-    [path.join(root, 'tests', 'product', 'interface-profile-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const appearanceSelector = await runStep(
-    'appearance-selector-local',
-    [path.join(root, 'tests', 'product', 'appearance-selector-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const appearanceVisual = await runStep(
-    'appearance-visual-local',
-    [path.join(root, 'tests', 'product', 'appearance-visual-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const homeVisualOut = await mkdtemp(path.join(tmpdir(), 'tachiko-sheet-home-visual-'));
-  const homeVisual = await runStep(
-    'home-visual-local',
-    [path.join(root, 'tests', 'product', 'home-visual-local.mjs')],
-    { WORK_DIST: acceptanceDir, HOME_VISUAL_OUT: homeVisualOut, ...singleProcessEnv },
-    { details: { evidenceDirectory: homeVisualOut } },
-  );
-  const profileInterchange = await runStep(
-    'interface-profile-interchange-local',
-    [path.join(root, 'tests', 'product', 'interface-profile-interchange-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const primaryActions = await runStep(
-    'primary-actions-forced-colors-local-transport',
-    [path.join(root, 'tests', 'product', 'primary-actions-forced-colors-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const initialLaunchLocal = await runStep(
-    'initial-launch-local-transport',
-    [path.join(root, 'tests', 'product', 'initial-launch-regression.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const undoRedo = await runStep(
-    'undo-redo-local',
-    [path.join(root, 'tests', 'product', 'undo-redo-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const cellEditing = await runStep(
-    'cell-editing-regression',
-    [path.join(root, 'tests', 'product', 'cell-editing-regression.mjs')],
-    { ...(serving.ready ? { WORK_CLIENT_URL: baseUrl } : { WORK_DIST: acceptanceDir }), ...singleProcessEnv,
-      ...(chromiumSupport.executablePath ? { WORK_CHROMIUM: chromiumSupport.executablePath } : {}) },
-  );
-  const componentReviewFollowups = await runStep(
-    'component-review-followups-local',
-    [path.join(root, 'tests', 'product', 'component-review-followups-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const normalUi = await runStep(
-    'j3-normal-ui-local-transport',
-    [path.join(root, 'tests', 'product', 'j3-normal-ui-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const gridWindow = await runStep(
-    'grid-window-local',
-    [path.join(root, 'tests', 'product', 'grid-window-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  const recognizable = await runStep(
-    'import-recognizable-local',
-    [path.join(root, 'tests', 'product', 'import-recognizable-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  // #150: 8,406 x 3 Text import/edit/history/save/restart/export lifecycle.
-  const capacity = await runStep(
-    'capacity-8406-local',
-    [path.join(root, 'tests', 'product', 'capacity-8406-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  // #160: mixed Text/Number import, history, restart and full-cell export.
-  const mixedImport = await runStep(
-    'mixed-import-local',
-    [path.join(root, 'tests', 'product', 'mixed-import-local.mjs')],
-    { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-  );
-  if (!serving.ready) {
+  const homeVisualOut = selectedSteps.includes('home-visual-local')
+    ? await mkdtemp(path.join(tmpdir(), 'tachiko-sheet-home-visual-')) : undefined;
+  const steps = productSteps({ singleProcessEnv, chromiumSupport, serving: serving ?? {}, homeVisualOut });
+  const canonicalBlocked = needsServer && !serving.ready;
+  const results = [];
+  for (const step of steps.filter(({ name }) => selectedSteps.includes(name))) {
+    if (canonicalBlocked && step.server && !step.env.WORK_DIST) {
+      if (step.fallback) {
+        const fallback = step.fallback;
+        results.push(await runStep(fallback.name, fallback.args, fallback.env));
+      }
+      continue;
+    }
+    // The initial-launch canonical regression has WORK_DIST as well as the URL.
+    if (canonicalBlocked && step.name === 'browser-initial-launch-regression') continue;
+    results.push(await runStep(step.name, step.args, step.env, step.options));
+  }
+  const localOk = results.every((code) => code === 0);
+  if (canonicalBlocked) {
     console.error(`BLOCKED: the canonical acceptance server did not start.\n${Buffer.concat(serving.output).toString()}`);
-    // Supporting evidence only: the same six product outcomes over a disk-routed
-    // transport. This is NOT the unchanged tests/browser.mjs acceptance.
-    const localM1 = await runStep(
-      'browser-m1-local-transport',
-      [path.join(root, 'tests', 'product', 'm1-local.mjs')],
-      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-    );
-    const localFocus = await runStep(
-      'product-focus-local-transport',
-      [path.join(root, 'tests', 'product', 'focus-regression.mjs')],
-      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-    );
-    const localDialogRecovery = await runStep(
-      'dialog-operation-recovery-local-transport',
-      [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
-      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-    );
-    const localOk = workbookTabs === 0 && mutationCompletion === 0 && tableRows === 0 && selectionStatistics === 0 && clipboard === 0 && editingBasics === 0 && findReplace === 0 && filterLocal === 0 && columns === 0 && calculatedRow === 0 && workingSizeBounds === 0 && columnAlignment === 0 && columnDateDisplay === 0 && workingSizeEntries === 0 && j1 === 0 && workFile === 0 && workFileSave === 0 && v3FolderSave === 0 && saveClose === 0 && saveUpdate === 0 && cellEditing === 0 && componentReviewFollowups === 0 && j4 === 0 && j4Imported === 0 && nativeExport === 0 && templates === 0 && bankStatement === 0 && resultComposition === 0 && resultsChartRedraw === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && undoRedo === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && localM1 === 0 && localFocus === 0 && localDialogRecovery === 0;
     exitCode = localOk ? 79 : 1;
     status = `BLOCKED-CANONICAL; local-transport ${localOk ? 'PASS' : 'FAIL'}`;
   } else {
-    const browser = await runStep('browser-m1', [path.join(root, 'tests', 'browser.mjs')], {
-      WORK_CLIENT_URL: baseUrl,
-      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
-      ...(chromiumSupport.executablePath
-        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
-        : {}),
-    });
-    const recovery = await runStep('browser-recovery-regression', [path.join(root, 'tests', 'product', 'recovery-regression.mjs')], {
-      WORK_CLIENT_URL: baseUrl,
-      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
-      ...(chromiumSupport.executablePath
-        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
-        : {}),
-    });
-    const initialLaunch = await runStep('browser-initial-launch-regression', [path.join(root, 'tests', 'product', 'initial-launch-regression.mjs')], {
-      WORK_CLIENT_URL: baseUrl,
-      WORK_DIST: acceptanceDir,
-      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
-      ...(chromiumSupport.executablePath
-        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
-        : {}),
-    });
-    const focus = await runStep('product-focus', [path.join(root, 'tests', 'product', 'focus-regression.mjs')], {
-      WORK_CLIENT_URL: baseUrl,
-      WORK_PLAYWRIGHT_MODULE: 'playwright-core',
-      ...(chromiumSupport.executablePath
-        ? { WORK_CHROMIUM: chromiumSupport.executablePath, TACHIKO_TEST_SINGLE_PROCESS: '1' }
-        : {}),
-    });
-    // This focused suite installs its own disk routes; keep it supplemental
-    // local-transport evidence even when the canonical server is available.
-    const dialogRecovery = await runStep(
-      'dialog-operation-recovery-local-transport',
-      [path.join(root, 'tests', 'product', 'dialog-operation-recovery.mjs')],
-      { WORK_DIST: acceptanceDir, ...singleProcessEnv },
-    );
-    exitCode = workbookTabs === 0 && mutationCompletion === 0 && tableRows === 0 && selectionStatistics === 0 && clipboard === 0 && editingBasics === 0 && findReplace === 0 && filterLocal === 0 && columns === 0 && calculatedRow === 0 && workingSizeBounds === 0 && columnAlignment === 0 && columnDateDisplay === 0 && workingSizeEntries === 0 && j1 === 0 && workFile === 0 && workFileSave === 0 && v3FolderSave === 0 && saveClose === 0 && saveUpdate === 0 && cellEditing === 0 && componentReviewFollowups === 0 && j4 === 0 && j4Imported === 0 && nativeExport === 0 && templates === 0 && bankStatement === 0 && resultComposition === 0 && resultsChartRedraw === 0 && j5 === 0 && saveReadFault === 0 && interfaceProfile === 0 && appearanceSelector === 0 && appearanceVisual === 0 && homeVisual === 0 && profileInterchange === 0 && primaryActions === 0 && initialLaunchLocal === 0 && normalUi === 0 && capacity === 0 && mixedImport === 0 && gridWindow === 0 && recognizable === 0 && browser === 0 && recovery === 0 && initialLaunch === 0 && undoRedo === 0 && focus === 0 && dialogRecovery === 0 ? 0 : 1;
+    exitCode = localOk ? 0 : 1;
     status = exitCode === 0 ? 'PASS' : 'FAIL';
   }
 } finally {
-  await serving.stop();
+  await serving?.stop();
 }
 
-await writeFile(
-  path.join(evidenceDir, 'summary.json'),
-  JSON.stringify({ status, baseUrl, summary }, null, 2),
-);
+await writeSummary({ status, baseUrl, summary });
 process.exit(exitCode);
