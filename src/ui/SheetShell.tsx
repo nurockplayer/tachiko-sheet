@@ -1721,7 +1721,11 @@ export function SheetShell(props: SheetShellProps) {
         if (plan) {
           if (plan.kind === "unchanged") { announceClipboard("The selected cells are unchanged.", false, true); return; }
           keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => { if (confirmed && pasteSource) setPasteRebind(pasteSource); });
+          const intent = completionIntent();
+          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => {
+            if (confirmed && pasteSource) setPasteRebind(pasteSource);
+            if (confirmed) revealPastedCell(position, intent);
+          });
           return;
         }
       } catch (error) {
@@ -1790,13 +1794,28 @@ export function SheetShell(props: SheetShellProps) {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
       if (result.kind === "confirmed" && pasteSource) setPasteRebind(pasteSource);
       // Appended rows stay visible under the active filter, as Add row does.
-      if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
+      if (result.kind === "confirmed") {
+        keepGridRows(result.addedEntities ?? []);
+        revealPastedCell(position, intent);
+      }
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
         : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed", edits.some(edit => edit.input.kind === "clear"));
     }, () => {
       if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) announceClipboard("The paste could not be confirmed. Refresh to check it before pasting again.", true);
     }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
+  }
+
+  function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
+    if (!completionMayUpdateUi(intent)) return;
+    const rowIndex = rowIndexByEntity.get(position.entity);
+    if (rowIndex !== undefined) revealGridRow(rowIndex);
+    // A windowed target may mount with the confirmed projection. Keep focus and selection intact.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent) || clipboardIdentityRef.current !== collectionIdentity) return;
+      const cell = cellRefs.current.get(cellKey(position.entity, position.field));
+      if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
+    }));
   }
 
   async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut" | "Updated", noun: "clear" | "fill" | "cut" | "paste"): Promise<boolean> {

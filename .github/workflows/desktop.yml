@@ -139,3 +139,59 @@ jobs:
             desktop-evidence/e2e/stdout-stderr.log
             desktop-evidence/e2e/host.log
             desktop-evidence/e2e/diagnostics.json
+
+  native:
+    name: macOS native subcases
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+      EVIDENCE_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      EVIDENCE_PR_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Check out same revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          node-version-file: false
+          version: 12.11.2
+          install: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Initialize bounded desktop evidence
+        run: node scripts/desktop-evidence.mjs init
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target aarch64-apple-darwin
+          rustup default 1.97.1
+      - name: Cache Cargo builds
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: macOS-aarch64-apple-darwin
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build same-revision packaged E2E app
+        run: pnpm desktop:build:e2e
+      - name: Capture the separate packaged E2E identity
+        run: node scripts/desktop-evidence.mjs e2e-identity
+      - name: Run native subcases
+        timeout-minutes: 35
+        env:
+          TACHIKO_SHEET_E2E_WINDOW_SIZE: 1000x660
+        run: node scripts/desktop-evidence.mjs native
+      - name: Retain native timing and diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sheet-macos-native-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          path: desktop-evidence/e2e/
