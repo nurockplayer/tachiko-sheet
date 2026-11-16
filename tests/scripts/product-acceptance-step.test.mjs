@@ -6,7 +6,18 @@ import path from 'node:path';
 import { connect } from 'node:net';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { runStep } from '../../scripts/product-acceptance-step.mjs';
+import { runStep, signalableOwnedPids } from '../../scripts/product-acceptance-step.mjs';
+
+test('macOS cleanup does not signal an unmarked reused PID with the same start second', () => {
+  const owned = new Map([[123, 'same second'], [456, 'same second']]);
+  const current = new Map([
+    [123, { started: 'same second', marked: false }],
+    [456, { started: 'same second', marked: true }],
+  ]);
+  const signalled = [];
+  for (const pid of signalableOwnedPids(owned, current, 'darwin')) signalled.push(pid);
+  assert.deepEqual(signalled, [456]);
+});
 
 async function setup(t, timeoutMs) {
   const directory = await mkdtemp(path.join(tmpdir(), 'sheet-step-test-'));
