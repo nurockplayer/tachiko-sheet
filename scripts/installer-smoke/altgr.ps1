@@ -1,21 +1,8 @@
 param(
-    [Parameter(Mandatory=$true, ParameterSetName='Send')][int]$AppPid,
-    [Parameter(Mandatory=$true, ParameterSetName='Prepare')][switch]$Prepare
+    [Parameter(Mandatory=$true)][int]$AppPid
 )
 $ErrorActionPreference = 'Stop'
 trap { Write-Error "AltGr native input: $_"; exit 1 }
-if ($Prepare) {
-    # Run before launching the test app; loading a layout in this PowerShell
-    # process alone does not install/select it for the app's UI thread.
-    $languages = Get-WinUserLanguageList
-    if (-not ($languages.LanguageTag -contains 'de-DE')) {
-        $languages.Add((New-WinUserLanguageList 'de-DE')[0])
-    }
-    Set-WinUserLanguageList -LanguageList $languages -Force
-    Set-WinDefaultInputMethodOverride -InputTip '0407:00000407'
-    Write-Host "AltGr layout prepared before app launch: languages=$((Get-WinUserLanguageList).LanguageTag -join ','); default=$((Get-WinDefaultInputMethodOverride).InputMethodTip)"
-    exit 0
-}
 Add-Type @'
 using System;
 using System.ComponentModel;
@@ -70,7 +57,7 @@ try {
     }
     for ($i = 0; $i -lt 100 -and [AltGrInput]::GetKeyboardLayout($thread) -ne $layout; $i++) { Start-Sleep -Milliseconds 50 }
     $actual = [AltGrInput]::GetKeyboardLayout($thread)
-    if ($actual -ne $layout) { throw "app thread did not activate German AltGr layout after pre-launch default setup and WM_INPUTLANGCHANGEREQUEST: thread=$thread requested=$($layout.ToInt64().ToString('X')) actual=$($actual.ToInt64().ToString('X'))" }
+    if ($actual -ne $layout) { throw "app thread did not activate German AltGr layout after WM_INPUTLANGCHANGEREQUEST: thread=$thread requested=$($layout.ToInt64().ToString('X')) actual=$($actual.ToInt64().ToString('X'))" }
     Write-Host "AltGr layout verified on app thread $thread`: $($actual.ToInt64().ToString('X'))"
     [AltGrInput]::Send()
     Start-Sleep -Milliseconds 300

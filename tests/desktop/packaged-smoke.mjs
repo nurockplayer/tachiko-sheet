@@ -9,12 +9,11 @@
 //
 // Usage: node tests/desktop/packaged-smoke.mjs <path to the e2e binary>
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { formulaPersistence } from "./formula-persistence.mjs";
 import { pasteRaces } from "./paste-races.mjs";
 
@@ -391,8 +390,6 @@ async function main() {
       assert.equal(exit.code, 0, "persistence: clean process exit");
     },
   });
-  if (platform === "win32") execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-    fileURLToPath(new URL("../../scripts/installer-smoke/altgr.ps1", import.meta.url)), "-Prepare"], { stdio: "inherit", timeout: 30_000 });
   const pasteSession = await launch({ closeAnswer: "cancel" });
   await pasteRaces({ evaluate, work: pasteSession.dir, windowsPid: platform === "win32" ? pasteSession.child.pid : null });
 }
