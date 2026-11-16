@@ -63,7 +63,16 @@ try {
   await bar.fill("=C3*D2");
   await bar.press("Enter");
   await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent.includes("Copying this formula"));
+  // Enter leaves the formula bar focused; a grid click would insert a cell
+  // reference until Escape returns focus to the committed cell.
+  await bar.press("Escape");
   await cell(0, "confirmed").click();
+  await page.waitForFunction(field => {
+    const active = document.activeElement;
+    return active?.matches(`td[data-work-field="${field}"]`);
+  }, fields.confirmed);
+  assert.equal(await bar.getAttribute("readonly"), "");
+  await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent.includes("This column cannot hold a formula"));
   const full = await reason.textContent();
   assert.match(full, /This column cannot hold a formula/);
   assert.match(full, /Copying this formula/);
@@ -94,10 +103,11 @@ try {
       node.style.cssText = "position:fixed;right:0;bottom:0;width:120px;height:30px;z-index:30";
       window.dispatchEvent(new Event("resize"));
     });
-    await page.waitForFunction(() => {
+    await page.waitForFunction(field => {
       const box = document.querySelector(".ts-formula-hint")?.getBoundingClientRect();
-      return box && box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight;
-    });
+      const anchor = document.querySelector(`td[data-work-field="${field}"]`)?.getBoundingClientRect();
+      return box && anchor && box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && box.bottom <= anchor.top + 1;
+    }, fields.impact);
     const anchor = await cell(0, "impact").boundingBox();
     const placed = await hint.boundingBox();
     assert.ok(placed.y + placed.height <= anchor.y + 1, "bottom-edge hint flips above its cell");
