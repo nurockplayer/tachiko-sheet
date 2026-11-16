@@ -137,12 +137,15 @@ test('timeout escalates for a resistant detached grandchild after the direct chi
     setInterval(() => {}, 1000);
   `;
   const killGraceMs = 300;
-  t.after(async () => {
-    const { pid } = JSON.parse(await readFile(path.join(fixture.directory, 'grandchild.json'), 'utf8'));
-    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  let grandchild;
+  t.after(() => {
+    if (!grandchild) return;
+    try { process.kill(grandchild, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   });
   const started = performance.now();
   const code = await runStep('early-close', ['-e', source], {}, { ...fixture.options, killGraceMs });
+  const { pid, port } = JSON.parse(await readFile(path.join(fixture.directory, 'grandchild.json'), 'utf8'));
+  grandchild = pid;
   const [local] = await fixture.logs('early-close');
   const { parent } = JSON.parse(local.trim());
   t.after(() => {
@@ -152,7 +155,6 @@ test('timeout escalates for a resistant detached grandchild after the direct chi
   assert.ok(performance.now() - started >= 1500 + killGraceMs, 'returned before group escalation');
   assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'TIMEOUT']);
   assert.throws(() => process.kill(parent, 0), { code: 'ESRCH' });
-  const { port } = JSON.parse(await readFile(path.join(fixture.directory, 'grandchild.json'), 'utf8'));
   const deadline = Date.now() + 3000;
   while (true) {
     const closed = await new Promise((resolve, reject) => {
@@ -187,15 +189,17 @@ test('successful step cleans a detached grandchild after its parent exits', { ti
       setTimeout(() => process.exit(0), 300);
     });
   `;
-  t.after(async () => {
-    const [log] = await fixture.logs('detached-success');
-    const { pid } = JSON.parse(log.trim());
-    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  let grandchild;
+  t.after(() => {
+    if (!grandchild) return;
+    try { process.kill(grandchild, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   });
-  assert.equal(await runStep('detached-success', ['-e', source], {}, { ...fixture.options, killGraceMs: 150 }), 0);
-  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'PASS']);
+  const code = await runStep('detached-success', ['-e', source], {}, { ...fixture.options, killGraceMs: 150 });
   const [log] = await fixture.logs('detached-success');
-  const { port } = JSON.parse(log.trim());
+  const { pid, port } = JSON.parse(log.trim());
+  grandchild = pid;
+  assert.equal(code, 0);
+  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'PASS']);
   await new Promise((resolve, reject) => {
     const socket = connect(port, '127.0.0.1');
     socket.once('connect', () => { socket.destroy(); reject(new Error('detached grandchild survived successful step')); });
