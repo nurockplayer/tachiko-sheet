@@ -66,7 +66,7 @@ describe("working-size imported sessions with the vendored kit", () => {
       expect(reedited.many).toBeUndefined();
       expect(reedited.changed).toHaveLength(1);
       expect(reedited.changed![0]).toMatchObject({ target, stored: { kind: "number", value: 43 } });
-      const exported = await client.exportSpreadsheet(reedited.resulting_revision, metadata, format, collection);
+      const exported = await client.exportSpreadsheet(reedited.resulting_revision, metadata, format, table.collection.id);
       expect(exported.bytes.byteLength).toBeGreaterThan(0);
       expect(metadata).toEqual(retainedMetadata);
 
