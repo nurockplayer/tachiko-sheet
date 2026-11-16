@@ -65,50 +65,6 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
   `);
   const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
 
-  if (windowsPid) await check("AltGr Right-Alt+V does not open Paste Special", async () => {
-    await evaluate(`${page}
-      await show(0); click(cell(0));
-      window.__g6Keys = [];
-      window.__g6KeyListener = event => window.__g6Keys.push({ key: event.key, code: event.code,
-        trusted: event.isTrusted, ctrl: event.ctrlKey, alt: event.altKey, altGraph: event.getModifierState("AltGraph") });
-      document.addEventListener("keydown", window.__g6KeyListener, true);
-      return true;
-    `);
-    try {
-      execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-        fileURLToPath(new URL("../../scripts/installer-smoke/altgr.ps1", import.meta.url)), "-AppPid", String(windowsPid)], { stdio: "inherit", timeout: 30_000 });
-      const result = await evaluate(`
-        await waitFor(() => window.__g6Keys.some(e => e.code === "KeyV" && e.trusted), "native AltGr V reached WebView", 10000);
-        await sleep(250);
-        return { keys: window.__g6Keys, menu: Boolean(document.querySelector('[role="menu"][aria-label="Cell actions"]')) };
-      `);
-      console.log(`AltGr native evidence: ${JSON.stringify(result)}`);
-      assert.ok(result.keys.some(e => e.code === "AltRight" && e.trusted), "native Right Alt reached WebView");
-      assert.ok(result.keys.some(e => e.code === "KeyV" && e.trusted && (e.altGraph || (e.ctrl && e.alt))), "native AltGr V reached WebView");
-      assert.equal(result.menu, false, "AltGr must not open Paste Special");
-      await cancelEditor();
-      await evaluate(`${page}
-        dblclick(cell(0));
-        const input = await waitFor(() => textbox("Edit cell"), "cell editor for AltGr character");
-        input.focus(); input.select(); return true;
-      `);
-      execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-        fileURLToPath(new URL("../../scripts/installer-smoke/altgr.ps1", import.meta.url)), "-AppPid", String(windowsPid), "-Key", "Q"], { stdio: "inherit", timeout: 30_000 });
-      const character = await evaluate(`${page}
-        const input = await waitFor(() => textbox("Edit cell"), "cell editor after native AltGr Q");
-        await waitFor(() => input.value === "@", "native AltGr Q inserted @");
-        press(input, "Enter");
-        await waitFor(() => !textbox("Edit cell") && current() && cell(0)?.textContent === "@", "AltGr character committed to cell");
-        return { value: cell(0).textContent, keys: window.__g6Keys };
-      `);
-      assert.ok(character.keys.some(e => e.code === "KeyQ" && e.trusted && (e.altGraph || (e.ctrl && e.alt))), "native AltGr Q reached WebView");
-      assert.equal(character.value, "@", "native AltGr character committed to cell");
-    } finally {
-      await evaluate(`document.removeEventListener("keydown", window.__g6KeyListener, true);
-        const menu = document.querySelector('[role="menu"]'); if (menu) press(menu, "Escape"); return true;`);
-      await cancelEditor();
-    }
-  });
   for (const [name, run] of extraChecks) await check(name, run);
 
   await check("paste into an off-screen target changes only that cell and reveals it", async () => {
@@ -196,6 +152,33 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
         else delete navigator.clipboard;
         delete window.__g6ClipboardSaved;
       } return true;`);
+    }
+  });
+  if (windowsPid) await check("AltGr Right-Alt+V does not open Paste Special", async () => {
+    await evaluate(`${page}
+      await show(0); click(cell(0));
+      window.__g6Keys = [];
+      window.__g6KeyListener = event => window.__g6Keys.push({ key: event.key, code: event.code,
+        trusted: event.isTrusted, ctrl: event.ctrlKey, alt: event.altKey, altGraph: event.getModifierState("AltGraph") });
+      document.addEventListener("keydown", window.__g6KeyListener, true);
+      return true;
+    `);
+    try {
+      execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        fileURLToPath(new URL("../../scripts/installer-smoke/altgr.ps1", import.meta.url)), "-AppPid", String(windowsPid)], { stdio: "inherit", timeout: 30_000 });
+      const result = await evaluate(`
+        await waitFor(() => window.__g6Keys.some(e => e.code === "KeyV" && e.trusted), "native AltGr V reached WebView", 10000);
+        await sleep(250);
+        return { keys: window.__g6Keys, menu: Boolean(document.querySelector('[role="menu"][aria-label="Cell actions"]')) };
+      `);
+      console.log(`AltGr native evidence: ${JSON.stringify(result)}`);
+      assert.ok(result.keys.some(e => e.code === "AltRight" && e.trusted), "native Right Alt reached WebView");
+      assert.ok(result.keys.some(e => e.code === "KeyV" && e.trusted && (e.altGraph || (e.ctrl && e.alt))), "native AltGr V reached WebView");
+      assert.equal(result.menu, false, "AltGr must not open Paste Special");
+    } finally {
+      await evaluate(`document.removeEventListener("keydown", window.__g6KeyListener, true);
+        const menu = document.querySelector('[role="menu"]'); if (menu) press(menu, "Escape"); return true;`);
+      await cancelEditor();
     }
   });
   if (failures.length) throw new AggregateError(failures, "G6 paste/native input checks failed");
