@@ -266,7 +266,7 @@ export async function runClearCellsCases(page, { close, checks }) {
   // Open a sparse canonical work file through the real working-size path.
   const folder = await mkdtemp(path.join(tmpdir(), "sheet-clear-limit-"));
   try {
-  for (const [rowCount, columnCount] of [[10000, 10], [9091, 11]]) {
+  for (const [rowCount, columnCount] of [[4000, 25], [9091, 11]]) {
   const inBounds = rowCount * columnCount === 100000;
   const schema = JSON.parse(j4CanaryText["schemas.json"])[0];
   schema.fields = Array.from({ length: columnCount }, (_, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type: "text" }, required: false }));
@@ -296,6 +296,7 @@ export async function runClearCellsCases(page, { close, checks }) {
     assert.equal(largeBefore.rows.reduce((n, row) => n + row.fields.length, 0), 100000,
       "all 100,000 selected cells start with values; this cannot be a no-op");
     const publishedBefore = await publications();
+    console.log("R5: dispatching one clear for exactly 100,000 populated cells");
     await page.keyboard.press("Backspace");
     await status("Cleared 100000 cells.").waitFor({ timeout: 120000 }); await ready();
     assert.equal((await commands()).length, largeCount + 1, "one atomic mutation at the inclusive limit");
@@ -303,7 +304,7 @@ export async function runClearCellsCases(page, { close, checks }) {
     assert.equal(await publications(), publishedBefore + 1, "exactly one publication");
     const cleared = await projection();
     const assertCleared = table => {
-      assert.equal(table.rows.length, 10000);
+      assert.equal(table.rows.length, rowCount);
       for (const row of table.rows) {
         assert.deepEqual(row.fields, [], "every stored value is cleared");
         assert.deepEqual([...row.blank_fields].sort(), table.columns.map(c => c.id).sort(), "every cell is blank");
