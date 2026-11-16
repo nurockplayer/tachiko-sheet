@@ -136,7 +136,7 @@ const SAVE_UNBOUND_DESCRIPTION = "Save your work as a copy you can reopen here. 
 const SAVE_COPY_DESCRIPTION = "Keep this copy and save another one (like Excel's Save As).";
 const PREPARE_XLSX_DESCRIPTION = "Prepare XLSX makes a new Excel file; the file you opened from is not changed, and your work here still needs Save.";
 
-// Work a5348952, packages/browser-client/runtime/src/interop_adapter.rs:11-12,42,280-289,1798-1834,2404-2443.
+// Work e434dc38, packages/browser-client/runtime/src/interop_adapter.rs (input byte limits).
 // Home uses ordinary import; MB here follows Work's binary byte limits.
 const HOME_IMPORT_LIMITS_DESCRIPTION = "CSV text or Excel files up to 2 MB; an Excel file can unpack to at most 8 MB. Larger plain sheets also have a 1 MB limit on cell text. Some styles and features are not imported.";
 
