@@ -248,6 +248,38 @@ describe("keyboard history queue", () => {
     expect(onHistory).not.toHaveBeenCalled();
   });
 
+  it.each(["Ctrl+Z", "Cmd+Z", "menu"])("does not replay %s entered during unknown currentness after Refresh", async shortcut => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const onRefresh = vi.fn(async () => { await ui.update({ currentness: "current" }); });
+    const ui = await mount({ onHistory, onRefresh, currentness: "unknown" });
+    await act(async () => {
+      if (shortcut === "menu") window.dispatchEvent(new CustomEvent("tachiko-menu", { detail: "undo" }));
+      else ui.cell().dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z", ctrlKey: shortcut === "Ctrl+Z", metaKey: shortcut === "Cmd+Z", bubbles: true, cancelable: true,
+      }));
+    });
+    expect(onHistory).not.toHaveBeenCalled();
+    const refresh = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Refresh")!;
+    await act(async () => refresh.click());
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(onHistory).not.toHaveBeenCalled();
+    // Recovery retained the same occurrence, revision and available history;
+    // a fresh press, rather than Refresh itself, must initiate the next step.
+    await act(async () => ui.cell().focus());
+    await ui.key();
+    expect(onHistory).toHaveBeenCalledExactlyOnceWith("undo");
+  });
+
+  it("clears history queued before a commit leaves currentness unknown", async () => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const ui = await mount({ onHistory, busy: true });
+    await ui.key();
+    await ui.update({ currentness: "unknown", busy: false });
+    await ui.update({ currentness: "pending", busy: true });
+    await ui.update({ currentness: "current", busy: false });
+    expect(onHistory).not.toHaveBeenCalled();
+  });
+
   it.each(["collection", "occurrence", "close", "draft", "modal"])("clears queued history on %s change", async change => {
     const first = deferred<null>();
     const onHistory = vi.fn<SheetShellProps["onHistory"]>(() => first.promise);

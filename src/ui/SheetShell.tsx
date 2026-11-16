@@ -2244,11 +2244,11 @@ export function SheetShell(props: SheetShellProps) {
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
-    if (historyQueueIdentityRef.current !== collectionIdentity || historyInteractionLocked) {
+    if (historyQueueIdentityRef.current !== collectionIdentity || historyInteractionLocked || currentness === "unknown") {
       historyQueueRef.current = [];
       historyQueueIdentityRef.current = collectionIdentity;
     }
-  }, [collectionIdentity, historyInteractionLocked]);
+  }, [collectionIdentity, historyInteractionLocked, currentness]);
   useLayoutEffect(() => {
     const request = historyFocusRequest;
     if (!request || historyFocusRequestRef.current !== request) return;
@@ -2345,7 +2345,7 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     function onHistoryKeyDown(event: KeyboardEvent): void {
       const shell = shellRef.current;
-      if (!shell || !shell.isConnected || !view || event.defaultPrevented) return;
+      if (!shell || !shell.isConnected || !view || currentness === "unknown" || event.defaultPrevented) return;
       const ownerDocument = shell.ownerDocument;
       const focusedElement = ownerDocument.activeElement;
       const target = event.target;
@@ -3374,7 +3374,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function requestKeyboardHistory(direction: "undo" | "redo", initiator: HTMLElement | null): void {
-    if (historyInteractionLocked || !view) return;
+    if (historyInteractionLocked || !view || currentness === "unknown") return;
     if (controlsLocked || historyFocusRequestRef.current || historyQueueRef.current.length > 0) {
       if (historyQueueRef.current.length < 20) historyQueueRef.current.push({ direction, initiator });
       return;
