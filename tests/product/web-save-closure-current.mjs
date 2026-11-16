@@ -40,7 +40,7 @@ const sourcePins = {
   "acceptance/web-save-closure/adapter.ego.mjs": "061c8a4701355685d442fe658d31491d3a7359de302421cda6446fea5983aa1a",
   "tests/product/home-entry.mjs": "bd6336b4938eb9b023eb70a1441d9e9a4523bb9d84483f6a5f536ea84a04d5e6",
 };
-// Fresh imports use Work #644's wording and e434dc38's A1 diagnostic locations.
+// Fresh imports use Work #644's wording and a5348952's A1 diagnostic locations.
 // Keep the historical fixtures/private reader unchanged; compare every ledger
 // field exactly against these current producer expectations.
 const currentTypeLocations = {
