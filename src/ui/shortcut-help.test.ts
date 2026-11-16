@@ -6,13 +6,17 @@ describe("shortcut help", () => {
     const entries = (mac: boolean) => shortcutHelpGroups({ mac, desktop: true }).flatMap(group => group.entries);
     expect(entries(true).find(entry => entry.action === "Save")?.keys).toEqual(["⌘S"]);
     expect(entries(false).find(entry => entry.action === "Save")?.keys).toEqual(["Ctrl+S"]);
-    expect(entries(true).find(entry => entry.action === "Show formulas")?.keys).toEqual(["Ctrl+`"]);
-    expect(entries(true).find(entry => entry.action === "Paste Special")?.keys).toEqual(["Ctrl+⌘V"]);
+    expect(entries(true).find(entry => entry.action === "Show formulas")?.keys).toEqual(["⌃`"]);
+    expect(entries(true).find(entry => entry.action === "Paste Special")?.keys).toEqual(["⌃⌘V"]);
     expect(entries(false).find(entry => entry.action === "Copy from cell above")?.keys).toEqual(["Ctrl+'"]);
     expect(entries(true).find(entry => entry.action === "Copy value from cell above")?.keys).toEqual(['⌘"']);
     expect(entries(false).find(entry => entry.action === "Copy value from cell above")?.keys).toEqual(['Ctrl+"']);
     expect(entries(false).find(entry => entry.action === "Filter: open or clear")?.keys).toEqual(["Ctrl+Shift+L"]);
-    expect(entries(true).find(entry => entry.action === "Redo")?.keys).toEqual(["⌘Shift+Z"]);
+    expect(entries(true).find(entry => entry.action === "Redo")?.keys).toEqual(["⌘⇧Z"]);
+    expect(entries(true).find(entry => entry.action === "New line in a Text cell")?.keys).toEqual(["⌥Enter"]);
+    expect(entries(true).find(entry => entry.action === "Move right or left")?.keys).toEqual(["Tab", "⇧Tab"]);
+    expect(entries(true).flatMap(entry => entry.keys).join(" ")).not.toMatch(/Ctrl\+|Alt\+|Shift\+/);
+    expect(entries(false).find(entry => entry.action === "New line in a Text cell")?.keys).toEqual(["Alt+Enter"]);
   });
   it("filters desktop commands and does not repeat keys within a group", () => {
     for (const mac of [false, true]) for (const desktop of [false, true]) {
