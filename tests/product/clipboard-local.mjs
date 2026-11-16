@@ -423,7 +423,7 @@ try {
   assert.deepEqual((await displayed()).rows, beforeClearPaste.rows, "one Undo restores optional Number display and all other pasted inputs");
   checks.push("229 imported native optional Number empty paste sends clear, displays an empty cell and one Undo restores all values");
   await capture("imported-refusal");
-  assert.equal(await unchangedPaste("雪".repeat(23_000), /too large/), 1, "UTF-8 request byte limit refuses in Work without truncation");
+  assert.equal(await unchangedPaste("雪".repeat(23_000), /stored text exceeds the bounded 65536-byte projection maximum/), 1, "UTF-8 stored-text bound refuses in Work without truncation");
   assert.deepEqual((await commands()).at(-1).edits[0].input, { kind: "text", value: "雪".repeat(23_000) });
   for (const [text, message] of [["a\tb\nc", /different widths/], ["a\tb\tc\td", /too wide/]]) {
     assert.equal(await unchangedPaste(text, message), 0);
