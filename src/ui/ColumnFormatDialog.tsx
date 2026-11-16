@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { DateFormat, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import type { RowCommandOutcome } from "../contracts.js";
 import { formatNumberFor } from "./field-display.js";
@@ -18,8 +18,12 @@ export function ColumnFormatDialog({ columnName, format, dateFormat, composing, 
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const decimalsRef = useRef<HTMLInputElement | null>(null);
+  const dateChoicesRef = useRef<HTMLFieldSetElement>(null);
   const [error, setError] = useState<string | null>(null);
   const errorId = error !== null ? `${id}-error` : undefined;
+  useEffect(() => {
+    if (!pending && error !== null) dateChoicesRef.current?.querySelector<HTMLInputElement>("input:checked")?.focus();
+  }, [pending, error]);
   const previewType = draft.type;
   const decimals = Number(draft.decimals);
   const preview: NumberFormat = {
@@ -50,6 +54,8 @@ export function ColumnFormatDialog({ columnName, format, dateFormat, composing, 
     const saveDate = async () => {
       if (pendingRef.current || composing()) return;
       if (dateDraft === dateFormat) { onSuccess(false); return; }
+      // The root stays focusable while every Date control is disabled.
+      dateChoicesRef.current?.closest<HTMLElement>('[role="dialog"]')?.focus();
       pendingRef.current = true; setPending(true); setError(null);
       try {
         const result = await onSubmitDate!(dateDraft === "iso" ? null : dateDraft);
@@ -61,7 +67,7 @@ export function ColumnFormatDialog({ columnName, format, dateFormat, composing, 
     };
     return <Modal label="Date format" variant="save" onCancel={onCancel} dismissDisabled={pending}>
       <div className="ts-dialog-intro"><h2 className="ts-h2">Format for “{columnName}”</h2></div>
-      <fieldset className="ts-dialog-field"><legend>Format</legend>{choices.map(([value, label]) => <label key={value} style={{display: "block"}}><input type="radio" name={id} value={value} checked={dateDraft === value} disabled={pending} onChange={() => { setDateDraft(value); setError(null); }} /> {label}</label>)}</fieldset>
+      <fieldset ref={dateChoicesRef} className="ts-dialog-field"><legend>Format</legend>{choices.map(([value, label]) => <label key={value} style={{display: "block"}}><input type="radio" name={id} value={value} checked={dateDraft === value} disabled={pending} onChange={() => { setDateDraft(value); setError(null); }} /> {label}</label>)}</fieldset>
       {error !== null ? <p className="ts-dialog-error" role="alert">{error}</p> : null}
       <div className="ts-dialog-actions"><button type="button" className="ts-button" disabled={pending} onClick={onCancel}>Cancel</button><button type="button" className="ts-button ts-button--primary" disabled={pending} onClick={() => void saveDate()}>Save format</button></div>
     </Modal>;
