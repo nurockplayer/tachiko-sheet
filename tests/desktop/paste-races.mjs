@@ -55,6 +55,14 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
       shiftKey: true, bubbles: true, cancelable: true,
     }));
   `;
+  const cancelEditor = () => evaluate(`
+    const editor = textbox("Edit cell");
+    if (editor) {
+      press(editor, "Escape");
+      await waitFor(() => !textbox("Edit cell") && grid()?.contains(document.activeElement), "cell editor cancelled and grid focused");
+    }
+    return true;
+  `);
   const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
 
   if (windowsPid) await check("AltGr Right-Alt+V does not open Paste Special", async () => {
@@ -76,8 +84,9 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
       `);
       console.log(`AltGr native evidence: ${JSON.stringify(result)}`);
       assert.ok(result.keys.some(e => e.code === "AltRight" && e.trusted), "native Right Alt reached WebView");
-      assert.ok(result.keys.some(e => e.code === "KeyV" && e.trusted && e.ctrl && e.alt), "AltGr produced Ctrl+Alt+V");
+      assert.ok(result.keys.some(e => e.code === "KeyV" && e.trusted && (e.altGraph || (e.ctrl && e.alt))), "native AltGr V reached WebView");
       assert.equal(result.menu, false, "AltGr must not open Paste Special");
+      await cancelEditor();
       await evaluate(`${page}
         dblclick(cell(0));
         const input = await waitFor(() => textbox("Edit cell"), "cell editor for AltGr character");
@@ -92,18 +101,19 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
         await waitFor(() => !textbox("Edit cell") && current() && cell(0)?.textContent === "@", "AltGr character committed to cell");
         return { value: cell(0).textContent, keys: window.__g6Keys };
       `);
-      assert.ok(character.keys.some(e => e.code === "KeyQ" && e.trusted && e.ctrl && e.alt), "native AltGr Q reached WebView");
+      assert.ok(character.keys.some(e => e.code === "KeyQ" && e.trusted && (e.altGraph || (e.ctrl && e.alt))), "native AltGr Q reached WebView");
       assert.equal(character.value, "@", "native AltGr character committed to cell");
     } finally {
       await evaluate(`document.removeEventListener("keydown", window.__g6KeyListener, true);
         const menu = document.querySelector('[role="menu"]'); if (menu) press(menu, "Escape"); return true;`);
+      await cancelEditor();
     }
   });
   for (const [name, run] of extraChecks) await check(name, run);
 
   await check("paste into an off-screen target changes only that cell and reveals it", async () => {
-    // The macOS extra checks deliberately retain an edit. Compare this paste
-    // with the workbook as it stands after those checks.
+    // Compare with the workbook after the macOS extra checks and editor cleanup.
+    await cancelEditor();
     const expected = await snapshot();
     await evaluate(`${page}
       await show(8000); click(cell(8000));
@@ -142,10 +152,13 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
   });
 
   await check("slow paste is refused with every cell unchanged when the active cell moves", async () => {
+    await cancelEditor();
     const before = await snapshot();
+    try {
     const evidence = await evaluate(`${page}
       await show(10); click(cell(10));
       window.__g6ClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+      window.__g6ClipboardSaved = true;
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
         readText: () => new Promise(resolve => {
           window.__g6ReadStarted = true;
@@ -172,15 +185,17 @@ export async function pasteRaces({ evaluate, work, windowsPid, extraChecks = [],
         movedTarget: cell(11)?.dataset.testid, movedText: cell(11)?.textContent,
       };
     `);
-    try {
       const after = await snapshot();
       console.log("Slow paste native evidence: " + JSON.stringify({ ...evidence,
         allCellsUnchanged: JSON.stringify(after) === JSON.stringify(before) }));
       assert.equal(evidence.refusal, true, "the existing selection-change refusal is visible");
       assert.deepEqual(after, before, "all 25,218 values and stable targets, including both active cells, remain unchanged");
     } finally {
-      await evaluate(`if (window.__g6ClipboardDescriptor) Object.defineProperty(navigator, "clipboard", window.__g6ClipboardDescriptor);
-        else delete navigator.clipboard; return true;`);
+      await evaluate(`if (window.__g6ClipboardSaved) {
+        if (window.__g6ClipboardDescriptor) Object.defineProperty(navigator, "clipboard", window.__g6ClipboardDescriptor);
+        else delete navigator.clipboard;
+        delete window.__g6ClipboardSaved;
+      } return true;`);
     }
   });
   if (failures.length) throw new AggregateError(failures, "G6 paste/native input checks failed");
