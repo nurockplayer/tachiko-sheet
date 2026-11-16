@@ -10,7 +10,7 @@ At fresh intake, read the upstream [Mission](https://github.com/nurockplayer/tac
 
 ## Saying something is absent or undecided
 
-Before saying a decision, policy or file is absent, undecided or superseded, search both repositories: `git -C <clone> fetch` then `git -C <clone> grep -i <term> origin/main` in Work and Sheet, and `gh search issues <term> --repo nurockplayer/tachiko-work --repo nurockplayer/tachiko-sheet` (all states, comments included; `gh search prs` likewise). `gh search code` has returned nothing on these repositories and GitHub's license API returns 404 on Work's dual license, so neither is evidence. Say "not found in <what you searched>", never "does not exist". A README or an Issue comment is not the authority: apply Work's [knowledge authority](https://github.com/nurockplayer/tachiko-work/blob/main/docs/governance/knowledge-authority.md).
+Before saying a decision, policy or file is absent, undecided or superseded, search both repositories: `git -C <clone> fetch` then `git -C <clone> grep -i <term> origin/main` for contents and `git -C <clone> ls-tree -r --name-only origin/main | grep -i <term>` for filenames in Work and Sheet, and `gh search issues <term> --repo nurockplayer/tachiko-work --repo nurockplayer/tachiko-sheet` (all states, comments included; `gh search prs` likewise). `gh search code` has returned nothing on these repositories and GitHub's license API returns 404 on Work's dual license, so neither is evidence. Say "not found in <what you searched>", never "does not exist". A README or an Issue comment is not the authority: apply Work's [knowledge authority](https://github.com/nurockplayer/tachiko-work/blob/main/docs/governance/knowledge-authority.md).
 
 ## Current authority and routing
 

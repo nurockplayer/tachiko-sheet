@@ -156,6 +156,7 @@ test('timeout escalates for a resistant grandchild after the direct child closes
       socket.once('connect', () => { socket.destroy(); resolve(false); });
       socket.once('error', (error) => {
         if (error.code === 'ECONNREFUSED') resolve(true);
+        else if (error.code === 'ECONNRESET') resolve(false);
         else reject(error);
       });
     });
@@ -229,6 +230,7 @@ for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
         socket.once('connect', () => { socket.destroy(); resolve(false); });
         socket.once('error', (error) => {
           if (error.code === 'ECONNREFUSED') resolve(true);
+          else if (error.code === 'ECONNRESET') resolve(false);
           else reject(error);
         });
       });
