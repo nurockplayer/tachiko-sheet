@@ -226,6 +226,6 @@ try {
   assert.ok(Math.abs(importedOtherWidths[0] - otherWidthsAfter[0]) <= 1, `resized width after import: ${otherWidthsAfter[0]} → ${importedOtherWidths[0]}`);
   assert.ok(importedOtherWidths.slice(1).every(width => Math.abs(width - 160) <= 1), `default widths after import: ${importedOtherWidths.slice(1)}`);
   const importedAlignment = await cells().evaluateAll(nodes => nodes.map(node => getComputedStyle(node).textAlign));
-  console.log("XLSX imported alignment:", importedAlignment.join(", "));
+  assert.deepEqual(importedAlignment, ["right", "left", "right", "center"]);
   console.log("PASS: column alignment defaults, overrides, history, editor and save/reopen");
 } finally { if (context) await context.close(); await rm(dir, { recursive: true, force: true }); }
