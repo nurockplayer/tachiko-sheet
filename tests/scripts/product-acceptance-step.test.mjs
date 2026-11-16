@@ -122,21 +122,25 @@ test('timeout lets the step reap a detached grandchild before closing', { timeou
   assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
 
-test('timeout escalates for a resistant grandchild after the direct child closes', { timeout: 10000 }, async (t) => {
+test('timeout escalates for a resistant detached grandchild after the direct child closes', { timeout: 10000 }, async (t) => {
   const fixture = await setup(t, 1500);
   const descendant = `
     process.on('SIGTERM', () => {});
     const server = require('node:net').createServer();
     server.listen(0, '127.0.0.1', () => {
-      require('node:fs').writeFileSync('grandchild.json', JSON.stringify({ port: server.address().port }));
+      require('node:fs').writeFileSync('grandchild.json', JSON.stringify({ pid: process.pid, port: server.address().port }));
     });
   `;
   const source = `
-    require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' });
+    require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' });
     console.log(JSON.stringify({ parent: process.pid }));
     setInterval(() => {}, 1000);
   `;
   const killGraceMs = 300;
+  t.after(async () => {
+    const { pid } = JSON.parse(await readFile(path.join(fixture.directory, 'grandchild.json'), 'utf8'));
+    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  });
   const started = performance.now();
   const code = await runStep('early-close', ['-e', source], {}, { ...fixture.options, killGraceMs });
   const [local] = await fixture.logs('early-close');
@@ -166,6 +170,41 @@ test('timeout escalates for a resistant grandchild after the direct child closes
   }
 });
 
+test('successful step cleans a detached grandchild after its parent exits', { timeout: 10000 }, async t => {
+  const fixture = await setup(t, 5000);
+  const descendant = `
+    process.on('SIGTERM', () => {});
+    const server = require('node:net').createServer();
+    server.listen(0, '127.0.0.1', () => {
+      console.log(JSON.stringify({ pid: process.pid, port: server.address().port }));
+    });
+  `;
+  const source = `
+    const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}],
+      { detached: true, stdio: ['ignore', 'pipe', 'inherit'] });
+    child.stdout.once('data', data => {
+      console.log(data.toString().trim());
+      setTimeout(() => process.exit(0), 300);
+    });
+  `;
+  t.after(async () => {
+    const [log] = await fixture.logs('detached-success');
+    const { pid } = JSON.parse(log.trim());
+    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  });
+  assert.equal(await runStep('detached-success', ['-e', source], {}, { ...fixture.options, killGraceMs: 150 }), 0);
+  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'PASS']);
+  const [log] = await fixture.logs('detached-success');
+  const { port } = JSON.parse(log.trim());
+  await new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1');
+    socket.once('connect', () => { socket.destroy(); reject(new Error('detached grandchild survived successful step')); });
+    socket.once('error', error => {
+      try { assert.equal(error.code, 'ECONNREFUSED'); resolve(); } catch (failure) { reject(failure); }
+    });
+  });
+});
+
 test('nonzero step remains FAIL and retains its output in the upload directory', async (t) => {
   const fixture = await setup(t, 5000);
   assert.equal(await runStep('fail', ['-e', 'console.log("before failure"); process.exitCode = 7;'], {}, fixture.options), 7);
@@ -174,18 +213,18 @@ test('nonzero step remains FAIL and retains its output in the upload directory',
 });
 
 for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
-  test(`parent ${cancellation} kills the active step and descendant`, { timeout: 10000 }, async (t) => {
+  test(`parent ${cancellation} kills the active step and detached descendant`, { timeout: 10000 }, async (t) => {
     const fixture = await setup(t, 60000);
     const descendant = `
       const server = require('node:net').createServer();
       process.on('SIGINT', () => {});
       process.on('SIGTERM', () => {});
-      server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ port: server.address().port })));
+      server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ descendant: process.pid, port: server.address().port })));
     `;
     const step = `
       console.log(JSON.stringify({ group: process.pid }));
       require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}],
-        { stdio: ['ignore', 'inherit', 'inherit'] });
+        { detached: true, stdio: ['ignore', 'inherit', 'inherit'] });
       setInterval(() => {}, 1000);
     `;
     const source = `
@@ -197,8 +236,12 @@ for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
       cwd: fixture.directory, stdio: ['pipe', 'pipe', 'inherit'],
     });
     let group;
+    let descendantPid;
     t.after(() => {
       runner.kill('SIGKILL');
+      if (descendantPid) {
+        try { process.kill(descendantPid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      }
       if (group) {
         try { process.kill(-group, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
       }
@@ -212,7 +255,7 @@ for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
     for await (const line of lines) {
       const entry = JSON.parse(line);
       if (entry.group) group = entry.group;
-      if (entry.port) { port = entry.port; break; }
+      if (entry.port) { port = entry.port; descendantPid = entry.descendant; break; }
     }
     assert.ok(group);
     assert.ok(port);

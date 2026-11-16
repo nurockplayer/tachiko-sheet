@@ -23,18 +23,30 @@ app="$work/Applications/$(basename "${apps[0]}")"
 codesign --verify --deep --verbose=2 "$app" || fail 'codesign verification failed'
 python3 -c 'import plistlib,sys; d=plistlib.load(open(sys.argv[1], "rb")); sys.exit(0 if any("ro" in x.get("CFBundleTypeExtensions", []) for x in d.get("CFBundleDocumentTypes", [])) else 1)' "$app/Contents/Info.plist" || fail 'Info.plist does not register the ro extension'
 exe=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+# CoreGraphics lists on-screen windows without Accessibility permission. Match the
+# launched PID, a normal window layer and nonempty bounds; liveness is insufficient.
+cat > "$work/window.swift" <<'SWIFT'
+import CoreGraphics
+import Foundation
+let pid = Int(CommandLine.arguments[1])!
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+let visible = windows.contains { window in
+    guard (window[kCGWindowOwnerPID as String] as? Int) == pid,
+          (window[kCGWindowLayer as String] as? Int) == 0,
+          let alpha = window[kCGWindowAlpha as String] as? Double, alpha > 0,
+          let bounds = window[kCGWindowBounds as String] as? [String: Any],
+          let width = bounds["Width"] as? Double,
+          let height = bounds["Height"] as? Double else { return false }
+    return width > 0 && height > 0
+}
+exit(visible ? 0 : 1)
+SWIFT
+swiftc "$work/window.swift" -o "$work/window"
 "$app/Contents/MacOS/$exe" & pid=$!
 found=0
 for ((i=0; i<60; i++)); do
   kill -0 "$pid" 2>/dev/null || fail 'process exited before window'
-  if result=$(osascript -e "tell application \"System Events\" to count windows of (first process whose unix id is $pid)" 2>&1); then
-    if [[ "$result" =~ ^[0-9]+$ ]] && (( result > 0 )); then found=1; break; fi
-  elif [[ "$result" == *'-1743'* || "$result" == *'-25211'* || "$result" == *'not allowed'* || "$result" == *'not authorized'* ]]; then
-    echo "window check skipped: no Accessibility ($result); falling back to alive after 20 seconds"
-    if (( i < 20 )); then sleep $((20-i)); fi
-    kill -0 "$pid" 2>/dev/null || fail 'process exited during accessibility fallback'
-    found=1; break
-  fi
+  if "$work/window" "$pid"; then found=1; break; fi
   sleep 1
 done
 [[ "$found" == 1 ]] || fail 'no window within 60 seconds'

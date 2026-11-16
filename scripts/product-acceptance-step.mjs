@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
@@ -18,9 +18,11 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   const logs = [];
   let timer;
   let killTimer;
+  let descendantTimer;
   let groupCleanup;
   let timedOut = false;
   let cleanupParentListeners = () => {};
+  let cleanupOwned = () => {};
   try {
     for (const directory of directories) {
       mkdirSync(directory, { recursive: true });
@@ -33,12 +35,48 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // Remember ancestry while parents are alive: detached children can later be
+    // reparented. Start times prevent signalling a reused PID from an old sample.
+    const owned = new Map();
+    const descendants = () => {
+      const table = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
+        encoding: 'utf8', timeout: 1000, maxBuffer: 8 * 1024 * 1024,
+      });
+      const current = new Map(table.trim().split('\n').map(line => {
+        const [, pid, parent, group, started] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+        return [Number(pid), { parent: Number(parent), group: Number(group), started }];
+      }));
+      for (const [pid, started] of owned) {
+        if (current.get(pid)?.started !== started) owned.delete(pid);
+      }
+      // The original process group remains ours even after its leader exits.
+      for (const [pid, info] of current) {
+        if (info.group === child.pid) owned.set(pid, info.started);
+      }
+      let added;
+      do {
+        added = false;
+        for (const [pid, info] of current) {
+          if (!owned.has(pid) && owned.has(info.parent)) {
+            owned.set(pid, info.started);
+            added = true;
+          }
+        }
+      } while (added);
+      return [...owned.keys()];
+    };
     const signalGroup = (signal) => {
       if (!child.pid) return;
-      try {
-        process.kill(-child.pid, signal);
-      } catch (error) {
-        if (error.code !== 'ESRCH') throw error;
+      // Signal descendants before their parent, including separate sessions.
+      const pids = descendants();
+      const root = pids.indexOf(child.pid);
+      if (root !== -1) pids.push(...pids.splice(root, 1));
+      for (const pid of pids) {
+        try {
+          process.kill(pid, signal);
+        } catch (error) {
+          if (error.code !== 'ESRCH') throw error;
+        }
       }
     };
     const killGroup = () => {
@@ -58,6 +96,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       signalGroup('SIGTERM');
       signalGroup('SIGKILL');
     };
+    cleanupOwned = killGroupImmediately;
     const signalHandlers = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((signal) => {
       const handler = () => {
         killGroupImmediately();
@@ -84,6 +123,9 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
         clearTimeout(timer);
         resolve({ code, signal });
       });
+      descendantTimer = setInterval(() => {
+        try { descendants(); } catch (error) { reject(error); }
+      }, 100);
       timer = setTimeout(() => {
         timedOut = true;
         try {
@@ -94,7 +136,8 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
         }
       }, timeoutMs);
     });
-    // The direct child can close while descendants in its group are still alive.
+    // A successful direct child can also leave detached descendants behind.
+    if (!groupCleanup && descendants().length) groupCleanup = killGroup();
     await groupCleanup;
     const exitCode = timedOut ? 1 : typeof result.code === 'number' ? result.code : 1;
     const entry = {
@@ -110,7 +153,10 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   } finally {
     clearTimeout(timer);
     clearTimeout(killTimer);
+    clearInterval(descendantTimer);
     cleanupParentListeners();
-    for (const descriptor of logs) closeSync(descriptor);
+    try { cleanupOwned(); } finally {
+      for (const descriptor of logs) closeSync(descriptor);
+    }
   }
 }
