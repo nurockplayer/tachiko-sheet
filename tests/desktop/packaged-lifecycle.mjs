@@ -991,7 +991,7 @@ try {
     assert.equal(malformed.opened, false, "a malformed file opens no workbook");
     assert.ok(malformed.text.length > 0, "the refusal is explained");
     if (mixed) {
-      for (const file of [`source-320x17.${format}`, `source-8407x2.${format}`, `source-1577x16.${format}`, `malformed.${format}`]) {
+      for (const file of [`source-320x33.${format}`, `source-10001x2.${format}`, `source-6251x16.${format}`, `malformed.${format}`]) {
         const refused = await refusedImport(await readFile(path.join(mixedFixtures, file)), file);
         assert.equal(refused.opened, false, file);
         assert.match(refused.text, file.startsWith("malformed") ? /file could not be read/ : /outside what this beta can open/);

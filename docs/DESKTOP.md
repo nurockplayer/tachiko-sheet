@@ -161,11 +161,11 @@ tools show an unknown-publisher warning, and there is no code signing.
   table's history, and a text field's own Undo while one has focus. They are always
   enabled: a command that can't run does nothing or says why on the page.
 
-Large imports support one headered, default-style table with 1–16 Text,
+Imports use Work’s working-size profile: up to 32 columns of Text,
 finite Number, Date (1900-01-01 through 9999-12-31) or Yes/No columns, at most
-8,406 data rows and 25,218 logical cells (including missing cells). Byte/XML/ZIP
-limits and unsupported-feature checks also apply. Capacity formulas,
-constraints, saved definitions and Dedup are excluded from the enlarged profile. Work still owns admission.
+10,000 data rows and 100,000 logical cells (including missing cells). Byte/XML/ZIP
+limits and unsupported-feature checks also apply. Work owns admission and the
+formula, constraint, saved-definition and Dedup capabilities of that profile.
 
 ## Retained CI engineering evidence
 

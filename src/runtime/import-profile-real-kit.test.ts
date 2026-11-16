@@ -58,6 +58,30 @@ describe("working-size imported sessions with the vendored kit", () => {
     } finally { client.close(); }
   }, 30_000);
 
+  it("admits 8,407 and 10,000 rows and preserves resident work after a 10,001-row refusal", async () => {
+    const client = await realClient();
+    const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
+    const source = await readFile(new URL("../../acceptance/web-save-closure/fixtures/rows-10001.csv", import.meta.url), "utf8");
+    const lines = source.trimEnd().split("\n");
+    const textSelection = { column_types: [["text" as const]], extra_columns: [[]] };
+    try {
+      for (const rows of [8407, 10000]) {
+        const bytes = new TextEncoder().encode(lines.slice(0, rows + 1).join("\n") + "\n").buffer;
+        expect((await runtime.inspectSpreadsheet(bytes, "csv", options)).sheets[0]!.rows).toHaveLength(rows);
+        const imported = await runtime.importSpreadsheet(bytes, "csv", options, textSelection);
+        expect(imported.view.table.rows).toHaveLength(rows);
+        expect(imported.view.table.collection.entity_count).toBe(rows);
+      }
+      const before = await runtime.read();
+      const occurrence = await client.observeOccurrence();
+      const bytes = new TextEncoder().encode(source).buffer;
+      await expect(runtime.inspectSpreadsheet(bytes, "csv", options)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+      await expect(runtime.importSpreadsheet(bytes, "csv", options, textSelection)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+      expect(await client.observeOccurrence()).toEqual(occurrence);
+      expect(await runtime.read()).toEqual(before);
+    } finally { client.close(); }
+  }, 30_000);
+
   it.each(["csv", "xlsx"] as const)("qualifies %s import, changed cells, save and imported reopen", async format => {
     const client = await realClient();
     try {

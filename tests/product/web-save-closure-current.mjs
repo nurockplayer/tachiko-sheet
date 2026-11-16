@@ -69,7 +69,7 @@ const fixturePins = {
   "date-only-private.json": "1312dabec0cfb6b8cbf38f6239478198b6e94bdf55b0c09c9e90e04490ee89b0",
   "rows-64.csv": "494c650dc55391a804b5479c64236bc7e05f9fb13c39cc0bd5c835ce66672c07",
   "fields-32.csv": "c290f2c7aef7e6af5481f3827a3f17ae36a8a754fd8ee210ca28cf1d886c7b15",
-  "rows-8407.csv": "084ea2c83af94b61aab2117ca26f42c573269b7ef11b1f4a581631e228f68001",
+  "rows-10001.csv": "ecca184af30c2826cbda894a051d60aade721e42786da9d2780832f1cbc9a186",
   "fields-33.csv": "38ff8c07d2e5661731ca620f8f90450d88536b4cf5b48117af0c639aca1fa277",
 };
 for (const [file, expected] of Object.entries(sourcePins)) assert.equal(sha256(await readFile(path.join(root, file))), expected, `immutable source drift: ${file}`);
@@ -86,7 +86,7 @@ const expectedCases = [
   "D-canonical-opaque-complete-copy-controls",
   "E-CSV64-row-control",
   "E-CSV32-column-control",
-  "E-profile-refusal-rows-8407.csv",
+  "E-profile-refusal-rows-10001.csv",
   "E-profile-refusal-fields-33.csv",
   "F-existing-read-fault-no-publication-recovery",
   "R-unchanged-private-reader-Date-fixture",
@@ -562,7 +562,7 @@ try {
     return { before, after };
   });
 
-  for (const [caseIndex, file, pattern] of [[7, "rows-8407.csv", /has at least 8,407 rows; Tachiko can import up to 8,406 rows per sheet\./], [8, "fields-33.csv", /has at least 33 columns; Tachiko can import up to 32 columns per sheet\./]]) await runCase(expectedCases[caseIndex], async () => {
+  for (const [caseIndex, file, pattern] of [[7, "rows-10001.csv", /has at least 10,001 rows; Tachiko can import up to 10,000 rows per sheet\./], [8, "fields-33.csv", /has at least 33 columns; Tachiko can import up to 32 columns per sheet\./]]) await runCase(expectedCases[caseIndex], async () => {
     await launchExampleThenClose();
     const before = await counts();
     await activePage.locator('input[type="file"][accept*=".csv"]').setInputFiles(path.join(prep, "fixtures", file));

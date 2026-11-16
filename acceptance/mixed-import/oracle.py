@@ -31,13 +31,21 @@ def csv_bytes(data):
     return output.getvalue().encode()
 
 
+def column_name(index):
+    name = ""
+    while index >= 0:
+        name = chr(65 + index % 26) + name
+        index = index // 26 - 1
+    return name
+
+
 def xlsx_bytes(data):
     sheet = ET.Element('worksheet', xmlns=MAIN)
     body = ET.SubElement(sheet, 'sheetData')
     for r, row in enumerate(data, 1):
         node = ET.SubElement(body, 'row', r=str(r))
         for c, value in enumerate(row):
-            cell = ET.SubElement(node, 'c', r=f'{chr(65+c)}{r}', t='str' if r == 1 or c % 2 == 0 else 'n')
+            cell = ET.SubElement(node, 'c', r=f'{column_name(c)}{r}', t='str' if r == 1 or c % 2 == 0 else 'n')
             ET.SubElement(cell, 'v').text = value
     parts = {
         '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
@@ -78,7 +86,7 @@ def parse(file, cols):
             assert len(node) == cols, 'column count'
             row = []
             for c, cell in enumerate(node):
-                assert cell.attrib['r'] == f'{chr(65+c)}{r}', 'cell order'
+                assert cell.attrib['r'] == f'{column_name(c)}{r}', 'cell order'
                 assert cell.find(f'{{{MAIN}}}f') is None, 'unexpected formula'
                 kind = cell.attrib.get('t', 'n')
                 assert kind in TEXT_TYPES if r == 1 or c % 2 == 0 else kind == 'n', f'scalar type at {cell.attrib["r"]}'
@@ -94,7 +102,7 @@ def generate(directory):
     folder = Path(directory)
     folder.mkdir()
     # Main journeys plus accepted row/cell edges and each dimension just beyond.
-    for rows, cols in [(320, 2), (1000, 16), (1576, 16), (8406, 1), (320, 17), (8407, 2), (1577, 16)]:
+    for rows, cols in [(320, 2), (1000, 16), (1576, 16), (8406, 1), (10000, 1), (320, 33), (10001, 2), (6251, 16)]:
         data = values(rows, cols)
         for suffix, encode in [('csv', csv_bytes), ('xlsx', xlsx_bytes)]:
             file = folder / f'source-{rows}x{cols}.{suffix}'

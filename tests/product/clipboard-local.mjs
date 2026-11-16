@@ -1,3 +1,4 @@
+import { observeTableProjections } from "./table-projection-observer.mjs";
 // #210 / #217: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
 import assert from "node:assert/strict";
@@ -38,7 +39,7 @@ async function chooseColumnAction(name, action) {
   await columnActions(name).click();
   await page.getByRole("button", { name: `${action}…`, exact: true }).click();
 }
-const projection = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__observedTable);
 const commands = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.requests).filter(message => ["paste_cells", "edit_cells"].includes(message.request?.type)).map(message => message.request));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
@@ -52,6 +53,7 @@ async function start() {
   pid = info.processInfo.find(row => row.type === "browser")?.id;
   assert.ok(Number.isInteger(pid) && pid > 0); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await observeTableProjections(context);
   await context.addInitScript(() => {
     window.__clipboardEvidence = { records: [] };
     const Original = window.Worker;

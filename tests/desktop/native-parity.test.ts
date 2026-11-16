@@ -446,7 +446,7 @@ describe("native desktop runtime parity with the Web Worker/WASM runtime", () =>
             // Failed inspection and candidate confirmation preserve the entire
             // resident table, exact save/export bytes and both history directions.
             if (rows === 320) {
-              for (const file of [`source-320x17.${format}`, `source-8407x2.${format}`, `source-1577x16.${format}`, `malformed.${format}`, `nonfinite.${format}`]) {
+              for (const file of [`source-320x33.${format}`, `source-10001x2.${format}`, `source-6251x16.${format}`, `malformed.${format}`, `nonfinite.${format}`]) {
                 const before = await readTable(client, key, log);
                 const savedBefore = normalize((await client.exportProject(revision)).bytes);
                 const csvBefore = normalize((await client.exportSpreadsheet(revision, metadata, "csv", metadata.sheets[0]!.schema_id)).bytes);
