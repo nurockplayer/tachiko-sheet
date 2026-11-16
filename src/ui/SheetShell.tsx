@@ -793,7 +793,15 @@ export function SheetShell(props: SheetShellProps) {
   const [closeOpen, setCloseOpen] = useState(false);
   const [shortcutHelp, setShortcutHelp] = useState(false);
   const shortcutHelpOriginRef = useRef<HTMLElement | null>(null);
-  function openShortcutHelp(origin: HTMLElement | null) { shortcutHelpOriginRef.current = origin; setShortcutHelp(true); }
+  function openShortcutHelp(origin: HTMLElement | null) {
+    shortcutHelpOriginRef.current = origin;
+    setTableMenu(null);
+    setCellMenu(null);
+    setFilterDraft(null);
+    setCellOptionsUi(null);
+    document.querySelectorAll<HTMLDetailsElement>(".ts-command-overflow[open], .ts-column-overflow[open]").forEach(menu => { menu.open = false; });
+    setShortcutHelp(true);
+  }
   function closeShortcutHelp() { setShortcutHelp(false); requestAnimationFrame(() => shortcutHelpOriginRef.current?.focus()); }
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
@@ -1279,6 +1287,7 @@ export function SheetShell(props: SheetShellProps) {
   const copiedFormulaRef = useRef<CopiedFormula & { identity: string | null } | null>(null);
   const [copiedArea, setCopiedArea] = useState<{ identity: string | null; revision: string | undefined; area: CellRectangle } | null>(null);
   const [pasteRebind, setPasteRebind] = useState<typeof copiedArea>(null);
+  useEffect(() => { setCopiedArea(null); }, [displaySignature]);
   // The clipboard's text can't say who wrote it, so the copy is only trusted until
   // anything else could have copied: another copy or cut here (this capture runs
   // before copyGrid sets the ref), or the window losing focus.
@@ -3243,7 +3252,7 @@ export function SheetShell(props: SheetShellProps) {
       : { entity: rowEntity(displayRows[index]!), field: columns.at(-1)!.id };
     tabRunStartRef.current = null;
     const visibleCell = kind === "column" ? visibleColumnCell(anchor.field) : undefined;
-    (cellRefs.current.get(cellKey(anchor.entity, anchor.field)) ?? visibleCell)?.focus({ preventScroll: true });
+    (visibleCell ?? cellRefs.current.get(cellKey(anchor.entity, anchor.field)))?.focus({ preventScroll: true });
     setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
   }
 
@@ -3274,6 +3283,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!find || editor || formulaDraftActive) return;
     const match = findMatches[stepGridMatch(findMatches.length, findIndex, direction)];
     if (!match) return;
+    tabRunStartRef.current = null;
     const key = cellKey(match.entity, match.field);
     setFind({ ...find, active: { entity: match.entity, field: match.field } });
     setCellSelection(null);
@@ -3304,7 +3314,7 @@ export function SheetShell(props: SheetShellProps) {
     findOriginKeyRef.current = null;
     setFind(null);
     requestAnimationFrame(() => {
-      if (match) focusCell(match.entity, match.field, match.rowIndex);
+      if (match) { tabRunStartRef.current = null; focusCell(match.entity, match.field, match.rowIndex); }
       else if (origin?.isConnected) origin.focus();
       else if (originKey) { const [entity, field] = originKey.split("\u0000"); if (entity && field) focusCell(entity, field); }
       else lastCellRef.current?.focus();
@@ -5820,6 +5830,8 @@ export function SheetShell(props: SheetShellProps) {
         }
         const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
         const pickIndex = formulaOptionIndex(optionsUi.index, cellOptions.length);
+        const exactField = suggestions && editor && columns.some(column => column.key === editor.value.slice(suggestions.start, suggestions.end));
+        if (!composing && !modified && event.key === "Tab" && exactField) { onEditorKeyDown(event); return; }
         const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" && pickIndex !== null ? { kind: "pick" as const, index: pickIndex } : cellOptionsKeyAction(event.key, formulaMode && optionsUi.index >= 0 && pickIndex !== null ? { ...optionsUi, index: pickIndex } : optionsUi, cellOptions.length);
         if (!action) { onEditorKeyDown(event); return; }
         // The open list owns this key; Enter picks without committing, so a second Enter commits.
@@ -6690,14 +6702,19 @@ export function SheetShell(props: SheetShellProps) {
       ) : null}
       {view ? renderWorkbook() : renderHome()}
       {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Sheet actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
-        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!names.table(tableMenu.id)} disabled={!!names.table(tableMenu.id)} title={names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
+        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!!onRenameTable && !names.table(tableMenu.id)} disabled={!onRenameTable || !!names.table(tableMenu.id)} title={!onRenameTable ? "Renaming sheets is not available." : names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (onRenameTable && !columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
         {onDeleteTable ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={(view?.collections.length ?? 0) <= 1} title={(view?.collections.length ?? 0) <= 1 ? "Keep at least one sheet in this work." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setDeleteTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Delete sheet…</button> : null}
         {(view?.collections.length ?? 0) <= 1 ? <span className="ts-hint">Keep at least one sheet in this work.</span> : null}
         {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog onDraftChange={setRenameTableDraftActive} initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); setRenameTableDraftActive(false); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
       {shortcutHelp ? <ShortcutHelpDialog mac={isMacPlatform()} desktop={import.meta.env.MODE === "desktop"} onClose={closeShortcutHelp} /> : null}
-      {deleteTable && onDeleteTable ? <DeleteTableDialog name={deleteTable.name} onDelete={() => onDeleteTable(deleteTable.witness, deleteTable.key)} onClose={() => { const key = deleteTable.key; setDeleteTable(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
+      {deleteTable && onDeleteTable ? <DeleteTableDialog name={deleteTable.name} onDelete={() => onDeleteTable(deleteTable.witness, deleteTable.key)} onClose={() => { const key = deleteTable.key; setDeleteTable(null); requestAnimationFrame(() => {
+        const target = document.getElementById(tableTabId(key))
+          ?? tableTabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')
+          ?? gridScrollRef.current?.querySelector<HTMLElement>('td[tabindex="0"]');
+        target?.focus();
+      }); }} /> : null}
       {columnDialog ? <ColumnDialog state={columnDialog} onSubmit={submitColumn} onCancel={() => finishColumnDialog()} onComplete={(confirmed, focusInside) => finishColumnDialog(confirmed, confirmed, focusInside)} composing={() => props.appearancePreference.getSnapshot().composing} /> : null}
       {newTableOpen && onNewTable ? <NewTableDialog onCreate={async (name, columns) => {
         const generation = focusIntentRef.current;
