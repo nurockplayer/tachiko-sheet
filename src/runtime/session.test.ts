@@ -1281,6 +1281,22 @@ describe("createSheetRuntime", () => {
     expect(Array.from(new Uint8Array(client.calls.openProject[1]))).toEqual([3, 19]);
   });
 
+  it("requests working-size spreadsheet inspection on cloned bytes without replacing resident work", async () => {
+    const { client, runtime, view } = await opened();
+    const bytes = new Uint8Array([7, 8, 9]).buffer;
+    const options = { delimiter: ",", header: true };
+    const preview = { sheets: [], ledger: [] };
+    const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: typeof options, _profile: string) => preview);
+    Object.assign(client, { inspectSpreadsheet: inspect });
+
+    await expect(runtime.inspectSpreadsheet(bytes, "xlsx", options)).resolves.toBe(preview);
+    expect(inspect).toHaveBeenCalledExactlyOnceWith(expect.any(ArrayBuffer), "xlsx", options, "working_size");
+    const inspectedBytes = inspect.mock.calls[0]![0];
+    expect(inspectedBytes).not.toBe(bytes);
+    expect(new Uint8Array(inspectedBytes)).toEqual(new Uint8Array(bytes));
+    expect(await runtime.read()).toEqual(view);
+  });
+
   it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
     const { client, runtime, view } = await opened();
     const bytes = new Uint8Array([7, 8, 9]).buffer;

@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { WorkerDesignerClient } from "../../public/core-kit/runtime/worker-client.js";
 import { startDesignerWorker } from "../../public/core-kit/runtime/worker-runtime.js";
+import * as kit from "../../public/core-kit/experimental-client.js";
+import { createSheetRuntime } from "./session.js";
 
 // Keep the actual public worker protocol, importer and WASM; only the Worker
 // transport is in-process, as in a1-real-kit.test.ts.
@@ -34,6 +36,28 @@ const options = { delimiter: ",", header: true };
 const selection = { column_types: [["text", "number", "number"]] as ("text" | "number")[][], extra_columns: [[]] };
 
 describe("working-size imported sessions with the vendored kit", () => {
+  it("admits a 129-row XLSX with a formula through application inspection and import", async () => {
+    const client = await realClient();
+    const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
+    try {
+      // Produce a real XLSX with the kit, including a formula so ordinary
+      // inspection cannot admit it through the special text-only profile.
+      const csv = new TextEncoder().encode("Name,Qty,Total\n" + Array.from({ length: 129 }, (_, i) => `Item ${i},2,0`).join("\n"));
+      const seed = await client.importSpreadsheetWorkingSize(csv.buffer, "csv", options, selection);
+      const table = seed.opened.window;
+      const formula = await client.updateFormula(table.revision, { entity: table.rows[0]!.id, field: table.columns[2]!.id }, "1 + 1");
+      const xlsx = await client.exportSpreadsheet(formula.resulting_revision, seed.metadata, "xlsx", table.collection.id);
+      await expect(client.inspectSpreadsheet(xlsx.bytes.slice(0), "xlsx", options)).rejects.toThrow(/capacity|limit|128/i);
+
+      const preview = await runtime.inspectSpreadsheet(xlsx.bytes, "xlsx", options);
+      expect(preview.sheets[0]!.rows).toHaveLength(129);
+      expect(preview.sheets[0]!.rows.some(row => row.some(cell => cell.formula !== null))).toBe(true);
+      const imported = await runtime.importSpreadsheet(xlsx.bytes, "xlsx", options, selection);
+      expect(imported.metadata.sheets[0]!.rows).toHaveLength(129);
+      expect(imported.view.table.collection.entity_count).toBe(129);
+    } finally { client.close(); }
+  }, 30_000);
+
   it.each(["csv", "xlsx"] as const)("qualifies %s import, changed cells, save and imported reopen", async format => {
     const client = await realClient();
     try {

@@ -1462,7 +1462,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return enqueue(async () => {
       const { kit, client } = await loadKitOnce();
       const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
-      return dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
+      return dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
     });
   }
 
