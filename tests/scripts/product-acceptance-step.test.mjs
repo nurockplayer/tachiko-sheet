@@ -54,7 +54,7 @@ test('passing step keeps its output, details and zero exit code', async (t) => {
   assert.deepEqual(local.trim().split('\n').sort(), ['stderr', 'stdout']);
 });
 
-test('SIGTERM-resistant step times out, escalates after grace and keeps partial logs', { timeout: 10000 }, async (t) => {
+test('SIGTERM-resistant step times out, escalates after grace and keeps partial logs', { timeout: 60000 }, async (t) => {
   const fixture = await setup(t, 1500);
   const descendant = `
     const net = require('node:net');
@@ -90,7 +90,7 @@ test('SIGTERM-resistant step times out, escalates after grace and keeps partial 
   });
 });
 
-test('timeout lets the step reap a detached grandchild before closing', { timeout: 10000 }, async (t) => {
+test('timeout lets the step reap a detached grandchild before closing', { timeout: 60000 }, async (t) => {
   const fixture = await setup(t, 1500);
   const source = `
     const { spawn } = require('node:child_process');
@@ -122,7 +122,7 @@ test('timeout lets the step reap a detached grandchild before closing', { timeou
   assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
 
-test('timeout escalates for a resistant detached grandchild after the direct child closes', { timeout: 10000 }, async (t) => {
+test('timeout escalates for a resistant detached grandchild after the direct child closes', { timeout: 60000 }, async (t) => {
   const fixture = await setup(t, 1500);
   const descendant = `
     process.on('SIGTERM', () => {});
@@ -172,7 +172,7 @@ test('timeout escalates for a resistant detached grandchild after the direct chi
   }
 });
 
-test('successful step cleans a detached grandchild after its parent exits', { timeout: 10000 }, async t => {
+test('successful step cleans a detached grandchild after its parent exits', { timeout: 60000 }, async t => {
   const fixture = await setup(t, 5000);
   const descendant = `
     process.on('SIGTERM', () => {});
@@ -214,7 +214,7 @@ for (const [label, stdio, delay] of [
   ['immediate-ignored', 'ignore', 0],
   ['immediate-inherited', ['ignore', 'inherit', 'inherit'], 0],
 ]) {
-  test(`successful step cleans ${label} detached child without waiting for pipe close`, { timeout: 10000 }, async t => {
+  test(`successful step cleans ${label} detached child without waiting for pipe close`, { timeout: 60000 }, async t => {
     const fixture = await setup(t, 800);
     const heartbeat = path.join(fixture.directory, 'heartbeat');
     const descendant = `
@@ -267,7 +267,7 @@ test('nonzero step remains FAIL and retains its output in the upload directory',
 });
 
 for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
-  test(`parent ${cancellation} kills the active step and detached descendant`, { timeout: 10000 }, async (t) => {
+  test(`parent ${cancellation} kills the active step and detached descendant`, { timeout: 60000 }, async (t) => {
     const fixture = await setup(t, 60000);
     const descendant = `
       const server = require('node:net').createServer();

@@ -4,6 +4,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, writeSync } 
 import path from 'node:path';
 
 const STEP_KILL_GRACE_MS = 5000;
+const PROCESS_SCAN_TIMEOUT_MS = 10_000;
 
 export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   const { cwd, evidenceDir, summary } = options;
@@ -56,7 +57,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
         return table;
       }
       const table = spawnSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
-        encoding: 'utf8', timeout: 1000, maxBuffer: 4 * 1024 * 1024,
+        encoding: 'utf8', timeout: PROCESS_SCAN_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024,
       });
       if (table.error || table.status !== 0) throw new Error(`cannot inspect process ownership: ${table.error?.code ?? table.status}`);
       const processes = new Map(table.stdout.trim().split('\n').map(line => {
@@ -68,7 +69,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       const candidates = baseline && [...processes].filter(([pid, info]) => baseline.get(pid)?.started !== info.started).map(([pid]) => pid);
       if (candidates?.length) {
         const marked = spawnSync('ps', ['-wwE', '-p', candidates.join(','), '-o', 'pid=,command='], {
-          encoding: 'utf8', timeout: 1000, maxBuffer: 32 * 1024 * 1024,
+          encoding: 'utf8', timeout: PROCESS_SCAN_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024,
         });
         // A candidate may have exited; ps returns 1 when none remain.
         if (marked.error || (marked.status !== 0 && marked.status !== 1)) throw new Error(`cannot inspect process ownership: ${marked.error?.code ?? marked.status}`);
