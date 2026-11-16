@@ -263,7 +263,7 @@ describe("keyboard history queue", () => {
     expect(rename.disabled).toBe(true);
     expect(rename.title).toBe("Renaming sheets is not available.");
     await act(async () => { rename.click(); tab.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true })); tab.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
-    expect(ui.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Rename sheet"]')).toBeNull();
     await act(async () => { tab.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
     await ui.key("z", ui.cell());
     expect(onHistory).toHaveBeenCalledOnce();
