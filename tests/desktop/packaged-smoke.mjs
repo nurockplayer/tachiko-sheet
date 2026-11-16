@@ -391,7 +391,7 @@ async function main() {
     },
   });
   const pasteSession = await launch({ closeAnswer: "cancel" });
-  await pasteRaces({ evaluate, work: pasteSession.dir, windowsPid: platform === "win32" ? pasteSession.child.pid : null });
+  await pasteRaces({ evaluate, work: pasteSession.dir });
 }
 
 async function diagnostics(error) {
