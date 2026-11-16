@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
 const STEP_KILL_GRACE_MS = 5000;
@@ -29,6 +29,32 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       logs.push(openSync(path.join(directory, `${name}.log`), 'w'));
     }
     console.log(JSON.stringify({ step: name, status: 'START', timeoutMs, log }));
+    const processTable = () => {
+      if (process.platform === 'linux') {
+        // Minimal Linux acceptance images need no external ps dependency.
+        const table = new Map();
+        for (const pid of readdirSync('/proc').filter(name => /^\d+$/.test(name))) {
+          let stat;
+          try { stat = readFileSync(`/proc/${pid}/stat`, 'utf8'); } catch (error) {
+            if (error.code === 'ENOENT' || error.code === 'ESRCH') continue;
+            throw error;
+          }
+          // comm is parenthesized and can itself contain spaces or parentheses.
+          const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/);
+          table.set(Number(pid), { parent: Number(fields[1]), group: Number(fields[2]), started: fields[19] });
+        }
+        return table;
+      }
+      const table = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
+        encoding: 'utf8', timeout: 1000, maxBuffer: 8 * 1024 * 1024,
+      });
+      return new Map(table.trim().split('\n').map(line => {
+        const [, pid, parent, group, started] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+        return [Number(pid), { parent: Number(parent), group: Number(group), started }];
+      }));
+    };
+    // Fail before launching a step when its process table cannot be inspected.
+    processTable();
     const child = spawn(process.execPath, args, {
       cwd,
       env: { ...process.env, ...extraEnvironment },
@@ -39,13 +65,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     // reparented. Start times prevent signalling a reused PID from an old sample.
     const owned = new Map();
     const descendants = () => {
-      const table = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
-        encoding: 'utf8', timeout: 1000, maxBuffer: 8 * 1024 * 1024,
-      });
-      const current = new Map(table.trim().split('\n').map(line => {
-        const [, pid, parent, group, started] = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
-        return [Number(pid), { parent: Number(parent), group: Number(group), started }];
-      }));
+      const current = processTable();
       for (const [pid, started] of owned) {
         if (current.get(pid)?.started !== started) owned.delete(pid);
       }
