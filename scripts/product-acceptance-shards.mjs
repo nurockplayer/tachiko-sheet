@@ -25,6 +25,24 @@ export function selectSteps(steps, durations, shard) {
   return { shard, steps: assignShards(steps, durations, count)[index - 1] };
 }
 
+// Partial reruns retain successful jobs' artifacts from earlier attempts.
+// Choose before reading summaries: a broken latest artifact must never fall back.
+export function latestShardArtifacts(names) {
+  const latest = new Map();
+  let runId;
+  for (const name of names) {
+    const match = /^product-acceptance-shard-([1-4])-([1-9]\d*)-([1-9]\d*)$/.exec(name);
+    if (!match) throw new Error(`Invalid shard artifact: ${name}`);
+    const [, shard, run, attempt] = match;
+    if (runId !== undefined && run !== runId) throw new Error('Shard artifacts span multiple runs');
+    runId = run;
+    if (!latest.has(shard) || BigInt(attempt) > BigInt(latest.get(shard).attempt)) {
+      latest.set(shard, { name, shard: `${shard}/4`, attempt });
+    }
+  }
+  return [...latest.values()];
+}
+
 export function verifyShardSummaries(expectedSteps, summaries, needs, count = 4) {
   for (const name of ['checks', 'acceptance', 'save-closure']) {
     if (needs?.[name]?.result !== 'success') throw new Error(`Need ${name} did not succeed`);

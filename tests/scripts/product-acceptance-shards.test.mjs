@@ -60,7 +60,7 @@ test('verifier CLI accepts complete real runner coverage and lists each name onc
   const directory = await mkdtemp(path.join(tmpdir(), 'sheet-product-shards-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   for (const summary of summaries()) {
-    const shardDirectory = path.join(directory, `artifact-${summary.shard[0]}`);
+    const shardDirectory = path.join(directory, `product-acceptance-shard-${summary.shard[0]}-123-1`);
     await mkdir(shardDirectory);
     await writeFile(path.join(shardDirectory, 'summary.json'), JSON.stringify(summary));
   }
@@ -69,12 +69,41 @@ test('verifier CLI accepts complete real runner coverage and lists each name onc
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.stdout.trim().split('\n').slice(0, -1), names);
-  await rm(path.join(directory, 'artifact-1', 'summary.json'));
+  await rm(path.join(directory, 'product-acceptance-shard-1-123-1', 'summary.json'));
   const missing = spawnSync(process.execPath, [verifier, directory], {
     encoding: 'utf8', env: { ...process.env, TACHIKO_ACCEPTANCE_NEEDS: JSON.stringify(needs) },
   });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /summary.json/);
+});
+
+test('partial reruns reuse earlier successes and require the latest evidence for each shard', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'sheet-product-rerun-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const all = summaries();
+  for (const summary of all) {
+    const artifact = path.join(directory, `product-acceptance-shard-${summary.shard[0]}-123-1`);
+    await mkdir(artifact);
+    await writeFile(path.join(artifact, 'summary.json'), JSON.stringify(summary));
+  }
+  const verify = () => spawnSync(process.execPath, [verifier, directory], {
+    encoding: 'utf8', env: { ...process.env, TACHIKO_ACCEPTANCE_NEEDS: JSON.stringify(needs) },
+  });
+  // Only save-closure reruns: all four artifacts still belong to attempt 1.
+  assert.equal(verify().status, 0);
+  const retry = path.join(directory, 'product-acceptance-shard-1-123-2');
+  await mkdir(retry);
+  const retrySummary = path.join(retry, 'summary.json');
+  await writeFile(retrySummary, JSON.stringify({ ...all[0], status: 'FAIL' }));
+  assert.equal(verify().status, 1, 'latest failure must override earlier PASS');
+  await writeFile(retrySummary, JSON.stringify(all[0]));
+  await writeFile(path.join(directory, 'product-acceptance-shard-1-123-1', 'summary.json'),
+    JSON.stringify({ ...all[0], status: 'FAIL' }));
+  const recovered = verify();
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.deepEqual(recovered.stdout.trim().split('\n').slice(0, -1), names);
+  await rm(retrySummary);
+  assert.equal(verify().status, 1, 'missing latest summary must not fall back');
 });
 
 for (const [name, change, error] of [

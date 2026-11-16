@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verifyShardSummaries } from './product-acceptance-shards.mjs';
+import { latestShardArtifacts, verifyShardSummaries } from './product-acceptance-shards.mjs';
 
 try {
   const directory = process.argv[2];
@@ -11,8 +11,12 @@ try {
     fileURLToPath(new URL('./run-product-acceptance.mjs', import.meta.url)), '--list',
   ], { encoding: 'utf8' }));
   const entries = await readdir(directory, { withFileTypes: true });
-  const summaries = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) =>
-    JSON.parse(await readFile(path.join(directory, entry.name, 'summary.json'), 'utf8'))));
+  const artifacts = latestShardArtifacts(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+  const summaries = await Promise.all(artifacts.map(async (artifact) => {
+    const summary = JSON.parse(await readFile(path.join(directory, artifact.name, 'summary.json'), 'utf8'));
+    if (summary.shard !== artifact.shard) throw new Error(`Shard identity mismatch: ${artifact.name}`);
+    return summary;
+  }));
   const needs = JSON.parse(process.env.TACHIKO_ACCEPTANCE_NEEDS ?? 'null');
   const names = verifyShardSummaries(expectedSteps, summaries, needs);
   for (const name of names) console.log(name);

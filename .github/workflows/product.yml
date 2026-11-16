@@ -242,7 +242,7 @@ jobs:
       - name: Download product acceptance shard evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: product-acceptance-shard-*-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: product-acceptance-shard-*-${{ github.run_id }}-*
           path: evidence/product-acceptance-shards
 
       - name: Verify all product acceptance shards
