@@ -12,7 +12,8 @@ describe("groupChartPoints", () => {
       { keys: [{ kind: "blank" }], rows: 1, totals: [1] },
       { keys: [{ kind: "text", value: "(blank)" }], rows: 1, totals: [2] },
     ]), 0)!;
-    expect(blank!.label).toBe(text!.label);
+    expect(blank!.label).toBe("(blank)");
+    expect(text!.label).toBe('"(blank)"');
     expect(blank!.id).not.toBe(text!.id);
     expect([blank!.marked, text!.marked]).toEqual([true, false]);
   });
@@ -23,6 +24,19 @@ describe("groupChartPoints", () => {
       { keys: [{ kind: "text", value: "a" }, { kind: "text", value: "b · c" }], rows: 1, totals: [2] },
     ]), 0)!;
     expect(first!.id).not.toBe(second!.id);
+    expect(first!.label).toBe('"a · b" · "c"');
+    expect(second!.label).toBe('"a" · "b · c"');
+  });
+
+  it("quotes and escapes text apart from empty, boolean and date keys", () => {
+    const keys = [{ kind: "text", value: "" }, { kind: "text", value: "(empty)" },
+      { kind: "boolean", value: true }, { kind: "text", value: "Yes" },
+      { kind: "date", value: "2026-11-07" }, { kind: "text", value: "2026-11-07" },
+      { kind: "text", value: 'a" · "b\\c' }] as const;
+    const labels = groupChartPoints(projection(keys.map(key => ({ keys: [key], rows: 1, totals: [1] }))), 0)!.map(point => point.label);
+    expect(new Set(labels).size).toBe(keys.length);
+    expect(labels[0]).toBe('""');
+    expect(labels[6]).toBe(JSON.stringify(keys[6].value));
   });
 
   it("answers null when a total is unavailable", () => {
