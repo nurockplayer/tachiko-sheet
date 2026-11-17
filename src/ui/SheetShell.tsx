@@ -1826,11 +1826,16 @@ export function SheetShell(props: SheetShellProps) {
     if (!completionMayUpdateUi(intent)) return;
     const rowIndex = rowIndexByEntity.get(position.entity);
     if (rowIndex !== undefined) revealGridRow(rowIndex);
+    const scroller = gridScrollRef.current;
+    const scrollTop = scroller?.scrollTop, scrollLeft = scroller?.scrollLeft;
     // A windowed target may mount with the confirmed projection. Keep focus and selection intact.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent) || clipboardIdentityRef.current !== collectionIdentity) return;
+      // A scroll after publication is a newer viewport choice. The delayed
+      // reveal must not pull it back to the pasted row.
+      if (!scroller || gridScrollRef.current !== scroller || scroller.scrollTop !== scrollTop || scroller.scrollLeft !== scrollLeft) return;
       const cell = cellRefs.current.get(cellKey(position.entity, position.field));
-      if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
+      if (cell) scrollCellIntoGridNearest(cell, scroller);
     }));
   }
 
@@ -2426,7 +2431,7 @@ export function SheetShell(props: SheetShellProps) {
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
   const importErrorMessage = interop?.importInspection
-    ? (importError && message && message.length > 0 ? importConfirmationMessage(message) : importError)
+    ? (importError && message && message.length > 0 ? importConfirmationMessage(message, interop.importInspection.source.ledger) : importError)
     : importError;
   const closeSaveError = closeSaveAttempted && (saveStatus === "failed" || localError !== null)
     ? errorMessage ?? "The copy could not be saved on this device." : null;
@@ -4184,7 +4189,7 @@ export function SheetShell(props: SheetShellProps) {
       const accepted = await onImportCandidate(selection);
       if (!accepted) setImportError("The import was not applied. Your source selection is still available.");
     } catch (error) {
-      setImportError(importConfirmationMessage(explain(error, "The import was not applied. Your source selection is still available.")));
+      setImportError(importConfirmationMessage(explain(error, "The import was not applied. Your source selection is still available."), interop?.importInspection?.source.ledger));
     } finally {
       setImportPending(false);
     }

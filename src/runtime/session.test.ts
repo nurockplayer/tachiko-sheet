@@ -58,7 +58,7 @@ class FakeDesignerRuntimeError extends Error {
 interface Hooks {
   newTable?: () => Promise<OpenedProjection>;
   openProject?: () => Promise<OpenedProjection>;
-  inspectImportedProject?: () => Promise<OpenedProjection>;
+  inspectImportedProjectWorkingSize?: () => Promise<OpenedProjection>;
   observeOccurrence?: () => Promise<OccurrenceProjection>;
   editNumber?: () => Promise<PublicationProjection>;
   editText?: () => Promise<PublicationProjection>;
@@ -99,7 +99,8 @@ class FakeClient {
   readonly calls = {
     newTable: [] as Array<{ name: string; columns: NewTableColumnInput[] }>,
     openProject: [] as ArrayBuffer[],
-    inspectImportedProject: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
+    openImportedProjectWorkingSize: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
+    inspectImportedProjectWorkingSize: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
     bootstrap: 0,
     observeOccurrence: 0,
     queryTable: [] as string[],
@@ -336,15 +337,20 @@ class FakeClient {
     return this.#opened();
   }
 
-  async inspectImportedProject(bytes: ArrayBuffer, metadata: unknown): Promise<OpenedProjection> {
-    this.calls.inspectImportedProject.push({ bytes, metadata });
-    const hook = this.hooks.inspectImportedProject;
+  async openImportedProjectWorkingSize(bytes: ArrayBuffer, metadata: unknown) {
+    this.calls.openImportedProjectWorkingSize.push({ bytes, metadata });
+    return { ...await this.openProject(bytes), profile: "working_size" as const };
+  }
+
+  async inspectImportedProjectWorkingSize(bytes: ArrayBuffer, metadata: unknown): Promise<OpenedProjection> {
+    this.calls.inspectImportedProjectWorkingSize.push({ bytes, metadata });
+    const hook = this.hooks.inspectImportedProjectWorkingSize;
     if (hook !== undefined) {
-      this.hooks.inspectImportedProject = undefined;
+      this.hooks.inspectImportedProjectWorkingSize = undefined;
       return hook();
     }
     // The public imported-project inspection is validation only. It must not
-    // install or replace the resident project before openProject succeeds.
+    // install or replace the resident project before imported open succeeds.
     return { bootstrap: this.#bootstrap(), table: this.#table() };
   }
 
@@ -1275,6 +1281,84 @@ describe("createSheetRuntime", () => {
     expect(Array.from(new Uint8Array(client.calls.openProject[1]))).toEqual([3, 19]);
   });
 
+  it("prefers full-fidelity spreadsheet inspection on cloned bytes without replacing resident work", async () => {
+    const { client, runtime, view } = await opened();
+    const bytes = new Uint8Array([7, 8, 9]).buffer;
+    const options = { delimiter: ",", header: true };
+    const preview = { sheets: [], ledger: [] };
+    const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: typeof options, _profile: string) => preview);
+    Object.assign(client, { inspectSpreadsheet: inspect });
+
+    await expect(runtime.inspectSpreadsheet(bytes, "xlsx", options)).resolves.toBe(preview);
+    expect(inspect).toHaveBeenCalledExactlyOnceWith(expect.any(ArrayBuffer), "xlsx", options);
+    const inspectedBytes = inspect.mock.calls[0]![0];
+    expect(inspectedBytes).not.toBe(bytes);
+    expect(new Uint8Array(inspectedBytes)).toEqual(new Uint8Array(bytes));
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it.each([
+    { width: 12 }, { number_format: "0.00" }, { bold: true }, { fill: "#ff0000" },
+    { wrap: true }, { border: true }, { alignment: "right" },
+  ])("retains the capacity refusal when working-size would drop %j", async presentation => {
+    const { client, runtime, view } = await opened();
+    const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
+    const source = { sheets: [{ columns: [{ width: null, ...("width" in presentation ? presentation : {}) }],
+      rows: [[{ style: { number_format: null, bold: false, fill: null, wrap: false, border: false, alignment: null,
+        ...(!("width" in presentation) ? presentation : {}) } }]] }], ledger: [] };
+    const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
+      if (!profile) throw refusal;
+      return source;
+    });
+    const fallback = vi.fn();
+    Object.assign(client, { inspectSpreadsheet: inspect, importSpreadsheet: async () => { throw refusal; },
+      importSpreadsheetWorkingSize: fallback });
+    const args = [new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true }] as const;
+    await expect(runtime.inspectSpreadsheet(...args)).rejects.toBe(refusal);
+    await expect(runtime.importSpreadsheet(...args, { column_types: [], extra_columns: [] })).rejects.toBe(refusal);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it.each(["header_style_not_preserved", "checkbox_presentation", "other_style_not_preserved"])(
+    "retains the original capacity refusal for ledger-only presentation loss: %s", async code => {
+      const { client, runtime, view } = await opened();
+      const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
+      const source = { sheets: [], ledger: [{ category: "lossy_on_export", code,
+        location: "source", message: "Source presentation remains source-only", blocking: false }] };
+      const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
+        if (!profile) throw refusal;
+        return source;
+      });
+      const fallback = vi.fn();
+      Object.assign(client, { inspectSpreadsheet: inspect, importSpreadsheet: async () => { throw refusal; },
+        importSpreadsheetWorkingSize: fallback });
+      const args = [new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true }] as const;
+      await expect(runtime.inspectSpreadsheet(...args)).rejects.toBe(refusal);
+      await expect(runtime.importSpreadsheet(...args, { column_types: [], extra_columns: [] })).rejects.toBe(refusal);
+      expect(fallback).not.toHaveBeenCalled();
+      expect(await runtime.read()).toEqual(view);
+    });
+
+  it("uses working-size inspection only after a typed capacity refusal", async () => {
+    const { client, runtime } = await opened();
+    const source = { sheets: [], ledger: [{ category: "lossy_on_export", code: "style_profile",
+      location: "xl/styles.xml", message: "Basic styles retained; font family remains source-only", blocking: false }] };
+    const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
+    const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
+      if (!profile) throw refusal;
+      return source;
+    });
+    Object.assign(client, { inspectSpreadsheet: inspect });
+    await expect(runtime.inspectSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true })).resolves.toBe(source);
+    expect(inspect.mock.calls.map(call => call[3])).toEqual([undefined, "working_size"]);
+    const invalid = new FakeDesignerRuntimeError("invalid_project", client.currentRevision);
+    inspect.mockRejectedValue(invalid);
+    inspect.mockClear();
+    await expect(runtime.inspectSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true })).rejects.toBe(invalid);
+    expect(inspect).toHaveBeenCalledTimes(1);
+  });
+
   it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
     const { client, runtime, view } = await opened();
     const bytes = new Uint8Array([7, 8, 9]).buffer;
@@ -1282,16 +1366,21 @@ describe("createSheetRuntime", () => {
 
     const reopened = await runtime.openOpaque(bytes, metadata);
     expect(reopened.occurrence).toBe("scope-2");
-    expect(client.calls.inspectImportedProject).toHaveLength(1);
-    expect(client.calls.inspectImportedProject[0].metadata).toBe(metadata);
-    expect(client.calls.inspectImportedProject[0].bytes).not.toBe(bytes);
+    expect(client.calls.inspectImportedProjectWorkingSize).toHaveLength(1);
+    expect(client.calls.inspectImportedProjectWorkingSize[0].metadata).toBe(metadata);
+    expect(client.calls.inspectImportedProjectWorkingSize[0].bytes).not.toBe(bytes);
+    expect(client.calls.openImportedProjectWorkingSize).toHaveLength(1);
+    expect(client.calls.openImportedProjectWorkingSize[0].metadata).toBe(metadata);
+    expect(client.calls.openImportedProjectWorkingSize[0].bytes).not.toBe(bytes);
+    expect(Array.from(new Uint8Array(client.calls.openImportedProjectWorkingSize[0].bytes))).toEqual([7, 8, 9]);
     expect(client.calls.openProject).toHaveLength(2);
 
-    client.hooks.inspectImportedProject = async () => {
+    client.hooks.inspectImportedProjectWorkingSize = async () => {
       throw new FakeDesignerRuntimeError("invalid_value", "r2");
     };
     const rejection = await failure(runtime.openOpaque(bytes, metadata));
     expect(rejection).toBeInstanceOf(FakeDesignerRuntimeError);
+    expect(client.calls.openImportedProjectWorkingSize).toHaveLength(1);
     expect(client.calls.openProject).toHaveLength(2);
     expect((await runtime.read()).revision).toBe(reopened.revision);
     expect(view.occurrence).toBe("scope-1");
@@ -1593,6 +1682,38 @@ describe("Work file adapter admission and export", () => {
     vi.spyOn(client, "exportProjectV3").mockResolvedValue({ revision: "other", bytes: new ArrayBuffer(4) });
     await expect(runtime.exportOpaque(view)).rejects.toMatchObject({ code: "incoherent-reply" });
     expect(await runtime.read()).toEqual(view);
+  });
+
+  it.each([false, true])("keeps an acknowledged import known after projection loss (after reopen=%s)", async afterReopen => {
+    const { runtime, client } = await opened();
+    Object.assign(client, { importSpreadsheet: async () => ({
+      opened: await client.openProject(new ArrayBuffer(4)), metadata: { version: 1, sheets: [] }, ledger: [],
+    }) });
+    const query = vi.spyOn(client, "queryTable");
+    // The first read confirms import; the second observes the acknowledged reopen.
+    const original = FakeClient.prototype.queryTable.bind(client);
+    if (afterReopen) query.mockImplementationOnce(original);
+    query.mockRejectedValue(new Error("lost import projection reply"));
+    const error = await failure(runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] }));
+    expect(error).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(error).toMatchObject({ operationOutcome: "opened" });
+    expect(client.calls.exportProjectV3).toHaveLength(afterReopen ? 1 : 0);
+    expect(client.calls.openImportedProjectWorkingSize).toHaveLength(afterReopen ? 1 : 0);
+  });
+
+  it.each([false, true])("retains import recovery when the working-size reopen fails (unknown=%s)", async unknown => {
+    const { runtime, client } = await opened();
+    const cause = unknown ? new Error("lost reopen acknowledgement") : new FakeDesignerRuntimeError("unsupported_project", client.currentRevision);
+    Object.assign(client, { importSpreadsheet: async () => ({
+      opened: await client.openProject(new ArrayBuffer(4)), metadata: { version: 1, sheets: [] }, ledger: [],
+    }) });
+    vi.spyOn(client, "openImportedProjectWorkingSize").mockRejectedValueOnce(cause);
+    const error = await failure(runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] }));
+    expect(error).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(error).toMatchObject({ operationOutcome: unknown ? "unknown" : "opened" });
+    expect(client.calls.exportProjectV3).toHaveLength(1);
   });
 
   it.each(["close", "replacement", "import"])("clears work-file origin at %s after a lost replacement reply", async (boundary) => {
@@ -2110,15 +2231,21 @@ describe("querySelectionStatistics", () => {
     const largeTargets = [{ entity: "e".repeat(ordinaryLimit), field: "impact" }];
     await expect(runtime.querySelectionStatistics(witnessOf(view), largeTargets)).resolves.toMatchObject({ count: 4 });
     expect(client.calls.querySelectionStatistics).toEqual([{ revision: view.revision, targets: largeTargets }]);
-    Object.assign(client, { importSpreadsheet: async () => {
-      await client.openProject(new ArrayBuffer(4));
-      return { metadata: {}, ledger: [] };
+    Object.assign(client, {
+      importSpreadsheet: async () => { throw new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision); },
+      inspectSpreadsheet: async () => ({ sheets: [], ledger: [] }),
+      importSpreadsheetWorkingSize: async () => {
+      const opened = { ...await client.openProject(new ArrayBuffer(4)), profile: "working_size" };
+      return { opened, metadata: {}, ledger: [] };
     } });
     const imported = await runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
       { column_types: [], extra_columns: [] });
-    expect(runtime.requestByteLimit).toBe(ordinaryLimit);
-    await expect(runtime.querySelectionStatistics(witnessOf(imported.view), largeTargets)).resolves.toBe("too-large");
-    expect(client.calls.querySelectionStatistics).toHaveLength(1);
+    expect(runtime.requestByteLimit).toBeGreaterThan(ordinaryLimit);
+    await expect(runtime.querySelectionStatistics(witnessOf(imported.view), largeTargets)).resolves.toMatchObject({ count: 4 });
+    const reopened = await runtime.openOpaque(new ArrayBuffer(4), { version: 1, sheets: [] });
+    expect(runtime.requestByteLimit).toBeGreaterThan(ordinaryLimit);
+    await expect(runtime.querySelectionStatistics(witnessOf(reopened), largeTargets)).resolves.toMatchObject({ count: 4 });
+    expect(client.calls.querySelectionStatistics).toHaveLength(3);
   });
   it("rejects a late reply after the runtime closes", async () => {
     const { runtime, client, view } = await opened();

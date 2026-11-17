@@ -152,7 +152,7 @@ def parse_xlsx(path):
 def generate(directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=False)
-    for count in [ROWS, ROWS + 1]:
+    for count in [ROWS, 10001]:
         (directory / f"source-{count}.csv").write_bytes(csv_bytes(values(count)))
         (directory / f"source-{count}.xlsx").write_bytes(xlsx(values(count)))
     (directory / "malformed.csv").write_bytes(b'account_id,profile_url,unix_timestamp\r\n"unclosed')

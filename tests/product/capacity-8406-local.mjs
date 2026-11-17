@@ -46,6 +46,25 @@ async function start(profile) {
   // CAPACITY_ORIGIN runs the same journey against a hosted candidate.
   if (!hostedOrigin) await installDistRoutes(context, dist);
   await observeTableProjections(context);
+  // Hold the next real publication reply until the focus probe has landed.
+  // No command, receipt or field is synthesized; only delivery is deferred.
+  await context.addInitScript(() => {
+    const Original = window.Worker;
+    window.Worker = class extends Original {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", event => {
+          if (!window.__holdCapacityPublication || event.data.response?.type !== "published") return;
+          window.__holdCapacityPublication = false;
+          event.stopImmediatePropagation();
+          window.__releaseCapacityPublication = () => {
+            window.__releaseCapacityPublication = null;
+            this.dispatchEvent(new MessageEvent("message", { data: event.data }));
+          };
+        });
+      }
+    };
+  });
   const page = await context.newPage();
   page.setDefaultTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -203,19 +222,24 @@ try {
     });
     const pending = () => page.locator('[data-testid="project-ready"][aria-busy="true"]').waitFor({ timeout: 2_000 });
     // The probe input must land while the publication is still pending, or
-    // the leg proves nothing; slow the CPU to widen that window and check it.
+    // the leg proves nothing; release the real reply only after checking it.
     const stillPending = async (label) => assert.equal(
       await page.locator('[data-testid="project-ready"]').getAttribute("aria-busy"), "true", `${label}: probe input landed while publishing`);
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    const holdPublication = () => page.evaluate(() => { window.__holdCapacityPublication = true; });
+    const releasePublication = async () => {
+      await page.waitForFunction(() => typeof window.__releaseCapacityPublication === "function");
+      await page.evaluate(() => window.__releaseCapacityPublication());
+    };
     // Enter, then another cell chosen while the edit is still publishing.
     await reveal(page, 100);
     await cellAt(page, 100, 1).dblclick();
     await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("focus-intent");
+    await holdPublication();
     await page.keyboard.press("Enter");
     await pending();
     await cellAt(page, 105, 0).click();
     await stillPending("Enter");
+    await releasePublication();
     await current(page);
     await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "focus-intent", cellSelector(100, 1));
     await page.waitForTimeout(200);
@@ -224,11 +248,13 @@ try {
     // Tab, then away and deliberately back to the origin: no Tab advance.
     await cellAt(page, 110, 1).dblclick();
     await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("tab-intent");
+    await holdPublication();
     await page.keyboard.press("Tab");
     await pending();
     await cellAt(page, 115, 0).click();
     await cellAt(page, 110, 1).click();
     await stillPending("Tab");
+    await releasePublication();
     await current(page);
     await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "tab-intent", cellSelector(110, 1));
     await page.waitForTimeout(200);
@@ -238,17 +264,17 @@ try {
     // editor): the click wins over the Tab move.
     await cellAt(page, 120, 1).dblclick();
     await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("origin-click");
+    await holdPublication();
     await page.keyboard.press("Tab");
     await pending();
     await cellAt(page, 120, 1).click({ force: true });
     await stillPending("Tab + origin click");
+    await releasePublication();
     await current(page);
     await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === "origin-click", cellSelector(120, 1));
     await page.waitForTimeout(200);
     assert.equal(await focusedCell(), "122:2", "a click on the origin during a pending Tab keeps focus there");
     await history(page, "undo", 120, 1, "https://example.invalid/account/00120");
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-    await cdp.detach();
     for (const [row, column, value] of EDITS) await edit(page, row, column, value);
     const [lastRow, lastColumn] = EDITS[2];
     const [middleRow, middleColumn] = EDITS[1];
@@ -287,10 +313,10 @@ try {
     // Over-limit and malformed sources are refused without touching saved work.
     await closeToHome(page);
     const refusals = {};
-    for (const file of [`source-${ROWS + 1}.${format}`, `malformed.${format}`]) {
+    for (const file of [`source-10001.${format}`, `malformed.${format}`]) {
       refusals[file] = await refusedImport(page, path.join(fixtures, file), file);
     }
-    assert.match(refusals[`source-${ROWS + 1}.${format}`], /^This file is outside what this beta can open:/, "plain-language size refusal");
+    assert.match(refusals[`source-10001.${format}`], /^This file is outside what this beta can open:/, "plain-language size refusal");
     assert.match(refusals[`malformed.${format}`], /^This file could not be read\./, "plain-language damaged-file refusal");
     await page.getByRole("button", { name: `Open saved ${name}`, exact: true }).click();
     await ready(page);

@@ -1,4 +1,4 @@
-import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
+import type { FidelityFinding, SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
 import { isCapacityFailure, type FailureProjection } from "../../public/core-kit/runtime/protocol.js";
 import { importCapacityMessage } from "./capacity-message.js";
 
@@ -77,7 +77,7 @@ export function sourcePreviewText(value: SourceValue | undefined): string {
   return String(value.value);
 }
 
-const BEYOND_LIMITS = /\b(?:TableRows|TableFields|PopulatedCells|TotalEntities) capacity exceeded|Text capacity requires|capacity requires|exceeds 8,406|row exceeds 8,406|CSV exceeds|exceeds .*(row|column|cell) bounds|25,218|25218|logical cells|(?:cell column|worksheet row).*exceeds profile|bounded Text\/Number capacity rectangle/i;
+const BEYOND_LIMITS = /\b(?:TableRows|TableFields|PopulatedCells|TotalEntities) capacity exceeded|Text capacity requires|capacity requires|exceeds 8,406|row exceeds 8,406|CSV exceeds|exceeds .*(row|column|cell) bounds|25,218|25218|logical cells|(?:cell column|worksheet row).*exceeds profile|XML structure exceeds bounded profile|bounded Text\/Number capacity rectangle/i;
 const DAMAGED = /unclosed quoted field|Missing ZIP|invalid ZIP|not a valid|malformed|truncated/i;
 
 /** Plain-language inspection refusal; the producer's detail stays visible. */
@@ -98,10 +98,15 @@ export function importRefusalMessage(error: unknown): string {
 }
 
 /** Format known confirmation refusals; retain recovery/unknown outcome wording. */
-export function importConfirmationMessage(message: string): string {
+export function importConfirmationMessage(message: string, ledger: readonly FidelityFinding[] = []): string {
   if (/unknown|refresh|recovery|could not be confirmed|stopped unexpectedly/i.test(message)) return message;
+  if (/blocking fidelity findings prevent import/i.test(message)) {
+    const details = ledger.filter(finding => finding.blocking)
+      .map(finding => `${finding.location}: ${finding.message}`).join(" ");
+    if (details) message = `The import was not applied. (Details: ${details})`;
+  }
   if (BEYOND_LIMITS.test(message) || DAMAGED.test(message)) return importRefusalMessage(new Error(message));
-  if (/conversion requires.*finite.*Number|source Number is not finite/i.test(message)) {
+  if (/conversion requires.*finite.*Number|source Number is not finite|nonfinite.*Number/i.test(message)) {
     return `A column could not be converted to Number. Check its values or choose Text. Nothing was imported. (Details: ${message})`;
   }
   return message;

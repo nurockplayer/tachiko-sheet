@@ -22,6 +22,7 @@ import type {
   ImportSelection,
   InteropMetadata,
   SpreadsheetFormat,
+  SourceWorkbook,
 } from "../../public/core-kit/runtime/interop-protocol.js";
 import {
   UnknownOperationOutcomeError,
@@ -714,17 +715,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const { kit, client } = await loadKitOnce();
       assertNotReplaced(requestedAt);
       if (importedMetadata) {
-        const inspect = capability(client.inspectImportedProject, "imported-project inspection");
+        const inspect = capability(client.inspectImportedProjectWorkingSize, "working-size imported-project inspection");
         // The retained J3 metadata is producer-issued and is validated by the
         // public kit against a cloned opaque transfer before this replacement
         // boundary. Sheet neither decodes nor rewrites the transfer.
         await dispatch(kit, () => inspect.call(client, bytes.slice(0), importedMetadata));
         assertNotReplaced(requestedAt);
+        const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+        return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0), importedMetadata));
       }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
-      const open: (bytes: ArrayBuffer) => Promise<OpenedProjection | OpenedWindowProjection> = importedMetadata ? client.openProject
-        : capability(client.openProjectWorkingSize, "working-size project open");
+      const open = capability(client.openProjectWorkingSize, "working-size project open");
       return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0)));
     });
   }
@@ -1461,8 +1463,33 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return enqueue(async () => {
       const { kit, client } = await loadKitOnce();
       const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
-      return dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
+      try {
+        return await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
+      } catch (error) {
+        if (!hasFailureCode(kit, error, "capacity_exceeded")) throw error;
+        return inspectLosslessWorkingSize(kit, client, bytes, format, options, error);
+      }
     });
+  }
+
+  async function inspectLosslessWorkingSize(
+    kit: CoreKit, client: PublicClient, bytes: ArrayBuffer, format: SpreadsheetFormat,
+    options: ImportOptions, capacityRefusal: unknown,
+  ): Promise<SourceWorkbook> {
+    const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
+    const source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
+    // Working-size metadata carries no presentation. Only use it when there
+    // is no source presentation to lose; retain Work's original refusal otherwise.
+    // Work excludes header cells from rows and reports their styling in the ledger.
+    // style_profile also occurs on full-fidelity import; basic styles are checked below.
+    if (source.ledger.some(finding => finding.code === "checkbox_presentation" ||
+      finding.code.endsWith("_not_preserved")) ||
+      source.sheets.some(sheet => sheet.columns.some(column => column.width !== null) ||
+      sheet.rows.some(row => row.some(({ style }) => style.number_format !== null || style.bold ||
+        style.fill !== null || style.wrap || style.border || style.alignment !== null)))) {
+      throw capacityRefusal;
+    }
+    return source;
   }
 
   function importSpreadsheet(
@@ -1478,10 +1505,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const importSheet = capability(client.importSpreadsheet, "spreadsheet import");
       let imported;
       try {
-        imported = await afterNotReplaced(
-          requestedAt,
-          dispatch(kit, () => importSheet.call(client, bytes.slice(0), format, options, selection)),
-        );
+        try {
+          imported = await afterNotReplaced(
+            requestedAt,
+            dispatch(kit, () => importSheet.call(client, bytes.slice(0), format, options, selection)),
+          );
+        } catch (error) {
+          if (!hasFailureCode(kit, error, "capacity_exceeded")) throw error;
+          await afterNotReplaced(requestedAt, inspectLosslessWorkingSize(kit, client, bytes, format, options, error));
+          const workingImport = capability(client.importSpreadsheetWorkingSize, "working-size spreadsheet import");
+          imported = await afterNotReplaced(requestedAt,
+            dispatch(kit, () => workingImport.call(client, bytes.slice(0), format, options, selection)));
+        }
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
           openedFromWorkFile = false;
@@ -1500,11 +1535,34 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       residentCollection = null;
       residentAvailable = true;
       closed = false;
-      requestByteLimit = MAX_WIRE_REQUEST_BYTES;
+      requestByteLimit = "profile" in imported.opened && imported.opened.profile === "working_size"
+        ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
       let read: CoherentRead;
       try {
+        // Confirm the acknowledged import before exporting or replacing it.
+        // A lost query reply does not make that import's outcome unknown.
         read = await loadCoherentView(kit, client, requestedAt, null);
+        if (!("profile" in imported.opened && imported.opened.profile === "working_size")) {
+          // Keep the full-fidelity import and its producer metadata. Reopen its
+          // opaque v3 snapshot through Work's supported working-size boundary
+          // so edits reach Work's value checks instead of the 64 KiB wire cap.
+          const revision = imported.opened.bootstrap.revision;
+          const project = await afterNotReplaced(requestedAt,
+            dispatch(kit, () => client.exportProjectV3(revision)));
+          requireCurrentProjectionRevision(revision, project.revision, "imported project export");
+          const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+          let opened;
+          try {
+            opened = await afterNotReplaced(requestedAt,
+              dispatch(kit, () => open.call(client, project.bytes.slice(0), imported.metadata)));
+          } catch (error) {
+            throw new OpenedProjectionRecoveryError(error, error instanceof UnknownOperationOutcomeError ? "unknown" : "opened");
+          }
+          requestByteLimit = opened.profile === "working_size" ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
+          read = await loadCoherentView(kit, client, requestedAt, null);
+        }
       } catch (error) {
+        if (error instanceof OpenedProjectionRecoveryError) throw error;
         throw new OpenedProjectionRecoveryError(error);
       }
       active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
