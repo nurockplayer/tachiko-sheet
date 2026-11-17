@@ -259,7 +259,7 @@ it("retains a published mapping even when projection recovery is required", asyn
   const { port } = harness();
   const accepted: unknown[] = [];
   port.acceptPublication = publication => accepted.push(publication.import_metadata);
-  const metadata = { version: 1, sheets: [] } as const;
+  const metadata: import("../../public/core-kit/runtime/protocol.js").InteropMetadata = { version: 1, sheets: [] };
   const publication = { base_revision: "rev-1", resulting_revision: "rev-2", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [], import_metadata: metadata };
   await createMutationCompletion(port).run({ kind: "rows", witness, dispatch: async () => { throw new PublishedProjectionRecoveryError(publication, new Error("read failed")); } });
   expect(accepted).toEqual([metadata]);
