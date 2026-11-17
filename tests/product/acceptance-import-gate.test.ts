@@ -26,18 +26,19 @@ async function instrumentedImportClient(
   importSpreadsheet: () => Promise<unknown>,
 ): Promise<ReturnType<CoreKit["createExperimentalDesignerClient"]>> {
   const kit = {
-    createExperimentalDesignerClient: () => ({ importSpreadsheet }),
+    createExperimentalDesignerClient: () => ({ importSpreadsheet, importSpreadsheetWorkingSize: importSpreadsheet }),
   } as unknown as CoreKit;
   return (await wrapKitLoader(async () => kit)()).createExperimentalDesignerClient();
 }
 
 function importSpreadsheet(
   client: ReturnType<CoreKit["createExperimentalDesignerClient"]>,
+  method: "importSpreadsheet" | "importSpreadsheetWorkingSize",
 ): Promise<unknown> {
-  return client.importSpreadsheet(new ArrayBuffer(0), "csv" as never, {} as never, {} as never);
+  return client[method](new ArrayBuffer(0), "csv" as never, {} as never, {} as never);
 }
 
-describe("acceptance import application gate scheduling", () => {
+describe.each(["importSpreadsheet", "importSpreadsheetWorkingSize"] as const)("acceptance %s application gate scheduling", (method) => {
   it("holds a successful real reply until release and does not gate the next call", async () => {
     const pendingRealReply = deferred<unknown>();
     const acceptedReply = { imported: true };
@@ -50,7 +51,7 @@ describe("acceptance import application gate scheduling", () => {
     const dispatchesBefore = importSpreadsheetRequestCount();
 
     deferNextImportApplication();
-    const result = importSpreadsheet(client);
+    const result = importSpreadsheet(client, method);
     let settled = false;
     void result.then(() => { settled = true; }, () => { settled = true; });
     pendingRealReply.resolve(acceptedReply);
@@ -65,7 +66,7 @@ describe("acceptance import application gate scheduling", () => {
     }
 
     await expect(result).resolves.toBe(acceptedReply);
-    await expect(importSpreadsheet(client)).resolves.toBe(nextReply);
+    await expect(importSpreadsheet(client, method)).resolves.toBe(nextReply);
     expect(calls).toBe(2);
     expect(importSpreadsheetRequestCount() - dispatchesBefore).toBe(2);
   });
@@ -82,7 +83,7 @@ describe("acceptance import application gate scheduling", () => {
     const dispatchesBefore = importSpreadsheetRequestCount();
 
     deferNextImportApplication();
-    const result = importSpreadsheet(client);
+    const result = importSpreadsheet(client, method);
     let settled = false;
     void result.then(() => { settled = true; }, () => { settled = true; });
     pendingRealReply.reject(failure);
@@ -97,7 +98,7 @@ describe("acceptance import application gate scheduling", () => {
     }
 
     await expect(result).rejects.toBe(failure);
-    await expect(importSpreadsheet(client)).resolves.toBe(nextReply);
+    await expect(importSpreadsheet(client, method)).resolves.toBe(nextReply);
     expect(calls).toBe(2);
     expect(importSpreadsheetRequestCount() - dispatchesBefore).toBe(2);
   });

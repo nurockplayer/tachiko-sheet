@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
+import type { FidelityFinding, SourceCell, SourceValue } from "../../public/core-kit/runtime/interop-protocol.js";
 import { largeImport, chooseImportType, chosenImportTypes, importConfirmationMessage, importRefusalMessage, sourcePreviewText, suggestColumnType } from "./import-suggestions.js";
 
 const cell = (value: SourceValue): SourceCell => ({ value, formula: null, style: {} as SourceCell["style"] });
@@ -91,6 +91,23 @@ describe("import refusal message", () => {
 });
 
 describe("import confirmation errors", () => {
+  it("explains working-size blockers from Work's inspection without guessing from the generic refusal", () => {
+    const refusal = "The import was not applied. (Details: tracker operation rejected: blocking fidelity findings prevent import)";
+    const finding: FidelityFinding = {
+      category: "unsupported_safe_disabled", code: "cell_refused", location: "Mixed!B201",
+      message: "Nonfinite XLSX Number", blocking: true,
+    };
+    const message = importConfirmationMessage(refusal, [finding]);
+    expect(message).toMatch(/^A column could not be converted to Number/);
+    expect(message).toContain("Mixed!B201: Nonfinite XLSX Number");
+    expect(importConfirmationMessage(refusal)).toBe(refusal);
+    expect(importConfirmationMessage(refusal, [{ ...finding, blocking: false }])).toBe(refusal);
+    expect(importConfirmationMessage(refusal, [{ ...finding, message: "Unsupported source feature" }]))
+      .toBe("The import was not applied. (Details: Mixed!B201: Unsupported source feature)");
+    const unknown = "The import outcome is unknown; Refresh is required.";
+    expect(importConfirmationMessage(unknown, [finding])).toBe(unknown);
+  });
+
   it("explains known limits and conversion errors while retaining recovery truth", () => {
     expect(importConfirmationMessage("8,406-row capacity requires selected Text/Number fields and no extra columns")).toMatch(/^This file is outside/);
     expect(importConfirmationMessage("conversion requires an unambiguous finite decimal Number")).toMatch(/^A column could not be converted to Number/);
