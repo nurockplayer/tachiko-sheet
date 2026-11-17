@@ -1528,7 +1528,7 @@ describe("createSheetRuntime", () => {
       productCategoryField: "notes",
       productPriceField: "impact",
     });
-    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(["tasks"]);
+    expect(client.calls.queryTableWindowCollections.slice(windowsBefore)).toEqual(["tasks", "tasks"]);
     expect(client.calls.createKeyedGroupedSum).toHaveLength(1);
   });
 
@@ -2456,7 +2456,7 @@ describe("whole-table display routing", () => {
     client.calls.queryTableWindow.length = 0;
     client.hooks.queryTableWindow = async (revision, _key, start, count) => ({ ...table, revision, columns_revision: "c1", total_rows: table.rows.length, unfiltered_rows: table.rows.length, start, rows: table.rows.slice(start, start + count) });
     await runtime.read();
-    expect(client.calls.queryTableWindow.length).toBe(format === "mdy" ? 1 : 0);
+    expect(client.calls.queryTableWindow).toEqual([{ revision: table.revision, start: 0, count: format === "mdy" ? 256 : 0 }]);
   });
 });
 
@@ -2850,6 +2850,68 @@ describe("#189 scalar/history completion evidence", () => {
 });
 
 describe("confirmed changed-cell patches", () => {
+  async function queryTableSession(mismatchedRevision = false) {
+    const { client, runtime, view: openedView } = await opened();
+    const firstRow = openedView.table.rows[0]!;
+    const otherRow = { ...firstRow, id: "e2", key: "e2", fields: firstRow.fields.map(field => ({
+      ...field, target: { ...field.target, entity: "e2" }, address: `e2.${field.target.field}`,
+    })) };
+    let fields = firstRow.fields;
+    const fullTable = (): TableProjection => ({ ...openedView.table, revision: client.currentRevision,
+      columns: openedView.table.columns.map(column => ({ ...column, id: column.key })),
+      rows: [{ ...firstRow, fields }, otherRow] });
+    client.hooks.queryTable = async () => fullTable();
+    client.hooks.queryTableWindow = async (revision, _key, start, count) => {
+      const table = fullTable();
+      return { ...table, revision: mismatchedRevision ? "wrong" : revision, columns_revision: "c1",
+        total_rows: table.rows.length, unfiltered_rows: table.rows.length, start,
+        rows: table.rows.slice(start, start + count) };
+    };
+    const view = await runtime.read();
+    client.hooks.editNumber = async () => {
+      const publication = await client.editNumber(view.revision, IMPACT, "12");
+      fields = [{ ...fields[0]!, stored: { kind: "number", value: 12 } }, ...fields.slice(1)];
+      return { ...publication, changed: [fields[0]!] };
+    };
+    return { client, runtime, view, fullTable };
+  }
+
+  it("patches a queryTable scalar edit without a whole-table read and preserves other rows", async () => {
+    const { client, runtime, view, fullTable } = await queryTableSession();
+    const before = client.calls.queryTable.length;
+    expect(view.table.columns.some(column => column.field_type === "date")).toBe(false);
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+    expect(client.calls.queryTable).toHaveLength(before);
+    expect(result.view.table).toEqual(fullTable());
+    expect(result.view.table.rows[0]!.fields[0]!.stored).toEqual({ kind: "number", value: 12 });
+    expect(result.view.table.rows[1]).toBe(view.table.rows[1]);
+    expect(result.view.revision).toBe(result.publication.resulting_revision);
+    expect(result.view.table.revision).toBe(result.publication.resulting_revision);
+  });
+
+  it("reloads after a queryTable load's zero-row window reports another revision", async () => {
+    const { client, runtime, view, fullTable } = await queryTableSession(true);
+    const before = client.calls.queryTable.length;
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+    expect(client.calls.queryTable).toHaveLength(before + 1);
+    expect(result.view.table).toEqual(fullTable());
+    expect(result.view.revision).toBe(result.publication.resulting_revision);
+  });
+
+  it("reloads when a queryTable publication carries display", async () => {
+    const { client, runtime, view, fullTable } = await queryTableSession();
+    const edit = client.hooks.editNumber!;
+    client.hooks.editNumber = async () => {
+      const publication = await edit();
+      return { ...publication, changed: [{ ...publication.changed![0]!, display: "12.00" }] };
+    };
+    const before = client.calls.queryTable.length;
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+    expect(client.calls.queryTable).toHaveLength(before + 1);
+    expect(result.view.table).toEqual(fullTable());
+    expect(result.view.revision).toBe(result.publication.resulting_revision);
+  });
+
   async function patchSession(windowed = true, initiallyBlank = false) {
     const { client, runtime, view: openedView } = await opened();
     const initialFields = openedView.table.rows[0]!.fields;
