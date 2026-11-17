@@ -583,11 +583,11 @@ function expectResponse(type, response) {
             response.payload.fields.forEach(validateFieldPresence);
             break;
         case "published":
-            response.payload.changed?.forEach(validateFieldPresence);
+            validatePublication(response.payload);
             break;
         case "duplicated":
         case "keyed_grouped_sum_published":
-            response.payload.publication.changed?.forEach(validateFieldPresence);
+            validatePublication(response.payload.publication);
             break;
         case "field_explanation":
             validateFieldPresence(response.payload.value);
@@ -602,6 +602,36 @@ function expectResponse(type, response) {
             break;
     }
     return "payload" in response ? response.payload : undefined;
+}
+function validatePublication(publication) {
+    publication.changed?.forEach(validateFieldPresence);
+    if (publication.import_metadata !== undefined)
+        validateImportMetadata(publication.import_metadata);
+}
+function validateImportMetadata(metadata) {
+    const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+    const nullableString = (value) => value === null || typeof value === "string";
+    const style = (value) => record(value) &&
+        nullableString(value.number_format) && nullableString(value.fill) && nullableString(value.alignment) &&
+        typeof value.bold === "boolean" && typeof value.wrap === "boolean" && typeof value.border === "boolean";
+    if (!record(metadata) || (metadata.version !== 1 && metadata.version !== 2) || !Array.isArray(metadata.sheets)) {
+        throw new Error("Invalid Worker import metadata.");
+    }
+    const version = metadata.version;
+    for (const sheet of metadata.sheets) {
+        if (!record(sheet) || typeof sheet.schema_id !== "string" || typeof sheet.name !== "string" ||
+            typeof sheet.has_header !== "boolean" || !Array.isArray(sheet.columns)) {
+            throw new Error("Invalid Worker import metadata.");
+        }
+        const columns = sheet.columns;
+        if (!columns.every(column => record(column) &&
+            typeof column.field_id === "string" && typeof column.name === "string" &&
+            (version === 2 || column.width === null || (typeof column.width === "number" && Number.isFinite(column.width)))) ||
+            (version === 1 && (!Array.isArray(sheet.rows) || !sheet.rows.every((row) => record(row) && typeof row.entity_id === "string" && Array.isArray(row.styles) &&
+                row.styles.length === columns.length && row.styles.every(style))))) {
+            throw new Error("Invalid Worker import metadata.");
+        }
+    }
 }
 const CAPACITY_LIMITS = [
     "collections", "table_fields", "table_rows", "total_entities", "populated_cells",
@@ -630,7 +660,43 @@ function validateCapacity(capacity) {
         }
     }
 }
+function validateCalculatedResult(result) {
+    if (result !== null && typeof result === "object" && !Array.isArray(result)) {
+        const tagged = result;
+        switch (tagged.kind) {
+            case "number":
+                if (typeof tagged.value === "number" && Number.isFinite(tagged.value))
+                    return;
+                break;
+            case "text":
+                if (typeof tagged.value === "string")
+                    return;
+                break;
+            case "boolean":
+                if (typeof tagged.value === "boolean")
+                    return;
+                break;
+            case "reference":
+                if (typeof tagged.entity === "string")
+                    return;
+                break;
+            case "date": {
+                if (typeof tagged.value !== "string" || !/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(tagged.value))
+                    break;
+                const date = new Date(`${tagged.value}T00:00:00Z`);
+                if (Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === tagged.value)
+                    return;
+                break;
+            }
+        }
+    }
+    throw new Error("Invalid Worker calculated result.");
+}
 function validateFieldPresence(field) {
+    // An absent result means Number; preserve the compact numeric wire payload.
+    if (field.calculated?.status === "value" && field.calculated.result !== undefined) {
+        validateCalculatedResult(field.calculated.result);
+    }
     if (field.blank !== undefined && typeof field.blank !== "boolean") {
         throw new Error("Invalid Worker field blank flag.");
     }
