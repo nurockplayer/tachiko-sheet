@@ -572,6 +572,13 @@ export type TrackerCommand = {
         input: ScalarEditInput;
     }>;
 } | {
+    type: "move_cells";
+    expected_revision: string;
+    moves: Array<{
+        from: FieldTarget;
+        to: FieldTarget;
+    }>;
+} | {
     type: "paste_cells";
     expected_revision: string;
     collection: string;

@@ -13,13 +13,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boundedText } from "../../scripts/desktop-evidence.mjs";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 import { formulaPersistence } from "./formula-persistence.mjs";
+import { pasteRaces } from "./paste-races.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const app = path.resolve(process.argv[2] ?? "");
@@ -55,8 +56,11 @@ const expectedMixed = JSON.parse(await readFile(path.join(mixedFixtures, "expect
 const timings = {};
 const timed = async (label, action) => {
   const started = performance.now();
+  console.log(`START: ${label}`);
   const result = await action();
-  (timings[label] ??= []).push(Math.round(performance.now() - started));
+  const elapsed = Math.round(performance.now() - started);
+  (timings[label] ??= []).push(elapsed);
+  console.log(`PASS: ${label} (${elapsed}ms)`);
   return result;
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -72,7 +76,7 @@ function appPids(strict = false) {
   }
 }
 
-async function launch() {
+async function launch(answerDelay = 1200) {
   assert.deepEqual(appPids(), [], "no earlier app process is running");
   execFileSync("open", ["-n", "-a", app,
     "--env", `TACHIKO_SHEET_E2E_DIR=${scripts}`,
@@ -83,7 +87,7 @@ async function launch() {
     // The unsaved-work dialog is answered "Cancel": closing must then not happen.
     "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER=cancel",
     // The answer takes a moment, so the frozen page can be observed meanwhile.
-    "--env", "TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=1200",
+    "--env", `TACHIKO_SHEET_E2E_CLOSE_ANSWER_DELAY_MS=${answerDelay}`,
     ...(process.env.TACHIKO_SHEET_E2E_WINDOW_SIZE ? ["--env", `TACHIKO_SHEET_E2E_WINDOW_SIZE=${process.env.TACHIKO_SHEET_E2E_WINDOW_SIZE}`] : [])]);
   for (let attempt = 0; attempt < 100 && appPids().length === 0; attempt++) await sleep(100);
   const pids = appPids();
@@ -385,15 +389,25 @@ const rowCount = () => evaluate(`
 const cellText = (row, column) => evaluate(`await reveal(${row}); return cellAt(${row}, ${column}).textContent;`);
 
 async function edit(row, column, value) {
-  await evaluate(`
+  const formula = await evaluate(`
     await reveal(${row});
-    dblclick(cellAt(${row}, ${column}));
-    const input = await waitFor(() => textbox("Edit cell"), "cell editor");
+    const cell = await waitFor(() => {
+      const cell = cellAt(${row}, ${column});
+      return current() && cell?.getAttribute("data-work-currentness") === "current" && cell;
+    }, "published cell for edit");
+    // Formula-backed cells are read-only in the grid, including numeric
+    // constants restored from a work file. Plain inputs keep the cell editor.
+    const formula = cell.getAttribute("aria-readonly") === "true";
+    if (formula) click(cell); else dblclick(cell);
+    const input = await waitFor(() => {
+      const input = formula ? document.querySelector('[data-testid="formula-bar-input"]') : textbox("Edit cell");
+      return input && !input.disabled && !input.readOnly && input;
+    }, formula ? "editable formula bar" : "cell editor");
     fill(input, ${JSON.stringify(value)});
-    return true;
+    return formula;
   `);
   await timed("edit", () => evaluate(`
-    press(textbox("Edit cell"), "Enter");
+    press(${formula ? "document.querySelector('[data-testid=\"formula-bar-input\"]')" : 'textbox("Edit cell")'}, "Enter");
     await waitFor(() => !textbox("Edit cell") && current() && cellAt(${row}, ${column})?.textContent === ${JSON.stringify(value)}, "published edit");
     return true;
   `));
@@ -898,6 +912,67 @@ async function namedTableJourney() {
   pid = undefined;
 }
 
+// G6 3a: observe the existing host/file behavior; never consume the pending
+// file through a test-only command in order to call it delivered.
+async function fileDuringUnsavedQuestion() {
+  const originalFile = await readFile(openFixture);
+  await edit(0, 0, "unsaved-arrival-edit");
+  const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
+  const before = await snapshot();
+  await evaluate(`
+    window.__g6Arrival = null;
+    window.__g6ArrivalListener = event => {
+      if (event.detail === "file-opened") window.__g6Arrival = { inert: document.body.inert };
+    };
+    window.addEventListener("tachiko-menu", window.__g6ArrivalListener);
+    return true;
+  `);
+  const count = await dialogs();
+  await requestClose();
+  await evaluate(`await waitFor(() => document.body.inert, "unsaved question is up"); return true;`);
+  assert.ok((await dialogs()) > count, "host asked about unsaved work");
+  execFileSync("open", ["-a", app, openFixture]);
+  await evaluate(`
+    await waitFor(() => window.__g6Arrival, "OS file event reached the frozen page");
+    window.removeEventListener("tachiko-menu", window.__g6ArrivalListener);
+    if (!window.__g6Arrival.inert) throw new Error("OS file arrived after the delayed answer");
+    await waitFor(() => !document.body.inert, "Cancel returned to work"); return true;
+  `);
+  const shown = await evaluate(`return document.body.innerText.includes('Close this work, then open “open-me.csv” again.');`);
+  if (!shown) {
+    // Opening/closing help lets the ordinary pending-file effect run. Seeing
+    // the named refusal afterwards proves it was retained while the page was inert.
+    await evaluate(`
+      click(await waitFor(() => button("Keyboard shortcuts"), "Keyboard shortcuts"));
+      const help = await waitFor(() => dialog("Keyboard shortcuts"), "help dialog");
+      click(button("Close", help));
+      await waitFor(() => !dialog("Keyboard shortcuts"), "help closed");
+      return true;
+    `);
+  }
+  await evaluate(`await waitFor(() => document.body.innerText.includes('Close this work, then open “open-me.csv” again.'), "arriving file retained and named"); return true;`);
+  const after = await snapshot();
+  assert.deepEqual(after, before, "Cancel retains unsaved cells and identities");
+  assert.deepEqual(await readFile(openFixture), originalFile, "original source file still exists with unchanged bytes");
+  console.log(`File arrival disposition: ${shown ? "shown after Cancel" : "pending after Cancel; named refusal shown after help interaction"}; edits retained; original fixture retained=${existsSync(openFixture)}`);
+}
+
+async function macShortcutLabels() {
+  const labels = await evaluate(`
+    click(await waitFor(() => button("Keyboard shortcuts"), "Keyboard shortcuts"));
+    const help = await waitFor(() => dialog("Keyboard shortcuts"), "shortcut help");
+    const keys = [...help.querySelectorAll("kbd")].map(el => el.textContent);
+    click(button("Close", help));
+    await waitFor(() => !dialog("Keyboard shortcuts"), "help closed");
+    return keys;
+  `);
+  console.log(`macOS rendered shortcut labels: ${JSON.stringify(labels)}`);
+  assert.ok(labels.some(label => label.includes("⌘")), "macOS Command symbols rendered");
+  assert.ok(labels.some(label => label.includes("⌥")), "macOS Option symbols rendered");
+  assert.ok(labels.some(label => label.includes("⇧")), "macOS Shift symbols rendered");
+  assert.ok(labels.every(label => !label.includes("Ctrl+")), `macOS help must not render Ctrl+: ${JSON.stringify(labels)}`);
+}
+
 // ---- run ---------------------------------------------------------------------
 
 const webkitData = [
@@ -911,7 +986,20 @@ let pid;
 let directResult;
 let lifecycleError;
 try {
-  await namedTableJourney();
+  if (process.env.DESKTOP_NATIVE_ONLY === "1") {
+    pid = await timed("launch", () => launch(5000));
+    await coldHome();
+    await pasteRaces({ evaluate, work, extraChecks: [
+      ["file arriving during unsaved question retains edits and the file", fileDuringUnsavedQuestion],
+      ["shortcut help renders macOS ⌘/⌥/⇧ labels", macShortcutLabels],
+    ], receipt: async record => {
+      if (process.env.DESKTOP_TIMING_RECEIPTS) await appendFile(process.env.DESKTOP_TIMING_RECEIPTS, `${JSON.stringify(record)}\n`);
+    } });
+    await closeToHome();
+    await quit(pid);
+    pid = undefined;
+  } else {
+  await timed("named-table journey", namedTableJourney);
   pid = await timed("launch", launch);
   await coldHome();
   await formulaPersistence({
@@ -923,7 +1011,7 @@ try {
     },
     quit: async () => { await quit(pid); pid = undefined; },
   });
-  if (process.env.DESKTOP_JOURNEYS !== "capacity") await salesJourney();
+  if (process.env.DESKTOP_JOURNEYS !== "capacity") await timed("sales journey", salesJourney);
   const cases = process.env.DESKTOP_JOURNEYS === "sales" ? [] : [
     ...formats.map(format => ({ format, rows: 8406, cols: 3, mixed: false })),
     ...[[320, 2], [1000, 16]].flatMap(([rows, cols]) => formats.map(format => ({ format, rows, cols, mixed: true }))),
@@ -934,6 +1022,7 @@ try {
     oracle = mixed ? mixedOracle : path.join(root, "acceptance/capacity-8406/oracle.py");
     EDITS = mixed ? [[ROWS >> 1, 1, "424242"]] : [[0, 0, '000-edited-雪,"first"'], [ROWS >> 1, 1, "https://example.invalid/edited-middle?x=0007"], [ROWS - 1, 2, "0001700008405999"]];
     const name = mixed ? `mixed-${ROWS}x${COLS}-${format}` : `capacity-8406-${format}`;
+    console.log(`START: ${name}`);
     pid = await timed("launch", launch);
     const home = await coldHome();
     assert.equal(home.protocol, "tauri:", "the packaged frontend is served by the app");
@@ -1006,10 +1095,12 @@ try {
     await quit(pid, { via: format === "xlsx" ? "terminate" : "quit" });
     pid = undefined;
     results.push({ name, format, csv: path.basename(csv), xlsx: path.basename(xlsx), refusal: malformed.text.slice(0, 160) });
+    console.log(`PASS: ${name}`);
+  }
   }
   directResult = {
-    case: "desktop packaged lifecycle (native runtime)",
-    journeys: { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    case: process.env.DESKTOP_NATIVE_ONLY === "1" ? "desktop native subcases" : "desktop packaged lifecycle (native runtime)",
+    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),
@@ -1020,6 +1111,7 @@ try {
   console.log(JSON.stringify(directResult, null, 2));
 } catch (error) {
   lifecycleError = error;
+  console.error(`FAIL: desktop lifecycle: ${error.stack ?? error}`);
   throw error;
 } finally {
   const cleanupErrors = [];

@@ -45,8 +45,9 @@ function launch(command, args, options, collector) {
     return { child: undefined, error, closed: Promise.resolve({ code: 127, signal: null, error }) };
   }
   let spawnError;
-  child.stdout?.on('data', (chunk) => collector.push(chunk));
-  child.stderr?.on('data', (chunk) => collector.push(chunk));
+  const output = (chunk) => { collector.push(chunk); options.onOutput?.(chunk); };
+  child.stdout?.on('data', output);
+  child.stderr?.on('data', output);
   child.once('error', (error) => { spawnError = error; collector.push(error.message); });
   const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({
     code: typeof code === 'number' ? code : spawnError ? 127 : 1,

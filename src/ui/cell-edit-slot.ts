@@ -55,6 +55,9 @@ export function cellEditorUnchanged(slot: CellEditSlot, original: string, raw: s
 }
 
 /** Empty clipboard input on an authoritative blank is unchanged, not empty Text.
+ * Plain text carries no presence: copying/cutting explicit empty Text (Empty)
+ * serializes as "". In the native edit path, pasting it into optional Text
+ * normalizes Empty to Blank via emptyCellEdit; required Text stays empty Text.
  * The caller validates the whole rectangle and cap before omitting no-op slots.
  * Boolean tokens have already been validated and folded by routePaste. */
 export function pastedCellEdit(slot: CellEditSlot, raw: string, native = false): CellEdit | null {

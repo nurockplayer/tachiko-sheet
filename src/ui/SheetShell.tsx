@@ -136,7 +136,7 @@ const SAVE_UNBOUND_DESCRIPTION = "Save your work as a copy you can reopen here. 
 const SAVE_COPY_DESCRIPTION = "Keep this copy and save another one (like Excel's Save As).";
 const PREPARE_XLSX_DESCRIPTION = "Prepare XLSX makes a new Excel file; the file you opened from is not changed, and your work here still needs Save.";
 
-// Work a5348952, packages/browser-client/runtime/src/interop_adapter.rs:11-12,42,280-289,1798-1834,2404-2443.
+// Work e434dc38, packages/browser-client/runtime/src/interop_adapter.rs (input byte limits).
 // Home uses ordinary import; MB here follows Work's binary byte limits.
 const HOME_IMPORT_LIMITS_DESCRIPTION = "CSV text or Excel files up to 2 MB; an Excel file can unpack to at most 8 MB. Larger plain sheets also have a 1 MB limit on cell text. Some styles and features are not imported.";
 
@@ -1730,7 +1730,11 @@ export function SheetShell(props: SheetShellProps) {
         if (plan) {
           if (plan.kind === "unchanged") { announceClipboard("The selected cells are unchanged.", false, true); return; }
           keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => { if (confirmed && pasteSource) setPasteRebind(pasteSource); });
+          const intent = completionIntent();
+          void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => {
+            if (confirmed && pasteSource) setPasteRebind(pasteSource);
+            if (confirmed) revealPastedCell(position, intent);
+          });
           return;
         }
       } catch (error) {
@@ -1799,13 +1803,28 @@ export function SheetShell(props: SheetShellProps) {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
       if (result.kind === "confirmed" && pasteSource) setPasteRebind(pasteSource);
       // Appended rows stay visible under the active filter, as Add row does.
-      if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
+      if (result.kind === "confirmed") {
+        keepGridRows(result.addedEntities ?? []);
+        revealPastedCell(position, intent);
+      }
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
         : "The paste outcome needs review. Refresh to check it; the paste has not been retried.", result.kind !== "confirmed", edits.some(edit => edit.input.kind === "clear"));
     }, () => {
       if (liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) announceClipboard("The paste could not be confirmed. Refresh to check it before pasting again.", true);
     }).finally(() => { rowCommandPendingRef.current = false; setCommitPending(false); });
+  }
+
+  function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
+    if (!completionMayUpdateUi(intent)) return;
+    const rowIndex = rowIndexByEntity.get(position.entity);
+    if (rowIndex !== undefined) revealGridRow(rowIndex);
+    // A windowed target may mount with the confirmed projection. Keep focus and selection intact.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent) || clipboardIdentityRef.current !== collectionIdentity) return;
+      const cell = cellRefs.current.get(cellKey(position.entity, position.field));
+      if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
+    }));
   }
 
   async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut" | "Updated", noun: "clear" | "fill" | "cut" | "paste"): Promise<boolean> {

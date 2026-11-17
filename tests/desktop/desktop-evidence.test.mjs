@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { captureRunnerCommand } from '../../scripts/runner-process-lifecycle.mjs';
 import { appIdentity, boundedText, lifecycleFiles, lifecycleVerdict, OUTPUT_LIMIT, productionFiles, runLifecycle, stageProduction, verifyLifecycle, verifyProduction, workIdentity } from '../../scripts/desktop-evidence.mjs';
@@ -13,6 +14,25 @@ const successfulProcess = { code: 0, signal: null, outcome: 'EXITED' };
 const successfulDirect = { schema: 'sheet-desktop-direct-result-v1', status: 'PASS', cleanup: { status: 'PASS' } };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const writeJson = (file, value) => writeFile(file, JSON.stringify(value));
+
+test('lifecycle output reaches live diagnostics before exit and retains the captured failure', async () => {
+  let firstOutput;
+  const observed = new Promise(resolve => { firstOutput = resolve; });
+  let finished = false;
+  const chunks = [];
+  const running = captureRunnerCommand(process.execPath, ['-e',
+    'console.log("START: lifecycle"); setTimeout(() => { console.error("FAIL: lifecycle reason"); process.exit(7); }, 100);'], {
+    timeoutMs: 5000,
+    onOutput: chunk => { chunks.push(chunk); firstOutput(); },
+  }).then(result => { finished = true; return result; });
+  await Promise.race([observed, running.then(() => { throw new Error('capture completed without live diagnostics'); })]);
+  assert.equal(finished, false, 'the initial phase is visible while the child is running');
+  const result = await running;
+  assert.equal(result.code, 7);
+  assert.equal(result.outcome, 'EXITED');
+  assert.match(Buffer.concat(chunks).toString(), /START: lifecycle[\s\S]*FAIL: lifecycle reason/);
+  assert.equal(result.output, Buffer.concat(chunks).toString());
+});
 
 test('independent XLSX checker rejects formula loss, source changes and stale or missing caches', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sheet-xlsx-formula-'));
@@ -31,7 +51,7 @@ with zipfile.ZipFile(sys.argv[1], 'w') as z:
  formula = '<f>' + sys.argv[2] + '</f>' if sys.argv[2] else ''
  z.writestr('xl/worksheets/invoice.xml', '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="C2">' + formula + sys.argv[3] + '</c></row></sheetData></worksheet>')
 `, file, formula, cache]);
-    const check = () => execFileSync(python, ['-I', checker.pathname, file, expected], { stdio: 'pipe' });
+    const check = () => execFileSync(python, ['-I', fileURLToPath(checker), file, expected], { stdio: 'pipe' });
     if (passes) check();
     else assert.throws(check, { status: 1 });
   }
@@ -233,10 +253,10 @@ test('workflow preserves gates, timeouts, permissions and exact narrow upload pa
       `production retention must finish before E2E work: ${retentionOrder[index - 1]} precedes ${retentionOrder[index]}`);
   }
   assert.ok(workflow.indexOf('mjs e2e-identity') < workflow.indexOf('mjs lifecycle'));
-  assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 2);
-  assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 2);
-  assert.equal((workflow.match(/if-no-files-found: error/g) ?? []).length, 2);
-  assert.equal((workflow.match(/github.run_attempt/g) ?? []).length, 2);
+  assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 3);
+  assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 3);
+  assert.equal((workflow.match(/if-no-files-found: error/g) ?? []).length, 3);
+  assert.equal((workflow.match(/github.run_attempt/g) ?? []).length, 3);
   const paths = [...workflow.matchAll(/^            (desktop-evidence\/[^\n]+)$/gm)].map(match => match[1]);
   assert.deepEqual(paths, [...productionFiles.map(file => `desktop-evidence/production/${file}`), ...lifecycleFiles.map(file => `desktop-evidence/e2e/${file}`)]);
   assert.doesNotMatch(workflow, /continue-on-error|permissions: write|upload-artifact@main/);

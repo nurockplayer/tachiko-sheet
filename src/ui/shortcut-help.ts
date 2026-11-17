@@ -62,6 +62,6 @@ export function shortcutHelpGroups({ mac, desktop }: { mac: boolean; desktop: bo
   return groups.map(group => ({ ...group, entries: group.entries.filter(entry => desktop || !entry.desktopOnly).map(entry => ({
     ...entry,
     keys: (mac && entry.action === "Redo" ? ["Mod+Shift+Z"] : mac && entry.action === "Paste Special" ? ["Ctrl+⌘V"] : entry.keys)
-      .map(key => key.replace(/Mod\+/g, mac ? "⌘" : "Ctrl+")),
+      .map(key => mac ? key.replace(/Mod\+/g, "⌘").replace(/Ctrl\+/g, "⌃").replace(/Alt\+/g, "⌥").replace(/Shift\+/g, "⇧") : key.replace(/Mod\+/g, "Ctrl+")),
   })) }));
 }

@@ -35,9 +35,31 @@ import { DRAFT_ROW } from "./row-entry-model.js";
 import { FORMULA_BAR_NO_CELL } from "./formula-bar.js";
 import { notesFieldFor, rowEntity, tableColumns } from "./projection-access.js";
 
+const pasteRender = vi.hoisted(() => ({ capture: false, nodes: [] as React.ReactElement<Record<string, any>>[], occurrenceEffects: [] as React.EffectCallback[] }));
+vi.mock("react/jsx-runtime", async importOriginal => {
+  const actual = await importOriginal<typeof import("react/jsx-runtime")>();
+  const capture = (factory: typeof actual.jsx) => (...args: Parameters<typeof actual.jsx>) => {
+    const node = factory(...args);
+    if (pasteRender.capture) pasteRender.nodes.push(node as React.ReactElement<Record<string, any>>);
+    return node;
+  };
+  return { ...actual, jsx: capture(actual.jsx), jsxs: capture(actual.jsxs) };
+});
+vi.mock("react/jsx-dev-runtime", async importOriginal => {
+  const actual = await importOriginal<typeof import("react/jsx-dev-runtime")>();
+  return { ...actual, jsxDEV: (...args: Parameters<typeof actual.jsxDEV>) => {
+    const node = actual.jsxDEV(...args);
+    if (pasteRender.capture) pasteRender.nodes.push(node as React.ReactElement<Record<string, any>>);
+    return node;
+  } };
+});
+
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
-  return { ...actual, useState: vi.fn(actual.useState) };
+  return { ...actual, useState: vi.fn(actual.useState), useLayoutEffect: (effect: React.EffectCallback, deps?: React.DependencyList) => {
+    if (pasteRender.capture && deps?.length === 1 && deps[0] === "occ-1") pasteRender.occurrenceEffects.push(effect);
+    return actual.useLayoutEffect(effect, deps);
+  } };
 });
 
 const entityA = "entity-a";
@@ -385,6 +407,72 @@ describe("keyboard history queue", () => {
     expect(onHistory).not.toHaveBeenCalled();
     await ui.update({ busy: false });
     expect(onHistory.mock.calls.map(call => call[0])).toEqual(Array.from({ length: 20 }, (_, i) => i % 2 ? "redo" : "undo"));
+  });
+});
+
+describe("paste completion reveal", () => {
+  it.each(["confirmed", "refused", "cancelled"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    const scrollport = {
+      scrollTop: 0, scrollLeft: 0, clientHeight: 100,
+      querySelector: () => null,
+      getBoundingClientRect: () => ({ top: 0, bottom: 100, left: 0, right: 400 }),
+    };
+    class Cell {
+      dataset = { workEntity: entityB, workField: "c-title" };
+      classList = { contains: () => false };
+      closest(selector: string) { return selector.startsWith("td[") ? this : null; }
+      getBoundingClientRect() { return { top: 400 - scrollport.scrollTop, bottom: 432 - scrollport.scrollTop, left: 20, right: 120 }; }
+    }
+    const target = new Cell();
+    const doc = { activeElement: target };
+    vi.stubGlobal("Element", Cell);
+    vi.stubGlobal("document", doc);
+    let finish!: (result: any) => void;
+    const publish = vi.fn(() => new Promise<any>(resolve => { finish = resolve; }));
+    let finishRead!: (text: string) => void;
+    vi.stubGlobal("navigator", { clipboard: { readText: () => new Promise<string>(resolve => { finishRead = resolve; }) } });
+    try {
+      pasteRender.nodes = [];
+      pasteRender.capture = true;
+      render({ view: makeView(), onEditCells: publish });
+      pasteRender.capture = false;
+      // Mount the occurrence lifecycle and DOM refs used by the real event handlers.
+      pasteRender.occurrenceEffects[0]();
+      const grid = pasteRender.nodes.find(node => node.props.role === "grid")!;
+      const scroller = pasteRender.nodes.find(node => node.props.className === "ts-grid-scroll")!;
+      scroller.props.ref.current = scrollport;
+      const cell = pasteRender.nodes.find(node => node.type === "td" && node.props["data-work-entity"] === entityB && node.props["data-work-field"] === "c-title")!;
+      cell.props.ref(target);
+      expect(target.getBoundingClientRect().top).toBeGreaterThan(100);
+      if (outcome === "cancelled") {
+        cell.props.onKeyDown({ key: "v", ctrlKey: true, shiftKey: true, nativeEvent: {}, preventDefault() {}, target, currentTarget: target });
+        doc.activeElement = new Cell();
+        doc.activeElement.dataset.workEntity = entityA;
+        finishRead("pasted");
+      } else {
+        grid.props.onPaste({ target, preventDefault() {}, clipboardData: { types: ["text/plain"], getData: () => "pasted" } });
+        expect(publish).toHaveBeenCalledOnce();
+        expect(scrollport.scrollTop).toBe(0);
+        finish(outcome === "confirmed" ? { kind: "confirmed" } : { kind: "refused", message: "Refused" });
+      }
+      await Promise.resolve();
+      await Promise.resolve();
+      while (frames.length) frames.shift()!(0);
+      if (outcome === "confirmed") {
+        expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(100);
+        expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+      } else {
+        expect(scrollport.scrollTop).toBe(0);
+        if (outcome === "cancelled") expect(publish).not.toHaveBeenCalled();
+      }
+    } finally {
+      pasteRender.capture = false;
+      pasteRender.nodes = [];
+      pasteRender.occurrenceEffects = [];
+      vi.unstubAllGlobals();
+    }
   });
 });
 

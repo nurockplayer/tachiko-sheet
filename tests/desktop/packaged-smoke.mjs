@@ -15,6 +15,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { formulaPersistence } from "./formula-persistence.mjs";
+import { pasteRaces } from "./paste-races.mjs";
 
 const platform = process.platform;
 assert.ok(
@@ -389,6 +390,8 @@ async function main() {
       assert.equal(exit.code, 0, "persistence: clean process exit");
     },
   });
+  const pasteSession = await launch({ closeAnswer: "cancel" });
+  await pasteRaces({ evaluate, work: pasteSession.dir });
 }
 
 async function diagnostics(error) {
