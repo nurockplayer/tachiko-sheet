@@ -64,7 +64,9 @@ foreach ($case in @('A', 'B')) {
   $userKeyBefore = @{}
   foreach ($extension in @('.xlsx', '.csv')) {
     $fake = $fakeIds[$extension]
-    New-Item -Path "$userClasses\$extension" -Force | Out-Null
+    if (-not (Test-Path -LiteralPath "$userClasses\$extension")) {
+      New-Item -Path "$userClasses\$extension" | Out-Null
+    }
     # An empty per-user default masks a machine default without changing it.
     Set-Item -LiteralPath "$userClasses\$extension" -Value ''
     if ($case -eq 'B') {
