@@ -399,7 +399,7 @@ try {
   const productionIndex = await readFile(path.join(dist, "index.html"));
   assert.ok(productionIndex.length, "production dist index exists");
   const builtPkg = JSON.parse(await readFile(path.join(root, "node_modules/@playwright/test/package.json"), "utf8"));
-  assert.equal(builtPkg.version, "1.62.1", "locked Playwright version");
+  assert.equal(builtPkg.version, "1.64.1", "locked Playwright version");
   receipt.environment.playwrightVersion = builtPkg.version;
 
   phase = "server";

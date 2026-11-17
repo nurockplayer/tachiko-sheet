@@ -25,7 +25,7 @@ const implementationPaths = [
 const expectedSeeds = {
   'tests/product/web-save-closure-current.mjs': '31b43d889a4e0208e6dab1c2a94ca2749e3c3167bf736c23510fff2a5492b534',
   'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
-  'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
+  'tests/product/production-lifecycle.mjs': 'ee2963f5eebaf13a41e8c61324ccfc6a480ab8b5e1ab37163bf08807cf164db5',
 };
 const workPin = '518aaa55e046a4e4676b4d5e05d8189c4c6343fe';
 const kitManifest = 'ae82d68592b73ac5da4f72fe9242833f2e9ba15e93480fac01d5d7751b86125b';
@@ -808,7 +808,7 @@ export function classifyM6ReadinessFaviconDisposition(proof, identity, buildRece
     && /^\/(?:[^?#]+\.m?js)$/i.test(proof.productionEntryAssetPath ?? '')
     && proof.emittedHtmlAudit?.domAudit?.url === `${origin}/`
     && proof.browserNavigationStatus === 200 && proof.cdpReady === true && proof.coldHomeReady === true
-    && proof.playwrightVersion === '1.62.1' && typeof proof.browserVersion === 'string' && proof.browserVersion.startsWith('Chrome/')
+    && proof.playwrightVersion === '1.64.1' && typeof proof.browserVersion === 'string' && proof.browserVersion.startsWith('Chrome/')
     && getsComplete && productionEntryBound && validM6FaviconFetch(favicon, origin) && expectedConsole && requestsClean && responsesClean
     && buildBound && sourceClear && emittedClear && controlValid && cleanProcess;
   return valid ? { status: 'AUXILIARY_CANDIDATE', origin, target, candidateIdentity: identity.candidateSha256,
@@ -874,7 +874,7 @@ export function classifyM6LifecycleFaviconDisposition(lifecycleReceipt, lifecycl
   const browserProvenanceBound = browserProvenance?.status === 'PASS'
     && browserProvenance.candidateSha256 === expectedCandidateSha
     && browserProvenance.buildDigest === buildReceipt?.artifact?.digest
-    && browserProvenance.playwrightTestVersion === '1.62.1' && browserProvenance.playwrightCoreVersion === '1.62.1'
+    && browserProvenance.playwrightTestVersion === '1.64.1' && browserProvenance.playwrightCoreVersion === '1.64.1'
     && browserProvenance.frozenSeedSha256 === expectedSeeds['tests/product/production-lifecycle.mjs']
     && typeof executable === 'string' && path.isAbsolute(executable)
     && browserProvenance.executableIsFile === true && Number.isSafeInteger(browserProvenance.executableBytes) && browserProvenance.executableBytes > 0
@@ -1579,7 +1579,7 @@ async function runM6ProductionReadinessProbe(ctx, worktree, evidenceDir, mutatio
     await writeMutationJson(path.join(evidenceDir, 'm6-production-readiness.json'), proof);
     return proof;
   }
-  if (playwrightVersion !== '1.62.1') {
+  if (playwrightVersion !== '1.64.1') {
     proof.reason = `locked Playwright version mismatch: ${playwrightVersion}`;
     proof.playwrightVersion = playwrightVersion;
     await writeMutationJson(path.join(evidenceDir, 'm6-production-readiness.json'), proof);
@@ -1852,7 +1852,7 @@ async function captureM6LifecycleBrowserProvenance(worktree, candidateSha256, bu
     proof.executableIsFile = stat.isFile();
     proof.executableBytes = stat.size;
     proof.status = candidateSha256 === buildReceipt?.candidate?.sha256
-      && proof.playwrightTestVersion === '1.62.1' && proof.playwrightCoreVersion === '1.62.1'
+      && proof.playwrightTestVersion === '1.64.1' && proof.playwrightCoreVersion === '1.64.1'
       && proof.frozenSeedSha256 === expectedSeeds['tests/product/production-lifecycle.mjs']
       && path.isAbsolute(proof.executable) && proof.executableIsFile ? 'PASS' : 'BLOCKED';
   } catch (error) { proof.error = { name: error.name, code: error.code ?? null, message: error.message }; }
@@ -2186,7 +2186,7 @@ export async function executeMutationQualification() {
     summary: {
       status: 'NOT RUN', base, expectedHead, startedAt: nowIso(), environment: { platform: process.platform, arch: process.arch, node: process.version, os: os.release() },
       frozenSeedHashes: expectedSeeds, workPin, kitManifest, mutations: [], commands: [], diagnostics: [], controls: { status: 'NOT RUN' },
-      limits: { serial: true, mutationsPerWorkspace: 1, jobTimeoutMinutes: 20, uploadReserveMs: 90_000, browser: 'hosted Ubuntu locked Playwright 1.62.1 only for M6; no Mac Chrome/Brave browser launch' },
+      limits: { serial: true, mutationsPerWorkspace: 1, jobTimeoutMinutes: 20, uploadReserveMs: 90_000, browser: 'hosted Ubuntu locked Playwright 1.64.1 only for M6; no Mac Chrome/Brave browser launch' },
     },
   };
   ctx.summary.evidenceRoot = evidenceDir;
