@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { captureRunnerCommand } from '../../scripts/runner-process-lifecycle.mjs';
 import { appIdentity, boundedText, lifecycleFiles, lifecycleVerdict, OUTPUT_LIMIT, productionFiles, runLifecycle, stageProduction, verifyLifecycle, verifyProduction, workIdentity } from '../../scripts/desktop-evidence.mjs';
@@ -50,7 +51,7 @@ with zipfile.ZipFile(sys.argv[1], 'w') as z:
  formula = '<f>' + sys.argv[2] + '</f>' if sys.argv[2] else ''
  z.writestr('xl/worksheets/invoice.xml', '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="C2">' + formula + sys.argv[3] + '</c></row></sheetData></worksheet>')
 `, file, formula, cache]);
-    const check = () => execFileSync(python, ['-I', checker.pathname, file, expected], { stdio: 'pipe' });
+    const check = () => execFileSync(python, ['-I', fileURLToPath(checker), file, expected], { stdio: 'pipe' });
     if (passes) check();
     else assert.throws(check, { status: 1 });
   }
