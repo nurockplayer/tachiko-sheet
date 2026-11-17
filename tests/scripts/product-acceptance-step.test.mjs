@@ -8,14 +8,14 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { runStep, signalableOwnedPids } from '../../scripts/product-acceptance-step.mjs';
 
-test('macOS cleanup does not signal an unmarked reused PID with the same start second', () => {
+test('cleanup does not signal an unmarked reused PID with the same start time', () => {
   const owned = new Map([[123, 'same second'], [456, 'same second']]);
   const current = new Map([
     [123, { started: 'same second', marked: false }],
     [456, { started: 'same second', marked: true }],
   ]);
   const signalled = [];
-  for (const pid of signalableOwnedPids(owned, current, 'darwin')) signalled.push(pid);
+  for (const pid of signalableOwnedPids(owned, current)) signalled.push(pid);
   assert.deepEqual(signalled, [456]);
 });
 

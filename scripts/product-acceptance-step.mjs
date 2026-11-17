@@ -6,11 +6,11 @@ import path from 'node:path';
 const STEP_KILL_GRACE_MS = 5000;
 const PROCESS_SCAN_TIMEOUT_MS = 10_000;
 
-export function signalableOwnedPids(owned, current, platform) {
-  // On macOS a descendant that clears its marker may survive cleanup.
+export function signalableOwnedPids(owned, current) {
+  // A descendant that clears its marker may survive cleanup.
   return [...owned].filter(([pid, started]) => {
     const info = current.get(pid);
-    return info?.started === started && (platform !== 'darwin' || info.marked);
+    return info?.started === started && info.marked;
   }).map(([pid]) => pid);
 }
 
@@ -121,7 +121,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
           }
         }
       } while (added);
-      return signalableOwnedPids(owned, current, process.platform);
+      return signalableOwnedPids(owned, current);
     };
     const signalGroup = (signal) => {
       if (!child.pid) return;
