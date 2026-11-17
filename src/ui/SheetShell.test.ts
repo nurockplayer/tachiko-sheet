@@ -236,12 +236,12 @@ describe("keyboard history queue", () => {
     for (const args of onAddTable.mock.calls) expect(args).toEqual([
       { occurrence: view.occurrence, revision: view.revision }, "Sheet 6", [{ name: "A", field_type: "text", required: false }],
     ]);
-    expect(ui.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(ui.container.querySelector('[role="dialog"]:not([hidden])')).toBeNull();
   });
 
   it("lands in the first cell only after Work confirms the new sheet", async () => {
     let confirm!: (result: { kind: "confirmed" }) => void;
-    const ui = await mount({ onAddTable: () => new Promise(resolve => { confirm = resolve; }) });
+    const ui = await mount({ onAddTable: () => new Promise(resolve => { confirm = resolve; }), onInsertRow: async () => ({ kind: "confirmed" }) });
     await act(async () => ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.click());
     expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("release_items");
     const collection = { id: "new", key: "new", display_name: "Sheet 2", entity_count: 0 };
@@ -250,7 +250,9 @@ describe("keyboard history queue", () => {
     await ui.update({ view });
     await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
     expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("Sheet 2");
-    expect(document.activeElement).toBe(ui.container.querySelector('.ts-entry-row [data-entry-field="a"]'));
+    const firstCell = ui.container.querySelector('.ts-entry-row [data-entry-field="a"]');
+    expect(firstCell).not.toBeNull();
+    expect(document.activeElement).toBe(firstCell);
   });
 
   it("disables imported addition and refuses Shift+F11 with the exact hint", async () => {
@@ -287,7 +289,7 @@ describe("keyboard history queue", () => {
     await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     const tab = ui.container.querySelector<HTMLElement>('[aria-label="Sheets"] [role="tab"]')!;
     await act(async () => tab.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-    expect(ui.container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Rename sheet"]')).not.toBeNull();
     await shortcut(tab);
     expect(onAddTable).not.toHaveBeenCalled();
     await ui.update({ busy: true });
